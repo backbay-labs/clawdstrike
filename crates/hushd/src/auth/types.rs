@@ -19,18 +19,21 @@ pub enum Scope {
     All,
 }
 
-impl Scope {
-    /// Parse scope from string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Scope {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "check" => Some(Self::Check),
-            "read" => Some(Self::Read),
-            "admin" => Some(Self::Admin),
-            "*" | "all" => Some(Self::All),
-            _ => None,
+            "check" => Ok(Self::Check),
+            "read" => Ok(Self::Read),
+            "admin" => Ok(Self::Admin),
+            "*" | "all" => Ok(Self::All),
+            _ => Err(()),
         }
     }
+}
 
+impl Scope {
     /// Convert to string representation
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -88,13 +91,13 @@ mod tests {
 
     #[test]
     fn test_scope_from_str() {
-        assert_eq!(Scope::from_str("check"), Some(Scope::Check));
-        assert_eq!(Scope::from_str("read"), Some(Scope::Read));
-        assert_eq!(Scope::from_str("admin"), Some(Scope::Admin));
-        assert_eq!(Scope::from_str("*"), Some(Scope::All));
-        assert_eq!(Scope::from_str("all"), Some(Scope::All));
-        assert_eq!(Scope::from_str("CHECK"), Some(Scope::Check)); // case insensitive
-        assert_eq!(Scope::from_str("invalid"), None);
+        assert_eq!("check".parse::<Scope>().ok(), Some(Scope::Check));
+        assert_eq!("read".parse::<Scope>().ok(), Some(Scope::Read));
+        assert_eq!("admin".parse::<Scope>().ok(), Some(Scope::Admin));
+        assert_eq!("*".parse::<Scope>().ok(), Some(Scope::All));
+        assert_eq!("all".parse::<Scope>().ok(), Some(Scope::All));
+        assert_eq!("CHECK".parse::<Scope>().ok(), Some(Scope::Check)); // case insensitive
+        assert_eq!("invalid".parse::<Scope>().ok(), None);
     }
 
     #[test]

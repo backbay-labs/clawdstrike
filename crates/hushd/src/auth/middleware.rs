@@ -12,6 +12,10 @@ use crate::state::AppState;
 
 use super::{ApiKey, Scope};
 
+/// Type alias for scope layer future
+type ScopeLayerFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>;
+
 /// Extension type to pass validated API key through request
 #[derive(Clone, Debug)]
 pub struct AuthenticatedKey(pub ApiKey);
@@ -103,10 +107,7 @@ pub async fn require_scope(
 /// Create a closure for scope checking that can be used with middleware::from_fn
 pub fn scope_layer(
     scope: Scope,
-) -> impl Fn(Request<Body>, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>
-       + Clone
-       + Send
-       + 'static {
+) -> impl Fn(Request<Body>, Next) -> ScopeLayerFuture + Clone + Send + 'static {
     move |req, next| {
         let scope = scope;
         Box::pin(async move { require_scope(scope, req, next).await })
