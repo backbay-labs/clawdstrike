@@ -1,9 +1,4 @@
-/**
- * @hushclaw/openclaw - Policy Module
- *
- * Policy loading, validation, and evaluation.
- */
-
-export { PolicyEngine } from './engine.js';
-export { loadPolicy, resolvePolicyPath, PolicyLoadError } from './loader.js';
-export { validatePolicy } from './validator.js';
+export * from './types.js';
+export * from './validator.js';
+export * from './engine.js';
+export * from './loader.js';

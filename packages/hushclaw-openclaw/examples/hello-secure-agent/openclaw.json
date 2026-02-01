@@ -1,0 +1,14 @@
+{
+  "plugins": {
+    "entries": {
+      "@hushclaw/openclaw": {
+        "enabled": true,
+        "config": {
+          "policy": "./policy.yaml",
+          "mode": "deterministic",
+          "logLevel": "debug"
+        }
+      }
+    }
+  }
+}

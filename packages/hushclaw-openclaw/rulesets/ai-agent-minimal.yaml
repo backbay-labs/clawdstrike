@@ -1,153 +1,33 @@
-# HushClaw AI Agent Minimal Ruleset
-# Minimal security baseline for AI agent operations
-#
-# This ruleset provides sensible defaults that protect against:
-# - Credential theft (SSH keys, cloud credentials)
-# - Secret exfiltration (API keys, tokens)
-# - Network SSRF attacks (localhost, private IPs)
-# - Dangerous command execution
+# Hushclaw AI Agent Minimal Policy
+# Basic protection for AI-assisted development
 
 version: "hushclaw-v1.0"
 
-# Network egress policy
 egress:
   mode: allowlist
   allowed_domains:
     # AI Provider APIs
     - "api.anthropic.com"
     - "api.openai.com"
-    - "generativelanguage.googleapis.com"
-
-    # Package registries
+    # Package Registries
     - "pypi.org"
-    - "files.pythonhosted.org"
     - "registry.npmjs.org"
     - "crates.io"
-    - "static.crates.io"
-
-    # Source control
-    - "*.github.com"
-    - "*.githubusercontent.com"
-    - "*.gitlab.com"
-    - "*.bitbucket.org"
-
-    # Documentation
-    - "*.readthedocs.io"
-    - "docs.python.org"
-    - "nodejs.org"
-    - "developer.mozilla.org"
-
+    # Source Control
+    - "github.com"
+    - "api.github.com"
   denied_domains:
-    # Tor/anonymous networks
     - "*.onion"
-
-    # Localhost/loopback
     - "localhost"
     - "127.*"
-    - "::1"
 
-    # Private network ranges (SSRF protection)
-    - "10.*"
-    - "192.168.*"
-    - "172.16.*"
-    - "172.17.*"
-    - "172.18.*"
-    - "172.19.*"
-    - "172.20.*"
-    - "172.21.*"
-    - "172.22.*"
-    - "172.23.*"
-    - "172.24.*"
-    - "172.25.*"
-    - "172.26.*"
-    - "172.27.*"
-    - "172.28.*"
-    - "172.29.*"
-    - "172.30.*"
-    - "172.31.*"
-
-    # Cloud metadata endpoints
-    - "169.254.169.254"
-    - "metadata.google.internal"
-
-# Filesystem access policy
 filesystem:
   forbidden_paths:
-    # SSH credentials
     - "~/.ssh"
-    - "~/.ssh/*"
-    - "**/id_rsa"
-    - "**/id_ed25519"
-    - "**/id_ecdsa"
-    - "**/id_dsa"
-    - "**/known_hosts"
-    - "**/authorized_keys"
-
-    # Cloud provider credentials
     - "~/.aws"
-    - "~/.aws/*"
-    - "~/.config/gcloud"
-    - "~/.config/gcloud/*"
-    - "~/.azure"
-    - "~/.azure/*"
-    - "~/.kube"
-    - "~/.kube/*"
-
-    # GPG keys
     - "~/.gnupg"
-    - "~/.gnupg/*"
-
-    # System files
-    - "/etc/shadow"
-    - "/etc/passwd"
-    - "/etc/sudoers"
-    - "/etc/sudoers.d/*"
-
-    # Environment/secret files
     - ".env"
-    - "**/.env"
-    - "**/.env.*"
-    - "**/.env.local"
-    - "**/.env.production"
-
-    # Private keys
     - "*.pem"
-    - "**/*.pem"
     - "*.key"
-    - "**/*.key"
-    - "*.p12"
-    - "**/*.p12"
-    - "*.pfx"
-    - "**/*.pfx"
 
-# Command execution policy
-execution:
-  denied_patterns:
-    # Destructive commands
-    - "rm\\s+(-rf?|--recursive)\\s+[/\\\\]"
-    - "mkfs"
-    - "dd\\s+if=/dev/(zero|random|urandom)\\s+of=/dev/"
-
-    # Fork bombs and DoS
-    - ":\\(\\)\\{\\s*:\\|:&\\s*\\};:"
-
-    # Dangerous downloads
-    - "curl.*\\|.*bash"
-    - "curl.*\\|.*sh"
-    - "wget.*\\|.*bash"
-    - "wget.*\\|.*sh"
-
-    # Privilege escalation
-    - "chmod\\s+777"
-    - "chmod\\s+a\\+rwx"
-
-# Guard toggles
-guards:
-  forbidden_path: true
-  egress: true
-  secret_leak: true
-  patch_integrity: true
-  mcp_tool: false
-
-# Default action on violation
 on_violation: cancel
