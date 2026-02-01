@@ -94,7 +94,22 @@ impl std::fmt::Display for Hash {
     }
 }
 
-/// Compute SHA-256 hash
+/// Compute SHA-256 hash of data.
+///
+/// # Examples
+///
+/// ```rust
+/// use hush_core::sha256;
+///
+/// let hash = sha256(b"hello");
+/// assert_eq!(hash.as_bytes().len(), 32);
+///
+/// // Known test vector
+/// assert_eq!(
+///     hash.to_hex(),
+///     "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+/// );
+/// ```
 pub fn sha256(data: &[u8]) -> Hash {
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -110,7 +125,22 @@ pub fn sha256_hex(data: &[u8]) -> String {
     sha256(data).to_hex_prefixed()
 }
 
-/// Compute Keccak-256 hash (Ethereum-compatible)
+/// Compute Keccak-256 hash (Ethereum-compatible).
+///
+/// # Examples
+///
+/// ```rust
+/// use hush_core::keccak256;
+///
+/// let hash = keccak256(b"hello");
+/// assert_eq!(hash.as_bytes().len(), 32);
+///
+/// // Known test vector (Ethereum keccak256)
+/// assert_eq!(
+///     hash.to_hex(),
+///     "1c8aff950685c2ed4bc3174f3472287b56d9517b9c948127319a09a7a36deac8"
+/// );
+/// ```
 pub fn keccak256(data: &[u8]) -> Hash {
     let mut hasher = Keccak256::new();
     hasher.update(data);
