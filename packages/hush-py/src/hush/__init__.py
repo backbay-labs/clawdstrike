@@ -29,6 +29,7 @@ from hush.merkle import (
     MerkleProof,
 )
 from hush.canonical import canonicalize, canonical_hash
+from hush.native import NATIVE_AVAILABLE
 
 __version__ = "0.1.0"
 
@@ -75,4 +76,6 @@ __all__ = [
     # Canonical JSON
     "canonicalize",
     "canonical_hash",
+    # Native backend
+    "NATIVE_AVAILABLE",
 ]
