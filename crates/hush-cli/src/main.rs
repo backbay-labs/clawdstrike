@@ -96,6 +96,24 @@ enum Commands {
         #[arg(short, long, default_value = "hex")]
         format: String,
     },
+
+    /// Sign a file with a private key
+    Sign {
+        /// Path to private key file
+        #[arg(short, long)]
+        key: String,
+
+        /// File to sign
+        file: String,
+
+        /// Verify signature after signing
+        #[arg(long)]
+        verify: bool,
+
+        /// Output file for signature (defaults to stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -474,6 +492,43 @@ async fn main() -> anyhow::Result<()> {
             };
 
             println!("{}", output);
+        }
+
+        Commands::Sign {
+            key,
+            file,
+            verify,
+            output,
+        } => {
+            // Load private key
+            let key_hex = std::fs::read_to_string(&key)?.trim().to_string();
+            let keypair = Keypair::from_hex(&key_hex)
+                .map_err(|e| anyhow::anyhow!("Failed to load private key: {}", e))?;
+
+            // Read file to sign
+            let data = std::fs::read(&file)?;
+
+            // Sign the data
+            let signature = keypair.sign(&data);
+            let sig_hex = signature.to_hex();
+
+            // Output signature
+            if let Some(output_path) = &output {
+                std::fs::write(output_path, &sig_hex)?;
+                println!("Signature written to {}", output_path);
+            } else {
+                println!("{}", sig_hex);
+            }
+
+            // Optionally verify
+            if verify {
+                let public_key = keypair.public_key();
+                if public_key.verify(&data, &signature) {
+                    eprintln!("Signature verified successfully");
+                } else {
+                    anyhow::bail!("Signature verification failed!");
+                }
+            }
         }
     }
 

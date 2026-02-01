@@ -390,6 +390,54 @@ mod cli_parsing {
             _ => panic!("Expected Hash command"),
         }
     }
+
+    #[test]
+    fn test_sign_command_basic() {
+        let cli = Cli::parse_from(["hush", "sign", "--key", "hush.key", "document.txt"]);
+
+        match cli.command {
+            Commands::Sign {
+                key,
+                file,
+                verify,
+                output,
+            } => {
+                assert_eq!(key, "hush.key");
+                assert_eq!(file, "document.txt");
+                assert!(!verify);
+                assert!(output.is_none());
+            }
+            _ => panic!("Expected Sign command"),
+        }
+    }
+
+    #[test]
+    fn test_sign_command_with_verify() {
+        let cli = Cli::parse_from([
+            "hush", "sign", "--key", "my.key", "--verify", "message.txt",
+        ]);
+
+        match cli.command {
+            Commands::Sign { verify, .. } => {
+                assert!(verify);
+            }
+            _ => panic!("Expected Sign command"),
+        }
+    }
+
+    #[test]
+    fn test_sign_command_with_output() {
+        let cli = Cli::parse_from([
+            "hush", "sign", "--key", "hush.key", "--output", "doc.sig", "document.txt",
+        ]);
+
+        match cli.command {
+            Commands::Sign { output, .. } => {
+                assert_eq!(output, Some("doc.sig".to_string()));
+            }
+            _ => panic!("Expected Sign command"),
+        }
+    }
 }
 
 #[cfg(test)]
