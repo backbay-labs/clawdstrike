@@ -8,12 +8,32 @@ Wants=network-online.target
 Type=simple
 User=hushd
 Group=hushd
+
+# Main process
 ExecStart=/usr/local/bin/hushd --config /etc/hushd/config.yaml
 ExecReload=/bin/kill -HUP $MAINPID
-Restart=always
-RestartSec=5
 
-# Security hardening
+# Restart behavior
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=255
+
+# Standard directories (automatically created with correct permissions)
+StateDirectory=hushd
+LogsDirectory=hushd
+ConfigurationDirectory=hushd
+
+# Environment
+Environment=RUST_LOG=info
+EnvironmentFile=-/etc/hushd/environment
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryMax=512M
+CPUQuota=100%
+
+# Security hardening - filesystem
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -21,20 +41,36 @@ PrivateTmp=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
+ProtectKernelLogs=yes
 ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+
+# Security hardening - execution
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 MemoryDenyWriteExecute=yes
 LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
 
-# Allow reading config and writing to data directory
+# Security hardening - network
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+PrivateUsers=yes
+
+# Capabilities
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Working paths
 ReadOnlyPaths=/
 ReadWritePaths=/var/lib/hushd
 ReadWritePaths=/var/log/hushd
 
-# Environment
-Environment=RUST_LOG=info
+# Watchdog (optional - daemon must implement sd_notify)
+# WatchdogSec=30
 
 [Install]
 WantedBy=multi-user.target
