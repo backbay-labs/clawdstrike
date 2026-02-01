@@ -162,3 +162,54 @@ fn test_compute_merkle_root_empty_fails() {
     let result = compute_merkle_root(leaves_json);
     assert!(result.is_err());
 }
+
+#[wasm_bindgen_test]
+fn test_generate_merkle_proof() {
+    let leaves_json = r#"[
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002"
+    ]"#;
+
+    let proof = generate_merkle_proof(leaves_json, 0);
+    assert!(proof.is_ok());
+
+    let proof_json = proof.unwrap();
+    // Should be valid JSON
+    assert!(proof_json.contains("tree_size"));
+    assert!(proof_json.contains("leaf_index"));
+}
+
+#[wasm_bindgen_test]
+fn test_verify_merkle_proof() {
+    let leaves_json = r#"[
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002"
+    ]"#;
+
+    // Compute root and proof
+    let root = compute_merkle_root(leaves_json).unwrap();
+    let proof_json = generate_merkle_proof(leaves_json, 0).unwrap();
+    let leaf_hex = "0x0000000000000000000000000000000000000000000000000000000000000001";
+
+    // Verify the proof
+    let valid = verify_merkle_proof(leaf_hex, &proof_json, &root);
+    assert!(valid.is_ok());
+    assert!(valid.unwrap());
+}
+
+#[wasm_bindgen_test]
+fn test_verify_merkle_proof_wrong_leaf() {
+    let leaves_json = r#"[
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002"
+    ]"#;
+
+    let root = compute_merkle_root(leaves_json).unwrap();
+    let proof_json = generate_merkle_proof(leaves_json, 0).unwrap();
+
+    // Wrong leaf should fail verification
+    let wrong_leaf = "0x0000000000000000000000000000000000000000000000000000000000000099";
+    let valid = verify_merkle_proof(wrong_leaf, &proof_json, &root);
+    assert!(valid.is_ok());
+    assert!(!valid.unwrap());
+}
