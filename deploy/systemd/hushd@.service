@@ -1,0 +1,74 @@
+[Unit]
+Description=Hushclaw Security Daemon (%i instance)
+Documentation=https://github.com/hushclaw/hushclaw
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hushd
+Group=hushd
+
+# Main process - instance-specific config
+ExecStart=/usr/local/bin/hushd --config /etc/hushd/%i/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart behavior
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=255
+
+# Instance-specific directories
+StateDirectory=hushd/%i
+LogsDirectory=hushd/%i
+ConfigurationDirectory=hushd/%i
+
+# Environment (instance-specific)
+Environment=RUST_LOG=info
+Environment=HUSHD_INSTANCE=%i
+EnvironmentFile=-/etc/hushd/%i/environment
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryMax=512M
+CPUQuota=100%
+
+# Security hardening - filesystem
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+
+# Security hardening - execution
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Security hardening - network
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+PrivateUsers=yes
+
+# Capabilities
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Working paths (instance-specific)
+ReadOnlyPaths=/
+ReadWritePaths=/var/lib/hushd/%i
+ReadWritePaths=/var/log/hushd/%i
+
+[Install]
+WantedBy=multi-user.target
