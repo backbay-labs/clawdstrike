@@ -277,3 +277,55 @@ async fn test_health_always_public() {
 
     assert!(resp.status().is_success());
 }
+
+// Rate limiting tests
+// Note: These tests require the daemon to have rate limiting enabled with low limits
+
+#[tokio::test]
+#[ignore = "requires daemon with rate_limit.burst_size = 3"]
+async fn test_rate_limiting_returns_429() {
+    let (client, url) = test_setup();
+
+    // Make requests until we hit the rate limit
+    let mut hit_limit = false;
+    for _ in 0..10 {
+        let resp = client
+            .post(format!("{}/api/v1/check", url))
+            .json(&serde_json::json!({
+                "action_type": "file_access",
+                "target": "/test/file.txt"
+            }))
+            .send()
+            .await
+            .expect("Failed to connect to daemon");
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            hit_limit = true;
+            // Verify Retry-After header is present
+            assert!(resp.headers().contains_key("retry-after"));
+            break;
+        }
+    }
+
+    assert!(hit_limit, "Expected to hit rate limit within 10 requests");
+}
+
+#[tokio::test]
+async fn test_health_not_rate_limited() {
+    let (client, url) = test_setup();
+
+    // Health endpoint should never be rate limited
+    // Make many requests quickly
+    for _ in 0..20 {
+        let resp = client
+            .get(format!("{}/health", url))
+            .send()
+            .await
+            .expect("Failed to connect to daemon");
+
+        assert!(
+            resp.status().is_success(),
+            "Health endpoint should never return 429"
+        );
+    }
+}
