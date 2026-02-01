@@ -7,6 +7,7 @@ members = [
     "crates/hush-cli",
     "crates/hushd",
     "crates/hush-wasm",
+    "packages/hush-py/hush-native",
 ]
 
 [workspace.package]

@@ -10,9 +10,10 @@ name = "hush_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.23", features = ["extension-module"] }
 hush-core = { path = "../../../crates/hush-core" }
 hex = "0.4"
+serde_json = "1.0"
 
 [build-dependencies]
-pyo3-build-config = "0.20"
+pyo3-build-config = "0.23"
