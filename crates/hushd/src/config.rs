@@ -30,7 +30,7 @@ pub struct ApiKeyConfig {
 }
 
 /// Authentication configuration
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AuthConfig {
     /// Whether authentication is required for API endpoints
     #[serde(default)]
@@ -38,15 +38,6 @@ pub struct AuthConfig {
     /// API keys
     #[serde(default)]
     pub api_keys: Vec<ApiKeyConfig>,
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            api_keys: Vec::new(),
-        }
-    }
 }
 
 /// Daemon configuration
@@ -201,7 +192,7 @@ impl Config {
             let scopes: std::collections::HashSet<Scope> = key_config
                 .scopes
                 .iter()
-                .filter_map(|s| Scope::from_str(s))
+                .filter_map(|s| s.parse().ok())
                 .collect();
 
             // Default to check+read if no scopes specified
@@ -261,15 +252,22 @@ log_level = "debug"
 
     #[test]
     fn test_tracing_level() {
-        let mut config = Config::default();
-
-        config.log_level = "trace".to_string();
+        let config = Config {
+            log_level: "trace".to_string(),
+            ..Default::default()
+        };
         assert_eq!(config.tracing_level(), tracing::Level::TRACE);
 
-        config.log_level = "debug".to_string();
+        let config = Config {
+            log_level: "debug".to_string(),
+            ..Default::default()
+        };
         assert_eq!(config.tracing_level(), tracing::Level::DEBUG);
 
-        config.log_level = "invalid".to_string();
+        let config = Config {
+            log_level: "invalid".to_string(),
+            ..Default::default()
+        };
         assert_eq!(config.tracing_level(), tracing::Level::INFO);
     }
 

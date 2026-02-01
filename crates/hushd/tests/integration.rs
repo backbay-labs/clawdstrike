@@ -178,8 +178,10 @@ fn test_config_default() {
 
 #[test]
 fn test_config_tracing_level() {
-    let mut config = hushd::config::Config::default();
-    config.log_level = "debug".to_string();
+    let config = hushd::config::Config {
+        log_level: "debug".to_string(),
+        ..Default::default()
+    };
     assert_eq!(config.tracing_level(), tracing::Level::DEBUG);
 }
 
