@@ -1,0 +1,1 @@
+"""Hush test suite."""
