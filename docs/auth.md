@@ -103,3 +103,71 @@ auth:
 ```
 
 **Warning**: Never disable auth in production environments.
+
+## Rate Limiting
+
+Hushd includes built-in rate limiting to protect against abuse and ensure fair usage.
+
+### Configuration
+
+```yaml
+rate_limit:
+  enabled: true           # Enable/disable rate limiting (default: true)
+  requests_per_second: 100  # Refill rate (default: 100)
+  burst_size: 50           # Maximum burst capacity (default: 50)
+```
+
+### How It Works
+
+Rate limiting uses a **token bucket algorithm** with per-IP tracking:
+
+1. Each IP address has a "bucket" that holds up to `burst_size` tokens
+2. Tokens are consumed on each request (except `/health`)
+3. Tokens refill at `requests_per_second` rate
+4. When the bucket is empty, requests receive `429 Too Many Requests`
+
+### Excluded Endpoints
+
+The following endpoints are **not** rate limited:
+
+| Endpoint | Reason |
+|----------|--------|
+| GET /health | Health checks should always succeed for load balancers |
+
+### Response Headers
+
+When rate limited, the response includes:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 1
+Content-Type: text/plain
+
+Rate limit exceeded. Please slow down.
+```
+
+### Client IP Detection
+
+The client IP is determined in order of precedence:
+
+1. `X-Forwarded-For` header (first IP in chain)
+2. `X-Real-IP` header
+3. Direct connection IP
+
+**Important:** If running behind a reverse proxy, ensure it sets the appropriate headers.
+
+### Disabling Rate Limiting
+
+For development or testing:
+
+```yaml
+rate_limit:
+  enabled: false
+```
+
+### Production Recommendations
+
+1. **Tune limits**: Adjust `requests_per_second` and `burst_size` based on expected load
+2. **Monitor 429s**: Set up alerting for excessive rate limit hits
+3. **Use with auth**: Combine with API key authentication for best protection
+4. **Proxy configuration**: Ensure your reverse proxy passes client IPs correctly
