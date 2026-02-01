@@ -545,3 +545,82 @@ mod completions {
         assert!(script.contains("complete -c hush"), "Should have fish complete command");
     }
 }
+
+#[cfg(test)]
+mod functional_tests {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+    use hush_core::{keccak256, sha256, Keypair, MerkleProof, MerkleTree};
+
+    #[test]
+    fn test_hash_sha256_known_vector() {
+        // "hello" -> known SHA-256 hash
+        let hash = sha256(b"hello");
+        assert_eq!(
+            hash.to_hex(),
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn test_hash_keccak256_known_vector() {
+        // "hello" -> known Keccak-256 hash
+        let hash = keccak256(b"hello");
+        assert_eq!(
+            hash.to_hex(),
+            "1c8aff950685c2ed4bc3174f3472287b56d9517b9c948127319a09a7a36deac8"
+        );
+    }
+
+    #[test]
+    fn test_hash_base64_format() {
+        let hash = sha256(b"hello");
+        let b64 = BASE64.encode(hash.as_bytes());
+        // Base64 of the SHA-256 hash bytes
+        assert!(!b64.is_empty());
+        // Verify roundtrip
+        let decoded = BASE64.decode(&b64).expect("valid base64");
+        assert_eq!(decoded.as_slice(), hash.as_bytes());
+    }
+
+    #[test]
+    fn test_sign_and_verify() {
+        let keypair = Keypair::generate();
+        let message = b"test message for signing";
+
+        let signature = keypair.sign(message);
+        let public_key = keypair.public_key();
+
+        assert!(public_key.verify(message, &signature));
+        assert!(!public_key.verify(b"wrong message", &signature));
+    }
+
+    #[test]
+    fn test_merkle_root_deterministic() {
+        let leaves = vec![b"leaf1".to_vec(), b"leaf2".to_vec(), b"leaf3".to_vec()];
+
+        let tree1 = MerkleTree::from_leaves(&leaves).expect("valid tree");
+        let tree2 = MerkleTree::from_leaves(&leaves).expect("valid tree");
+
+        assert_eq!(tree1.root(), tree2.root());
+    }
+
+    #[test]
+    fn test_merkle_proof_verify() {
+        let leaves = vec![b"file1".to_vec(), b"file2".to_vec(), b"file3".to_vec()];
+        let tree = MerkleTree::from_leaves(&leaves).expect("valid tree");
+        let root = tree.root();
+
+        // Generate proof for leaf at index 1
+        let proof = tree.inclusion_proof(1).expect("valid proof");
+
+        // Serialize and deserialize (simulates file I/O)
+        let json = serde_json::to_string(&proof).expect("serialize");
+        let restored: MerkleProof = serde_json::from_str(&json).expect("deserialize");
+
+        // Verify the proof
+        assert!(restored.verify(&leaves[1], &root));
+
+        // Wrong leaf should fail
+        assert!(!restored.verify(&leaves[0], &root));
+    }
+}
