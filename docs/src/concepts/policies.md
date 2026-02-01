@@ -37,66 +37,111 @@ Use `extends` to build on base policies:
 
 ```yaml
 # Your policy
-version: "hushclaw-v1.0"
-extends: hushclaw:ai-agent
+version: "1.0.0"
+name: My Custom Policy
+extends: strict
 
 # Only specify overrides
-egress:
-  allowed_domains:
-    - "api.mycompany.com"
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/my-secrets/**"
 ```
 
-Built-in base policies:
+### Built-in Rulesets
 
 | Name | Description |
 |------|-------------|
-| `hushclaw:minimal` | Bare minimum protection |
-| `hushclaw:default` | Balanced security |
-| `hushclaw:strict` | Maximum security |
-| `hushclaw:ai-agent` | Optimized for AI agents |
-| `hushclaw:cicd` | For CI/CD pipelines |
+| `default` | Balanced security |
+| `strict` | Maximum security, blocks by default |
+| `permissive` | Development-friendly, logs but allows |
+
+### Extending Files
+
+You can extend from local files:
+
+```yaml
+extends: ./base-policy.yaml
+```
+
+Paths are resolved relative to the current policy file.
+
+### Merge Strategies
+
+Control how child policy merges with base:
+
+```yaml
+merge_strategy: deep_merge  # default
+```
+
+| Strategy | Behavior |
+|----------|----------|
+| `replace` | Child completely replaces base |
+| `merge` | Child values override base at top level |
+| `deep_merge` | Recursively merge nested structures |
+
+### Adding and Removing Patterns
+
+Use `additional_patterns` and `remove_patterns` to modify base:
+
+```yaml
+extends: strict
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/company-secrets/**"
+    remove_patterns:
+      - "**/.env"  # Allow .env in this project
+```
 
 ## Policy Merging
 
-When extending, values are merged:
+When extending with `deep_merge`, values are merged:
 
 ```yaml
 # Base policy
-egress:
-  allowed_domains:
-    - "api.github.com"
+guards:
+  egress_allowlist:
+    allow:
+      - "api.github.com"
 
 # Your policy
 extends: base
-egress:
-  allowed_domains:
-    - "api.stripe.com"
+guards:
+  egress_allowlist:
+    additional_allow:
+      - "api.stripe.com"
 
 # Effective policy
-egress:
-  allowed_domains:
-    - "api.github.com"    # From base
-    - "api.stripe.com"    # From yours
+guards:
+  egress_allowlist:
+    allow:
+      - "api.github.com"    # From base
+      - "api.stripe.com"    # Added from yours
 ```
 
-For forbidden paths, lists are combined:
+For forbidden paths, use `additional_patterns` and `remove_patterns`:
 
 ```yaml
 # Base
-filesystem:
-  forbidden_paths:
-    - "~/.ssh"
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
 
 # Yours
-filesystem:
-  forbidden_paths:
-    - "./secrets"
+extends: ./base.yaml
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/secrets/**"
 
 # Effective
-filesystem:
-  forbidden_paths:
-    - "~/.ssh"
-    - "./secrets"
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/secrets/**"
 ```
 
 ## Environment Variables
