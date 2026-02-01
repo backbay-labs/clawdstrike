@@ -12,10 +12,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/hushclaw/hushclaw"
+    "url": "https://github.com/hushclaw/hushclaw.git",
+    "directory": "crates/hush-wasm"
   },
   "keywords": [
     "wasm",
+    "webassembly",
     "cryptography",
     "verification",
     "attestation",
@@ -28,5 +30,5 @@
   "bugs": {
     "url": "https://github.com/hushclaw/hushclaw/issues"
   },
-  "homepage": "https://github.com/hushclaw/hushclaw#readme"
+  "homepage": "https://hushclaw.dev"
 }
