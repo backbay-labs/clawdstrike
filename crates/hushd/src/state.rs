@@ -7,6 +7,7 @@ use hush_core::Keypair;
 use hushclaw::{HushEngine, Policy, RuleSet};
 
 use crate::audit::{AuditEvent, AuditLedger};
+use crate::auth::AuthStore;
 use crate::config::Config;
 
 /// Event broadcast for SSE streaming
@@ -27,6 +28,8 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<DaemonEvent>,
     /// Configuration
     pub config: Arc<Config>,
+    /// API key authentication store
+    pub auth_store: Arc<AuthStore>,
     /// Session ID
     pub session_id: String,
     /// Start time
@@ -35,7 +38,7 @@ pub struct AppState {
 
 impl AppState {
     /// Create new application state
-    pub fn new(config: Config) -> anyhow::Result<Self> {
+    pub async fn new(config: Config) -> anyhow::Result<Self> {
         // Load policy
         let policy = if let Some(ref path) = config.policy_path {
             Policy::from_yaml_file(path)?
@@ -70,6 +73,15 @@ impl AppState {
         // Create event channel
         let (event_tx, _) = broadcast::channel(1024);
 
+        // Load auth store from config
+        let auth_store = Arc::new(config.load_auth_store().await);
+        if config.auth.enabled {
+            tracing::info!(
+                key_count = auth_store.key_count().await,
+                "Auth enabled"
+            );
+        }
+
         // Generate session ID
         let session_id = uuid::Uuid::new_v4().to_string();
 
@@ -82,6 +94,7 @@ impl AppState {
             ledger: Arc::new(ledger),
             event_tx,
             config: Arc::new(config),
+            auth_store,
             session_id,
             started_at: chrono::Utc::now(),
         })
@@ -121,5 +134,10 @@ impl AppState {
     /// Get daemon uptime in seconds
     pub fn uptime_secs(&self) -> i64 {
         (chrono::Utc::now() - self.started_at).num_seconds()
+    }
+
+    /// Check if authentication is enabled
+    pub fn auth_enabled(&self) -> bool {
+        self.config.auth.enabled
     }
 }

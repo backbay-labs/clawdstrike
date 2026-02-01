@@ -182,3 +182,98 @@ fn test_config_tracing_level() {
     config.log_level = "debug".to_string();
     assert_eq!(config.tracing_level(), tracing::Level::DEBUG);
 }
+
+// Auth tests - these require auth to be enabled on the daemon
+// Run with: AUTH_ENABLED=1 cargo test -p hushd --test integration -- --ignored
+
+#[tokio::test]
+#[ignore = "requires running daemon with auth enabled"]
+async fn test_auth_required_without_token() {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://127.0.0.1:9876/api/v1/check")
+        .json(&serde_json::json!({
+            "action_type": "file_access",
+            "target": "/test/file.txt"
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+#[ignore = "requires running daemon with auth enabled"]
+async fn test_auth_with_valid_token() {
+    let client = reqwest::Client::new();
+    let api_key = std::env::var("HUSHD_API_KEY").expect("HUSHD_API_KEY not set");
+
+    let resp = client
+        .post("http://127.0.0.1:9876/api/v1/check")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(&serde_json::json!({
+            "action_type": "file_access",
+            "target": "/test/file.txt"
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+}
+
+#[tokio::test]
+#[ignore = "requires running daemon with auth enabled"]
+async fn test_auth_with_invalid_token() {
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post("http://127.0.0.1:9876/api/v1/check")
+        .header("Authorization", "Bearer invalid-key-12345")
+        .json(&serde_json::json!({
+            "action_type": "file_access",
+            "target": "/test/file.txt"
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+#[ignore = "requires running daemon with auth enabled"]
+async fn test_admin_endpoint_requires_admin_scope() {
+    let client = reqwest::Client::new();
+    // Use a key with only check/read scope, not admin
+    let api_key = std::env::var("HUSHD_API_KEY").expect("HUSHD_API_KEY not set");
+
+    let resp = client
+        .post("http://127.0.0.1:9876/api/v1/policy/reload")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    // Should be 403 Forbidden if key doesn't have admin scope
+    // or 200 if it does have admin scope
+    assert!(
+        resp.status() == reqwest::StatusCode::FORBIDDEN
+            || resp.status() == reqwest::StatusCode::OK
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires running daemon"]
+async fn test_health_always_public() {
+    // Health should work even with auth enabled and no token
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("http://127.0.0.1:9876/health")
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+}

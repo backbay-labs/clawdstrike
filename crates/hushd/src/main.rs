@@ -134,7 +134,7 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     );
 
     // Create application state
-    let state = AppState::new(config.clone())?;
+    let state = AppState::new(config.clone()).await?;
 
     // Create router
     let app = api::create_router(state.clone());

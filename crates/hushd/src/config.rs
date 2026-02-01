@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::auth::{ApiKey, AuthStore, Scope};
+
 /// TLS configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TlsConfig {
@@ -10,6 +12,41 @@ pub struct TlsConfig {
     pub cert_path: PathBuf,
     /// Path to private key file
     pub key_path: PathBuf,
+}
+
+/// Configuration for a single API key
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiKeyConfig {
+    /// Human-readable name for the key
+    pub name: String,
+    /// The actual API key (will be hashed, never stored plaintext)
+    pub key: String,
+    /// Scopes granted to this key (check, read, admin, *)
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional expiration time (ISO 8601 format)
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Authentication configuration
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuthConfig {
+    /// Whether authentication is required for API endpoints
+    #[serde(default)]
+    pub enabled: bool,
+    /// API keys
+    #[serde(default)]
+    pub api_keys: Vec<ApiKeyConfig>,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_keys: Vec::new(),
+        }
+    }
 }
 
 /// Daemon configuration
@@ -50,6 +87,10 @@ pub struct Config {
     /// Maximum audit log entries to keep (0 = unlimited)
     #[serde(default)]
     pub max_audit_entries: usize,
+
+    /// API authentication configuration
+    #[serde(default)]
+    pub auth: AuthConfig,
 }
 
 fn default_listen() -> String {
@@ -87,6 +128,7 @@ impl Default for Config {
             signing_key: None,
             cors_enabled: default_cors(),
             max_audit_entries: 0,
+            auth: AuthConfig::default(),
         }
     }
 }
@@ -149,6 +191,47 @@ impl Config {
             _ => tracing::Level::INFO,
         }
     }
+
+    /// Load API keys from config into an AuthStore
+    pub async fn load_auth_store(&self) -> AuthStore {
+        let store = AuthStore::new();
+
+        for key_config in &self.auth.api_keys {
+            // Parse scopes
+            let scopes: std::collections::HashSet<Scope> = key_config
+                .scopes
+                .iter()
+                .filter_map(|s| Scope::from_str(s))
+                .collect();
+
+            // Default to check+read if no scopes specified
+            let scopes = if scopes.is_empty() {
+                let mut default_scopes = std::collections::HashSet::new();
+                default_scopes.insert(Scope::Check);
+                default_scopes.insert(Scope::Read);
+                default_scopes
+            } else {
+                scopes
+            };
+
+            let api_key = ApiKey {
+                id: uuid::Uuid::new_v4().to_string(),
+                key_hash: AuthStore::hash_key(&key_config.key),
+                name: key_config.name.clone(),
+                scopes,
+                created_at: chrono::Utc::now(),
+                expires_at: key_config.expires_at,
+            };
+
+            store.add_key(api_key).await;
+        }
+
+        if self.auth.enabled && self.auth.api_keys.is_empty() {
+            tracing::warn!("Auth is enabled but no API keys configured");
+        }
+
+        store
+    }
 }
 
 #[cfg(test)]
@@ -188,5 +271,88 @@ log_level = "debug"
 
         config.log_level = "invalid".to_string();
         assert_eq!(config.tracing_level(), tracing::Level::INFO);
+    }
+
+    #[test]
+    fn test_auth_config_default() {
+        let config = Config::default();
+        assert!(!config.auth.enabled);
+        assert!(config.auth.api_keys.is_empty());
+    }
+
+    #[test]
+    fn test_config_with_auth_from_toml() {
+        let toml = r#"
+listen = "0.0.0.0:8080"
+ruleset = "strict"
+
+[auth]
+enabled = true
+
+[[auth.api_keys]]
+name = "test-key"
+key = "secret-key-123"
+scopes = ["check", "read"]
+
+[[auth.api_keys]]
+name = "admin-key"
+key = "admin-secret"
+scopes = ["*"]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.auth.enabled);
+        assert_eq!(config.auth.api_keys.len(), 2);
+        assert_eq!(config.auth.api_keys[0].name, "test-key");
+        assert_eq!(config.auth.api_keys[0].scopes, vec!["check", "read"]);
+        assert_eq!(config.auth.api_keys[1].name, "admin-key");
+        assert_eq!(config.auth.api_keys[1].scopes, vec!["*"]);
+    }
+
+    #[tokio::test]
+    async fn test_load_auth_store() {
+        let toml = r#"
+listen = "127.0.0.1:9876"
+
+[auth]
+enabled = true
+
+[[auth.api_keys]]
+name = "test"
+key = "my-secret-key"
+scopes = ["check"]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let store = config.load_auth_store().await;
+
+        // Should be able to validate with the raw key
+        let result = store.validate_key("my-secret-key").await;
+        assert!(result.is_ok());
+        let key = result.unwrap();
+        assert_eq!(key.name, "test");
+        assert!(key.has_scope(crate::auth::Scope::Check));
+        assert!(!key.has_scope(crate::auth::Scope::Admin));
+    }
+
+    #[tokio::test]
+    async fn test_load_auth_store_default_scopes() {
+        let toml = r#"
+listen = "127.0.0.1:9876"
+
+[auth]
+enabled = true
+
+[[auth.api_keys]]
+name = "default-scopes"
+key = "my-key"
+scopes = []
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let store = config.load_auth_store().await;
+
+        let key = store.validate_key("my-key").await.unwrap();
+        // Empty scopes should default to check+read
+        assert!(key.has_scope(crate::auth::Scope::Check));
+        assert!(key.has_scope(crate::auth::Scope::Read));
+        assert!(!key.has_scope(crate::auth::Scope::Admin));
     }
 }

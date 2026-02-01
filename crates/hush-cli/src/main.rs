@@ -10,6 +10,8 @@
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::generate;
+use rand::Rng;
+use sha2::{Digest, Sha256};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use hush_core::{Keypair, SignedReceipt};
@@ -130,6 +132,20 @@ enum DaemonCommands {
         /// Daemon URL
         #[arg(default_value = "http://127.0.0.1:9876")]
         url: String,
+    },
+    /// Generate a new API key for the daemon
+    Keygen {
+        /// Name for the key
+        #[arg(long)]
+        name: String,
+
+        /// Scopes (comma-separated: check,read,admin,*)
+        #[arg(long, default_value = "check,read")]
+        scopes: String,
+
+        /// Expiration in days (0 = never expires)
+        #[arg(long, default_value = "0")]
+        expires_days: u64,
     },
 }
 
@@ -359,6 +375,52 @@ async fn main() -> anyhow::Result<()> {
                         std::process::exit(1);
                     }
                 }
+            }
+            DaemonCommands::Keygen {
+                name,
+                scopes,
+                expires_days,
+            } => {
+                // Generate a secure random key
+                let mut rng = rand::thread_rng();
+                let key_bytes: [u8; 32] = rng.gen();
+                let raw_key = format!("hush_{}", hex::encode(key_bytes));
+
+                // Compute hash for config
+                let hash = Sha256::digest(raw_key.as_bytes());
+                let key_hash = hex::encode(hash);
+
+                // Parse scopes
+                let scope_list: Vec<&str> = scopes.split(',').map(|s| s.trim()).collect();
+
+                // Calculate expiration
+                let expires_at = if expires_days > 0 {
+                    Some(chrono::Utc::now() + chrono::Duration::days(expires_days as i64))
+                } else {
+                    None
+                };
+
+                println!("Generated API key for '{}':\n", name);
+                println!("  Key:    {}", raw_key);
+                println!("  Hash:   {}", key_hash);
+                println!("  Scopes: {:?}", scope_list);
+                if let Some(exp) = expires_at {
+                    println!("  Expires: {}", exp.to_rfc3339());
+                } else {
+                    println!("  Expires: never");
+                }
+
+                println!("\nAdd to config.yaml:\n");
+                println!("[[auth.api_keys]]");
+                println!("name = \"{}\"", name);
+                println!("key = \"{}\"", raw_key);
+                println!("scopes = {:?}", scope_list);
+                if let Some(exp) = expires_at {
+                    println!("expires_at = \"{}\"", exp.to_rfc3339());
+                }
+
+                println!("\nOr set environment variable:");
+                println!("  export HUSHD_API_KEY=\"{}\"", raw_key);
             }
         },
 

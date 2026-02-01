@@ -31,3 +31,22 @@ max_audit_entries: 100000
 # tls:
 #   cert_path: /etc/hushd/cert.pem
 #   key_path: /etc/hushd/key.pem
+
+# API Authentication
+# When enabled, all endpoints except /health require a valid API key
+auth:
+  enabled: true
+  api_keys:
+    # Default key with check/read permissions
+    - name: "default"
+      key: "${HUSHD_API_KEY}"  # Set via environment variable
+      scopes: ["check", "read"]
+    # Admin key with full permissions
+    - name: "admin"
+      key: "${HUSHD_ADMIN_KEY}"
+      scopes: ["*"]
+    # Example with expiration
+    # - name: "temporary"
+    #   key: "temp-key-12345"
+    #   scopes: ["check"]
+    #   expires_at: "2024-12-31T23:59:59Z"
