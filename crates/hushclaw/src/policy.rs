@@ -5,10 +5,9 @@ use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::guards::{
-    ForbiddenPathGuard, EgressAllowlistGuard, SecretLeakGuard,
-    PatchIntegrityGuard, McpToolGuard,
-    ForbiddenPathConfig, EgressAllowlistConfig, SecretLeakConfig,
-    PatchIntegrityConfig, McpToolConfig,
+    EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard,
+    McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard, SecretLeakConfig,
+    SecretLeakGuard,
 };
 
 /// Complete policy configuration

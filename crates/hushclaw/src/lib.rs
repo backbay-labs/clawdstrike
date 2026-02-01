@@ -7,21 +7,31 @@
 //! - PatchIntegrityGuard: Validates patch safety
 //! - McpToolGuard: Restricts MCP tool invocations
 //!
+//! Additionally, the IRM (Inline Reference Monitor) module provides runtime
+//! interception for filesystem, network, and execution operations.
+//!
 //! Guards can be composed into rulesets and configured via YAML.
 
-pub mod guards;
-pub mod policy;
 pub mod engine;
 pub mod error;
+pub mod guards;
+pub mod irm;
+pub mod policy;
 
-pub use guards::{
-    Guard, GuardContext, GuardResult, Severity,
-    ForbiddenPathGuard, EgressAllowlistGuard, SecretLeakGuard,
-    PatchIntegrityGuard, McpToolGuard,
-};
-pub use policy::{Policy, RuleSet};
 pub use engine::HushEngine;
 pub use error::{Error, Result};
+pub use guards::{
+    EgressAllowlistGuard, ForbiddenPathGuard, Guard, GuardContext, GuardResult, McpToolGuard,
+    PatchIntegrityGuard, SecretLeakGuard, Severity,
+};
+pub use policy::{Policy, RuleSet};
+
+// IRM exports
+pub use irm::{
+    Decision, EventType, ExecOperation, ExecutionIrm, FilesystemIrm, FsOperation, HostCall,
+    HostCallMetadata, IrmEvent, IrmRouter, Monitor, NetOperation, NetworkIrm, Sandbox,
+    SandboxConfig, SandboxStats,
+};
 
 /// Re-export core types
 pub mod core {

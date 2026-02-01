@@ -123,14 +123,14 @@ impl Guard for EgressAllowlistGuard {
                 "matched_pattern": result.matched_pattern,
                 "is_default": result.is_default,
             })),
-            PolicyAction::Log => GuardResult::warn(
-                &self.name,
-                format!("Egress to {} logged", host),
-            )
-            .with_details(serde_json::json!({
-                "host": host,
-                "port": port,
-            })),
+            PolicyAction::Log => {
+                GuardResult::warn(&self.name, format!("Egress to {} logged", host)).with_details(
+                    serde_json::json!({
+                        "host": host,
+                        "port": port,
+                    }),
+                )
+            }
         }
     }
 }

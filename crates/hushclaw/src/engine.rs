@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use hush_core::{Receipt, SignedReceipt, Keypair, Hash, sha256};
-use hush_core::receipt::{Verdict, Provenance, ViolationRef};
+use hush_core::receipt::{Provenance, Verdict, ViolationRef};
+use hush_core::{sha256, Hash, Keypair, Receipt, SignedReceipt};
 
 use crate::error::{Error, Result};
 use crate::guards::{Guard, GuardAction, GuardContext, GuardResult, Severity};
@@ -77,8 +77,13 @@ impl HushEngine {
     }
 
     /// Check a file access action
-    pub async fn check_file_access(&self, path: &str, context: &GuardContext) -> Result<GuardResult> {
-        self.check_action(&GuardAction::FileAccess(path), context).await
+    pub async fn check_file_access(
+        &self,
+        path: &str,
+        context: &GuardContext,
+    ) -> Result<GuardResult> {
+        self.check_action(&GuardAction::FileAccess(path), context)
+            .await
     }
 
     /// Check a file write action
@@ -88,7 +93,8 @@ impl HushEngine {
         content: &[u8],
         context: &GuardContext,
     ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::FileWrite(path, content), context).await
+        self.check_action(&GuardAction::FileWrite(path, content), context)
+            .await
     }
 
     /// Check a network egress action
@@ -98,12 +104,14 @@ impl HushEngine {
         port: u16,
         context: &GuardContext,
     ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::NetworkEgress(host, port), context).await
+        self.check_action(&GuardAction::NetworkEgress(host, port), context)
+            .await
     }
 
     /// Check a shell command action
     pub async fn check_shell(&self, command: &str, context: &GuardContext) -> Result<GuardResult> {
-        self.check_action(&GuardAction::ShellCommand(command), context).await
+        self.check_action(&GuardAction::ShellCommand(command), context)
+            .await
     }
 
     /// Check an MCP tool invocation
@@ -113,7 +121,8 @@ impl HushEngine {
         args: &serde_json::Value,
         context: &GuardContext,
     ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::McpTool(tool, args), context).await
+        self.check_action(&GuardAction::McpTool(tool, args), context)
+            .await
     }
 
     /// Check a patch action
@@ -123,7 +132,8 @@ impl HushEngine {
         diff: &str,
         context: &GuardContext,
     ) -> Result<GuardResult> {
-        self.check_action(&GuardAction::Patch(path, diff), context).await
+        self.check_action(&GuardAction::Patch(path, diff), context)
+            .await
     }
 
     /// Check any action against all applicable guards
@@ -295,11 +305,17 @@ mod tests {
         let context = GuardContext::new();
 
         // Normal file should be allowed
-        let result = engine.check_file_access("/app/src/main.rs", &context).await.unwrap();
+        let result = engine
+            .check_file_access("/app/src/main.rs", &context)
+            .await
+            .unwrap();
         assert!(result.allowed);
 
         // SSH key should be blocked
-        let result = engine.check_file_access("/home/user/.ssh/id_rsa", &context).await.unwrap();
+        let result = engine
+            .check_file_access("/home/user/.ssh/id_rsa", &context)
+            .await
+            .unwrap();
         assert!(!result.allowed);
     }
 
@@ -309,11 +325,17 @@ mod tests {
         let context = GuardContext::new();
 
         // Allowed API
-        let result = engine.check_egress("api.openai.com", 443, &context).await.unwrap();
+        let result = engine
+            .check_egress("api.openai.com", 443, &context)
+            .await
+            .unwrap();
         assert!(result.allowed);
 
         // Unknown domain blocked
-        let result = engine.check_egress("evil.com", 443, &context).await.unwrap();
+        let result = engine
+            .check_egress("evil.com", 443, &context)
+            .await
+            .unwrap();
         assert!(!result.allowed);
     }
 
@@ -323,7 +345,10 @@ mod tests {
         let context = GuardContext::new();
 
         // Cause a violation
-        engine.check_file_access("/home/user/.ssh/id_rsa", &context).await.unwrap();
+        engine
+            .check_file_access("/home/user/.ssh/id_rsa", &context)
+            .await
+            .unwrap();
 
         let stats = engine.stats().await;
         assert_eq!(stats.action_count, 1);
@@ -336,7 +361,10 @@ mod tests {
         let context = GuardContext::new();
 
         // Normal action
-        engine.check_file_access("/app/main.rs", &context).await.unwrap();
+        engine
+            .check_file_access("/app/main.rs", &context)
+            .await
+            .unwrap();
 
         let content_hash = sha256(b"test content");
         let receipt = engine.create_receipt(content_hash).await.unwrap();
@@ -350,7 +378,10 @@ mod tests {
         let engine = HushEngine::new().with_generated_keypair();
         let context = GuardContext::new();
 
-        engine.check_file_access("/app/main.rs", &context).await.unwrap();
+        engine
+            .check_file_access("/app/main.rs", &context)
+            .await
+            .unwrap();
 
         let content_hash = sha256(b"test content");
         let signed = engine.create_signed_receipt(content_hash).await.unwrap();
@@ -364,7 +395,10 @@ mod tests {
         let context = GuardContext::new();
 
         // Strict ruleset blocks unknown egress
-        let result = engine.check_egress("random.com", 443, &context).await.unwrap();
+        let result = engine
+            .check_egress("random.com", 443, &context)
+            .await
+            .unwrap();
         assert!(!result.allowed);
     }
 
@@ -373,7 +407,10 @@ mod tests {
         let engine = HushEngine::new();
         let context = GuardContext::new();
 
-        engine.check_file_access("/home/user/.ssh/id_rsa", &context).await.unwrap();
+        engine
+            .check_file_access("/home/user/.ssh/id_rsa", &context)
+            .await
+            .unwrap();
         assert_eq!(engine.stats().await.violation_count, 1);
 
         engine.reset().await;

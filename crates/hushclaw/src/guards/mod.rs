@@ -2,17 +2,17 @@
 //!
 //! Guards implement async checks that can allow, block, or log actions.
 
-mod forbidden_path;
 mod egress_allowlist;
-mod secret_leak;
-mod patch_integrity;
+mod forbidden_path;
 mod mcp_tool;
+mod patch_integrity;
+mod secret_leak;
 
-pub use forbidden_path::{ForbiddenPathGuard, ForbiddenPathConfig};
-pub use egress_allowlist::{EgressAllowlistGuard, EgressAllowlistConfig};
-pub use secret_leak::{SecretLeakGuard, SecretLeakConfig};
-pub use patch_integrity::{PatchIntegrityGuard, PatchIntegrityConfig};
-pub use mcp_tool::{McpToolGuard, McpToolConfig};
+pub use egress_allowlist::{EgressAllowlistConfig, EgressAllowlistGuard};
+pub use forbidden_path::{ForbiddenPathConfig, ForbiddenPathGuard};
+pub use mcp_tool::{McpToolConfig, McpToolGuard};
+pub use patch_integrity::{PatchIntegrityConfig, PatchIntegrityGuard};
+pub use secret_leak::{SecretLeakConfig, SecretLeakGuard};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

@@ -42,7 +42,9 @@ fn default_patterns() -> Vec<SecretPattern> {
         },
         SecretPattern {
             name: "aws_secret_key".to_string(),
-            pattern: r#"(?i)aws[_\-]?secret[_\-]?access[_\-]?key['"]?\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}"#.to_string(),
+            pattern:
+                r#"(?i)aws[_\-]?secret[_\-]?access[_\-]?key['"]?\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}"#
+                    .to_string(),
             severity: Severity::Critical,
         },
         SecretPattern {
@@ -87,7 +89,9 @@ fn default_patterns() -> Vec<SecretPattern> {
         },
         SecretPattern {
             name: "generic_secret".to_string(),
-            pattern: r#"(?i)(secret|password|passwd|pwd)['"]?\s*[:=]\s*['"]?[A-Za-z0-9!@#$%^&*]{8,}"#.to_string(),
+            pattern:
+                r#"(?i)(secret|password|passwd|pwd)['"]?\s*[:=]\s*['"]?[A-Za-z0-9!@#$%^&*]{8,}"#
+                    .to_string(),
             severity: Severity::Warning,
         },
     ]
@@ -274,10 +278,7 @@ impl Guard for SecretLeakGuard {
             GuardResult::block(
                 &self.name,
                 max_severity,
-                format!(
-                    "Potential secrets detected: {}",
-                    pattern_names.join(", ")
-                ),
+                format!("Potential secrets detected: {}", pattern_names.join(", ")),
             )
             .with_details(serde_json::json!({
                 "path": path,
@@ -343,7 +344,10 @@ mod tests {
     #[test]
     fn test_redaction() {
         assert_eq!(redact_secret("short"), "*****");
-        assert_eq!(redact_secret("AKIAIOSFODNN7EXAMPLE"), "AKIA************MPLE");
+        assert_eq!(
+            redact_secret("AKIAIOSFODNN7EXAMPLE"),
+            "AKIA************MPLE"
+        );
     }
 
     #[test]
