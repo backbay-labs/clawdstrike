@@ -1,0 +1,43 @@
+[package]
+name = "hush-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+hush-core = { path = "../crates/hush-core" }
+hushclaw = { path = "../crates/hushclaw" }
+arbitrary = { version = "1.3", features = ["derive"] }
+
+[[bin]]
+name = "fuzz_sha256"
+path = "fuzz_targets/sha256.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_merkle"
+path = "fuzz_targets/merkle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_policy_parse"
+path = "fuzz_targets/policy_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_secret_leak"
+path = "fuzz_targets/secret_leak.rs"
+test = false
+doc = false
+bench = false
