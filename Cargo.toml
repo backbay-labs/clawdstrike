@@ -8,6 +8,7 @@ members = [
     "crates/hushd",
     "crates/hush-wasm",
 ]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0"
