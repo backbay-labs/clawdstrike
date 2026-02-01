@@ -199,3 +199,36 @@ jobs:
         run: |
           cd fuzz
           cargo +nightly build
+
+  typescript-sdk:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/hush-ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/hush-ts/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Verify package exports
+        run: |
+          node -e "const sdk = require('./dist/index.cjs'); console.log('CJS exports:', Object.keys(sdk).slice(0, 10))"
+          node --input-type=module -e "import * as sdk from './dist/index.js'; console.log('ESM exports:', Object.keys(sdk).slice(0, 10))"
