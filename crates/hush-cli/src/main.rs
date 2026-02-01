@@ -6,12 +6,13 @@
 //! - hush keygen - Generate a signing keypair
 //! - hush policy show - Show current policy
 //! - hush policy validate <file> - Validate a policy file
+//! - hush daemon start/stop/status/reload - Daemon management
 
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use hush_core::{Keypair, SignedReceipt};
-use hushclaw::{HushEngine, Policy, RuleSet, GuardContext};
+use hushclaw::{GuardContext, HushEngine, Policy, RuleSet};
 
 #[derive(Parser)]
 #[command(name = "hush")]
@@ -63,6 +64,12 @@ enum Commands {
         #[command(subcommand)]
         command: PolicyCommands,
     },
+
+    /// Daemon management commands
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -84,6 +91,40 @@ enum PolicyCommands {
     List,
 }
 
+#[derive(Subcommand)]
+enum DaemonCommands {
+    /// Start the daemon
+    Start {
+        /// Configuration file
+        #[arg(short, long)]
+        config: Option<String>,
+        /// Bind address
+        #[arg(short, long, default_value = "127.0.0.1")]
+        bind: String,
+        /// Port
+        #[arg(short, long, default_value = "9876")]
+        port: u16,
+    },
+    /// Stop the daemon
+    Stop {
+        /// Daemon URL
+        #[arg(default_value = "http://127.0.0.1:9876")]
+        url: String,
+    },
+    /// Show daemon status
+    Status {
+        /// Daemon URL
+        #[arg(default_value = "http://127.0.0.1:9876")]
+        url: String,
+    },
+    /// Reload daemon policy
+    Reload {
+        /// Daemon URL
+        #[arg(default_value = "http://127.0.0.1:9876")]
+        url: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -98,11 +139,17 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::filter::LevelFilter::from_level(log_level))
+        .with(tracing_subscriber::filter::LevelFilter::from_level(
+            log_level,
+        ))
         .init();
 
     match cli.command {
-        Commands::Check { action_type, target, ruleset } => {
+        Commands::Check {
+            action_type,
+            target,
+            ruleset,
+        } => {
             let engine = HushEngine::from_ruleset(&ruleset)
                 .map_err(|e| anyhow::anyhow!("Failed to load ruleset: {}", e))?;
             let context = GuardContext::new();
@@ -142,7 +189,14 @@ async fn main() -> anyhow::Result<()> {
 
             if result.valid {
                 println!("VALID: Receipt signature verified");
-                println!("  Verdict: {}", if signed.receipt.verdict.passed { "PASS" } else { "FAIL" });
+                println!(
+                    "  Verdict: {}",
+                    if signed.receipt.verdict.passed {
+                        "PASS"
+                    } else {
+                        "FAIL"
+                    }
+                );
             } else {
                 println!("INVALID: {}", result.errors.join(", "));
                 std::process::exit(1);
@@ -185,6 +239,117 @@ async fn main() -> anyhow::Result<()> {
                 for name in ["default", "strict", "permissive"] {
                     let rs = RuleSet::by_name(name).unwrap();
                     println!("  {} - {}", rs.id, rs.description);
+                }
+            }
+        },
+
+        Commands::Daemon { command } => match command {
+            DaemonCommands::Start { config, bind, port } => {
+                use std::process::Command;
+
+                let mut cmd = Command::new("hushd");
+                cmd.arg("start")
+                    .arg("--bind")
+                    .arg(&bind)
+                    .arg("--port")
+                    .arg(port.to_string());
+
+                if let Some(config) = config {
+                    cmd.arg("--config").arg(&config);
+                }
+
+                println!("Starting hushd on {}:{}...", bind, port);
+
+                // Try to spawn the daemon
+                match cmd.spawn() {
+                    Ok(_) => println!("Daemon started"),
+                    Err(e) => {
+                        if e.kind() == std::io::ErrorKind::NotFound {
+                            eprintln!(
+                                "Error: hushd not found in PATH. Run 'cargo install --path crates/hushd'"
+                            );
+                        } else {
+                            eprintln!("Error starting daemon: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DaemonCommands::Stop { url } => {
+                println!("Note: Daemon can be stopped with Ctrl+C or SIGTERM");
+                println!("Checking status at {}...", url);
+
+                let client = reqwest::blocking::Client::new();
+                match client.get(format!("{}/health", url)).send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("Daemon is running. Send SIGTERM to stop.");
+                    }
+                    _ => {
+                        println!("Daemon is not running.");
+                    }
+                }
+            }
+            DaemonCommands::Status { url } => {
+                let client = reqwest::blocking::Client::new();
+                match client.get(format!("{}/health", url)).send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        let health: serde_json::Value = resp.json().unwrap_or_default();
+                        println!(
+                            "Status: {}",
+                            health
+                                .get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                        );
+                        println!(
+                            "Version: {}",
+                            health
+                                .get("version")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                        );
+                        println!(
+                            "Uptime: {}s",
+                            health
+                                .get("uptime_secs")
+                                .and_then(|v| v.as_i64())
+                                .unwrap_or(0)
+                        );
+                        println!(
+                            "Session: {}",
+                            health
+                                .get("session_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                        );
+                        println!(
+                            "Audit events: {}",
+                            health
+                                .get("audit_count")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0)
+                        );
+                    }
+                    _ => {
+                        println!("Daemon is not running at {}", url);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DaemonCommands::Reload { url } => {
+                let client = reqwest::blocking::Client::new();
+                match client.post(format!("{}/api/v1/policy/reload", url)).send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("Policy reloaded successfully");
+                    }
+                    Ok(resp) => {
+                        eprintln!("Error: {} {}", resp.status(), resp.text().unwrap_or_default());
+                        std::process::exit(1);
+                    }
+                    Err(e) => {
+                        eprintln!("Error connecting to daemon: {}", e);
+                        std::process::exit(1);
+                    }
                 }
             }
         },

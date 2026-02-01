@@ -1,0 +1,33 @@
+# Hushd Configuration
+# Copy to /etc/hushd/config.yaml and customize
+
+# Listen address
+listen: "0.0.0.0:9876"
+
+# Policy configuration
+# Option 1: Use a named ruleset (default, strict, permissive)
+ruleset: default
+
+# Option 2: Use a custom policy file (uncomment)
+# policy_path: /etc/hushd/policy.yaml
+
+# Audit database path
+audit_db: /var/lib/hushd/audit.db
+
+# Log level: trace, debug, info, warn, error
+log_level: info
+
+# Signing key for receipts (optional)
+# If not set, an ephemeral key is generated at startup
+# signing_key: /etc/hushd/signing.key
+
+# Enable CORS for browser access
+cors_enabled: true
+
+# Maximum audit entries to keep (0 = unlimited)
+max_audit_entries: 100000
+
+# TLS configuration (optional)
+# tls:
+#   cert_path: /etc/hushd/cert.pem
+#   key_path: /etc/hushd/key.pem

@@ -1,0 +1,40 @@
+[Unit]
+Description=Hushclaw Security Daemon
+Documentation=https://github.com/hushclaw/hushclaw
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hushd
+Group=hushd
+ExecStart=/usr/local/bin/hushd --config /etc/hushd/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+# Allow reading config and writing to data directory
+ReadOnlyPaths=/
+ReadWritePaths=/var/lib/hushd
+ReadWritePaths=/var/log/hushd
+
+# Environment
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

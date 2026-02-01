@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "hushd"
+path = "src/lib.rs"
+
 [[bin]]
 name = "hushd"
 path = "src/main.rs"
@@ -21,7 +25,33 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 anyhow.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+
+# HTTP server
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+
+# Database
+rusqlite.workspace = true
+
+# Async utilities
+tokio-stream.workspace = true
+futures.workspace = true
+
+# Config
+toml.workspace = true
+dirs.workspace = true
+
+# HTTP client (for status command)
+reqwest.workspace = true
+
+[dev-dependencies]
+reqwest.workspace = true
 
 [features]
 default = []

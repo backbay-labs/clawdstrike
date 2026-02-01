@@ -56,6 +56,25 @@ uuid = { version = "1.6", features = ["v4", "serde", "js"] }
 # CLI
 clap = { version = "4.4", features = ["derive"] }
 
+# HTTP server
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Async utilities
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+
+# Config
+toml = "0.8"
+dirs = "5.0"
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 # Internal crates
 hush-core = { path = "crates/hush-core" }
 hush-proxy = { path = "crates/hush-proxy" }
