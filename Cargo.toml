@@ -63,6 +63,10 @@ axum = { version = "0.7", features = ["macros"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
+# Rate limiting
+governor = "0.6"
+dashmap = "5.5"
+
 # Database
 rusqlite = { version = "0.31", features = ["bundled"] }
 
