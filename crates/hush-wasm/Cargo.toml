@@ -1,6 +1,6 @@
 [package]
 name = "hush-wasm"
-description = "WebAssembly bindings for hush-core cryptographic primitives"
+description = "WebAssembly bindings for hush-core cryptographic verification"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -34,3 +34,6 @@ getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+[features]
+default = []

@@ -1,8 +1,6 @@
 //! WebAssembly bindings for hush-core cryptographic primitives
 //!
-//! This crate provides browser and Node.js verification of hushclaw attestations.
-//! It enables trustless verification where users can independently verify
-//! that SignedReceipts are validly signed and Merkle proofs are correct.
+//! This crate provides browser-side verification of hushclaw attestations.
 
 use wasm_bindgen::prelude::*;
 
