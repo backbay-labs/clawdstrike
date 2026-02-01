@@ -49,6 +49,42 @@ impl Default for AuthConfig {
     }
 }
 
+/// Rate limiting configuration
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RateLimitConfig {
+    /// Whether rate limiting is enabled
+    #[serde(default = "default_rate_limit_enabled")]
+    pub enabled: bool,
+    /// Maximum requests per second per IP
+    #[serde(default = "default_requests_per_second")]
+    pub requests_per_second: u32,
+    /// Burst size (number of requests allowed in a burst)
+    #[serde(default = "default_burst_size")]
+    pub burst_size: u32,
+}
+
+fn default_rate_limit_enabled() -> bool {
+    true
+}
+
+fn default_requests_per_second() -> u32 {
+    100
+}
+
+fn default_burst_size() -> u32 {
+    50
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_rate_limit_enabled(),
+            requests_per_second: default_requests_per_second(),
+            burst_size: default_burst_size(),
+        }
+    }
+}
+
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -91,6 +127,10 @@ pub struct Config {
     /// API authentication configuration
     #[serde(default)]
     pub auth: AuthConfig,
+
+    /// Rate limiting configuration
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
 }
 
 fn default_listen() -> String {
@@ -129,6 +169,7 @@ impl Default for Config {
             cors_enabled: default_cors(),
             max_audit_entries: 0,
             auth: AuthConfig::default(),
+            rate_limit: RateLimitConfig::default(),
         }
     }
 }
@@ -354,5 +395,41 @@ scopes = []
         assert!(key.has_scope(crate::auth::Scope::Check));
         assert!(key.has_scope(crate::auth::Scope::Read));
         assert!(!key.has_scope(crate::auth::Scope::Admin));
+    }
+
+    #[test]
+    fn test_rate_limit_config_default() {
+        let config = Config::default();
+        assert!(config.rate_limit.enabled);
+        assert_eq!(config.rate_limit.requests_per_second, 100);
+        assert_eq!(config.rate_limit.burst_size, 50);
+    }
+
+    #[test]
+    fn test_config_with_rate_limit_from_toml() {
+        let toml = r#"
+listen = "0.0.0.0:8080"
+
+[rate_limit]
+enabled = true
+requests_per_second = 50
+burst_size = 25
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.rate_limit.enabled);
+        assert_eq!(config.rate_limit.requests_per_second, 50);
+        assert_eq!(config.rate_limit.burst_size, 25);
+    }
+
+    #[test]
+    fn test_config_rate_limit_disabled_from_toml() {
+        let toml = r#"
+listen = "0.0.0.0:8080"
+
+[rate_limit]
+enabled = false
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(!config.rate_limit.enabled);
     }
 }
