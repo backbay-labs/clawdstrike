@@ -11,7 +11,7 @@
 mod cli_parsing {
     use clap::Parser;
 
-    use crate::{Cli, Commands, DaemonCommands, PolicyCommands};
+    use crate::{Cli, Commands, DaemonCommands, MerkleCommands, PolicyCommands};
 
     #[test]
     fn test_check_command_parses_with_required_args() {
@@ -436,6 +436,71 @@ mod cli_parsing {
                 assert_eq!(output, Some("doc.sig".to_string()));
             }
             _ => panic!("Expected Sign command"),
+        }
+    }
+
+    #[test]
+    fn test_merkle_root_command() {
+        let cli = Cli::parse_from([
+            "hush", "merkle", "root", "file1.txt", "file2.txt", "file3.txt",
+        ]);
+
+        match cli.command {
+            Commands::Merkle { command } => match command {
+                MerkleCommands::Root { files } => {
+                    assert_eq!(files.len(), 3);
+                    assert_eq!(files[0], "file1.txt");
+                    assert_eq!(files[1], "file2.txt");
+                    assert_eq!(files[2], "file3.txt");
+                }
+                _ => panic!("Expected Root subcommand"),
+            },
+            _ => panic!("Expected Merkle command"),
+        }
+    }
+
+    #[test]
+    fn test_merkle_proof_command() {
+        let cli = Cli::parse_from([
+            "hush", "merkle", "proof", "--index", "1", "file1.txt", "file2.txt", "file3.txt",
+        ]);
+
+        match cli.command {
+            Commands::Merkle { command } => match command {
+                MerkleCommands::Proof { index, files } => {
+                    assert_eq!(index, 1);
+                    assert_eq!(files.len(), 3);
+                }
+                _ => panic!("Expected Proof subcommand"),
+            },
+            _ => panic!("Expected Merkle command"),
+        }
+    }
+
+    #[test]
+    fn test_merkle_verify_command() {
+        let cli = Cli::parse_from([
+            "hush",
+            "merkle",
+            "verify",
+            "--root",
+            "abc123",
+            "--leaf",
+            "file2.txt",
+            "--proof",
+            "proof.json",
+        ]);
+
+        match cli.command {
+            Commands::Merkle { command } => match command {
+                MerkleCommands::Verify { root, leaf, proof } => {
+                    assert_eq!(root, "abc123");
+                    assert_eq!(leaf, "file2.txt");
+                    assert_eq!(proof, "proof.json");
+                }
+                _ => panic!("Expected Verify subcommand"),
+            },
+            _ => panic!("Expected Merkle command"),
         }
     }
 }

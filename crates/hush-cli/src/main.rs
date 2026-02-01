@@ -16,7 +16,7 @@ use std::io::{self, Read};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use hush_core::{keccak256, sha256, Keypair, SignedReceipt};
+use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, SignedReceipt};
 use hushclaw::{GuardContext, HushEngine, Policy, RuleSet};
 
 #[derive(Parser, Debug)]
@@ -113,6 +113,48 @@ enum Commands {
         /// Output file for signature (defaults to stdout)
         #[arg(short, long)]
         output: Option<String>,
+    },
+
+    /// Merkle tree operations
+    Merkle {
+        #[command(subcommand)]
+        command: MerkleCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum MerkleCommands {
+    /// Compute Merkle root of files
+    Root {
+        /// Files to include in the tree
+        #[arg(required = true)]
+        files: Vec<String>,
+    },
+
+    /// Generate inclusion proof for a file
+    Proof {
+        /// Index of the leaf to prove (0-indexed)
+        #[arg(short, long)]
+        index: usize,
+
+        /// Files to include in the tree
+        #[arg(required = true)]
+        files: Vec<String>,
+    },
+
+    /// Verify an inclusion proof
+    Verify {
+        /// Expected Merkle root (hex)
+        #[arg(long)]
+        root: String,
+
+        /// Leaf file to verify
+        #[arg(long)]
+        leaf: String,
+
+        /// Path to proof JSON file
+        #[arg(long)]
+        proof: String,
     },
 }
 
@@ -530,6 +572,69 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+
+        Commands::Merkle { command } => match command {
+            MerkleCommands::Root { files } => {
+                if files.is_empty() {
+                    anyhow::bail!("At least one file is required");
+                }
+
+                let leaves: Vec<Vec<u8>> = files
+                    .iter()
+                    .map(|f| std::fs::read(f))
+                    .collect::<std::io::Result<_>>()?;
+
+                let tree = MerkleTree::from_leaves(&leaves)
+                    .map_err(|e| anyhow::anyhow!("Failed to build tree: {}", e))?;
+
+                println!("{}", tree.root().to_hex());
+            }
+
+            MerkleCommands::Proof { index, files } => {
+                if files.is_empty() {
+                    anyhow::bail!("At least one file is required");
+                }
+
+                let leaves: Vec<Vec<u8>> = files
+                    .iter()
+                    .map(|f| std::fs::read(f))
+                    .collect::<std::io::Result<_>>()?;
+
+                let tree = MerkleTree::from_leaves(&leaves)
+                    .map_err(|e| anyhow::anyhow!("Failed to build tree: {}", e))?;
+
+                let proof = tree
+                    .inclusion_proof(index)
+                    .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
+
+                let json = serde_json::to_string_pretty(&proof)?;
+                println!("{}", json);
+            }
+
+            MerkleCommands::Verify { root, leaf, proof } => {
+                // Parse expected root
+                let expected_root = Hash::from_hex(&root)
+                    .map_err(|e| anyhow::anyhow!("Invalid root hash: {}", e))?;
+
+                // Read leaf data
+                let leaf_data = std::fs::read(&leaf)?;
+
+                // Read and parse proof
+                let proof_json = std::fs::read_to_string(&proof)?;
+                let merkle_proof: MerkleProof = serde_json::from_str(&proof_json)?;
+
+                // Verify
+                if merkle_proof.verify(&leaf_data, &expected_root) {
+                    println!("VALID: Proof verified successfully");
+                    println!("  Root: {}", expected_root.to_hex());
+                    println!("  Leaf index: {}", merkle_proof.leaf_index);
+                    println!("  Tree size: {}", merkle_proof.tree_size);
+                } else {
+                    eprintln!("INVALID: Proof verification failed");
+                    std::process::exit(1);
+                }
+            }
+        },
     }
 
     Ok(())
