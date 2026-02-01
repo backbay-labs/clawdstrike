@@ -90,6 +90,33 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # Publish to PyPI (when hush-py package exists)
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: preflight
+    # Only run if hush-py package exists
+    if: ${{ hashFiles('packages/hush-py/pyproject.toml') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build package
+        run: cd packages/hush-py && python -m build
+
+      - name: Publish to PyPI
+        run: twine upload packages/hush-py/dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
   # Build release binaries
   build-binaries:
     name: Build Binaries
