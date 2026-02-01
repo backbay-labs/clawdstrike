@@ -140,8 +140,9 @@ mod cli_parsing {
 
         match cli.command {
             Commands::Policy { command } => match command {
-                PolicyCommands::Show { ruleset } => {
+                PolicyCommands::Show { ruleset, merged } => {
                     assert_eq!(ruleset, "default");
+                    assert!(!merged);
                 }
                 _ => panic!("Expected Show subcommand"),
             },
@@ -155,8 +156,25 @@ mod cli_parsing {
 
         match cli.command {
             Commands::Policy { command } => match command {
-                PolicyCommands::Show { ruleset } => {
+                PolicyCommands::Show { ruleset, merged } => {
                     assert_eq!(ruleset, "strict");
+                    assert!(!merged);
+                }
+                _ => panic!("Expected Show subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_show_with_merged_flag() {
+        let cli = Cli::parse_from(["hush", "policy", "show", "--merged", "strict"]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Show { ruleset, merged } => {
+                    assert_eq!(ruleset, "strict");
+                    assert!(merged);
                 }
                 _ => panic!("Expected Show subcommand"),
             },
@@ -170,8 +188,25 @@ mod cli_parsing {
 
         match cli.command {
             Commands::Policy { command } => match command {
-                PolicyCommands::Validate { file } => {
+                PolicyCommands::Validate { file, resolve } => {
                     assert_eq!(file, "policy.yaml");
+                    assert!(!resolve);
+                }
+                _ => panic!("Expected Validate subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_validate_with_resolve_flag() {
+        let cli = Cli::parse_from(["hush", "policy", "validate", "--resolve", "policy.yaml"]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Validate { file, resolve } => {
+                    assert_eq!(file, "policy.yaml");
+                    assert!(resolve);
                 }
                 _ => panic!("Expected Validate subcommand"),
             },

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for PatchIntegrityGuard
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PatchIntegrityConfig {
     /// Maximum lines added in a single patch
     #[serde(default = "default_max_additions")]

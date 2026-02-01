@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Pattern definition for secret detection
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SecretPattern {
     /// Pattern name
     pub name: String,
@@ -23,7 +23,7 @@ fn default_severity() -> Severity {
 }
 
 /// Configuration for SecretLeakGuard
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SecretLeakConfig {
     /// Secret patterns to detect
     #[serde(default = "default_patterns")]

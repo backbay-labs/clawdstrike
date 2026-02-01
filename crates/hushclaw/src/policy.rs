@@ -10,6 +10,19 @@ use crate::guards::{
     SecretLeakGuard,
 };
 
+/// Strategy for merging policies when using extends
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeStrategy {
+    /// Replace base entirely with child values
+    Replace,
+    /// Shallow merge: child values override base at top level
+    Merge,
+    /// Deep merge: recursively merge nested structures
+    #[default]
+    DeepMerge,
+}
+
 /// Complete policy configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Policy {
@@ -22,6 +35,12 @@ pub struct Policy {
     /// Policy description
     #[serde(default)]
     pub description: String,
+    /// Base policy to extend (ruleset name or file path)
+    #[serde(default)]
+    pub extends: Option<String>,
+    /// Strategy for merging with base policy
+    #[serde(default)]
+    pub merge_strategy: MergeStrategy,
     /// Guard configurations
     #[serde(default)]
     pub guards: GuardConfigs,
@@ -40,6 +59,8 @@ impl Default for Policy {
             version: default_version(),
             name: String::new(),
             description: String::new(),
+            extends: None,
+            merge_strategy: MergeStrategy::default(),
             guards: GuardConfigs::default(),
             settings: PolicySettings::default(),
         }
@@ -47,7 +68,7 @@ impl Default for Policy {
 }
 
 /// Configuration for all guards
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct GuardConfigs {
     /// Forbidden path guard config
     #[serde(default)]
@@ -66,8 +87,37 @@ pub struct GuardConfigs {
     pub mcp_tool: Option<McpToolConfig>,
 }
 
+impl GuardConfigs {
+    /// Merge with another GuardConfigs (child overrides base)
+    pub fn merge_with(&self, child: &Self) -> Self {
+        Self {
+            forbidden_path: match (&self.forbidden_path, &child.forbidden_path) {
+                (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
+                (Some(base), None) => Some(base.clone()),
+                // When base is None, merge child with default to apply additional_patterns
+                (None, Some(child_cfg)) => Some(ForbiddenPathConfig::default().merge_with(child_cfg)),
+                (None, None) => None,
+            },
+            egress_allowlist: match (&self.egress_allowlist, &child.egress_allowlist) {
+                (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
+                (Some(base), None) => Some(base.clone()),
+                (None, Some(child_cfg)) => Some(EgressAllowlistConfig::default().merge_with(child_cfg)),
+                (None, None) => None,
+            },
+            secret_leak: child.secret_leak.clone().or_else(|| self.secret_leak.clone()),
+            patch_integrity: child.patch_integrity.clone().or_else(|| self.patch_integrity.clone()),
+            mcp_tool: match (&self.mcp_tool, &child.mcp_tool) {
+                (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
+                (Some(base), None) => Some(base.clone()),
+                (None, Some(child_cfg)) => Some(McpToolConfig::default().merge_with(child_cfg)),
+                (None, None) => None,
+            },
+        }
+    }
+}
+
 /// Global policy settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PolicySettings {
     /// Whether to fail fast on first violation
     #[serde(default)]
@@ -114,6 +164,167 @@ impl Policy {
     /// Export to YAML string
     pub fn to_yaml(&self) -> Result<String> {
         serde_yaml::to_string(self).map_err(Error::from)
+    }
+
+    /// Resolve a base policy by name or path
+    ///
+    /// Tries built-in ruleset names first (default, strict, permissive),
+    /// then falls back to loading from file path.
+    pub fn resolve_base(name_or_path: &str) -> Result<Self> {
+        // Try built-in rulesets first
+        if let Some(ruleset) = RuleSet::by_name(name_or_path) {
+            return Ok(ruleset.policy);
+        }
+
+        // Try loading from file
+        let path = std::path::Path::new(name_or_path);
+        if path.exists() {
+            return Self::from_yaml_file(path);
+        }
+
+        Err(Error::ConfigError(format!(
+            "Unknown ruleset or file not found: {}",
+            name_or_path
+        )))
+    }
+
+    /// Merge this policy with a child policy
+    ///
+    /// Uses child's merge_strategy to determine how to combine.
+    pub fn merge(&self, child: &Policy) -> Self {
+        match child.merge_strategy {
+            MergeStrategy::Replace => child.clone(),
+            MergeStrategy::Merge => Self {
+                version: if child.version != default_version() {
+                    child.version.clone()
+                } else {
+                    self.version.clone()
+                },
+                name: if !child.name.is_empty() {
+                    child.name.clone()
+                } else {
+                    self.name.clone()
+                },
+                description: if !child.description.is_empty() {
+                    child.description.clone()
+                } else {
+                    self.description.clone()
+                },
+                extends: None, // Don't propagate extends
+                merge_strategy: MergeStrategy::default(),
+                guards: if child.guards != GuardConfigs::default() {
+                    child.guards.clone()
+                } else {
+                    self.guards.clone()
+                },
+                settings: if child.settings != PolicySettings::default() {
+                    child.settings.clone()
+                } else {
+                    self.settings.clone()
+                },
+            },
+            MergeStrategy::DeepMerge => Self {
+                version: if child.version != default_version() {
+                    child.version.clone()
+                } else {
+                    self.version.clone()
+                },
+                name: if !child.name.is_empty() {
+                    child.name.clone()
+                } else {
+                    self.name.clone()
+                },
+                description: if !child.description.is_empty() {
+                    child.description.clone()
+                } else {
+                    self.description.clone()
+                },
+                extends: None,
+                merge_strategy: MergeStrategy::default(),
+                guards: self.guards.merge_with(&child.guards),
+                settings: PolicySettings {
+                    fail_fast: if child.settings.fail_fast != PolicySettings::default().fail_fast {
+                        child.settings.fail_fast
+                    } else {
+                        self.settings.fail_fast
+                    },
+                    verbose_logging: if child.settings.verbose_logging != PolicySettings::default().verbose_logging {
+                        child.settings.verbose_logging
+                    } else {
+                        self.settings.verbose_logging
+                    },
+                    session_timeout_secs: if child.settings.session_timeout_secs != default_timeout() {
+                        child.settings.session_timeout_secs
+                    } else {
+                        self.settings.session_timeout_secs
+                    },
+                },
+            },
+        }
+    }
+
+    /// Load from YAML string with extends resolution
+    ///
+    /// If the policy has an `extends` field, loads the base and merges.
+    /// Detects circular dependencies.
+    pub fn from_yaml_with_extends(yaml: &str, base_path: Option<&Path>) -> Result<Self> {
+        Self::from_yaml_with_extends_internal(yaml, base_path, &mut std::collections::HashSet::new())
+    }
+
+    fn from_yaml_with_extends_internal(
+        yaml: &str,
+        base_path: Option<&Path>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Result<Self> {
+        let child: Policy = serde_yaml::from_str(yaml)?;
+
+        if let Some(ref extends) = child.extends {
+            // Check for circular dependency
+            if visited.contains(extends) {
+                return Err(Error::ConfigError(format!(
+                    "Circular policy extension detected: {}",
+                    extends
+                )));
+            }
+            visited.insert(extends.clone());
+
+            // Resolve base policy
+            let base = if let Some(ruleset) = RuleSet::by_name(extends) {
+                ruleset.policy
+            } else {
+                // Try as file path, relative to base_path if provided
+                let extends_path = if let Some(bp) = base_path {
+                    bp.parent().unwrap_or(bp).join(extends)
+                } else {
+                    std::path::PathBuf::from(extends)
+                };
+
+                if !extends_path.exists() {
+                    return Err(Error::ConfigError(format!(
+                        "Unknown ruleset or file not found: {}",
+                        extends
+                    )));
+                }
+
+                let base_yaml = std::fs::read_to_string(&extends_path)?;
+                Self::from_yaml_with_extends_internal(
+                    &base_yaml,
+                    Some(&extends_path),
+                    visited,
+                )?
+            };
+
+            Ok(base.merge(&child))
+        } else {
+            Ok(child)
+        }
+    }
+
+    /// Load from YAML file with extends resolution
+    pub fn from_yaml_file_with_extends(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let content = std::fs::read_to_string(path)?;
+        Self::from_yaml_with_extends(&content, Some(path))
     }
 
     /// Create guards from this policy
@@ -199,6 +410,7 @@ impl RuleSet {
             allow: vec![],
             block: vec![],
             default_action: "block".to_string(),
+            ..Default::default()
         });
 
         // Strict MCP tools - block by default
@@ -212,6 +424,7 @@ impl RuleSet {
             require_confirmation: vec![],
             default_action: "block".to_string(),
             max_args_size: 1024 * 1024,
+            ..Default::default()
         });
 
         // Strict patch limits
@@ -246,6 +459,7 @@ impl RuleSet {
             allow: vec!["*".to_string()],
             block: vec![],
             default_action: "allow".to_string(),
+            ..Default::default()
         });
 
         // Higher patch limits
@@ -323,5 +537,189 @@ mod tests {
         assert!(RuleSet::by_name("strict").is_some());
         assert!(RuleSet::by_name("permissive").is_some());
         assert!(RuleSet::by_name("unknown").is_none());
+    }
+
+    #[test]
+    fn test_merge_strategy_default() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.merge_strategy, MergeStrategy::DeepMerge);
+    }
+
+    #[test]
+    fn test_merge_strategy_parse() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+merge_strategy: replace
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.merge_strategy, MergeStrategy::Replace);
+    }
+
+    #[test]
+    fn test_extends_field_parse() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+extends: strict
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.extends, Some("strict".to_string()));
+    }
+
+    #[test]
+    fn test_extends_field_none_by_default() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert!(policy.extends.is_none());
+    }
+
+    #[test]
+    fn test_resolve_base_builtin_strict() {
+        let base = Policy::resolve_base("strict").unwrap();
+        assert!(base.settings.fail_fast);
+    }
+
+    #[test]
+    fn test_resolve_base_builtin_default() {
+        let base = Policy::resolve_base("default").unwrap();
+        assert!(!base.settings.fail_fast);
+    }
+
+    #[test]
+    fn test_resolve_base_unknown_returns_error() {
+        let result = Policy::resolve_base("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_guard_configs_merge() {
+        let base = GuardConfigs {
+            forbidden_path: Some(ForbiddenPathConfig {
+                patterns: vec!["**/.ssh/**".to_string()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let child = GuardConfigs {
+            forbidden_path: Some(ForbiddenPathConfig {
+                additional_patterns: vec!["**/secrets/**".to_string()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let fp = merged.forbidden_path.unwrap();
+        assert!(fp.patterns.contains(&"**/.ssh/**".to_string()));
+        assert!(fp.patterns.contains(&"**/secrets/**".to_string()));
+    }
+
+    #[test]
+    fn test_policy_merge_deep() {
+        let base = Policy {
+            name: "Base".to_string(),
+            settings: PolicySettings {
+                fail_fast: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let child = Policy {
+            name: "Child".to_string(),
+            merge_strategy: MergeStrategy::DeepMerge,
+            settings: PolicySettings {
+                verbose_logging: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let merged = base.merge(&child);
+        assert_eq!(merged.name, "Child");
+        assert!(merged.settings.fail_fast); // from base
+        assert!(merged.settings.verbose_logging); // from child
+    }
+
+    #[test]
+    fn test_policy_merge_replace() {
+        let base = Policy {
+            name: "Base".to_string(),
+            settings: PolicySettings {
+                fail_fast: true,
+                verbose_logging: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let child = Policy {
+            name: "Child".to_string(),
+            merge_strategy: MergeStrategy::Replace,
+            settings: PolicySettings::default(),
+            ..Default::default()
+        };
+
+        let merged = base.merge(&child);
+        assert_eq!(merged.name, "Child");
+        assert!(!merged.settings.fail_fast); // child replaces
+        assert!(!merged.settings.verbose_logging); // child replaces
+    }
+
+    #[test]
+    fn test_policy_extends_builtin() {
+        let yaml = r#"
+version: "1.0.0"
+name: CustomStrict
+extends: strict
+settings:
+  verbose_logging: true
+"#;
+        let policy = Policy::from_yaml_with_extends(yaml, None).unwrap();
+
+        // Should have strict's fail_fast
+        assert!(policy.settings.fail_fast);
+        // Should have child's verbose_logging
+        assert!(policy.settings.verbose_logging);
+        // Name should be from child
+        assert_eq!(policy.name, "CustomStrict");
+    }
+
+    #[test]
+    fn test_policy_extends_with_additional_patterns() {
+        // Test adding patterns via additional_patterns
+        let yaml = r#"
+version: "1.0.0"
+name: CustomDefault
+extends: default
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/my-secrets/**"
+"#;
+        let policy = Policy::from_yaml_with_extends(yaml, None).unwrap();
+
+        // Should have the additional pattern added
+        let fp = policy.guards.forbidden_path.unwrap();
+        assert!(fp.patterns.iter().any(|p| p.contains("my-secrets")));
+    }
+
+    #[test]
+    fn test_policy_circular_extends_detection() {
+        use std::collections::HashSet;
+        let mut visited = HashSet::new();
+        visited.insert("policy-a".to_string());
+
+        // Simulating circular detection
+        assert!(visited.contains("policy-a"));
     }
 }

@@ -1,0 +1,27 @@
+# Example: Extending the strict ruleset
+version: "1.0.0"
+name: Custom Strict
+description: Strict ruleset with additional patterns for our company
+
+extends: strict
+merge_strategy: deep_merge
+
+guards:
+  forbidden_path:
+    # Add company-specific sensitive paths
+    additional_patterns:
+      - "**/company-secrets/**"
+      - "**/.vault-token"
+    # Allow some paths that strict blocks
+    exceptions:
+      - "**/test-fixtures/.env"
+
+  egress_allowlist:
+    # Add our internal APIs
+    additional_allow:
+      - "api.internal.company.com"
+      - "*.company-services.io"
+
+settings:
+  # Override timeout for our longer-running tasks
+  session_timeout_secs: 3600

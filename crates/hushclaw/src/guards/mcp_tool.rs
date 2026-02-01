@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for McpToolGuard
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct McpToolConfig {
     /// Allowed tool names (if empty, all are allowed except blocked)
     #[serde(default)]
@@ -24,6 +24,18 @@ pub struct McpToolConfig {
     /// Maximum arguments size (bytes)
     #[serde(default = "default_max_args_size")]
     pub max_args_size: usize,
+    /// Additional allowed tools when merging
+    #[serde(default)]
+    pub additional_allow: Vec<String>,
+    /// Tools to remove from allow list when merging
+    #[serde(default)]
+    pub remove_allow: Vec<String>,
+    /// Additional blocked tools when merging
+    #[serde(default)]
+    pub additional_block: Vec<String>,
+    /// Tools to remove from block list when merging
+    #[serde(default)]
+    pub remove_block: Vec<String>,
 }
 
 fn default_action() -> String {
@@ -34,8 +46,9 @@ fn default_max_args_size() -> usize {
     1024 * 1024 // 1MB
 }
 
-impl Default for McpToolConfig {
-    fn default() -> Self {
+impl McpToolConfig {
+    /// Create config with default blocked tools
+    pub fn with_defaults() -> Self {
         Self {
             allow: vec![],
             block: vec![
@@ -53,6 +66,64 @@ impl Default for McpToolConfig {
             ],
             default_action: "allow".to_string(),
             max_args_size: default_max_args_size(),
+            additional_allow: vec![],
+            remove_allow: vec![],
+            additional_block: vec![],
+            remove_block: vec![],
+        }
+    }
+
+    /// Merge this config with a child config
+    pub fn merge_with(&self, child: &Self) -> Self {
+        let mut allow = self.allow.clone();
+        let mut block = self.block.clone();
+        let mut require_confirmation = self.require_confirmation.clone();
+
+        // Add additional tools
+        for t in &child.additional_allow {
+            if !allow.contains(t) {
+                allow.push(t.clone());
+            }
+        }
+        for t in &child.additional_block {
+            if !block.contains(t) {
+                block.push(t.clone());
+            }
+        }
+
+        // Remove specified tools
+        allow.retain(|t| !child.remove_allow.contains(t));
+        block.retain(|t| !child.remove_block.contains(t));
+
+        // Use child's lists if non-empty
+        if !child.allow.is_empty() {
+            allow = child.allow.clone();
+        }
+        if !child.block.is_empty() {
+            block = child.block.clone();
+        }
+        if !child.require_confirmation.is_empty() {
+            require_confirmation = child.require_confirmation.clone();
+        }
+
+        Self {
+            allow,
+            block,
+            require_confirmation,
+            default_action: if child.default_action != default_action() {
+                child.default_action.clone()
+            } else {
+                self.default_action.clone()
+            },
+            max_args_size: if child.max_args_size != default_max_args_size() {
+                child.max_args_size
+            } else {
+                self.max_args_size
+            },
+            additional_allow: vec![],
+            remove_allow: vec![],
+            additional_block: vec![],
+            remove_block: vec![],
         }
     }
 }
@@ -69,7 +140,7 @@ pub struct McpToolGuard {
 impl McpToolGuard {
     /// Create with default configuration
     pub fn new() -> Self {
-        Self::with_config(McpToolConfig::default())
+        Self::with_config(McpToolConfig::with_defaults())
     }
 
     /// Create with custom configuration
@@ -226,6 +297,7 @@ mod tests {
             require_confirmation: vec![],
             default_action: "block".to_string(),
             max_args_size: 1024,
+            ..Default::default()
         };
         let guard = McpToolGuard::with_config(config);
 

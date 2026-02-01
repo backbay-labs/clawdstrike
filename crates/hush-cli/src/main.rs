@@ -165,15 +165,21 @@ enum MerkleCommands {
 enum PolicyCommands {
     /// Show a ruleset's policy
     Show {
-        /// Ruleset name
+        /// Ruleset name or file path
         #[arg(default_value = "default")]
         ruleset: String,
+        /// Show merged policy (resolve extends)
+        #[arg(long)]
+        merged: bool,
     },
 
     /// Validate a policy file
     Validate {
         /// Path to policy YAML file
         file: String,
+        /// Resolve extends and show merged policy
+        #[arg(long)]
+        resolve: bool,
     },
 
     /// List available rulesets
@@ -321,20 +327,40 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Policy { command } => match command {
-            PolicyCommands::Show { ruleset } => {
-                let rs = RuleSet::by_name(&ruleset)
-                    .ok_or_else(|| anyhow::anyhow!("Unknown ruleset: {}", ruleset))?;
-                let yaml = rs.policy.to_yaml()?;
-                println!("# Ruleset: {} ({})", rs.name, rs.id);
-                println!("# {}", rs.description);
-                println!("{}", yaml);
+            PolicyCommands::Show { ruleset, merged } => {
+                if merged || std::path::Path::new(&ruleset).exists() {
+                    // Load from file with extends
+                    let policy = Policy::from_yaml_file_with_extends(&ruleset)?;
+                    let yaml = policy.to_yaml()?;
+                    println!("# Policy: {} (merged)", policy.name);
+                    println!("{}", yaml);
+                } else {
+                    let rs = RuleSet::by_name(&ruleset)
+                        .ok_or_else(|| anyhow::anyhow!("Unknown ruleset: {}", ruleset))?;
+                    let yaml = rs.policy.to_yaml()?;
+                    println!("# Ruleset: {} ({})", rs.name, rs.id);
+                    println!("# {}", rs.description);
+                    println!("{}", yaml);
+                }
             }
 
-            PolicyCommands::Validate { file } => {
-                let policy = Policy::from_yaml_file(&file)?;
+            PolicyCommands::Validate { file, resolve } => {
+                let policy = if resolve {
+                    Policy::from_yaml_file_with_extends(&file)?
+                } else {
+                    Policy::from_yaml_file(&file)?
+                };
+
                 println!("Policy is valid:");
                 println!("  Version: {}", policy.version);
                 println!("  Name: {}", policy.name);
+                if let Some(ref extends) = policy.extends {
+                    println!("  Extends: {}", extends);
+                }
+                if resolve {
+                    println!("\nMerged policy:");
+                    println!("{}", policy.to_yaml()?);
+                }
             }
 
             PolicyCommands::List => {

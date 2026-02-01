@@ -8,7 +8,7 @@ use hush_proxy::policy::{DomainPolicy, PolicyAction};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for EgressAllowlistGuard
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct EgressAllowlistConfig {
     /// Allowed domain patterns
     #[serde(default)]
@@ -19,14 +19,27 @@ pub struct EgressAllowlistConfig {
     /// Default action (allow or block)
     #[serde(default = "default_policy")]
     pub default_action: String,
+    /// Additional allowed domains when merging
+    #[serde(default)]
+    pub additional_allow: Vec<String>,
+    /// Domains to remove from allow list when merging
+    #[serde(default)]
+    pub remove_allow: Vec<String>,
+    /// Additional blocked domains when merging
+    #[serde(default)]
+    pub additional_block: Vec<String>,
+    /// Domains to remove from block list when merging
+    #[serde(default)]
+    pub remove_block: Vec<String>,
 }
 
 fn default_policy() -> String {
     "block".to_string()
 }
 
-impl Default for EgressAllowlistConfig {
-    fn default() -> Self {
+impl EgressAllowlistConfig {
+    /// Create default config with common allowed domains
+    pub fn with_defaults() -> Self {
         Self {
             allow: vec![
                 // Common AI/ML APIs
@@ -43,6 +56,54 @@ impl Default for EgressAllowlistConfig {
             ],
             block: vec![],
             default_action: "block".to_string(),
+            additional_allow: vec![],
+            remove_allow: vec![],
+            additional_block: vec![],
+            remove_block: vec![],
+        }
+    }
+
+    /// Merge this config with a child config
+    pub fn merge_with(&self, child: &Self) -> Self {
+        let mut allow = self.allow.clone();
+        let mut block = self.block.clone();
+
+        // Add additional domains
+        for d in &child.additional_allow {
+            if !allow.contains(d) {
+                allow.push(d.clone());
+            }
+        }
+        for d in &child.additional_block {
+            if !block.contains(d) {
+                block.push(d.clone());
+            }
+        }
+
+        // Remove specified domains
+        allow.retain(|d| !child.remove_allow.contains(d));
+        block.retain(|d| !child.remove_block.contains(d));
+
+        // Use child's allow/block if non-empty
+        if !child.allow.is_empty() {
+            allow = child.allow.clone();
+        }
+        if !child.block.is_empty() {
+            block = child.block.clone();
+        }
+
+        Self {
+            allow,
+            block,
+            default_action: if child.default_action != default_policy() {
+                child.default_action.clone()
+            } else {
+                self.default_action.clone()
+            },
+            additional_allow: vec![],
+            remove_allow: vec![],
+            additional_block: vec![],
+            remove_block: vec![],
         }
     }
 }
@@ -56,7 +117,7 @@ pub struct EgressAllowlistGuard {
 impl EgressAllowlistGuard {
     /// Create with default configuration
     pub fn new() -> Self {
-        Self::with_config(EgressAllowlistConfig::default())
+        Self::with_config(EgressAllowlistConfig::with_defaults())
     }
 
     /// Create with custom configuration
@@ -159,6 +220,7 @@ mod tests {
             allow: vec!["*.mycompany.com".to_string()],
             block: vec!["blocked.mycompany.com".to_string()],
             default_action: "block".to_string(),
+            ..Default::default()
         };
         let guard = EgressAllowlistGuard::with_config(config);
 
