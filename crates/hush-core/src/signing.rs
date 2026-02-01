@@ -13,7 +13,17 @@ pub struct Keypair {
 }
 
 impl Keypair {
-    /// Generate a new random keypair
+    /// Generate a new random keypair.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use hush_core::Keypair;
+    ///
+    /// let keypair = Keypair::generate();
+    /// let pubkey = keypair.public_key();
+    /// assert_eq!(pubkey.as_bytes().len(), 32);
+    /// ```
     pub fn generate() -> Self {
         let signing_key = SigningKey::generate(&mut OsRng);
         Self { signing_key }
@@ -46,7 +56,17 @@ impl Keypair {
         }
     }
 
-    /// Sign a message
+    /// Sign a message.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use hush_core::Keypair;
+    ///
+    /// let keypair = Keypair::generate();
+    /// let signature = keypair.sign(b"hello");
+    /// assert_eq!(signature.to_bytes().len(), 64);
+    /// ```
     pub fn sign(&self, message: &[u8]) -> Signature {
         let sig = self.signing_key.sign(message);
         Signature { inner: sig }
@@ -116,7 +136,20 @@ impl PublicKey {
         Self::from_bytes(&arr)
     }
 
-    /// Verify a signature
+    /// Verify a signature.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use hush_core::Keypair;
+    ///
+    /// let keypair = Keypair::generate();
+    /// let message = b"hello";
+    /// let signature = keypair.sign(message);
+    ///
+    /// assert!(keypair.public_key().verify(message, &signature));
+    /// assert!(!keypair.public_key().verify(b"wrong", &signature));
+    /// ```
     pub fn verify(&self, message: &[u8], signature: &Signature) -> bool {
         self.verifying_key.verify(message, &signature.inner).is_ok()
     }
