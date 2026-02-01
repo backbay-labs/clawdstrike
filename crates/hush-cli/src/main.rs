@@ -584,7 +584,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let leaves: Vec<Vec<u8>> = files
                     .iter()
-                    .map(|f| std::fs::read(f))
+                    .map(std::fs::read)
                     .collect::<std::io::Result<_>>()?;
 
                 let tree = MerkleTree::from_leaves(&leaves)
@@ -600,7 +600,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let leaves: Vec<Vec<u8>> = files
                     .iter()
-                    .map(|f| std::fs::read(f))
+                    .map(std::fs::read)
                     .collect::<std::io::Result<_>>()?;
 
                 let tree = MerkleTree::from_leaves(&leaves)
