@@ -6,6 +6,7 @@ members = [
     "crates/hushclaw",
     "crates/hush-cli",
     "crates/hushd",
+    "crates/hush-wasm",
 ]
 
 [workspace.package]
