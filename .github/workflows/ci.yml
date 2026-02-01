@@ -117,3 +117,45 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: false
+
+  proptest:
+    name: Property Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-proptest-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-proptest-
+
+      - name: Run property tests
+        run: cargo test --workspace proptest
+        env:
+          PROPTEST_CASES: 500
+
+  fuzz-check:
+    name: Fuzz Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Build fuzz targets
+        run: |
+          cd fuzz
+          cargo +nightly build
