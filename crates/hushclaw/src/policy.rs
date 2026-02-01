@@ -10,6 +10,19 @@ use crate::guards::{
     SecretLeakGuard,
 };
 
+/// Strategy for merging policies when using extends
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeStrategy {
+    /// Replace base entirely with child values
+    Replace,
+    /// Shallow merge: child values override base at top level
+    Merge,
+    /// Deep merge: recursively merge nested structures
+    #[default]
+    DeepMerge,
+}
+
 /// Complete policy configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Policy {
@@ -22,6 +35,12 @@ pub struct Policy {
     /// Policy description
     #[serde(default)]
     pub description: String,
+    /// Base policy to extend (ruleset name or file path)
+    #[serde(default)]
+    pub extends: Option<String>,
+    /// Strategy for merging with base policy
+    #[serde(default)]
+    pub merge_strategy: MergeStrategy,
     /// Guard configurations
     #[serde(default)]
     pub guards: GuardConfigs,
@@ -40,6 +59,8 @@ impl Default for Policy {
             version: default_version(),
             name: String::new(),
             description: String::new(),
+            extends: None,
+            merge_strategy: MergeStrategy::default(),
             guards: GuardConfigs::default(),
             settings: PolicySettings::default(),
         }
@@ -323,5 +344,47 @@ mod tests {
         assert!(RuleSet::by_name("strict").is_some());
         assert!(RuleSet::by_name("permissive").is_some());
         assert!(RuleSet::by_name("unknown").is_none());
+    }
+
+    #[test]
+    fn test_merge_strategy_default() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.merge_strategy, MergeStrategy::DeepMerge);
+    }
+
+    #[test]
+    fn test_merge_strategy_parse() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+merge_strategy: replace
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.merge_strategy, MergeStrategy::Replace);
+    }
+
+    #[test]
+    fn test_extends_field_parse() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+extends: strict
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.extends, Some("strict".to_string()));
+    }
+
+    #[test]
+    fn test_extends_field_none_by_default() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert!(policy.extends.is_none());
     }
 }
