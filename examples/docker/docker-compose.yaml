@@ -1,0 +1,89 @@
+# Hushclaw Docker Compose Stack
+#
+# Includes:
+# - hushd: Security enforcement daemon
+# - sample-agent: Demo agent running through hushclaw
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f hushd
+
+version: "3.9"
+
+services:
+  # ============================================================
+  # Hushclaw Daemon
+  # ============================================================
+  hushd:
+    build:
+      context: ../..
+      dockerfile: examples/docker/Dockerfile.hushd
+    container_name: hushd
+    restart: unless-stopped
+    ports:
+      - "9090:9090"  # gRPC API
+      - "9091:9091"  # HTTP health
+    volumes:
+      # Persist receipts
+      - hushd-data:/var/lib/hushd
+      # Custom policy (uncomment to override)
+      # - ./policy.yaml:/etc/hushd/policy.yaml:ro
+    environment:
+      HUSH_LOG_LEVEL: info
+      HUSH_MODE: deterministic
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9091/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - hushnet
+
+  # ============================================================
+  # Sample Agent (for demonstration)
+  # ============================================================
+  sample-agent:
+    image: node:20-slim
+    container_name: sample-agent
+    depends_on:
+      hushd:
+        condition: service_healthy
+    working_dir: /app
+    volumes:
+      - ../hello-secure-agent:/app:ro
+    environment:
+      HUSH_ENDPOINT: hushd:9090
+    command: ["node", "agent.js"]
+    networks:
+      - hushnet
+
+  # ============================================================
+  # Receipt Viewer (optional web UI)
+  # ============================================================
+  receipt-viewer:
+    image: nginx:alpine
+    container_name: receipt-viewer
+    ports:
+      - "8080:80"
+    volumes:
+      - hushd-data:/usr/share/nginx/html/receipts:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - hushnet
+    profiles:
+      - viewer  # Only start with: docker compose --profile viewer up
+
+# ============================================================
+# Volumes
+# ============================================================
+volumes:
+  hushd-data:
+    driver: local
+
+# ============================================================
+# Networks
+# ============================================================
+networks:
+  hushnet:
+    driver: bridge

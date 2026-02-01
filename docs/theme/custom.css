@@ -1,0 +1,71 @@
+/* Hushclaw Documentation Theme */
+
+:root {
+  --hush-primary: #6366f1;
+  --hush-primary-dark: #4f46e5;
+  --hush-accent: #22c55e;
+  --hush-warning: #f59e0b;
+  --hush-danger: #ef4444;
+}
+
+/* Code blocks */
+pre code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+th {
+  background: var(--bg);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.75em;
+  border-bottom: 2px solid var(--table-border-color);
+}
+
+td {
+  padding: 0.75em;
+  border-bottom: 1px solid var(--table-border-color);
+}
+
+/* Admonitions */
+.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 4px solid var(--hush-warning);
+  padding: 1em;
+  margin: 1em 0;
+}
+
+.danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 4px solid var(--hush-danger);
+  padding: 1em;
+  margin: 1em 0;
+}
+
+.tip {
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 4px solid var(--hush-accent);
+  padding: 1em;
+  margin: 1em 0;
+}
+
+/* Feature boxes */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1em;
+  margin: 1.5em 0;
+}
+
+.feature-box {
+  padding: 1em;
+  border: 1px solid var(--table-border-color);
+  border-radius: 8px;
+}

@@ -1,0 +1,69 @@
+# Multi-stage build for hushd daemon
+# Produces a minimal, secure container image
+
+# ============================================================
+# Stage 1: Build
+# ============================================================
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy manifests first for dependency caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+
+# Build release binary
+RUN cargo build --release --package hushd \
+    && strip target/release/hushd
+
+# ============================================================
+# Stage 2: Runtime
+# ============================================================
+FROM debian:bookworm-slim AS runtime
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /bin/false hushd
+
+# Copy binary from builder
+COPY --from=builder /build/target/release/hushd /usr/local/bin/hushd
+
+# Create directories
+RUN mkdir -p /etc/hushd /var/lib/hushd/receipts \
+    && chown -R hushd:hushd /var/lib/hushd
+
+# Copy default policy
+COPY --chown=hushd:hushd policy.yaml /etc/hushd/policy.yaml
+
+# Switch to non-root user
+USER hushd
+
+# Expose ports
+# 9090: gRPC API
+# 9091: HTTP health check
+EXPOSE 9090 9091
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q --spider http://localhost:9091/health || exit 1
+
+# Environment defaults
+ENV HUSH_POLICY_PATH=/etc/hushd/policy.yaml \
+    HUSH_RECEIPT_DIR=/var/lib/hushd/receipts \
+    HUSH_LOG_LEVEL=info \
+    HUSH_MODE=deterministic
+
+# Data volume
+VOLUME /var/lib/hushd
+
+# Run daemon
+ENTRYPOINT ["hushd"]
+CMD ["serve", "--grpc-addr", "0.0.0.0:9090", "--http-addr", "0.0.0.0:9091"]

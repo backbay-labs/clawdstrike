@@ -1,0 +1,49 @@
+{
+  "$schema": "https://openclaw.dev/schemas/config.json",
+  "name": "hello-secure-agent",
+  "version": "1.0.0",
+  "description": "A minimal secure agent demonstrating hushclaw integration",
+
+  "agent": {
+    "model": "gpt-4",
+    "system_prompt": "You are a helpful assistant. Use the available tools to complete tasks.",
+    "max_tokens": 4096,
+    "temperature": 0.7
+  },
+
+  "skills": [
+    "./skills/hello"
+  ],
+
+  "tools": {
+    "builtin": [
+      "read_file",
+      "write_file",
+      "list_directory"
+    ]
+  },
+
+  "plugins": [
+    {
+      "name": "@hushclaw/openclaw",
+      "version": "^0.1.0",
+      "config": {
+        "policy": "./policy.yaml",
+        "mode": "deterministic",
+        "receipts": {
+          "enabled": true,
+          "directory": "./.hush/receipts",
+          "sign": true
+        },
+        "hooks": {
+          "tool_result_persist": true,
+          "agent:bootstrap": true
+        }
+      }
+    }
+  ],
+
+  "environment": {
+    "HUSH_LOG_LEVEL": "info"
+  }
+}

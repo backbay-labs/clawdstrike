@@ -1,0 +1,20 @@
+[book]
+title = "Hushclaw Documentation"
+authors = ["Hushclaw Contributors"]
+description = "Multi-model security enforcement for AI agents"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/hushclaw/hushclaw"
+edit-url-template = "https://github.com/hushclaw/hushclaw/edit/main/docs/{path}"
+additional-css = ["theme/custom.css"]
+
+[output.html.fold]
+enable = true
+level = 1

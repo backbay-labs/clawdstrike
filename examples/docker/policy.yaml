@@ -1,0 +1,106 @@
+# Hushclaw Policy for Docker Deployment
+#
+# This policy demonstrates a production-ready configuration
+# for containerized AI agents.
+
+version: "1.0"
+
+# Inherit from the strict ruleset
+extends: "hushclaw://rulesets/strict"
+
+# Metadata
+metadata:
+  name: docker-production
+  description: Production policy for containerized agents
+  environment: docker
+
+# Override settings for container environment
+settings:
+  # Deterministic enforcement - no LLM calls
+  mode: deterministic
+
+  # Receipt configuration
+  receipts:
+    enabled: true
+    sign: true
+    include_events: true
+
+  # Logging
+  logging:
+    level: info
+    format: json
+    include_decisions: true
+
+# Guards configuration
+guards:
+  # Path restrictions for container filesystem
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/root/**"
+      - "/proc/**"
+      - "/sys/**"
+      # Container-specific
+      - "/var/run/docker.sock"
+      - "**/.docker/**"
+    allow:
+      # Allow workspace
+      - "/app/**"
+      - "/tmp/**"
+      - "/var/lib/hushd/**"
+
+  # Network egress allowlist
+  egress:
+    enabled: true
+    default: deny
+    allowlist:
+      # Internal services only
+      - host: "hushd"
+        ports: [9090]
+      - host: "*.internal"
+        ports: [443, 80]
+      # API endpoints (customize as needed)
+      - host: "api.openai.com"
+        ports: [443]
+      - host: "api.anthropic.com"
+        ports: [443]
+
+  # Secret leak prevention
+  secret_leak:
+    enabled: true
+    patterns:
+      # Standard patterns
+      - name: api_key
+        regex: "(sk-[a-zA-Z0-9]{48}|AKIA[0-9A-Z]{16})"
+      - name: docker_auth
+        regex: "\\{\"auths\":\\{.*\\}\\}"
+      # Container secrets
+      - name: k8s_token
+        regex: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9\\.[a-zA-Z0-9_-]+"
+
+  # Patch integrity for /app
+  patch_integrity:
+    enabled: true
+    protected_paths:
+      - "/app/node_modules/**"
+      - "/app/package-lock.json"
+    require_review:
+      - "/app/src/**"
+
+  # MCP tool restrictions
+  mcp_tool:
+    enabled: true
+    default: deny
+    allowlist:
+      # Safe tools only
+      - tool: "read_file"
+        paths: ["/app/**"]
+      - tool: "list_directory"
+        paths: ["/app/**", "/tmp/**"]
+      - tool: "write_file"
+        paths: ["/app/output/**", "/tmp/**"]
+    denylist:
+      - tool: "execute_command"
+        reason: "Shell execution disabled in production"
