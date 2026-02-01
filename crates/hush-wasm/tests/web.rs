@@ -3,7 +3,8 @@
 use wasm_bindgen_test::*;
 use hush_wasm::*;
 
-wasm_bindgen_test_configure!(run_in_browser);
+// Tests can run in both browser and Node.js
+// Use `wasm-pack test --node` for Node.js or `wasm-pack test --headless --chrome` for browser
 
 #[wasm_bindgen_test]
 fn test_hash_sha256() {
