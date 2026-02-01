@@ -202,3 +202,44 @@ jobs:
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Update Homebrew formula with correct SHA256
+  update-homebrew:
+    name: Update Homebrew Formula
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main  # Checkout main branch for the update
+
+      - name: Calculate SHA256
+        id: sha
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          URL="https://github.com/hushclaw/hushclaw/archive/refs/tags/v${VERSION}.tar.gz"
+          echo "Downloading from: $URL"
+          SHA=$(curl -sL "$URL" | shasum -a 256 | cut -d' ' -f1)
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Calculated SHA256: $SHA"
+
+      - name: Update formula
+        run: |
+          # Update URL with new version
+          sed -i 's|url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v[^"]*"|url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' HomebrewFormula/hush.rb
+          # Update SHA256
+          sed -i 's|sha256 "[^"]*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' HomebrewFormula/hush.rb
+
+          echo "Updated formula:"
+          cat HomebrewFormula/hush.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add HomebrewFormula/hush.rb
+          git diff --cached --quiet || git commit -m "chore: update Homebrew formula for v${{ steps.sha.outputs.version }}"
+          git push origin main

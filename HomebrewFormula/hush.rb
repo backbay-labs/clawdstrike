@@ -1,6 +1,10 @@
 # Homebrew formula for hush CLI
 # Install: brew install hushclaw/tap/hush
 # Or from local: brew install --build-from-source ./HomebrewFormula/hush.rb
+#
+# SHA256 is automatically updated by the release workflow.
+# To calculate SHA256 manually:
+#   curl -sL https://github.com/hushclaw/hushclaw/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256
 
 class Hush < Formula
   desc "CLI for hushclaw security verification and policy enforcement"
