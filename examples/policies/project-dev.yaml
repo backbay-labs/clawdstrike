@@ -1,0 +1,31 @@
+# Example: Development policy extending project base
+version: "1.0.0"
+name: Project Dev
+description: Development environment - more permissive for testing
+
+extends: ./project-base.yaml
+merge_strategy: deep_merge
+
+guards:
+  forbidden_path:
+    # Allow .env in local dev
+    remove_patterns:
+      - "**/.env"
+    # Keep .env.* files blocked
+    additional_patterns:
+      - "**/.env.production"
+
+  egress_allowlist:
+    # Allow additional services for dev
+    additional_allow:
+      - "localhost"
+      - "127.0.0.1"
+      - "*.local"
+
+  mcp_tool:
+    # Remove git_push from confirmation for faster iteration
+    require_confirmation: []
+
+settings:
+  verbose_logging: true
+  session_timeout_secs: 7200  # 2 hours for dev

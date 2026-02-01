@@ -1,0 +1,34 @@
+# Example: Base policy for a project
+version: "1.0.0"
+name: Project Base
+description: Base security policy for MyProject
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+    exceptions:
+      - "**/.env.example"
+
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+      - "registry.npmjs.org"
+      - "pypi.org"
+    default_action: block
+
+  mcp_tool:
+    block:
+      - shell_exec
+      - raw_file_delete
+    require_confirmation:
+      - git_push
+    default_action: allow
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600
