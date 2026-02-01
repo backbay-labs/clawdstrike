@@ -1,14 +1,23 @@
 //! Integration tests for hushd HTTP API
+//!
+//! These tests require either:
+//! 1. A running daemon at HUSHD_TEST_URL (for local development)
+//! 2. The daemon binary at HUSHD_BIN (for CI, will spawn automatically)
 
-// Note: These tests require the daemon to be running
-// Run with: cargo test -p hushd --test integration -- --ignored
+mod common;
+
+use common::daemon_url;
+
+/// Helper to get client and URL
+fn test_setup() -> (reqwest::Client, String) {
+    (reqwest::Client::new(), daemon_url())
+}
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_health_endpoint() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .get("http://127.0.0.1:9876/health")
+        .get(format!("{}/health", url))
         .send()
         .await
         .expect("Failed to connect to daemon");
@@ -22,11 +31,10 @@ async fn test_health_endpoint() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_check_file_access_allowed() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .post("http://127.0.0.1:9876/api/v1/check")
+        .post(format!("{}/api/v1/check", url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/app/src/main.rs"
@@ -42,11 +50,10 @@ async fn test_check_file_access_allowed() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_check_file_access_blocked() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .post("http://127.0.0.1:9876/api/v1/check")
+        .post(format!("{}/api/v1/check", url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/home/user/.ssh/id_rsa"
@@ -62,11 +69,10 @@ async fn test_check_file_access_blocked() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_check_egress_allowed() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .post("http://127.0.0.1:9876/api/v1/check")
+        .post(format!("{}/api/v1/check", url))
         .json(&serde_json::json!({
             "action_type": "egress",
             "target": "api.openai.com:443"
@@ -82,11 +88,10 @@ async fn test_check_egress_allowed() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_get_policy() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .get("http://127.0.0.1:9876/api/v1/policy")
+        .get(format!("{}/api/v1/policy", url))
         .send()
         .await
         .expect("Failed to connect to daemon");
@@ -100,13 +105,12 @@ async fn test_get_policy() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_audit_query() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
 
     // First, make some actions to audit
     client
-        .post("http://127.0.0.1:9876/api/v1/check")
+        .post(format!("{}/api/v1/check", url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/test/file.txt"
@@ -117,7 +121,7 @@ async fn test_audit_query() {
 
     // Query audit log
     let resp = client
-        .get("http://127.0.0.1:9876/api/v1/audit?limit=10")
+        .get(format!("{}/api/v1/audit?limit=10", url))
         .send()
         .await
         .expect("Failed to query audit");
@@ -130,11 +134,10 @@ async fn test_audit_query() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_audit_stats() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .get("http://127.0.0.1:9876/api/v1/audit/stats")
+        .get(format!("{}/api/v1/audit/stats", url))
         .send()
         .await
         .expect("Failed to get audit stats");
@@ -148,13 +151,12 @@ async fn test_audit_stats() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_sse_events() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
 
     // Start listening to events
     let resp = client
-        .get("http://127.0.0.1:9876/api/v1/events")
+        .get(format!("{}/api/v1/events", url))
         .send()
         .await
         .expect("Failed to connect to events");
@@ -184,14 +186,14 @@ fn test_config_tracing_level() {
 }
 
 // Auth tests - these require auth to be enabled on the daemon
-// Run with: AUTH_ENABLED=1 cargo test -p hushd --test integration -- --ignored
+// Run with: HUSHD_TEST_AUTH_ENABLED=1 cargo test -p hushd --test integration
 
 #[tokio::test]
 #[ignore = "requires running daemon with auth enabled"]
 async fn test_auth_required_without_token() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .post("http://127.0.0.1:9876/api/v1/check")
+        .post(format!("{}/api/v1/check", url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/test/file.txt"
@@ -206,11 +208,11 @@ async fn test_auth_required_without_token() {
 #[tokio::test]
 #[ignore = "requires running daemon with auth enabled"]
 async fn test_auth_with_valid_token() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let api_key = std::env::var("HUSHD_API_KEY").expect("HUSHD_API_KEY not set");
 
     let resp = client
-        .post("http://127.0.0.1:9876/api/v1/check")
+        .post(format!("{}/api/v1/check", url))
         .header("Authorization", format!("Bearer {}", api_key))
         .json(&serde_json::json!({
             "action_type": "file_access",
@@ -226,10 +228,10 @@ async fn test_auth_with_valid_token() {
 #[tokio::test]
 #[ignore = "requires running daemon with auth enabled"]
 async fn test_auth_with_invalid_token() {
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
 
     let resp = client
-        .post("http://127.0.0.1:9876/api/v1/check")
+        .post(format!("{}/api/v1/check", url))
         .header("Authorization", "Bearer invalid-key-12345")
         .json(&serde_json::json!({
             "action_type": "file_access",
@@ -245,12 +247,11 @@ async fn test_auth_with_invalid_token() {
 #[tokio::test]
 #[ignore = "requires running daemon with auth enabled"]
 async fn test_admin_endpoint_requires_admin_scope() {
-    let client = reqwest::Client::new();
-    // Use a key with only check/read scope, not admin
+    let (client, url) = test_setup();
     let api_key = std::env::var("HUSHD_API_KEY").expect("HUSHD_API_KEY not set");
 
     let resp = client
-        .post("http://127.0.0.1:9876/api/v1/policy/reload")
+        .post(format!("{}/api/v1/policy/reload", url))
         .header("Authorization", format!("Bearer {}", api_key))
         .send()
         .await
@@ -265,12 +266,11 @@ async fn test_admin_endpoint_requires_admin_scope() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon"]
 async fn test_health_always_public() {
     // Health should work even with auth enabled and no token
-    let client = reqwest::Client::new();
+    let (client, url) = test_setup();
     let resp = client
-        .get("http://127.0.0.1:9876/health")
+        .get(format!("{}/health", url))
         .send()
         .await
         .expect("Failed to connect to daemon");
