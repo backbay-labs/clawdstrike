@@ -13,6 +13,7 @@
 - [Architecture](concepts/architecture.md)
 - [Guards](concepts/guards.md)
 - [Policies](concepts/policies.md)
+- [Schema Governance](concepts/schema-governance.md)
 - [Decisions](concepts/decisions.md)
 
 # Guides

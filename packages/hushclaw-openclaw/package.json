@@ -20,6 +20,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "e2e": "npm run build && node dist/e2e/openclaw-e2e.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src --ext .ts",

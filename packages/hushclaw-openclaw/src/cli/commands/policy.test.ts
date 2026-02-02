@@ -59,6 +59,7 @@ egress:
       const eventPath = join(testDir, 'event.json');
 
       writeFileSync(policyPath, `
+version: hushclaw-v1.0
 filesystem:
   forbidden_paths:
     - ~/.ssh

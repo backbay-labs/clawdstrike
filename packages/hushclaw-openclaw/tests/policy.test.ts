@@ -129,7 +129,7 @@ describe('PolicyEngine', () => {
 describe('validatePolicy', () => {
   it('should validate correct policy', () => {
     const policy: Policy = {
-      version: 'test-v1',
+      version: 'hushclaw-v1.0',
       egress: {
         mode: 'allowlist',
         allowed_domains: ['example.com'],
@@ -144,6 +144,7 @@ describe('validatePolicy', () => {
 
   it('should reject invalid egress mode', () => {
     const policy = {
+      version: 'hushclaw-v1.0',
       egress: {
         mode: 'invalid' as any,
       },
@@ -156,6 +157,7 @@ describe('validatePolicy', () => {
 
   it('should reject invalid on_violation action', () => {
     const policy: Policy = {
+      version: 'hushclaw-v1.0',
       on_violation: 'invalid' as any,
     };
 
@@ -166,6 +168,7 @@ describe('validatePolicy', () => {
 
   it('should warn about allowlist mode without domains', () => {
     const policy: Policy = {
+      version: 'hushclaw-v1.0',
       egress: {
         mode: 'allowlist',
         allowed_domains: [],
@@ -178,6 +181,7 @@ describe('validatePolicy', () => {
 
   it('should reject paths with null bytes', () => {
     const policy: Policy = {
+      version: 'hushclaw-v1.0',
       filesystem: {
         forbidden_paths: ['/etc/passwd\x00.txt'],
       },
@@ -190,6 +194,7 @@ describe('validatePolicy', () => {
 
   it('should reject invalid regex in denied_patterns', () => {
     const policy: Policy = {
+      version: 'hushclaw-v1.0',
       execution: {
         denied_patterns: ['[invalid(regex'],
       },
@@ -202,6 +207,7 @@ describe('validatePolicy', () => {
 
   it('should validate limits as positive numbers', () => {
     const policy: Policy = {
+      version: 'hushclaw-v1.0',
       limits: {
         max_execution_seconds: -10,
       },
@@ -210,6 +216,18 @@ describe('validatePolicy', () => {
     const result = validatePolicy(policy);
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes('positive number'))).toBe(true);
+  });
+  it('should reject unknown fields (fail closed)', () => {
+    const policy = {
+      version: 'hushclaw-v1.0',
+      guards: {
+        egress_allowlist: true,
+      },
+    };
+
+    const result = validatePolicy(policy);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes('unknown field'))).toBe(true);
   });
 });
 

@@ -2,9 +2,27 @@
 
 This repository contains an OpenClaw plugin under `packages/hushclaw-openclaw`.
 
-The OpenClaw integration is still evolving and may not match the Rust policy schema described in this mdBook.
+## Important: policy schema is different from Rust
+
+The OpenClaw plugin uses its **own policy schema** (currently `version: "hushclaw-v1.0"`). It is **not** the same as the Rust `hushclaw::Policy` schema (`version: "1.0.0"`).
+
+If you paste a Rust policy into OpenClaw, it should fail closed (and it does): unknown fields are rejected.
+
+See [Schema Governance](../concepts/schema-governance.md) for the repo-wide versioning/compat rules.
+
+## Recommended flow
+
+- Use a built-in ruleset as a starting point: `hushclaw:ai-agent-minimal` or `hushclaw:ai-agent`.
+- Validate policies before running agents:
+
+```bash
+hushclaw policy lint .hush/policy.yaml
+```
+
+- Use `policy_check` for **preflight** decisions (before the agent attempts an action).
+- Use the OpenClaw hook(s) for **post-action** defense-in-depth (e.g., block/strip tool outputs that contain secrets).
 
 ## Where to look
 
-- `packages/hushclaw-openclaw/docs/`
-- `packages/hushclaw-openclaw/src/`
+- OpenClaw plugin docs: `packages/hushclaw-openclaw/docs/`
+- OpenClaw plugin code: `packages/hushclaw-openclaw/src/`

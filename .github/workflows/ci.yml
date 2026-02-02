@@ -336,6 +336,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: OpenClaw E2E (simulated runtime)
+        run: npm run e2e
+
   python-sdk:
     name: Python SDK
     runs-on: ubuntu-latest

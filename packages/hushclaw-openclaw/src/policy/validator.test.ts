@@ -27,24 +27,27 @@ describe('validatePolicy', () => {
 
   it('rejects invalid egress mode', () => {
     const policy = {
+      version: 'hushclaw-v1.0',
       egress: { mode: 'invalid' },
     };
     const result = validatePolicy(policy as any);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain('egress.mode');
+    expect(result.errors.some((e) => e.includes('egress.mode'))).toBe(true);
   });
 
   it('rejects invalid on_violation', () => {
     const policy = {
+      version: 'hushclaw-v1.0',
       on_violation: 'explode',
     };
     const result = validatePolicy(policy as any);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain('on_violation');
+    expect(result.errors.some((e) => e.includes('on_violation'))).toBe(true);
   });
 
   it('warns on empty forbidden_paths', () => {
     const policy = {
+      version: 'hushclaw-v1.0',
       filesystem: { forbidden_paths: [] },
     };
     const result = validatePolicy(policy);

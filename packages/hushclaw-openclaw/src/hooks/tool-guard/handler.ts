@@ -12,7 +12,9 @@ import type {
   PolicyEvent,
   ToolEventData,
   FileEventData,
+  CommandEventData,
   NetworkEventData,
+  PatchEventData,
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
 
@@ -134,10 +136,13 @@ function inferEventType(
 ): PolicyEvent['eventType'] {
   const lowerName = toolName.toLowerCase();
 
+  if (lowerName.includes('patch') || lowerName.includes('diff') || lowerName.includes('apply_patch')) {
+    return 'patch_apply';
+  }
   if (lowerName.includes('read') || lowerName.includes('cat') || lowerName.includes('head') || lowerName.includes('tail')) {
     return 'file_read';
   }
-  if (lowerName.includes('write') || lowerName.includes('edit') || lowerName.includes('patch')) {
+  if (lowerName.includes('write') || lowerName.includes('edit')) {
     return 'file_write';
   }
   if (lowerName.includes('exec') || lowerName.includes('bash') || lowerName.includes('shell')) {
@@ -179,6 +184,25 @@ function createEventData(
         port,
         url,
       } as NetworkEventData;
+    }
+
+    case 'command_exec': {
+      const { command, args, workingDir } = extractCommandInfo(params);
+      return {
+        type: 'command',
+        command,
+        args,
+        workingDir,
+      } as CommandEventData;
+    }
+
+    case 'patch_apply': {
+      const { filePath, patchContent } = extractPatchInfo(params, result);
+      return {
+        type: 'patch',
+        filePath,
+        patchContent,
+      } as PatchEventData;
     }
 
     case 'tool_call':
@@ -268,6 +292,65 @@ function extractNetworkInfo(
     port: (params.port as number) ?? 80,
     url,
   };
+}
+
+function extractCommandInfo(
+  params: Record<string, unknown>,
+): { command: string; args: string[]; workingDir?: string } {
+  const workingDir =
+    typeof params.cwd === 'string'
+      ? params.cwd
+      : typeof params.workingDir === 'string'
+        ? params.workingDir
+        : undefined;
+
+  const args =
+    Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')
+      ? (params.args as string[])
+      : Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')
+        ? (params.argv as string[])
+        : undefined;
+
+  const cmdLine =
+    typeof params.command === 'string'
+      ? params.command
+      : typeof params.cmd === 'string'
+        ? params.cmd
+        : undefined;
+
+  if (cmdLine) {
+    const parts = cmdLine.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) {
+      return { command: '', args: [], workingDir };
+    }
+    const [command, ...rest] = parts;
+    return { command, args: args ?? rest, workingDir };
+  }
+
+  if (typeof params.tool === 'string' && args) {
+    return { command: params.tool, args, workingDir };
+  }
+
+  return { command: '', args: args ?? [], workingDir };
+}
+
+function extractPatchInfo(
+  params: Record<string, unknown>,
+  result: unknown,
+): { filePath: string; patchContent: string } {
+  const filePath =
+    (typeof params.filePath === 'string' && params.filePath) ||
+    (typeof params.path === 'string' && params.path) ||
+    (typeof params.file === 'string' && params.file) ||
+    '';
+
+  const patchContent =
+    (typeof params.patch === 'string' && params.patch) ||
+    (typeof params.diff === 'string' && params.diff) ||
+    (typeof params.content === 'string' && params.content) ||
+    (typeof result === 'string' ? result : JSON.stringify(result ?? ''));
+
+  return { filePath, patchContent };
 }
 
 export default handler;

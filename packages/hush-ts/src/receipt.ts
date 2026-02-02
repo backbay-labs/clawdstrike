@@ -156,11 +156,8 @@ function requireBoolean(obj: Record<string, unknown>, key: string, label: string
   return value;
 }
 
-function normalizeVerdict(input: Verdict): Verdict {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new Error("verdict must be an object");
-  }
-  const verdict = input as Record<string, unknown>;
+function normalizeVerdict(input: unknown): Verdict {
+  const verdict = assertObject(input, "verdict");
   assertAllowedKeys(
     verdict,
     new Set(["passed", "gate_id", "scores", "threshold"]),
@@ -314,8 +311,7 @@ export class Receipt {
 
     const contentHash = normalizeHash(requireString(r, "content_hash", "receipt.content_hash"));
 
-    const verdictObj = assertObject(r.verdict, "receipt.verdict");
-    const verdict = normalizeVerdict(verdictObj as Verdict);
+    const verdict = normalizeVerdict(r.verdict);
 
     const provenance =
       r.provenance === undefined
