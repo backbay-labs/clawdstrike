@@ -1,0 +1,28 @@
+[package]
+name = "spinning_top"
+version = "0.3.0"
+authors = ["Philipp Oppermann <dev@phil-opp.com>"]
+edition = "2018"
+license = "MIT/Apache-2.0"
+description = "A simple spinlock crate based on the abstractions provided by `lock_api`."
+repository = "https://github.com/rust-osdev/spinning_top"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
+
+[features]
+arc_lock = ["lock_api/arc_lock"]
+owning_ref = ["lock_api/owning_ref"]
+
+[dependencies]
+lock_api = "0.4.7"
+
+[dev-dependencies]
+rand = "0.8"
+
+[package.metadata.release]
+pre-release-replacements = [
+    { file = "Changelog.md", search = "# Unreleased", replace = "# Unreleased\n\n# {{version}} – {{date}}", exactly = 1 },
+]
+pre-release-commit-message = "Release version {{version}}"

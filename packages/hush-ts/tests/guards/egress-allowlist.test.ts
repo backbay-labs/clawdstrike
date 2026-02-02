@@ -46,14 +46,31 @@ describe("EgressAllowlistGuard", () => {
     expect(guard.check(GuardAction.networkEgress("example.com", 443), new GuardContext()).allowed).toBe(false);
   });
 
-  it("supports subdomain matching", () => {
+  it("does not implicitly match subdomains without a glob", () => {
     const config: EgressAllowlistConfig = {
       allow: ["example.com"],
     };
     const guard = new EgressAllowlistGuard(config);
 
     expect(guard.check(GuardAction.networkEgress("example.com", 443), new GuardContext()).allowed).toBe(true);
-    expect(guard.check(GuardAction.networkEgress("api.example.com", 443), new GuardContext()).allowed).toBe(true);
+    expect(guard.check(GuardAction.networkEgress("api.example.com", 443), new GuardContext()).allowed).toBe(false);
+  });
+
+  it("supports full glob semantics (case-insensitive, ?, [])", () => {
+    const config: EgressAllowlistConfig = {
+      allow: ["api-?.example.com", "api-[a-z].example.com"],
+    };
+    const guard = new EgressAllowlistGuard(config);
+
+    expect(
+      guard.check(GuardAction.networkEgress("api-1.example.com", 443), new GuardContext()).allowed
+    ).toBe(true);
+    expect(
+      guard.check(GuardAction.networkEgress("API-a.EXAMPLE.com", 443), new GuardContext()).allowed
+    ).toBe(true);
+    expect(
+      guard.check(GuardAction.networkEgress("api-aa.example.com", 443), new GuardContext()).allowed
+    ).toBe(false);
   });
 
   it("block list takes precedence", () => {

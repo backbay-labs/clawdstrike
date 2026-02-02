@@ -1,116 +1,33 @@
-# Hushclaw Security Policy for Hello Secure Agent
+# Hushclaw/OpenClaw policy for the hello-secure-agent example.
 #
-# This minimal policy demonstrates core security features
-# while allowing the agent to function normally.
+# This file is consumed by the @hushclaw/openclaw plugin (not the Rust `hushclaw::Policy` type).
+# Validate it with:
+#   npx hushclaw policy lint ./policy.yaml
 
-version: "1.0"
+version: "hushclaw-v1.0"
 
-# Inherit sensible defaults
-extends: "hushclaw://rulesets/default"
+egress:
+  mode: allowlist
+  allowed_domains:
+    - "api.openai.com"
+    - "api.anthropic.com"
+    - "api.github.com"
+    - "registry.npmjs.org"
+    - "pypi.org"
+    - "files.pythonhosted.org"
+  denied_domains:
+    - "*.onion"
+    - "localhost"
+    - "127.*"
+    - "10.*"
+    - "192.168.*"
 
-# Policy metadata
-metadata:
-  name: hello-secure-agent
-  description: Minimal policy for demonstration
-  author: hushclaw-examples
+filesystem:
+  forbidden_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.gnupg"
+    - ".env"
+    - ".env.*"
 
-# Global settings
-settings:
-  mode: deterministic
-
-  receipts:
-    enabled: true
-    sign: true
-    include_events: true
-
-# Guard configurations
-guards:
-  # ============================================================
-  # Forbidden Path Guard
-  # ============================================================
-  forbidden_path:
-    enabled: true
-    patterns:
-      # System files
-      - "/etc/**"
-      - "/var/**"
-      - "/usr/**"
-      - "/root/**"
-      # Hidden directories
-      - "**/.*"
-      - "**/.git/**"
-    allow:
-      # Workspace is allowed
-      - "./**"
-      - "./skills/**"
-      # Temp files
-      - "/tmp/hello-agent-*"
-
-  # ============================================================
-  # Egress Allowlist Guard
-  # ============================================================
-  egress:
-    enabled: true
-    default: deny
-    allowlist:
-      # OpenAI API (for agent)
-      - host: "api.openai.com"
-        ports: [443]
-      # Anthropic API
-      - host: "api.anthropic.com"
-        ports: [443]
-      # Example allowed endpoint
-      - host: "api.example.com"
-        ports: [443, 80]
-    log_blocked: true
-
-  # ============================================================
-  # Secret Leak Guard
-  # ============================================================
-  secret_leak:
-    enabled: true
-    patterns:
-      - name: openai_key
-        regex: "sk-[a-zA-Z0-9]{48}"
-        severity: critical
-      - name: anthropic_key
-        regex: "sk-ant-[a-zA-Z0-9-]+"
-        severity: critical
-      - name: generic_secret
-        regex: "(?i)(password|secret|token)\\s*[:=]\\s*['\"][^'\"]{8,}"
-        severity: high
-    action: deny
-    redact_in_logs: true
-
-  # ============================================================
-  # Patch Integrity Guard
-  # ============================================================
-  patch_integrity:
-    enabled: true
-    protected_paths:
-      # Protect configuration
-      - "./openclaw.json"
-      - "./policy.yaml"
-      # Protect skill definitions
-      - "./skills/**/SKILL.md"
-    require_review: []
-
-  # ============================================================
-  # MCP Tool Guard
-  # ============================================================
-  mcp_tool:
-    enabled: true
-    default: allow
-    denylist:
-      # No shell execution
-      - tool: "execute_command"
-        reason: "Shell access disabled for security"
-      - tool: "run_shell"
-        reason: "Shell access disabled for security"
-    allowlist:
-      - tool: "read_file"
-        paths: ["./**"]
-      - tool: "write_file"
-        paths: ["./output/**", "/tmp/hello-agent-*"]
-      - tool: "list_directory"
-        paths: ["./**"]
+on_violation: cancel

@@ -1,0 +1,69 @@
+# TemplateCIConfig { bench: BenchEntry { run: false, version: "nightly", allow_failure: false, install_commandline: None, commandline: "cargo bench" }, clippy: ClippyEntry { run: true, version: "nightly", allow_failure: false, install_commandline: None, commandline: "cargo clippy -- -D warnings" }, rustfmt: RustfmtEntry { run: true, version: "stable", allow_failure: false, install_commandline: None, commandline: "cargo fmt" }, additional_matrix_entries: {}, cache: "false", os: "linux", dist: "xenial", versions: ["stable", "beta", "nightly"], test_commandline: "cargo test --all --features \"compiletest_rs $TRAVIS_RUST_VERSION\"" }
+os:
+  - "linux"
+dist: "xenial"
+
+language: rust
+sudo: required
+cache: false
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+env:
+  global:
+    - RUN_TEST=true
+    - RUN_CLIPPY=false
+    - RUN_BENCH=false
+
+matrix:
+  fast_finish: true
+  include:
+    - &rustfmt_build
+      rust: "stable"
+      env:
+        - RUN_RUSTFMT=true
+        - RUN_TEST=false
+    - &clippy_build
+      rust: "nightly"
+      env:
+        - RUN_CLIPPY=true
+        - RUN_TEST=false
+  allow_failures: []
+
+before_script:
+  - bash -c 'if [[ "$RUN_RUSTFMT" == "true" ]]; then
+      rustup component add rustfmt-preview
+      ;
+    fi'
+  - bash -c 'if [[ "$RUN_CLIPPY" == "true" ]]; then
+      rm -f ~/.cargo/bin/clippy;
+      rustup component add clippy-preview
+      ;
+    fi'
+
+script:
+  - bash -c 'if [[ "$RUN_TEST" == "true" ]]; then
+      cargo test --all --features "compiletest_rs $TRAVIS_RUST_VERSION"
+      ;
+    fi'
+  - bash -c 'if [[ "$RUN_RUSTFMT" == "true" ]]; then
+      cargo fmt -v -- --check
+      ;
+    fi'
+  - bash -c 'if [[ "$RUN_CLIPPY" == "true" ]]; then
+      cargo clippy -- -D warnings
+      ;
+    fi'
+
+branches:
+  only:
+    # release tags
+    - /^v\d+\.\d+\.\d+.*$/
+    - master
+
+notifications:
+  email:
+    on_success: never

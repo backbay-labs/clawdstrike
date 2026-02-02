@@ -51,6 +51,39 @@ if [[ -f "packages/hushclaw-openclaw/package.json" ]]; then
     fi
 fi
 
+if [[ -f "packages/hush-ts/package.json" ]]; then
+    echo "  Updating packages/hush-ts/package.json..."
+    if command -v node &> /dev/null; then
+        node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('packages/hush-ts/package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync('packages/hush-ts/package.json', JSON.stringify(pkg, null, 2) + '\n');
+        "
+    else
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/hush-ts/package.json
+    fi
+fi
+
+if [[ -f "crates/hush-wasm/package.json" ]]; then
+    echo "  Updating crates/hush-wasm/package.json..."
+    if command -v node &> /dev/null; then
+        node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('crates/hush-wasm/package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync('crates/hush-wasm/package.json', JSON.stringify(pkg, null, 2) + '\n');
+        "
+    else
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" crates/hush-wasm/package.json
+    fi
+fi
+
+if [[ -f "HomebrewFormula/hush.rb" ]]; then
+    echo "  Updating HomebrewFormula/hush.rb tag URL..."
+    $SED_INPLACE "s#https://github.com/hushclaw/hushclaw/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/hushclaw/hushclaw/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
+fi
+
 # Update pyproject.toml if it exists
 if [[ -f "packages/hush-py/pyproject.toml" ]]; then
     echo "  Updating packages/hush-py/pyproject.toml..."

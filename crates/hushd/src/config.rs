@@ -5,6 +5,33 @@ use std::path::{Path, PathBuf};
 
 use crate::auth::{ApiKey, AuthStore, Scope};
 
+fn expand_env_refs(value: &str) -> anyhow::Result<String> {
+    let mut out = String::new();
+    let mut rest = value;
+
+    while let Some(start) = rest.find("${") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let end = after
+            .find('}')
+            .ok_or_else(|| anyhow::anyhow!("Unclosed env var reference in value: {}", value))?;
+        let name = &after[..end];
+        if name.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Empty env var reference in value: {}",
+                value
+            ));
+        }
+        let resolved = std::env::var(name)
+            .map_err(|_| anyhow::anyhow!("Missing environment variable: {}", name))?;
+        out.push_str(&resolved);
+        rest = &after[end + 1..];
+    }
+
+    out.push_str(rest);
+    Ok(out)
+}
+
 /// TLS configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TlsConfig {
@@ -231,11 +258,13 @@ impl Config {
         }
     }
 
-    /// Load API keys from config into an AuthStore
-    pub async fn load_auth_store(&self) -> AuthStore {
+    /// Load API keys from config into an AuthStore.
+    ///
+    /// Supports `${VAR}` environment variable references inside `auth.api_keys[].key`.
+    pub async fn load_auth_store(&self) -> anyhow::Result<AuthStore> {
         let store = AuthStore::new();
 
-        for key_config in &self.auth.api_keys {
+        for (idx, key_config) in self.auth.api_keys.iter().enumerate() {
             // Parse scopes
             let scopes: std::collections::HashSet<Scope> = key_config
                 .scopes
@@ -253,9 +282,12 @@ impl Config {
                 scopes
             };
 
+            let key = expand_env_refs(&key_config.key)
+                .map_err(|e| anyhow::anyhow!("Invalid auth.api_keys[{}].key value: {}", idx, e))?;
+
             let api_key = ApiKey {
                 id: uuid::Uuid::new_v4().to_string(),
-                key_hash: AuthStore::hash_key(&key_config.key),
+                key_hash: AuthStore::hash_key(&key),
                 name: key_config.name.clone(),
                 scopes,
                 created_at: chrono::Utc::now(),
@@ -269,7 +301,7 @@ impl Config {
             tracing::warn!("Auth is enabled but no API keys configured");
         }
 
-        store
+        Ok(store)
     }
 }
 
@@ -355,7 +387,7 @@ scopes = ["*"]
     }
 
     #[tokio::test]
-    async fn test_load_auth_store() {
+    async fn test_load_auth_store() -> anyhow::Result<()> {
         let toml = r#"
 listen = "127.0.0.1:9876"
 
@@ -367,20 +399,19 @@ name = "test"
 key = "my-secret-key"
 scopes = ["check"]
 "#;
-        let config: Config = toml::from_str(toml).unwrap();
-        let store = config.load_auth_store().await;
+        let config: Config = toml::from_str(toml)?;
+        let store = config.load_auth_store().await?;
 
         // Should be able to validate with the raw key
-        let result = store.validate_key("my-secret-key").await;
-        assert!(result.is_ok());
-        let key = result.unwrap();
+        let key = store.validate_key("my-secret-key").await?;
         assert_eq!(key.name, "test");
         assert!(key.has_scope(crate::auth::Scope::Check));
         assert!(!key.has_scope(crate::auth::Scope::Admin));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_load_auth_store_default_scopes() {
+    async fn test_load_auth_store_default_scopes() -> anyhow::Result<()> {
         let toml = r#"
 listen = "127.0.0.1:9876"
 
@@ -392,14 +423,36 @@ name = "default-scopes"
 key = "my-key"
 scopes = []
 "#;
-        let config: Config = toml::from_str(toml).unwrap();
-        let store = config.load_auth_store().await;
+        let config: Config = toml::from_str(toml)?;
+        let store = config.load_auth_store().await?;
 
-        let key = store.validate_key("my-key").await.unwrap();
+        let key = store.validate_key("my-key").await?;
         // Empty scopes should default to check+read
         assert!(key.has_scope(crate::auth::Scope::Check));
         assert!(key.has_scope(crate::auth::Scope::Read));
         assert!(!key.has_scope(crate::auth::Scope::Admin));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_auth_store_expands_env_refs() -> anyhow::Result<()> {
+        std::env::set_var("HUSHD_TEST_API_KEY", "secret-from-env");
+
+        let yaml = r#"
+listen: "127.0.0.1:9876"
+auth:
+  enabled: true
+  api_keys:
+    - name: "env"
+      key: "${HUSHD_TEST_API_KEY}"
+      scopes: ["check"]
+"#;
+
+        let config: Config = serde_yaml::from_str(yaml)?;
+        let store = config.load_auth_store().await?;
+        let key = store.validate_key("secret-from-env").await?;
+        assert_eq!(key.name, "env");
+        Ok(())
     }
 
     #[test]

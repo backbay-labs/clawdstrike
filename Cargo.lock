@@ -830,6 +830,7 @@ dependencies = [
  "hushclaw",
  "rand 0.8.5",
  "reqwest",
+ "serde",
  "serde_json",
  "sha2",
  "tokio",
@@ -846,13 +847,12 @@ dependencies = [
  "hex",
  "proptest",
  "rand 0.8.5",
+ "ryu",
  "serde",
  "serde_json",
  "sha2",
  "sha3",
  "thiserror 1.0.69",
- "tokio",
- "uuid",
 ]
 
 [[package]]
@@ -870,9 +870,10 @@ dependencies = [
 name = "hush-proxy"
 version = "0.1.0"
 dependencies = [
+ "globset",
+ "proptest",
  "serde",
  "thiserror 1.0.69",
- "tokio",
 ]
 
 [[package]]
@@ -902,7 +903,6 @@ dependencies = [
  "globset",
  "hush-core",
  "hush-proxy",
- "ipnet",
  "proptest",
  "regex",
  "serde",

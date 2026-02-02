@@ -66,7 +66,7 @@ Your agent is now protected!
 
 Ask your agent: "Try to read ~/.ssh/id_rsa"
 
-Expected response: Operation blocked by ForbiddenPathGuard.
+Expected response: Operation blocked by `forbidden_path`.
 
 ## Using the CLI
 
@@ -81,8 +81,10 @@ hushclaw policy lint .hush/policy.yaml
 Create `test-event.json`:
 ```json
 {
-  "type": "file_read",
-  "resource": "~/.ssh/id_rsa"
+  "eventId": "example-1",
+  "eventType": "file_read",
+  "timestamp": "2026-02-02T00:00:00Z",
+  "data": { "type": "file", "path": "~/.ssh/id_rsa", "operation": "read" }
 }
 ```
 
@@ -126,7 +128,7 @@ The tool provides:
 
 ```yaml
 egress:
-  mode: allowlist  # allowlist | denylist | open
+  mode: allowlist  # allowlist | denylist | open | deny_all
   allowed_domains:
     - "api.github.com"
     - "*.amazonaws.com"  # Wildcards supported

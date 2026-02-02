@@ -9,7 +9,7 @@ members = [
     "crates/hush-wasm",
     "packages/hush-py/hush-native",
 ]
-exclude = ["fuzz"]
+exclude = ["fuzz", "examples/rust/basic-verification"]
 
 [workspace.package]
 version = "0.1.0"
@@ -31,6 +31,7 @@ base64 = "0.22"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+ryu = "1.0"
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
@@ -40,7 +41,6 @@ async-trait = "0.1"
 regex = "1.10"
 glob = "0.3"
 globset = "0.4"
-ipnet = "2.9"
 
 # Error handling
 thiserror = "1.0"
@@ -83,16 +83,14 @@ dirs = "5.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Internal crates
-hush-core = { path = "crates/hush-core" }
-hush-proxy = { path = "crates/hush-proxy" }
-hushclaw = { path = "crates/hushclaw" }
+hush-core = { path = "crates/hush-core", version = "0.1.0" }
+hush-proxy = { path = "crates/hush-proxy", version = "0.1.0" }
+hushclaw = { path = "crates/hushclaw", version = "0.1.0" }
 
 [profile.release]
 lto = true
 codegen-units = 1
 
 [workspace.lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 expect_used = "deny"

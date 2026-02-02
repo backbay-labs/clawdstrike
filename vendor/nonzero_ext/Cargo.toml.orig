@@ -1,0 +1,22 @@
+[package]
+name = "nonzero_ext"
+version = "0.3.0"
+authors = ["Andreas Fuchs <asf@boinkor.net>"]
+license = "Apache-2.0"
+repository = "https://github.com/antifuchs/nonzero_ext"
+readme = "README.md"
+description = "Extensions and additional traits for non-zero integer types"
+documentation = "https://docs.rs/nonzero_ext"
+
+[badges]
+maintenance = { status = "passively-maintained" }
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+
+[dev-dependencies]
+trybuild = "1.0.42"
+rustversion = "1.0.2"

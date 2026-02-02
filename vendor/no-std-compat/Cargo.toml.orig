@@ -1,0 +1,32 @@
+[package]
+name = "no-std-compat"
+version = "0.4.1"
+authors = ["jD91mZM2 <me@krake.one>"]
+exclude = [ "example-crates/**/*" ]
+description = "A `#![no_std]` compatibility layer that will make porting your crate to no_std *easy*."
+repository = "https://gitlab.com/jD91mZM2/no-std-compat"
+categories = [ "no-std" ]
+license = "MIT"
+readme = "README.md"
+edition = "2018"
+
+[dependencies]
+hashbrown = { version = "0.8.1", optional = true }
+spin = { version = "0.5.2", optional = true }
+
+[dev-dependencies]
+libc = "0.2.74"
+
+[profile.dev]
+panic = "abort"
+
+[features]
+alloc = []
+std = []
+unstable = []
+# This will sadly also add hashbrown even if overriden by std. Cargo
+# does not seem to provide any cfg(compat_hash && !std) functionality.
+# Luckily, hashbrown is really small.
+compat_hash = ["hashbrown"]
+compat_sync = ["spin"]
+compat_macros = []

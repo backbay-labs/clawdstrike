@@ -1,4 +1,3 @@
-export * from './types.js';
-export * from './validator.js';
-export * from './engine.js';
-export * from './loader.js';
+export { PolicyEngine } from './engine.js';
+export { validatePolicy } from './validator.js';
+export { loadPolicy, loadPolicyFromString, PolicyLoadError } from './loader.js';

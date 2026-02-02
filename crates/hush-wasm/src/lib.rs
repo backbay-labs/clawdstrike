@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 //! WebAssembly bindings for hush-core cryptographic primitives
 //!
 //! This crate provides browser-side verification of hushclaw attestations.

@@ -40,9 +40,14 @@ pub async fn get_policy(
         .map(|h| h.to_hex())
         .unwrap_or_else(|_| "unknown".to_string());
 
-    // Get the ruleset name from config
-    let ruleset = hushclaw::RuleSet::by_name(&state.config.ruleset)
-        .unwrap_or_else(hushclaw::RuleSet::default_ruleset);
+    let Some(ruleset) = hushclaw::RuleSet::by_name(&state.config.ruleset)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    else {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Unknown ruleset: {}", state.config.ruleset),
+        ));
+    };
 
     let yaml = ruleset
         .policy
@@ -64,8 +69,12 @@ pub async fn update_policy(
     Json(request): Json<UpdatePolicyRequest>,
 ) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
     // Parse the new policy
-    let policy = Policy::from_yaml(&request.yaml)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy YAML: {}", e)))?;
+    let policy = Policy::from_yaml(&request.yaml).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid policy YAML: {}", e),
+        )
+    })?;
 
     // Update the engine
     let mut engine = state.engine.write().await;

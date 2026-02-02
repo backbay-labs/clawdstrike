@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 //! # Hushclaw - Security Guards and Policy Engine
 //!
 //! This crate provides security guards for AI agent execution:
@@ -42,14 +44,20 @@
 pub mod engine;
 pub mod error;
 pub mod guards;
+pub mod hygiene;
 pub mod irm;
 pub mod policy;
 
-pub use engine::HushEngine;
+pub use engine::{GuardReport, HushEngine};
 pub use error::{Error, Result};
 pub use guards::{
     EgressAllowlistGuard, ForbiddenPathGuard, Guard, GuardContext, GuardResult, McpToolGuard,
-    PatchIntegrityGuard, SecretLeakGuard, Severity,
+    PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard, Severity,
+};
+pub use hygiene::{
+    detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,
+    FingerprintDeduper, PromptInjectionLevel, PromptInjectionReport, USER_CONTENT_END,
+    USER_CONTENT_START,
 };
 pub use policy::{Policy, RuleSet};
 

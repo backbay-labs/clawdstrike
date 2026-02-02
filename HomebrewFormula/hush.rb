@@ -21,69 +21,17 @@ class Hush < Formula
 
     # Generate shell completions
     generate_completions_from_executable(bin/"hush", "completions")
-
-    # Install hushd daemon binary
-    system "cargo", "install", *std_cargo_args(path: "crates/hushd")
-
-    # Install service files and documentation
-    (share/"hushd").install "deploy/config.yaml" => "config.yaml.example"
-    (share/"hushd").install "deploy/README.md" => "README.md"
-    (share/"hushd/systemd").install Dir["deploy/systemd/*"]
-    (share/"hushd/launchd").install Dir["deploy/launchd/*"]
-
-    # Create default directories
-    (var/"lib/hushd").mkpath
-    (var/"log/hushd").mkpath
-    (etc/"hushd").mkpath
-  end
-
-  def post_install
-    # Install example config if none exists
-    unless (etc/"hushd/config.yaml").exist?
-      (etc/"hushd/config.yaml").write (share/"hushd/config.yaml.example").read
-    end
   end
 
   def caveats
     <<~EOS
-      To start hushd as a background service:
+      This formula installs the `hush` CLI only.
 
-        # User-level (runs as current user)
-        brew services start hush
+      The `hushd` daemon is experimental and is not installed by default.
+      If you want to try it anyway, build it from source:
 
-        # System-level (runs as root, requires sudo)
-        sudo brew services start hush
-
-      Configuration file:
-        #{etc}/hushd/config.yaml
-
-      Log files:
-        #{var}/log/hushd/
-
-      Data directory:
-        #{var}/lib/hushd/
-
-      Service files are installed to:
-        #{share}/hushd/
-
-      For manual installation on Linux:
-        cp #{share}/hushd/systemd/hushd.service /etc/systemd/system/
-        systemctl daemon-reload
-        systemctl enable --now hushd
-
-      For more information, see:
-        #{share}/hushd/systemd/README.md
-        #{share}/hushd/launchd/README.md
+        cargo install --path crates/hushd
     EOS
-  end
-
-  service do
-    run [opt_bin/"hushd", "--config", etc/"hushd/config.yaml"]
-    keep_alive true
-    log_path var/"log/hushd/hushd.log"
-    error_log_path var/"log/hushd/hushd.error.log"
-    working_dir var/"lib/hushd"
-    environment_variables RUST_LOG: "info"
   end
 
   test do
@@ -91,11 +39,5 @@ class Hush < Formula
 
     # Test basic help
     assert_match "security verification", shell_output("#{bin}/hush --help")
-
-    # Test hushd version
-    assert_match "hushd #{version}", shell_output("#{bin}/hushd --version")
-
-    # Test hushd show-config
-    assert_match "ruleset:", shell_output("#{bin}/hushd show-config 2>&1")
   end
 end

@@ -59,14 +59,10 @@ pub async fn require_auth(
     let token = extract_bearer_token(&req).ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Validate token against store
-    let key = state
-        .auth_store
-        .validate_key(token)
-        .await
-        .map_err(|e| {
-            tracing::debug!(error = %e, "Auth validation failed");
-            StatusCode::UNAUTHORIZED
-        })?;
+    let key = state.auth_store.validate_key(token).await.map_err(|e| {
+        tracing::debug!(error = %e, "Auth validation failed");
+        StatusCode::UNAUTHORIZED
+    })?;
 
     // Store validated key in request extensions for downstream handlers
     req.extensions_mut().insert(AuthenticatedKey(key));

@@ -4,6 +4,8 @@
 //! 1. A running daemon at HUSHD_TEST_URL (for local development)
 //! 2. The daemon binary at HUSHD_BIN (for CI, will spawn automatically)
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 mod common;
 
 use common::daemon_url;
@@ -262,8 +264,7 @@ async fn test_admin_endpoint_requires_admin_scope() {
     // Should be 403 Forbidden if key doesn't have admin scope
     // or 200 if it does have admin scope
     assert!(
-        resp.status() == reqwest::StatusCode::FORBIDDEN
-            || resp.status() == reqwest::StatusCode::OK
+        resp.status() == reqwest::StatusCode::FORBIDDEN || resp.status() == reqwest::StatusCode::OK
     );
 }
 

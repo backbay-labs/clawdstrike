@@ -156,14 +156,6 @@ pub fn keccak256_hex(data: &[u8]) -> String {
     keccak256(data).to_hex_prefixed()
 }
 
-/// Concatenate two hashes for Merkle tree computation
-pub fn concat_hashes(left: &Hash, right: &Hash) -> Hash {
-    let mut combined = Vec::with_capacity(64);
-    combined.extend_from_slice(left.as_bytes());
-    combined.extend_from_slice(right.as_bytes());
-    sha256(&combined)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,6 +209,13 @@ mod tests {
 
     #[test]
     fn test_concat_hashes() {
+        fn concat_hashes(left: &Hash, right: &Hash) -> Hash {
+            let mut combined = [0u8; 64];
+            combined[..32].copy_from_slice(left.as_bytes());
+            combined[32..].copy_from_slice(right.as_bytes());
+            sha256(&combined)
+        }
+
         let h1 = sha256(b"left");
         let h2 = sha256(b"right");
         let combined = concat_hashes(&h1, &h2);

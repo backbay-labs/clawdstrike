@@ -84,15 +84,33 @@ export const auditCommands = {
     if (event.decision === 'denied') {
       console.log('\nRemediation:');
       console.log('------------');
-      if (event.guard === 'ForbiddenPathGuard') {
-        console.log('This path is protected by the ForbiddenPathGuard.');
+      const guard = (event.guard || '').trim();
+
+      if (guard === 'forbidden_path' || guard === 'ForbiddenPathGuard') {
+        console.log('This path is protected by the forbidden_path guard.');
         console.log('To allow access, remove it from filesystem.forbidden_paths in your policy.');
-      } else if (event.guard === 'EgressAllowlistGuard') {
-        console.log('This domain is not in the egress allowlist.');
-        console.log('To allow access, add it to egress.allowed_domains in your policy.');
-      } else {
-        console.log('Review your policy configuration to understand why this was blocked.');
+        return;
       }
+
+      if (guard === 'egress' || guard === 'EgressAllowlistGuard') {
+        console.log('This domain is blocked by the egress policy.');
+        console.log('To allow access, add it to egress.allowed_domains (or change egress.mode) in your policy.');
+        return;
+      }
+
+      if (guard === 'secret_leak' || guard === 'SecretLeakGuard') {
+        console.log('Tool output contained a value that looks like a secret.');
+        console.log('Remove/redact secrets from tool output or adjust your workflow to avoid printing credentials.');
+        return;
+      }
+
+      if (guard === 'patch_integrity' || guard === 'PatchIntegrityGuard') {
+        console.log('The patch/command matched a dangerous pattern.');
+        console.log('Avoid unsafe commands/patterns (e.g., curl|bash, rm -rf /) or update execution.denied_patterns.');
+        return;
+      }
+
+      console.log('Review your policy configuration to understand why this was blocked.');
     }
   },
 

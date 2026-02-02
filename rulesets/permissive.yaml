@@ -1,0 +1,23 @@
+# Permissive Ruleset
+# Development-friendly: allows all egress and relaxes patch limits.
+version: "1.0.0"
+name: Permissive
+description: Permissive rules for development (use with caution)
+
+guards:
+  egress_allowlist:
+    allow:
+      - "*"
+    block: []
+    default_action: allow
+
+  patch_integrity:
+    max_additions: 10000
+    max_deletions: 5000
+    require_balance: false
+    max_imbalance_ratio: 50.0
+
+settings:
+  fail_fast: false
+  verbose_logging: true
+  session_timeout_secs: 7200

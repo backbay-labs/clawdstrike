@@ -3,11 +3,22 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::io;
 
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
+/// Default behavior when a tool is not explicitly allowed/blocked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpDefaultAction {
+    #[default]
+    Allow,
+    Block,
+}
+
 /// Configuration for McpToolGuard
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct McpToolConfig {
     /// Allowed tool names (if empty, all are allowed except blocked)
     #[serde(default)]
@@ -18,12 +29,12 @@ pub struct McpToolConfig {
     /// Tools that require confirmation
     #[serde(default)]
     pub require_confirmation: Vec<String>,
-    /// Default action (allow or block)
-    #[serde(default = "default_action")]
-    pub default_action: String,
+    /// Default action when not explicitly matched
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_action: Option<McpDefaultAction>,
     /// Maximum arguments size (bytes)
-    #[serde(default = "default_max_args_size")]
-    pub max_args_size: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_args_size: Option<usize>,
     /// Additional allowed tools when merging
     #[serde(default)]
     pub additional_allow: Vec<String>,
@@ -38,12 +49,29 @@ pub struct McpToolConfig {
     pub remove_block: Vec<String>,
 }
 
-fn default_action() -> String {
-    "allow".to_string()
-}
-
 fn default_max_args_size() -> usize {
     1024 * 1024 // 1MB
+}
+
+fn json_size_bytes(value: &serde_json::Value) -> std::result::Result<usize, serde_json::Error> {
+    struct CountingWriter {
+        count: usize,
+    }
+
+    impl io::Write for CountingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.count += buf.len();
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut w = CountingWriter { count: 0 };
+    serde_json::to_writer(&mut w, value)?;
+    Ok(w.count)
 }
 
 impl McpToolConfig {
@@ -64,8 +92,8 @@ impl McpToolConfig {
                 "file_delete".to_string(),
                 "git_push".to_string(),
             ],
-            default_action: "allow".to_string(),
-            max_args_size: default_max_args_size(),
+            default_action: Some(McpDefaultAction::Allow),
+            max_args_size: Some(default_max_args_size()),
             additional_allow: vec![],
             remove_allow: vec![],
             additional_block: vec![],
@@ -110,16 +138,8 @@ impl McpToolConfig {
             allow,
             block,
             require_confirmation,
-            default_action: if child.default_action != default_action() {
-                child.default_action.clone()
-            } else {
-                self.default_action.clone()
-            },
-            max_args_size: if child.max_args_size != default_max_args_size() {
-                child.max_args_size
-            } else {
-                self.max_args_size
-            },
+            default_action: child.default_action.or(self.default_action),
+            max_args_size: child.max_args_size.or(self.max_args_size),
             additional_allow: vec![],
             remove_allow: vec![],
             additional_block: vec![],
@@ -181,7 +201,7 @@ impl McpToolGuard {
         }
 
         // Default action
-        if self.config.default_action == "block" {
+        if self.config.default_action.unwrap_or_default() == McpDefaultAction::Block {
             ToolDecision::Block
         } else {
             ToolDecision::Allow
@@ -220,14 +240,25 @@ impl Guard for McpToolGuard {
         };
 
         // Check args size
-        let args_size = args.to_string().len();
-        if args_size > self.config.max_args_size {
+        let args_size = match json_size_bytes(args) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return GuardResult::block(
+                    &self.name,
+                    Severity::Error,
+                    format!("Failed to serialize tool args: {}", e),
+                );
+            }
+        };
+
+        let max_args_size = self.config.max_args_size.unwrap_or(default_max_args_size());
+        if args_size > max_args_size {
             return GuardResult::block(
                 &self.name,
                 Severity::Error,
                 format!(
                     "Tool arguments too large: {} bytes (max: {})",
-                    args_size, self.config.max_args_size
+                    args_size, max_args_size
                 ),
             );
         }
@@ -295,8 +326,8 @@ mod tests {
             allow: vec!["safe_tool".to_string()],
             block: vec![],
             require_confirmation: vec![],
-            default_action: "block".to_string(),
-            max_args_size: 1024,
+            default_action: Some(McpDefaultAction::Block),
+            max_args_size: Some(1024),
             ..Default::default()
         };
         let guard = McpToolGuard::with_config(config);
@@ -325,7 +356,7 @@ mod tests {
     #[tokio::test]
     async fn test_args_size_limit() {
         let config = McpToolConfig {
-            max_args_size: 100,
+            max_args_size: Some(100),
             ..Default::default()
         };
         let guard = McpToolGuard::with_config(config);

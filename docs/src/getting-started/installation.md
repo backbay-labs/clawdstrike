@@ -1,79 +1,51 @@
 # Installation
 
-Choose your preferred installation method.
+Hushclaw currently ships as a Rust workspace with a CLI (`hush`) and libraries (`hushclaw`, `hush-core`, `hush-proxy`).
 
-## Rust CLI (hush-cli)
+## Rust CLI (`hush`)
 
-The CLI is the primary way to use hushclaw.
+### From source (recommended)
 
-### From crates.io (Recommended)
+```bash
+# From a workspace checkout
+cargo install --path crates/hush-cli
+```
+
+### From crates.io (if published)
+
+If your environment has `hush-cli` available in a Cargo registry:
 
 ```bash
 cargo install hush-cli
 ```
 
-### From Source
-
-```bash
-git clone https://github.com/hushclaw/hushclaw
-cd hushclaw
-cargo install --path crates/hush-cli
-```
-
-### Verify Installation
+### Verify installation
 
 ```bash
 hush --version
-# hush-cli 0.1.0
 ```
 
-## TypeScript SDK
+## Daemon (`hushd`) (optional)
 
-For Node.js and browser environments:
+`hushd` is an HTTP daemon that can evaluate checks server-side. It is still evolving, so treat it as optional/WIP.
 
 ```bash
-npm install @hushclaw/sdk
-# or
-yarn add @hushclaw/sdk
-# or
-pnpm add @hushclaw/sdk
+cargo install --path crates/hushd
 ```
 
-## OpenClaw Plugin
-
-If you're using OpenClaw:
+You can start it via the CLI:
 
 ```bash
-npm install @hushclaw/openclaw
-openclaw plugins enable @hushclaw/openclaw
+hush daemon start
 ```
 
-## Python SDK (Coming Soon)
+## TypeScript / Python (experimental)
 
-```bash
-pip install hush
-```
+This repo contains experimental SDKs under `packages/` (TypeScript, Python, OpenClaw plugin). Their APIs and schemas are not yet guaranteed to match the Rust policy schema.
 
-## Docker
+## Requirements
 
-Run the daemon in a container:
-
-```bash
-docker run -d \
-  --name hushd \
-  -v ~/.hush:/root/.hush \
-  -p 9090:9090 \
-  ghcr.io/hushclaw/hushd:latest
-```
-
-## System Requirements
-
-| Component | Requirement |
-|-----------|-------------|
-| Rust CLI | Rust 1.75+ |
-| TypeScript SDK | Node.js 18+ |
-| Python SDK | Python 3.10+ |
-| Docker | Docker 20.10+ |
+- Rust `1.75+` (workspace `rust-version`)
 
 ## Next Steps
 

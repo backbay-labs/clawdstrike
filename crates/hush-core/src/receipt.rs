@@ -3,12 +3,62 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::hashing::{keccak256, sha256, Hash};
 use crate::signing::{verify_signature, Keypair, PublicKey, Signature};
 
+/// Current receipt schema version.
+///
+/// This is a schema compatibility boundary (not the crate version). Verifiers must fail closed on
+/// unsupported versions to prevent silent drift.
+pub const RECEIPT_SCHEMA_VERSION: &str = "1.0.0";
+
+/// Validate that a receipt version string is supported.
+pub fn validate_receipt_version(version: &str) -> Result<()> {
+    if parse_semver_strict(version).is_none() {
+        return Err(Error::InvalidReceiptVersion {
+            version: version.to_string(),
+        });
+    }
+
+    if version != RECEIPT_SCHEMA_VERSION {
+        return Err(Error::UnsupportedReceiptVersion {
+            found: version.to_string(),
+            supported: RECEIPT_SCHEMA_VERSION.to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn parse_semver_strict(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.split('.');
+    let major = parse_semver_part(parts.next()?)?;
+    let minor = parse_semver_part(parts.next()?)?;
+    let patch = parse_semver_part(parts.next()?)?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    Some((major, minor, patch))
+}
+
+fn parse_semver_part(part: &str) -> Option<u64> {
+    if part.is_empty() {
+        return None;
+    }
+    if part.len() > 1 && part.starts_with('0') {
+        return None;
+    }
+    if !part.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    part.parse().ok()
+}
+
 /// Verdict result from quality gates or guards
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Verdict {
     /// Whether the check passed
     pub passed: bool,
@@ -67,6 +117,7 @@ impl Verdict {
 
 /// Violation reference from a guard
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ViolationRef {
     /// Guard that detected the violation
     pub guard: String,
@@ -81,6 +132,7 @@ pub struct ViolationRef {
 
 /// Provenance information about execution environment
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Provenance {
     /// Hushclaw version
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,6 +153,7 @@ pub struct Provenance {
 
 /// Receipt for an attested execution (unsigned)
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Receipt {
     /// Receipt schema version
     pub version: String,
@@ -125,7 +178,7 @@ impl Receipt {
     /// Create a new receipt
     pub fn new(content_hash: Hash, verdict: Verdict) -> Self {
         Self {
-            version: "1.0.0".to_string(),
+            version: RECEIPT_SCHEMA_VERSION.to_string(),
             receipt_id: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
             content_hash,
@@ -153,8 +206,14 @@ impl Receipt {
         self
     }
 
+    /// Validate that this receipt uses a supported schema version.
+    pub fn validate_version(&self) -> Result<()> {
+        validate_receipt_version(&self.version)
+    }
+
     /// Serialize to canonical JSON (sorted keys, no extra whitespace)
     pub fn to_canonical_json(&self) -> Result<String> {
+        self.validate_version()?;
         let value = serde_json::to_value(self)?;
         crate::canonical::canonicalize(&value)
     }
@@ -174,6 +233,7 @@ impl Receipt {
 
 /// Signatures on a receipt
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Signatures {
     /// Primary signer (required)
     pub signer: Signature,
@@ -184,6 +244,7 @@ pub struct Signatures {
 
 /// Signed receipt
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SignedReceipt {
     /// The underlying receipt
     pub receipt: Receipt,
@@ -194,6 +255,7 @@ pub struct SignedReceipt {
 impl SignedReceipt {
     /// Sign a receipt
     pub fn sign(receipt: Receipt, keypair: &Keypair) -> Result<Self> {
+        receipt.validate_version()?;
         let canonical = receipt.to_canonical_json()?;
         let sig = keypair.sign(canonical.as_bytes());
 
@@ -208,6 +270,7 @@ impl SignedReceipt {
 
     /// Add co-signer signature
     pub fn add_cosigner(&mut self, keypair: &Keypair) -> Result<()> {
+        self.receipt.validate_version()?;
         let canonical = self.receipt.to_canonical_json()?;
         self.signatures.cosigner = Some(keypair.sign(canonical.as_bytes()));
         Ok(())
@@ -215,6 +278,15 @@ impl SignedReceipt {
 
     /// Verify all signatures
     pub fn verify(&self, public_keys: &PublicKeySet) -> VerificationResult {
+        if let Err(e) = self.receipt.validate_version() {
+            return VerificationResult {
+                valid: false,
+                signer_valid: false,
+                cosigner_valid: None,
+                errors: vec![e.to_string()],
+            };
+        }
+
         let canonical = match self.receipt.to_canonical_json() {
             Ok(c) => c,
             Err(e) => {
@@ -311,7 +383,7 @@ mod tests {
 
     fn make_test_receipt() -> Receipt {
         Receipt {
-            version: "1.0.0".to_string(),
+            version: RECEIPT_SCHEMA_VERSION.to_string(),
             receipt_id: Some("test-receipt-001".to_string()),
             timestamp: "2026-01-01T00:00:00Z".to_string(),
             content_hash: Hash::zero(),
@@ -376,6 +448,32 @@ mod tests {
         assert!(result
             .errors
             .contains(&"Invalid signer signature".to_string()));
+    }
+
+    #[test]
+    fn test_sign_rejects_unsupported_version() {
+        let mut receipt = make_test_receipt();
+        receipt.version = "2.0.0".to_string();
+        let signer_kp = Keypair::generate();
+
+        let err = SignedReceipt::sign(receipt, &signer_kp).unwrap_err();
+        assert!(err.to_string().contains("Unsupported receipt version"));
+    }
+
+    #[test]
+    fn test_verify_fails_closed_on_unsupported_version_before_signature_check() {
+        let receipt = make_test_receipt();
+        let signer_kp = Keypair::generate();
+
+        let mut signed = SignedReceipt::sign(receipt, &signer_kp).unwrap();
+        signed.receipt.version = "2.0.0".to_string();
+
+        let keys = PublicKeySet::new(signer_kp.public_key());
+        let result = signed.verify(&keys);
+
+        assert!(!result.valid);
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0].contains("Unsupported receipt version"));
     }
 
     #[test]

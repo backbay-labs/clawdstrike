@@ -17,8 +17,11 @@ describe('Hello Secure Agent E2E', () => {
   let tool: ReturnType<typeof policyCheckTool>;
 
   beforeAll(async () => {
-    const policy = await loadPolicy(join(exampleDir, 'policy.yaml'));
-    engine = new PolicyEngine(policy);
+    engine = new PolicyEngine({
+      policy: join(exampleDir, 'policy.yaml'),
+      mode: 'deterministic',
+      logLevel: 'error',
+    });
     tool = policyCheckTool(engine);
 
     // Create test directory
@@ -36,25 +39,25 @@ describe('Hello Secure Agent E2E', () => {
       const result = await tool.execute({
         action: 'file_read',
         resource: '~/.ssh/id_rsa',
-      });
+      } as any);
       expect(result.denied).toBe(true);
-      expect(result.guard).toBe('ForbiddenPathGuard');
+      expect(result.guard).toBe('forbidden_path');
     });
 
     it('blocks forbidden path access (~/.aws)', async () => {
       const result = await tool.execute({
         action: 'file_read',
         resource: '~/.aws/credentials',
-      });
+      } as any);
       expect(result.denied).toBe(true);
-      expect(result.guard).toBe('ForbiddenPathGuard');
+      expect(result.guard).toBe('forbidden_path');
     });
 
     it('blocks .env file access', async () => {
       const result = await tool.execute({
         action: 'file_read',
         resource: '/workspace/.env',
-      });
+      } as any);
       expect(result.denied).toBe(true);
     });
 
@@ -62,7 +65,7 @@ describe('Hello Secure Agent E2E', () => {
       const result = await tool.execute({
         action: 'file_write',
         resource: '/tmp/hello-agent/test.txt',
-      });
+      } as any);
       expect(result.allowed).toBe(true);
     });
 
@@ -70,7 +73,7 @@ describe('Hello Secure Agent E2E', () => {
       const result = await tool.execute({
         action: 'file_write',
         resource: '/etc/passwd',
-      });
+      } as any);
       expect(result.denied).toBe(true);
     });
   });
@@ -78,41 +81,41 @@ describe('Hello Secure Agent E2E', () => {
   describe('Egress Guards', () => {
     it('blocks non-allowlisted domains', async () => {
       const result = await tool.execute({
-        action: 'network_egress',
+        action: 'network',
         resource: 'https://evil.com/exfiltrate',
-      });
+      } as any);
       expect(result.denied).toBe(true);
-      expect(result.guard).toBe('EgressAllowlistGuard');
+      expect(result.guard).toBe('egress');
     });
 
     it('allows api.github.com', async () => {
       const result = await tool.execute({
-        action: 'network_egress',
+        action: 'network',
         resource: 'https://api.github.com/user',
-      });
+      } as any);
       expect(result.allowed).toBe(true);
     });
 
     it('allows pypi.org', async () => {
       const result = await tool.execute({
-        action: 'network_egress',
+        action: 'network',
         resource: 'https://pypi.org/simple/',
-      });
+      } as any);
       expect(result.allowed).toBe(true);
     });
 
     it('blocks localhost', async () => {
       const result = await tool.execute({
-        action: 'network_egress',
+        action: 'network',
         resource: 'http://localhost:8080',
-      });
+      } as any);
       expect(result.denied).toBe(true);
     });
   });
 
   describe('Security Prompt', () => {
     it('generates security context for agent', async () => {
-      const policy = await loadPolicy(join(exampleDir, 'policy.yaml'));
+      const policy = loadPolicy(join(exampleDir, 'policy.yaml'));
       const prompt = generateSecurityPrompt(policy);
 
       expect(prompt).toContain('api.github.com');
@@ -127,17 +130,17 @@ describe('Hello Secure Agent E2E', () => {
       const result = await tool.execute({
         action: 'file_write',
         resource: '~/.ssh/authorized_keys',
-      });
+      } as any);
       expect(result.suggestion).toBeDefined();
       expect(result.suggestion).toContain('SSH');
     });
 
     it('returns reason for denial', async () => {
       const result = await tool.execute({
-        action: 'network_egress',
+        action: 'network',
         resource: 'https://malware.com',
-      });
-      expect(result.reason).toContain('not in egress allowlist');
+      } as any);
+      expect(result.reason).toContain('non-allowlisted');
     });
   });
 });

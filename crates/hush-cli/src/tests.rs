@@ -15,23 +15,21 @@ mod cli_parsing {
 
     #[test]
     fn test_check_command_parses_with_required_args() {
-        let cli = Cli::parse_from([
-            "hush",
-            "check",
-            "--action-type",
-            "file",
-            "/path/to/file",
-        ]);
+        let cli = Cli::parse_from(["hush", "check", "--action-type", "file", "/path/to/file"]);
 
         match cli.command {
             Commands::Check {
                 action_type,
                 target,
+                json,
+                policy,
                 ruleset,
             } => {
                 assert_eq!(action_type, "file");
                 assert_eq!(target, "/path/to/file");
-                assert_eq!(ruleset, "default"); // default value
+                assert!(!json);
+                assert!(policy.is_none());
+                assert!(ruleset.is_none()); // defaults to "default" at runtime
             }
             _ => panic!("Expected Check command"),
         }
@@ -53,11 +51,15 @@ mod cli_parsing {
             Commands::Check {
                 action_type,
                 target,
+                json,
                 ruleset,
+                policy,
             } => {
                 assert_eq!(action_type, "egress");
                 assert_eq!(target, "api.example.com:443");
-                assert_eq!(ruleset, "strict");
+                assert!(!json);
+                assert!(policy.is_none());
+                assert_eq!(ruleset, Some("strict".to_string()));
             }
             _ => panic!("Expected Check command"),
         }
@@ -65,22 +67,48 @@ mod cli_parsing {
 
     #[test]
     fn test_check_command_mcp_action_type() {
+        let cli = Cli::parse_from(["hush", "check", "-a", "mcp", "filesystem_read"]);
+
+        match cli.command {
+            Commands::Check {
+                action_type,
+                target,
+                policy,
+                ..
+            } => {
+                assert_eq!(action_type, "mcp");
+                assert_eq!(target, "filesystem_read");
+                assert!(policy.is_none());
+            }
+            _ => panic!("Expected Check command"),
+        }
+    }
+
+    #[test]
+    fn test_check_command_with_policy_file() {
         let cli = Cli::parse_from([
             "hush",
             "check",
-            "-a",
-            "mcp",
-            "filesystem_read",
+            "--action-type",
+            "file",
+            "--policy",
+            "policy.yaml",
+            "/path/to/file",
         ]);
 
         match cli.command {
             Commands::Check {
                 action_type,
                 target,
-                ..
+                json,
+                policy,
+                ruleset,
             } => {
-                assert_eq!(action_type, "mcp");
-                assert_eq!(target, "filesystem_read");
+                assert_eq!(action_type, "file");
+                assert_eq!(target, "/path/to/file");
+                assert!(!json);
+                assert_eq!(policy, Some("policy.yaml".to_string()));
+                assert!(ruleset.is_none());
             }
             _ => panic!("Expected Check command"),
         }
@@ -88,17 +116,16 @@ mod cli_parsing {
 
     #[test]
     fn test_verify_command_parses() {
-        let cli = Cli::parse_from([
-            "hush",
-            "verify",
-            "receipt.json",
-            "--pubkey",
-            "key.pub",
-        ]);
+        let cli = Cli::parse_from(["hush", "verify", "receipt.json", "--pubkey", "key.pub"]);
 
         match cli.command {
-            Commands::Verify { receipt, pubkey } => {
+            Commands::Verify {
+                receipt,
+                json,
+                pubkey,
+            } => {
                 assert_eq!(receipt, "receipt.json");
+                assert!(!json);
                 assert_eq!(pubkey, "key.pub");
             }
             _ => panic!("Expected Verify command"),
@@ -119,12 +146,7 @@ mod cli_parsing {
 
     #[test]
     fn test_keygen_command_custom_output() {
-        let cli = Cli::parse_from([
-            "hush",
-            "keygen",
-            "--output",
-            "/custom/path/my.key",
-        ]);
+        let cli = Cli::parse_from(["hush", "keygen", "--output", "/custom/path/my.key"]);
 
         match cli.command {
             Commands::Keygen { output } => {
@@ -287,12 +309,7 @@ mod cli_parsing {
 
     #[test]
     fn test_daemon_reload() {
-        let cli = Cli::parse_from([
-            "hush",
-            "daemon",
-            "reload",
-            "http://localhost:9999",
-        ]);
+        let cli = Cli::parse_from(["hush", "daemon", "reload", "http://localhost:9999"]);
 
         match cli.command {
             Commands::Daemon { command } => match command {
@@ -448,9 +465,7 @@ mod cli_parsing {
 
     #[test]
     fn test_sign_command_with_verify() {
-        let cli = Cli::parse_from([
-            "hush", "sign", "--key", "my.key", "--verify", "message.txt",
-        ]);
+        let cli = Cli::parse_from(["hush", "sign", "--key", "my.key", "--verify", "message.txt"]);
 
         match cli.command {
             Commands::Sign { verify, .. } => {
@@ -463,7 +478,13 @@ mod cli_parsing {
     #[test]
     fn test_sign_command_with_output() {
         let cli = Cli::parse_from([
-            "hush", "sign", "--key", "hush.key", "--output", "doc.sig", "document.txt",
+            "hush",
+            "sign",
+            "--key",
+            "hush.key",
+            "--output",
+            "doc.sig",
+            "document.txt",
         ]);
 
         match cli.command {
@@ -477,7 +498,12 @@ mod cli_parsing {
     #[test]
     fn test_merkle_root_command() {
         let cli = Cli::parse_from([
-            "hush", "merkle", "root", "file1.txt", "file2.txt", "file3.txt",
+            "hush",
+            "merkle",
+            "root",
+            "file1.txt",
+            "file2.txt",
+            "file3.txt",
         ]);
 
         match cli.command {
@@ -497,7 +523,14 @@ mod cli_parsing {
     #[test]
     fn test_merkle_proof_command() {
         let cli = Cli::parse_from([
-            "hush", "merkle", "proof", "--index", "1", "file1.txt", "file2.txt", "file3.txt",
+            "hush",
+            "merkle",
+            "proof",
+            "--index",
+            "1",
+            "file1.txt",
+            "file2.txt",
+            "file3.txt",
         ]);
 
         match cli.command {
@@ -556,7 +589,10 @@ mod completions {
         let script = String::from_utf8(output).expect("valid UTF-8");
         assert!(script.contains("_hush"), "Should contain bash function");
         assert!(script.contains("check"), "Should contain check subcommand");
-        assert!(script.contains("completions"), "Should contain completions subcommand");
+        assert!(
+            script.contains("completions"),
+            "Should contain completions subcommand"
+        );
     }
 
     #[test]
@@ -566,7 +602,10 @@ mod completions {
         generate(Shell::Zsh, &mut cmd, "hush", &mut output);
 
         let script = String::from_utf8(output).expect("valid UTF-8");
-        assert!(script.contains("#compdef hush"), "Should have zsh compdef header");
+        assert!(
+            script.contains("#compdef hush"),
+            "Should have zsh compdef header"
+        );
         assert!(script.contains("check"), "Should contain check subcommand");
     }
 
@@ -577,7 +616,10 @@ mod completions {
         generate(Shell::Fish, &mut cmd, "hush", &mut output);
 
         let script = String::from_utf8(output).expect("valid UTF-8");
-        assert!(script.contains("complete -c hush"), "Should have fish complete command");
+        assert!(
+            script.contains("complete -c hush"),
+            "Should have fish complete command"
+        );
     }
 }
 
@@ -657,5 +699,251 @@ mod functional_tests {
 
         // Wrong leaf should fail
         assert!(!restored.verify(&leaves[0], &root));
+    }
+}
+
+#[cfg(test)]
+mod cli_contract {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use hush_core::{sha256, Keypair, Receipt, SignedReceipt, Verdict};
+
+    use crate::{cmd_check, cmd_verify, ExitCode};
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("hush_cli_{name}_{nanos}"))
+    }
+
+    #[tokio::test]
+    async fn check_json_allowed_exit_code_ok() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_check(
+            "file".to_string(),
+            "/app/src/main.rs".to_string(),
+            true,
+            None,
+            Some("default".to_string()),
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Ok);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("command").and_then(|v| v.as_str()), Some("check"));
+        assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(0));
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("allowed"));
+        assert_eq!(
+            v.get("result")
+                .and_then(|r| r.get("allowed"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn check_json_blocked_exit_code_fail() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_check(
+            "file".to_string(),
+            "/home/user/.ssh/id_rsa".to_string(),
+            true,
+            None,
+            Some("default".to_string()),
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Fail);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("blocked"));
+        assert_eq!(
+            v.get("result")
+                .and_then(|r| r.get("allowed"))
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn check_json_warn_exit_code_warn() {
+        let policy_path = temp_path("policy.yaml");
+        std::fs::write(
+            &policy_path,
+            r#"
+version: "1.0.0"
+name: "warn-policy"
+guards:
+  egress_allowlist:
+    default_action: log
+"#,
+        )
+        .expect("write policy");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_check(
+            "egress".to_string(),
+            "evil.example:443".to_string(),
+            true,
+            Some(policy_path.to_string_lossy().to_string()),
+            None,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Warn);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("warn"));
+        assert_eq!(
+            v.get("result")
+                .and_then(|r| r.get("allowed"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn verify_json_pass_exit_code_ok() {
+        let receipt_path = temp_path("receipt.json");
+        let pubkey_path = temp_path("pubkey.hex");
+
+        let keypair = Keypair::generate();
+        let receipt = Receipt::new(sha256(b"content"), Verdict::pass());
+        let signed = SignedReceipt::sign(receipt, &keypair).expect("sign");
+
+        std::fs::write(&receipt_path, signed.to_json().expect("receipt json")).expect("write");
+        std::fs::write(&pubkey_path, keypair.public_key().to_hex()).expect("write");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_verify(
+            receipt_path.to_string_lossy().to_string(),
+            pubkey_path.to_string_lossy().to_string(),
+            true,
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(code, ExitCode::Ok);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("command").and_then(|v| v.as_str()), Some("verify"));
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("pass"));
+        assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(0));
+        assert_eq!(
+            v.get("signature")
+                .and_then(|s| s.get("valid"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            v.get("receipt_summary")
+                .and_then(|s| s.get("verdict_passed"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn verify_json_fail_verdict_exit_code_fail() {
+        let receipt_path = temp_path("receipt_fail.json");
+        let pubkey_path = temp_path("pubkey_fail.hex");
+
+        let keypair = Keypair::generate();
+        let receipt = Receipt::new(sha256(b"content"), Verdict::fail());
+        let signed = SignedReceipt::sign(receipt, &keypair).expect("sign");
+
+        std::fs::write(&receipt_path, signed.to_json().expect("receipt json")).expect("write");
+        std::fs::write(&pubkey_path, keypair.public_key().to_hex()).expect("write");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_verify(
+            receipt_path.to_string_lossy().to_string(),
+            pubkey_path.to_string_lossy().to_string(),
+            true,
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(code, ExitCode::Fail);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("fail"));
+        assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(
+            v.get("signature")
+                .and_then(|s| s.get("valid"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            v.get("receipt_summary")
+                .and_then(|s| s.get("verdict_passed"))
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn verify_json_invalid_signature_exit_code_fail() {
+        let receipt_path = temp_path("receipt_invalid.json");
+        let pubkey_path = temp_path("pubkey_invalid.hex");
+
+        let keypair = Keypair::generate();
+        let receipt = Receipt::new(sha256(b"content"), Verdict::pass());
+        let signed = SignedReceipt::sign(receipt, &keypair).expect("sign");
+
+        std::fs::write(&receipt_path, signed.to_json().expect("receipt json")).expect("write");
+        std::fs::write(&pubkey_path, Keypair::generate().public_key().to_hex()).expect("write");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_verify(
+            receipt_path.to_string_lossy().to_string(),
+            pubkey_path.to_string_lossy().to_string(),
+            true,
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(code, ExitCode::Fail);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("invalid"));
+        assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(
+            v.get("signature")
+                .and_then(|s| s.get("valid"))
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
     }
 }

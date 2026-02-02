@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during proxy operations
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("DNS parsing error: {0}")]

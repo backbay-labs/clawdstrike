@@ -1,12 +1,12 @@
 # Browser Receipt Verification Example
 
-Demonstrates how to verify hushclaw receipts in a web browser using the TypeScript SDK with WASM.
+Demonstrates how to verify hushclaw **SignedReceipts** in a web browser using the TypeScript SDK (pure JS crypto).
 
 ## What It Does
 
 1. User selects a receipt JSON file
-2. WASM module verifies the Ed25519 signature
-3. WASM module validates the Merkle root
+2. User provides the signer public key (hex)
+3. The SDK verifies the Ed25519 signature over canonical JSON (RFC 8785 / JCS)
 4. Results display in the browser
 
 ## Prerequisites
@@ -34,22 +34,18 @@ Open http://localhost:5173 in your browser.
 
 ## How It Works
 
-The example uses the `@hushclaw/sdk` package which includes WASM bindings for cryptographic verification:
+The example uses the `@hushclaw/sdk` package:
 
 ```typescript
-import { initWasm, verifyReceipt, Receipt } from '@hushclaw/sdk';
+import { SignedReceipt } from '@hushclaw/sdk';
 
-// Initialize WASM (required once)
-await initWasm();
-
-// Parse and verify
-const receipt: Receipt = JSON.parse(jsonText);
-const result = verifyReceipt(receipt);
+const signed = SignedReceipt.fromJSON(jsonText);
+const result = await signed.verify({ signer: signerPublicKeyHex });
 
 if (result.valid) {
   console.log('Receipt is authentic');
 } else {
-  console.error('Verification failed:', result.error);
+  console.error('Verification failed:', result.errors);
 }
 ```
 
@@ -59,17 +55,20 @@ Create a `sample-receipt.json` file:
 
 ```json
 {
-  "run_id": "run_abc123",
-  "started_at": "2026-01-31T14:00:00Z",
-  "ended_at": "2026-01-31T14:30:00Z",
-  "events": [],
-  "event_count": 127,
-  "denied_count": 2,
-  "merkle_root": "0x7f3a4b2c...",
-  "signature": "ed25519:abc...",
-  "public_key": "ed25519:xyz..."
+  "receipt": {
+    "version": "1.0.0",
+    "receipt_id": "run_abc123",
+    "timestamp": "2026-01-31T14:00:00Z",
+    "content_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "verdict": { "passed": true }
+  },
+  "signatures": {
+    "signer": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  }
 }
 ```
+
+Note: this sample will **not** verify unless the signature matches the receipt content and the signer public key you provide.
 
 ## Build for Production
 
@@ -87,4 +86,4 @@ The build output will be in the `dist/` directory, ready for static hosting.
 - Safari 15+
 - Edge 89+
 
-All modern browsers with WebAssembly support are compatible.
+All modern browsers with ES modules are compatible.

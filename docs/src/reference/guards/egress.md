@@ -1,131 +1,49 @@
 # EgressAllowlistGuard
 
-Controls network egress via domain allowlisting.
+Controls network egress via a simple allow/block list of domain patterns.
 
-## Overview
+## Actions
 
-The EgressAllowlistGuard blocks network connections to domains not in the allowlist, preventing data exfiltration and C2 connections.
-
-## Modes
-
-| Mode | Behavior |
-|------|----------|
-| `allowlist` | Only allow listed domains (recommended) |
-| `denylist` | Block listed domains, allow others |
-| `open` | Allow all (not recommended) |
+- `GuardAction::NetworkEgress(host, port)`
 
 ## Configuration
 
 ```yaml
-egress:
-  mode: allowlist
-
-  allowed_domains:
-    - "api.anthropic.com"
-    - "api.openai.com"
-    - "*.github.com"
-    - "registry.npmjs.org"
-
-  denied_domains:
-    - "*.onion"
-    - "localhost"
-    - "127.*"
-    - "10.*"
-    - "192.168.*"
+guards:
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+      - "*.openai.com"
+    block:
+      - "bad.example.com"
+    default_action: block # allow|block|log
+    additional_allow: []
+    remove_allow: []
+    additional_block: []
+    remove_block: []
 ```
 
-## Domain Matching
+## Matching semantics
 
-### Exact match
-```yaml
-allowed_domains:
-  - "api.github.com"  # Only api.github.com
-```
+Domain patterns use `globset` (shell-style glob patterns) and are matched **case-insensitively** against the full `host` string.
 
-### Wildcard subdomain
-```yaml
-allowed_domains:
-  - "*.github.com"  # Matches any subdomain
-```
+Supported syntax includes:
 
-Matches: `api.github.com`, `raw.github.com`, `gist.github.com`
-Does not match: `github.com` (no subdomain)
+- `*` (match any sequence)
+- `?` (match any single character)
+- character classes like `[a-z]`
 
-### IP patterns
-```yaml
-denied_domains:
-  - "127.*"        # Localhost range
-  - "10.*"         # Private network
-  - "192.168.*"    # Private network
-```
+Examples:
 
-## Default Denied
+- `api.github.com` (exact)
+- `*.github.com` (any subdomain of `github.com`)
+- `api-?.example.com` (single-character slot)
+- `api-[0-9].example.com` (character class)
 
-These are always denied regardless of policy:
+Note: `*.example.com` does **not** match `example.com`. If you want both, list both `example.com` and `*.example.com`.
 
-- `*.onion` (Tor hidden services)
-- Private IP ranges (RFC 1918)
-- Localhost variants
+## Default action
 
-## Example Violations
-
-```
-Event: NetworkEgress { host: "evil.com", port: 443 }
-Decision: Deny
-Guard: EgressAllowlistGuard
-Severity: High
-Reason: Domain not in allowlist: evil.com
-```
-
-```
-Event: NetworkEgress { host: "192.168.1.1", port: 22 }
-Decision: Deny
-Guard: EgressAllowlistGuard
-Severity: Medium
-Reason: Private IP addresses are denied
-```
-
-## Common Allowlists
-
-### AI Development
-```yaml
-egress:
-  allowed_domains:
-    - "api.anthropic.com"
-    - "api.openai.com"
-    - "generativelanguage.googleapis.com"
-```
-
-### Package Registries
-```yaml
-egress:
-  allowed_domains:
-    - "pypi.org"
-    - "files.pythonhosted.org"
-    - "registry.npmjs.org"
-    - "crates.io"
-```
-
-### Git Hosting
-```yaml
-egress:
-  allowed_domains:
-    - "*.github.com"
-    - "*.githubusercontent.com"
-    - "gitlab.com"
-```
-
-## Testing
-
-```bash
-# Test domain access
-echo '{"event_type":"network_egress","data":{"host":"evil.com","port":443}}' | \
-  hush policy test - --policy policy.yaml
-
-# Expected: DENIED
-```
-
-## Related
-
-- [Policies](../../concepts/policies.md) - Configure egress rules
-- [Rulesets](../rulesets/README.md) - Pre-built allowlists
+- `allow`: allow if no allow/block pattern matches
+- `block`: block if no allow/block pattern matches
+- `log`: allow, but return a warning result (useful for audit-only runs)

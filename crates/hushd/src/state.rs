@@ -44,9 +44,9 @@ impl AppState {
     pub async fn new(config: Config) -> anyhow::Result<Self> {
         // Load policy
         let policy = if let Some(ref path) = config.policy_path {
-            Policy::from_yaml_file(path)?
+            Policy::from_yaml_file_with_extends(path)?
         } else {
-            RuleSet::by_name(&config.ruleset)
+            RuleSet::by_name(&config.ruleset)?
                 .ok_or_else(|| anyhow::anyhow!("Unknown ruleset: {}", config.ruleset))?
                 .policy
         };
@@ -62,7 +62,9 @@ impl AppState {
             tracing::info!(path = %key_path.display(), "Loaded signing key");
         } else {
             engine = engine.with_generated_keypair();
-            tracing::warn!("Using ephemeral keypair (receipts won't be verifiable across restarts)");
+            tracing::warn!(
+                "Using ephemeral keypair (receipts won't be verifiable across restarts)"
+            );
         }
 
         // Create audit ledger
@@ -77,12 +79,9 @@ impl AppState {
         let (event_tx, _) = broadcast::channel(1024);
 
         // Load auth store from config
-        let auth_store = Arc::new(config.load_auth_store().await);
+        let auth_store = Arc::new(config.load_auth_store().await?);
         if config.auth.enabled {
-            tracing::info!(
-                key_count = auth_store.key_count().await,
-                "Auth enabled"
-            );
+            tracing::info!(key_count = auth_store.key_count().await, "Auth enabled");
         }
 
         // Create rate limiter state
@@ -123,9 +122,9 @@ impl AppState {
     /// Reload policy from config
     pub async fn reload_policy(&self) -> anyhow::Result<()> {
         let policy = if let Some(ref path) = self.config.policy_path {
-            Policy::from_yaml_file(path)?
+            Policy::from_yaml_file_with_extends(path)?
         } else {
-            RuleSet::by_name(&self.config.ruleset)
+            RuleSet::by_name(&self.config.ruleset)?
                 .ok_or_else(|| anyhow::anyhow!("Unknown ruleset: {}", self.config.ruleset))?
                 .policy
         };

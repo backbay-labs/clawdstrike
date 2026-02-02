@@ -1,4 +1,4 @@
-# Hushd daemon configuration
+# Hushd daemon configuration (Docker Compose example)
 listen: "0.0.0.0:8080"
 policy_path: "/etc/hushd/policy.yaml"
 audit_db: "/var/lib/hushd/audit.db"
@@ -8,6 +8,9 @@ auth:
   enabled: true
   api_keys:
     - name: "default"
-      # Set via HUSH_API_KEY environment variable
-      key_env: "HUSH_API_KEY"
+      # Use a strong random key in your shell:
+      #   export HUSHD_API_KEY=$(openssl rand -hex 32)
+      #
+      # hushd expands "${VAR}" at startup.
+      key: "${HUSHD_API_KEY}"
       scopes: ["check", "read"]

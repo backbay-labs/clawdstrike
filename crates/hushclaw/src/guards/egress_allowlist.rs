@@ -9,6 +9,7 @@ use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for EgressAllowlistGuard
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EgressAllowlistConfig {
     /// Allowed domain patterns
     #[serde(default)]
@@ -16,9 +17,9 @@ pub struct EgressAllowlistConfig {
     /// Blocked domain patterns (takes precedence)
     #[serde(default)]
     pub block: Vec<String>,
-    /// Default action (allow or block)
-    #[serde(default = "default_policy")]
-    pub default_action: String,
+    /// Default action when no pattern matches
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_action: Option<PolicyAction>,
     /// Additional allowed domains when merging
     #[serde(default)]
     pub additional_allow: Vec<String>,
@@ -31,10 +32,6 @@ pub struct EgressAllowlistConfig {
     /// Domains to remove from block list when merging
     #[serde(default)]
     pub remove_block: Vec<String>,
-}
-
-fn default_policy() -> String {
-    "block".to_string()
 }
 
 impl EgressAllowlistConfig {
@@ -55,7 +52,7 @@ impl EgressAllowlistConfig {
                 "static.crates.io".to_string(),
             ],
             block: vec![],
-            default_action: "block".to_string(),
+            default_action: Some(PolicyAction::Block),
             additional_allow: vec![],
             remove_allow: vec![],
             additional_block: vec![],
@@ -95,11 +92,10 @@ impl EgressAllowlistConfig {
         Self {
             allow,
             block,
-            default_action: if child.default_action != default_policy() {
-                child.default_action.clone()
-            } else {
-                self.default_action.clone()
-            },
+            default_action: child
+                .default_action
+                .clone()
+                .or_else(|| self.default_action.clone()),
             additional_allow: vec![],
             remove_allow: vec![],
             additional_block: vec![],
@@ -122,18 +118,10 @@ impl EgressAllowlistGuard {
 
     /// Create with custom configuration
     pub fn with_config(config: EgressAllowlistConfig) -> Self {
-        let mut policy = if config.default_action == "allow" {
-            DomainPolicy::permissive()
-        } else {
-            DomainPolicy::new()
-        };
-
-        for pattern in config.allow {
-            policy.allow.push(pattern);
-        }
-        for pattern in config.block {
-            policy.block.push(pattern);
-        }
+        let mut policy = DomainPolicy::new();
+        policy.set_default_action(config.default_action.unwrap_or_default());
+        policy.extend_allow(config.allow);
+        policy.extend_block(config.block);
 
         Self {
             name: "egress_allowlist".to_string(),
@@ -219,7 +207,7 @@ mod tests {
         let config = EgressAllowlistConfig {
             allow: vec!["*.mycompany.com".to_string()],
             block: vec!["blocked.mycompany.com".to_string()],
-            default_action: "block".to_string(),
+            default_action: Some(PolicyAction::Block),
             ..Default::default()
         };
         let guard = EgressAllowlistGuard::with_config(config);

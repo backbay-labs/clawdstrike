@@ -1,180 +1,140 @@
 import { describe, it, expect } from "vitest";
-import { Receipt, SignedReceipt } from "../src/receipt";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  RECEIPT_SCHEMA_VERSION,
+  Receipt,
+  SignedReceipt,
+  validateReceiptVersion,
+} from "../src/receipt";
 import { generateKeypair } from "../src/crypto/sign";
 import { toHex } from "../src/crypto/hash";
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, "../../..");
+const ZERO_HASH = `0x${"00".repeat(32)}`;
+
+describe("validateReceiptVersion (golden vectors)", () => {
+  const casesPath = path.join(REPO_ROOT, "fixtures/receipts/version_cases.json");
+  const cases = JSON.parse(fs.readFileSync(casesPath, "utf8")) as Array<{
+    version: string;
+    supported: boolean;
+    error_contains?: string;
+  }>;
+
+  for (const c of cases) {
+    it(c.version, () => {
+      if (c.supported) {
+        expect(() => validateReceiptVersion(c.version)).not.toThrow();
+      } else {
+        expect(() => validateReceiptVersion(c.version)).toThrow(
+          c.error_contains ?? "Invalid receipt version"
+        );
+      }
+    });
+  }
+});
+
 describe("Receipt", () => {
-  it("creates from fields", () => {
+  it("creates a valid receipt and canonicalizes deterministically", () => {
     const receipt = new Receipt({
-      id: "run-123",
-      artifactRoot: "0xabc123",
-      eventCount: 42,
+      contentHash: ZERO_HASH,
+      verdict: { passed: true, gate_id: "unit-test" },
+      timestamp: "2026-01-01T00:00:00Z",
+      receiptId: "test-receipt-001",
     });
 
-    expect(receipt.id).toBe("run-123");
-    expect(receipt.artifactRoot).toBe("0xabc123");
-    expect(receipt.eventCount).toBe(42);
-    expect(receipt.metadata).toEqual({});
+    expect(receipt.version).toBe(RECEIPT_SCHEMA_VERSION);
+    expect(receipt.contentHash).toBe(ZERO_HASH);
+    expect(receipt.receiptId).toBe("test-receipt-001");
+
+    const json = receipt.toCanonicalJSON();
+    expect(json).toContain('"version":"1.0.0"');
+    expect(json).toContain('"receipt_id":"test-receipt-001"');
+    expect(json).toContain('"content_hash":"0x0000000000000000000000000000000000000000000000000000000000000000"');
   });
 
-  it("includes optional metadata", () => {
+  it("fails closed on unknown fields", () => {
+    expect(() =>
+      Receipt.fromObject({
+        version: RECEIPT_SCHEMA_VERSION,
+        timestamp: "2026-01-01T00:00:00Z",
+        content_hash: ZERO_HASH,
+        verdict: { passed: true },
+        extra_field: 1,
+      })
+    ).toThrow(/Unknown receipt field/);
+  });
+
+  it("computes stable receipt hashes", () => {
     const receipt = new Receipt({
-      id: "run-456",
-      artifactRoot: "0xdef789",
-      eventCount: 10,
-      metadata: { agent: "test", timestamp: 1234567890 },
+      contentHash: ZERO_HASH,
+      verdict: { passed: true },
+      timestamp: "2026-01-01T00:00:00Z",
     });
-
-    expect(receipt.metadata).toEqual({ agent: "test", timestamp: 1234567890 });
-  });
-
-  it("serializes to JSON", () => {
-    const receipt = new Receipt({
-      id: "run-123",
-      artifactRoot: "0xabc",
-      eventCount: 5,
-    });
-
-    const json = receipt.toJSON();
-    expect(json).toContain('"id":"run-123"');
-    expect(json).toContain('"artifact_root":"0xabc"');
-    expect(json).toContain('"event_count":5');
-  });
-
-  it("deserializes from JSON", () => {
-    const json = '{"artifact_root":"0xabc","event_count":5,"id":"run-123","metadata":{}}';
-    const receipt = Receipt.fromJSON(json);
-
-    expect(receipt.id).toBe("run-123");
-    expect(receipt.artifactRoot).toBe("0xabc");
-    expect(receipt.eventCount).toBe(5);
-  });
-
-  it("computes SHA-256 hash", () => {
-    const receipt = new Receipt({
-      id: "run-123",
-      artifactRoot: "0xabc",
-      eventCount: 5,
-    });
-
-    const hash = receipt.hash();
-    expect(hash.length).toBe(32);
-  });
-
-  it("computes consistent hash", () => {
-    const r1 = new Receipt({
-      id: "run-123",
-      artifactRoot: "0xabc",
-      eventCount: 5,
-    });
-    const r2 = new Receipt({
-      id: "run-123",
-      artifactRoot: "0xabc",
-      eventCount: 5,
-    });
-
-    expect(toHex(r1.hash())).toBe(toHex(r2.hash()));
-  });
-
-  it("returns hex hash with 0x prefix", () => {
-    const receipt = new Receipt({
-      id: "run-123",
-      artifactRoot: "0xabc",
-      eventCount: 5,
-    });
-
-    const hashHex = receipt.hashHex();
-    expect(hashHex.startsWith("0x")).toBe(true);
-    expect(hashHex.length).toBe(66); // 0x + 64 hex chars
+    expect(receipt.hashSha256()).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(receipt.hashKeccak256()).toMatch(/^0x[0-9a-f]{64}$/);
   });
 });
 
 describe("SignedReceipt", () => {
-  it("signs a receipt", async () => {
+  it("signs and verifies a receipt", async () => {
     const receipt = new Receipt({
-      id: "run-signed",
-      artifactRoot: "0xabc",
-      eventCount: 10,
+      contentHash: ZERO_HASH,
+      verdict: { passed: true, gate_id: "gate" },
+      timestamp: "2026-01-01T00:00:00Z",
     });
 
     const { privateKey, publicKey } = await generateKeypair();
-    const signed = await SignedReceipt.sign(receipt, privateKey, publicKey);
+    const signed = await SignedReceipt.sign(receipt, privateKey);
 
-    expect(signed.receipt).toBe(receipt);
-    expect(signed.signature.length).toBe(64);
-    expect(signed.publicKey).toEqual(publicKey);
+    expect(signed.signatures.signer).toMatch(/^[0-9a-f]{128}$/);
+
+    const result = await signed.verify({ signer: toHex(publicKey) });
+    expect(result.valid).toBe(true);
+    expect(result.signer_valid).toBe(true);
+    expect(result.errors).toEqual([]);
   });
 
-  it("verifies valid signature", async () => {
+  it("rejects tampering", async () => {
     const receipt = new Receipt({
-      id: "run-verify",
-      artifactRoot: "0xdef",
-      eventCount: 20,
+      contentHash: ZERO_HASH,
+      verdict: { passed: true },
+      timestamp: "2026-01-01T00:00:00Z",
     });
 
     const { privateKey, publicKey } = await generateKeypair();
-    const signed = await SignedReceipt.sign(receipt, privateKey, publicKey);
+    const signed = await SignedReceipt.sign(receipt, privateKey);
 
-    const isValid = await signed.verify();
-    expect(isValid).toBe(true);
+    const tamperedReceipt = new Receipt({
+      contentHash: ZERO_HASH,
+      verdict: { passed: false },
+      timestamp: "2026-01-01T00:00:00Z",
+    });
+
+    const tampered = new SignedReceipt(tamperedReceipt, signed.signatures);
+    const result = await tampered.verify({ signer: toHex(publicKey) });
+    expect(result.valid).toBe(false);
+    expect(result.signer_valid).toBe(false);
   });
 
-  it("rejects tampered receipt", async () => {
+  it("roundtrips JSON deterministically", async () => {
     const receipt = new Receipt({
-      id: "run-tamper",
-      artifactRoot: "0xabc",
-      eventCount: 10,
+      contentHash: ZERO_HASH,
+      verdict: { passed: true },
+      timestamp: "2026-01-01T00:00:00Z",
     });
 
     const { privateKey, publicKey } = await generateKeypair();
-    const signed = await SignedReceipt.sign(receipt, privateKey, publicKey);
-
-    // Create a new SignedReceipt with tampered data
-    const tampered = new SignedReceipt(
-      new Receipt({
-        id: "run-tamper",
-        artifactRoot: "0xabc",
-        eventCount: 999, // Changed!
-      }),
-      signed.signature,
-      signed.publicKey
-    );
-
-    const isValid = await tampered.verify();
-    expect(isValid).toBe(false);
-  });
-
-  it("serializes to JSON", async () => {
-    const receipt = new Receipt({
-      id: "run-json",
-      artifactRoot: "0xabc",
-      eventCount: 5,
-    });
-
-    const { privateKey, publicKey } = await generateKeypair();
-    const signed = await SignedReceipt.sign(receipt, privateKey, publicKey);
+    const signed = await SignedReceipt.sign(receipt, privateKey);
 
     const json = signed.toJSON();
-    expect(json).toContain('"receipt"');
-    expect(json).toContain('"signature"');
-    expect(json).toContain('"public_key"');
-  });
+    const parsed = SignedReceipt.fromJSON(json);
 
-  it("deserializes from JSON", async () => {
-    const receipt = new Receipt({
-      id: "run-roundtrip",
-      artifactRoot: "0xdef",
-      eventCount: 15,
-    });
-
-    const { privateKey, publicKey } = await generateKeypair();
-    const signed = await SignedReceipt.sign(receipt, privateKey, publicKey);
-
-    const json = signed.toJSON();
-    const restored = SignedReceipt.fromJSON(json);
-
-    expect(restored.receipt.id).toBe("run-roundtrip");
-    expect(restored.signature.length).toBe(64);
-    expect(await restored.verify()).toBe(true);
+    expect(parsed.receipt.version).toBe(RECEIPT_SCHEMA_VERSION);
+    const result = await parsed.verify({ signer: toHex(publicKey) });
+    expect(result.valid).toBe(true);
   });
 });

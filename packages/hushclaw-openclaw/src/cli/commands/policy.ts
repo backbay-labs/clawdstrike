@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { loadPolicy, loadPolicyFromString } from '../../policy/loader.js';
 import { validatePolicy } from '../../policy/validator.js';
 import { PolicyEngine } from '../../policy/engine.js';
-import type { PolicyEvent } from '../../policy/types.js';
+import type { PolicyEvent } from '../../types.js';
 
 export const policyCommands = {
   async lint(file: string): Promise<void> {
@@ -36,7 +36,7 @@ export const policyCommands = {
   async show(options: { policy?: string } = {}): Promise<void> {
     try {
       const policyPath = options.policy || '.hush/policy.yaml';
-      const policy = await loadPolicy(policyPath);
+      const policy = loadPolicy(policyPath);
       console.log('Current policy:');
       console.log(JSON.stringify(policy, null, 2));
     } catch (err) {
@@ -49,10 +49,9 @@ export const policyCommands = {
   async test(eventFile: string, options: { policy?: string } = {}): Promise<void> {
     try {
       const policyPath = options.policy || '.hush/policy.yaml';
-      const policy = await loadPolicy(policyPath);
       const event: PolicyEvent = JSON.parse(readFileSync(eventFile, 'utf-8'));
 
-      const engine = new PolicyEngine(policy);
+      const engine = new PolicyEngine({ policy: policyPath });
       const decision = await engine.evaluate(event);
 
       console.log('Decision:', decision.allowed ? 'ALLOWED' : 'DENIED');
@@ -68,8 +67,8 @@ export const policyCommands = {
 
   async diff(file1: string, file2: string): Promise<void> {
     try {
-      const p1 = await loadPolicy(file1);
-      const p2 = await loadPolicy(file2);
+      const p1 = loadPolicy(file1);
+      const p2 = loadPolicy(file2);
 
       console.log('Policy Diff:');
       console.log('============');

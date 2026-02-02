@@ -126,9 +126,30 @@ class TestEgressAllowlistGuard:
         )
         assert result.allowed is True
 
-        # Subdomain should also match
+        # Subdomain should NOT match without an explicit glob
         result = guard.check(
             GuardAction.network_egress("api.github.com", 443),
             context,
         )
-        assert result.allowed is True
+        assert result.allowed is False
+
+    def test_glob_features_case_insensitive(self) -> None:
+        config = EgressAllowlistConfig(
+            allow=["api-?.example.com", "api-[a-z].example.com"],
+            default_action="block",
+        )
+        guard = EgressAllowlistGuard(config)
+        context = GuardContext()
+
+        assert (
+            guard.check(GuardAction.network_egress("api-1.example.com", 443), context).allowed
+            is True
+        )
+        assert (
+            guard.check(GuardAction.network_egress("API-a.EXAMPLE.com", 443), context).allowed
+            is True
+        )
+        assert (
+            guard.check(GuardAction.network_egress("api-aa.example.com", 443), context).allowed
+            is False
+        )

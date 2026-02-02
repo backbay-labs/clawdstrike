@@ -2,9 +2,68 @@
 //!
 //! Provides domain allowlist/blocklist policy evaluation.
 
+use std::sync::OnceLock;
+
+use globset::{GlobBuilder, GlobMatcher};
 use serde::{Deserialize, Serialize};
 
-use crate::dns::domain_matches;
+#[derive(Debug)]
+struct DomainPatternError {
+    pattern: String,
+    error: globset::Error,
+}
+
+impl std::fmt::Display for DomainPatternError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid domain glob {:?}: {}", self.pattern, self.error)
+    }
+}
+
+#[derive(Debug)]
+struct CompiledPattern {
+    original: String,
+    matcher: GlobMatcher,
+}
+
+#[derive(Debug, Default)]
+struct CompiledDomainPolicy {
+    allow: Vec<CompiledPattern>,
+    block: Vec<CompiledPattern>,
+}
+
+impl CompiledDomainPolicy {
+    fn compile(policy: &DomainPolicy) -> Result<Self, DomainPatternError> {
+        Ok(Self {
+            allow: compile_patterns(policy.allow_patterns())?,
+            block: compile_patterns(policy.block_patterns())?,
+        })
+    }
+}
+
+fn compile_patterns(patterns: &[String]) -> Result<Vec<CompiledPattern>, DomainPatternError> {
+    let mut out = Vec::with_capacity(patterns.len());
+    for p in patterns {
+        let matcher = compile_pattern(p)?;
+        out.push(CompiledPattern {
+            original: p.clone(),
+            matcher,
+        });
+    }
+    Ok(out)
+}
+
+fn compile_pattern(pattern: &str) -> Result<GlobMatcher, DomainPatternError> {
+    let glob = GlobBuilder::new(pattern)
+        .case_insensitive(true)
+        .literal_separator(true)
+        .build()
+        .map_err(|e| DomainPatternError {
+            pattern: pattern.to_string(),
+            error: e,
+        })?;
+
+    Ok(glob.compile_matcher())
+}
 
 /// Policy action for a domain
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,21 +79,46 @@ pub enum PolicyAction {
 }
 
 /// Domain policy configuration
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DomainPolicy {
-    /// Allowed domain patterns (supports wildcards like *.example.com)
+    /// Allowed domain patterns (glob syntax)
     #[serde(default)]
-    pub allow: Vec<String>,
+    allow: Vec<String>,
     /// Blocked domain patterns
     #[serde(default)]
-    pub block: Vec<String>,
+    block: Vec<String>,
     /// Default action when no pattern matches
     #[serde(default = "default_action")]
-    pub default_action: PolicyAction,
+    default_action: PolicyAction,
+
+    #[serde(skip)]
+    compiled: OnceLock<Result<CompiledDomainPolicy, DomainPatternError>>,
 }
 
 fn default_action() -> PolicyAction {
     PolicyAction::Block
+}
+
+impl Default for DomainPolicy {
+    fn default() -> Self {
+        Self {
+            allow: Vec::new(),
+            block: Vec::new(),
+            default_action: default_action(),
+            compiled: OnceLock::new(),
+        }
+    }
+}
+
+impl Clone for DomainPolicy {
+    fn clone(&self) -> Self {
+        Self {
+            allow: self.allow.clone(),
+            block: self.block.clone(),
+            default_action: self.default_action.clone(),
+            compiled: OnceLock::new(),
+        }
+    }
 }
 
 impl DomainPolicy {
@@ -46,36 +130,42 @@ impl DomainPolicy {
     /// Create a permissive policy (default allow)
     pub fn permissive() -> Self {
         Self {
-            allow: vec![],
-            block: vec![],
             default_action: PolicyAction::Allow,
+            ..Self::default()
         }
     }
 
     /// Add an allowed domain pattern
     pub fn allow(mut self, pattern: impl Into<String>) -> Self {
         self.allow.push(pattern.into());
+        self.compiled = OnceLock::new();
         self
     }
 
     /// Add a blocked domain pattern
     pub fn block(mut self, pattern: impl Into<String>) -> Self {
         self.block.push(pattern.into());
+        self.compiled = OnceLock::new();
         self
     }
 
     /// Evaluate a domain against the policy
     pub fn evaluate(&self, domain: &str) -> PolicyAction {
+        let compiled = match self.compiled() {
+            Ok(c) => c,
+            Err(_) => return PolicyAction::Block,
+        };
+
         // Check blocklist first (block takes precedence)
-        for pattern in &self.block {
-            if domain_matches(domain, pattern) {
+        for pattern in &compiled.block {
+            if pattern.matcher.is_match(domain) {
                 return PolicyAction::Block;
             }
         }
 
         // Check allowlist
-        for pattern in &self.allow {
-            if domain_matches(domain, pattern) {
+        for pattern in &compiled.allow {
+            if pattern.matcher.is_match(domain) {
                 return PolicyAction::Allow;
             }
         }
@@ -106,25 +196,37 @@ pub struct PolicyResult {
 impl DomainPolicy {
     /// Evaluate with detailed result
     pub fn evaluate_detailed(&self, domain: &str) -> PolicyResult {
-        // Check blocklist first
-        for pattern in &self.block {
-            if domain_matches(domain, pattern) {
+        let compiled = match self.compiled() {
+            Ok(c) => c,
+            Err(_) => {
                 return PolicyResult {
                     domain: domain.to_string(),
                     action: PolicyAction::Block,
-                    matched_pattern: Some(pattern.clone()),
+                    matched_pattern: None,
+                    is_default: true,
+                };
+            }
+        };
+
+        // Check blocklist first
+        for pattern in &compiled.block {
+            if pattern.matcher.is_match(domain) {
+                return PolicyResult {
+                    domain: domain.to_string(),
+                    action: PolicyAction::Block,
+                    matched_pattern: Some(pattern.original.clone()),
                     is_default: false,
                 };
             }
         }
 
         // Check allowlist
-        for pattern in &self.allow {
-            if domain_matches(domain, pattern) {
+        for pattern in &compiled.allow {
+            if pattern.matcher.is_match(domain) {
                 return PolicyResult {
                     domain: domain.to_string(),
                     action: PolicyAction::Allow,
-                    matched_pattern: Some(pattern.clone()),
+                    matched_pattern: Some(pattern.original.clone()),
                     is_default: false,
                 };
             }
@@ -136,6 +238,45 @@ impl DomainPolicy {
             action: self.default_action.clone(),
             matched_pattern: None,
             is_default: true,
+        }
+    }
+
+    pub fn allow_patterns(&self) -> &[String] {
+        &self.allow
+    }
+
+    pub fn block_patterns(&self) -> &[String] {
+        &self.block
+    }
+
+    pub fn set_default_action(&mut self, default_action: PolicyAction) {
+        self.default_action = default_action;
+        self.compiled = OnceLock::new();
+    }
+
+    pub fn extend_allow<I>(&mut self, patterns: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.allow.extend(patterns);
+        self.compiled = OnceLock::new();
+    }
+
+    pub fn extend_block<I>(&mut self, patterns: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.block.extend(patterns);
+        self.compiled = OnceLock::new();
+    }
+
+    fn compiled(&self) -> std::result::Result<&CompiledDomainPolicy, &DomainPatternError> {
+        match self
+            .compiled
+            .get_or_init(|| CompiledDomainPolicy::compile(self))
+        {
+            Ok(c) => Ok(c),
+            Err(e) => Err(e),
         }
     }
 }
@@ -177,7 +318,9 @@ mod tests {
 
     #[test]
     fn test_wildcard_block() {
-        let policy = DomainPolicy::permissive().block("*.blocked.com");
+        let policy = DomainPolicy::permissive()
+            .block("*.blocked.com")
+            .block("blocked.com");
 
         assert!(policy.is_allowed("allowed.com"));
         assert!(!policy.is_allowed("sub.blocked.com"));

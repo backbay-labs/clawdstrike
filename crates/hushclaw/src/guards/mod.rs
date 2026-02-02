@@ -25,12 +25,14 @@ mod egress_allowlist;
 mod forbidden_path;
 mod mcp_tool;
 mod patch_integrity;
+mod prompt_injection;
 mod secret_leak;
 
 pub use egress_allowlist::{EgressAllowlistConfig, EgressAllowlistGuard};
 pub use forbidden_path::{ForbiddenPathConfig, ForbiddenPathGuard};
-pub use mcp_tool::{McpToolConfig, McpToolGuard};
+pub use mcp_tool::{McpDefaultAction, McpToolConfig, McpToolGuard};
 pub use patch_integrity::{PatchIntegrityConfig, PatchIntegrityGuard};
+pub use prompt_injection::{PromptInjectionConfig, PromptInjectionGuard};
 pub use secret_leak::{SecretLeakConfig, SecretLeakGuard};
 
 use async_trait::async_trait;
@@ -51,6 +53,7 @@ pub enum Severity {
 }
 
 /// Result of a guard check
+#[must_use]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GuardResult {
     /// Whether the action is allowed

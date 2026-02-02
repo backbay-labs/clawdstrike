@@ -1,32 +1,21 @@
-# Example security policy for hushd
-version: "1.0"
-name: "docker-example"
+# Example hushclaw policy for hushd (Docker Compose)
+version: "1.0.0"
+name: "docker-compose-example"
+description: "Minimal hushd policy for local Docker Compose testing"
+extends: hushclaw:strict
+merge_strategy: deep_merge
 
 guards:
-  # Block access to sensitive files
-  forbidden_path:
-    enabled: true
-    patterns:
-      - "/etc/shadow"
-      - "/etc/passwd"
-      - "**/.ssh/**"
-      - "**/.aws/**"
-      - "**/.env"
-
-  # Only allow egress to specific domains
   egress_allowlist:
-    enabled: true
-    allowed_domains:
+    allow:
       - "*.github.com"
+      - "*.githubusercontent.com"
       - "api.anthropic.com"
       - "api.openai.com"
       - "registry.npmjs.org"
       - "pypi.org"
-
-  # Detect secrets in output
-  secret_leak:
-    enabled: true
+      - "files.pythonhosted.org"
+    default_action: block
 
 settings:
   fail_fast: true
-  audit_all: true

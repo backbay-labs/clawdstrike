@@ -1,171 +1,60 @@
 # Architecture
 
-Hushclaw is designed as a modular, composable security enforcement layer.
+Hushclaw is a guard suite and attestation primitives for agent runtimes.
+It is **not** an operating system sandbox: it will not automatically intercept syscalls or “wrap” a process.
 
-## Overview
+The intended integration is at the **tool boundary** (your agent runtime calls Hushclaw before performing actions).
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Your Agent                               │
-│  (Claude Code, OpenClaw, Custom Agent)                          │
-└────────────────────────────────┬────────────────────────────────┘
-                                 │ Events
-┌────────────────────────────────▼────────────────────────────────┐
-│                         Hushclaw                                 │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    Policy Engine                         │    │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │    │
-│  │  │ Load    │→ │ Parse   │→ │ Compile │→ │ Cache   │    │    │
-│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘    │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                 │                                │
-│  ┌─────────────────────────────▼───────────────────────────┐    │
-│  │                    Guard Registry                        │    │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────┐ │    │
-│  │  │ Forbidden │ │ Egress    │ │ Secret    │ │ Patch   │ │    │
-│  │  │ Path      │ │ Allowlist │ │ Leak      │ │ Integrity│ │    │
-│  │  └───────────┘ └───────────┘ └───────────┘ └─────────┘ │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                 │                                │
-│  ┌─────────────────────────────▼───────────────────────────┐    │
-│  │                    Decision Engine                       │    │
-│  │  Event → Guards → Aggregate → Decision (Allow/Warn/Deny) │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                 │                                │
-│  ┌─────────────────────────────▼───────────────────────────┐    │
-│  │                    Audit Ledger                          │    │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐                  │    │
-│  │  │ Events  │→ │ Merkle  │→ │ Sign    │→ Receipts       │    │
-│  │  └─────────┘  └─────────┘  └─────────┘                  │    │
-│  └─────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘
-```
+## Components
 
-## Core Components
+- `hushclaw` (Rust): policy type, built-in guards, `HushEngine`
+- `hush-core` (Rust): hashing/signing, Merkle trees, `SignedReceipt`
+- `hush-proxy` (Rust): DNS/SNI parsing utilities and domain matching
+- `hush-cli` (Rust): `hush` CLI for ad-hoc checks and verification
+- `hushd` (Rust, optional): HTTP daemon for centralized checks (WIP)
 
-### Policy Engine
+## Data flow (typical integration)
 
-Loads, parses, and compiles YAML policies into efficient evaluation structures.
+1. Your agent runtime wants to do an action (read a file, call a tool, make a network request).
+2. Your runtime constructs a `GuardAction` (e.g. `FileAccess`, `NetworkEgress`, `McpTool`) and a `GuardContext`.
+3. Your runtime calls `HushEngine::check_*` (or `check_action_report` for per-guard evidence).
+4. Your runtime uses the returned `GuardResult` to allow, warn, or block the action.
+5. Optionally, your runtime creates a signed receipt (`create_signed_receipt`) for a content hash that represents the run output/artifacts.
 
-```rust
-let policy = Policy::from_yaml_file("policy.yaml")?;
-let engine = HushEngineBuilder::new()
-    .with_policy(policy)
-    .build()?;
-```
+## What Hushclaw can and cannot enforce
 
-Key features:
-- **Inheritance** - Extend built-in policies with `extends:`
-- **Hot reload** - Update policies without restart
-- **Validation** - Catch errors before deployment
+Hushclaw can enforce only what your runtime routes through it. If an agent has direct access to the filesystem/network without going through your tool layer, Hushclaw cannot stop it.
 
-### Guard Registry
+## Threat model (explicit)
 
-Guards are modular security checks. Each guard handles specific event types:
+### Attacker
 
-| Guard | Events | Purpose |
-|-------|--------|---------|
-| ForbiddenPathGuard | FileRead, FileWrite | Block sensitive paths |
-| EgressAllowlistGuard | NetworkEgress | Domain allowlist |
-| SecretLeakGuard | PatchApply | Detect secrets in output |
-| PatchIntegrityGuard | PatchApply | Block dangerous code |
-| McpToolGuard | ToolCall | Tool allow/deny lists |
+- Untrusted agent output (LLM-generated tool calls, patches, commands).
+- Prompt-injection content that tries to influence tool usage.
+- Accidental operator error (overly broad allowlists, unsafe tools enabled).
 
-### Decision Engine
+### Assets to protect
 
-Aggregates guard results into a final decision:
+- Local secrets and credentials (SSH keys, `.env`, cloud creds).
+- Network egress destinations (exfil to arbitrary hosts).
+- Repository integrity (unsafe patches, disabling checks).
+- Auditability (what happened, under which policy, with what evidence).
 
-```
-Allow + Allow + Allow = Allow
-Allow + Warn + Allow = Warn
-Allow + Deny + Allow = Deny (short-circuit)
-```
+### Enforcement points
 
-### Audit Ledger
+- **Tool boundary**: your runtime must call `HushEngine::check_*` before performing an action.
+- **Policy validation**: malformed patterns are rejected at policy load time (fail-closed).
+- **Receipts**: cryptographically signed artifacts that record results + provenance for later verification.
 
-Records all events and decisions for accountability:
+### Non-goals / limitations
 
-- **Events** - What was attempted
-- **Decisions** - What was decided
-- **Merkle Tree** - Tamper-evident log
-- **Signatures** - Cryptographic proof
+- No syscall interception, sandbox escape prevention, or kernel-level isolation.
+- Cannot stop actions that bypass the runtime/tool layer (direct FS/net access).
+- Does not guarantee secrecy against a fully compromised host or OS-level attacker.
 
-## Event Flow
+## Enforced vs attested (don’t conflate these)
 
-```
-1. Agent requests action (file read, network call, etc.)
-         ↓
-2. Action converted to Event
-         ↓
-3. Event sent to Guard Registry
-         ↓
-4. Each applicable Guard evaluates
-         ↓
-5. Results aggregated into Decision
-         ↓
-6. Event + Decision logged to Ledger
-         ↓
-7. Decision returned to Agent
-         ↓
-8. Allow → proceed, Deny → block, Warn → proceed + log
-```
+- **Enforced**: the action your runtime *chose not to perform* because a guard returned `allowed=false` (or required confirmation).
+- **Attested**: what Hushclaw recorded in a `Receipt`/`SignedReceipt` (policy hash, verdict, violations, timestamps).
 
-## Crate Structure
-
-```
-hush-core       # Crypto primitives (Ed25519, SHA-256, Merkle)
-    ↓
-hush-proxy      # Network interception utilities
-    ↓
-hushclaw        # Runtime enforcement (guards, policy, IRM)
-    ↓
-hush-cli        # Command-line interface
-    ↓
-hushd           # Long-running daemon (optional)
-```
-
-## Integration Points
-
-### Direct Library
-
-```rust
-use hushclaw::{HushEngine, Event};
-
-let engine = HushEngine::new(policy)?;
-let decision = engine.evaluate(&event).await;
-```
-
-### CLI Wrapper
-
-```bash
-hush run --policy policy.yaml -- your-command
-```
-
-### OpenClaw Plugin
-
-```typescript
-// Automatically intercepts tool calls
-await openclaw.registerPlugin("@hushclaw/openclaw");
-```
-
-### Daemon Mode
-
-```bash
-hushd --config /etc/hush/config.yaml
-```
-
-## Performance
-
-| Operation | Target Latency |
-|-----------|----------------|
-| Cached evaluation | < 1ms |
-| Uncached evaluation | < 5ms |
-| Async (with I/O) | < 20ms |
-| Policy load | < 100ms |
-| Hot reload | < 50ms |
-
-## Next Steps
-
-- [Guards](./guards.md) - Deep dive into guard types
-- [Policies](./policies.md) - Policy system details
-- [Decisions](./decisions.md) - Decision types and modes
+Receipts are only as strong as the integration: they prove what Hushclaw *observed/decided* under a specific policy, not that the underlying OS prevented all side effects.

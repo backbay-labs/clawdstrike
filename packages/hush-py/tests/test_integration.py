@@ -4,10 +4,12 @@ import pytest
 from hush import (
     Policy,
     PolicyEngine,
+    PublicKeySet,
     Receipt,
     SignedReceipt,
     GuardAction,
     GuardContext,
+    Verdict,
     generate_keypair,
     sha256,
 )
@@ -46,9 +48,12 @@ class TestFullWorkflow:
         """Test complete receipt creation and verification workflow."""
         # Create a receipt
         receipt = Receipt(
-            id="run-integration-test",
-            artifact_root="0x" + "ab" * 32,
-            event_count=100,
+            version="1.0.0",
+            receipt_id="run-integration-test",
+            timestamp="2026-01-01T00:00:00Z",
+            content_hash="0x" + "ab" * 32,
+            verdict=Verdict(passed=True, gate_id="integration"),
+            provenance=None,
             metadata={
                 "task": "integration-test",
                 "passed": True,
@@ -57,18 +62,18 @@ class TestFullWorkflow:
 
         # Sign it
         private_key, public_key = generate_keypair()
-        signed = SignedReceipt.sign(receipt, private_key, public_key)
+        signed = SignedReceipt.sign(receipt, private_key)
 
         # Verify
-        assert signed.verify() is True
+        assert signed.verify(PublicKeySet(signer=public_key.hex())).valid is True
 
         # Serialize and restore
         json_str = signed.to_json()
         restored = SignedReceipt.from_json(json_str)
 
         # Verify restored receipt
-        assert restored.verify() is True
-        assert restored.receipt.id == "run-integration-test"
+        assert restored.verify(PublicKeySet(signer=public_key.hex())).valid is True
+        assert restored.receipt.receipt_id == "run-integration-test"
         assert restored.receipt.metadata["passed"] is True
 
     def test_hash_consistency(self) -> None:
@@ -82,14 +87,17 @@ class TestFullWorkflow:
 
         # Receipt hashing should be deterministic
         receipt = Receipt(
-            id="test",
-            artifact_root="0x00",
-            event_count=1,
-            metadata={},
+            version="1.0.0",
+            receipt_id="test",
+            timestamp="2026-01-01T00:00:00Z",
+            content_hash="0x" + "00" * 32,
+            verdict=Verdict(passed=True),
+            provenance=None,
+            metadata=None,
         )
 
-        hash1 = receipt.hash()
-        hash2 = receipt.hash()
+        hash1 = receipt.hash_sha256()
+        hash2 = receipt.hash_sha256()
 
         assert hash1 == hash2
 

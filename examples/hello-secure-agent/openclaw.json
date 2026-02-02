@@ -30,14 +30,13 @@
       "config": {
         "policy": "./policy.yaml",
         "mode": "deterministic",
-        "receipts": {
-          "enabled": true,
-          "directory": "./.hush/receipts",
-          "sign": true
-        },
-        "hooks": {
-          "tool_result_persist": true,
-          "agent:bootstrap": true
+        "logLevel": "info",
+        "guards": {
+          "forbidden_path": true,
+          "egress": true,
+          "secret_leak": true,
+          "patch_integrity": true,
+          "mcp_tool": false
         }
       }
     }

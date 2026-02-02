@@ -6,7 +6,7 @@ Run hushd locally with Docker Compose for development and testing.
 
 ```bash
 # Generate a secure API key
-export HUSH_API_KEY=$(openssl rand -hex 32)
+export HUSHD_API_KEY=$(openssl rand -hex 32)
 
 # Start hushd
 docker compose up -d
@@ -23,13 +23,13 @@ docker compose logs -f hushd
 ```bash
 # Check file access (should pass)
 curl -X POST http://localhost:8080/api/v1/check \
-  -H "Authorization: Bearer $HUSH_API_KEY" \
+  -H "Authorization: Bearer $HUSHD_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"action": "file_access", "path": "/tmp/test.txt"}'
 
 # Check forbidden path (should fail)
 curl -X POST http://localhost:8080/api/v1/check \
-  -H "Authorization: Bearer $HUSH_API_KEY" \
+  -H "Authorization: Bearer $HUSHD_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"action": "file_access", "path": "/etc/shadow"}'
 ```

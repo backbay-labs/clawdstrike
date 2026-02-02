@@ -8,6 +8,7 @@ use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for ForbiddenPathGuard
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ForbiddenPathConfig {
     /// Glob patterns for forbidden paths
     #[serde(default = "default_forbidden_patterns")]

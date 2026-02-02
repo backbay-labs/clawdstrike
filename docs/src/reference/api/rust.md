@@ -1,226 +1,78 @@
 # Rust API
 
-Native Rust library for hushclaw.
+Native Rust API for policy evaluation and receipt signing.
 
 ## Crates
 
-| Crate | Purpose |
-|-------|---------|
-| `hushclaw` | Runtime enforcement (guards, policy) |
-| `hush-core` | Crypto primitives (signing, hashing) |
-| `hush-proxy` | Network interception utilities |
+- `hushclaw`: policy type, built-in guards, and `HushEngine`
+- `hush-core`: hashing/signing, Merkle trees, and `SignedReceipt`
+- `hush-proxy`: domain matching + DNS/SNI parsing utilities
 
 ## Installation
 
-```toml
-[dependencies]
-hushclaw = "0.1"
-hush-core = "0.1"
-```
+If you depend on a published version, use `0.1.0`. If you are working from a checkout, use a path dependency.
 
-## Quick Start
+## Quick start: evaluate actions + create a receipt
 
 ```rust
-use hushclaw::{HushEngine, HushEngineBuilder, Policy, Event, Decision};
+use hushclaw::{GuardContext, HushEngine, Policy};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load policy
-    let policy = Policy::from_yaml_file("policy.yaml")?;
+async fn main() -> anyhow::Result<()> {
+    // Load a policy file and resolve `extends`
+    let policy = Policy::from_yaml_file_with_extends("policy.yaml")?;
 
-    // Build engine
-    let engine = HushEngineBuilder::new()
-        .with_policy(policy)
-        .build()?;
+    // Engine with a signing keypair for receipts
+    let engine = HushEngine::with_policy(policy).with_generated_keypair();
+    let ctx = GuardContext::new();
 
-    // Create event
-    let event = Event::file_read("~/.ssh/id_rsa");
+    // Evaluate an action
+    let result = engine
+        .check_file_access("/home/user/.ssh/id_rsa", &ctx)
+        .await?;
+    println!("allowed={} severity={:?} msg={}", result.allowed, result.severity, result.message);
 
-    // Evaluate
-    let decision = engine.evaluate(&event).await;
-
-    match decision {
-        Decision::Allow => println!("Allowed"),
-        Decision::Warn { message, .. } => println!("Warning: {}", message),
-        Decision::Deny { reason, .. } => println!("Denied: {}", reason),
-    }
+    // Create a signed receipt for some artifact hash
+    let artifact_hash = hush_core::sha256(b"example artifact");
+    let signed = engine.create_signed_receipt(artifact_hash).await?;
+    std::fs::write("receipt.json", signed.to_json()?)?;
 
     Ok(())
 }
 ```
 
-## HushEngine
+## Getting per-guard evidence
 
-### Builder
-
-```rust
-let engine = HushEngineBuilder::new()
-    .with_policy(policy)
-    .with_guards(custom_guards)
-    .with_mode(EvaluationMode::Deterministic)
-    .with_cache(CacheConfig::default())
-    .build()?;
-```
-
-### Evaluation
+`HushEngine::check_action_report` returns a `GuardReport` with per-guard results and an aggregated verdict:
 
 ```rust
-// Async evaluation (with I/O)
-let decision = engine.evaluate(&event).await;
+use hushclaw::{guards::GuardAction, GuardContext, HushEngine};
 
-// Sync evaluation (cached)
-let decision = engine.evaluate_sync(&event);
-
-// Batch evaluation
-let decisions = engine.evaluate_batch(&events).await;
-```
-
-### Policy Management
-
-```rust
-// Load policy
-engine.load_policy(new_policy)?;
-
-// Hot reload
-engine.reload_policy(updated_policy)?;
-
-// Get current policy
-let policy = engine.current_policy();
-```
-
-## Event Types
-
-```rust
-use hushclaw::{Event, EventType, EventData};
-
-// File read
-let event = Event {
-    event_id: uuid::Uuid::new_v4().to_string(),
-    event_type: EventType::FileRead,
-    timestamp: chrono::Utc::now(),
-    session_id: None,
-    data: EventData::File(FileEventData {
-        path: "~/.ssh/id_rsa".into(),
-        content_hash: None,
-    }),
-    metadata: HashMap::new(),
-};
-
-// Convenience constructors
-let event = Event::file_read("path/to/file");
-let event = Event::file_write("path/to/file");
-let event = Event::network_egress("api.github.com", 443);
-let event = Event::tool_call("write_file", params);
-```
-
-## Decision Types
-
-```rust
-use hushclaw::{Decision, Severity};
-
-match decision {
-    Decision::Allow => {
-        // Proceed
-    }
-    Decision::Warn { message, guard } => {
-        println!("Warning from {:?}: {}", guard, message);
-        // Proceed with logging
-    }
-    Decision::Deny { reason, guard, severity } => {
-        println!("Denied by {}: {} ({:?})", guard, reason, severity);
-        // Block operation
-    }
-}
-
-// Helper methods
-decision.is_allowed()  // true for Allow and Warn
-decision.is_denied()   // true for Deny
-decision.severity()    // Option<Severity>
-```
-
-## Custom Guards
-
-```rust
-use async_trait::async_trait;
-use hushclaw::{Guard, GuardResult, Event, Policy, Severity};
-
-pub struct MyGuard;
-
-#[async_trait]
-impl Guard for MyGuard {
-    fn name(&self) -> &str {
-        "MyGuard"
-    }
-
-    fn handles(&self) -> &[EventType] {
-        &[EventType::FileWrite]
-    }
-
-    async fn check(&self, event: &Event, policy: &Policy) -> GuardResult {
-        // Your logic
-        GuardResult::Allow
-    }
-}
-
-// Register
-let mut registry = GuardRegistry::with_defaults();
-registry.register(Arc::new(MyGuard));
-```
-
-## Crypto (hush-core)
-
-```rust
-use hush_core::{Keypair, sign, verify, sha256_hex, MerkleTree};
-
-// Generate keypair
-let keypair = Keypair::generate();
-
-// Sign data
-let signature = keypair.sign(b"data");
-
-// Verify
-let valid = keypair.public_key().verify(b"data", &signature);
-
-// Hash
-let hash = sha256_hex(b"data");
-
-// Merkle tree
-let tree = MerkleTree::from_leaves(&hashes);
-let proof = tree.prove(index);
-let valid = tree.verify(&hash, &proof);
-```
-
-## Error Handling
-
-```rust
-use hushclaw::{Error, PolicyError};
-
-match engine.load_policy(policy) {
-    Ok(_) => println!("Policy loaded"),
-    Err(Error::Policy(PolicyError::Parse(e))) => {
-        println!("Parse error: {}", e);
-    }
-    Err(Error::Policy(PolicyError::Validation(e))) => {
-        println!("Validation error: {}", e);
-    }
-    Err(e) => println!("Other error: {}", e),
+async fn report(engine: &HushEngine) -> anyhow::Result<()> {
+    let ctx = GuardContext::new();
+    let report = engine
+        .check_action_report(&GuardAction::FileAccess("/tmp/test.txt"), &ctx)
+        .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
 }
 ```
 
-## Feature Flags
+## Guard API (direct use)
 
-```toml
-[dependencies]
-hushclaw = { version = "0.1", features = ["all-guards"] }
+All guards implement `hushclaw::guards::Guard` and operate over `GuardAction` + `GuardContext`.
+
+```rust
+use hushclaw::guards::{ForbiddenPathGuard, Guard, GuardAction, GuardContext};
+
+async fn check_one() {
+    let guard = ForbiddenPathGuard::new();
+    let ctx = GuardContext::new();
+    let r = guard.check(&GuardAction::FileAccess("/home/user/.ssh/id_rsa"), &ctx).await;
+    assert!(!r.allowed);
+}
 ```
 
-| Feature | Description |
-|---------|-------------|
-| `default` | Local runner only |
-| `all-guards` | All built-in guards |
-| `wasm-runner` | WASM sandbox runner |
-| `serde` | Serialization support |
+## Policy validation (fail closed)
 
-## Examples
-
-See [Rust examples](https://github.com/hushclaw/hushclaw/tree/main/examples/rust).
+Loading a policy validates glob and regex patterns. Invalid patterns fail policy loading with a structured error (`Error::PolicyValidation`).

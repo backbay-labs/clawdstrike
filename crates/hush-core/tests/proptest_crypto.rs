@@ -1,5 +1,7 @@
 //! Property-based tests for cryptographic primitives
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use hush_core::{keccak256, sha256, Hash, Keypair};
 use proptest::prelude::*;
 

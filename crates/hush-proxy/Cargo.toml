@@ -13,10 +13,13 @@ readme = "../../README.md"
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
-tokio.workspace = true
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+globset.workspace = true
 
 [features]
 default = []
+
+[dev-dependencies]
+proptest = "1.4"
+
+[lints]
+workspace = true

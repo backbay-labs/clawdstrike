@@ -1,0 +1,32 @@
+name: Scheduled Fuzz
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Daily at 03:00 UTC
+    - cron: '0 3 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fuzz:
+    name: Fuzz DNS/SNI Parsers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Run fuzz targets (time-boxed)
+        run: |
+          cd fuzz
+          # Keep these time-bounded to avoid runaway CI costs.
+          cargo +nightly fuzz run fuzz_dns_parse -- -max_total_time=60
+          cargo +nightly fuzz run fuzz_sni_parse -- -max_total_time=60
+

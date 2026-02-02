@@ -14,7 +14,7 @@ services:
       - hushd-data:/var/lib/hushd
     environment:
       - HUSH_LOG_LEVEL=info
-      - HUSH_API_KEY=${HUSH_API_KEY:-changeme}
+      - HUSHD_API_KEY=${HUSHD_API_KEY:-changeme}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s

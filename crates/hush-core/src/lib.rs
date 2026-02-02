@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 //! # hush-core
 //!
 //! Cryptographic primitives for the hushclaw attestation system.

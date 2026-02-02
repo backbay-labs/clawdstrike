@@ -1,12 +1,12 @@
 # Basic Verification Example
 
-Demonstrates how to verify a hushclaw receipt.
+Demonstrates how to verify a signed hushclaw receipt.
 
 ## What It Does
 
-1. Loads a receipt JSON file
-2. Verifies the Ed25519 signature
-3. Validates the Merkle root
+1. Loads a signed receipt JSON file
+2. Loads a public key (hex)
+3. Verifies the Ed25519 signature over canonical JSON
 4. Reports the result
 
 ## Build
@@ -18,7 +18,7 @@ cargo build --release
 ## Run
 
 ```bash
-cargo run -- receipt.json
+cargo run -- receipt.json key.pub
 ```
 
 ## Example Output
@@ -27,35 +27,41 @@ cargo run -- receipt.json
 Receipt Verification
 ====================
 
-Run ID:     run_abc123
-Started:    2026-01-31T14:00:00Z
-Ended:      2026-01-31T14:30:00Z
-Events:     127
-Denials:    2
+Version:    1.0.0
+Timestamp:  2026-01-31T14:00:00Z
+Content:    0x7f3a4b2c...
+Verdict:    PASS
 
 Signature:  VALID
-Merkle:     VALID
 
-Receipt is authentic and unmodified.
+Signed receipt verified.
 ```
 
 ## Sample Receipt
 
-Create a `receipt.json` file:
+Create a `receipt.json` file (signed receipt):
 
 ```json
 {
-  "run_id": "run_abc123",
-  "started_at": "2026-01-31T14:00:00Z",
-  "ended_at": "2026-01-31T14:30:00Z",
-  "events": [],
-  "event_count": 127,
-  "denied_count": 2,
-  "merkle_root": "0x7f3a4b2c...",
-  "signature": "ed25519:abc...",
-  "public_key": "ed25519:xyz..."
+  "receipt": {
+    "version": "1.0.0",
+    "timestamp": "2026-01-31T14:00:00Z",
+    "content_hash": "0x7f3a4b2c00000000000000000000000000000000000000000000000000000000",
+    "verdict": { "passed": true },
+    "provenance": {
+      "hushclaw_version": "0.1.0",
+      "ruleset": "default",
+      "violations": []
+    }
+  },
+  "signatures": {
+    "signer": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "cosigner": null
+  }
 }
 ```
+
+And a `key.pub` file containing the Ed25519 public key (hex, 32 bytes).
 
 ## Exit Codes
 

@@ -34,29 +34,14 @@ class EgressAllowlistGuard(Guard):
     def _matches_pattern(self, host: str, pattern: str) -> bool:
         """Check if host matches a pattern.
 
-        Supports:
-        - Exact match: "api.example.com"
-        - Wildcard subdomain: "*.example.com"
-        - Subdomain matching: "example.com" matches "api.example.com"
+        Semantics match the Rust `globset` contract:
+        - Full-string glob match (no implicit subdomain matching)
+        - Case-insensitive
+        - Supports `*`, `?`, and `[]` character classes
         """
         if not pattern:
             return False
-
-        # Exact match
-        if host == pattern:
-            return True
-
-        # Wildcard pattern
-        if pattern.startswith("*."):
-            suffix = pattern[1:]  # ".example.com"
-            return host.endswith(suffix)
-
-        # Subdomain matching (host ends with .pattern)
-        if host.endswith("." + pattern):
-            return True
-
-        # fnmatch for other patterns
-        return fnmatch.fnmatch(host, pattern)
+        return fnmatch.fnmatchcase(host.lower(), pattern.lower())
 
     def _matches_any(self, host: str, patterns: List[str]) -> bool:
         """Check if host matches any pattern in the list."""

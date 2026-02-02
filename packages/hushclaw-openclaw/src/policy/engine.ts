@@ -1,143 +1,250 @@
-import type { PolicyConfig, PolicyEvent, PolicyDecision, ActionType } from './types.js';
+import { homedir } from 'node:os';
+import path from 'node:path';
+
+import { mergeConfig } from '../config.js';
+import { EgressGuard, ForbiddenPathGuard, PatchIntegrityGuard, SecretLeakGuard } from '../guards/index.js';
+import type { Decision, EvaluationMode, HushClawConfig, Policy, PolicyEvent } from '../types.js';
+
+import { loadPolicy } from './loader.js';
+import { validatePolicy } from './validator.js';
+
+function expandHome(p: string): string {
+  return p.replace(/^~(?=\/|$)/, homedir());
+}
+
+function normalizePathForPrefix(p: string): string {
+  return path.resolve(expandHome(p));
+}
 
 export class PolicyEngine {
-  private config: PolicyConfig;
+  private readonly config: Required<HushClawConfig>;
+  private readonly policy: Policy;
+  private readonly forbiddenPathGuard: ForbiddenPathGuard;
+  private readonly egressGuard: EgressGuard;
+  private readonly secretLeakGuard: SecretLeakGuard;
+  private readonly patchIntegrityGuard: PatchIntegrityGuard;
 
-  constructor(config: PolicyConfig) {
-    this.config = config;
+  constructor(config: HushClawConfig = {}) {
+    this.config = mergeConfig(config);
+    this.policy = loadPolicy(this.config.policy);
+    this.forbiddenPathGuard = new ForbiddenPathGuard();
+    this.egressGuard = new EgressGuard();
+    this.secretLeakGuard = new SecretLeakGuard();
+    this.patchIntegrityGuard = new PatchIntegrityGuard();
   }
 
-  async evaluate(event: PolicyEvent): Promise<PolicyDecision> {
-    // Check filesystem guards
-    if (event.type === 'file_read' || event.type === 'file_write') {
-      const fsDecision = this.checkFilesystem(event);
-      if (fsDecision.denied) return fsDecision;
-    }
-
-    // Check egress guards
-    if (event.type === 'network_egress') {
-      const egressDecision = this.checkEgress(event);
-      if (egressDecision.denied) return egressDecision;
-    }
-
-    return { allowed: true, denied: false };
+  enabledGuards(): string[] {
+    const g = this.config.guards;
+    const enabled: string[] = [];
+    if (g.forbidden_path) enabled.push('forbidden_path');
+    if (g.egress) enabled.push('egress');
+    if (g.secret_leak) enabled.push('secret_leak');
+    if (g.patch_integrity) enabled.push('patch_integrity');
+    if (g.mcp_tool) enabled.push('mcp_tool');
+    return enabled;
   }
 
-  private checkFilesystem(event: PolicyEvent): PolicyDecision {
-    const { filesystem } = this.config;
-    if (!filesystem) return { allowed: true, denied: false };
+  getPolicy(): Policy {
+    return this.policy;
+  }
 
-    // Check forbidden paths
-    if (filesystem.forbidden_paths) {
-      for (const pattern of filesystem.forbidden_paths) {
-        if (this.matchPath(event.resource, pattern)) {
-          return {
+  async lintPolicy(policyRef: string): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
+    try {
+      const policy = loadPolicy(policyRef);
+      return validatePolicy(policy);
+    } catch (err) {
+      return { valid: false, errors: [String(err)], warnings: [] };
+    }
+  }
+
+  redactSecrets(content: string): string {
+    return this.secretLeakGuard.redact(content);
+  }
+
+  async evaluate(event: PolicyEvent): Promise<Decision> {
+    const base = this.evaluateDeterministic(event);
+    return this.applyMode(base, this.config.mode);
+  }
+
+  private applyMode(result: Decision, mode: EvaluationMode): Decision {
+    if (mode === 'audit') {
+      return { allowed: true, denied: false, warn: false };
+    }
+
+    if (mode === 'advisory' && result.denied) {
+      return {
+        allowed: true,
+        denied: false,
+        warn: true,
+        reason: result.reason,
+        guard: result.guard,
+        severity: result.severity,
+        message: result.reason,
+      };
+    }
+
+    return result;
+  }
+
+  private evaluateDeterministic(event: PolicyEvent): Decision {
+    const allowed: Decision = { allowed: true, denied: false, warn: false };
+
+    switch (event.eventType) {
+      case 'file_read':
+      case 'file_write':
+        return this.checkFilesystem(event);
+      case 'network_egress':
+        return this.checkEgress(event);
+      case 'command_exec':
+        return this.checkExecution(event);
+      case 'tool_call':
+        return this.checkToolCall(event);
+      case 'patch_apply':
+        return this.checkPatch(event);
+      default:
+        return allowed;
+    }
+  }
+
+  private checkFilesystem(event: PolicyEvent): Decision {
+    if (!this.config.guards.forbidden_path) {
+      return { allowed: true, denied: false, warn: false };
+    }
+
+    // First, enforce forbidden path patterns.
+    const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
+    const mapped = this.guardResultToDecision(forbidden);
+    if (mapped.denied || mapped.warn) {
+      return this.applyOnViolation(mapped);
+    }
+
+    // Then, enforce write roots if configured.
+    if (event.eventType === 'file_write' && event.data.type === 'file') {
+      const allowedWriteRoots = this.policy.filesystem?.allowed_write_roots;
+      if (allowedWriteRoots && allowedWriteRoots.length > 0) {
+        const filePath = normalizePathForPrefix(event.data.path);
+        const ok = allowedWriteRoots.some((root) => {
+          const rootPath = normalizePathForPrefix(root);
+          return filePath === rootPath || filePath.startsWith(rootPath + path.sep);
+        });
+        if (!ok) {
+          return this.applyOnViolation({
             allowed: false,
             denied: true,
-            reason: `Path matches forbidden pattern: ${pattern}`,
-            guard: 'ForbiddenPathGuard',
-            severity: 'critical',
-          };
+            warn: false,
+            reason: 'Write path not in allowed roots',
+            guard: 'forbidden_path',
+            severity: 'high',
+          });
         }
       }
     }
 
-    // Check allowed write roots for write operations
-    if (event.type === 'file_write' && filesystem.allowed_write_roots) {
-      const isAllowed = filesystem.allowed_write_roots.some(root =>
-        this.matchPath(event.resource, root) || event.resource.startsWith(this.expandPath(root))
-      );
-      if (!isAllowed) {
-        return {
+    return { allowed: true, denied: false, warn: false };
+  }
+
+  private checkEgress(event: PolicyEvent): Decision {
+    if (!this.config.guards.egress) {
+      return { allowed: true, denied: false, warn: false };
+    }
+
+    const res = this.egressGuard.checkSync(event, this.policy);
+    const mapped = this.guardResultToDecision(res);
+    return this.applyOnViolation(mapped);
+  }
+
+  private checkExecution(event: PolicyEvent): Decision {
+    if (!this.config.guards.patch_integrity) {
+      return { allowed: true, denied: false, warn: false };
+    }
+
+    const res = this.patchIntegrityGuard.checkSync(event, this.policy);
+    const mapped = this.guardResultToDecision(res);
+    return this.applyOnViolation(mapped);
+  }
+
+  private checkToolCall(event: PolicyEvent): Decision {
+    // Optional tool allow/deny list.
+    if (event.data.type === 'tool') {
+      const tools = this.policy.tools;
+      const toolName = event.data.toolName.toLowerCase();
+
+      const denied = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
+      if (denied.includes(toolName)) {
+        return this.applyOnViolation({
           allowed: false,
           denied: true,
-          reason: `Write path not in allowed roots`,
-          guard: 'WriteRootGuard',
+          warn: false,
+          reason: `Tool '${event.data.toolName}' is denied by policy`,
+          guard: 'mcp_tool',
           severity: 'high',
-        };
+        });
+      }
+
+      const allowed = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
+      if (allowed.length > 0 && !allowed.includes(toolName)) {
+        return this.applyOnViolation({
+          allowed: false,
+          denied: true,
+          warn: false,
+          reason: `Tool '${event.data.toolName}' is not in allowed tool list`,
+          guard: 'mcp_tool',
+          severity: 'high',
+        });
       }
     }
 
-    return { allowed: true, denied: false };
-  }
-
-  private checkEgress(event: PolicyEvent): PolicyDecision {
-    const { egress } = this.config;
-    if (!egress || egress.mode === 'open') return { allowed: true, denied: false };
-
-    const domain = this.extractDomain(event.resource);
-
-    if (egress.mode === 'allowlist') {
-      const allowed = egress.allowed_domains?.some(pattern =>
-        this.matchDomain(domain, pattern)
-      );
-      if (!allowed) {
-        return {
-          allowed: false,
-          denied: true,
-          reason: `Domain '${domain}' not in egress allowlist`,
-          guard: 'EgressAllowlistGuard',
-          severity: 'high',
-        };
-      }
+    if (!this.config.guards.secret_leak) {
+      return { allowed: true, denied: false, warn: false };
     }
 
-    if (egress.mode === 'denylist' && egress.denied_domains) {
-      const denied = egress.denied_domains.some(pattern =>
-        this.matchDomain(domain, pattern)
-      );
-      if (denied) {
-        return {
-          allowed: false,
-          denied: true,
-          reason: `Domain '${domain}' is in deny list`,
-          guard: 'EgressDenylistGuard',
-          severity: 'high',
-        };
-      }
+    const res = this.secretLeakGuard.checkSync(event, this.policy);
+    const mapped = this.guardResultToDecision(res);
+    return this.applyOnViolation(mapped);
+  }
+
+  private checkPatch(event: PolicyEvent): Decision {
+    if (this.config.guards.patch_integrity) {
+      const r1 = this.patchIntegrityGuard.checkSync(event, this.policy);
+      const mapped1 = this.guardResultToDecision(r1);
+      const applied1 = this.applyOnViolation(mapped1);
+      if (applied1.denied || applied1.warn) return applied1;
     }
 
-    return { allowed: true, denied: false };
-  }
-
-  private matchPath(path: string, pattern: string): boolean {
-    const expandedPattern = this.expandPath(pattern);
-    const expandedPath = this.expandPath(path);
-
-    // Simple prefix match for now
-    if (expandedPath.startsWith(expandedPattern)) return true;
-    if (expandedPath.includes(expandedPattern)) return true;
-
-    return false;
-  }
-
-  private matchDomain(domain: string, pattern: string): boolean {
-    if (pattern.startsWith('*.')) {
-      const suffix = pattern.slice(1); // Remove *
-      return domain.endsWith(suffix) || domain === pattern.slice(2);
+    if (this.config.guards.secret_leak) {
+      const r2 = this.secretLeakGuard.checkSync(event, this.policy);
+      const mapped2 = this.guardResultToDecision(r2);
+      const applied2 = this.applyOnViolation(mapped2);
+      if (applied2.denied || applied2.warn) return applied2;
     }
-    return domain === pattern;
+
+    return { allowed: true, denied: false, warn: false };
   }
 
-  private extractDomain(url: string): string {
-    try {
-      const parsed = new URL(url);
-      return parsed.hostname;
-    } catch {
-      return url;
+  private applyOnViolation(decision: Decision): Decision {
+    const action = this.policy.on_violation;
+    if (!decision.denied) return decision;
+
+    if (action === 'warn') {
+      return {
+        allowed: true,
+        denied: false,
+        warn: true,
+        reason: decision.reason,
+        guard: decision.guard,
+        severity: decision.severity,
+        message: decision.reason,
+      };
     }
+
+    return decision;
   }
 
-  private expandPath(path: string): string {
-    return path.replace(/^~/, process.env.HOME || '/home/user');
-  }
-
-  createEvent(action: ActionType, resource: string, params?: Record<string, unknown>): PolicyEvent {
-    return {
-      type: action,
-      resource,
-      params,
-      timestamp: Date.now(),
-    };
+  private guardResultToDecision(result: { status: 'allow' | 'deny' | 'warn'; reason?: string; severity?: any; guard: string }): Decision {
+    if (result.status === 'allow') return { allowed: true, denied: false, warn: false };
+    if (result.status === 'warn') {
+      return { allowed: true, denied: false, warn: true, reason: result.reason, guard: result.guard, message: result.reason };
+    }
+    return { allowed: false, denied: true, warn: false, reason: result.reason, guard: result.guard, severity: result.severity };
   }
 }

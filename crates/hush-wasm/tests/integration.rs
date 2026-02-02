@@ -1,6 +1,8 @@
 //! Integration tests for hush-wasm
 //! These run as regular Rust tests (not WASM)
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use hush_core::{Keypair, Receipt, SignedReceipt, Verdict};
 
 #[test]

@@ -57,8 +57,12 @@ pub async fn check_action(
 ) -> Result<Json<CheckResponse>, (StatusCode, String)> {
     let engine = state.engine.read().await;
 
-    let context = GuardContext::new()
-        .with_session_id(request.session_id.clone().unwrap_or_else(|| state.session_id.clone()));
+    let context = GuardContext::new().with_session_id(
+        request
+            .session_id
+            .clone()
+            .unwrap_or_else(|| state.session_id.clone()),
+    );
 
     let result = match request.action_type.as_str() {
         "file_access" => engine.check_file_access(&request.target, &context).await,
@@ -77,7 +81,9 @@ pub async fn check_action(
         "shell" => engine.check_shell(&request.target, &context).await,
         "mcp_tool" => {
             let args = request.args.clone().unwrap_or(serde_json::json!({}));
-            engine.check_mcp_tool(&request.target, &args, &context).await
+            engine
+                .check_mcp_tool(&request.target, &args, &context)
+                .await
         }
         "patch" => {
             let diff = request.content.as_deref().unwrap_or("");

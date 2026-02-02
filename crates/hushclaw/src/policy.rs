@@ -1,14 +1,23 @@
 //! Policy configuration and rulesets
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use crate::error::{Error, Result};
+use globset::GlobBuilder;
+
+use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
 use crate::guards::{
     EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard,
-    McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard, SecretLeakConfig,
-    SecretLeakGuard,
+    McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard, PromptInjectionConfig,
+    PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
 };
+
+/// Current policy schema version.
+///
+/// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
+/// unsupported versions to prevent silent drift.
+pub const POLICY_SCHEMA_VERSION: &str = "1.0.0";
 
 /// Strategy for merging policies when using extends
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +34,7 @@ pub enum MergeStrategy {
 
 /// Complete policy configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Policy {
     /// Policy version
     #[serde(default = "default_version")]
@@ -50,7 +60,7 @@ pub struct Policy {
 }
 
 fn default_version() -> String {
-    "1.0.0".to_string()
+    POLICY_SCHEMA_VERSION.to_string()
 }
 
 impl Default for Policy {
@@ -69,6 +79,7 @@ impl Default for Policy {
 
 /// Configuration for all guards
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GuardConfigs {
     /// Forbidden path guard config
     #[serde(default)]
@@ -85,6 +96,9 @@ pub struct GuardConfigs {
     /// MCP tool guard config
     #[serde(default)]
     pub mcp_tool: Option<McpToolConfig>,
+    /// Prompt injection guard config
+    #[serde(default)]
+    pub prompt_injection: Option<PromptInjectionConfig>,
 }
 
 impl GuardConfigs {
@@ -95,29 +109,44 @@ impl GuardConfigs {
                 (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
                 (Some(base), None) => Some(base.clone()),
                 // When base is None, merge child with default to apply additional_patterns
-                (None, Some(child_cfg)) => Some(ForbiddenPathConfig::default().merge_with(child_cfg)),
+                (None, Some(child_cfg)) => {
+                    Some(ForbiddenPathConfig::default().merge_with(child_cfg))
+                }
                 (None, None) => None,
             },
             egress_allowlist: match (&self.egress_allowlist, &child.egress_allowlist) {
                 (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
                 (Some(base), None) => Some(base.clone()),
-                (None, Some(child_cfg)) => Some(EgressAllowlistConfig::default().merge_with(child_cfg)),
+                (None, Some(child_cfg)) => {
+                    Some(EgressAllowlistConfig::default().merge_with(child_cfg))
+                }
                 (None, None) => None,
             },
-            secret_leak: child.secret_leak.clone().or_else(|| self.secret_leak.clone()),
-            patch_integrity: child.patch_integrity.clone().or_else(|| self.patch_integrity.clone()),
+            secret_leak: child
+                .secret_leak
+                .clone()
+                .or_else(|| self.secret_leak.clone()),
+            patch_integrity: child
+                .patch_integrity
+                .clone()
+                .or_else(|| self.patch_integrity.clone()),
             mcp_tool: match (&self.mcp_tool, &child.mcp_tool) {
                 (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
                 (Some(base), None) => Some(base.clone()),
                 (None, Some(child_cfg)) => Some(McpToolConfig::default().merge_with(child_cfg)),
                 (None, None) => None,
             },
+            prompt_injection: child
+                .prompt_injection
+                .clone()
+                .or_else(|| self.prompt_injection.clone()),
         }
     }
 }
 
 /// Global policy settings
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PolicySettings {
     /// Whether to fail fast on first violation
     #[serde(default)]
@@ -158,7 +187,9 @@ impl Policy {
 
     /// Parse from YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self> {
-        serde_yaml::from_str(yaml).map_err(Error::from)
+        let policy: Self = serde_yaml::from_str(yaml)?;
+        policy.validate()?;
+        Ok(policy)
     }
 
     /// Export to YAML string
@@ -166,13 +197,114 @@ impl Policy {
         serde_yaml::to_string(self).map_err(Error::from)
     }
 
+    /// Validate policy semantics and guard configs.
+    ///
+    /// This is a security boundary: invalid regex/glob patterns are treated as errors, not silently ignored.
+    pub fn validate(&self) -> Result<()> {
+        validate_policy_version(&self.version)?;
+
+        let mut errors: Vec<PolicyFieldError> = Vec::new();
+
+        if let Some(cfg) = &self.guards.forbidden_path {
+            validate_globs(&mut errors, "guards.forbidden_path.patterns", &cfg.patterns);
+            validate_globs(
+                &mut errors,
+                "guards.forbidden_path.exceptions",
+                &cfg.exceptions,
+            );
+            validate_globs(
+                &mut errors,
+                "guards.forbidden_path.additional_patterns",
+                &cfg.additional_patterns,
+            );
+            validate_globs(
+                &mut errors,
+                "guards.forbidden_path.remove_patterns",
+                &cfg.remove_patterns,
+            );
+        }
+
+        if let Some(cfg) = &self.guards.egress_allowlist {
+            validate_domain_globs(&mut errors, "guards.egress_allowlist.allow", &cfg.allow);
+            validate_domain_globs(&mut errors, "guards.egress_allowlist.block", &cfg.block);
+            validate_domain_globs(
+                &mut errors,
+                "guards.egress_allowlist.additional_allow",
+                &cfg.additional_allow,
+            );
+            validate_domain_globs(
+                &mut errors,
+                "guards.egress_allowlist.additional_block",
+                &cfg.additional_block,
+            );
+            validate_domain_globs(
+                &mut errors,
+                "guards.egress_allowlist.remove_allow",
+                &cfg.remove_allow,
+            );
+            validate_domain_globs(
+                &mut errors,
+                "guards.egress_allowlist.remove_block",
+                &cfg.remove_block,
+            );
+        }
+
+        if let Some(cfg) = &self.guards.secret_leak {
+            for (idx, p) in cfg.patterns.iter().enumerate() {
+                if let Err(e) = Regex::new(&p.pattern) {
+                    errors.push(PolicyFieldError::new(
+                        format!("guards.secret_leak.patterns[{}].pattern", idx),
+                        format!("invalid regex ({}): {}", p.name, e),
+                    ));
+                }
+            }
+            validate_globs(
+                &mut errors,
+                "guards.secret_leak.skip_paths",
+                &cfg.skip_paths,
+            );
+        }
+
+        if let Some(cfg) = &self.guards.patch_integrity {
+            for (idx, pattern) in cfg.forbidden_patterns.iter().enumerate() {
+                if let Err(e) = Regex::new(pattern) {
+                    errors.push(PolicyFieldError::new(
+                        format!("guards.patch_integrity.forbidden_patterns[{}]", idx),
+                        format!("invalid regex: {}", e),
+                    ));
+                }
+            }
+        }
+
+        if let Some(cfg) = &self.guards.prompt_injection {
+            if cfg.max_scan_bytes == 0 {
+                errors.push(PolicyFieldError::new(
+                    "guards.prompt_injection.max_scan_bytes".to_string(),
+                    "max_scan_bytes must be > 0".to_string(),
+                ));
+            }
+            if !cfg.block_at_or_above.at_least(cfg.warn_at_or_above) {
+                errors.push(PolicyFieldError::new(
+                    "guards.prompt_injection.warn_at_or_above".to_string(),
+                    "warn_at_or_above must be <= block_at_or_above".to_string(),
+                ));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(PolicyValidationError::new(errors).into())
+        }
+    }
+
     /// Resolve a base policy by name or path
     ///
-    /// Tries built-in ruleset names first (default, strict, permissive),
+    /// Tries built-in ruleset names first,
     /// then falls back to loading from file path.
     pub fn resolve_base(name_or_path: &str) -> Result<Self> {
         // Try built-in rulesets first
-        if let Some(ruleset) = RuleSet::by_name(name_or_path) {
+        if let Some(ruleset) = RuleSet::by_name(name_or_path)? {
             return Ok(ruleset.policy);
         }
 
@@ -248,12 +380,16 @@ impl Policy {
                     } else {
                         self.settings.fail_fast
                     },
-                    verbose_logging: if child.settings.verbose_logging != PolicySettings::default().verbose_logging {
+                    verbose_logging: if child.settings.verbose_logging
+                        != PolicySettings::default().verbose_logging
+                    {
                         child.settings.verbose_logging
                     } else {
                         self.settings.verbose_logging
                     },
-                    session_timeout_secs: if child.settings.session_timeout_secs != default_timeout() {
+                    session_timeout_secs: if child.settings.session_timeout_secs
+                        != default_timeout()
+                    {
                         child.settings.session_timeout_secs
                     } else {
                         self.settings.session_timeout_secs
@@ -268,7 +404,11 @@ impl Policy {
     /// If the policy has an `extends` field, loads the base and merges.
     /// Detects circular dependencies.
     pub fn from_yaml_with_extends(yaml: &str, base_path: Option<&Path>) -> Result<Self> {
-        Self::from_yaml_with_extends_internal(yaml, base_path, &mut std::collections::HashSet::new())
+        Self::from_yaml_with_extends_internal(
+            yaml,
+            base_path,
+            &mut std::collections::HashSet::new(),
+        )
     }
 
     fn from_yaml_with_extends_internal(
@@ -276,7 +416,7 @@ impl Policy {
         base_path: Option<&Path>,
         visited: &mut std::collections::HashSet<String>,
     ) -> Result<Self> {
-        let child: Policy = serde_yaml::from_str(yaml)?;
+        let child = Policy::from_yaml(yaml)?;
 
         if let Some(ref extends) = child.extends {
             // Check for circular dependency
@@ -289,7 +429,7 @@ impl Policy {
             visited.insert(extends.clone());
 
             // Resolve base policy
-            let base = if let Some(ruleset) = RuleSet::by_name(extends) {
+            let base = if let Some(ruleset) = RuleSet::by_name(extends)? {
                 ruleset.policy
             } else {
                 // Try as file path, relative to base_path if provided
@@ -307,14 +447,12 @@ impl Policy {
                 }
 
                 let base_yaml = std::fs::read_to_string(&extends_path)?;
-                Self::from_yaml_with_extends_internal(
-                    &base_yaml,
-                    Some(&extends_path),
-                    visited,
-                )?
+                Self::from_yaml_with_extends_internal(&base_yaml, Some(&extends_path), visited)?
             };
 
-            Ok(base.merge(&child))
+            let merged = base.merge(&child);
+            merged.validate()?;
+            Ok(merged)
         } else {
             Ok(child)
         }
@@ -328,7 +466,7 @@ impl Policy {
     }
 
     /// Create guards from this policy
-    pub fn create_guards(&self) -> PolicyGuards {
+    pub(crate) fn create_guards(&self) -> PolicyGuards {
         PolicyGuards {
             forbidden_path: self
                 .guards
@@ -360,17 +498,92 @@ impl Policy {
                 .clone()
                 .map(McpToolGuard::with_config)
                 .unwrap_or_default(),
+            prompt_injection: self
+                .guards
+                .prompt_injection
+                .clone()
+                .map(PromptInjectionGuard::with_config)
+                .unwrap_or_default(),
+        }
+    }
+}
+
+fn validate_policy_version(version: &str) -> Result<()> {
+    if parse_semver_strict(version).is_none() {
+        return Err(Error::InvalidPolicyVersion {
+            version: version.to_string(),
+        });
+    }
+
+    if version != POLICY_SCHEMA_VERSION {
+        return Err(Error::UnsupportedPolicyVersion {
+            found: version.to_string(),
+            supported: POLICY_SCHEMA_VERSION.to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn parse_semver_strict(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.split('.');
+    let major = parse_semver_part(parts.next()?)?;
+    let minor = parse_semver_part(parts.next()?)?;
+    let patch = parse_semver_part(parts.next()?)?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    Some((major, minor, patch))
+}
+
+fn parse_semver_part(part: &str) -> Option<u64> {
+    if part.is_empty() {
+        return None;
+    }
+    if part.len() > 1 && part.starts_with('0') {
+        return None;
+    }
+    if !part.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    part.parse().ok()
+}
+
+fn validate_globs(errors: &mut Vec<PolicyFieldError>, field: &str, patterns: &[String]) {
+    for (idx, pattern) in patterns.iter().enumerate() {
+        if let Err(e) = glob::Pattern::new(pattern) {
+            errors.push(PolicyFieldError::new(
+                format!("{}[{}]", field, idx),
+                format!("invalid glob {:?}: {}", pattern, e),
+            ));
+        }
+    }
+}
+
+fn validate_domain_globs(errors: &mut Vec<PolicyFieldError>, field: &str, patterns: &[String]) {
+    for (idx, pattern) in patterns.iter().enumerate() {
+        if let Err(e) = GlobBuilder::new(pattern)
+            .case_insensitive(true)
+            .literal_separator(true)
+            .build()
+        {
+            errors.push(PolicyFieldError::new(
+                format!("{}[{}]", field, idx),
+                format!("invalid domain glob {:?}: {}", pattern, e),
+            ));
         }
     }
 }
 
 /// Guards instantiated from a policy
-pub struct PolicyGuards {
+pub(crate) struct PolicyGuards {
     pub forbidden_path: ForbiddenPathGuard,
     pub egress_allowlist: EgressAllowlistGuard,
     pub secret_leak: SecretLeakGuard,
     pub patch_integrity: PatchIntegrityGuard,
     pub mcp_tool: McpToolGuard,
+    pub prompt_injection: PromptInjectionGuard,
 }
 
 /// Named ruleset with pre-configured policies
@@ -387,107 +600,33 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    /// Load the "default" ruleset
-    pub fn default_ruleset() -> Self {
-        Self {
-            id: "default".to_string(),
-            name: "Default".to_string(),
-            description: "Default security rules for AI agent execution".to_string(),
-            policy: Policy::default(),
-        }
-    }
+    pub fn by_name(name: &str) -> Result<Option<Self>> {
+        let id = name.strip_prefix("hushclaw:").unwrap_or(name);
 
-    /// Load the "strict" ruleset
-    pub fn strict() -> Self {
-        let mut policy = Policy {
-            name: "Strict".to_string(),
-            description: "Strict security rules with minimal permissions".to_string(),
-            ..Default::default()
-        };
-
-        // Strict egress - block by default
-        policy.guards.egress_allowlist = Some(EgressAllowlistConfig {
-            allow: vec![],
-            block: vec![],
-            default_action: "block".to_string(),
-            ..Default::default()
-        });
-
-        // Strict MCP tools - block by default
-        policy.guards.mcp_tool = Some(McpToolConfig {
-            allow: vec![
-                "read_file".to_string(),
-                "list_directory".to_string(),
-                "search".to_string(),
-            ],
-            block: vec![],
-            require_confirmation: vec![],
-            default_action: "block".to_string(),
-            max_args_size: 1024 * 1024,
-            ..Default::default()
-        });
-
-        // Strict patch limits
-        policy.guards.patch_integrity = Some(PatchIntegrityConfig {
-            max_additions: 500,
-            max_deletions: 200,
-            require_balance: true,
-            max_imbalance_ratio: 5.0,
-            ..Default::default()
-        });
-
-        policy.settings.fail_fast = true;
-
-        Self {
-            id: "strict".to_string(),
-            name: "Strict".to_string(),
-            description: "Strict security rules with minimal permissions".to_string(),
-            policy,
-        }
-    }
-
-    /// Load the "permissive" ruleset (for development)
-    pub fn permissive() -> Self {
-        let mut policy = Policy {
-            name: "Permissive".to_string(),
-            description: "Permissive rules for development (use with caution)".to_string(),
-            ..Default::default()
-        };
-
-        // Allow all egress
-        policy.guards.egress_allowlist = Some(EgressAllowlistConfig {
-            allow: vec!["*".to_string()],
-            block: vec![],
-            default_action: "allow".to_string(),
-            ..Default::default()
-        });
-
-        // Higher patch limits
-        policy.guards.patch_integrity = Some(PatchIntegrityConfig {
-            max_additions: 10000,
-            max_deletions: 5000,
-            require_balance: false,
-            ..Default::default()
-        });
-
-        policy.settings.verbose_logging = true;
-
-        Self {
-            id: "permissive".to_string(),
-            name: "Permissive".to_string(),
-            description: "Permissive rules for development (use with caution)".to_string(),
-            policy,
-        }
-    }
-
-    /// Load a ruleset by name
-    pub fn by_name(name: &str) -> Option<Self> {
-        match name {
-            "default" => Some(Self::default_ruleset()),
-            "strict" => Some(Self::strict()),
-            "permissive" => Some(Self::permissive()),
+        let yaml = match id {
+            "default" => Some(include_str!("../../../rulesets/default.yaml")),
+            "strict" => Some(include_str!("../../../rulesets/strict.yaml")),
+            "ai-agent" => Some(include_str!("../../../rulesets/ai-agent.yaml")),
+            "cicd" => Some(include_str!("../../../rulesets/cicd.yaml")),
+            "permissive" => Some(include_str!("../../../rulesets/permissive.yaml")),
             _ => None,
-        }
+        };
+
+        let Some(yaml) = yaml else {
+            return Ok(None);
+        };
+
+        let policy = Policy::from_yaml_with_extends(yaml, None)?;
+        Ok(Some(Self {
+            id: id.to_string(),
+            name: policy.name.clone(),
+            description: policy.description.clone(),
+            policy,
+        }))
+    }
+
+    pub fn list() -> &'static [&'static str] {
+        &["default", "strict", "ai-agent", "cicd", "permissive"]
     }
 }
 
@@ -510,6 +649,107 @@ mod tests {
     }
 
     #[test]
+    fn test_policy_validation_rejects_invalid_glob() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+guards:
+  forbidden_path:
+    patterns:
+      - "foo[bar"
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(!e.is_empty());
+                assert!(e
+                    .errors
+                    .iter()
+                    .any(|fe| fe.path == "guards.forbidden_path.patterns[0]"));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_policy_validation_rejects_invalid_domain_glob() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+guards:
+  egress_allowlist:
+    allow:
+      - "foo[bar"
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(!e.is_empty());
+                assert!(e
+                    .errors
+                    .iter()
+                    .any(|fe| fe.path == "guards.egress_allowlist.allow[0]"));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_policy_validation_rejects_invalid_regex() {
+        let yaml = r#"
+version: "1.0.0"
+name: Test
+guards:
+  secret_leak:
+    patterns:
+      - name: bad
+        pattern: "("
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(!e.is_empty());
+                assert!(e
+                    .errors
+                    .iter()
+                    .any(|fe| fe.path == "guards.secret_leak.patterns[0].pattern"));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_policy_version_rejects_invalid_semver() {
+        let yaml = r#"
+version: "1.0"
+name: Test
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::InvalidPolicyVersion { .. } => {}
+            other => panic!("expected invalid policy version error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_policy_version_rejects_unsupported_version() {
+        let yaml = r#"
+version: "2.0.0"
+name: Test
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::UnsupportedPolicyVersion { .. } => {}
+            other => panic!("expected unsupported policy version error, got: {}", other),
+        }
+    }
+
+    #[test]
     fn test_create_guards() {
         let policy = Policy::new();
         let guards = policy.create_guards();
@@ -521,22 +761,78 @@ mod tests {
 
     #[test]
     fn test_rulesets() {
-        let default = RuleSet::default_ruleset();
+        let default = match RuleSet::by_name("default") {
+            Ok(Some(rs)) => rs,
+            Ok(None) => panic!("missing built-in ruleset: default"),
+            Err(e) => panic!("failed to load built-in ruleset: {}", e),
+        };
         assert_eq!(default.id, "default");
 
-        let strict = RuleSet::strict();
+        let strict = match RuleSet::by_name("strict") {
+            Ok(Some(rs)) => rs,
+            Ok(None) => panic!("missing built-in ruleset: strict"),
+            Err(e) => panic!("failed to load built-in ruleset: {}", e),
+        };
         assert!(strict.policy.settings.fail_fast);
 
-        let permissive = RuleSet::permissive();
+        let permissive = match RuleSet::by_name("permissive") {
+            Ok(Some(rs)) => rs,
+            Ok(None) => panic!("missing built-in ruleset: permissive"),
+            Err(e) => panic!("failed to load built-in ruleset: {}", e),
+        };
         assert!(permissive.policy.settings.verbose_logging);
     }
 
     #[test]
     fn test_ruleset_by_name() {
-        assert!(RuleSet::by_name("default").is_some());
-        assert!(RuleSet::by_name("strict").is_some());
-        assert!(RuleSet::by_name("permissive").is_some());
-        assert!(RuleSet::by_name("unknown").is_none());
+        assert!(matches!(RuleSet::by_name("default"), Ok(Some(_))));
+        assert!(matches!(RuleSet::by_name("strict"), Ok(Some(_))));
+        assert!(matches!(RuleSet::by_name("ai-agent"), Ok(Some(_))));
+        assert!(matches!(RuleSet::by_name("cicd"), Ok(Some(_))));
+        assert!(matches!(RuleSet::by_name("permissive"), Ok(Some(_))));
+        assert!(matches!(RuleSet::by_name("unknown"), Ok(None)));
+    }
+
+    #[test]
+    fn test_rulesets_parse_validate_and_match_disk_registry() {
+        use std::collections::HashSet;
+        use std::path::PathBuf;
+
+        let expected: HashSet<&str> = RuleSet::list().iter().copied().collect();
+        assert!(!expected.is_empty());
+
+        for id in RuleSet::list() {
+            let rs = RuleSet::by_name(id)
+                .unwrap()
+                .unwrap_or_else(|| panic!("missing built-in ruleset: {}", id));
+            rs.policy.validate().unwrap();
+
+            let prefixed = format!("hushclaw:{}", id);
+            let rs2 = RuleSet::by_name(&prefixed)
+                .unwrap()
+                .unwrap_or_else(|| panic!("missing built-in ruleset: {}", prefixed));
+            assert_eq!(rs2.id, *id);
+        }
+
+        let rulesets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../rulesets");
+        let mut disk_ids: HashSet<String> = HashSet::new();
+        for entry in std::fs::read_dir(&rulesets_dir)
+            .unwrap_or_else(|e| panic!("failed to read {:?}: {}", rulesets_dir, e))
+        {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "yaml") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    disk_ids.insert(stem.to_string());
+                }
+            }
+        }
+
+        let disk: HashSet<&str> = disk_ids.iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            disk, expected,
+            "rulesets/ directory and RuleSet::list() drifted"
+        );
     }
 
     #[test]

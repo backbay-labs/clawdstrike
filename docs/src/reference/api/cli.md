@@ -1,262 +1,82 @@
 # CLI Reference
 
-Command-line interface for hushclaw.
+The `hush` CLI is provided by the `hush-cli` crate.
 
 ## Installation
 
 ```bash
-cargo install hush-cli
+cargo install --path crates/hush-cli
 ```
 
-## Commands
+## `hush check`
 
-### hush run
-
-Run a command with policy enforcement.
+Evaluate a single action against a ruleset or policy file.
 
 ```bash
-hush run --policy policy.yaml -- your-command args
+hush check [--json] --action-type <file|egress|mcp> [--ruleset NAME | --policy FILE] <TARGET>
 ```
 
-Options:
-
-| Flag | Description |
-|------|-------------|
-| `--policy <path>` | Policy file or built-in name |
-| `--mode <mode>` | `deterministic`, `advisory`, or `audit` |
-| `--log-level <level>` | `error`, `warn`, `info`, `debug`, `trace` |
-| `--receipt <path>` | Save receipt to file |
-| `--no-receipt` | Don't generate receipt |
+- `file`: `<TARGET>` is a path string.
+- `egress`: `<TARGET>` is `host[:port]` (port defaults to `443`).
+- `mcp`: `<TARGET>` is a tool name. (The CLI currently evaluates with empty tool args `{}`.)
 
 Examples:
 
 ```bash
-# Basic usage
-hush run --policy policy.yaml -- python script.py
-
-# Advisory mode (warn only)
-hush run --policy policy.yaml --mode advisory -- ./build.sh
-
-# Save receipt
-hush run --policy policy.yaml --receipt ./run.receipt.json -- npm test
-
-# Use built-in policy
-hush run --policy hushclaw:strict -- cargo build
+hush check --action-type file --ruleset strict ~/.ssh/id_rsa
+hush check --action-type egress --ruleset default api.github.com:443
+hush check --action-type mcp --ruleset strict shell_exec
 ```
 
-### hush policy
-
-Policy management commands.
-
-#### policy lint
-
-Validate a policy file.
+Machine-readable JSON:
 
 ```bash
-hush policy lint policy.yaml
+hush check --json --action-type egress --ruleset default api.github.com:443 | jq .
 ```
 
-Output:
+## `hush policy`
 
-```
-Validating policy.yaml...
+- `hush policy list` — list built-in rulesets.
+- `hush policy show [RULESET_OR_FILE]` — print a ruleset policy or a policy file.
+  - `--merged` resolves `extends` (useful for files).
+- `hush policy validate <FILE>` — validate YAML + patterns.
+  - `--resolve` resolves `extends` and prints the merged policy.
 
-✓ Syntax valid
-✓ Schema valid
-✓ No conflicts detected
-
-Suggestions:
-  - Consider adding 'pypi.org' for Python projects
-```
-
-#### policy show
-
-Display policy details.
+Examples:
 
 ```bash
-hush policy show --policy policy.yaml
-hush policy show --effective --policy policy.yaml
+hush policy list
+hush policy show ai-agent
+hush policy show ./policy.yaml
+hush policy show --merged ./policy.yaml
+hush policy validate ./policy.yaml
+hush policy validate --resolve ./policy.yaml
 ```
 
-#### policy test
+## Receipts and crypto
 
-Test an event against a policy.
+- `hush keygen --output <path>` — generate Ed25519 keypair (hex files).
+- `hush verify [--json] <receipt.json> --pubkey <pubkey>` — verify a `SignedReceipt` (signature + verdict).
+- `hush hash <file|- >` — compute `sha256` or `keccak256`.
+- `hush sign --key <private_key> <file>` — sign a file (raw Ed25519 signature).
+- `hush merkle root|proof|verify` — Merkle tree utilities for files.
+
+## `hush daemon` (optional)
+
+The CLI can start/inspect a `hushd` daemon, but `hushd` must be installed separately.
 
 ```bash
-hush policy test event.json --policy policy.yaml
+cargo install --path crates/hushd
+hush daemon start
+hush daemon status
+hush daemon reload
 ```
 
-Or from stdin:
+## Shell completions
 
 ```bash
-echo '{"event_type":"file_read","data":{"path":"~/.ssh/id_rsa"}}' | \
-  hush policy test - --policy policy.yaml
+hush completions zsh
 ```
-
-Output:
-
-```
-Event: file_read ~/.ssh/id_rsa
-Result: DENIED
-Guard: ForbiddenPathGuard
-Reason: Path matches forbidden pattern: ~/.ssh/*
-Severity: CRITICAL
-```
-
-#### policy diff
-
-Compare two policies.
-
-```bash
-hush policy diff policy-a.yaml policy-b.yaml
-```
-
-### hush verify
-
-Verify a signed receipt.
-
-```bash
-hush verify receipt.json
-```
-
-Output:
-
-```
-Receipt Verification
-────────────────────
-
-Run ID:     run_abc123
-Events:     127
-Denials:    2
-
-Signature:  VALID
-Merkle:     VALID
-
-Receipt is authentic and unmodified.
-```
-
-Options:
-
-| Flag | Description |
-|------|-------------|
-| `--public-key <path>` | Use specific public key |
-| `--json` | Output as JSON |
-| `--quiet` | Only exit code |
-
-### hush sign
-
-Sign a payload.
-
-```bash
-hush sign payload.json --key ~/.hush/keys/private.key
-```
-
-### hush hash
-
-Compute content hash.
-
-```bash
-hush hash file.txt
-# 7f3a4b2c...
-
-hush hash --algorithm sha256 file.txt
-hush hash --algorithm keccak256 file.txt
-```
-
-### hush keygen
-
-Generate a keypair.
-
-```bash
-hush keygen --output ~/.hush/keys/
-```
-
-Creates:
-- `~/.hush/keys/private.key`
-- `~/.hush/keys/public.key`
-
-### hush merkle
-
-Merkle tree operations.
-
-```bash
-# Build tree
-hush merkle build events.jsonl --output tree.json
-
-# Get root
-hush merkle root events.jsonl
-# 0x7f3a4b2c...
-
-# Verify proof
-hush merkle verify proof.json
-```
-
-### hush explain
-
-Explain a blocked event.
-
-```bash
-hush explain event-id
-```
-
-Output:
-
-```
-Event Details
-─────────────────────────────
-
-Event ID:    evt_abc123
-Timestamp:   2026-01-31T14:23:45Z
-Type:        file_read
-Target:      ~/.ssh/id_rsa
-
-Decision:    BLOCKED
-
-Evaluation Chain:
-─────────────────────────────
-
-1. ForbiddenPathGuard
-   Pattern: ~/.ssh/*
-   Result: DENY
-   Reason: Path matches forbidden pattern
-
-Remediation:
-─────────────────────────────
-
-To allow this path:
-
-  filesystem:
-    forbidden_paths:
-      # Remove: - "~/.ssh/*"
-```
-
-### hush audit
-
-Query audit logs.
-
-```bash
-# Recent denials
-hush audit query --denied --since 1h
-
-# By event type
-hush audit query --event-type network_egress --since 24h
-
-# By guard
-hush audit query --guard EgressAllowlistGuard --since 7d
-
-# Export
-hush audit query --since 24h --format json > audit.json
-```
-
-Generate report:
-
-```bash
-hush audit report --period week --output report.pdf
-```
-
-### hush daemon
-
-Daemon control.
 
 ```bash
 # Start daemon
@@ -272,48 +92,16 @@ hush daemon stop
 hush daemon reload
 ```
 
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `HUSHCLAW_POLICY` | Default policy path |
-| `HUSH_LOG_LEVEL` | Log level |
-| `HUSH_LOG_FORMAT` | `json` or `human` |
-| `HUSH_RECEIPTS_DIR` | Receipt storage path |
-| `HUSH_KEY_PATH` | Signing key path |
-
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success |
-| 1 | Policy violation (blocked) |
-| 2 | Configuration error |
-| 3 | Runtime error |
-| 4 | Invalid arguments |
-
-## Configuration File
-
-```yaml
-# ~/.hush/config.yaml
-policy: ~/.hush/policy.yaml
-mode: deterministic
-
-logging:
-  level: info
-  format: json
-  path: ~/.hush/logs/audit.log
-
-receipts:
-  enabled: true
-  path: ~/.hush/receipts
-  sign: true
-  key_path: ~/.hush/keys/private.key
-
-daemon:
-  address: 127.0.0.1:9090
-  pidfile: /var/run/hushd.pid
-```
+| 0 | OK (allowed / receipt verified + PASS) |
+| 1 | Warning (allowed, but warnings present) |
+| 2 | Fail (blocked / receipt invalid / receipt verdict FAIL) |
+| 3 | Config error (invalid policy/ruleset/pubkey/receipt JSON) |
+| 4 | Runtime error (I/O or internal) |
+| 5 | Invalid arguments |
 
 ## Shell Completions
 

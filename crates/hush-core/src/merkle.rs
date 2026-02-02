@@ -9,9 +9,10 @@
 //! append-only semantics).
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::error::{Error, Result};
-use crate::hashing::{sha256, Hash};
+use crate::hashing::Hash;
 
 /// Compute leaf hash per RFC 6962: SHA256(0x00 || leaf_bytes)
 ///
@@ -24,19 +25,27 @@ use crate::hashing::{sha256, Hash};
 /// assert_eq!(hash.as_bytes().len(), 32);
 /// ```
 pub fn leaf_hash(leaf_bytes: &[u8]) -> Hash {
-    let mut buf = Vec::with_capacity(1 + leaf_bytes.len());
-    buf.push(0x00);
-    buf.extend_from_slice(leaf_bytes);
-    sha256(&buf)
+    let mut hasher = Sha256::new();
+    hasher.update([0x00]);
+    hasher.update(leaf_bytes);
+    let result = hasher.finalize();
+
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&result);
+    Hash::from_bytes(bytes)
 }
 
 /// Compute node hash per RFC 6962: SHA256(0x01 || left || right)
 pub fn node_hash(left: &Hash, right: &Hash) -> Hash {
-    let mut buf = Vec::with_capacity(1 + 32 + 32);
-    buf.push(0x01);
-    buf.extend_from_slice(left.as_bytes());
-    buf.extend_from_slice(right.as_bytes());
-    sha256(&buf)
+    let mut hasher = Sha256::new();
+    hasher.update([0x01]);
+    hasher.update(left.as_bytes());
+    hasher.update(right.as_bytes());
+    let result = hasher.finalize();
+
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&result);
+    Hash::from_bytes(bytes)
 }
 
 /// RFC 6962-compatible Merkle tree

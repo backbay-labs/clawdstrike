@@ -6,18 +6,119 @@ export interface EgressAllowlistConfig {
   defaultAction?: "allow" | "block";
 }
 
+function escapeRegex(ch: string): string {
+  return ch.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+}
+
+function globToRegExp(pattern: string): RegExp {
+  if (!pattern) {
+    throw new Error("glob pattern must be non-empty");
+  }
+
+  let out = "^";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+
+    if (ch === "\\") {
+      const next = pattern[i + 1];
+      if (next === undefined) {
+        throw new Error("glob pattern ends with escape");
+      }
+      out += escapeRegex(next);
+      i++;
+      continue;
+    }
+
+    if (ch === "*") {
+      out += ".*";
+      continue;
+    }
+
+    if (ch === "?") {
+      out += ".";
+      continue;
+    }
+
+    if (ch === "[") {
+      const end = pattern.indexOf("]", i + 1);
+      if (end === -1) {
+        throw new Error("glob pattern has unclosed character class");
+      }
+      let body = pattern.slice(i + 1, end);
+      if (body.length === 0) {
+        throw new Error("glob pattern has empty character class");
+      }
+
+      let negate = false;
+      if (body.startsWith("!")) {
+        negate = true;
+        body = body.slice(1);
+      }
+
+      let classOut = "[";
+      if (negate) classOut += "^";
+
+      for (let j = 0; j < body.length; j++) {
+        const c = body[j];
+        if (c === "\\") {
+          const next = body[j + 1];
+          if (next === undefined) {
+            throw new Error("glob character class ends with escape");
+          }
+          if (next === "\\") {
+            classOut += "\\\\";
+          } else if (next === "]") {
+            classOut += "\\]";
+          } else if (next === "^") {
+            classOut += "\\^";
+          } else if (next === "-") {
+            classOut += "\\-";
+          } else {
+            classOut += next;
+          }
+          j++;
+          continue;
+        }
+        if (c === "]") {
+          classOut += "\\]";
+          continue;
+        }
+        if (c === "^") {
+          classOut += "\\^";
+          continue;
+        }
+        if (c === "-" && (j === 0 || j === body.length - 1)) {
+          classOut += "\\-";
+          continue;
+        }
+        classOut += c;
+      }
+
+      classOut += "]";
+      out += classOut;
+      i = end;
+      continue;
+    }
+
+    out += escapeRegex(ch);
+  }
+
+  out += "$";
+  return new RegExp(out, "i");
+}
+
 /**
  * Guard that controls outbound network access.
  */
 export class EgressAllowlistGuard implements Guard {
   readonly name = "egress_allowlist";
-  private allow: string[];
-  private block: string[];
+  private allow: RegExp[];
+  private block: RegExp[];
   private defaultAction: "allow" | "block";
 
   constructor(config: EgressAllowlistConfig = {}) {
-    this.allow = config.allow ?? [];
-    this.block = config.block ?? [];
+    this.allow = (config.allow ?? []).map((p) => globToRegExp(p));
+    this.block = (config.block ?? []).map((p) => globToRegExp(p));
     this.defaultAction = config.defaultAction ?? "block";
   }
 
@@ -69,27 +170,7 @@ export class EgressAllowlistGuard implements Guard {
     });
   }
 
-  private matchesAny(host: string, patterns: string[]): boolean {
-    return patterns.some((p) => this.matchPattern(host, p));
-  }
-
-  private matchPattern(host: string, pattern: string): boolean {
-    if (!pattern) return false;
-
-    // Exact match
-    if (host === pattern) return true;
-
-    // Wildcard pattern: *.example.com
-    if (pattern.startsWith("*.")) {
-      const suffix = pattern.slice(1); // ".example.com"
-      return host.endsWith(suffix);
-    }
-
-    // Subdomain matching: host ends with .pattern
-    if (host.endsWith("." + pattern)) {
-      return true;
-    }
-
-    return false;
+  private matchesAny(host: string, patterns: RegExp[]): boolean {
+    return patterns.some((re) => re.test(host));
   }
 }

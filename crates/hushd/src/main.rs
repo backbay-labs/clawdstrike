@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 //! Hushd - Hushclaw security daemon
 //!
 //! This daemon provides:
@@ -149,17 +151,23 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     // Setup signal handlers for graceful shutdown
     let shutdown_signal = async {
         let ctrl_c = async {
-            tokio::signal::ctrl_c()
-                .await
-                .expect("Failed to install Ctrl+C handler");
+            if let Err(err) = tokio::signal::ctrl_c().await {
+                tracing::error!(error = %err, "Failed to install Ctrl+C handler");
+                std::future::pending::<()>().await;
+            }
         };
 
         #[cfg(unix)]
         let terminate = async {
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("Failed to install SIGTERM handler")
-                .recv()
-                .await;
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(mut signal) => {
+                    signal.recv().await;
+                }
+                Err(err) => {
+                    tracing::error!(error = %err, "Failed to install SIGTERM handler");
+                    std::future::pending::<()>().await;
+                }
+            }
         };
 
         #[cfg(not(unix))]

@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 //! Native Rust bindings for hush Python SDK.
 //!
 //! Provides optimized implementations of cryptographic operations.

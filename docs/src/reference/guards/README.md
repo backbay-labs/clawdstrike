@@ -1,99 +1,44 @@
 # Guards Reference
 
-Complete reference for all built-in guards.
+Hushclaw ships with five built-in guards. Guards evaluate a `GuardAction` plus `GuardContext` and return a `GuardResult`.
 
-## Overview
+## Built-in guards
 
-| Guard | Purpose | Default |
-|-------|---------|---------|
-| [ForbiddenPathGuard](./forbidden-path.md) | Block sensitive paths | Enabled |
-| [EgressAllowlistGuard](./egress.md) | Control network access | Enabled |
-| [SecretLeakGuard](./secret-leak.md) | Detect secrets in output | Enabled |
-| [PatchIntegrityGuard](./patch-integrity.md) | Block dangerous code | Enabled |
-| [McpToolGuard](./mcp-tool.md) | Control tool access | Enabled |
+| Guard | Purpose | Config key |
+|------|---------|------------|
+| [ForbiddenPathGuard](./forbidden-path.md) | Block access to sensitive paths | `guards.forbidden_path` |
+| [EgressAllowlistGuard](./egress.md) | Control network egress | `guards.egress_allowlist` |
+| [SecretLeakGuard](./secret-leak.md) | Detect secrets in writes/patches | `guards.secret_leak` |
+| [PatchIntegrityGuard](./patch-integrity.md) | Block dangerous patches | `guards.patch_integrity` |
+| [McpToolGuard](./mcp-tool.md) | Restrict MCP tool usage | `guards.mcp_tool` |
+| [PromptInjectionGuard](./prompt-injection.md) | Detect prompt-injection in untrusted text | `guards.prompt_injection` |
 
-## Enable/Disable Guards
+## Action coverage
 
-```yaml
-guards:
-  forbidden_path: true
-  egress_allowlist: true
-  secret_leak: true
-  patch_integrity: true
-  mcp_tool: true
-```
+| Guard | FileAccess | FileWrite | Patch | NetworkEgress | McpTool |
+|------|------------|-----------|-------|---------------|---------|
+| ForbiddenPath | ✓ | ✓ | ✓ | | |
+| EgressAllowlist | | | | ✓ | |
+| SecretLeak | | ✓ | ✓ | | |
+| PatchIntegrity | | | ✓ | | |
+| McpTool | | | | | ✓ |
 
-## Event Types
+PromptInjectionGuard handles only `GuardAction::Custom("untrusted_text", ...)`.
 
-Each guard handles specific events:
+## Evaluation order and fail-fast
 
-| Guard | FileRead | FileWrite | NetworkEgress | ToolCall | PatchApply |
-|-------|----------|-----------|---------------|----------|------------|
-| ForbiddenPath | ✓ | ✓ | | | |
-| Egress | | | ✓ | | |
-| SecretLeak | | | | | ✓ |
-| PatchIntegrity | | | | | ✓ |
-| McpTool | | | | ✓ | |
+`HushEngine` evaluates applicable guards in this order:
 
-## Guard Evaluation Order
+1. `forbidden_path`
+2. `egress_allowlist`
+3. `secret_leak`
+4. `patch_integrity`
+5. `mcp_tool`
+6. `prompt_injection` (only for `Custom("untrusted_text", ...)`)
 
-Guards are evaluated in this order:
+If `settings.fail_fast: true`, evaluation stops on the first blocked result. Otherwise, all applicable guards run and the final verdict is the highest severity across results (block > warn > allow).
 
-1. **ForbiddenPathGuard** - Filesystem checks first
-2. **EgressAllowlistGuard** - Network checks
-3. **McpToolGuard** - Tool access checks
-4. **SecretLeakGuard** - Content inspection
-5. **PatchIntegrityGuard** - Code pattern checks
+## Defaults and “disabling” a guard
 
-Evaluation short-circuits on first Deny.
-
-## Common Configuration Patterns
-
-### Maximum Security
-
-```yaml
-guards:
-  forbidden_path: true
-  egress_allowlist: true
-  secret_leak: true
-  patch_integrity: true
-  mcp_tool: true
-
-egress:
-  mode: allowlist
-  allowed_domains: []  # Nothing allowed
-
-filesystem:
-  forbidden_paths:
-    - "~/*"  # Block all home directory access
-```
-
-### Development Mode
-
-```yaml
-guards:
-  forbidden_path: true
-  egress_allowlist: false  # Open network
-  secret_leak: true
-  patch_integrity: false   # Allow eval() etc.
-  mcp_tool: false          # All tools allowed
-```
-
-### CI/CD Pipeline
-
-```yaml
-guards:
-  forbidden_path: true
-  egress_allowlist: true
-  secret_leak: true
-  patch_integrity: true
-  mcp_tool: true
-
-egress:
-  allowed_domains:
-    - "*.internal.company.com"
-```
-
-## Custom Guards
-
-See [Custom Guards Guide](../../guides/custom-guards.md) for implementing your own guards.
+If a guard config is omitted from the policy, the guard runs with its default configuration.
+There is no `enabled: false` toggle in the current policy schema; to effectively disable a guard you must configure it to allow everything (e.g. empty forbidden path patterns, `default_action: allow`, etc.).

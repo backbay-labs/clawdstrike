@@ -36,13 +36,14 @@ Hushclaw implements defense-in-depth for AI agent execution:
 
 ### Guards
 
-Five composable security guards provide runtime protection:
+Six composable security guards provide runtime protection:
 
 1. **ForbiddenPathGuard** - Blocks access to sensitive filesystem paths (SSH keys, credentials, etc.)
 2. **EgressAllowlistGuard** - Controls network egress via domain allowlist/blocklist
 3. **SecretLeakGuard** - Detects potential secrets in file writes and patches
 4. **PatchIntegrityGuard** - Validates patch safety (size limits, forbidden patterns)
 5. **McpToolGuard** - Restricts MCP tool invocations
+6. **PromptInjectionGuard** - Detects and deduplicates prompt-injection attempts in untrusted text
 
 ### Attestation
 

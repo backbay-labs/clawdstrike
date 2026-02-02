@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during cryptographic operations
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Invalid signature")]
@@ -34,6 +35,12 @@ pub enum Error {
 
     #[error("Receipt verification failed: {0}")]
     ReceiptVerificationFailed(String),
+
+    #[error("Invalid receipt version: {version}")]
+    InvalidReceiptVersion { version: String },
+
+    #[error("Unsupported receipt version: {found} (supported: {supported})")]
+    UnsupportedReceiptVersion { found: String, supported: String },
 }
 
 impl From<serde_json::Error> for Error {

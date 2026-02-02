@@ -23,7 +23,6 @@ tracing.workspace = true
 regex.workspace = true
 glob.workspace = true
 chrono.workspace = true
-ipnet.workspace = true
 globset.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 
@@ -35,3 +34,6 @@ tempfile = "3.24"
 
 [features]
 default = []
+
+[lints]
+workspace = true

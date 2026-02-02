@@ -64,3 +64,6 @@ reqwest = { workspace = true, features = ["blocking"] }
 
 [features]
 default = []
+
+[lints]
+workspace = true

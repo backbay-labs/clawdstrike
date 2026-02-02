@@ -18,14 +18,16 @@ rand.workspace = true
 hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ryu.workspace = true
 thiserror.workspace = true
-uuid.workspace = true
 chrono.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 proptest = "1.4"
 
 [features]
 default = []
 wasm = []
+
+[lints]
+workspace = true

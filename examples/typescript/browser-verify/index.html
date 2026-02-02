@@ -52,6 +52,18 @@
       margin-bottom: 1rem;
     }
 
+    input[type="text"] {
+      display: block;
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: white;
+      margin-bottom: 1rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.9rem;
+    }
+
     button {
       background: #2563eb;
       color: white;
@@ -128,6 +140,13 @@
   <div class="upload-section">
     <label for="receipt-file">Select Receipt File</label>
     <input type="file" id="receipt-file" accept=".json">
+
+    <label for="signer-pk">Signer Public Key (hex, 32 bytes)</label>
+    <input type="text" id="signer-pk" placeholder="64 hex chars (optionally 0x-prefixed)">
+
+    <label for="cosigner-pk">Cosigner Public Key (optional)</label>
+    <input type="text" id="cosigner-pk" placeholder="64 hex chars (optionally 0x-prefixed)">
+
     <button id="verify-btn" disabled>Verify Receipt</button>
   </div>
 

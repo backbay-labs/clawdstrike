@@ -1,54 +1,27 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { canonicalize, canonicalHash } from "../src/canonical";
 import { toHex } from "../src/crypto/hash";
 
 describe("canonicalize", () => {
-  it("sorts object keys lexicographically", () => {
-    const obj = { z: 1, a: 2, m: 3 };
-    const result = canonicalize(obj);
-    expect(result).toBe('{"a":2,"m":3,"z":1}');
-  });
+  const HERE = path.dirname(fileURLToPath(import.meta.url));
+  const REPO_ROOT = path.resolve(HERE, "../../..");
 
-  it("produces no whitespace", () => {
-    const obj = { key: "value", list: [1, 2, 3] };
-    const result = canonicalize(obj);
-    expect(result).not.toContain(" ");
-    expect(result).not.toContain("\n");
-    expect(result).not.toContain("\t");
-  });
+  it("matches repo golden vectors (RFC 8785)", () => {
+    const vectorsPath = path.join(REPO_ROOT, "fixtures/canonical/jcs_vectors.json");
+    const vectors = JSON.parse(fs.readFileSync(vectorsPath, "utf8")) as Array<{
+      name: string;
+      input: unknown;
+      expected: string;
+    }>;
 
-  it("sorts nested object keys", () => {
-    const obj = { outer: { z: 1, a: 2 }, inner: [3, 2, 1] };
-    const result = canonicalize(obj);
-    expect(result).toBe('{"inner":[3,2,1],"outer":{"a":2,"z":1}}');
-  });
-
-  it("sorts numeric string keys lexicographically", () => {
-    const obj = { "2": "b", "10": "a", a: 0 };
-    const result = canonicalize(obj);
-    // "10" < "2" < "a" lexicographically
-    expect(result).toBe('{"10":"a","2":"b","a":0}');
-  });
-
-  it("serializes primitives correctly", () => {
-    expect(canonicalize(true)).toBe("true");
-    expect(canonicalize(false)).toBe("false");
-    expect(canonicalize(null)).toBe("null");
-    expect(canonicalize("hello")).toBe('"hello"');
-    expect(canonicalize(42)).toBe("42");
-  });
-
-  it("serializes empty structures", () => {
-    expect(canonicalize({})).toBe("{}");
-    expect(canonicalize([])).toBe("[]");
-  });
-
-  it("escapes control characters", () => {
-    const obj = { newline: "\n", tab: "\t", quote: '"' };
-    const result = canonicalize(obj);
-    expect(result).toContain("\\n");
-    expect(result).toContain("\\t");
-    expect(result).toContain('\\"');
+    for (const v of vectors) {
+      expect(canonicalize(v.input as Parameters<typeof canonicalize>[0]), v.name).toBe(
+        v.expected
+      );
+    }
   });
 
   it("throws for NaN", () => {

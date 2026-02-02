@@ -1,0 +1,61 @@
+[
+  {
+    "name": "supported_current",
+    "version": "1.0.0",
+    "supported": true
+  },
+  {
+    "name": "unsupported_patch",
+    "version": "1.0.1",
+    "supported": false,
+    "error_contains": "Unsupported receipt version"
+  },
+  {
+    "name": "unsupported_major",
+    "version": "2.0.0",
+    "supported": false,
+    "error_contains": "Unsupported receipt version"
+  },
+  {
+    "name": "invalid_missing_patch",
+    "version": "1.0",
+    "supported": false,
+    "error_contains": "Invalid receipt version"
+  },
+  {
+    "name": "invalid_missing_minor_and_patch",
+    "version": "1",
+    "supported": false,
+    "error_contains": "Invalid receipt version"
+  },
+  {
+    "name": "invalid_extra_part",
+    "version": "1.0.0.0",
+    "supported": false,
+    "error_contains": "Invalid receipt version"
+  },
+  {
+    "name": "invalid_leading_zero",
+    "version": "01.0.0",
+    "supported": false,
+    "error_contains": "Invalid receipt version"
+  },
+  {
+    "name": "invalid_prerelease",
+    "version": "1.0.0-alpha",
+    "supported": false,
+    "error_contains": "Invalid receipt version"
+  },
+  {
+    "name": "invalid_build_metadata",
+    "version": "1.0.0+build.1",
+    "supported": false,
+    "error_contains": "Invalid receipt version"
+  },
+  {
+    "name": "invalid_whitespace",
+    "version": " 1.0.0",
+    "supported": false,
+    "error_contains": "Invalid receipt version"
+  }
+]

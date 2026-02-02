@@ -21,10 +21,10 @@ openclaw start
 
 | Request | Result | Guard |
 |---------|--------|-------|
-| Read ~/.ssh/id_rsa | BLOCKED | ForbiddenPathGuard |
+| Read ~/.ssh/id_rsa | BLOCKED | forbidden_path |
 | Write /tmp/hello-agent/test.txt | ALLOWED | - |
 | Fetch api.github.com | ALLOWED | - |
-| Fetch evil.com | BLOCKED | EgressAllowlistGuard |
+| Fetch evil.com | BLOCKED | egress |
 
 ## Policy
 

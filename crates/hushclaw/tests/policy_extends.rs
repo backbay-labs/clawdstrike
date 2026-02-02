@@ -1,5 +1,7 @@
 //! Integration tests for policy extends feature
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use hushclaw::Policy;
 use std::fs;
 use tempfile::TempDir;

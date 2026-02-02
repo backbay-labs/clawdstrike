@@ -21,10 +21,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use governor::{
-    clock::DefaultClock,
-    middleware::NoOpMiddleware,
-    state::InMemoryState,
-    Quota, RateLimiter,
+    clock::DefaultClock, middleware::NoOpMiddleware, state::InMemoryState, Quota, RateLimiter,
 };
 
 use crate::config::RateLimitConfig;
@@ -52,11 +49,22 @@ impl RateLimitState {
             };
         }
 
-        // Create quota: burst_size requests, refilling at requests_per_second
-        let quota = Quota::per_second(
-            NonZeroU32::new(config.requests_per_second).unwrap_or(NonZeroU32::new(100).unwrap()),
-        )
-        .allow_burst(NonZeroU32::new(config.burst_size).unwrap_or(NonZeroU32::new(50).unwrap()));
+        // Create quota: burst_size requests, refilling at requests_per_second.
+        //
+        // If the config specifies 0 for either field, fall back to safe defaults.
+        let default_rps = unsafe {
+            // SAFETY: 100 is non-zero.
+            NonZeroU32::new_unchecked(100)
+        };
+        let default_burst = unsafe {
+            // SAFETY: 50 is non-zero.
+            NonZeroU32::new_unchecked(50)
+        };
+
+        let rps = NonZeroU32::new(config.requests_per_second).unwrap_or(default_rps);
+        let burst = NonZeroU32::new(config.burst_size).unwrap_or(default_burst);
+
+        let quota = Quota::per_second(rps).allow_burst(burst);
 
         let limiter = RateLimiter::keyed(quota);
 
@@ -178,11 +186,7 @@ fn extract_client_ip(req: &Request<Body>, rate_limit: &RateLimitState) -> IpAddr
         }
 
         // Check X-Real-IP header
-        if let Some(real_ip) = req
-            .headers()
-            .get("X-Real-IP")
-            .and_then(|v| v.to_str().ok())
-        {
+        if let Some(real_ip) = req.headers().get("X-Real-IP").and_then(|v| v.to_str().ok()) {
             if let Ok(ip) = real_ip.trim().parse() {
                 return ip;
             }
@@ -301,7 +305,10 @@ mod tests {
         let state = RateLimitState::new(&config);
 
         let req = Request::builder()
-            .header("X-Forwarded-For", "203.0.113.195, 70.41.3.18, 150.172.238.178")
+            .header(
+                "X-Forwarded-For",
+                "203.0.113.195, 70.41.3.18, 150.172.238.178",
+            )
             .body(Body::empty())
             .unwrap();
 

@@ -6,8 +6,8 @@ A minimal OpenClaw agent with hushclaw security integration. This example demons
 
 1. Runs an OpenClaw agent with a simple "hello" skill
 2. All tool calls are verified by hushclaw guards
-3. Generates a cryptographically signed receipt
-4. Demonstrates policy enforcement in action
+3. Provides a `policy_check` tool for preflight checks
+4. Demonstrates fail-closed policy enforcement in action
 
 ## Project Structure
 
@@ -26,7 +26,7 @@ hello-secure-agent/
 
 - Node.js 18+
 - OpenClaw CLI (`npm install -g @openclaw/cli`)
-- Hushclaw CLI (`cargo install hush-cli`)
+- `@hushclaw/openclaw` CLI (`npx hushclaw ...`)
 
 ## Quick Start
 
@@ -35,13 +35,16 @@ hello-secure-agent/
 npm install
 
 # 2. Verify policy syntax
-hush policy validate policy.yaml
+npm run policy:lint
 
-# 3. Run the agent with security
-openclaw run --with-hushclaw
+# 3. Dry-run policy checks (no OpenClaw required)
+npm start
 
-# 4. View the receipt
-hush receipt show .hush/receipts/latest.json
+# 4. Run the agent with OpenClaw + hushclaw enabled (requires OpenClaw CLI)
+# openclaw run --config ./openclaw.json
+
+# 5. Confirm enforcement (example)
+# Try to read ~/.ssh/id_rsa via a tool and expect the plugin to block it.
 ```
 
 ## Configuration
@@ -67,63 +70,54 @@ The OpenClaw configuration enables the hushclaw plugin:
 ### policy.yaml
 
 The security policy defines:
-- Allowed file paths
-- Network egress rules
-- Secret patterns to block
-- Tool restrictions
+- Forbidden filesystem paths
+- Network egress allowlist/denylist rules
+- Command deny patterns (regex)
+- Optional tool allow/deny lists
 
 ## Understanding the Output
 
 When you run the agent, you'll see security decisions in the logs:
 
 ```
-[hush] ALLOW: read_file("/app/data.txt")
-[hush] DENY:  write_file("/etc/passwd") - forbidden path
-[hush] ALLOW: http_request("api.example.com")
+[hushclaw] Allowed: file_read("/project/src/index.ts")
+[hushclaw] Denied by forbidden_path: file_read("~/.ssh/id_rsa")
+[hushclaw] Denied by egress: network("http://localhost:8080")
 ```
 
-After the run completes, a receipt is generated:
-
-```
-Receipt: .hush/receipts/run_abc123.json
-  Events:    15
-  Denied:    2
-  Signature: VALID
-  Merkle:    VALID
-```
+This example focuses on guard enforcement in OpenClaw. Receipt generation/attestation is handled by the Rust crates and is documented separately.
 
 ## Policy Customization
 
 Edit `policy.yaml` to adjust security rules:
 
 ```yaml
-# Allow additional paths
-guards:
-  forbidden_path:
-    allow:
-      - "./my-data/**"
+# Allow additional network destinations
+egress:
+  mode: allowlist
+  allowed_domains:
+    - "api.anthropic.com"
+    - "api.openai.com"
+    - "my-api.com"
 
-# Add network destinations
-  egress:
-    allowlist:
-      - host: "my-api.com"
-        ports: [443]
+# Protect additional filesystem paths
+filesystem:
+  forbidden_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - ".env"
+    - "**/secrets/**"
+
+# Block dangerous commands (regex)
+execution:
+  denied_patterns:
+    - "rm -rf /"
+    - "curl.*\\|.*bash"
 ```
 
 ## Verification
 
-Verify the receipt independently:
-
-```bash
-# Using CLI
-hush receipt verify .hush/receipts/run_abc123.json
-
-# Using Rust SDK
-cargo run --example verify -- .hush/receipts/run_abc123.json
-
-# Using TypeScript (browser)
-# See ../typescript/browser-verify/
-```
+This example does not generate cryptographic receipts. See `crates/hush-core` and the `hush` CLI docs for receipt signing/verification.
 
 ## Next Steps
 

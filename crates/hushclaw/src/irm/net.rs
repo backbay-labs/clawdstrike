@@ -5,6 +5,9 @@
 use async_trait::async_trait;
 use tracing::debug;
 
+use hush_proxy::dns::domain_matches;
+use hush_proxy::policy::PolicyAction;
+
 use crate::policy::Policy;
 
 use super::{Decision, EventType, HostCall, Monitor};
@@ -102,42 +105,7 @@ impl NetworkIrm {
 
     /// Check if a host matches a pattern
     fn matches_pattern(&self, host: &str, pattern: &str) -> bool {
-        // Check for IP-style patterns first
-        if pattern.contains('*') && self.is_ip_pattern(pattern) {
-            let parts: Vec<&str> = pattern.split('.').collect();
-            let host_parts: Vec<&str> = host.split('.').collect();
-
-            if parts.len() != host_parts.len() {
-                return false;
-            }
-
-            return parts
-                .iter()
-                .zip(host_parts.iter())
-                .all(|(p, h)| *p == "*" || *p == *h);
-        }
-
-        if let Some(suffix) = pattern.strip_prefix("*.") {
-            // Wildcard subdomain match (e.g., *.github.com)
-            host.ends_with(suffix) || host == suffix
-        } else if let Some(prefix) = pattern.strip_suffix(".*") {
-            // Wildcard TLD match
-            host.starts_with(prefix)
-        } else if pattern == "*" {
-            // Match all
-            true
-        } else {
-            // Exact match
-            host == pattern
-        }
-    }
-
-    /// Check if a pattern looks like an IP address pattern
-    fn is_ip_pattern(&self, pattern: &str) -> bool {
-        let parts: Vec<&str> = pattern.split('.').collect();
-        parts.len() >= 2
-            && parts.len() <= 4
-            && parts.iter().all(|p| *p == "*" || p.parse::<u8>().is_ok())
+        domain_matches(host, pattern)
     }
 
     /// Check if host is allowed by policy
@@ -154,7 +122,7 @@ impl NetworkIrm {
             }
 
             // Check allowed list
-            let default_action = config.default_action.as_str();
+            let default_action = config.default_action.clone().unwrap_or_default();
 
             // Check allow patterns
             for allowed in &config.allow {
@@ -164,16 +132,25 @@ impl NetworkIrm {
             }
 
             // Apply default action
-            if default_action == "block" {
-                return Decision::Deny {
-                    reason: format!("Host {} not in allowlist", host),
-                };
+            match default_action {
+                PolicyAction::Allow => return Decision::Allow,
+                PolicyAction::Block => {
+                    return Decision::Deny {
+                        reason: format!("Host {} not in allowlist", host),
+                    };
+                }
+                PolicyAction::Log => {
+                    return Decision::Audit {
+                        message: format!("Host {} not in allowlist (logged)", host),
+                    };
+                }
             }
         }
 
         // Default: check against common allowed hosts
         let default_allowed = [
             "*.github.com",
+            "github.com",
             "*.githubusercontent.com",
             "*.openai.com",
             "*.anthropic.com",
@@ -266,7 +243,7 @@ mod tests {
         let irm = NetworkIrm::new();
 
         assert!(irm.matches_pattern("api.github.com", "*.github.com"));
-        assert!(irm.matches_pattern("github.com", "*.github.com"));
+        assert!(!irm.matches_pattern("github.com", "*.github.com"));
         assert!(!irm.matches_pattern("github.com.evil.com", "*.github.com"));
     }
 

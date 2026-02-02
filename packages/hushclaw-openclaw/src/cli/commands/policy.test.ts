@@ -64,8 +64,10 @@ filesystem:
     - ~/.ssh
 `);
       writeFileSync(eventPath, JSON.stringify({
-        type: 'file_read',
-        resource: '~/.ssh/id_rsa',
+        eventId: 't1',
+        eventType: 'file_read',
+        timestamp: new Date().toISOString(),
+        data: { type: 'file', path: '~/.ssh/id_rsa', operation: 'read' },
       }));
 
       await policyCommands.test(eventPath, { policy: policyPath });

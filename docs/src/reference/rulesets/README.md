@@ -1,94 +1,62 @@
 # Rulesets
 
-Built-in security policy presets.
+Rulesets are built-in policy presets shipped with Hushclaw.
 
-## Overview
+In this repository, rulesets are defined as YAML files in `rulesets/` and embedded into the Rust binary at build time.
 
-Hushclaw includes several pre-configured rulesets:
+## Built-in rulesets
 
-| Ruleset | Security Level | Use Case |
-|---------|---------------|----------|
-| [Default](./default.md) | Medium | General development |
-| [Strict](./strict.md) | High | Production, sensitive work |
-| [AI Agent](./ai-agent.md) | Medium | AI coding agents |
+| ID | Purpose |
+|----|---------|
+| `default` | Balanced baseline |
+| `ai-agent` | Tuned for AI coding assistants |
+| `strict` | Deny-by-default baseline for sensitive environments |
+| `cicd` | Tuned for CI jobs (registries allowed) |
+| `permissive` | Dev-friendly (egress defaults to allow; verbose logging) |
 
-## Using Rulesets
+## Use a ruleset
 
-### Directly
+### CLI
 
 ```bash
-hush run --policy hushclaw:default -- command
+hush check --action-type egress --ruleset default api.github.com:443
 ```
 
-### As Base
+### As a base policy
 
 ```yaml
-version: "hushclaw-v1.0"
+version: "1.0.0"
+name: My Policy
 extends: hushclaw:default
-
-# Your customizations
-egress:
-  allowed_domains:
-    - "api.mycompany.com"
 ```
 
-## Comparison
+### Inspect
 
-| Feature | Default | Strict | AI Agent |
-|---------|---------|--------|----------|
-| **Egress Mode** | Allowlist | Allowlist | Allowlist |
-| **AI APIs** | Yes | Yes | Yes |
-| **Package Registries** | Yes | No | Yes |
-| **Write Restrictions** | Workspace + tmp | Workspace only | Workspace + tmp |
-| **Git Operations** | Allowed | Restricted | Confirmation |
-| **Secrets Protection** | Yes | Yes | Yes |
-| **Max Execution** | 300s | 120s | 600s |
+```bash
+hush policy show strict
+```
 
-## Custom Rulesets
+## Customize a ruleset
 
-Create your own:
+Create a policy file that extends a ruleset and adds overrides:
 
 ```yaml
-# company-ruleset.yaml
-version: "hushclaw-v1.0"
+version: "1.0.0"
+name: My CI Policy
+extends: hushclaw:cicd
 
-egress:
-  mode: allowlist
-  allowed_domains:
-    - "*.company.com"
-    - "api.github.com"
-
-filesystem:
-  forbidden_paths:
-    - "~/.ssh"
-    - "~/.aws"
-    - ".env*"
-
-on_violation: cancel
+guards:
+  egress_allowlist:
+    additional_allow:
+      - "api.mycompany.com"
 ```
 
-Use it:
+Note: `extends` currently supports built-in ruleset ids and local file paths (resolved relative to the policy file). URL/Git-based `extends` are not implemented.
 
-```yaml
-extends: file://./company-ruleset.yaml
-```
+## Next steps
 
-## Sharing Rulesets
-
-### Via URL
-
-```yaml
-extends: https://policies.company.com/standard.yaml
-```
-
-### Via Git
-
-```yaml
-extends: git://github.com/company/policies.git#main:security/base.yaml
-```
-
-## Next Steps
-
-- [Default Ruleset](./default.md) - Balanced security
-- [Strict Ruleset](./strict.md) - Maximum security
-- [AI Agent Ruleset](./ai-agent.md) - AI agent optimized
+- [Default](./default.md)
+- [AI Agent](./ai-agent.md)
+- [Strict](./strict.md)
+- [CI/CD](./cicd.md)
+- [Permissive](./permissive.md)

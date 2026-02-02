@@ -20,6 +20,9 @@ egress:
     - "*.onion"
     - "localhost"
     - "127.*"
+    - "10.*"
+    - "192.168.*"
+    - "172.16.*"
 
 filesystem:
   forbidden_paths:
@@ -29,5 +32,11 @@ filesystem:
     - ".env"
     - "*.pem"
     - "*.key"
+
+execution:
+  denied_patterns:
+    - "rm -rf /"
+    - "rm -rf /*"
+    - "curl.*|.*bash"
 
 on_violation: cancel

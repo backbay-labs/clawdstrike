@@ -1,7 +1,18 @@
 """Hush - Python SDK for hushclaw security verification."""
 
 from hush.core import sha256, keccak256, verify_signature, sign_message, generate_keypair
-from hush.receipt import Receipt, SignedReceipt
+from hush.receipt import (
+    RECEIPT_SCHEMA_VERSION,
+    PublicKeySet,
+    Receipt,
+    SignedReceipt,
+    Signatures,
+    VerificationResult,
+    Verdict,
+    Provenance,
+    ViolationRef,
+    validate_receipt_version,
+)
 from hush.policy import Policy, PolicyEngine, PolicySettings, GuardConfigs
 from hush.guards import (
     Severity,
@@ -42,8 +53,16 @@ __all__ = [
     "sign_message",
     "generate_keypair",
     # Receipt
+    "RECEIPT_SCHEMA_VERSION",
+    "validate_receipt_version",
     "Receipt",
     "SignedReceipt",
+    "Signatures",
+    "PublicKeySet",
+    "VerificationResult",
+    "Verdict",
+    "Provenance",
+    "ViolationRef",
     # Policy
     "Policy",
     "PolicyEngine",

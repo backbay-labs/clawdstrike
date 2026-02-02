@@ -1,5 +1,20 @@
 """Tests for RFC 8785 (JCS) canonical JSON implementation."""
+import json
+from pathlib import Path
+
 import pytest
+
+
+def test_canonicalize_matches_repo_golden_vectors():
+    """Canonicalize output must match the repo's RFC 8785 golden vectors."""
+    from hush.canonical import canonicalize
+
+    repo_root = Path(__file__).resolve().parents[3]
+    vectors_path = repo_root / "fixtures" / "canonical" / "jcs_vectors.json"
+    vectors = json.loads(vectors_path.read_text(encoding="utf-8"))
+
+    for v in vectors:
+        assert canonicalize(v["input"]) == v["expected"], v["name"]
 
 
 def test_canonicalize_sorted_keys():

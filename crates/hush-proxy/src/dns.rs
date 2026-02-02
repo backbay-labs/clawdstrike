@@ -4,6 +4,7 @@
 //! for egress filtering.
 
 use crate::error::{Error, Result};
+use globset::GlobBuilder;
 
 /// Extract domain name from a DNS query packet
 pub fn extract_domain_from_query(packet: &[u8]) -> Result<Option<String>> {
@@ -72,14 +73,15 @@ pub fn extract_domain_from_query(packet: &[u8]) -> Result<Option<String>> {
 
 /// Check if a domain matches a pattern (supports wildcards)
 pub fn domain_matches(domain: &str, pattern: &str) -> bool {
-    let domain = domain.to_lowercase();
-    let pattern = pattern.to_lowercase();
+    let Ok(glob) = GlobBuilder::new(pattern)
+        .case_insensitive(true)
+        .literal_separator(true)
+        .build()
+    else {
+        return false;
+    };
 
-    if let Some(suffix) = pattern.strip_prefix("*.") {
-        domain == suffix || domain.ends_with(&format!(".{}", suffix))
-    } else {
-        domain == pattern
-    }
+    glob.compile_matcher().is_match(domain)
 }
 
 #[cfg(test)]
@@ -97,8 +99,15 @@ mod tests {
     fn test_domain_matches_wildcard() {
         assert!(domain_matches("sub.example.com", "*.example.com"));
         assert!(domain_matches("deep.sub.example.com", "*.example.com"));
-        assert!(domain_matches("example.com", "*.example.com"));
+        assert!(!domain_matches("example.com", "*.example.com"));
         assert!(!domain_matches("example.org", "*.example.com"));
+    }
+
+    #[test]
+    fn test_domain_matches_glob_features() {
+        assert!(domain_matches("api-1.example.com", "api-?.example.com"));
+        assert!(domain_matches("api-a.example.com", "api-[a-z].example.com"));
+        assert!(!domain_matches("api-aa.example.com", "api-?.example.com"));
     }
 
     #[test]

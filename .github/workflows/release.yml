@@ -19,6 +19,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Validate version consistency
+        run: scripts/release-preflight.sh "${GITHUB_REF#refs/tags/v}"
+
       - name: Run tests
         run: cargo test --workspace
 

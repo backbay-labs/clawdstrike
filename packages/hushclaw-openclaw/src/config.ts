@@ -95,9 +95,8 @@ function isValidLogLevel(level: string): level is LogLevel {
 export function resolveBuiltinPolicy(name: string): string | null {
   const builtinPolicies: Record<string, string> = {
     'hushclaw:ai-agent-minimal': 'ai-agent-minimal.yaml',
-    'hushclaw:strict': 'strict.yaml',
-    'hushclaw:permissive': 'permissive.yaml',
-    'hushclaw:default': 'ai-agent-minimal.yaml',
+    'hushclaw:ai-agent': 'ai-agent.yaml',
+    'hushclaw:default': 'ai-agent.yaml',
   };
 
   return builtinPolicies[name] ?? null;

@@ -34,7 +34,22 @@ export {
 } from "./merkle";
 
 // Receipt
-export { Receipt, SignedReceipt, type ReceiptData } from "./receipt";
+export {
+  RECEIPT_SCHEMA_VERSION,
+  validateReceiptVersion,
+  Receipt,
+  SignedReceipt,
+  type Hash,
+  type PublicKey,
+  type PublicKeySet,
+  type ReceiptData,
+  type Signature,
+  type Signatures,
+  type VerificationResult,
+  type Verdict,
+  type Provenance,
+  type ViolationRef,
+} from "./receipt";
 
 // Guards
 export {

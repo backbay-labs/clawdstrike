@@ -1,104 +1,115 @@
-"""Tests for hush.receipt types."""
+"""Tests for hush.receipt types (schema-compatible with Rust hush-core)."""
+
+from __future__ import annotations
 
 import json
+from pathlib import Path
+
 import pytest
-from hush.receipt import Receipt, SignedReceipt
+
 from hush.core import generate_keypair
+from hush.receipt import (
+    RECEIPT_SCHEMA_VERSION,
+    PublicKeySet,
+    Receipt,
+    SignedReceipt,
+    Verdict,
+    validate_receipt_version,
+)
 
 
-class TestReceipt:
-    def test_create_receipt(self) -> None:
-        receipt = Receipt(
-            id="run-123",
-            artifact_root="0x" + "ab" * 32,
-            event_count=42,
-            metadata={"task": "test"},
+def test_validate_receipt_version_matches_vectors():
+    repo_root = Path(__file__).resolve().parents[3]
+    cases_path = repo_root / "fixtures" / "receipts" / "version_cases.json"
+    cases = json.loads(cases_path.read_text(encoding="utf-8"))
+
+    for c in cases:
+        if c["supported"]:
+            validate_receipt_version(c["version"])
+        else:
+            with pytest.raises(ValueError, match=c.get("error_contains", "Invalid receipt version")):
+                validate_receipt_version(c["version"])
+
+
+def test_receipt_canonical_json_and_hashes():
+    receipt = Receipt(
+        version=RECEIPT_SCHEMA_VERSION,
+        receipt_id="test-receipt-001",
+        timestamp="2026-01-01T00:00:00Z",
+        content_hash="0x" + "00" * 32,
+        verdict=Verdict(passed=True, gate_id="unit-test"),
+        provenance=None,
+        metadata=None,
+    )
+
+    canonical = receipt.to_canonical_json()
+    assert '"version":"1.0.0"' in canonical
+    assert canonical.count(" ") == 0
+    assert receipt.hash_sha256().startswith("0x")
+    assert receipt.hash_keccak256().startswith("0x")
+
+
+def test_receipt_fails_closed_on_unknown_fields():
+    with pytest.raises(ValueError, match="Unknown receipt field"):
+        Receipt.from_dict(
+            {
+                "version": RECEIPT_SCHEMA_VERSION,
+                "timestamp": "2026-01-01T00:00:00Z",
+                "content_hash": "0x" + "00" * 32,
+                "verdict": {"passed": True},
+                "extra_field": 1,
+            }
         )
-        assert receipt.id == "run-123"
-        assert receipt.event_count == 42
-
-    def test_receipt_to_json(self) -> None:
-        receipt = Receipt(
-            id="run-123",
-            artifact_root="0x" + "ab" * 32,
-            event_count=42,
-            metadata={},
-        )
-        json_str = receipt.to_json()
-        data = json.loads(json_str)
-        assert data["id"] == "run-123"
-        assert data["event_count"] == 42
-
-    def test_receipt_from_json(self) -> None:
-        json_str = json.dumps({
-            "id": "run-456",
-            "artifact_root": "0x" + "cd" * 32,
-            "event_count": 100,
-            "metadata": {"key": "value"},
-        })
-        receipt = Receipt.from_json(json_str)
-        assert receipt.id == "run-456"
-        assert receipt.event_count == 100
-        assert receipt.metadata["key"] == "value"
-
-    def test_receipt_hash(self) -> None:
-        receipt = Receipt(
-            id="run-123",
-            artifact_root="0x" + "ab" * 32,
-            event_count=42,
-            metadata={},
-        )
-        hash1 = receipt.hash()
-        hash2 = receipt.hash()
-        assert hash1 == hash2
-        assert len(hash1) == 32
 
 
-class TestSignedReceipt:
-    def test_sign_and_verify(self) -> None:
-        receipt = Receipt(
-            id="run-123",
-            artifact_root="0x" + "ab" * 32,
-            event_count=42,
-            metadata={},
-        )
-        private_key, public_key = generate_keypair()
+def test_signed_receipt_sign_and_verify():
+    receipt = Receipt(
+        version=RECEIPT_SCHEMA_VERSION,
+        receipt_id=None,
+        timestamp="2026-01-01T00:00:00Z",
+        content_hash="0x" + "11" * 32,
+        verdict=Verdict(passed=True, gate_id="gate"),
+        provenance=None,
+        metadata=None,
+    )
 
-        signed = SignedReceipt.sign(receipt, private_key, public_key)
+    private_key, public_key = generate_keypair()
+    signed = SignedReceipt.sign(receipt, private_key)
 
-        assert signed.receipt == receipt
-        assert len(signed.signature) == 64
-        assert signed.public_key == public_key
-        assert signed.verify() is True
+    result = signed.verify(PublicKeySet(signer=public_key.hex()))
+    assert result.valid is True
+    assert result.signer_valid is True
+    assert result.errors == []
 
-    def test_verify_tampered_receipt(self) -> None:
-        receipt = Receipt(
-            id="run-123",
-            artifact_root="0x" + "ab" * 32,
-            event_count=42,
-            metadata={},
-        )
-        private_key, public_key = generate_keypair()
 
-        signed = SignedReceipt.sign(receipt, private_key, public_key)
+def test_signed_receipt_rejects_tampering():
+    receipt = Receipt(
+        version=RECEIPT_SCHEMA_VERSION,
+        receipt_id=None,
+        timestamp="2026-01-01T00:00:00Z",
+        content_hash="0x" + "11" * 32,
+        verdict=Verdict(passed=True),
+        provenance=None,
+        metadata=None,
+    )
 
-        # Tamper with the receipt
-        signed.receipt.event_count = 999
+    private_key, public_key = generate_keypair()
+    signed = SignedReceipt.sign(receipt, private_key)
 
-        assert signed.verify() is False
+    tampered = SignedReceipt(
+        receipt=Receipt(
+            version=RECEIPT_SCHEMA_VERSION,
+            receipt_id=None,
+            timestamp="2026-01-01T00:00:00Z",
+            content_hash="0x" + "11" * 32,
+            verdict=Verdict(passed=False),
+            provenance=None,
+            metadata=None,
+        ),
+        signatures=signed.signatures,
+    )
 
-    def test_signed_receipt_serialization(self) -> None:
-        receipt = Receipt(
-            id="run-123",
-            artifact_root="0x" + "ab" * 32,
-            event_count=42,
-            metadata={},
-        )
-        private_key, public_key = generate_keypair()
+    result = tampered.verify(PublicKeySet(signer=public_key.hex()))
+    assert result.valid is False
+    assert result.signer_valid is False
 
-        signed = SignedReceipt.sign(receipt, private_key, public_key)
-        json_str = signed.to_json()
-
-        restored = SignedReceipt.from_json(json_str)
-        assert restored.receipt.id == "run-123"
-        assert restored.verify() is True

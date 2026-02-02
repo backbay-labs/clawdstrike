@@ -1,5 +1,7 @@
 //! Property-based tests for Merkle tree operations
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use hush_core::merkle::{leaf_hash, MerkleTree};
 use proptest::prelude::*;
 

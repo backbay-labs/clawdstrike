@@ -11,6 +11,15 @@ Hushclaw provides runtime security enforcement for AI agents, including:
 - **Cryptographic Attestation** - Ed25519 signing, Merkle trees, and receipt generation for verifiable execution
 - **Pre-configured Rulesets** - Ready-to-use security profiles for different environments
 
+## Threat model & limitations (explicit)
+
+Hushclaw enforces policy at the **agent/tool boundary**. It is not an OS sandbox and does not intercept syscalls.
+
+- **Enforced**: what your runtime blocks/permits based on `GuardResult` from `HushEngine::check_*`.
+- **Attested**: what is recorded in `Receipt`/`SignedReceipt` (verdict + provenance such as policy hash and violations).
+
+If an agent can bypass your tool layer and access the filesystem/network directly, Hushclaw cannot prevent it.
+
 ## Crates
 
 | Crate | Description |
@@ -34,6 +43,20 @@ cargo install --path crates/hush-cli
 cargo build --release
 ```
 
+### Offline builds (vendored Rust deps)
+
+This repo vendors Rust dependencies under `vendor/` and configures Cargo to use them via `.cargo/config.toml`.
+
+```bash
+CARGO_NET_OFFLINE=true scripts/cargo-offline.sh test --workspace --all-targets
+```
+
+If you update `Cargo.lock`, regenerate the vendor directory:
+
+```bash
+cargo vendor vendor > /dev/null
+```
+
 ### Using the CLI
 
 ```bash
@@ -46,11 +69,17 @@ hush check --action-type file --ruleset strict /home/user/.ssh/id_rsa
 # Check network egress
 hush check --action-type egress api.openai.com:443
 
+# Machine-readable output (JSON)
+hush check --json --action-type egress api.openai.com:443
+
 # Generate signing keypair
 hush keygen --output my-key
 
 # Verify a receipt
 hush verify receipt.json --pubkey my-key.pub
+
+# Machine-readable verify output (JSON)
+hush verify --json receipt.json --pubkey my-key.pub
 
 # List available rulesets
 hush policy list
@@ -183,10 +212,10 @@ Pre-configured security profiles in `rulesets/`:
 │  │ ForbiddenPath│  │   Egress   │  │ SecretLeak  │ │
 │  │    Guard     │  │  Allowlist │  │   Guard     │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘ │
-│  ┌─────────────┐  ┌─────────────┐                  │
-│  │   Patch     │  │  MCP Tool   │                  │
-│  │ Integrity   │  │   Guard     │                  │
-│  └─────────────┘  └─────────────┘                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
+│  │   Patch     │  │  MCP Tool   │  │  Prompt     │ │
+│  │ Integrity   │  │   Guard     │  │ Injection   │ │
+│  └─────────────┘  └─────────────┘  └─────────────┘ │
 ├─────────────────────────────────────────────────────┤
 │                 Policy (YAML)                       │
 ├─────────────────────────────────────────────────────┤

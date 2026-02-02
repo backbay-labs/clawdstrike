@@ -6,10 +6,19 @@ use tracing::{debug, info, warn};
 
 use hush_core::receipt::{Provenance, Verdict, ViolationRef};
 use hush_core::{sha256, Hash, Keypair, Receipt, SignedReceipt};
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::guards::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 use crate::policy::{Policy, PolicyGuards, RuleSet};
+
+/// Per-guard evidence + an aggregated verdict.
+#[must_use]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GuardReport {
+    pub overall: GuardResult,
+    pub per_guard: Vec<GuardResult>,
+}
 
 /// The main security enforcement engine
 pub struct HushEngine {
@@ -53,7 +62,7 @@ impl HushEngine {
 
     /// Create from a named ruleset
     pub fn from_ruleset(name: &str) -> Result<Self> {
-        let ruleset = RuleSet::by_name(name)
+        let ruleset = RuleSet::by_name(name)?
             .ok_or_else(|| Error::ConfigError(format!("Unknown ruleset: {}", name)))?;
         Ok(Self::with_policy(ruleset.policy))
     }
@@ -125,6 +134,24 @@ impl HushEngine {
             .await
     }
 
+    /// Check untrusted text (e.g. fetched web content) for prompt-injection signals.
+    ///
+    /// This uses `GuardAction::Custom("untrusted_text", ...)` and is evaluated by `PromptInjectionGuard`.
+    pub async fn check_untrusted_text(
+        &self,
+        source: Option<&str>,
+        text: &str,
+        context: &GuardContext,
+    ) -> Result<GuardResult> {
+        let payload = match source {
+            Some(source) => serde_json::json!({ "source": source, "text": text }),
+            None => serde_json::json!({ "text": text }),
+        };
+
+        self.check_action(&GuardAction::Custom("untrusted_text", &payload), context)
+            .await
+    }
+
     /// Check a patch action
     pub async fn check_patch(
         &self,
@@ -142,15 +169,25 @@ impl HushEngine {
         action: &GuardAction<'_>,
         context: &GuardContext,
     ) -> Result<GuardResult> {
-        let guards: Vec<&dyn Guard> = vec![
+        Ok(self.check_action_report(action, context).await?.overall)
+    }
+
+    /// Check any action and return per-guard evidence plus the aggregated verdict.
+    pub async fn check_action_report(
+        &self,
+        action: &GuardAction<'_>,
+        context: &GuardContext,
+    ) -> Result<GuardReport> {
+        let guards: [&dyn Guard; 6] = [
             &self.guards.forbidden_path,
             &self.guards.egress_allowlist,
             &self.guards.secret_leak,
             &self.guards.patch_integrity,
             &self.guards.mcp_tool,
+            &self.guards.prompt_injection,
         ];
 
-        let mut final_result: Option<GuardResult> = None;
+        let mut per_guard: Vec<GuardResult> = Vec::with_capacity(guards.len());
 
         for guard in guards {
             if !guard.handles(action) {
@@ -168,7 +205,6 @@ impl HushEngine {
                 );
             }
 
-            // Record violations
             if !result.allowed {
                 let mut state = self.state.write().await;
                 state.violation_count += 1;
@@ -184,35 +220,24 @@ impl HushEngine {
                     message = result.message,
                     "Security violation detected"
                 );
-
-                if self.policy.settings.fail_fast {
-                    return Ok(result);
-                }
             }
 
-            // Keep the most severe result
-            match (&final_result, &result) {
-                (None, _) => final_result = Some(result),
-                (Some(prev), curr) if !curr.allowed && prev.allowed => {
-                    final_result = Some(result);
-                }
-                (Some(prev), curr) if !curr.allowed && !prev.allowed => {
-                    // Keep the more severe one
-                    if severity_ord(&curr.severity) > severity_ord(&prev.severity) {
-                        final_result = Some(result);
-                    }
-                }
-                _ => {}
+            per_guard.push(result);
+
+            if self.policy.settings.fail_fast && per_guard.last().is_some_and(|r| !r.allowed) {
+                break;
             }
         }
 
-        // Update action count
+        // Count the check even if we fail-fast.
         {
             let mut state = self.state.write().await;
             state.action_count += 1;
         }
 
-        Ok(final_result.unwrap_or_else(|| GuardResult::allow("engine")))
+        let overall = aggregate_overall(&per_guard);
+
+        Ok(GuardReport { overall, per_guard })
     }
 
     /// Create a receipt for the current session
@@ -287,6 +312,30 @@ fn severity_ord(s: &Severity) -> u8 {
     }
 }
 
+fn aggregate_overall(results: &[GuardResult]) -> GuardResult {
+    if results.is_empty() {
+        return GuardResult::allow("engine");
+    }
+
+    let mut best = &results[0];
+
+    for r in &results[1..] {
+        let best_blocks = !best.allowed;
+        let r_blocks = !r.allowed;
+
+        if r_blocks && !best_blocks {
+            best = r;
+            continue;
+        }
+
+        if r_blocks == best_blocks && severity_ord(&r.severity) > severity_ord(&best.severity) {
+            best = r;
+        }
+    }
+
+    best.clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,12 +389,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_warn_aggregation_across_guards() {
+        let engine = HushEngine::new();
+        let context = GuardContext::new();
+
+        let diff = r#"
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1 @@
++api_key = "0123456789abcdef0123456789abcdef"
+"#;
+
+        let report = engine
+            .check_action_report(&GuardAction::Patch("src/lib.rs", diff), &context)
+            .await
+            .unwrap();
+
+        assert!(report.overall.allowed);
+        assert_eq!(report.overall.severity, Severity::Warning);
+        assert!(report.per_guard.iter().any(|r| r.guard == "secret_leak"));
+    }
+
+    #[tokio::test]
     async fn test_violation_tracking() {
         let engine = HushEngine::new();
         let context = GuardContext::new();
 
         // Cause a violation
-        engine
+        let _ = engine
             .check_file_access("/home/user/.ssh/id_rsa", &context)
             .await
             .unwrap();
@@ -361,7 +432,7 @@ mod tests {
         let context = GuardContext::new();
 
         // Normal action
-        engine
+        let _ = engine
             .check_file_access("/app/main.rs", &context)
             .await
             .unwrap();
@@ -378,7 +449,7 @@ mod tests {
         let engine = HushEngine::new().with_generated_keypair();
         let context = GuardContext::new();
 
-        engine
+        let _ = engine
             .check_file_access("/app/main.rs", &context)
             .await
             .unwrap();
@@ -407,7 +478,7 @@ mod tests {
         let engine = HushEngine::new();
         let context = GuardContext::new();
 
-        engine
+        let _ = engine
             .check_file_access("/home/user/.ssh/id_rsa", &context)
             .await
             .unwrap();

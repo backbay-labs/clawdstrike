@@ -75,7 +75,11 @@ fn canonicalize_f64(v: f64) -> Result<String> {
     let abs = v.abs();
     let use_exponential = !(1e-6..1e21).contains(&abs);
 
-    let (digits, sci_exp) = parse_to_scientific_parts(&format!("{:?}", abs))?;
+    // Avoid `std` float formatting for canonicalization: it is not a stable cross-language
+    // contract. Use a deterministic shortest-repr algorithm (ryu) and then apply JCS rules.
+    let mut buf = ryu::Buffer::new();
+    let rendered = buf.format_finite(abs);
+    let (digits, sci_exp) = parse_to_scientific_parts(rendered)?;
 
     if !use_exponential {
         let rendered = render_decimal(&digits, sci_exp);

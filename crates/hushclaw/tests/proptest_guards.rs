@@ -1,5 +1,7 @@
 //! Property-based tests for security guards
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use hushclaw::{ForbiddenPathGuard, SecretLeakGuard};
 use proptest::prelude::*;
 

@@ -1,29 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import handler from './handler.js';
+import handler, { initialize } from './handler.js';
+import type { AgentBootstrapEvent, HookEvent } from '../../types.js';
 
 describe('agent:bootstrap handler', () => {
   it('ignores non-bootstrap events', async () => {
-    const event = {
+    const event: HookEvent = {
       type: 'other:event',
-      context: { bootstrapFiles: [] },
+      timestamp: new Date().toISOString(),
+      context: {} as any,
+      messages: [],
     };
     await handler(event as any);
-    expect(event.context.bootstrapFiles).toHaveLength(0);
+    expect((event as any).context.bootstrapFiles).toBeUndefined();
   });
 
   it('injects SECURITY.md into bootstrap files', async () => {
-    const event = {
+    initialize({ policy: 'hushclaw:ai-agent-minimal', mode: 'deterministic', logLevel: 'error' });
+
+    const event: AgentBootstrapEvent = {
       type: 'agent:bootstrap',
+      timestamp: new Date().toISOString(),
       context: {
+        sessionId: 'test-session',
+        agentId: 'test-agent',
         bootstrapFiles: [] as { path: string; content: string }[],
-        cfg: {
-          hushclaw: {
-            egress: {
-              mode: 'allowlist' as const,
-              allowed_domains: ['api.github.com'],
-            },
-          },
-        },
+        cfg: { policy: 'hushclaw:ai-agent-minimal', mode: 'deterministic', logLevel: 'error' },
       },
     };
     await handler(event as any);
@@ -31,12 +32,17 @@ describe('agent:bootstrap handler', () => {
     expect(event.context.bootstrapFiles[0].path).toBe('SECURITY.md');
     expect(event.context.bootstrapFiles[0].content).toContain('Security Policy');
     expect(event.context.bootstrapFiles[0].content).toContain('api.github.com');
+    expect(event.context.bootstrapFiles[0].content).toContain('Enabled Guards');
+    expect(event.context.bootstrapFiles[0].content).toContain('forbidden_path');
   });
 
   it('uses default policy when none provided', async () => {
-    const event = {
+    const event: AgentBootstrapEvent = {
       type: 'agent:bootstrap',
+      timestamp: new Date().toISOString(),
       context: {
+        sessionId: 'test-session',
+        agentId: 'test-agent',
         bootstrapFiles: [] as { path: string; content: string }[],
         cfg: {},
       },

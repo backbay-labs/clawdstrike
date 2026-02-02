@@ -1,0 +1,60 @@
+[
+  {
+    "name": "sorted_keys_simple",
+    "input": { "z": 1, "a": 2, "m": 3 },
+    "expected": "{\"a\":2,\"m\":3,\"z\":1}"
+  },
+  {
+    "name": "nested_objects",
+    "input": { "outer": { "inner": "value" } },
+    "expected": "{\"outer\":{\"inner\":\"value\"}}"
+  },
+  {
+    "name": "arrays",
+    "input": [1, 2, 3],
+    "expected": "[1,2,3]"
+  },
+  {
+    "name": "numeric_string_keys",
+    "input": { "2": "b", "10": "a", "a": 0 },
+    "expected": "{\"10\":\"a\",\"2\":\"b\",\"a\":0}"
+  },
+  {
+    "name": "string_escape_shortcuts",
+    "input": {
+      "b": "\b",
+      "f": "\f",
+      "ctl": "\u000f",
+      "quote": "\"",
+      "backslash": "\\"
+    },
+    "expected": "{\"b\":\"\\b\",\"backslash\":\"\\\\\",\"ctl\":\"\\u000f\",\"f\":\"\\f\",\"quote\":\"\\\"\"}"
+  },
+  {
+    "name": "unicode_and_controls",
+    "input": {
+      "s": "e",
+      "u2028": "\u2028",
+      "u2029": "\u2029",
+      "emoji": "X",
+      "nl": "\n",
+      "tab": "\t"
+    },
+    "expected": "{\"emoji\":\"X\",\"nl\":\"\\n\",\"s\":\"e\",\"tab\":\"\\t\",\"u2028\":\"\u2028\",\"u2029\":\"\u2029\"}"
+  },
+  {
+    "name": "numbers_thresholds",
+    "input": { "a": 1.0, "b": 0.0, "c": -0.0, "d": 1e21, "e": 1e20, "f": 1e-6, "g": 1e-7 },
+    "expected": "{\"a\":1,\"b\":0,\"c\":0,\"d\":1e+21,\"e\":100000000000000000000,\"f\":0.000001,\"g\":1e-7}"
+  },
+  {
+    "name": "numbers_misc_exact",
+    "input": [1.0, 1.5, 0.1, 0.25],
+    "expected": "[1,1.5,0.1,0.25]"
+  },
+  {
+    "name": "numbers_large_exponents",
+    "input": [1e100, 1e-100],
+    "expected": "[1e+100,1e-100]"
+  }
+]

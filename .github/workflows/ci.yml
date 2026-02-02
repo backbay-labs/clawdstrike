@@ -36,6 +36,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Validate docs code blocks
+        run: tools/scripts/validate-docs
+
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -56,6 +59,20 @@ jobs:
 
       - name: Build with MSRV
         run: cargo build --all-targets
+
+  offline:
+    name: Offline Build/Test (vendored)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test offline
+        run: scripts/cargo-offline.sh test --workspace --all-targets
+        env:
+          CARGO_NET_OFFLINE: "true"
 
   docs:
     name: Documentation
@@ -290,3 +307,55 @@ jobs:
         run: |
           node -e "const sdk = require('./dist/index.cjs'); console.log('CJS exports:', Object.keys(sdk).slice(0, 10))"
           node --input-type=module -e "import * as sdk from './dist/index.js'; console.log('ESM exports:', Object.keys(sdk).slice(0, 10))"
+
+  openclaw-plugin:
+    name: OpenClaw Plugin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/hushclaw-openclaw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/hushclaw-openclaw/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  python-sdk:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/hush-py
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: packages/hush-py/pyproject.toml
+
+      - name: Install package (editable)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest

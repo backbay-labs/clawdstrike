@@ -170,6 +170,10 @@ pub struct AuditLedger {
 }
 
 impl AuditLedger {
+    fn lock_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|err| err.into_inner())
+    }
+
     /// Create a new audit ledger
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         // Ensure parent directory exists
@@ -210,7 +214,7 @@ impl AuditLedger {
 
     /// Record an audit event
     pub fn record(&self, event: &AuditEvent) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn();
 
         conn.execute(
             schema::INSERT_EVENT,
@@ -243,7 +247,7 @@ impl AuditLedger {
 
     /// Query audit events
     pub fn query(&self, filter: &AuditFilter) -> Result<Vec<AuditEvent>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn();
 
         let mut sql = schema::SELECT_EVENTS.to_string();
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
@@ -286,7 +290,8 @@ impl AuditLedger {
             sql.push_str(&format!(" OFFSET {}", offset));
         }
 
-        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = conn.prepare(&sql)?;
         let events = stmt.query_map(params_refs.as_slice(), |row| {
@@ -318,7 +323,7 @@ impl AuditLedger {
 
     /// Get event count
     pub fn count(&self) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn();
         let count: i64 = conn.query_row(schema::COUNT_EVENTS, [], |row| row.get(0))?;
         Ok(count as usize)
     }
