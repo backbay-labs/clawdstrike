@@ -2,6 +2,18 @@
   <img src=".github/assets/clawdstrike-hero.png" alt="Clawdstrike" width="900" />
 </p>
 
+<p align="center">
+  <em>
+    The claw strikes back.<br/>
+    At the boundary between intent and action,<br/>
+    it watches what leaves, what changes, what leaks.<br/>
+    If the rules drift, it fails closed.<br/>
+    If the story changes, the receipt won’t sign.
+  </em>
+</p>
+
+---
+
 <h1 align="center">Clawdstrike</h1>
 
 <p align="center">
