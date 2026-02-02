@@ -1,4 +1,4 @@
-"""Hush - Python SDK for hushclaw security verification."""
+"""Hush - Python SDK for clawdstrike security verification."""
 
 from hush.core import sha256, keccak256, verify_signature, sign_message, generate_keypair
 from hush.receipt import (

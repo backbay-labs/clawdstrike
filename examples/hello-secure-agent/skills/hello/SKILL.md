@@ -33,7 +33,7 @@ Ask the agent:
 
 **Agent:** I'll read the README file for you.
 ```
-[Uses read_file tool - verified by hushclaw]
+[Uses read_file tool - verified by clawdstrike]
 ```
 
 ### Secure Logging
@@ -42,12 +42,12 @@ Ask the agent:
 
 **Agent:** I'll create a greeting log.
 ```
-[Uses write_file to ./output/greeting.log - verified by hushclaw]
+[Uses write_file to ./output/greeting.log - verified by clawdstrike]
 ```
 
 ## Security Notes
 
-This skill operates within the hushclaw security boundary:
+This skill operates within the clawdstrike security boundary:
 
 - File reads are restricted to the workspace (`./**`)
 - File writes are restricted to `./output/**`

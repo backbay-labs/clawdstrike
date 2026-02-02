@@ -2,7 +2,7 @@
   "$schema": "https://openclaw.dev/schemas/config.json",
   "name": "hello-secure-agent",
   "version": "1.0.0",
-  "description": "A minimal secure agent demonstrating hushclaw integration",
+  "description": "A minimal secure agent demonstrating clawdstrike integration",
 
   "agent": {
     "model": "gpt-4",
@@ -25,7 +25,7 @@
 
   "plugins": [
     {
-      "name": "@hushclaw/openclaw",
+      "name": "@clawdstrike/openclaw",
       "version": "^0.1.0",
       "config": {
         "policy": "./policy.yaml",

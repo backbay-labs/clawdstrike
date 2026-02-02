@@ -38,7 +38,7 @@ def test_hash_leaf_produces_32_bytes():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_hash_leaf_produces_32_bytes -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_hash_leaf_produces_32_bytes -v`
 Expected: FAIL with "ModuleNotFoundError" or "ImportError"
 
 ### Step 3: Write minimal merkle.py with hash_leaf
@@ -75,13 +75,13 @@ def hash_leaf(data: bytes) -> bytes:
 
 ### Step 4: Run test to verify it passes
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_hash_leaf_produces_32_bytes -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_hash_leaf_produces_32_bytes -v`
 Expected: PASS
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add packages/hush-py/src/hush/merkle.py packages/hush-py/tests/test_merkle.py && git commit -m "feat(hush-py): add hash_leaf for RFC 6962 Merkle trees"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add packages/hush-py/src/hush/merkle.py packages/hush-py/tests/test_merkle.py && git commit -m "feat(hush-py): add hash_leaf for RFC 6962 Merkle trees"
 ```
 
 ---
@@ -121,7 +121,7 @@ def test_hash_node_order_matters():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_hash_node_produces_32_bytes -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_hash_node_produces_32_bytes -v`
 Expected: FAIL with "ImportError: cannot import name 'hash_node'"
 
 ### Step 3: Add hash_node to merkle.py
@@ -144,13 +144,13 @@ def hash_node(left: bytes, right: bytes) -> bytes:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
 Expected: PASS (all 3 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add hash_node for Merkle tree internal nodes"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add hash_node for Merkle tree internal nodes"
 ```
 
 ---
@@ -218,7 +218,7 @@ def test_compute_root_odd_count():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_compute_root_single_leaf -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_compute_root_single_leaf -v`
 Expected: FAIL with "ImportError: cannot import name 'compute_root'"
 
 ### Step 3: Add compute_root to merkle.py
@@ -267,13 +267,13 @@ def compute_root(leaves: List[bytes]) -> bytes:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
 Expected: PASS (all 7 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add compute_root for Merkle tree root calculation"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add compute_root for Merkle tree root calculation"
 ```
 
 ---
@@ -346,7 +346,7 @@ def test_merkle_proof_verify_right_leaf():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_merkle_proof_verify_valid -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_merkle_proof_verify_valid -v`
 Expected: FAIL with "ImportError: cannot import name 'MerkleProof'"
 
 ### Step 3: Add MerkleProof dataclass to merkle.py
@@ -432,13 +432,13 @@ class MerkleProof:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
 Expected: PASS (all 10 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add MerkleProof with verify and compute_root methods"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add MerkleProof with verify and compute_root methods"
 ```
 
 ---
@@ -507,7 +507,7 @@ def test_generate_proof_invalid_index():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_generate_proof_two_leaves -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_generate_proof_two_leaves -v`
 Expected: FAIL with "ImportError: cannot import name 'generate_proof'"
 
 ### Step 3: Add generate_proof to merkle.py
@@ -578,13 +578,13 @@ def generate_proof(leaves: List[bytes], index: int) -> MerkleProof:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
 Expected: PASS (all 14 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add generate_proof for Merkle inclusion proofs"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add generate_proof for Merkle inclusion proofs"
 ```
 
 ---
@@ -650,7 +650,7 @@ def test_merkle_tree_single_leaf():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_merkle_tree_from_data -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_merkle_tree_from_data -v`
 Expected: FAIL with "ImportError: cannot import name 'MerkleTree'"
 
 ### Step 3: Add MerkleTree class to merkle.py
@@ -772,13 +772,13 @@ class MerkleTree:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
 Expected: PASS (all 18 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add MerkleTree class with from_data, from_hashes, and inclusion_proof"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add MerkleTree class with from_data, from_hashes, and inclusion_proof"
 ```
 
 ---
@@ -815,7 +815,7 @@ def test_merkle_exports_from_package():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_merkle_exports_from_package -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py::test_merkle_exports_from_package -v`
 Expected: FAIL with "ImportError: cannot import name 'hash_leaf'"
 
 ### Step 3: Update __init__.py to export merkle API
@@ -823,7 +823,7 @@ Expected: FAIL with "ImportError: cannot import name 'hash_leaf'"
 Replace the content of `packages/hush-py/src/hush/__init__.py`:
 
 ```python
-"""Hush - Python SDK for hushclaw security verification."""
+"""Hush - Python SDK for clawdstrike security verification."""
 
 from hush.core import sha256, keccak256, verify_signature, sign_message, generate_keypair
 from hush.receipt import Receipt, SignedReceipt
@@ -901,13 +901,13 @@ __all__ = [
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_merkle.py -v`
 Expected: PASS (all 19 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): export Merkle API from package __init__"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): export Merkle API from package __init__"
 ```
 
 ---
@@ -971,7 +971,7 @@ def test_canonicalize_numeric_string_keys():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py::test_canonicalize_sorted_keys -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py::test_canonicalize_sorted_keys -v`
 Expected: FAIL with "ModuleNotFoundError"
 
 ### Step 3: Create canonical.py with canonicalize
@@ -1015,13 +1015,13 @@ def canonicalize(obj: Any) -> str:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
 Expected: PASS (all 4 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add packages/hush-py/src/hush/canonical.py packages/hush-py/tests/test_canonical.py && git commit -m "feat(hush-py): add canonicalize for RFC 8785 canonical JSON"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add packages/hush-py/src/hush/canonical.py packages/hush-py/tests/test_canonical.py && git commit -m "feat(hush-py): add canonicalize for RFC 8785 canonical JSON"
 ```
 
 ---
@@ -1086,7 +1086,7 @@ def test_canonical_hash_unknown_algorithm():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py::test_canonical_hash_sha256 -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py::test_canonical_hash_sha256 -v`
 Expected: FAIL with "ImportError: cannot import name 'canonical_hash'"
 
 ### Step 3: Add canonical_hash to canonical.py
@@ -1121,13 +1121,13 @@ def canonical_hash(obj: Any, algorithm: str = "sha256") -> bytes:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
 Expected: PASS (all 8 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add canonical_hash for hashing canonical JSON"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add canonical_hash for hashing canonical JSON"
 ```
 
 ---
@@ -1153,7 +1153,7 @@ def test_canonical_exports_from_package():
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py::test_canonical_exports_from_package -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py::test_canonical_exports_from_package -v`
 Expected: FAIL with "ImportError: cannot import name 'canonicalize'"
 
 ### Step 3: Update __init__.py to export canonical API
@@ -1174,13 +1174,13 @@ Add to __all__ list:
 
 ### Step 4: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
 Expected: PASS (all 9 tests)
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): export canonical JSON API from package __init__"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): export canonical JSON API from package __init__"
 ```
 
 ---
@@ -1256,13 +1256,13 @@ def test_canonicalize_inf_raises():
 
 ### Step 2: Run tests to verify they pass
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_canonical.py -v`
 Expected: PASS (all 15 tests)
 
 ### Step 3: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "test(hush-py): add edge case tests for canonical JSON"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "test(hush-py): add edge case tests for canonical JSON"
 ```
 
 ---
@@ -1295,13 +1295,13 @@ m.add_function(wrap_pyfunction!(keccak256_native, m)?)?;
 
 ### Step 3: Verify it compiles
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
 Expected: Compiles without errors
 
 ### Step 4: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add keccak256_native binding"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add keccak256_native binding"
 ```
 
 ---
@@ -1354,13 +1354,13 @@ m.add_function(wrap_pyfunction!(verify_ed25519_native, m)?)?;
 
 ### Step 4: Verify it compiles
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
 Expected: Compiles without errors
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add verify_ed25519_native binding"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add verify_ed25519_native binding"
 ```
 
 ---
@@ -1430,13 +1430,13 @@ m.add_function(wrap_pyfunction!(generate_merkle_proof_native, m)?)?;
 
 ### Step 3: Verify it compiles
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
 Expected: Compiles without errors
 
 ### Step 4: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add generate_merkle_proof_native binding"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add generate_merkle_proof_native binding"
 ```
 
 ---
@@ -1487,13 +1487,13 @@ m.add_function(wrap_pyfunction!(canonicalize_native, m)?)?;
 
 ### Step 4: Verify it compiles
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py/hush-native && cargo check`
 Expected: Compiles without errors
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add canonicalize_native binding"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-native): add canonicalize_native binding"
 ```
 
 ---
@@ -1602,13 +1602,13 @@ Add to __all__:
 
 ### Step 3: Run tests to verify no regressions
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest -v`
 Expected: All tests pass
 
 ### Step 4: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add native backend detection module"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): add native backend detection module"
 ```
 
 ---
@@ -1620,17 +1620,17 @@ cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git c
 
 ### Step 1: Run all tests
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest -v --tb=short`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest -v --tb=short`
 Expected: 100+ tests pass
 
 ### Step 2: Run mypy type checking
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m mypy src/hush --ignore-missing-imports`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m mypy src/hush --ignore-missing-imports`
 Expected: No errors (or only minor warnings)
 
 ### Step 3: Run ruff linting
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m ruff check src/hush`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m ruff check src/hush`
 Expected: No errors
 
 ---
@@ -1664,18 +1664,18 @@ module-name = "hush_native"
 
 ### Step 2: Build with maturin
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py/hush-native && maturin develop`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py/hush-native && maturin develop`
 Expected: Build succeeds and installs hush_native module
 
 ### Step 3: Verify native module works
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -c "from hush_native import is_native_available; print(is_native_available())"`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -c "from hush_native import is_native_available; print(is_native_available())"`
 Expected: Prints "True"
 
 ### Step 4: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "build(hush-native): configure maturin build system"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "build(hush-native): configure maturin build system"
 ```
 
 ---
@@ -1751,13 +1751,13 @@ class TestNativeAvailabilityFlag:
 
 ### Step 2: Run native tests
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_native.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest tests/test_native.py -v`
 Expected: Tests pass (skipped if native not built)
 
 ### Step 3: Commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "test(hush-py): add native backend tests"
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "test(hush-py): add native backend tests"
 ```
 
 ---
@@ -1769,24 +1769,24 @@ cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git c
 
 ### Step 1: Run complete test suite
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -m pytest -v --tb=short 2>&1 | tail -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -m pytest -v --tb=short 2>&1 | tail -20`
 Expected: 100+ tests pass
 
 ### Step 2: Verify all imports work
 
-Run: `cd /Users/connor/Medica/hushclaw-ws13-python-enhancements/packages/hush-py && python -c "from hush import hash_leaf, hash_node, compute_root, generate_proof, MerkleTree, MerkleProof, canonicalize, canonical_hash, NATIVE_AVAILABLE; print('All imports successful'); print(f'Native available: {NATIVE_AVAILABLE}')"`
+Run: `cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements/packages/hush-py && python -c "from hush import hash_leaf, hash_node, compute_root, generate_proof, MerkleTree, MerkleProof, canonicalize, canonical_hash, NATIVE_AVAILABLE; print('All imports successful'); print(f'Native available: {NATIVE_AVAILABLE}')"`
 Expected: "All imports successful" and native availability status
 
 ### Step 3: Create summary commit
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git log --oneline -15
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git log --oneline -15
 ```
 
 ### Step 4: Final commit for branch
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): complete Python enhancements - Merkle trees, canonical JSON, PyO3 bindings
+cd /Users/connor/Medica/clawdstrike-ws13-python-enhancements && git add -A && git commit -m "feat(hush-py): complete Python enhancements - Merkle trees, canonical JSON, PyO3 bindings
 
 - Add RFC 6962 Merkle tree (hash_leaf, hash_node, compute_root, MerkleTree, MerkleProof)
 - Add RFC 8785 canonical JSON (canonicalize, canonical_hash)

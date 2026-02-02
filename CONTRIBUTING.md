@@ -1,6 +1,6 @@
-# Contributing to Hushclaw
+# Contributing to Clawdstrike
 
-Thank you for your interest in contributing to Hushclaw! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to Clawdstrike! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
@@ -15,21 +15,21 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 - **Git**
 
 Optional for specific packages:
-- **Node.js 20+** for `@hushclaw/openclaw`
+- **Node.js 20+** for `@clawdstrike/openclaw`
 - **Python 3.11+** for `hush-py`
-- **wasm-pack** for `@hushclaw/wasm`
+- **wasm-pack** for `@clawdstrike/wasm`
 
 ### Fork and Clone
 
 1. Fork the repository on GitHub
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/hushclaw.git
-   cd hushclaw
+   git clone https://github.com/YOUR_USERNAME/clawdstrike.git
+   cd clawdstrike
    ```
 3. Add upstream remote:
    ```bash
-   git remote add upstream https://github.com/hushclaw/hushclaw.git
+   git remote add upstream https://github.com/backbay-labs/clawdstrike.git
    ```
 
 ### Development Setup
@@ -106,7 +106,7 @@ cargo test
 
 # Run specific crate tests
 cargo test -p hush-core
-cargo test -p hushclaw
+cargo test -p clawdstrike
 
 # Run with verbose output
 cargo test -- --nocapture
@@ -163,17 +163,17 @@ proptest! {
 ## Architecture Overview
 
 ```
-hushclaw/
+clawdstrike/
 ├── crates/
 │   ├── hush-core/     # Cryptographic primitives
 │   ├── hush-proxy/    # Network proxy utilities
-│   ├── hushclaw/      # Guard implementations and policy engine
+│   ├── clawdstrike/      # Guard implementations and policy engine
 │   ├── hush-cli/      # CLI binary
 │   ├── hushd/         # Security daemon
 │   └── hush-wasm/     # WebAssembly bindings
 ├── packages/
 │   ├── hush-py/       # Python SDK
-│   └── hushclaw-openclaw/  # OpenClaw integration
+│   └── clawdstrike-openclaw/  # OpenClaw integration
 ├── rulesets/          # Pre-configured security policies
 ├── docs/              # mdBook documentation
 └── examples/          # Usage examples
@@ -181,7 +181,7 @@ hushclaw/
 
 ### Key Abstractions
 
-- **Guard**: A security check (trait `Guard` in `hushclaw`)
+- **Guard**: A security check (trait `Guard` in `clawdstrike`)
 - **Policy**: Configuration for guards (YAML-based)
 - **Receipt**: Cryptographically signed execution attestation
 - **HushEngine**: Facade orchestrating guards and signing
@@ -214,7 +214,7 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ## Questions?
 
-- Open a [GitHub Discussion](https://github.com/hushclaw/hushclaw/discussions) for questions
+- Open a [GitHub Discussion](https://github.com/backbay-labs/clawdstrike/discussions) for questions
 - Join our community chat (coming soon)
 
 Thank you for contributing!

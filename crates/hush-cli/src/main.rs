@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-//! Hush CLI - Command-line interface for hushclaw
+//! Hush CLI - Command-line interface for clawdstrike
 //!
 //! Commands:
 //! - `hush check <action>` - Check an action against policy
@@ -21,8 +21,8 @@ use std::io::{self, Read, Write};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use clawdstrike::{GuardContext, GuardResult, HushEngine, Policy, RuleSet, Severity};
 use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, SignedReceipt};
-use hushclaw::{GuardContext, GuardResult, HushEngine, Policy, RuleSet, Severity};
 
 const CLI_JSON_VERSION: u8 = 1;
 
@@ -52,7 +52,7 @@ impl ExitCode {
 
 #[derive(Parser, Debug)]
 #[command(name = "hush")]
-#[command(version, about = "Hushclaw security guard CLI", long_about = None)]
+#[command(version, about = "Clawdstrike security guard CLI", long_about = None)]
 struct Cli {
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]

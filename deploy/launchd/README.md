@@ -6,7 +6,7 @@ This directory contains launchd configuration for running hushd on macOS.
 
 | File | Description |
 |------|-------------|
-| `dev.hushclaw.hushd.plist` | Launch daemon/agent configuration |
+| `dev.clawdstrike.hushd.plist` | Launch daemon/agent configuration |
 
 ## Installation Options
 
@@ -22,10 +22,10 @@ sudo mkdir -p /usr/local/etc/hushd /usr/local/var/lib/hushd /usr/local/var/log/h
 sudo cp deploy/config.yaml /usr/local/etc/hushd/config.yaml
 
 # Install plist
-sudo cp deploy/launchd/dev.hushclaw.hushd.plist /Library/LaunchDaemons/
+sudo cp deploy/launchd/dev.clawdstrike.hushd.plist /Library/LaunchDaemons/
 
 # Load and start
-sudo launchctl load /Library/LaunchDaemons/dev.hushclaw.hushd.plist
+sudo launchctl load /Library/LaunchDaemons/dev.clawdstrike.hushd.plist
 ```
 
 ### Option B: User-level agent (runs as current user)
@@ -40,10 +40,10 @@ mkdir -p ~/Library/Logs/hushd ~/.config/hushd ~/.local/share/hushd
 # (edit the plist or use the Homebrew formula which handles this)
 
 # Install plist
-cp deploy/launchd/dev.hushclaw.hushd.plist ~/Library/LaunchAgents/
+cp deploy/launchd/dev.clawdstrike.hushd.plist ~/Library/LaunchAgents/
 
 # Load and start
-launchctl load ~/Library/LaunchAgents/dev.hushclaw.hushd.plist
+launchctl load ~/Library/LaunchAgents/dev.clawdstrike.hushd.plist
 ```
 
 ### Option C: Homebrew (recommended for development)
@@ -51,7 +51,7 @@ launchctl load ~/Library/LaunchAgents/dev.hushclaw.hushd.plist
 If installed via Homebrew:
 
 ```bash
-brew install hushclaw/tap/hush
+brew install clawdstrike/tap/hush
 
 # For system-level (requires sudo)
 sudo brew services start hush
@@ -67,18 +67,18 @@ brew services start hush
 | `launchctl list \| grep hushd` | Check if running |
 | `launchctl load <plist>` | Load and start service |
 | `launchctl unload <plist>` | Stop and unload service |
-| `launchctl start dev.hushclaw.hushd` | Start loaded service |
-| `launchctl stop dev.hushclaw.hushd` | Stop loaded service |
+| `launchctl start dev.clawdstrike.hushd` | Start loaded service |
+| `launchctl stop dev.clawdstrike.hushd` | Stop loaded service |
 | `tail -f /usr/local/var/log/hushd/hushd.log` | Follow logs |
 
 ### System-level commands (with sudo)
 
 ```bash
 # Load
-sudo launchctl load /Library/LaunchDaemons/dev.hushclaw.hushd.plist
+sudo launchctl load /Library/LaunchDaemons/dev.clawdstrike.hushd.plist
 
 # Unload
-sudo launchctl unload /Library/LaunchDaemons/dev.hushclaw.hushd.plist
+sudo launchctl unload /Library/LaunchDaemons/dev.clawdstrike.hushd.plist
 
 # Check status
 sudo launchctl list | grep hushd
@@ -88,10 +88,10 @@ sudo launchctl list | grep hushd
 
 ```bash
 # Load
-launchctl load ~/Library/LaunchAgents/dev.hushclaw.hushd.plist
+launchctl load ~/Library/LaunchAgents/dev.clawdstrike.hushd.plist
 
 # Unload
-launchctl unload ~/Library/LaunchAgents/dev.hushclaw.hushd.plist
+launchctl unload ~/Library/LaunchAgents/dev.clawdstrike.hushd.plist
 
 # Check status
 launchctl list | grep hushd
@@ -109,8 +109,8 @@ launchctl setenv HUSHD_API_KEY "your-api-key"
 launchctl setenv HUSHD_ADMIN_KEY "your-admin-key"
 
 # Then restart
-launchctl stop dev.hushclaw.hushd
-launchctl start dev.hushclaw.hushd
+launchctl stop dev.clawdstrike.hushd
+launchctl start dev.clawdstrike.hushd
 ```
 
 ### Log Locations
@@ -171,19 +171,19 @@ chmod 755 ~/.config/hushd ~/.local/share/hushd ~/Library/Logs/hushd
 Validate plist syntax:
 
 ```bash
-plutil -lint deploy/launchd/dev.hushclaw.hushd.plist
+plutil -lint deploy/launchd/dev.clawdstrike.hushd.plist
 ```
 
 ### Reload after plist changes
 
 ```bash
 # System-level
-sudo launchctl unload /Library/LaunchDaemons/dev.hushclaw.hushd.plist
-sudo launchctl load /Library/LaunchDaemons/dev.hushclaw.hushd.plist
+sudo launchctl unload /Library/LaunchDaemons/dev.clawdstrike.hushd.plist
+sudo launchctl load /Library/LaunchDaemons/dev.clawdstrike.hushd.plist
 
 # User-level
-launchctl unload ~/Library/LaunchAgents/dev.hushclaw.hushd.plist
-launchctl load ~/Library/LaunchAgents/dev.hushclaw.hushd.plist
+launchctl unload ~/Library/LaunchAgents/dev.clawdstrike.hushd.plist
+launchctl load ~/Library/LaunchAgents/dev.clawdstrike.hushd.plist
 ```
 
 ## Security Hardening

@@ -1,6 +1,6 @@
 # Permissive
 
-**Ruleset ID:** `permissive` (also accepted as `hushclaw:permissive`)
+**Ruleset ID:** `permissive` (also accepted as `clawdstrike:permissive`)
 
 **Source:** `rulesets/permissive.yaml`
 

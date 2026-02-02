@@ -4,7 +4,7 @@ const { execSync, spawnSync } = require('child_process');
 const { pathToFileURL } = require('url');
 
 function packageDir() {
-  return path.resolve(__dirname, '../../../packages/hushclaw-openclaw');
+  return path.resolve(__dirname, '../../../packages/clawdstrike-openclaw');
 }
 
 function distPath(rel) {
@@ -27,7 +27,7 @@ async function importOpenclawSdk() {
   return import(pathToFileURL(distPath('index.js')).href);
 }
 
-function runHushclawCli(args) {
+function runClawdstrikeCli(args) {
   ensureBuilt();
   const cli = distPath(path.join('cli', 'bin.js'));
   const res = spawnSync('node', [cli, ...args], {
@@ -42,5 +42,5 @@ function runHushclawCli(args) {
 module.exports = {
   ensureBuilt,
   importOpenclawSdk,
-  runHushclawCli,
+  runClawdstrikeCli,
 };

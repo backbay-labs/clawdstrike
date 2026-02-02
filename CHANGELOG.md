@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Signed receipt creation with UUID, timestamps, and metadata
 - Receipt verification with signer and optional cosigner
 
-#### Security Guards (`hushclaw`)
+#### Security Guards (`clawdstrike`)
 
 - **ForbiddenPathGuard**: Block access to sensitive paths with glob patterns and exceptions
 - **EgressAllowlistGuard**: Control network egress via domain allowlist/blocklist with wildcards
@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Health check and status endpoints
 - CORS and request tracing middleware
 
-#### WebAssembly Bindings (`@hushclaw/wasm`)
+#### WebAssembly Bindings (`@clawdstrike/wasm`)
 
 - Browser and Node.js compatible WASM module
 - `hash_sha256` / `hash_sha256_prefixed` - SHA-256 hashing
@@ -77,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ed25519 receipt signing and verification
 - Optional native bindings via PyO3 (`hush-native`)
 
-#### OpenClaw Integration (`@hushclaw/openclaw`)
+#### OpenClaw Integration (`@clawdstrike/openclaw`)
 
 - TypeScript plugin for OpenClaw agent framework
 - CLI tool for policy checking in agent workflows
@@ -86,9 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Distribution
 
-- Homebrew formula (`brew install hushclaw/tap/hush`)
+- Homebrew formula (`brew install clawdstrike/tap/hush`)
 - Docker image for `hushd` daemon
-- npm package `@hushclaw/wasm` for web verification
+- npm package `@clawdstrike/wasm` for web verification
 - PyPI package `hush` for Python integration
 
 #### Documentation
@@ -107,4 +107,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release builds with LTO and single codegen unit
 - Dependabot configured for automated security updates
 
-[0.1.0]: https://github.com/hushclaw/hushclaw/releases/tag/v0.1.0
+[0.1.0]: https://github.com/backbay-labs/clawdstrike/releases/tag/v0.1.0

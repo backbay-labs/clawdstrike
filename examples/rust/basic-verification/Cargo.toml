@@ -2,7 +2,7 @@
 name = "basic-verification"
 version = "0.1.0"
 edition = "2021"
-description = "Example: Verify hushclaw receipts"
+description = "Example: Verify clawdstrike receipts"
 
 [dependencies]
 hush-core = { path = "../../../crates/hush-core" }

@@ -1,10 +1,10 @@
-# Hushclaw
+# Clawdstrike
 
 Security guards and attestation primitives for AI agent execution.
 
 ## Overview
 
-Hushclaw provides runtime security enforcement for AI agents, including:
+Clawdstrike provides runtime security enforcement for AI agents, including:
 
 - **Security Guards** - Composable checks for file access, network egress, secret detection, patch validation, and tool invocation
 - **Policy Engine** - YAML-based configuration for guard behavior
@@ -13,12 +13,12 @@ Hushclaw provides runtime security enforcement for AI agents, including:
 
 ## Threat model & limitations (explicit)
 
-Hushclaw enforces policy at the **agent/tool boundary**. It is not an OS sandbox and does not intercept syscalls.
+Clawdstrike enforces policy at the **agent/tool boundary**. It is not an OS sandbox and does not intercept syscalls.
 
 - **Enforced**: what your runtime blocks/permits based on `GuardResult` from `HushEngine::check_*`.
 - **Attested**: what is recorded in `Receipt`/`SignedReceipt` (verdict + provenance such as policy hash and violations).
 
-If an agent can bypass your tool layer and access the filesystem/network directly, Hushclaw cannot prevent it.
+If an agent can bypass your tool layer and access the filesystem/network directly, Clawdstrike cannot prevent it.
 
 ## Crates
 
@@ -27,7 +27,7 @@ If an agent can bypass your tool layer and access the filesystem/network directl
 | `hush-core` | Cryptographic primitives (Ed25519, SHA-256, Keccak-256, Merkle trees, receipts) |
 | `hush-proxy` | Network proxy utilities (DNS/SNI extraction, domain policy) |
 | `hush-wasm` | WebAssembly bindings for browser/Node.js verification |
-| `hushclaw` | Security guards and policy engine |
+| `clawdstrike` | Security guards and policy engine |
 | `hush-cli` | Command-line interface |
 | `hushd` | Security daemon (WIP) |
 
@@ -91,7 +91,7 @@ hush policy show strict
 ### Using as a Library
 
 ```rust
-use hushclaw::{HushEngine, GuardContext};
+use clawdstrike::{HushEngine, GuardContext};
 
 #[tokio::main]
 async fn main() {

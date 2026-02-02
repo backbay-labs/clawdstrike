@@ -334,6 +334,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
+name = "clawdstrike"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "glob",
+ "globset",
+ "hush-core",
+ "hush-proxy",
+ "proptest",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -825,9 +848,9 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "clawdstrike",
  "hex",
  "hush-core",
- "hushclaw",
  "rand 0.8.5",
  "reqwest",
  "serde",
@@ -894,29 +917,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hushclaw"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "glob",
- "globset",
- "hush-core",
- "hush-proxy",
- "proptest",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-test",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "hushd"
 version = "0.1.0"
 dependencies = [
@@ -924,6 +924,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "clawdstrike",
  "dashmap",
  "dirs",
  "futures",
@@ -931,7 +932,6 @@ dependencies = [
  "hex",
  "hush-core",
  "hush-proxy",
- "hushclaw",
  "reqwest",
  "rusqlite",
  "serde",

@@ -1,6 +1,6 @@
 # Audit Logging
 
-Hushclaw emits logs via `tracing`.
+Clawdstrike emits logs via `tracing`.
 
 ## CLI logging
 

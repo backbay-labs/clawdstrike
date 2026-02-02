@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-//! Hushd - Hushclaw security daemon
+//! Hushd - Clawdstrike security daemon
 //!
 //! This daemon provides:
 //! - HTTP API for action checking
@@ -20,7 +20,7 @@ use hushd::state::AppState;
 
 #[derive(Parser)]
 #[command(name = "hushd")]
-#[command(about = "Hushclaw security daemon", long_about = None)]
+#[command(about = "Clawdstrike security daemon", long_about = None)]
 #[command(version)]
 struct Cli {
     /// Verbosity level (-v, -vv, -vvv)

@@ -37,7 +37,7 @@ Constraints:
 ## PR-002: Rulesets: pick a single source of truth and enforce it
 - Goal: Eliminate drift between YAML rulesets, engine `RuleSet::by_name`, CLI listing, and docs.
 - Files:
-  - crates/hushclaw/src/policy.rs
+  - crates/clawdstrike/src/policy.rs
   - crates/hush-cli/src/main.rs
   - rulesets/*.yaml
   - README.md
@@ -58,11 +58,11 @@ Constraints:
 ## PR-003: Policy validation: fail closed on invalid regex/glob patterns
 - Goal: Remove silent weakening due to invalid patterns being dropped.
 - Files:
-  - crates/hushclaw/src/policy.rs
-  - crates/hushclaw/src/error.rs
-  - crates/hushclaw/src/guards/forbidden_path.rs
-  - crates/hushclaw/src/guards/secret_leak.rs
-  - crates/hushclaw/src/guards/patch_integrity.rs
+  - crates/clawdstrike/src/policy.rs
+  - crates/clawdstrike/src/error.rs
+  - crates/clawdstrike/src/guards/forbidden_path.rs
+  - crates/clawdstrike/src/guards/secret_leak.rs
+  - crates/clawdstrike/src/guards/patch_integrity.rs
 - Steps:
   - Introduce `PolicyValidationError` with a list of field errors (guard name, field path, pattern, compile error).
   - Implement `Policy::validate()` and call it in policy load paths (CLI, daemon).
@@ -78,8 +78,8 @@ Constraints:
 ## PR-004: Typed config actions: replace `default_action: String` with enums
 - Goal: Make policy semantics unambiguous and typo-proof.
 - Files:
-  - crates/hushclaw/src/guards/egress_allowlist.rs
-  - crates/hushclaw/src/guards/mcp_tool.rs
+  - crates/clawdstrike/src/guards/egress_allowlist.rs
+  - crates/clawdstrike/src/guards/mcp_tool.rs
   - rulesets/*.yaml
 - Steps:
   - Introduce enums for default actions with serde rename_all=lowercase.
@@ -95,8 +95,8 @@ Constraints:
 ## PR-005: Engine semantics: preserve warnings and per-guard evidence
 - Goal: Make warning results visible and explainable.
 - Files:
-  - crates/hushclaw/src/engine.rs
-  - crates/hushclaw/src/guards/mod.rs
+  - crates/clawdstrike/src/engine.rs
+  - crates/clawdstrike/src/guards/mod.rs
   - crates/hush-cli/src/main.rs
 - Steps:
   - Introduce a `GuardReport` containing per-guard results plus an overall verdict.
@@ -215,8 +215,8 @@ Constraints:
 ## PR-012: API safety: add `#[must_use]` and tighten visibility
 - Goal: Prevent ignored security decisions and reduce public surface area.
 - Files:
-  - crates/hushclaw/src/guards/mod.rs
-  - crates/hushclaw/src/engine.rs
+  - crates/clawdstrike/src/guards/mod.rs
+  - crates/clawdstrike/src/engine.rs
   - crates/hush-core/src/*
 - Steps:
   - Mark `GuardResult` (and report type, if added) as `#[must_use]`.
@@ -234,8 +234,8 @@ Constraints:
 - Goal: Remove avoidable allocations in hashing and guard evaluation.
 - Files:
   - crates/hush-core/src/hashing.rs
-  - crates/hushclaw/src/guards/mcp_tool.rs
-  - crates/hushclaw/src/engine.rs
+  - crates/clawdstrike/src/guards/mcp_tool.rs
+  - crates/clawdstrike/src/engine.rs
 - Steps:
   - Replace `concat_hashes` Vec allocation with a fixed `[u8; 64]` buffer.
   - Replace args size calculation with `serde_json::to_vec` (byte-accurate) or a size-tracking serializer.
@@ -251,7 +251,7 @@ Constraints:
 - Goal: Keep dependency surface minimal and intentional.
 - Files:
   - crates/hush-core/Cargo.toml
-  - crates/hushclaw/Cargo.toml
+  - crates/clawdstrike/Cargo.toml
   - crates/hush-proxy/Cargo.toml
 - Steps:
   - Confirm unused deps (`uuid`, `ipnet`, `globset`, `tokio` in hush-proxy).
@@ -310,7 +310,7 @@ Constraints:
   - Medium; doc test harness can be brittle if not scoped carefully.
 
 ## PR-018: Clarify threat model: what is enforced vs what is attested
-- Goal: Make it explicit whether hushclaw enforces OS-level restrictions or agent-tool-level restrictions.
+- Goal: Make it explicit whether clawdstrike enforces OS-level restrictions or agent-tool-level restrictions.
 - Files:
   - README.md
   - docs/src/concepts/architecture.md
@@ -453,8 +453,8 @@ really includes the Python SDK and OpenClaw plugin.
 ### PR-019: Implement schema translation layer (S1 -> S2) with fixtures
 - Goal: allow OpenClaw/mdBook policies (S1) to be consumed by Rust engine (S2) via explicit translation.
 - Files:
-  - `crates/hushclaw/src/policy.rs` (or new `policy_loader.rs`)
-  - `rulesets/` and `packages/hushclaw-openclaw/examples/*` (fixtures)
+  - `crates/clawdstrike/src/policy.rs` (or new `policy_loader.rs`)
+  - `rulesets/` and `packages/clawdstrike-openclaw/examples/*` (fixtures)
 - Steps:
   - Define S1 structs (serde) and translation into S2 Policy/Guard configs.
   - Define translation semantics explicitly and test with fixtures.
@@ -475,8 +475,8 @@ really includes the Python SDK and OpenClaw plugin.
 ### PR-021: OpenClaw plugin alignment with Rust engine
 - Goal: ensure OpenClaw plugin policies and guard semantics match Rust guard behavior.
 - Files:
-  - `packages/hushclaw-openclaw/src/*`
-  - `packages/hushclaw-openclaw/examples/*`
+  - `packages/clawdstrike-openclaw/src/*`
+  - `packages/clawdstrike-openclaw/examples/*`
 - Steps:
   - Decide whether plugin uses S1 schema directly or through translation into S2.
   - Add integration tests that feed example policies into Rust validator/translator (if available).

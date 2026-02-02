@@ -12,7 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 hush-core = { path = "../crates/hush-core" }
 hush-proxy = { path = "../crates/hush-proxy" }
-hushclaw = { path = "../crates/hushclaw" }
+clawdstrike = { path = "../crates/clawdstrike" }
 arbitrary = { version = "1.3", features = ["derive"] }
 
 [[bin]]

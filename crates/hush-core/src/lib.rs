@@ -2,7 +2,7 @@
 
 //! # hush-core
 //!
-//! Cryptographic primitives for the hushclaw attestation system.
+//! Cryptographic primitives for the clawdstrike attestation system.
 //!
 //! This crate provides:
 //! - Ed25519 signing and verification

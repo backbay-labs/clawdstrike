@@ -31,8 +31,8 @@ See [systemd/README.md](systemd/README.md) for full installation instructions.
 
 ```bash
 # Install as system daemon
-sudo cp deploy/launchd/dev.hushclaw.hushd.plist /Library/LaunchDaemons/
-sudo launchctl load /Library/LaunchDaemons/dev.hushclaw.hushd.plist
+sudo cp deploy/launchd/dev.clawdstrike.hushd.plist /Library/LaunchDaemons/
+sudo launchctl load /Library/LaunchDaemons/dev.clawdstrike.hushd.plist
 
 # Check status
 sudo launchctl list | grep hushd
@@ -44,7 +44,7 @@ See [launchd/README.md](launchd/README.md) for full installation instructions in
 
 ```bash
 # Build image
-docker build -f Dockerfile.hushd -t hushclaw/hushd .
+docker build -f Dockerfile.hushd -t clawdstrike/hushd .
 
 # Run container
 docker run -d \
@@ -52,7 +52,7 @@ docker run -d \
   -p 9876:9876 \
   -v /path/to/config.yaml:/etc/hushd/config.yaml:ro \
   -v hushd-data:/var/lib/hushd \
-  hushclaw/hushd
+  clawdstrike/hushd
 ```
 
 ### Docker Compose

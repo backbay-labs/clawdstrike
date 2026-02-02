@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Implement the Isolation Runtime Manager (IRM) module that intercepts and controls filesystem, network, and execution operations at runtime, integrating with hushclaw's existing guard system.
+**Goal:** Implement the Isolation Runtime Manager (IRM) module that intercepts and controls filesystem, network, and execution operations at runtime, integrating with clawdstrike's existing guard system.
 
 **Architecture:** The IRM provides a second layer of defense beyond guards - while guards evaluate actions before execution, IRMs can intercept host calls during execution. The IRM consists of three specialized monitors (Filesystem, Network, Execution) coordinated by a Router that dispatches calls and aggregates decisions. A Sandbox orchestrator wraps all IRMs for unified session management.
 
@@ -12,7 +12,7 @@
 
 ## Overview
 
-Port the IRM module from `aegis-shell` to `hushclaw`, adapting it to use hushclaw's existing patterns (Policy, GuardResult, etc.) while maintaining the core functionality.
+Port the IRM module from `aegis-shell` to `clawdstrike`, adapting it to use clawdstrike's existing patterns (Policy, GuardResult, etc.) while maintaining the core functionality.
 
 **Source files to port:**
 - `/Users/connor/Medica/glia-fab/crates/aegis-shell/src/irm/mod.rs`
@@ -22,7 +22,7 @@ Port the IRM module from `aegis-shell` to `hushclaw`, adapting it to use hushcla
 
 **Target structure:**
 ```
-crates/hushclaw/src/irm/
+crates/clawdstrike/src/irm/
 ├── mod.rs          # IRM trait, types, router
 ├── fs.rs           # Filesystem interception
 ├── net.rs          # Network interception
@@ -35,15 +35,15 @@ crates/hushclaw/src/irm/
 ## Task 1: Create IRM Module Structure and Core Types
 
 **Files:**
-- Create: `crates/hushclaw/src/irm/mod.rs`
-- Modify: `crates/hushclaw/src/lib.rs`
+- Create: `crates/clawdstrike/src/irm/mod.rs`
+- Modify: `crates/clawdstrike/src/lib.rs`
 
 **Step 1: Write the failing test for IRM types**
 
 Create the test file first to define expected behavior:
 
 ```rust
-// In crates/hushclaw/src/irm/mod.rs (at the bottom)
+// In crates/clawdstrike/src/irm/mod.rs (at the bottom)
 
 #[cfg(test)]
 mod tests {
@@ -107,14 +107,14 @@ mod tests {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm --no-run 2>&1 | head -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm --no-run 2>&1 | head -20`
 
 Expected: Compilation error - module `irm` not found
 
 **Step 3: Create the IRM module with core types**
 
 ```rust
-// crates/hushclaw/src/irm/mod.rs
+// crates/clawdstrike/src/irm/mod.rs
 
 //! Inline Reference Monitors (IRM)
 //!
@@ -553,10 +553,10 @@ mod tests {
 
 **Step 4: Update lib.rs to include IRM module**
 
-Add to `crates/hushclaw/src/lib.rs`:
+Add to `crates/clawdstrike/src/lib.rs`:
 
 ```rust
-//! Hushclaw - Security Guards and Policy Engine
+//! Clawdstrike - Security Guards and Policy Engine
 //!
 //! This crate provides security guards for AI agent execution:
 //! - ForbiddenPathGuard: Blocks access to sensitive paths
@@ -601,7 +601,7 @@ pub mod core {
 
 **Step 5: Run test to verify compilation fails (missing submodules)**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm --no-run 2>&1 | head -30`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm --no-run 2>&1 | head -30`
 
 Expected: Compilation error - file not found for modules `fs`, `net`, `exec`, `sandbox`
 
@@ -610,12 +610,12 @@ Expected: Compilation error - file not found for modules `fs`, `net`, `exec`, `s
 ## Task 2: Implement Filesystem IRM
 
 **Files:**
-- Create: `crates/hushclaw/src/irm/fs.rs`
+- Create: `crates/clawdstrike/src/irm/fs.rs`
 
 **Step 1: Write the failing tests**
 
 ```rust
-// crates/hushclaw/src/irm/fs.rs
+// crates/clawdstrike/src/irm/fs.rs
 
 //! Filesystem Inline Reference Monitor
 //!
@@ -947,21 +947,21 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm::fs --no-run 2>&1 | head -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm::fs --no-run 2>&1 | head -20`
 
 Expected: Compilation should succeed now (fs.rs is complete)
 
 **Step 3: Verify tests pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm::fs -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm::fs -- --nocapture`
 
 Expected: All tests pass
 
 **Step 4: Commit**
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws7-irm
-git add crates/hushclaw/src/irm/fs.rs
+cd /Users/connor/Medica/clawdstrike-ws7-irm
+git add crates/clawdstrike/src/irm/fs.rs
 git commit -m "feat(irm): add filesystem inline reference monitor"
 ```
 
@@ -970,12 +970,12 @@ git commit -m "feat(irm): add filesystem inline reference monitor"
 ## Task 3: Implement Network IRM
 
 **Files:**
-- Create: `crates/hushclaw/src/irm/net.rs`
+- Create: `crates/clawdstrike/src/irm/net.rs`
 
 **Step 1: Write the implementation with tests**
 
 ```rust
-// crates/hushclaw/src/irm/net.rs
+// crates/clawdstrike/src/irm/net.rs
 
 //! Network Inline Reference Monitor
 //!
@@ -1354,15 +1354,15 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm::net -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm::net -- --nocapture`
 
 Expected: All tests pass
 
 **Step 3: Commit**
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws7-irm
-git add crates/hushclaw/src/irm/net.rs
+cd /Users/connor/Medica/clawdstrike-ws7-irm
+git add crates/clawdstrike/src/irm/net.rs
 git commit -m "feat(irm): add network inline reference monitor"
 ```
 
@@ -1371,12 +1371,12 @@ git commit -m "feat(irm): add network inline reference monitor"
 ## Task 4: Implement Execution IRM
 
 **Files:**
-- Create: `crates/hushclaw/src/irm/exec.rs`
+- Create: `crates/clawdstrike/src/irm/exec.rs`
 
 **Step 1: Write the implementation with tests**
 
 ```rust
-// crates/hushclaw/src/irm/exec.rs
+// crates/clawdstrike/src/irm/exec.rs
 
 //! Execution Inline Reference Monitor
 //!
@@ -1682,15 +1682,15 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm::exec -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm::exec -- --nocapture`
 
 Expected: All tests pass
 
 **Step 3: Commit**
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws7-irm
-git add crates/hushclaw/src/irm/exec.rs
+cd /Users/connor/Medica/clawdstrike-ws7-irm
+git add crates/clawdstrike/src/irm/exec.rs
 git commit -m "feat(irm): add execution inline reference monitor"
 ```
 
@@ -1699,12 +1699,12 @@ git commit -m "feat(irm): add execution inline reference monitor"
 ## Task 5: Implement Sandbox Orchestration
 
 **Files:**
-- Create: `crates/hushclaw/src/irm/sandbox.rs`
+- Create: `crates/clawdstrike/src/irm/sandbox.rs`
 
 **Step 1: Write the implementation with tests**
 
 ```rust
-// crates/hushclaw/src/irm/sandbox.rs
+// crates/clawdstrike/src/irm/sandbox.rs
 
 //! Sandbox orchestration for IRM
 //!
@@ -2095,15 +2095,15 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm::sandbox -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm::sandbox -- --nocapture`
 
 Expected: All tests pass
 
 **Step 3: Commit**
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws7-irm
-git add crates/hushclaw/src/irm/sandbox.rs
+cd /Users/connor/Medica/clawdstrike-ws7-irm
+git add crates/clawdstrike/src/irm/sandbox.rs
 git commit -m "feat(irm): add sandbox orchestration"
 ```
 
@@ -2112,8 +2112,8 @@ git commit -m "feat(irm): add sandbox orchestration"
 ## Task 6: Update Module Exports and Integration Tests
 
 **Files:**
-- Modify: `crates/hushclaw/src/lib.rs`
-- Modify: `crates/hushclaw/src/irm/mod.rs`
+- Modify: `crates/clawdstrike/src/lib.rs`
+- Modify: `crates/clawdstrike/src/irm/mod.rs`
 
 **Step 1: Update lib.rs with final exports**
 
@@ -2121,7 +2121,7 @@ The lib.rs should already be correct from Task 1, but verify the IRM exports are
 
 **Step 2: Add integration tests to mod.rs**
 
-Add these integration tests to the bottom of `crates/hushclaw/src/irm/mod.rs`:
+Add these integration tests to the bottom of `crates/clawdstrike/src/irm/mod.rs`:
 
 ```rust
 // Add to the existing tests module in mod.rs
@@ -2231,21 +2231,21 @@ mod integration_tests {
 
 **Step 3: Run all tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw irm -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike irm -- --nocapture`
 
 Expected: All tests pass
 
 **Step 4: Run full crate tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike`
 
 Expected: All tests pass
 
 **Step 5: Commit**
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws7-irm
-git add crates/hushclaw/src/irm/mod.rs crates/hushclaw/src/lib.rs
+cd /Users/connor/Medica/clawdstrike-ws7-irm
+git add crates/clawdstrike/src/irm/mod.rs crates/clawdstrike/src/lib.rs
 git commit -m "feat(irm): add integration tests and finalize module exports"
 ```
 
@@ -2255,45 +2255,45 @@ git commit -m "feat(irm): add integration tests and finalize module exports"
 
 **Step 1: Run clippy**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo clippy -p hushclaw -- -D warnings`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo clippy -p clawdstrike -- -D warnings`
 
 Expected: No warnings
 
 **Step 2: Run fmt check**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo fmt -p hushclaw -- --check`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo fmt -p clawdstrike -- --check`
 
 Expected: No formatting issues
 
 **Step 3: Run full test suite**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo test -p hushclaw --all-features`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo test -p clawdstrike --all-features`
 
 Expected: All tests pass
 
 **Step 4: Build docs**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws7-irm && cargo doc -p hushclaw --no-deps`
+Run: `cd /Users/connor/Medica/clawdstrike-ws7-irm && cargo doc -p clawdstrike --no-deps`
 
 Expected: Docs build successfully
 
 **Step 5: Final commit and push**
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws7-irm
+cd /Users/connor/Medica/clawdstrike-ws7-irm
 git log --oneline -5  # Verify commits
-git push origin hushclaw/ws7-irm
+git push origin clawdstrike/ws7-irm
 ```
 
 ---
 
 ## Acceptance Criteria Checklist
 
-- [ ] `crates/hushclaw/src/irm/mod.rs` - IRM trait, types, router
-- [ ] `crates/hushclaw/src/irm/fs.rs` - Filesystem interception
-- [ ] `crates/hushclaw/src/irm/net.rs` - Network interception
-- [ ] `crates/hushclaw/src/irm/exec.rs` - Execution interception
-- [ ] `crates/hushclaw/src/irm/sandbox.rs` - Sandbox orchestration
+- [ ] `crates/clawdstrike/src/irm/mod.rs` - IRM trait, types, router
+- [ ] `crates/clawdstrike/src/irm/fs.rs` - Filesystem interception
+- [ ] `crates/clawdstrike/src/irm/net.rs` - Network interception
+- [ ] `crates/clawdstrike/src/irm/exec.rs` - Execution interception
+- [ ] `crates/clawdstrike/src/irm/sandbox.rs` - Sandbox orchestration
 - [ ] All unit tests pass
 - [ ] All integration tests pass
 - [ ] No clippy warnings

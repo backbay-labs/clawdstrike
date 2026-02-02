@@ -1,10 +1,10 @@
-# Hushclaw/OpenClaw policy for the hello-secure-agent example.
+# Clawdstrike/OpenClaw policy for the hello-secure-agent example.
 #
-# This file is consumed by the @hushclaw/openclaw plugin (not the Rust `hushclaw::Policy` type).
+# This file is consumed by the @clawdstrike/openclaw plugin (not the Rust `clawdstrike::Policy` type).
 # Validate it with:
-#   npx hushclaw policy lint ./policy.yaml
+#   npx clawdstrike policy lint ./policy.yaml
 
-version: "hushclaw-v1.0"
+version: "clawdstrike-v1.0"
 
 egress:
   mode: allowlist

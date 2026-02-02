@@ -1,7 +1,7 @@
 # Elite Rust Codebase Case Studies (v3)
 
 Goal: describe what “elite Rust” looks like in practice by studying patterns commonly used in top-tier Rust projects,
-then translate those patterns into concrete guidance for hushclaw.
+then translate those patterns into concrete guidance for clawdstrike.
 
 Important constraint:
 - This environment has no outbound network access, so I cannot fetch and quote actual Tokio/Serde/ripgrep source files here.
@@ -12,8 +12,8 @@ Important constraint:
 - 2. Serde: schema evolution and trait design
 - 3. ripgrep: CLI contract and performance engineering
 - 4. rustc/stdlib: stability, layering, and internal APIs
-- 5. Applied case studies for hushclaw (design exercises)
-- 6. Pattern-to-hushclaw mapping (priority list)
+- 5. Applied case studies for clawdstrike (design exercises)
+- 6. Pattern-to-clawdstrike mapping (priority list)
 - Bibliography
 
 ## 1. Tokio: async runtime, cancellation, and boundaries
@@ -28,7 +28,7 @@ The core discipline you see in elite async code:
 - Blocking work is explicitly segregated from async work.
 - Cancellation is treated as a normal outcome and documented in APIs.
 
-### 1.2 Concrete patterns to emulate (for hushclaw)
+### 1.2 Concrete patterns to emulate (for clawdstrike)
 - Builder objects to keep configuration extensible and discoverable.
 - Explicit resource limits (concurrency, queue sizes, timeouts).
 - Explicit “lifecycle” semantics for long-running services (start/reload/shutdown).
@@ -39,7 +39,7 @@ Elite async systems separate:
 - internal task failures (join errors, cancellation), from
 - programmer errors (panics).
 
-In hushclaw terms:
+In clawdstrike terms:
 - A policy violation is not a crash; it is an expected outcome.
 - A parse error is a configuration bug; it should be surfaced clearly.
 - A panic is a bug; treat it as a high-severity internal failure.
@@ -65,7 +65,7 @@ impl EngineBuilder {
 }
 ```
 
-### 1.6 How this maps to hushclaw code today
+### 1.6 How this maps to clawdstrike code today
 - `HushEngine` already exists and is async-friendly, but:
   - state tracking uses an `RwLock` (fine), but as features grow you should consider atomics for counters.
   - guard aggregation currently can lose warnings; a Tokio-grade system would keep per-check evidence.
@@ -91,15 +91,15 @@ Elite systems often provide both:
 - permissive parse (forward compatibility), and
 - strict parse (fail on unknown fields / invalid patterns).
 
-Hushclaw should likely default to strict parse for *policies*, because they represent intent and security posture.
+Clawdstrike should likely default to strict parse for *policies*, because they represent intent and security posture.
 
 ### 2.3 Versioning strategies
 Common strategies (choose one intentionally):
 - Semantic version string (e.g., `1.0.0`) with semver rules.
-- Schema ID string (e.g., `hushclaw-v1.0`) with explicit compatibility tables.
+- Schema ID string (e.g., `clawdstrike-v1.0`) with explicit compatibility tables.
 - Integer schema version (e.g., `1`) with a migration chain.
 
-### 2.4 Apply to hushclaw: you currently have two policy schemas
+### 2.4 Apply to clawdstrike: you currently have two policy schemas
 - Implemented schema: `Policy { version, name, description, guards, settings }`.
 - Documented schema: `version, extends, egress/filesystem/execution/tools, limits, on_violation`.
 
@@ -114,7 +114,7 @@ If you implement `extends`, define merge semantics explicitly:
 
 Elite approach: write tests for merge semantics before implementing them.
 
-### 2.6 Apply to hushclaw code today
+### 2.6 Apply to clawdstrike code today
 - Your `Policy` model is already strongly typed and serde-friendly.
 - Next step is to add validation (compile patterns) and choose strictness defaults.
 
@@ -134,7 +134,7 @@ as a contract. For security tooling, that mindset is essential.
 - Stable exit codes.
 - Stable output formats (especially machine-readable formats).
 
-### 3.2 Apply to hushclaw: current contract breaches
+### 3.2 Apply to clawdstrike: current contract breaches
 - mdBook documents CLI commands that do not exist in `crates/hush-cli`.
 - Examples reference rulesets (`ai-agent-minimal`, `cicd`) not supported by runtime `RuleSet::by_name`.
 
@@ -143,7 +143,7 @@ Elite CLI projects treat this as normal:
 - Integration tests that run the binary and assert output/exit codes.
 - Golden output snapshots for `--help` and key commands.
 
-### 3.4 Apply to hushclaw code today
+### 3.4 Apply to clawdstrike code today
 - Add tests that invoke `hush policy list` and ensure it matches whatever the engine can load.
 - If you implement `hush run`, define semantics and then add tests that cover common denial cases (reading ~/.ssh).
 
@@ -160,12 +160,12 @@ The Rust stdlib and compiler are the extreme example of layered design:
 - Internals are aggressively encapsulated.
 - Diagnostics are treated as UX.
 
-### 4.1 Apply to hushclaw
+### 4.1 Apply to clawdstrike
 - Use `pub(crate)` by default; re-export intentionally from `lib.rs`.
 - Add `#[non_exhaustive]` to public error enums if you expect evolution.
 - Treat policy errors as diagnostics: show which field/pattern is wrong.
 
-## 5. Applied case studies for hushclaw (design exercises)
+## 5. Applied case studies for clawdstrike (design exercises)
 
 This section is intentionally concrete: it uses the above “elite patterns” as design constraints for features
 that the docs *claim* exist but the code does not implement yet.
@@ -211,7 +211,7 @@ Elite design constraints (Serde style):
 Implementation sketch:
 - Add `extends: Option<String>` to the schema (if you adopt mdBook schema), or keep it separate in a “policy loader” layer.
 - Implement a resolver interface that can load base policies from:
-  - built-in registry (e.g., hushclaw:default)
+  - built-in registry (e.g., clawdstrike:default)
   - local file (file://)
   - (optionally) remote sources (https://, git://) but only in the CLI binary, not in library code.
 - Merge base and child into an “effective policy” and then validate.
@@ -232,7 +232,7 @@ Implementation sketch:
   - warned if none blocked but any warned
   - allowed otherwise
 
-## 6. Pattern-to-hushclaw mapping (priority list)
+## 6. Pattern-to-clawdstrike mapping (priority list)
 
 ### P0 (must fix to restore trust)
 - Docs/README/examples must match code or be labeled as roadmap.
@@ -256,7 +256,7 @@ Implementation sketch:
 - Rustdoc Book: https://doc.rust-lang.org/stable/rustdoc/
 - Clippy Book: https://doc.rust-lang.org/stable/clippy/
 
-## Appendix A: Applied design sketches (what “elite patterns” look like when building hushclaw features)
+## Appendix A: Applied design sketches (what “elite patterns” look like when building clawdstrike features)
 
 These sketches are intentionally concrete and use the same design constraints you see in elite Rust projects:
 - explicit boundaries
@@ -380,7 +380,7 @@ Elite design goal:
 
 Two viable product shapes:
 - Shape 1: Agent-tool enforcement
-  - hushclaw sits inside the agent runtime (MCP/tools) and checks actions as they happen.
+  - clawdstrike sits inside the agent runtime (MCP/tools) and checks actions as they happen.
   - Receipts attest to checked actions.
 - Shape 2: OS-level enforcement (harder)
   - You need sandboxing (seccomp, sandbox-exec, containers) or syscall interception.
@@ -443,7 +443,7 @@ Elite Rust codebases avoid this kind of drift by:
 - Adding fixtures and compatibility tests early.
 - Keeping docs honest (contract vs roadmap).
 
-### D.4 Concrete next steps for hushclaw (if multi-language is real)
+### D.4 Concrete next steps for clawdstrike (if multi-language is real)
 
 - Introduce `fixtures/canonical/*.json` containing canonicalization vectors and expected canonical strings.
 - Add Rust tests that canonicalize each fixture and compare to expected outputs.
@@ -455,15 +455,15 @@ Elite Rust codebases avoid this kind of drift by:
 The mdBook policy schema is not “just docs”: it is used by other parts of this repo.
 
 Evidence:
-- `packages/hushclaw-openclaw/examples/hello-secure-agent/policy.yaml` uses the mdBook schema:
-  - `version: "hushclaw-v1.0"`
+- `packages/clawdstrike-openclaw/examples/hello-secure-agent/policy.yaml` uses the mdBook schema:
+  - `version: "clawdstrike-v1.0"`
   - `egress: { mode, allowed_domains, denied_domains }`
   - `filesystem: { allowed_write_roots, forbidden_paths }`
   - `on_violation: cancel`
 
 This means the repo currently contains at least two “live” policy schemas:
 - Schema S1 (mdBook/OpenClaw): `egress/filesystem/execution/tools/...` + `extends` + `on_violation`.
-- Schema S2 (Rust crates/hushclaw): `guards.*` + `settings`.
+- Schema S2 (Rust crates/clawdstrike): `guards.*` + `settings`.
 
 Why this matters:
 - If the OpenClaw plugin is part of the product, S1 is not optional.

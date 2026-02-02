@@ -1,12 +1,12 @@
 [package]
 name = "hush-core"
-description = "Core cryptographic primitives for hushclaw"
+description = "Core cryptographic primitives for clawdstrike"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["security", "cryptography", "verification", "hushclaw"]
+keywords = ["security", "cryptography", "verification", "clawdstrike"]
 categories = ["cryptography", "authentication"]
 readme = "../../README.md"
 

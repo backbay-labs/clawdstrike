@@ -1,15 +1,15 @@
 {
   "name": "hello-secure-agent",
   "version": "1.0.0",
-  "description": "Minimal OpenClaw agent with hushclaw security",
+  "description": "Minimal OpenClaw agent with clawdstrike security",
   "main": "agent.js",
   "scripts": {
     "start": "node agent.js",
-    "policy:lint": "node ./tools/hushclaw.js policy lint ./policy.yaml"
+    "policy:lint": "node ./tools/clawdstrike.js policy lint ./policy.yaml"
   },
   "keywords": [
     "openclaw",
-    "hushclaw",
+    "clawdstrike",
     "ai-agent",
     "security"
   ],

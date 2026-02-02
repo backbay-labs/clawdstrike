@@ -1,6 +1,6 @@
 //! Canonical JSON for hashing/signatures (RFC 8785 JCS)
 //!
-//! Hushclaw needs byte-for-byte identical canonical JSON across Rust/Python/TS.
+//! Clawdstrike needs byte-for-byte identical canonical JSON across Rust/Python/TS.
 //! We adopt RFC 8785 (JCS) and match ECMAScript `JSON.stringify()` number and
 //! string escaping semantics.
 

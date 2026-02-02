@@ -14,7 +14,7 @@ We take security vulnerabilities seriously. If you discover a security issue, pl
 
 ### How to Report
 
-1. Email: [security@hushclaw.dev](mailto:security@hushclaw.dev)
+1. Email: [security@clawdstrike.dev](mailto:security@clawdstrike.dev)
 2. Include:
    - Description of the vulnerability
    - Steps to reproduce
@@ -32,11 +32,11 @@ We will keep you informed throughout the process and credit you in the release n
 
 ## Security Model
 
-Hushclaw implements defense-in-depth for AI agent execution:
+Clawdstrike implements defense-in-depth for AI agent execution:
 
 ### Enforcement boundary (explicit)
 
-Hushclaw enforces policy at the **agent/tool boundary**. It is **not** an OS sandbox and does not intercept syscalls. Anything that bypasses your tool/runtime integration is out of scope for enforcement.
+Clawdstrike enforces policy at the **agent/tool boundary**. It is **not** an OS sandbox and does not intercept syscalls. Anything that bypasses your tool/runtime integration is out of scope for enforcement.
 
 ### Guards
 
@@ -94,7 +94,7 @@ as it allows rate limit bypass via header spoofing.
 
 ## Security Best Practices
 
-When using Hushclaw in production:
+When using Clawdstrike in production:
 
 1. **Use strict rulesets** - Start with `strict` ruleset and allow only required paths/domains
 2. **Rotate signing keys** - Generate new keypairs periodically
@@ -104,4 +104,4 @@ When using Hushclaw in production:
 
 ## Acknowledgments
 
-We gratefully thank security researchers who help improve Hushclaw's security posture.
+We gratefully thank security researchers who help improve Clawdstrike's security posture.

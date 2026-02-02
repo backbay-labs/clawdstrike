@@ -1,11 +1,11 @@
 # Hello Secure Agent
 
-A minimal OpenClaw agent with hushclaw security integration. This example demonstrates the complete setup for a secure AI agent.
+A minimal OpenClaw agent with clawdstrike security integration. This example demonstrates the complete setup for a secure AI agent.
 
 ## What It Does
 
 1. Runs an OpenClaw agent with a simple "hello" skill
-2. All tool calls are verified by hushclaw guards
+2. All tool calls are verified by clawdstrike guards
 3. Provides a `policy_check` tool for preflight checks
 4. Demonstrates fail-closed policy enforcement in action
 
@@ -15,7 +15,7 @@ A minimal OpenClaw agent with hushclaw security integration. This example demons
 hello-secure-agent/
 ├── README.md           # This file
 ├── openclaw.json       # OpenClaw configuration
-├── policy.yaml         # Hushclaw security policy
+├── policy.yaml         # Clawdstrike security policy
 ├── agent.js            # Simple agent script
 └── skills/
     └── hello/
@@ -26,7 +26,7 @@ hello-secure-agent/
 
 - Node.js 18+
 - OpenClaw CLI (`npm install -g @openclaw/cli`)
-- `@hushclaw/openclaw` CLI (`npx hushclaw ...`)
+- `@clawdstrike/openclaw` CLI (`npx clawdstrike ...`)
 
 ## Quick Start
 
@@ -37,7 +37,7 @@ npm run policy:lint
 # 2. Dry-run policy checks (no OpenClaw required)
 npm start
 
-# 3. Run the agent with OpenClaw + hushclaw enabled (requires OpenClaw CLI)
+# 3. Run the agent with OpenClaw + clawdstrike enabled (requires OpenClaw CLI)
 # openclaw run --config ./openclaw.json
 
 # 4. Confirm enforcement (example)
@@ -48,13 +48,13 @@ npm start
 
 ### openclaw.json
 
-The OpenClaw configuration enables the hushclaw plugin:
+The OpenClaw configuration enables the clawdstrike plugin:
 
 ```json
 {
   "plugins": [
     {
-      "name": "@hushclaw/openclaw",
+      "name": "@clawdstrike/openclaw",
       "config": {
         "policy": "./policy.yaml",
         "mode": "deterministic"
@@ -77,9 +77,9 @@ The security policy defines:
 When you run the agent, you'll see security decisions in the logs:
 
 ```
-[hushclaw] Allowed: file_read("/project/src/index.ts")
-[hushclaw] Denied by forbidden_path: file_read("~/.ssh/id_rsa")
-[hushclaw] Denied by egress: network("http://localhost:8080")
+[clawdstrike] Allowed: file_read("/project/src/index.ts")
+[clawdstrike] Denied by forbidden_path: file_read("~/.ssh/id_rsa")
+[clawdstrike] Denied by egress: network("http://localhost:8080")
 ```
 
 This example focuses on guard enforcement in OpenClaw. Receipt generation/attestation is handled by the Rust crates and is documented separately.

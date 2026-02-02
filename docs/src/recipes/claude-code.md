@@ -1,8 +1,8 @@
 # Claude Code Integration (conceptual)
 
-Hushclaw does not currently ship a `hush run` process wrapper that can transparently sandbox Claude Code.
+Clawdstrike does not currently ship a `hush run` process wrapper that can transparently sandbox Claude Code.
 
-To enforce Hushclaw decisions, you need to integrate at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model).
+To enforce Clawdstrike decisions, you need to integrate at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model).
 
 ## Practical workflow today
 
@@ -18,7 +18,7 @@ hush policy show ai-agent
 ```yaml
 version: "1.0.0"
 name: My Claude Policy
-extends: hushclaw:ai-agent
+extends: clawdstrike:ai-agent
 ```
 
 3. Validate and resolve:
@@ -37,5 +37,5 @@ hush check --action-type egress --policy ./policy.yaml api.github.com:443
 
 ## Next
 
-- If you use OpenClaw, see the experimental plugin under `packages/hushclaw-openclaw`.
-- Otherwise, build a small adapter in your Claude Code tool layer that calls `hushclaw::HushEngine` before executing actions.
+- If you use OpenClaw, see the experimental plugin under `packages/clawdstrike-openclaw`.
+- Otherwise, build a small adapter in your Claude Code tool layer that calls `clawdstrike::HushEngine` before executing actions.

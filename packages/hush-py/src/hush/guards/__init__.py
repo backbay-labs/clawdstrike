@@ -1,4 +1,4 @@
-"""Security guards for hushclaw.
+"""Security guards for clawdstrike.
 
 Guards implement checks that can allow, block, or log actions.
 """

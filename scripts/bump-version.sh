@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Version bump script for hushclaw
+# Version bump script for clawdstrike
 # Usage: ./scripts/bump-version.sh <version>
 # Example: ./scripts/bump-version.sh 0.2.0
 
@@ -36,18 +36,18 @@ $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
 # (They inherit from workspace, so we only need to update the root)
 
 # Update package.json files
-if [[ -f "packages/hushclaw-openclaw/package.json" ]]; then
-    echo "  Updating packages/hushclaw-openclaw/package.json..."
+if [[ -f "packages/clawdstrike-openclaw/package.json" ]]; then
+    echo "  Updating packages/clawdstrike-openclaw/package.json..."
     # Use node/jq if available, otherwise sed
     if command -v node &> /dev/null; then
         node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/hushclaw-openclaw/package.json', 'utf8'));
+            const pkg = JSON.parse(fs.readFileSync('packages/clawdstrike-openclaw/package.json', 'utf8'));
             pkg.version = '$VERSION';
-            fs.writeFileSync('packages/hushclaw-openclaw/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('packages/clawdstrike-openclaw/package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
     else
-        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/hushclaw-openclaw/package.json
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/clawdstrike-openclaw/package.json
     fi
 fi
 
@@ -81,7 +81,7 @@ fi
 
 if [[ -f "HomebrewFormula/hush.rb" ]]; then
     echo "  Updating HomebrewFormula/hush.rb tag URL..."
-    $SED_INPLACE "s#https://github.com/hushclaw/hushclaw/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/hushclaw/hushclaw/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
+    $SED_INPLACE "s#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
 fi
 
 # Update pyproject.toml if it exists

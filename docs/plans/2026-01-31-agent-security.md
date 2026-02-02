@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Implement agent-aware security features including bootstrap hook, policy_check tool, CLI commands, and hello-world example for hushclaw OpenClaw integration.
+**Goal:** Implement agent-aware security features including bootstrap hook, policy_check tool, CLI commands, and hello-world example for clawdstrike OpenClaw integration.
 
 **Architecture:** Plugin-based integration with OpenClaw using hooks for enforcement points. The `agent:bootstrap` hook injects SECURITY.md into agent context. The `policy_check` tool allows agents to introspect policy before risky operations. CLI provides developer tooling for policy management.
 
@@ -13,23 +13,23 @@
 ## Task 1: Project Scaffold
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/package.json`
-- Create: `packages/hushclaw-openclaw/tsconfig.json`
-- Create: `packages/hushclaw-openclaw/vitest.config.ts`
+- Create: `packages/clawdstrike-openclaw/package.json`
+- Create: `packages/clawdstrike-openclaw/tsconfig.json`
+- Create: `packages/clawdstrike-openclaw/vitest.config.ts`
 
 **Step 1: Create package.json**
 
 ```bash
-mkdir -p packages/hushclaw-openclaw/src
+mkdir -p packages/clawdstrike-openclaw/src
 ```
 
-Create `packages/hushclaw-openclaw/package.json`:
+Create `packages/clawdstrike-openclaw/package.json`:
 
 ```json
 {
-  "name": "@hushclaw/openclaw",
+  "name": "@clawdstrike/openclaw",
   "version": "0.1.0",
-  "description": "Hushclaw security plugin for OpenClaw",
+  "description": "Clawdstrike security plugin for OpenClaw",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -44,7 +44,7 @@ Create `packages/hushclaw-openclaw/package.json`:
     }
   },
   "bin": {
-    "hushclaw": "./dist/cli/bin.js"
+    "clawdstrike": "./dist/cli/bin.js"
   },
   "scripts": {
     "build": "tsc",
@@ -80,7 +80,7 @@ Create `packages/hushclaw-openclaw/package.json`:
   "keywords": [
     "openclaw",
     "security",
-    "hushclaw",
+    "clawdstrike",
     "ai-agent"
   ],
   "license": "MIT"
@@ -89,7 +89,7 @@ Create `packages/hushclaw-openclaw/package.json`:
 
 **Step 2: Create tsconfig.json**
 
-Create `packages/hushclaw-openclaw/tsconfig.json`:
+Create `packages/clawdstrike-openclaw/tsconfig.json`:
 
 ```json
 {
@@ -115,7 +115,7 @@ Create `packages/hushclaw-openclaw/tsconfig.json`:
 
 **Step 3: Create vitest.config.ts**
 
-Create `packages/hushclaw-openclaw/vitest.config.ts`:
+Create `packages/clawdstrike-openclaw/vitest.config.ts`:
 
 ```typescript
 import { defineConfig } from 'vitest/config';
@@ -137,14 +137,14 @@ export default defineConfig({
 
 Run:
 ```bash
-cd packages/hushclaw-openclaw && npm install
+cd packages/clawdstrike-openclaw && npm install
 ```
 
 **Step 5: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/
-git commit -m "chore: scaffold hushclaw-openclaw package"
+git add packages/clawdstrike-openclaw/
+git commit -m "chore: scaffold clawdstrike-openclaw package"
 ```
 
 ---
@@ -152,13 +152,13 @@ git commit -m "chore: scaffold hushclaw-openclaw package"
 ## Task 2: Policy Types and Validator
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/policy/types.ts`
-- Create: `packages/hushclaw-openclaw/src/policy/validator.ts`
-- Create: `packages/hushclaw-openclaw/src/policy/validator.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/types.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/validator.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/validator.test.ts`
 
 **Step 1: Create policy types**
 
-Create `packages/hushclaw-openclaw/src/policy/types.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/types.ts`:
 
 ```typescript
 export interface EgressConfig {
@@ -213,7 +213,7 @@ export interface PolicyDecision {
 
 **Step 2: Write failing validator test**
 
-Create `packages/hushclaw-openclaw/src/policy/validator.test.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/validator.test.ts`:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -221,7 +221,7 @@ import { validatePolicy } from './validator.js';
 
 describe('validatePolicy', () => {
   it('validates a minimal valid policy', () => {
-    const policy = { version: 'hushclaw-v1.0' };
+    const policy = { version: 'clawdstrike-v1.0' };
     const result = validatePolicy(policy);
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
@@ -229,7 +229,7 @@ describe('validatePolicy', () => {
 
   it('validates a full policy', () => {
     const policy = {
-      version: 'hushclaw-v1.0',
+      version: 'clawdstrike-v1.0',
       egress: {
         mode: 'allowlist',
         allowed_domains: ['api.github.com'],
@@ -274,12 +274,12 @@ describe('validatePolicy', () => {
 
 **Step 3: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/policy/validator.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/policy/validator.test.ts`
 Expected: FAIL with "Cannot find module './validator.js'"
 
 **Step 4: Implement validator**
 
-Create `packages/hushclaw-openclaw/src/policy/validator.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/validator.ts`:
 
 ```typescript
 import type { PolicyConfig, ValidationResult } from './types.js';
@@ -347,13 +347,13 @@ export function validatePolicy(policy: unknown): ValidationResult {
 
 **Step 5: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/policy/validator.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/policy/validator.test.ts`
 Expected: PASS
 
 **Step 6: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/policy/
+git add packages/clawdstrike-openclaw/src/policy/
 git commit -m "feat: add policy types and validator"
 ```
 
@@ -362,12 +362,12 @@ git commit -m "feat: add policy types and validator"
 ## Task 3: Policy Engine
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/policy/engine.ts`
-- Create: `packages/hushclaw-openclaw/src/policy/engine.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/engine.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/engine.test.ts`
 
 **Step 1: Write failing engine test**
 
-Create `packages/hushclaw-openclaw/src/policy/engine.test.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/engine.test.ts`:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -481,12 +481,12 @@ describe('PolicyEngine', () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/policy/engine.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/policy/engine.test.ts`
 Expected: FAIL
 
 **Step 3: Implement PolicyEngine**
 
-Create `packages/hushclaw-openclaw/src/policy/engine.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/engine.ts`:
 
 ```typescript
 import type { PolicyConfig, PolicyEvent, PolicyDecision, ActionType } from './types.js';
@@ -636,13 +636,13 @@ export class PolicyEngine {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/policy/engine.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/policy/engine.test.ts`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/policy/engine.ts packages/hushclaw-openclaw/src/policy/engine.test.ts
+git add packages/clawdstrike-openclaw/src/policy/engine.ts packages/clawdstrike-openclaw/src/policy/engine.test.ts
 git commit -m "feat: add PolicyEngine with filesystem and egress guards"
 ```
 
@@ -651,12 +651,12 @@ git commit -m "feat: add PolicyEngine with filesystem and egress guards"
 ## Task 4: Security Prompt Generator
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/security-prompt.ts`
-- Create: `packages/hushclaw-openclaw/src/security-prompt.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/security-prompt.ts`
+- Create: `packages/clawdstrike-openclaw/src/security-prompt.test.ts`
 
 **Step 1: Write failing test**
 
-Create `packages/hushclaw-openclaw/src/security-prompt.test.ts`:
+Create `packages/clawdstrike-openclaw/src/security-prompt.test.ts`:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -713,12 +713,12 @@ describe('generateSecurityPrompt', () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/security-prompt.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/security-prompt.test.ts`
 Expected: FAIL
 
 **Step 3: Implement security prompt generator**
 
-Create `packages/hushclaw-openclaw/src/security-prompt.ts`:
+Create `packages/clawdstrike-openclaw/src/security-prompt.ts`:
 
 ```typescript
 import type { PolicyConfig } from './policy/types.js';
@@ -728,7 +728,7 @@ export function generateSecurityPrompt(config: PolicyConfig): string {
 
   sections.push(`# Security Policy
 
-You are protected by hushclaw security enforcement. The following constraints apply:`);
+You are protected by clawdstrike security enforcement. The following constraints apply:`);
 
   // Network Access section
   sections.push(`
@@ -798,13 +798,13 @@ When a security violation occurs:
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/security-prompt.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/security-prompt.test.ts`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/security-prompt.ts packages/hushclaw-openclaw/src/security-prompt.test.ts
+git add packages/clawdstrike-openclaw/src/security-prompt.ts packages/clawdstrike-openclaw/src/security-prompt.test.ts
 git commit -m "feat: add security prompt generator for agent context"
 ```
 
@@ -813,22 +813,22 @@ git commit -m "feat: add security prompt generator for agent context"
 ## Task 5: Agent Bootstrap Hook
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/hooks/agent-bootstrap/handler.ts`
-- Create: `packages/hushclaw-openclaw/src/hooks/agent-bootstrap/HOOK.md`
-- Create: `packages/hushclaw-openclaw/src/hooks/agent-bootstrap/handler.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/hooks/agent-bootstrap/handler.ts`
+- Create: `packages/clawdstrike-openclaw/src/hooks/agent-bootstrap/HOOK.md`
+- Create: `packages/clawdstrike-openclaw/src/hooks/agent-bootstrap/handler.test.ts`
 
 **Step 1: Create HOOK.md metadata**
 
-Create `packages/hushclaw-openclaw/src/hooks/agent-bootstrap/HOOK.md`:
+Create `packages/clawdstrike-openclaw/src/hooks/agent-bootstrap/HOOK.md`:
 
 ```markdown
 ---
-name: hushclaw-bootstrap
+name: clawdstrike-bootstrap
 description: Inject security context into agent workspace
 metadata: {"openclaw":{"emoji":"🔒","events":["agent:bootstrap"]}}
 ---
 
-# Hushclaw Bootstrap Hook
+# Clawdstrike Bootstrap Hook
 
 Injects SECURITY.md into the agent workspace during bootstrap.
 This file informs the agent about security constraints and available tools.
@@ -842,13 +842,13 @@ This file informs the agent about security constraints and available tools.
 ## Configuration
 
 The hook reads policy from:
-- `event.context.cfg.hushclaw.policy` - Policy file path
-- Inline policy config in `event.context.cfg.hushclaw`
+- `event.context.cfg.clawdstrike.policy` - Policy file path
+- Inline policy config in `event.context.cfg.clawdstrike`
 ```
 
 **Step 2: Write failing test**
 
-Create `packages/hushclaw-openclaw/src/hooks/agent-bootstrap/handler.test.ts`:
+Create `packages/clawdstrike-openclaw/src/hooks/agent-bootstrap/handler.test.ts`:
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest';
@@ -870,7 +870,7 @@ describe('agent:bootstrap handler', () => {
       context: {
         bootstrapFiles: [],
         cfg: {
-          hushclaw: {
+          clawdstrike: {
             egress: {
               mode: 'allowlist',
               allowed_domains: ['api.github.com'],
@@ -903,12 +903,12 @@ describe('agent:bootstrap handler', () => {
 
 **Step 3: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/hooks/agent-bootstrap/handler.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/hooks/agent-bootstrap/handler.test.ts`
 Expected: FAIL
 
 **Step 4: Implement handler**
 
-Create `packages/hushclaw-openclaw/src/hooks/agent-bootstrap/handler.ts`:
+Create `packages/clawdstrike-openclaw/src/hooks/agent-bootstrap/handler.ts`:
 
 ```typescript
 import { generateSecurityPrompt } from '../../security-prompt.js';
@@ -924,7 +924,7 @@ interface BootstrapEvent {
   context: {
     bootstrapFiles: BootstrapFile[];
     cfg: {
-      hushclaw?: PolicyConfig;
+      clawdstrike?: PolicyConfig;
     };
   };
 }
@@ -932,7 +932,7 @@ interface BootstrapEvent {
 const handler = async (event: BootstrapEvent): Promise<void> => {
   if (event.type !== 'agent:bootstrap') return;
 
-  const config = event.context.cfg.hushclaw || {};
+  const config = event.context.cfg.clawdstrike || {};
   const securityPrompt = generateSecurityPrompt(config);
 
   event.context.bootstrapFiles.push({
@@ -946,13 +946,13 @@ export default handler;
 
 **Step 5: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/hooks/agent-bootstrap/handler.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/hooks/agent-bootstrap/handler.test.ts`
 Expected: PASS
 
 **Step 6: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/hooks/
+git add packages/clawdstrike-openclaw/src/hooks/
 git commit -m "feat: add agent:bootstrap hook for SECURITY.md injection"
 ```
 
@@ -961,12 +961,12 @@ git commit -m "feat: add agent:bootstrap hook for SECURITY.md injection"
 ## Task 6: Policy Check Tool
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/tools/policy-check.ts`
-- Create: `packages/hushclaw-openclaw/src/tools/policy-check.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/tools/policy-check.ts`
+- Create: `packages/clawdstrike-openclaw/src/tools/policy-check.test.ts`
 
 **Step 1: Write failing test**
 
-Create `packages/hushclaw-openclaw/src/tools/policy-check.test.ts`:
+Create `packages/clawdstrike-openclaw/src/tools/policy-check.test.ts`:
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -1064,12 +1064,12 @@ describe('policyCheckTool', () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/tools/policy-check.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/tools/policy-check.test.ts`
 Expected: FAIL
 
 **Step 3: Implement policy check tool**
 
-Create `packages/hushclaw-openclaw/src/tools/policy-check.ts`:
+Create `packages/clawdstrike-openclaw/src/tools/policy-check.ts`:
 
 ```typescript
 import type { PolicyEngine } from '../policy/engine.js';
@@ -1158,13 +1158,13 @@ function getSuggestion(action: string, resource: string): string {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/tools/policy-check.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/tools/policy-check.test.ts`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/tools/
+git add packages/clawdstrike-openclaw/src/tools/
 git commit -m "feat: add policy_check tool for agent policy introspection"
 ```
 
@@ -1173,12 +1173,12 @@ git commit -m "feat: add policy_check tool for agent policy introspection"
 ## Task 7: Policy Loader
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/policy/loader.ts`
-- Create: `packages/hushclaw-openclaw/src/policy/loader.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/loader.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/loader.test.ts`
 
 **Step 1: Write failing test**
 
-Create `packages/hushclaw-openclaw/src/policy/loader.test.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/loader.test.ts`:
 
 ```typescript
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -1190,14 +1190,14 @@ import { tmpdir } from 'os';
 describe('loadPolicyFromString', () => {
   it('parses valid YAML policy', () => {
     const yaml = `
-version: hushclaw-v1.0
+version: clawdstrike-v1.0
 egress:
   mode: allowlist
   allowed_domains:
     - api.github.com
 `;
     const policy = loadPolicyFromString(yaml);
-    expect(policy.version).toBe('hushclaw-v1.0');
+    expect(policy.version).toBe('clawdstrike-v1.0');
     expect(policy.egress?.mode).toBe('allowlist');
     expect(policy.egress?.allowed_domains).toContain('api.github.com');
   });
@@ -1209,7 +1209,7 @@ egress:
 });
 
 describe('loadPolicy', () => {
-  const testDir = join(tmpdir(), 'hushclaw-test-' + Date.now());
+  const testDir = join(tmpdir(), 'clawdstrike-test-' + Date.now());
 
   beforeEach(() => {
     mkdirSync(testDir, { recursive: true });
@@ -1222,13 +1222,13 @@ describe('loadPolicy', () => {
   it('loads policy from file', async () => {
     const policyPath = join(testDir, 'policy.yaml');
     writeFileSync(policyPath, `
-version: hushclaw-v1.0
+version: clawdstrike-v1.0
 filesystem:
   forbidden_paths:
     - ~/.ssh
 `);
     const policy = await loadPolicy(policyPath);
-    expect(policy.version).toBe('hushclaw-v1.0');
+    expect(policy.version).toBe('clawdstrike-v1.0');
     expect(policy.filesystem?.forbidden_paths).toContain('~/.ssh');
   });
 
@@ -1240,12 +1240,12 @@ filesystem:
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/policy/loader.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/policy/loader.test.ts`
 Expected: FAIL
 
 **Step 3: Implement loader**
 
-Create `packages/hushclaw-openclaw/src/policy/loader.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/loader.ts`:
 
 ```typescript
 import { load } from 'js-yaml';
@@ -1268,13 +1268,13 @@ export async function loadPolicy(path: string): Promise<PolicyConfig> {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/policy/loader.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/policy/loader.test.ts`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/policy/loader.ts packages/hushclaw-openclaw/src/policy/loader.test.ts
+git add packages/clawdstrike-openclaw/src/policy/loader.ts packages/clawdstrike-openclaw/src/policy/loader.test.ts
 git commit -m "feat: add policy loader for YAML files"
 ```
 
@@ -1283,12 +1283,12 @@ git commit -m "feat: add policy loader for YAML files"
 ## Task 8: CLI Policy Commands
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/cli/commands/policy.ts`
-- Create: `packages/hushclaw-openclaw/src/cli/commands/policy.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/cli/commands/policy.ts`
+- Create: `packages/clawdstrike-openclaw/src/cli/commands/policy.test.ts`
 
 **Step 1: Write failing test**
 
-Create `packages/hushclaw-openclaw/src/cli/commands/policy.test.ts`:
+Create `packages/clawdstrike-openclaw/src/cli/commands/policy.test.ts`:
 
 ```typescript
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -1298,7 +1298,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 describe('policyCommands', () => {
-  const testDir = join(tmpdir(), 'hushclaw-cli-test-' + Date.now());
+  const testDir = join(tmpdir(), 'clawdstrike-cli-test-' + Date.now());
   let consoleLog: ReturnType<typeof vi.spyOn>;
   let processExit: ReturnType<typeof vi.spyOn>;
 
@@ -1318,7 +1318,7 @@ describe('policyCommands', () => {
     it('validates a correct policy file', async () => {
       const policyPath = join(testDir, 'valid.yaml');
       writeFileSync(policyPath, `
-version: hushclaw-v1.0
+version: clawdstrike-v1.0
 egress:
   mode: allowlist
   allowed_domains:
@@ -1370,12 +1370,12 @@ filesystem:
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/cli/commands/policy.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/cli/commands/policy.test.ts`
 Expected: FAIL
 
 **Step 3: Implement policy commands**
 
-Create `packages/hushclaw-openclaw/src/cli/commands/policy.ts`:
+Create `packages/clawdstrike-openclaw/src/cli/commands/policy.ts`:
 
 ```typescript
 import { readFileSync } from 'fs';
@@ -1489,13 +1489,13 @@ export const policyCommands = {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/cli/commands/policy.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/cli/commands/policy.test.ts`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/cli/
+git add packages/clawdstrike-openclaw/src/cli/
 git commit -m "feat: add CLI policy commands (lint, show, test, diff)"
 ```
 
@@ -1504,13 +1504,13 @@ git commit -m "feat: add CLI policy commands (lint, show, test, diff)"
 ## Task 9: CLI Audit Commands
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/cli/commands/audit.ts`
-- Create: `packages/hushclaw-openclaw/src/cli/commands/audit.test.ts`
-- Create: `packages/hushclaw-openclaw/src/audit/store.ts`
+- Create: `packages/clawdstrike-openclaw/src/cli/commands/audit.ts`
+- Create: `packages/clawdstrike-openclaw/src/cli/commands/audit.test.ts`
+- Create: `packages/clawdstrike-openclaw/src/audit/store.ts`
 
 **Step 1: Create audit store**
 
-Create `packages/hushclaw-openclaw/src/audit/store.ts`:
+Create `packages/clawdstrike-openclaw/src/audit/store.ts`:
 
 ```typescript
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -1602,7 +1602,7 @@ export class AuditStore {
 
 **Step 2: Write failing audit commands test**
 
-Create `packages/hushclaw-openclaw/src/cli/commands/audit.test.ts`:
+Create `packages/clawdstrike-openclaw/src/cli/commands/audit.test.ts`:
 
 ```typescript
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -1613,7 +1613,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 describe('auditCommands', () => {
-  const testDir = join(tmpdir(), 'hushclaw-audit-test-' + Date.now());
+  const testDir = join(tmpdir(), 'clawdstrike-audit-test-' + Date.now());
   let consoleLog: ReturnType<typeof vi.spyOn>;
   let store: AuditStore;
 
@@ -1670,12 +1670,12 @@ describe('auditCommands', () => {
 
 **Step 3: Run test to verify it fails**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/cli/commands/audit.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/cli/commands/audit.test.ts`
 Expected: FAIL
 
 **Step 4: Implement audit commands**
 
-Create `packages/hushclaw-openclaw/src/cli/commands/audit.ts`:
+Create `packages/clawdstrike-openclaw/src/cli/commands/audit.ts`:
 
 ```typescript
 import { writeFileSync } from 'fs';
@@ -1788,13 +1788,13 @@ export const auditCommands = {
 
 **Step 5: Run test to verify it passes**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run src/cli/commands/audit.test.ts`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run src/cli/commands/audit.test.ts`
 Expected: PASS
 
 **Step 6: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/audit/ packages/hushclaw-openclaw/src/cli/commands/audit.ts packages/hushclaw-openclaw/src/cli/commands/audit.test.ts
+git add packages/clawdstrike-openclaw/src/audit/ packages/clawdstrike-openclaw/src/cli/commands/audit.ts packages/clawdstrike-openclaw/src/cli/commands/audit.test.ts
 git commit -m "feat: add CLI audit commands (query, explain, export)"
 ```
 
@@ -1803,12 +1803,12 @@ git commit -m "feat: add CLI audit commands (query, explain, export)"
 ## Task 10: CLI Main Entry Point
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/cli/index.ts`
-- Create: `packages/hushclaw-openclaw/src/cli/bin.ts`
+- Create: `packages/clawdstrike-openclaw/src/cli/index.ts`
+- Create: `packages/clawdstrike-openclaw/src/cli/bin.ts`
 
 **Step 1: Create CLI index**
 
-Create `packages/hushclaw-openclaw/src/cli/index.ts`:
+Create `packages/clawdstrike-openclaw/src/cli/index.ts`:
 
 ```typescript
 import { Command } from 'commander';
@@ -1816,12 +1816,12 @@ import { policyCommands } from './commands/policy.js';
 import { auditCommands } from './commands/audit.js';
 
 export function registerCli(program: Command): void {
-  const hushclaw = program
-    .command('hushclaw')
-    .description('Hushclaw security management');
+  const clawdstrike = program
+    .command('clawdstrike')
+    .description('Clawdstrike security management');
 
   // Policy commands
-  const policy = hushclaw.command('policy').description('Policy management');
+  const policy = clawdstrike.command('policy').description('Policy management');
 
   policy
     .command('lint <file>')
@@ -1846,7 +1846,7 @@ export function registerCli(program: Command): void {
     .action(policyCommands.diff);
 
   // Audit commands
-  const audit = hushclaw.command('audit').description('Audit log management');
+  const audit = clawdstrike.command('audit').description('Audit log management');
 
   audit
     .command('query')
@@ -1862,7 +1862,7 @@ export function registerCli(program: Command): void {
     .action((file, options) => auditCommands.export(file, options));
 
   // Quick commands
-  hushclaw
+  clawdstrike
     .command('why <event-id>')
     .description('Explain why an event was blocked')
     .action((eventId, options) => auditCommands.explain(eventId, options));
@@ -1871,8 +1871,8 @@ export function registerCli(program: Command): void {
 export function createCli(): Command {
   const program = new Command();
   program
-    .name('hushclaw')
-    .description('Hushclaw security CLI')
+    .name('clawdstrike')
+    .description('Clawdstrike security CLI')
     .version('0.1.0');
 
   // Register commands directly on root
@@ -1926,7 +1926,7 @@ export function createCli(): Command {
 
 **Step 2: Create CLI bin entry**
 
-Create `packages/hushclaw-openclaw/src/cli/bin.ts`:
+Create `packages/clawdstrike-openclaw/src/cli/bin.ts`:
 
 ```typescript
 #!/usr/bin/env node
@@ -1939,7 +1939,7 @@ program.parse();
 **Step 3: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/cli/index.ts packages/hushclaw-openclaw/src/cli/bin.ts
+git add packages/clawdstrike-openclaw/src/cli/index.ts packages/clawdstrike-openclaw/src/cli/bin.ts
 git commit -m "feat: add CLI main entry point with all commands"
 ```
 
@@ -1948,12 +1948,12 @@ git commit -m "feat: add CLI main entry point with all commands"
 ## Task 11: Package Index and Exports
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/src/index.ts`
-- Create: `packages/hushclaw-openclaw/src/policy/index.ts`
+- Create: `packages/clawdstrike-openclaw/src/index.ts`
+- Create: `packages/clawdstrike-openclaw/src/policy/index.ts`
 
 **Step 1: Create policy index**
 
-Create `packages/hushclaw-openclaw/src/policy/index.ts`:
+Create `packages/clawdstrike-openclaw/src/policy/index.ts`:
 
 ```typescript
 export * from './types.js';
@@ -1964,7 +1964,7 @@ export * from './loader.js';
 
 **Step 2: Create main package index**
 
-Create `packages/hushclaw-openclaw/src/index.ts`:
+Create `packages/clawdstrike-openclaw/src/index.ts`:
 
 ```typescript
 // Policy
@@ -2000,7 +2000,7 @@ export { registerCli, createCli } from './cli/index.js';
 **Step 3: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/src/index.ts packages/hushclaw-openclaw/src/policy/index.ts
+git add packages/clawdstrike-openclaw/src/index.ts packages/clawdstrike-openclaw/src/policy/index.ts
 git commit -m "feat: add package exports"
 ```
 
@@ -2009,26 +2009,26 @@ git commit -m "feat: add package exports"
 ## Task 12: Hello World Example
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/examples/hello-secure-agent/README.md`
-- Create: `packages/hushclaw-openclaw/examples/hello-secure-agent/policy.yaml`
-- Create: `packages/hushclaw-openclaw/examples/hello-secure-agent/openclaw.json`
-- Create: `packages/hushclaw-openclaw/examples/hello-secure-agent/skills/hello/SKILL.md`
+- Create: `packages/clawdstrike-openclaw/examples/hello-secure-agent/README.md`
+- Create: `packages/clawdstrike-openclaw/examples/hello-secure-agent/policy.yaml`
+- Create: `packages/clawdstrike-openclaw/examples/hello-secure-agent/openclaw.json`
+- Create: `packages/clawdstrike-openclaw/examples/hello-secure-agent/skills/hello/SKILL.md`
 
 **Step 1: Create example README**
 
-Create `packages/hushclaw-openclaw/examples/hello-secure-agent/README.md`:
+Create `packages/clawdstrike-openclaw/examples/hello-secure-agent/README.md`:
 
 ```markdown
 # Hello Secure Agent
 
-A simple example demonstrating hushclaw security enforcement in OpenClaw.
+A simple example demonstrating clawdstrike security enforcement in OpenClaw.
 
 ## Setup
 
 ```bash
 cd examples/hello-secure-agent
 npm install
-openclaw plugins enable @hushclaw/openclaw
+openclaw plugins enable @clawdstrike/openclaw
 openclaw start
 ```
 
@@ -2064,10 +2064,10 @@ npm test
 
 **Step 2: Create example policy**
 
-Create `packages/hushclaw-openclaw/examples/hello-secure-agent/policy.yaml`:
+Create `packages/clawdstrike-openclaw/examples/hello-secure-agent/policy.yaml`:
 
 ```yaml
-version: "hushclaw-v1.0"
+version: "clawdstrike-v1.0"
 
 egress:
   mode: allowlist
@@ -2091,13 +2091,13 @@ on_violation: cancel
 
 **Step 3: Create OpenClaw config**
 
-Create `packages/hushclaw-openclaw/examples/hello-secure-agent/openclaw.json`:
+Create `packages/clawdstrike-openclaw/examples/hello-secure-agent/openclaw.json`:
 
 ```json
 {
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "enabled": true,
         "config": {
           "policy": "./policy.yaml",
@@ -2114,20 +2114,20 @@ Create `packages/hushclaw-openclaw/examples/hello-secure-agent/openclaw.json`:
 
 Create directory and file:
 ```bash
-mkdir -p packages/hushclaw-openclaw/examples/hello-secure-agent/skills/hello
+mkdir -p packages/clawdstrike-openclaw/examples/hello-secure-agent/skills/hello
 ```
 
-Create `packages/hushclaw-openclaw/examples/hello-secure-agent/skills/hello/SKILL.md`:
+Create `packages/clawdstrike-openclaw/examples/hello-secure-agent/skills/hello/SKILL.md`:
 
 ```markdown
 ---
 name: hello-secure
-description: A simple skill demonstrating hushclaw security
+description: A simple skill demonstrating clawdstrike security
 ---
 
 # Hello Secure Skill
 
-You are a friendly assistant protected by hushclaw security.
+You are a friendly assistant protected by clawdstrike security.
 
 ## What You Can Do
 - Create files in /tmp/hello-agent/
@@ -2166,7 +2166,7 @@ fetch({ url: "https://api.github.com/zen" })
 **Step 5: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/examples/
+git add packages/clawdstrike-openclaw/examples/
 git commit -m "feat: add hello-secure-agent example"
 ```
 
@@ -2175,11 +2175,11 @@ git commit -m "feat: add hello-secure-agent example"
 ## Task 13: E2E Tests
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/tests/e2e/hello-agent.test.ts`
+- Create: `packages/clawdstrike-openclaw/tests/e2e/hello-agent.test.ts`
 
 **Step 1: Write E2E test**
 
-Create `packages/hushclaw-openclaw/tests/e2e/hello-agent.test.ts`:
+Create `packages/clawdstrike-openclaw/tests/e2e/hello-agent.test.ts`:
 
 ```typescript
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -2324,13 +2324,13 @@ describe('Hello Secure Agent E2E', () => {
 
 **Step 2: Run E2E tests**
 
-Run: `cd packages/hushclaw-openclaw && npx vitest run tests/e2e/`
+Run: `cd packages/clawdstrike-openclaw && npx vitest run tests/e2e/`
 Expected: PASS
 
 **Step 3: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/tests/
+git add packages/clawdstrike-openclaw/tests/
 git commit -m "test: add E2E tests for hello-secure-agent"
 ```
 
@@ -2339,22 +2339,22 @@ git commit -m "test: add E2E tests for hello-secure-agent"
 ## Task 14: Getting Started Documentation
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/docs/getting-started.md`
+- Create: `packages/clawdstrike-openclaw/docs/getting-started.md`
 
 **Step 1: Write getting started guide**
 
-Create `packages/hushclaw-openclaw/docs/getting-started.md`:
+Create `packages/clawdstrike-openclaw/docs/getting-started.md`:
 
 ```markdown
-# Getting Started with Hushclaw for OpenClaw
+# Getting Started with Clawdstrike for OpenClaw
 
-Hushclaw provides security enforcement for AI agents running in OpenClaw.
+Clawdstrike provides security enforcement for AI agents running in OpenClaw.
 
 ## Installation
 
 ```bash
-npm install @hushclaw/openclaw
-openclaw plugins enable @hushclaw/openclaw
+npm install @clawdstrike/openclaw
+openclaw plugins enable @clawdstrike/openclaw
 ```
 
 ## Quick Start
@@ -2364,7 +2364,7 @@ openclaw plugins enable @hushclaw/openclaw
 Create `.hush/policy.yaml` in your project:
 
 ```yaml
-version: "hushclaw-v1.0"
+version: "clawdstrike-v1.0"
 
 egress:
   mode: allowlist
@@ -2391,7 +2391,7 @@ Add to your `openclaw.json`:
 {
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "enabled": true,
         "config": {
           "policy": "./.hush/policy.yaml"
@@ -2421,7 +2421,7 @@ Expected response: Operation blocked by ForbiddenPathGuard.
 ### Validate Your Policy
 
 ```bash
-hushclaw policy lint .hush/policy.yaml
+clawdstrike policy lint .hush/policy.yaml
 ```
 
 ### Test an Event
@@ -2435,19 +2435,19 @@ Create `test-event.json`:
 ```
 
 ```bash
-hushclaw policy test test-event.json --policy .hush/policy.yaml
+clawdstrike policy test test-event.json --policy .hush/policy.yaml
 ```
 
 ### Query Audit Log
 
 ```bash
-hushclaw audit query --denied
+clawdstrike audit query --denied
 ```
 
 ### Explain a Block
 
 ```bash
-hushclaw why <event-id>
+clawdstrike why <event-id>
 ```
 
 ## Agent Tools
@@ -2511,13 +2511,13 @@ on_violation: cancel  # cancel | warn | log
 Use predefined rulesets by extending them:
 
 ```yaml
-extends: hushclaw:ai-agent-minimal
+extends: clawdstrike:ai-agent-minimal
 ```
 
 Available rulesets:
-- `hushclaw:ai-agent-minimal` - Basic protection
-- `hushclaw:ai-agent` - Standard development
-- `hushclaw:strict` - Production environments
+- `clawdstrike:ai-agent-minimal` - Basic protection
+- `clawdstrike:ai-agent` - Standard development
+- `clawdstrike:strict` - Production environments
 
 ## Next Steps
 
@@ -2529,7 +2529,7 @@ Available rulesets:
 **Step 2: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/docs/
+git add packages/clawdstrike-openclaw/docs/
 git commit -m "docs: add getting started guide"
 ```
 
@@ -2538,18 +2538,18 @@ git commit -m "docs: add getting started guide"
 ## Task 15: Default Rulesets
 
 **Files:**
-- Create: `packages/hushclaw-openclaw/rulesets/ai-agent-minimal.yaml`
-- Create: `packages/hushclaw-openclaw/rulesets/ai-agent.yaml`
+- Create: `packages/clawdstrike-openclaw/rulesets/ai-agent-minimal.yaml`
+- Create: `packages/clawdstrike-openclaw/rulesets/ai-agent.yaml`
 
 **Step 1: Create minimal ruleset**
 
-Create `packages/hushclaw-openclaw/rulesets/ai-agent-minimal.yaml`:
+Create `packages/clawdstrike-openclaw/rulesets/ai-agent-minimal.yaml`:
 
 ```yaml
-# Hushclaw AI Agent Minimal Policy
+# Clawdstrike AI Agent Minimal Policy
 # Basic protection for AI-assisted development
 
-version: "hushclaw-v1.0"
+version: "clawdstrike-v1.0"
 
 egress:
   mode: allowlist
@@ -2583,13 +2583,13 @@ on_violation: cancel
 
 **Step 2: Create standard ruleset**
 
-Create `packages/hushclaw-openclaw/rulesets/ai-agent.yaml`:
+Create `packages/clawdstrike-openclaw/rulesets/ai-agent.yaml`:
 
 ```yaml
-# Hushclaw AI Agent Standard Policy
+# Clawdstrike AI Agent Standard Policy
 # Recommended for general AI-assisted development
 
-version: "hushclaw-v1.0"
+version: "clawdstrike-v1.0"
 extends: ai-agent-minimal
 
 egress:
@@ -2661,7 +2661,7 @@ on_violation: cancel
 **Step 3: Commit**
 
 ```bash
-git add packages/hushclaw-openclaw/rulesets/
+git add packages/clawdstrike-openclaw/rulesets/
 git commit -m "feat: add default rulesets (ai-agent-minimal, ai-agent)"
 ```
 
@@ -2672,13 +2672,13 @@ git commit -m "feat: add default rulesets (ai-agent-minimal, ai-agent)"
 **Step 1: Build the package**
 
 ```bash
-cd packages/hushclaw-openclaw && npm run build
+cd packages/clawdstrike-openclaw && npm run build
 ```
 
 **Step 2: Run all tests**
 
 ```bash
-cd packages/hushclaw-openclaw && npm test
+cd packages/clawdstrike-openclaw && npm test
 ```
 
 Expected: All tests pass
@@ -2686,8 +2686,8 @@ Expected: All tests pass
 **Step 3: Test CLI**
 
 ```bash
-cd packages/hushclaw-openclaw && node dist/cli/bin.js --help
-cd packages/hushclaw-openclaw && node dist/cli/bin.js policy lint rulesets/ai-agent-minimal.yaml
+cd packages/clawdstrike-openclaw && node dist/cli/bin.js --help
+cd packages/clawdstrike-openclaw && node dist/cli/bin.js policy lint rulesets/ai-agent-minimal.yaml
 ```
 
 **Step 4: Final commit**

@@ -134,9 +134,9 @@ pub struct ViolationRef {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Provenance {
-    /// Hushclaw version
+    /// Clawdstrike version
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub hushclaw_version: Option<String>,
+    pub clawdstrike_version: Option<String>,
     /// Execution provider
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -389,7 +389,7 @@ mod tests {
             content_hash: Hash::zero(),
             verdict: Verdict::pass_with_gate("test-gate"),
             provenance: Some(Provenance {
-                hushclaw_version: Some("0.1.0".to_string()),
+                clawdstrike_version: Some("0.1.0".to_string()),
                 provider: Some("local".to_string()),
                 policy_hash: Some(Hash::zero()),
                 ruleset: Some("default".to_string()),

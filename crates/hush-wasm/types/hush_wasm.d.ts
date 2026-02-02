@@ -1,5 +1,5 @@
 /**
- * TypeScript type definitions for @hushclaw/wasm
+ * TypeScript type definitions for @clawdstrike/wasm
  *
  * These augment the auto-generated wasm-bindgen types with
  * more detailed documentation and type information.

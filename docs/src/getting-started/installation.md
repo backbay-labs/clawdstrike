@@ -1,6 +1,6 @@
 # Installation
 
-Hushclaw currently ships as a Rust workspace with a CLI (`hush`) and libraries (`hushclaw`, `hush-core`, `hush-proxy`).
+Clawdstrike currently ships as a Rust workspace with a CLI (`hush`) and libraries (`clawdstrike`, `hush-core`, `hush-proxy`).
 
 ## Rust CLI (`hush`)
 

@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
+use clawdstrike::{HushEngine, Policy, RuleSet};
 use hush_core::Keypair;
-use hushclaw::{HushEngine, Policy, RuleSet};
 
 use crate::audit::{AuditEvent, AuditLedger};
 use crate::auth::AuthStore;

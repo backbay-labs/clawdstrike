@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn test_sign_verify() {
         let keypair = Keypair::generate();
-        let message = b"Hello, Hushclaw!";
+        let message = b"Hello, Clawdstrike!";
 
         let signature = keypair.sign(message);
         assert!(keypair.public_key().verify(message, &signature));
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn test_sign_verify_wrong_message() {
         let keypair = Keypair::generate();
-        let signature = keypair.sign(b"Hello, Hushclaw!");
+        let signature = keypair.sign(b"Hello, Clawdstrike!");
         assert!(!keypair.public_key().verify(b"Wrong message", &signature));
     }
 

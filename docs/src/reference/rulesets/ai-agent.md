@@ -1,6 +1,6 @@
 # AI Agent
 
-**Ruleset ID:** `ai-agent` (also accepted as `hushclaw:ai-agent`)
+**Ruleset ID:** `ai-agent` (also accepted as `clawdstrike:ai-agent`)
 
 **Source:** `rulesets/ai-agent.yaml`
 

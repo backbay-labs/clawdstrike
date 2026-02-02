@@ -148,7 +148,7 @@ class ViolationRef:
 
 @dataclass(frozen=True)
 class Provenance:
-    hushclaw_version: Optional[str] = None
+    clawdstrike_version: Optional[str] = None
     provider: Optional[str] = None
     policy_hash: Optional[str] = None
     ruleset: Optional[str] = None
@@ -156,8 +156,8 @@ class Provenance:
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
-        if self.hushclaw_version is not None:
-            out["hushclaw_version"] = self.hushclaw_version
+        if self.clawdstrike_version is not None:
+            out["clawdstrike_version"] = self.clawdstrike_version
         if self.provider is not None:
             out["provider"] = self.provider
         if self.policy_hash is not None:
@@ -172,17 +172,17 @@ class Provenance:
     def from_dict(cls, data: Dict[str, Any]) -> Provenance:
         _deny_unknown_fields(
             data,
-            {"hushclaw_version", "provider", "policy_hash", "ruleset", "violations"},
+            {"clawdstrike_version", "provider", "policy_hash", "ruleset", "violations"},
             "provenance",
         )
-        hushclaw_version = data.get("hushclaw_version")
+        clawdstrike_version = data.get("clawdstrike_version")
         provider = data.get("provider")
         policy_hash = data.get("policy_hash")
         ruleset = data.get("ruleset")
         violations_raw = data.get("violations", [])
 
-        if hushclaw_version is not None and not isinstance(hushclaw_version, str):
-            raise ValueError("provenance.hushclaw_version must be a string")
+        if clawdstrike_version is not None and not isinstance(clawdstrike_version, str):
+            raise ValueError("provenance.clawdstrike_version must be a string")
         if provider is not None and not isinstance(provider, str):
             raise ValueError("provenance.provider must be a string")
         if policy_hash is not None:
@@ -195,7 +195,7 @@ class Provenance:
             raise ValueError("provenance.violations must be a list")
         violations = [ViolationRef.from_dict(v) for v in violations_raw]
         return cls(
-            hushclaw_version=hushclaw_version,
+            clawdstrike_version=clawdstrike_version,
             provider=provider,
             policy_hash=policy_hash,
             ruleset=ruleset,

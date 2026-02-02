@@ -4,7 +4,7 @@ Native Rust API for policy evaluation and receipt signing.
 
 ## Crates
 
-- `hushclaw`: policy type, built-in guards, and `HushEngine`
+- `clawdstrike`: policy type, built-in guards, and `HushEngine`
 - `hush-core`: hashing/signing, Merkle trees, and `SignedReceipt`
 - `hush-proxy`: domain matching + DNS/SNI parsing utilities
 
@@ -15,7 +15,7 @@ If you depend on a published version, use `0.1.0`. If you are working from a che
 ## Quick start: evaluate actions + create a receipt
 
 ```rust
-use hushclaw::{GuardContext, HushEngine, Policy};
+use clawdstrike::{GuardContext, HushEngine, Policy};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
 `HushEngine::check_action_report` returns a `GuardReport` with per-guard results and an aggregated verdict:
 
 ```rust
-use hushclaw::{guards::GuardAction, GuardContext, HushEngine};
+use clawdstrike::{guards::GuardAction, GuardContext, HushEngine};
 
 async fn report(engine: &HushEngine) -> anyhow::Result<()> {
     let ctx = GuardContext::new();
@@ -60,10 +60,10 @@ async fn report(engine: &HushEngine) -> anyhow::Result<()> {
 
 ## Guard API (direct use)
 
-All guards implement `hushclaw::guards::Guard` and operate over `GuardAction` + `GuardContext`.
+All guards implement `clawdstrike::guards::Guard` and operate over `GuardAction` + `GuardContext`.
 
 ```rust
-use hushclaw::guards::{ForbiddenPathGuard, Guard, GuardAction, GuardContext};
+use clawdstrike::guards::{ForbiddenPathGuard, Guard, GuardAction, GuardContext};
 
 async fn check_one() {
     let guard = ForbiddenPathGuard::new();

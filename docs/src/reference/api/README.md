@@ -1,10 +1,10 @@
 # API Reference
 
-Hushclaw’s stable surface area today is the Rust crates and the `hush` CLI.
+Clawdstrike’s stable surface area today is the Rust crates and the `hush` CLI.
 
 ## Rust crates
 
-- `hushclaw`: policy type, built-in guards, and `HushEngine`
+- `clawdstrike`: policy type, built-in guards, and `HushEngine`
 - `hush-core`: hashing/signing, Merkle trees, and `SignedReceipt`
 - `hush-proxy`: domain matching + DNS/SNI parsing utilities
 

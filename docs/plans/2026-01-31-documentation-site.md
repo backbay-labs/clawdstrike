@@ -1,4 +1,4 @@
-# Hushclaw Documentation Site Implementation Plan
+# Clawdstrike Documentation Site Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -21,8 +21,8 @@
 
 ```toml
 [book]
-title = "Hushclaw Documentation"
-authors = ["Hushclaw Contributors"]
+title = "Clawdstrike Documentation"
+authors = ["Clawdstrike Contributors"]
 description = "Multi-model security enforcement for AI agents"
 language = "en"
 src = "src"
@@ -33,8 +33,8 @@ build-dir = "book"
 [output.html]
 default-theme = "navy"
 preferred-dark-theme = "navy"
-git-repository-url = "https://github.com/hushclaw/hushclaw"
-edit-url-template = "https://github.com/hushclaw/hushclaw/edit/main/docs/{path}"
+git-repository-url = "https://github.com/backbay-labs/clawdstrike"
+edit-url-template = "https://github.com/backbay-labs/clawdstrike/edit/main/docs/{path}"
 additional-css = ["theme/custom.css"]
 
 [output.html.fold]
@@ -97,7 +97,7 @@ level = 1
 **Step 3: Create custom.css**
 
 ```css
-/* Hushclaw Documentation Theme */
+/* Clawdstrike Documentation Theme */
 
 :root {
   --hush-primary: #6366f1;
@@ -176,7 +176,7 @@ Run: `mkdir -p docs/src/{getting-started,concepts,guides,reference/{guards,rules
 
 **Step 5: Verify mdBook builds**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws5-docs && mdbook build docs`
+Run: `cd /Users/connor/Medica/clawdstrike-ws5-docs && mdbook build docs`
 Expected: Build succeeds (with warnings about missing files)
 
 **Step 6: Commit**
@@ -196,11 +196,11 @@ git commit -m "feat(docs): add mdBook scaffold with navigation structure"
 **Step 1: Write landing page**
 
 ```markdown
-# Hushclaw
+# Clawdstrike
 
 **Multi-model security enforcement for AI agents**
 
-Hushclaw is an open-source security suite that protects AI agents from:
+Clawdstrike is an open-source security suite that protects AI agents from:
 
 - **Credential theft** - Blocks access to SSH keys, cloud credentials, API keys
 - **Data exfiltration** - Controls network egress with domain allowlists
@@ -215,8 +215,8 @@ cargo install hush-cli
 
 # Create a policy
 cat > policy.yaml << 'EOF'
-version: "hushclaw-v1.0"
-extends: hushclaw:ai-agent
+version: "clawdstrike-v1.0"
+extends: clawdstrike:ai-agent
 EOF
 
 # Run with protection
@@ -226,8 +226,8 @@ hush run --policy policy.yaml -- your-agent
 ## For OpenClaw Users
 
 ```bash
-npm install @hushclaw/openclaw
-openclaw plugins enable @hushclaw/openclaw
+npm install @clawdstrike/openclaw
+openclaw plugins enable @clawdstrike/openclaw
 ```
 
 [Get Started →](./getting-started/installation.md)
@@ -252,7 +252,7 @@ openclaw plugins enable @hushclaw/openclaw
 └─────────────────────────┬──────────────────────────────┘
                           │
 ┌─────────────────────────▼──────────────────────────────┐
-│                    Hushclaw                            │
+│                    Clawdstrike                            │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
 │  │ Guards   │  │ Policy   │  │ Audit    │  │ Crypto │ │
 │  │ (5 types)│  │ Engine   │  │ Logging  │  │ (sign) │ │
@@ -273,9 +273,9 @@ With the `ai-agent-minimal` policy:
 
 ## Community
 
-- [GitHub](https://github.com/hushclaw/hushclaw)
-- [Discord](https://discord.gg/hushclaw)
-- [Contributing](https://github.com/hushclaw/hushclaw/blob/main/CONTRIBUTING.md)
+- [GitHub](https://github.com/backbay-labs/clawdstrike)
+- [Discord](https://discord.gg/clawdstrike)
+- [Contributing](https://github.com/backbay-labs/clawdstrike/blob/main/CONTRIBUTING.md)
 
 ## License
 
@@ -284,7 +284,7 @@ MIT
 
 **Step 2: Verify build**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws5-docs && mdbook build docs`
+Run: `cd /Users/connor/Medica/clawdstrike-ws5-docs && mdbook build docs`
 Expected: Build succeeds
 
 **Step 3: Commit**
@@ -310,7 +310,7 @@ Choose your preferred installation method.
 
 ## Rust CLI (hush-cli)
 
-The CLI is the primary way to use hushclaw.
+The CLI is the primary way to use clawdstrike.
 
 ### From crates.io (Recommended)
 
@@ -321,8 +321,8 @@ cargo install hush-cli
 ### From Source
 
 ```bash
-git clone https://github.com/hushclaw/hushclaw
-cd hushclaw
+git clone https://github.com/backbay-labs/clawdstrike
+cd clawdstrike
 cargo install --path crates/hush-cli
 ```
 
@@ -338,11 +338,11 @@ hush --version
 For Node.js and browser environments:
 
 ```bash
-npm install @hushclaw/sdk
+npm install @clawdstrike/sdk
 # or
-yarn add @hushclaw/sdk
+yarn add @clawdstrike/sdk
 # or
-pnpm add @hushclaw/sdk
+pnpm add @clawdstrike/sdk
 ```
 
 ## OpenClaw Plugin
@@ -350,8 +350,8 @@ pnpm add @hushclaw/sdk
 If you're using OpenClaw:
 
 ```bash
-npm install @hushclaw/openclaw
-openclaw plugins enable @hushclaw/openclaw
+npm install @clawdstrike/openclaw
+openclaw plugins enable @clawdstrike/openclaw
 ```
 
 ## Python SDK (Coming Soon)
@@ -369,7 +369,7 @@ docker run -d \
   --name hushd \
   -v ~/.hush:/root/.hush \
   -p 9090:9090 \
-  ghcr.io/hushclaw/hushd:latest
+  ghcr.io/clawdstrike/hushd:latest
 ```
 
 ## System Requirements
@@ -406,7 +406,7 @@ git commit -m "feat(docs): add installation guide"
 ```markdown
 # Quick Start
 
-Get hushclaw protecting your agent in 5 minutes.
+Get clawdstrike protecting your agent in 5 minutes.
 
 ## Step 1: Install
 
@@ -420,10 +420,10 @@ Create a file named `policy.yaml`:
 
 ```yaml
 # policy.yaml
-version: "hushclaw-v1.0"
+version: "clawdstrike-v1.0"
 
 # Use a built-in base policy
-extends: hushclaw:ai-agent-minimal
+extends: clawdstrike:ai-agent-minimal
 
 # Customize as needed
 filesystem:
@@ -446,7 +446,7 @@ hush run --policy policy.yaml -- python my_agent.py
 {
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "enabled": true,
         "config": {
           "policy": "./policy.yaml"
@@ -549,10 +549,10 @@ Learn to write custom security policies for your agents.
 
 ## Policy Basics
 
-A hushclaw policy is a YAML file that defines security rules:
+A clawdstrike policy is a YAML file that defines security rules:
 
 ```yaml
-version: "hushclaw-v1.0"
+version: "clawdstrike-v1.0"
 
 egress:
   mode: allowlist
@@ -572,8 +572,8 @@ on_violation: cancel
 Start from a base policy and customize:
 
 ```yaml
-version: "hushclaw-v1.0"
-extends: hushclaw:ai-agent-minimal
+version: "clawdstrike-v1.0"
+extends: clawdstrike:ai-agent-minimal
 
 # Add your domains
 egress:
@@ -725,8 +725,8 @@ Reason: Path matches forbidden pattern: ~/.ssh/*
 
 ```yaml
 # my-project-policy.yaml
-version: "hushclaw-v1.0"
-extends: hushclaw:ai-agent
+version: "clawdstrike-v1.0"
+extends: clawdstrike:ai-agent
 
 # Project uses Stripe and Sentry
 egress:
@@ -754,7 +754,7 @@ on_violation: cancel
 
 ## Next Steps
 
-- [Architecture](../concepts/architecture.md) - Understand how hushclaw works
+- [Architecture](../concepts/architecture.md) - Understand how clawdstrike works
 - [Guards Reference](../reference/guards/README.md) - All guard details
 - [Policy Schema](../reference/policy-schema.md) - Full schema reference
 ```
@@ -778,7 +778,7 @@ git commit -m "feat(docs): add first policy tutorial"
 ```markdown
 # Architecture
 
-Hushclaw is designed as a modular, composable security enforcement layer.
+Clawdstrike is designed as a modular, composable security enforcement layer.
 
 ## Overview
 
@@ -789,7 +789,7 @@ Hushclaw is designed as a modular, composable security enforcement layer.
 └────────────────────────────────┬────────────────────────────────┘
                                  │ Events
 ┌────────────────────────────────▼────────────────────────────────┐
-│                         Hushclaw                                 │
+│                         Clawdstrike                                 │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │                    Policy Engine                         │    │
 │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │    │
@@ -895,7 +895,7 @@ hush-core       # Crypto primitives (Ed25519, SHA-256, Merkle)
     ↓
 hush-proxy      # Network interception utilities
     ↓
-hushclaw        # Runtime enforcement (guards, policy, IRM)
+clawdstrike        # Runtime enforcement (guards, policy, IRM)
     ↓
 hush-cli        # Command-line interface
     ↓
@@ -907,7 +907,7 @@ hushd           # Long-running daemon (optional)
 ### Direct Library
 
 ```rust
-use hushclaw::{HushEngine, Event};
+use clawdstrike::{HushEngine, Event};
 
 let engine = HushEngine::new(policy)?;
 let decision = engine.evaluate(&event).await;
@@ -923,7 +923,7 @@ hush run --policy policy.yaml -- your-command
 
 ```typescript
 // Automatically intercepts tool calls
-await openclaw.registerPlugin("@hushclaw/openclaw");
+await openclaw.registerPlugin("@clawdstrike/openclaw");
 ```
 
 ### Daemon Mode
@@ -987,7 +987,7 @@ pub trait Guard: Send + Sync {
 
 ## Built-in Guards
 
-Hushclaw includes 5 battle-tested guards:
+Clawdstrike includes 5 battle-tested guards:
 
 ### ForbiddenPathGuard
 
@@ -1113,7 +1113,7 @@ Final: WARN
 You can implement custom guards:
 
 ```rust
-use hushclaw::{Guard, GuardResult, Event, Policy};
+use clawdstrike::{Guard, GuardResult, Event, Policy};
 
 pub struct RateLimitGuard {
     requests: AtomicUsize,
@@ -1188,15 +1188,15 @@ git commit -m "feat(docs): add guards concept documentation"
 ```markdown
 # Policies
 
-Policies are YAML files that configure security rules for hushclaw.
+Policies are YAML files that configure security rules for clawdstrike.
 
 ## Policy Structure
 
 Every policy has these sections:
 
 ```yaml
-version: "hushclaw-v1.0"     # Schema version
-extends: hushclaw:default     # Optional base policy
+version: "clawdstrike-v1.0"     # Schema version
+extends: clawdstrike:default     # Optional base policy
 
 egress:                        # Network rules
   mode: allowlist
@@ -1225,8 +1225,8 @@ Use `extends` to build on base policies:
 
 ```yaml
 # Your policy
-version: "hushclaw-v1.0"
-extends: hushclaw:ai-agent
+version: "clawdstrike-v1.0"
+extends: clawdstrike:ai-agent
 
 # Only specify overrides
 egress:
@@ -1238,11 +1238,11 @@ Built-in base policies:
 
 | Name | Description |
 |------|-------------|
-| `hushclaw:minimal` | Bare minimum protection |
-| `hushclaw:default` | Balanced security |
-| `hushclaw:strict` | Maximum security |
-| `hushclaw:ai-agent` | Optimized for AI agents |
-| `hushclaw:cicd` | For CI/CD pipelines |
+| `clawdstrike:minimal` | Bare minimum protection |
+| `clawdstrike:default` | Balanced security |
+| `clawdstrike:strict` | Maximum security |
+| `clawdstrike:ai-agent` | Optimized for AI agents |
+| `clawdstrike:cicd` | For CI/CD pipelines |
 
 ## Policy Merging
 
@@ -1318,7 +1318,7 @@ hush run --mode advisory --policy policy.yaml -- command
 Or environment:
 
 ```bash
-HUSHCLAW_MODE=advisory hush run --policy policy.yaml -- command
+CLAWDSTRIKE_MODE=advisory hush run --policy policy.yaml -- command
 ```
 
 ## Policy Loading
@@ -1326,11 +1326,11 @@ HUSHCLAW_MODE=advisory hush run --policy policy.yaml -- command
 Policies are loaded from (in order):
 
 1. CLI flag: `--policy ./custom.yaml`
-2. Environment: `HUSHCLAW_POLICY=/path/to/policy.yaml`
+2. Environment: `CLAWDSTRIKE_POLICY=/path/to/policy.yaml`
 3. Project: `.hush/policy.yaml`
 4. User: `~/.config/hush/policy.yaml`
 5. System: `/etc/hush/policy.yaml`
-6. Built-in: `hushclaw:default`
+6. Built-in: `clawdstrike:default`
 
 ## Hot Reload
 
@@ -1997,7 +1997,7 @@ password = "password123"
 Use markers to indicate intentional patterns:
 
 ```python
-# hushclaw: ignore-next-line
+# clawdstrike: ignore-next-line
 API_KEY_PATTERN = "sk-[a-zA-Z0-9]+"  # Regex pattern, not actual key
 ```
 
@@ -2366,13 +2366,13 @@ git commit -m "feat(docs): add PatchIntegrityGuard and McpToolGuard references"
 ```markdown
 # OpenClaw Integration
 
-Complete guide to using hushclaw with OpenClaw.
+Complete guide to using clawdstrike with OpenClaw.
 
 ## Installation
 
 ```bash
-npm install @hushclaw/openclaw
-openclaw plugins enable @hushclaw/openclaw
+npm install @clawdstrike/openclaw
+openclaw plugins enable @clawdstrike/openclaw
 ```
 
 ## Configuration
@@ -2383,7 +2383,7 @@ openclaw plugins enable @hushclaw/openclaw
 {
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "enabled": true
       }
     }
@@ -2391,7 +2391,7 @@ openclaw plugins enable @hushclaw/openclaw
 }
 ```
 
-This enables hushclaw with the default `ai-agent-minimal` policy.
+This enables clawdstrike with the default `ai-agent-minimal` policy.
 
 ### Custom Policy
 
@@ -2399,7 +2399,7 @@ This enables hushclaw with the default `ai-agent-minimal` policy.
 {
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "enabled": true,
         "config": {
           "policy": "./.hush/policy.yaml",
@@ -2421,13 +2421,13 @@ This enables hushclaw with the default `ai-agent-minimal` policy.
       {
         "id": "trusted-agent",
         "security": {
-          "policy": "hushclaw:permissive"
+          "policy": "clawdstrike:permissive"
         }
       },
       {
         "id": "untrusted-agent",
         "security": {
-          "policy": "hushclaw:strict"
+          "policy": "clawdstrike:strict"
         }
       }
     ]
@@ -2439,7 +2439,7 @@ This enables hushclaw with the default `ai-agent-minimal` policy.
 
 ### Hook Integration
 
-Hushclaw uses two OpenClaw hooks:
+Clawdstrike uses two OpenClaw hooks:
 
 1. **`tool_result_persist`** - Evaluates every tool call against policy
 2. **`agent:bootstrap`** - Injects security context into agent prompts
@@ -2451,7 +2451,7 @@ Agent calls tool
     ↓
 tool_result_persist hook fires
     ↓
-Hushclaw evaluates policy
+Clawdstrike evaluates policy
     ↓
 ├─ Allow: Tool result added to transcript
 ├─ Warn: Warning logged, result added
@@ -2499,7 +2499,7 @@ This helps agents avoid triggering violations.
 {
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "config": {
           "mode": "advisory"
         }
@@ -2512,26 +2512,26 @@ This helps agents avoid triggering violations.
 ### Set via environment
 
 ```bash
-HUSHCLAW_MODE=advisory openclaw start
+CLAWDSTRIKE_MODE=advisory openclaw start
 ```
 
 ## CLI Commands
 
 ```bash
 # Validate a policy
-openclaw hushclaw policy lint ./policy.yaml
+openclaw clawdstrike policy lint ./policy.yaml
 
 # Show current effective policy
-openclaw hushclaw policy show
+openclaw clawdstrike policy show
 
 # Test an event against policy
-openclaw hushclaw policy test ./event.json
+openclaw clawdstrike policy test ./event.json
 
 # Explain why something was blocked
-openclaw hushclaw why <event-id>
+openclaw clawdstrike why <event-id>
 
 # Query audit log
-openclaw hushclaw audit query --denied --since 1h
+openclaw clawdstrike audit query --denied --since 1h
 ```
 
 ## Project Setup
@@ -2544,7 +2544,7 @@ openclaw init --with-security
 
 Creates:
 - `.hush/policy.yaml` - Your security policy
-- `.hush/config.yaml` - Hushclaw configuration
+- `.hush/config.yaml` - Clawdstrike configuration
 - Updates `.gitignore` for receipts
 
 ### Manual setup
@@ -2552,8 +2552,8 @@ Creates:
 1. Create `.hush/policy.yaml`:
 
 ```yaml
-version: "hushclaw-v1.0"
-extends: hushclaw:ai-agent
+version: "clawdstrike-v1.0"
+extends: clawdstrike:ai-agent
 
 egress:
   allowed_domains:
@@ -2570,7 +2570,7 @@ filesystem:
 {
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "enabled": true,
         "config": {
           "policy": "./.hush/policy.yaml"
@@ -2596,7 +2596,7 @@ Check your policy path in openclaw.json:
 Use advisory mode to debug:
 
 ```bash
-HUSHCLAW_MODE=advisory openclaw start
+CLAWDSTRIKE_MODE=advisory openclaw start
 ```
 
 Check the logs for warnings that explain what would be blocked.
@@ -2606,19 +2606,19 @@ Check the logs for warnings that explain what would be blocked.
 Ensure the `agent:bootstrap` hook is enabled:
 
 ```bash
-openclaw hooks list | grep hushclaw
+openclaw hooks list | grep clawdstrike
 ```
 
 Should show:
 ```
-@hushclaw/openclaw:agent-bootstrap  enabled
-@hushclaw/openclaw:tool-guard       enabled
+@clawdstrike/openclaw:agent-bootstrap  enabled
+@clawdstrike/openclaw:tool-guard       enabled
 ```
 
 ### View recent violations
 
 ```bash
-openclaw hushclaw audit query --denied --since 1h
+openclaw clawdstrike audit query --denied --since 1h
 ```
 
 ## Example: Secure Agent
@@ -2761,7 +2761,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```markdown
 # Basic Verification Example
 
-Demonstrates how to verify a hushclaw receipt.
+Demonstrates how to verify a clawdstrike receipt.
 
 ## Run
 
@@ -2898,7 +2898,7 @@ git commit -m "feat(ci): add docs deployment workflow"
 **Step 1: Build docs and verify**
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws5-docs
+cd /Users/connor/Medica/clawdstrike-ws5-docs
 mdbook build docs
 mdbook serve docs  # Open http://localhost:3000 to verify
 ```
@@ -2921,7 +2921,7 @@ cargo build
 
 ```bash
 git add -A
-git commit -m "docs: complete hushclaw documentation site"
+git commit -m "docs: complete clawdstrike documentation site"
 ```
 
 ---

@@ -1,0 +1,42 @@
+# Clawdstrike AI Agent Minimal Policy
+# Basic protection for AI-assisted development
+
+version: "clawdstrike-v1.0"
+
+egress:
+  mode: allowlist
+  allowed_domains:
+    # AI Provider APIs
+    - "api.anthropic.com"
+    - "api.openai.com"
+    # Package Registries
+    - "pypi.org"
+    - "registry.npmjs.org"
+    - "crates.io"
+    # Source Control
+    - "github.com"
+    - "api.github.com"
+  denied_domains:
+    - "*.onion"
+    - "localhost"
+    - "127.*"
+    - "10.*"
+    - "192.168.*"
+    - "172.16.*"
+
+filesystem:
+  forbidden_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.gnupg"
+    - ".env"
+    - "*.pem"
+    - "*.key"
+
+execution:
+  denied_patterns:
+    - "rm -rf /"
+    - "rm -rf /*"
+    - "curl.*|.*bash"
+
+on_violation: cancel

@@ -1,11 +1,11 @@
 /**
  * Browser-based receipt verification example
  *
- * This example verifies hushclaw SignedReceipts in a web browser
+ * This example verifies clawdstrike SignedReceipts in a web browser
  * using the TypeScript SDK (pure JS crypto).
  */
 
-import { SignedReceipt, type PublicKeySet } from '@hushclaw/sdk';
+import { SignedReceipt, type PublicKeySet } from '@clawdstrike/sdk';
 
 // DOM elements
 const fileInput = document.getElementById('receipt-file') as HTMLInputElement;

@@ -1,12 +1,12 @@
 [package]
 name = "hush-proxy"
-description = "Network proxy utilities for hushclaw"
+description = "Network proxy utilities for clawdstrike"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["security", "proxy", "network", "hushclaw"]
+keywords = ["security", "proxy", "network", "clawdstrike"]
 categories = ["network-programming", "authentication"]
 readme = "../../README.md"
 

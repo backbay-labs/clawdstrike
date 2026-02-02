@@ -3,9 +3,9 @@
 /**
  * Hello Secure Agent
  *
- * A minimal demonstration of hushclaw policy decisions.
+ * A minimal demonstration of clawdstrike policy decisions.
  *
- * This script does NOT run OpenClaw. It uses the @hushclaw/openclaw policy engine
+ * This script does NOT run OpenClaw. It uses the @clawdstrike/openclaw policy engine
  * to dry-run policy checks locally so you can verify your policy before wiring it
  * into an OpenClaw agent.
  */
@@ -31,7 +31,7 @@ async function runAgent() {
     const status = decision.denied ? 'DENY' : decision.warn ? 'WARN' : 'ALLOW';
     const guard = decision.guard ? ` (${decision.guard})` : '';
     const reason = decision.reason ? ` - ${decision.reason}` : '';
-    console.log(`[hushclaw] ${status}: ${action} ${JSON.stringify(resource)}${guard}${reason}`);
+    console.log(`[clawdstrike] ${status}: ${action} ${JSON.stringify(resource)}${guard}${reason}`);
     return decision;
   };
 

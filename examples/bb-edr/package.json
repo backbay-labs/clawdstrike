@@ -2,17 +2,17 @@
   "name": "bb-edr",
   "version": "0.1.0",
   "private": true,
-  "description": "Agentic EDR-style example for OpenClaw + hushclaw",
+  "description": "Agentic EDR-style example for OpenClaw + clawdstrike",
   "main": "simulate.js",
   "scripts": {
-    "policy:lint": "node ./tools/hushclaw.js policy lint ./policy.yaml",
+    "policy:lint": "node ./tools/clawdstrike.js policy lint ./policy.yaml",
     "simulate": "node simulate.js",
     "triage": "node triage.js",
-    "audit:denied": "node ./tools/hushclaw.js audit query --denied"
+    "audit:denied": "node ./tools/clawdstrike.js audit query --denied"
   },
   "keywords": [
     "openclaw",
-    "hushclaw",
+    "clawdstrike",
     "edr",
     "agentic",
     "security"

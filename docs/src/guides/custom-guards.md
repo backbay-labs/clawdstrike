@@ -1,12 +1,12 @@
 # Custom Guards (advanced)
 
-Hushclaw guards are plain Rust types that implement `hushclaw::guards::Guard`.
+Clawdstrike guards are plain Rust types that implement `clawdstrike::guards::Guard`.
 
 ## Implementing a guard
 
 ```rust
 use async_trait::async_trait;
-use hushclaw::guards::{Guard, GuardAction, GuardContext, GuardResult};
+use clawdstrike::guards::{Guard, GuardAction, GuardContext, GuardResult};
 
 pub struct AlwaysWarn;
 

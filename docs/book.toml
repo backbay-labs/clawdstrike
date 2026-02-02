@@ -1,6 +1,6 @@
 [book]
-title = "Hushclaw Documentation"
-authors = ["Hushclaw Contributors"]
+title = "Clawdstrike Documentation"
+authors = ["Clawdstrike Contributors"]
 description = "Multi-model security enforcement for AI agents"
 language = "en"
 src = "src"
@@ -11,8 +11,8 @@ build-dir = "book"
 [output.html]
 default-theme = "navy"
 preferred-dark-theme = "navy"
-git-repository-url = "https://github.com/hushclaw/hushclaw"
-edit-url-template = "https://github.com/hushclaw/hushclaw/edit/main/docs/{path}"
+git-repository-url = "https://github.com/backbay-labs/clawdstrike"
+edit-url-template = "https://github.com/backbay-labs/clawdstrike/edit/main/docs/{path}"
 additional-css = ["theme/custom.css"]
 
 [output.html.fold]

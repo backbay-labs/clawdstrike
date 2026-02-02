@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Create a Python SDK for hushclaw with pure Python guards and optional PyO3 native bindings.
+**Goal:** Create a Python SDK for clawdstrike with pure Python guards and optional PyO3 native bindings.
 
-**Architecture:** Pure Python implementation with fallback to native Rust bindings when available. Guards mirror the Rust hushclaw crate. Policy engine loads YAML and instantiates guards. Receipt types match hush-core for cross-language verification.
+**Architecture:** Pure Python implementation with fallback to native Rust bindings when available. Guards mirror the Rust clawdstrike crate. Policy engine loads YAML and instantiates guards. Receipt types match hush-core for cross-language verification.
 
 **Tech Stack:** Python 3.10+, pynacl (Ed25519), pyyaml, httpx (async HTTP), pytest, maturin (PyO3 build)
 
@@ -31,12 +31,12 @@ mkdir -p packages/hush-py/tests
 [project]
 name = "hush"
 version = "0.1.0"
-description = "Python SDK for hushclaw security verification"
+description = "Python SDK for clawdstrike security verification"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "Hushclaw Team" }
+    { name = "Clawdstrike Team" }
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -90,7 +90,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 **Step 3: Write src/hush/__init__.py**
 
 ```python
-"""Hush Python SDK for hushclaw security verification."""
+"""Hush Python SDK for clawdstrike security verification."""
 
 from hush.core import sha256, keccak256, verify_signature
 from hush.receipt import Receipt, SignedReceipt, Verdict
@@ -885,7 +885,7 @@ class ViolationRef:
 class Provenance:
     """Provenance information about execution environment."""
 
-    hushclaw_version: Optional[str] = None
+    clawdstrike_version: Optional[str] = None
     provider: Optional[str] = None
     policy_hash: Optional[Hash] = None
     ruleset: Optional[str] = None
@@ -894,8 +894,8 @@ class Provenance:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         result: dict[str, Any] = {}
-        if self.hushclaw_version is not None:
-            result["hushclaw_version"] = self.hushclaw_version
+        if self.clawdstrike_version is not None:
+            result["clawdstrike_version"] = self.clawdstrike_version
         if self.provider is not None:
             result["provider"] = self.provider
         if self.policy_hash is not None:
@@ -961,7 +961,7 @@ class Receipt:
         if "provenance" in data:
             prov_data = data["provenance"]
             provenance = Provenance(
-                hushclaw_version=prov_data.get("hushclaw_version"),
+                clawdstrike_version=prov_data.get("clawdstrike_version"),
                 provider=prov_data.get("provider"),
                 policy_hash=Hash.from_hex(prov_data["policy_hash"]) if prov_data.get("policy_hash") else None,
                 ruleset=prov_data.get("ruleset"),
@@ -3220,7 +3220,7 @@ git commit -m "feat(hush-py): update guards exports"
 
 ```python
 # packages/hush-py/src/hush/__init__.py
-"""Hush Python SDK for hushclaw security verification."""
+"""Hush Python SDK for clawdstrike security verification."""
 
 from hush.core import sha256, keccak256, verify_signature, Hash
 from hush.canonical import canonicalize, CanonicalJsonError
@@ -3342,7 +3342,7 @@ git commit -m "chore(hush-py): add test configuration"
 ```markdown
 # hush-py
 
-Python SDK for hushclaw security verification.
+Python SDK for clawdstrike security verification.
 
 ## Installation
 

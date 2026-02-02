@@ -1,0 +1,20 @@
+version: "clawdstrike-v1.0"
+
+egress:
+  mode: allowlist
+  allowed_domains:
+    - "api.github.com"
+    - "pypi.org"
+  denied_domains:
+    - "localhost"
+    - "127.*"
+
+filesystem:
+  allowed_write_roots:
+    - "/tmp/hello-agent"
+  forbidden_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - ".env"
+
+on_violation: cancel

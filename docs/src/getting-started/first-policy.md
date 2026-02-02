@@ -1,13 +1,13 @@
 # Your First Policy
 
-Policies are YAML files parsed into `hushclaw::Policy`. They configure the built-in guards under `guards.*` and engine settings under `settings.*`.
+Policies are YAML files parsed into `clawdstrike::Policy`. They configure the built-in guards under `guards.*` and engine settings under `settings.*`.
 
 ## Minimal policy (inherit a ruleset)
 
 ```yaml
 version: "1.0.0"
 name: My Policy
-extends: hushclaw:default
+extends: clawdstrike:default
 ```
 
 To see what you’re inheriting:

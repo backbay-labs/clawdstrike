@@ -3,7 +3,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use hushclaw::Policy;
+use clawdstrike::{HushEngine, Policy, RuleSet};
 
 use crate::state::AppState;
 
@@ -40,7 +40,7 @@ pub async fn get_policy(
         .map(|h| h.to_hex())
         .unwrap_or_else(|_| "unknown".to_string());
 
-    let Some(ruleset) = hushclaw::RuleSet::by_name(&state.config.ruleset)
+    let Some(ruleset) = RuleSet::by_name(&state.config.ruleset)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     else {
         return Err((
@@ -78,7 +78,7 @@ pub async fn update_policy(
 
     // Update the engine
     let mut engine = state.engine.write().await;
-    *engine = hushclaw::HushEngine::with_policy(policy).with_generated_keypair();
+    *engine = HushEngine::with_policy(policy).with_generated_keypair();
 
     tracing::info!("Policy updated via API");
 

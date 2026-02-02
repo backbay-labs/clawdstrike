@@ -1,11 +1,11 @@
-# @hushclaw/sdk
+# @clawdstrike/sdk
 
-TypeScript SDK for hushclaw security verification.
+TypeScript SDK for clawdstrike security verification.
 
 ## Installation
 
 ```bash
-npm install @hushclaw/sdk
+npm install @clawdstrike/sdk
 ```
 
 ## Features
@@ -21,7 +21,7 @@ npm install @hushclaw/sdk
 ### Hashing
 
 ```typescript
-import { sha256, keccak256, toHex } from "@hushclaw/sdk";
+import { sha256, keccak256, toHex } from "@clawdstrike/sdk";
 
 const hash = sha256("hello world");
 console.log(toHex(hash));
@@ -30,7 +30,7 @@ console.log(toHex(hash));
 ### Signatures
 
 ```typescript
-import { generateKeypair, signMessage, verifySignature } from "@hushclaw/sdk";
+import { generateKeypair, signMessage, verifySignature } from "@clawdstrike/sdk";
 
 const { privateKey, publicKey } = await generateKeypair();
 const message = new TextEncoder().encode("hello");
@@ -41,7 +41,7 @@ const isValid = await verifySignature(message, signature, publicKey);
 ### Canonical JSON
 
 ```typescript
-import { canonicalize, canonicalHash } from "@hushclaw/sdk";
+import { canonicalize, canonicalHash } from "@clawdstrike/sdk";
 
 const obj = { z: 1, a: 2 };
 const json = canonicalize(obj); // '{"a":2,"z":1}'
@@ -51,7 +51,7 @@ const hash = canonicalHash(obj); // SHA-256 of canonical JSON
 ### Merkle Trees
 
 ```typescript
-import { MerkleTree, hashLeaf, toHex } from "@hushclaw/sdk";
+import { MerkleTree, hashLeaf, toHex } from "@clawdstrike/sdk";
 
 const leaves = ["a", "b", "c"].map((s) =>
   hashLeaf(new TextEncoder().encode(s))
@@ -67,7 +67,7 @@ console.log("Valid:", proof.verify(leaves[1], tree.root));
 ### Receipts
 
 ```typescript
-import { Receipt, SignedReceipt, generateKeypair } from "@hushclaw/sdk";
+import { Receipt, SignedReceipt, generateKeypair } from "@clawdstrike/sdk";
 
 const receipt = new Receipt({
   id: "run-123",
@@ -89,7 +89,7 @@ import {
   SecretLeakGuard,
   GuardAction,
   GuardContext,
-} from "@hushclaw/sdk";
+} from "@clawdstrike/sdk";
 
 // Block access to sensitive paths
 const pathGuard = new ForbiddenPathGuard();

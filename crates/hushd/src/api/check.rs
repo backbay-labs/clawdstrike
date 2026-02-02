@@ -3,7 +3,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use hushclaw::guards::{GuardContext, GuardResult};
+use clawdstrike::guards::{GuardContext, GuardResult};
 
 use crate::audit::AuditEvent;
 use crate::state::{AppState, DaemonEvent};

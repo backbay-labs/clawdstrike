@@ -1,6 +1,6 @@
 [Unit]
-Description=Hushclaw Security Daemon (%i instance)
-Documentation=https://github.com/hushclaw/hushclaw
+Description=Clawdstrike Security Daemon (%i instance)
+Documentation=https://github.com/backbay-labs/clawdstrike
 After=network.target
 Wants=network-online.target
 

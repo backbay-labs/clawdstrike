@@ -28,12 +28,12 @@ group_imports = "StdExternalCrate"
 
 **Step 2: Verify formatting applies**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo fmt --all -- --check`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo fmt --all -- --check`
 Expected: Either PASS (already formatted) or shows diff of changes needed
 
 **Step 3: Apply formatting if needed**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo fmt --all`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo fmt --all`
 Expected: All files formatted to match config
 
 **Step 4: Commit**
@@ -71,7 +71,7 @@ expect_used = "deny"
 
 **Step 3: Verify clippy runs with new config**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo clippy --workspace -- -D warnings 2>&1 | head -50`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo clippy --workspace -- -D warnings 2>&1 | head -50`
 Expected: Either passes or shows warnings to fix (we accept warnings for now since fixing is out of scope)
 
 **Step 4: Commit**
@@ -144,7 +144,7 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 
 **Step 2: Test deny configuration (optional - requires cargo-deny installed)**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo deny check 2>&1 || echo "cargo-deny not installed or warnings found (OK)"`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo deny check 2>&1 || echo "cargo-deny not installed or warnings found (OK)"`
 Expected: Either passes or shows cargo-deny not installed (acceptable)
 
 **Step 3: Commit**
@@ -213,7 +213,7 @@ cargo doc --workspace --no-deps
 
 **Step 2: Verify mise can parse the config**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cat mise.toml`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cat mise.toml`
 Expected: Shows the config file contents
 
 **Step 3: Commit**
@@ -290,7 +290,7 @@ git commit -m "chore: add GitHub release notes template"
 
 **Step 1: Create scripts directory**
 
-Run: `mkdir -p /Users/connor/Medica/hushclaw-ws10-publish/scripts`
+Run: `mkdir -p /Users/connor/Medica/clawdstrike-ws10-publish/scripts`
 
 **Step 2: Create bump-version.sh script**
 
@@ -298,7 +298,7 @@ Run: `mkdir -p /Users/connor/Medica/hushclaw-ws10-publish/scripts`
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Version bump script for hushclaw
+# Version bump script for clawdstrike
 # Usage: ./scripts/bump-version.sh <version>
 # Example: ./scripts/bump-version.sh 0.2.0
 
@@ -333,18 +333,18 @@ $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
 # (They inherit from workspace, so we only need to update the root)
 
 # Update package.json files
-if [[ -f "packages/hushclaw-openclaw/package.json" ]]; then
-    echo "  Updating packages/hushclaw-openclaw/package.json..."
+if [[ -f "packages/clawdstrike-openclaw/package.json" ]]; then
+    echo "  Updating packages/clawdstrike-openclaw/package.json..."
     # Use node/jq if available, otherwise sed
     if command -v node &> /dev/null; then
         node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/hushclaw-openclaw/package.json', 'utf8'));
+            const pkg = JSON.parse(fs.readFileSync('packages/clawdstrike-openclaw/package.json', 'utf8'));
             pkg.version = '$VERSION';
-            fs.writeFileSync('packages/hushclaw-openclaw/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('packages/clawdstrike-openclaw/package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
     else
-        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/hushclaw-openclaw/package.json
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/clawdstrike-openclaw/package.json
     fi
 fi
 
@@ -366,11 +366,11 @@ echo "  4. Push: git push && git push --tags"
 
 **Step 3: Make script executable**
 
-Run: `chmod +x /Users/connor/Medica/hushclaw-ws10-publish/scripts/bump-version.sh`
+Run: `chmod +x /Users/connor/Medica/clawdstrike-ws10-publish/scripts/bump-version.sh`
 
 **Step 4: Test script shows usage**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && ./scripts/bump-version.sh`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && ./scripts/bump-version.sh`
 Expected: Shows "Usage: ./scripts/bump-version.sh <version>"
 
 **Step 5: Commit**
@@ -389,22 +389,22 @@ git commit -m "chore: add version bump script"
 
 **Step 1: Create HomebrewFormula directory**
 
-Run: `mkdir -p /Users/connor/Medica/hushclaw-ws10-publish/HomebrewFormula`
+Run: `mkdir -p /Users/connor/Medica/clawdstrike-ws10-publish/HomebrewFormula`
 
 **Step 2: Create Homebrew formula**
 
 ```ruby
 # Homebrew formula for hush CLI
-# Install: brew install hushclaw/tap/hush
+# Install: brew install clawdstrike/tap/hush
 # Or from local: brew install --build-from-source ./HomebrewFormula/hush.rb
 
 class Hush < Formula
-  desc "CLI for hushclaw security verification and policy enforcement"
-  homepage "https://github.com/hushclaw/hushclaw"
-  url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v0.1.0.tar.gz"
+  desc "CLI for clawdstrike security verification and policy enforcement"
+  homepage "https://github.com/backbay-labs/clawdstrike"
+  url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "PLACEHOLDER_SHA256_WILL_BE_UPDATED_ON_RELEASE"
   license "MIT"
-  head "https://github.com/hushclaw/hushclaw.git", branch: "main"
+  head "https://github.com/backbay-labs/clawdstrike.git", branch: "main"
 
   depends_on "rust" => :build
 
@@ -524,8 +524,8 @@ jobs:
       - name: Wait for crates.io index update
         run: sleep 30
 
-      - name: Publish hushclaw
-        run: cargo publish -p hushclaw --no-verify
+      - name: Publish clawdstrike
+        run: cargo publish -p clawdstrike --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         continue-on-error: true
@@ -662,13 +662,13 @@ Add to `.github/workflows/release.yml`:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: cd packages/hushclaw-openclaw && npm ci
+        run: cd packages/clawdstrike-openclaw && npm ci
 
       - name: Build package
-        run: cd packages/hushclaw-openclaw && npm run build
+        run: cd packages/clawdstrike-openclaw && npm run build
 
-      - name: Publish @hushclaw/openclaw
-        run: cd packages/hushclaw-openclaw && npm publish --access public
+      - name: Publish @clawdstrike/openclaw
+        run: cd packages/clawdstrike-openclaw && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         continue-on-error: true
@@ -768,7 +768,7 @@ git commit -m "feat: add cargo-deny license check to CI"
 **Files:**
 - Modify: `crates/hush-core/Cargo.toml`
 - Modify: `crates/hush-proxy/Cargo.toml`
-- Modify: `crates/hushclaw/Cargo.toml`
+- Modify: `crates/clawdstrike/Cargo.toml`
 - Modify: `crates/hush-cli/Cargo.toml`
 - Modify: `crates/hushd/Cargo.toml`
 
@@ -785,14 +785,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["security", "verification", "ai-agent", "hushclaw"]
+keywords = ["security", "verification", "ai-agent", "clawdstrike"]
 categories = ["cryptography", "command-line-utilities"]
 readme = "../../README.md"
 ```
 
 **Step 2: Verify dry-run publish works**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo publish -p hush-core --dry-run 2>&1 | head -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo publish -p hush-core --dry-run 2>&1 | head -20`
 Expected: Shows package info without errors (or expected missing field warnings)
 
 **Step 3: Commit**
@@ -810,22 +810,22 @@ git commit -m "chore: add publishing metadata to crate Cargo.toml files"
 
 **Step 1: Run full lint check**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo fmt --all -- --check`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo fmt --all -- --check`
 Expected: PASS
 
 **Step 2: Run clippy**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo clippy --workspace 2>&1 | tail -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo clippy --workspace 2>&1 | tail -20`
 Expected: Completes (warnings OK, no errors)
 
 **Step 3: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && cargo test --workspace 2>&1 | tail -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && cargo test --workspace 2>&1 | tail -20`
 Expected: PASS
 
 **Step 4: Verify all files created**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws10-publish && ls -la .rustfmt.toml clippy.toml deny.toml mise.toml && ls -la .github/release.yml .github/workflows/release.yml scripts/bump-version.sh HomebrewFormula/hush.rb`
+Run: `cd /Users/connor/Medica/clawdstrike-ws10-publish && ls -la .rustfmt.toml clippy.toml deny.toml mise.toml && ls -la .github/release.yml .github/workflows/release.yml scripts/bump-version.sh HomebrewFormula/hush.rb`
 Expected: All 8 files exist
 
 **Step 5: Final commit if needed**

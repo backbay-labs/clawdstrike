@@ -29,10 +29,10 @@ guards:
 
 The Rust crate also exposes a cheap detector and boundary markers:
 
-- `hushclaw::detect_prompt_injection`
-- `hushclaw::wrap_user_content`
-- `hushclaw::USER_CONTENT_START` / `hushclaw::USER_CONTENT_END`
-- `hushclaw::FingerprintDeduper` (optional log/alert dedupe via `PromptInjectionReport.fingerprint`)
+- `clawdstrike::detect_prompt_injection`
+- `clawdstrike::wrap_user_content`
+- `clawdstrike::USER_CONTENT_START` / `clawdstrike::USER_CONTENT_END`
+- `clawdstrike::FingerprintDeduper` (optional log/alert dedupe via `PromptInjectionReport.fingerprint`)
 
 The recommended pattern is:
 
