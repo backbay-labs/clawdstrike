@@ -1,7 +1,7 @@
 {
-  "name": "@hushclaw/sdk",
+  "name": "@clawdstrike/sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for hushclaw security verification",
+  "description": "TypeScript SDK for clawdstrike security verification",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -26,18 +26,18 @@
     "clean": "rm -rf dist"
   },
   "keywords": [
-    "hushclaw",
+    "clawdstrike",
     "security",
     "verification",
     "merkle",
     "ed25519",
     "receipts"
   ],
-  "author": "Hushclaw Contributors",
+  "author": "Clawdstrike Contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hushclaw/hushclaw.git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
     "directory": "packages/hush-ts"
   },
   "dependencies": {

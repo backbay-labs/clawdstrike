@@ -1,6 +1,6 @@
 # Basic Verification Example
 
-Demonstrates how to verify a signed hushclaw receipt.
+Demonstrates how to verify a signed clawdstrike receipt.
 
 ## What It Does
 
@@ -49,7 +49,7 @@ Create a `receipt.json` file (signed receipt):
     "content_hash": "0x7f3a4b2c00000000000000000000000000000000000000000000000000000000",
     "verdict": { "passed": true },
     "provenance": {
-      "hushclaw_version": "0.1.0",
+      "clawdstrike_version": "0.1.0",
       "ruleset": "default",
       "violations": []
     }

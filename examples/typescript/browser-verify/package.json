@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@hushclaw/sdk": "^0.1.0"
+    "@clawdstrike/sdk": "^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.3.0",

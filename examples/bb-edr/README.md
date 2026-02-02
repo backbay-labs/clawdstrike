@@ -6,7 +6,7 @@ This example demonstrates an **agentic EDR-style loop** for OpenClaw agents:
 2. **Triage**: summarize denied activity and group by guard
 3. **Respond**: write an incident report and optionally emit a simple blocklist artifact
 
-It uses `@hushclaw/openclaw` as the policy engine + OpenClaw integration layer.
+It uses `@clawdstrike/openclaw` as the policy engine + OpenClaw integration layer.
 
 > This is a teaching example. It does **not** implement OS-level telemetry or syscall interception.
 
@@ -30,11 +30,11 @@ npm run audit:denied
 
 ## Files
 
-- `policy.yaml` — policy enforced by hushclaw
+- `policy.yaml` — policy enforced by clawdstrike
 - `scenario.json` — a small set of simulated tool actions
 - `simulate.js` — writes `.hush/audit.jsonl` from the scenario
 - `triage.js` — reads `.hush/audit.jsonl` and writes `reports/`
-- `openclaw.json` — OpenClaw configuration (enables `@hushclaw/openclaw` in **audit** mode)
+- `openclaw.json` — OpenClaw configuration (enables `@clawdstrike/openclaw` in **audit** mode)
 - `skills/edr-triage/SKILL.md` — how an OpenClaw triage agent should operate
 
 ## Using with OpenClaw

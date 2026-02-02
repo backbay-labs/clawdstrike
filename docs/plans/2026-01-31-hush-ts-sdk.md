@@ -1,8 +1,8 @@
-# @hushclaw/sdk TypeScript Package Implementation Plan
+# @clawdstrike/sdk TypeScript Package Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Create a TypeScript SDK (`@hushclaw/sdk`) that provides verification utilities matching the Python SDK capabilities, including receipt verification, RFC 6962 Merkle trees, RFC 8785 canonical JSON, and security guards.
+**Goal:** Create a TypeScript SDK (`@clawdstrike/sdk`) that provides verification utilities matching the Python SDK capabilities, including receipt verification, RFC 6962 Merkle trees, RFC 8785 canonical JSON, and security guards.
 
 **Architecture:** Pure TypeScript implementation using @noble/hashes for SHA-256/Keccak-256 and @noble/ed25519 for Ed25519 signatures. The SDK mirrors the Python SDK's API surface with TypeScript idioms (classes, interfaces, union types). All cryptographic operations are deterministic and compatible with the Rust implementation.
 
@@ -23,9 +23,9 @@
 
 ```json
 {
-  "name": "@hushclaw/sdk",
+  "name": "@clawdstrike/sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for hushclaw security verification",
+  "description": "TypeScript SDK for clawdstrike security verification",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -50,18 +50,18 @@
     "clean": "rm -rf dist"
   },
   "keywords": [
-    "hushclaw",
+    "clawdstrike",
     "security",
     "verification",
     "merkle",
     "ed25519",
     "receipts"
   ],
-  "author": "Hushclaw Contributors",
+  "author": "Clawdstrike Contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hushclaw/hushclaw.git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
     "directory": "packages/hush-ts"
   },
   "dependencies": {
@@ -149,7 +149,7 @@ export default defineConfig({
 
 ```typescript
 /**
- * @hushclaw/sdk - TypeScript SDK for hushclaw security verification
+ * @clawdstrike/sdk - TypeScript SDK for clawdstrike security verification
  * @packageDocumentation
  */
 
@@ -165,7 +165,7 @@ Expected: Build succeeds, dist/ contains index.js, index.cjs, index.d.ts
 
 ```bash
 git add packages/hush-ts/
-git commit -m "feat(hush-ts): scaffold @hushclaw/sdk package"
+git commit -m "feat(hush-ts): scaffold @clawdstrike/sdk package"
 ```
 
 ---
@@ -2678,7 +2678,7 @@ export { SecretLeakGuard, type SecretLeakConfig } from "./secret-leak";
 ```typescript
 // src/index.ts
 /**
- * @hushclaw/sdk - TypeScript SDK for hushclaw security verification
+ * @clawdstrike/sdk - TypeScript SDK for clawdstrike security verification
  * @packageDocumentation
  */
 
@@ -2790,7 +2790,7 @@ Add the following job after the `wasm` job in `.github/workflows/ci.yml`:
 
 **Step 2: Verify CI config is valid YAML**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws19-typescript-sdk && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"`
+Run: `cd /Users/connor/Medica/clawdstrike-ws19-typescript-sdk && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"`
 Expected: No errors
 
 **Step 3: Commit**
@@ -2812,9 +2812,9 @@ git commit -m "ci: add TypeScript SDK job to CI"
 Add the following job after `publish-npm` in `.github/workflows/release.yml`:
 
 ```yaml
-  # Publish @hushclaw/sdk to npm
+  # Publish @clawdstrike/sdk to npm
   publish-hush-ts:
-    name: Publish @hushclaw/sdk to npm
+    name: Publish @clawdstrike/sdk to npm
     runs-on: ubuntu-latest
     needs: preflight
     steps:
@@ -2846,14 +2846,14 @@ Add the following job after `publish-npm` in `.github/workflows/release.yml`:
 
 **Step 2: Verify release config is valid YAML**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws19-typescript-sdk && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml'))"`
+Run: `cd /Users/connor/Medica/clawdstrike-ws19-typescript-sdk && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml'))"`
 Expected: No errors
 
 **Step 3: Commit**
 
 ```bash
 git add .github/workflows/release.yml
-git commit -m "ci: add @hushclaw/sdk to release workflow"
+git commit -m "ci: add @clawdstrike/sdk to release workflow"
 ```
 
 ---
@@ -2866,14 +2866,14 @@ git commit -m "ci: add @hushclaw/sdk to release workflow"
 **Step 1: Create README**
 
 ```markdown
-# @hushclaw/sdk
+# @clawdstrike/sdk
 
-TypeScript SDK for hushclaw security verification.
+TypeScript SDK for clawdstrike security verification.
 
 ## Installation
 
 ```bash
-npm install @hushclaw/sdk
+npm install @clawdstrike/sdk
 ```
 
 ## Features
@@ -2889,7 +2889,7 @@ npm install @hushclaw/sdk
 ### Hashing
 
 ```typescript
-import { sha256, keccak256, toHex } from "@hushclaw/sdk";
+import { sha256, keccak256, toHex } from "@clawdstrike/sdk";
 
 const hash = sha256("hello world");
 console.log(toHex(hash));
@@ -2898,7 +2898,7 @@ console.log(toHex(hash));
 ### Signatures
 
 ```typescript
-import { generateKeypair, signMessage, verifySignature } from "@hushclaw/sdk";
+import { generateKeypair, signMessage, verifySignature } from "@clawdstrike/sdk";
 
 const { privateKey, publicKey } = await generateKeypair();
 const message = new TextEncoder().encode("hello");
@@ -2909,7 +2909,7 @@ const isValid = await verifySignature(message, signature, publicKey);
 ### Canonical JSON
 
 ```typescript
-import { canonicalize, canonicalHash } from "@hushclaw/sdk";
+import { canonicalize, canonicalHash } from "@clawdstrike/sdk";
 
 const obj = { z: 1, a: 2 };
 const json = canonicalize(obj); // '{"a":2,"z":1}'
@@ -2919,7 +2919,7 @@ const hash = canonicalHash(obj); // SHA-256 of canonical JSON
 ### Merkle Trees
 
 ```typescript
-import { MerkleTree, hashLeaf } from "@hushclaw/sdk";
+import { MerkleTree, hashLeaf } from "@clawdstrike/sdk";
 
 const leaves = ["a", "b", "c"].map((s) =>
   hashLeaf(new TextEncoder().encode(s))
@@ -2935,7 +2935,7 @@ console.log("Valid:", proof.verify(leaves[1], tree.root));
 ### Receipts
 
 ```typescript
-import { Receipt, SignedReceipt, generateKeypair } from "@hushclaw/sdk";
+import { Receipt, SignedReceipt, generateKeypair } from "@clawdstrike/sdk";
 
 const receipt = new Receipt({
   id: "run-123",
@@ -2957,7 +2957,7 @@ import {
   SecretLeakGuard,
   GuardAction,
   GuardContext,
-} from "@hushclaw/sdk";
+} from "@clawdstrike/sdk";
 
 // Block access to sensitive paths
 const pathGuard = new ForbiddenPathGuard();

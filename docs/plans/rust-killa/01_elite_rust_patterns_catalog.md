@@ -1,6 +1,6 @@
 # Elite Rust Patterns Catalog (v3)
 
-This is the patterns doc that should guide the “de-ai-slopify” pass. It is tailored to hushclaw and focuses on patterns
+This is the patterns doc that should guide the “de-ai-slopify” pass. It is tailored to clawdstrike and focuses on patterns
 that prevent drift, enforce security boundaries, and keep APIs clean.
 
 Constraint note: no outbound network access here, so this doc is based on stable Rust community practice and the code in this repo.
@@ -35,7 +35,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Any return value representing allow/block/warn decisions.
 - Pitfalls:
   - Overusing `#[must_use]` on trivial values.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Mark `GuardResult` and any future `GuardReport` as must-use.
 
 ### Expose evidence, not just a summary
@@ -51,17 +51,17 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Multi-check engines where explainability matters.
 - Pitfalls:
   - Making evidence too big for hot path; consider optional detail modes.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Engine aggregation currently can lose warnings; evidence type fixes that.
 
 ### Minimize public surface area; re-export intentionally
 - Why it matters: Public APIs become contracts; minimize what you must maintain.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Audit `pub` items and convert internals to pub(crate).
 
 ### Use `#[non_exhaustive]` for public enums that will evolve
 - Why it matters: Allows adding variants without breaking downstream matches.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Consider for error enums and policy action enums.
 
 ## Async & Concurrency
@@ -74,7 +74,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Any async code with shared state.
 - Pitfalls:
   - Accidentally extending lock lifetime via references.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Engine state is behind `RwLock`; keep lock scopes minimal as features grow.
 
 ### Use atomics for hot counters
@@ -87,12 +87,12 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - For `action_count`/`violation_count` if check rate becomes high.
 - Pitfalls:
   - Over-optimizing; use only if metrics show contention.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - `EngineState` uses `RwLock`; consider atomics later if needed.
 
 ### Prefer channels over shared mutable state for event streams
 - Why it matters: Channels make backpressure and ownership explicit.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   If you add audit logging streams, use bounded channels.
 
 ## Config & Serde
@@ -109,7 +109,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Any finite config decision set.
 - Pitfalls:
   - Renaming enum variants without migration strategy.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - `EgressAllowlistConfig.default_action` and `McpToolConfig.default_action`.
 
 ### Fail-fast validation at config boundaries
@@ -124,7 +124,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Policy parsing, ruleset loading, pattern compilation.
 - Pitfalls:
   - Returning early and hiding multiple errors.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Replace guard `filter_map(...ok())` pattern compilation with explicit validation.
 
 ### Strict mode: `deny_unknown_fields` (when schema is stable)
@@ -139,7 +139,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - When the schema is stable enough to enforce strictly.
 - Pitfalls:
   - Breaking forward compatibility; consider offering both strict and permissive parse paths.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Add a strict parse entrypoint or CLI flag; keep permissive parse for upgrades if needed.
 
 ### Default functions instead of implicit defaults
@@ -152,30 +152,30 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Any field with a meaningful default that affects behavior/security.
 - Pitfalls:
   - Changing defaults silently; treat it as behavior change.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - PolicySettings already uses default functions; continue this style for other defaults.
 
 ### Version serialized formats intentionally
 - Why it matters: Policies and receipts are long-lived artifacts; versioning prevents silent drift.
 - What it looks like:
   ```rust
-  pub const POLICY_SCHEMA: &str = "hushclaw-v1";
+  pub const POLICY_SCHEMA: &str = "clawdstrike-v1";
   ```
 - When to use:
   - Any schema you expect external tools to consume.
 - Pitfalls:
   - “Version” field exists but is unused/unchecked.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Decide what `Policy.version` and `Receipt.version` mean and validate them.
 
 ### Avoid `serde_json::Value` for core config unless truly needed
 - Why it matters: Untyped JSON spreads ambiguity into the system. Prefer typed structs/enums.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Policy and guard configs are typed today; keep it that way.
 
 ### Use `skip_serializing_if` to keep artifacts stable and compact
 - Why it matters: Stable JSON/YAML output matters for signatures and diffs.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Receipt already uses skip_serializing_if; apply to policy output if needed.
 
 ## Docs & Maintenance
@@ -189,12 +189,12 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Always.
 - Pitfalls:
   - Shipping docs that describe commands/schemas that don’t exist.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - mdBook policy schema and CLI docs do not match current Rust code; pick a stance and align.
 
 ### Compile docs/examples in CI
 - Why it matters: Prevents drift and keeps docs honest.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Add CI jobs for mdBook build and example compilation (in a networked environment).
 
 ## Errors
@@ -214,8 +214,8 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - In library crates used by others.
 - Pitfalls:
   - Converting everything to `String` and losing structure.
-- Apply to hushclaw:
-  - Consider `#[non_exhaustive]` on `hush-core::Error` and `hushclaw::Error`.
+- Apply to clawdstrike:
+  - Consider `#[non_exhaustive]` on `hush-core::Error` and `clawdstrike::Error`.
   - Add a structured validation error type instead of `ConfigError(String)` for pattern failures.
 
 ### Use `anyhow` only at app boundaries
@@ -228,7 +228,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - In `hush-cli` and `hushd`, not in `hush-core`.
 - Pitfalls:
   - Letting `anyhow::Error` leak into library APIs.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Current split is decent: `anyhow` in binaries, `thiserror` in libs; keep it.
 
 ### Avoid boolean-only verification APIs
@@ -241,17 +241,17 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Signature verification, proof verification, policy validation.
 - Pitfalls:
   - Returning Result but still losing error causes via strings.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - `PublicKey::verify` returns bool; consider adding a fallible verify method for diagnostics.
 
 ### Prefer error enums with structured fields over formatted strings
 - Why it matters: Structured fields support programmatic handling and better diagnostics.
-- Apply to hushclaw:
-  Replace `ConfigError(String)` in hushclaw with structured variants where possible.
+- Apply to clawdstrike:
+  Replace `ConfigError(String)` in clawdstrike with structured variants where possible.
 
 ### Add context at boundaries, not everywhere
 - Why it matters: Too much context becomes noise; put context where user needs it (CLI/policy load).
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Keep hush-core errors precise; add context in hush-cli via anyhow.
 
 ## Performance
@@ -265,12 +265,12 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Hash concatenation, argument size limits, repeated engine checks.
 - Pitfalls:
   - Premature optimization; measure first.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - `concat_hashes` and `McpToolGuard` args sizing allocate; candidates for improvement.
 
 ### Avoid repeated allocations in per-action guard iteration
 - Why it matters: Repeated Vec allocation per check is noise; keep a fixed slice of guards.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   `check_action` builds a Vec of guard refs each time; can be pre-built.
 
 ## Security
@@ -284,7 +284,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Any signing/verifying of JSON artifacts.
 - Pitfalls:
   - Under-testing float edge cases.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Expand RFC 8785 vector coverage and consider `ryu` for float formatting stability.
 
 ### Never log secrets; redact early
@@ -296,17 +296,17 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Any structured logging or error output that might include user content.
 - Pitfalls:
   - Logging entire JSON args structures for debug.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - SecretLeakGuard redacts matches; apply similar discipline across other guards.
 
 ### Normalize domains consistently (lowercase, strip trailing dot)
 - Why it matters: Inconsistent normalization creates bypass risk.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Define a single normalization function in hush-proxy and use it everywhere.
 
 ### Document parser limitations explicitly
 - Why it matters: If DNS compression pointers or TLS fragmentation are unsupported, say so to avoid false assumptions.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Document in hush-proxy docs and in error messages.
 
 ## Testing
@@ -319,7 +319,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Canonical JSON, Merkle proofs, receipt signing.
 - Pitfalls:
   - Only testing happy paths.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Add RFC 8785 canonicalization vectors and Merkle vectors.
 
 ### Examples are tests
@@ -330,12 +330,12 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Always for published crates and security tools.
 - Pitfalls:
   - Examples that drift from API changes.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Fix/remove the outdated Rust verification example.
 
 ### Use property/fuzz tests for byte parsers
 - Why it matters: Parsers are fragile; fuzzing catches panics and OOB logic errors.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   DNS/SNI parsers should never panic on random input.
 
 ## Types & API
@@ -353,7 +353,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
 - Pitfalls:
   - Creating wrappers without conversion traits (`Display`, `FromStr`, `AsRef`).
   - Making fields public and leaking invariants.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Model egress domains as validated types if you expand semantics.
   - Replace stringly-typed `default_action` with enums/newtypes in guards.
 
@@ -370,7 +370,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
 - Pitfalls:
   - Returning references to temporary data.
   - Overusing lifetimes in public APIs when a `Cow` would be cleaner.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Most hush-core APIs already accept borrowed bytes/strings; keep that discipline as you expand.
 
 ### Use `Path`/`PathBuf` for filesystem boundaries
@@ -383,7 +383,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Whenever you interact with actual OS paths (writes, reads, patch targets).
 - Pitfalls:
   - Glob libraries often want strings; define a clear conversion boundary and normalize once.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - ForbiddenPathGuard currently normalizes `\` to `/` manually; consider Path-based normalization + explicit glob semantics.
 
 ### Prefer enums to `bool` parameters
@@ -396,7 +396,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - When a function has multiple behavioral modes (strict vs permissive parse).
 - Pitfalls:
   - Overengineering: keep enums small and meaningful.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - If you add strict vs permissive policy parsing, use an enum or separate methods.
 
 ### Expose fallible constructors for validated types
@@ -411,7 +411,7 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - Domains, CIDRs, policy IDs, tool names with restrictions.
 - Pitfalls:
   - Having multiple constructors with unclear invariants.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Domain matching semantics are currently limited; if you expand them, add validated constructors.
 
 ### Builder pattern for complex configuration
@@ -424,22 +424,22 @@ Constraint note: no outbound network access here, so this doc is based on stable
   - When configuration has many optional fields or grows over time.
 - Pitfalls:
   - Builders that allow invalid states without a validate() step.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   - Policy is serde-first; consider builders for programmatic construction or for engine options.
 
 ### Use `#[repr(transparent)]` + `serde(transparent)` for newtypes
 - Why it matters: Keeps ABI/serde behavior predictable for wrapper types.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   Hash and key types already use serde(transparent); keep that consistency for future newtypes.
 
 ### Implement `FromStr` for parseable domain types
 - Why it matters: Makes parsing idiomatic (`"...".parse()?`) and integrates with clap.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   If you add `Domain`/`ToolName` types, implement FromStr and Display.
 
 ### Use `Cow` when inputs are usually borrowed
 - Why it matters: Avoids allocation in common case but allows owned fallback when normalization needed.
-- Apply to hushclaw:
+- Apply to clawdstrike:
   If you normalize domains or paths, `Cow` can keep APIs ergonomic.
 
 ## Anti-slop heuristics (what to delete/avoid)

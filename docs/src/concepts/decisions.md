@@ -1,6 +1,6 @@
 # Decisions (Guard Results)
 
-Hushclaw returns a `GuardResult` for an evaluated action.
+Clawdstrike returns a `GuardResult` for an evaluated action.
 
 ## GuardResult
 

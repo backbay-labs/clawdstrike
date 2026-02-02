@@ -71,7 +71,7 @@ Create `crates/hush-wasm/src/lib.rs`:
 ```rust
 //! WebAssembly bindings for hush-core cryptographic primitives
 //!
-//! This crate provides browser and Node.js verification of hushclaw attestations.
+//! This crate provides browser and Node.js verification of clawdstrike attestations.
 //! It enables trustless verification where users can independently verify
 //! that SignedReceipts are validly signed and Merkle proofs are correct.
 
@@ -100,7 +100,7 @@ resolver = "2"
 members = [
     "crates/hush-core",
     "crates/hush-proxy",
-    "crates/hushclaw",
+    "crates/clawdstrike",
     "crates/hush-cli",
     "crates/hushd",
     "crates/hush-wasm",
@@ -857,9 +857,9 @@ Create `crates/hush-wasm/package.json`:
 
 ```json
 {
-  "name": "@hushclaw/wasm",
+  "name": "@clawdstrike/wasm",
   "version": "0.1.0",
-  "description": "WebAssembly bindings for hushclaw cryptographic verification",
+  "description": "WebAssembly bindings for clawdstrike cryptographic verification",
   "main": "hush_wasm.js",
   "module": "hush_wasm.js",
   "types": "hush_wasm.d.ts",
@@ -874,7 +874,7 @@ Create `crates/hush-wasm/package.json`:
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/hushclaw/hushclaw"
+    "url": "https://github.com/backbay-labs/clawdstrike"
   },
   "keywords": [
     "wasm",
@@ -887,12 +887,12 @@ Create `crates/hush-wasm/package.json`:
     "verification",
     "attestation"
   ],
-  "author": "Hushclaw Contributors",
+  "author": "Clawdstrike Contributors",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/hushclaw/hushclaw/issues"
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
   },
-  "homepage": "https://hushclaw.dev"
+  "homepage": "https://clawdstrike.dev"
 }
 ```
 
@@ -901,14 +901,14 @@ Create `crates/hush-wasm/package.json`:
 Create `crates/hush-wasm/README.npm.md`:
 
 ```markdown
-# @hushclaw/wasm
+# @clawdstrike/wasm
 
-WebAssembly bindings for hushclaw cryptographic verification.
+WebAssembly bindings for clawdstrike cryptographic verification.
 
 ## Installation
 
 ```bash
-npm install @hushclaw/wasm
+npm install @clawdstrike/wasm
 ```
 
 ## Usage
@@ -922,7 +922,7 @@ import init, {
   hash_keccak256,
   verify_receipt,
   verify_merkle_proof
-} from '@hushclaw/wasm';
+} from '@clawdstrike/wasm';
 
 // Initialize WASM module (required once)
 await init();
@@ -942,7 +942,7 @@ console.log(result.valid, result.signer_valid);
 ### Node.js
 
 ```javascript
-const { verify_ed25519, hash_sha256 } = require('@hushclaw/wasm');
+const { verify_ed25519, hash_sha256 } = require('@clawdstrike/wasm');
 
 const hash = hash_sha256(Buffer.from('hello'));
 ```
@@ -1226,14 +1226,14 @@ Ensure `crates/hush-wasm/src/lib.rs` has clean organization:
 ```rust
 //! WebAssembly bindings for hush-core cryptographic primitives
 //!
-//! This crate provides browser and Node.js verification of hushclaw attestations.
+//! This crate provides browser and Node.js verification of clawdstrike attestations.
 //! It enables trustless verification where users can independently verify
 //! that SignedReceipts are validly signed and Merkle proofs are correct.
 //!
 //! ## Usage (JavaScript/TypeScript)
 //!
 //! ```javascript
-//! import init, { verify_ed25519, hash_sha256, verify_receipt } from '@hushclaw/wasm';
+//! import init, { verify_ed25519, hash_sha256, verify_receipt } from '@clawdstrike/wasm';
 //!
 //! await init();
 //!
@@ -1262,7 +1262,7 @@ use hush_core::{
 
 **Step 2: Update root README**
 
-Add hush-wasm to the crates table in `/Users/connor/Medica/hushclaw-ws6-wasm/README.md`:
+Add hush-wasm to the crates table in `/Users/connor/Medica/clawdstrike-ws6-wasm/README.md`:
 
 ```markdown
 | Crate | Description |
@@ -1270,7 +1270,7 @@ Add hush-wasm to the crates table in `/Users/connor/Medica/hushclaw-ws6-wasm/REA
 | `hush-core` | Cryptographic primitives (Ed25519, SHA-256, Keccak-256, Merkle trees, receipts) |
 | `hush-proxy` | Network proxy utilities (DNS/SNI extraction, domain policy) |
 | `hush-wasm` | WebAssembly bindings for browser/Node.js verification |
-| `hushclaw` | Security guards and policy engine |
+| `clawdstrike` | Security guards and policy engine |
 | `hush-cli` | Command-line interface |
 | `hushd` | Security daemon (WIP) |
 ```

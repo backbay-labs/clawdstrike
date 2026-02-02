@@ -4,7 +4,7 @@
  * bb-edr (simulation)
  *
  * Generates an example `.hush/audit.jsonl` log by simulating a handful of tool actions
- * (file reads/writes, egress, and commands), gating each one with hushclaw policy checks.
+ * (file reads/writes, egress, and commands), gating each one with clawdstrike policy checks.
  *
  * This does NOT run OpenClaw. It demonstrates the data you can feed into an agentic EDR loop.
  */
@@ -63,7 +63,7 @@ async function main() {
     const reason = decision.reason ? ` - ${decision.reason}` : '';
     const noteSuffix = note ? `  # ${note}` : '';
 
-    console.log(`[hushclaw] ${status}: ${action} ${JSON.stringify(resource)}${guard}${reason}${noteSuffix}`);
+    console.log(`[clawdstrike] ${status}: ${action} ${JSON.stringify(resource)}${guard}${reason}${noteSuffix}`);
 
     store.append({
       type: action,

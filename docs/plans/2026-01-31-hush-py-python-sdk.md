@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Create a pure Python SDK for hushclaw with optional PyO3 native bindings for performance-critical operations.
+**Goal:** Create a pure Python SDK for clawdstrike with optional PyO3 native bindings for performance-critical operations.
 
-**Architecture:** The SDK mirrors the Rust hushclaw crate structure with pure Python implementations of all 5 guards (ForbiddenPath, EgressAllowlist, SecretLeak, PatchIntegrity, McpTool), a policy engine for YAML configuration, receipt types for verification, and optional PyO3 bindings that wrap hush-core for faster cryptographic operations.
+**Architecture:** The SDK mirrors the Rust clawdstrike crate structure with pure Python implementations of all 5 guards (ForbiddenPath, EgressAllowlist, SecretLeak, PatchIntegrity, McpTool), a policy engine for YAML configuration, receipt types for verification, and optional PyO3 bindings that wrap hush-core for faster cryptographic operations.
 
 **Tech Stack:** Python 3.10+, pynacl (Ed25519), pyyaml, httpx (attestation), pytest, maturin (PyO3 builds)
 
@@ -25,12 +25,12 @@
 [project]
 name = "hush"
 version = "0.1.0"
-description = "Python SDK for hushclaw security verification"
+description = "Python SDK for clawdstrike security verification"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "Hushclaw Contributors" }
+    { name = "Clawdstrike Contributors" }
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -87,7 +87,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 **Step 2: Create src/hush/__init__.py**
 
 ```python
-"""Hush - Python SDK for hushclaw security verification."""
+"""Hush - Python SDK for clawdstrike security verification."""
 
 from hush.core import sha256, keccak256, verify_signature
 from hush.receipt import Receipt, SignedReceipt
@@ -279,7 +279,7 @@ class TestSignature:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_core.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_core.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement core.py**
@@ -386,7 +386,7 @@ __all__ = [
 
 **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_core.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_core.py -v`
 Expected: All tests PASS
 
 **Step 5: Commit**
@@ -515,7 +515,7 @@ class TestSignedReceipt:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_receipt.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_receipt.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement receipt.py**
@@ -647,7 +647,7 @@ __all__ = ["Receipt", "SignedReceipt"]
 
 **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_receipt.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_receipt.py -v`
 Expected: All tests PASS
 
 **Step 5: Commit**
@@ -758,7 +758,7 @@ class TestGuardAction:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_guards_base.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_guards_base.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement guards/base.py**
@@ -934,7 +934,7 @@ __all__ = [
 **Step 4: Create guards/__init__.py**
 
 ```python
-"""Security guards for hushclaw.
+"""Security guards for clawdstrike.
 
 Guards implement checks that can allow, block, or log actions.
 """
@@ -958,7 +958,7 @@ __all__ = [
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_guards_base.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_guards_base.py -v`
 Expected: All tests PASS
 
 **Step 6: Commit**
@@ -1076,7 +1076,7 @@ class TestForbiddenPathGuard:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_forbidden_path.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_forbidden_path.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement forbidden_path.py**
@@ -1210,7 +1210,7 @@ __all__ = ["ForbiddenPathGuard", "ForbiddenPathConfig"]
 **Step 4: Update guards/__init__.py**
 
 ```python
-"""Security guards for hushclaw.
+"""Security guards for clawdstrike.
 
 Guards implement checks that can allow, block, or log actions.
 """
@@ -1237,7 +1237,7 @@ __all__ = [
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_forbidden_path.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_forbidden_path.py -v`
 Expected: All tests PASS
 
 **Step 6: Commit**
@@ -1397,7 +1397,7 @@ class TestEgressAllowlistGuard:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_egress_allowlist.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_egress_allowlist.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement egress_allowlist.py**
@@ -1521,7 +1521,7 @@ __all__ = ["EgressAllowlistGuard", "EgressAllowlistConfig"]
 **Step 4: Update guards/__init__.py**
 
 ```python
-"""Security guards for hushclaw.
+"""Security guards for clawdstrike.
 
 Guards implement checks that can allow, block, or log actions.
 """
@@ -1551,7 +1551,7 @@ __all__ = [
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_egress_allowlist.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_egress_allowlist.py -v`
 Expected: All tests PASS
 
 **Step 6: Commit**
@@ -1700,7 +1700,7 @@ class TestSecretLeakGuard:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_secret_leak.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_secret_leak.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement secret_leak.py**
@@ -1802,7 +1802,7 @@ __all__ = ["SecretLeakGuard", "SecretLeakConfig"]
 **Step 4: Update guards/__init__.py**
 
 ```python
-"""Security guards for hushclaw.
+"""Security guards for clawdstrike.
 
 Guards implement checks that can allow, block, or log actions.
 """
@@ -1835,7 +1835,7 @@ __all__ = [
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_secret_leak.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_secret_leak.py -v`
 Expected: All tests PASS
 
 **Step 6: Commit**
@@ -1981,7 +1981,7 @@ class TestPatchIntegrityGuard:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_patch_integrity.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_patch_integrity.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement patch_integrity.py**
@@ -2110,7 +2110,7 @@ __all__ = ["PatchIntegrityGuard", "PatchIntegrityConfig"]
 **Step 4: Update guards/__init__.py**
 
 ```python
-"""Security guards for hushclaw.
+"""Security guards for clawdstrike.
 
 Guards implement checks that can allow, block, or log actions.
 """
@@ -2146,7 +2146,7 @@ __all__ = [
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_patch_integrity.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_patch_integrity.py -v`
 Expected: All tests PASS
 
 **Step 6: Commit**
@@ -2289,7 +2289,7 @@ class TestMcpToolGuard:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_mcp_tool.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_mcp_tool.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement mcp_tool.py**
@@ -2384,7 +2384,7 @@ __all__ = ["McpToolGuard", "McpToolConfig"]
 **Step 4: Update guards/__init__.py (final version)**
 
 ```python
-"""Security guards for hushclaw.
+"""Security guards for clawdstrike.
 
 Guards implement checks that can allow, block, or log actions.
 """
@@ -2425,7 +2425,7 @@ __all__ = [
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_mcp_tool.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_mcp_tool.py -v`
 Expected: All tests PASS
 
 **Step 6: Commit**
@@ -2572,7 +2572,7 @@ class TestPolicyEngine:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_policy.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_policy.py -v`
 Expected: FAIL with ImportError
 
 **Step 3: Implement policy.py**
@@ -2801,7 +2801,7 @@ __all__ = [
 
 **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/test_policy.py -v`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/test_policy.py -v`
 Expected: All tests PASS
 
 **Step 5: Commit**
@@ -2823,7 +2823,7 @@ git commit -m "feat(hush-py): add Policy and PolicyEngine"
 **Step 1: Update __init__.py with all exports**
 
 ```python
-"""Hush - Python SDK for hushclaw security verification."""
+"""Hush - Python SDK for clawdstrike security verification."""
 
 from hush.core import sha256, keccak256, verify_signature, sign_message, generate_keypair
 from hush.receipt import Receipt, SignedReceipt
@@ -2991,12 +2991,12 @@ class TestVersionInfo:
 
 **Step 3: Run all tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/ -v --tb=short`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/ -v --tb=short`
 Expected: All tests PASS
 
 **Step 4: Run type checking**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && pip install mypy && python -m mypy src/hush --ignore-missing-imports`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && pip install mypy && python -m mypy src/hush --ignore-missing-imports`
 Expected: No errors
 
 **Step 5: Commit**
@@ -3105,7 +3105,7 @@ features = ["pyo3/extension-module"]
 
 **Step 4: Build with maturin (if available)**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py/hush-native && maturin develop`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py/hush-native && maturin develop`
 Expected: Build succeeds (optional, depends on Rust toolchain)
 
 **Step 5: Commit**
@@ -3121,12 +3121,12 @@ git commit -m "feat(hush-py): add optional PyO3 native bindings scaffold"
 
 **Step 1: Run full test suite**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && python -m pytest tests/ -v --cov=hush --cov-report=term-missing`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && python -m pytest tests/ -v --cov=hush --cov-report=term-missing`
 Expected: All tests pass, 80%+ coverage
 
 **Step 2: Test pip install**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws9-python/packages/hush-py && pip install -e .`
+Run: `cd /Users/connor/Medica/clawdstrike-ws9-python/packages/hush-py && pip install -e .`
 Expected: Install succeeds
 
 **Step 3: Test import**

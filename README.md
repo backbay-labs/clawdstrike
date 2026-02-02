@@ -1,35 +1,69 @@
-# Hushclaw
+<p align="center">
+  <img src=".github/assets/clawdstrike-hero.png" alt="Clawdstrike" width="900" />
+</p>
 
-Security guards and attestation primitives for AI agent execution.
+<p align="center">
+  <em>
+    The claw strikes back.<br/>
+    At the boundary between intent and action,<br/>
+    it watches what leaves, what changes, what leaks.<br/>
+    If the rules drift, it fails closed.<br/>
+    If the story changes, the receipt won’t sign.
+  </em>
+</p>
+
+---
+
+<h1 align="center">Clawdstrike</h1>
+
+<p align="center">
+  Security guards and attestation primitives for OpenClaw agents.
+</p>
+
+<p align="center">
+  🔒 Tool-boundary enforcement • 🧾 Signed receipts • 🧩 OpenClaw plugin
+</p>
+
+<p align="center">
+  <a href="docs/src/getting-started/quick-start.md">Docs</a> •
+  <a href="packages/clawdstrike-openclaw/docs/getting-started.md">OpenClaw integration</a> •
+  <a href="examples">Examples</a>
+</p>
 
 ## Overview
 
-Hushclaw provides runtime security enforcement for AI agents, including:
+Clawdstrike provides runtime security enforcement for OpenClaw agents, including:
 
-- **Security Guards** - Composable checks for file access, network egress, secret detection, patch validation, and tool invocation
-- **Policy Engine** - YAML-based configuration for guard behavior
-- **Cryptographic Attestation** - Ed25519 signing, Merkle trees, and receipt generation for verifiable execution
-- **Pre-configured Rulesets** - Ready-to-use security profiles for different environments
+- 🔒 **Security Guards** - Composable checks for file access, network egress, secret detection, patch validation, and tool invocation
+- 🧩 **Policy Engine** - YAML-based configuration for guard behavior
+- 🧾 **Cryptographic Attestation** - Ed25519 signing, Merkle trees, and receipt generation for verifiable execution
+- 🧰 **Pre-configured Rulesets** - Ready-to-use security profiles for different environments
+
+### OpenClaw Integration
+
+Clawdstrike ships an OpenClaw plugin in `packages/clawdstrike-openclaw` (published as `@clawdstrike/openclaw`). For setup and policy schema details, see `packages/clawdstrike-openclaw/docs/getting-started.md`.
 
 ## Threat model & limitations (explicit)
 
-Hushclaw enforces policy at the **agent/tool boundary**. It is not an OS sandbox and does not intercept syscalls.
+Clawdstrike enforces policy at the **agent/tool boundary**. It is **_NOT_** an OS sandbox and does **_NOT_** intercept syscalls.
+
+The purpose of Clawdstrike is to provide a solid and reliable foundation of tooling for developers building EDR apps and security infrastructure on top of OpenClaw—and to integrate cleanly into existing agent stacks and sandboxes.
 
 - **Enforced**: what your runtime blocks/permits based on `GuardResult` from `HushEngine::check_*`.
 - **Attested**: what is recorded in `Receipt`/`SignedReceipt` (verdict + provenance such as policy hash and violations).
 
-If an agent can bypass your tool layer and access the filesystem/network directly, Hushclaw cannot prevent it.
+If an agent can bypass your tool layer and access the filesystem/network directly, Clawdstrike cannot prevent it.
 
 ## Crates
 
-| Crate | Description |
-|-------|-------------|
-| `hush-core` | Cryptographic primitives (Ed25519, SHA-256, Keccak-256, Merkle trees, receipts) |
-| `hush-proxy` | Network proxy utilities (DNS/SNI extraction, domain policy) |
-| `hush-wasm` | WebAssembly bindings for browser/Node.js verification |
-| `hushclaw` | Security guards and policy engine |
-| `hush-cli` | Command-line interface |
-| `hushd` | Security daemon (WIP) |
+| Crate         | Description                                                                     |
+| ------------- | ------------------------------------------------------------------------------- |
+| `hush-core`   | Cryptographic primitives (Ed25519, SHA-256, Keccak-256, Merkle trees, receipts) |
+| `hush-proxy`  | Network proxy utilities (DNS/SNI extraction, domain policy)                     |
+| `hush-wasm`   | WebAssembly bindings for browser/Node.js verification                           |
+| `clawdstrike` | Security guards and policy engine                                               |
+| `hush-cli`    | Command-line interface                                                          |
+| `hushd`       | Security daemon (WIP)                                                           |
 
 ## Quick Start
 
@@ -91,7 +125,7 @@ hush policy show strict
 ### Using as a Library
 
 ```rust
-use hushclaw::{HushEngine, GuardContext};
+use clawdstrike::{HushEngine, GuardContext};
 
 #[tokio::main]
 async fn main() {
@@ -196,32 +230,32 @@ guards:
 
 Pre-configured security profiles in `rulesets/`:
 
-| Ruleset | Description |
-|---------|-------------|
-| `default` | Balanced security for general use |
-| `strict` | Maximum security with minimal permissions |
-| `ai-agent` | Optimized for AI coding assistants |
-| `cicd` | Designed for CI/CD pipeline environments |
+| Ruleset    | Description                               |
+| ---------- | ----------------------------------------- |
+| `default`  | Balanced security for general use         |
+| `strict`   | Maximum security with minimal permissions |
+| `ai-agent` | Optimized for AI coding assistants        |
+| `cicd`     | Designed for CI/CD pipeline environments  |
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    HushEngine                        │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-│  │ ForbiddenPath│  │   Egress   │  │ SecretLeak  │ │
-│  │    Guard     │  │  Allowlist │  │   Guard     │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘ │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-│  │   Patch     │  │  MCP Tool   │  │  Prompt     │ │
-│  │ Integrity   │  │   Guard     │  │ Injection   │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘ │
-├─────────────────────────────────────────────────────┤
-│                 Policy (YAML)                       │
-├─────────────────────────────────────────────────────┤
-│               Receipt Signing                       │
-│  Ed25519 │ SHA-256/Keccak │ Merkle │ Canonical JSON │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                               HushEngine                                │
+│  ┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐  │
+│  │   ForbiddenPath   │   │      Egress       │   │    SecretLeak     │  │
+│  │       Guard       │   │     Allowlist     │   │       Guard       │  │
+│  └───────────────────┘   └───────────────────┘   └───────────────────┘  │
+│  ┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐  │
+│  │  Patch Integrity  │   │     MCP Tool      │   │      Prompt       │  │
+│  │       Guard       │   │       Guard       │   │     Injection     │  │
+│  └───────────────────┘   └───────────────────┘   └───────────────────┘  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                              Policy (YAML)                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                             Receipt Signing                             │
+│        Ed25519 │ SHA-256/Keccak │ Merkle │ Canonical JSON (JCS)         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Development

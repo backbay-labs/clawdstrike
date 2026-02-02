@@ -10,7 +10,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use hushclaw::guards::GuardResult;
+use clawdstrike::guards::GuardResult;
 
 /// Error type for audit operations
 #[derive(Debug, thiserror::Error)]

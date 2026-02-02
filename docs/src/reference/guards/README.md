@@ -1,6 +1,6 @@
 # Guards Reference
 
-Hushclaw ships with five built-in guards. Guards evaluate a `GuardAction` plus `GuardContext` and return a `GuardResult`.
+Clawdstrike ships with five built-in guards. Guards evaluate a `GuardAction` plus `GuardContext` and return a `GuardResult`.
 
 ## Built-in guards
 

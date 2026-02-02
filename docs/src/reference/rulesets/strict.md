@@ -1,6 +1,6 @@
 # Strict
 
-**Ruleset ID:** `strict` (also accepted as `hushclaw:strict`)
+**Ruleset ID:** `strict` (also accepted as `clawdstrike:strict`)
 
 **Source:** `rulesets/strict.yaml`
 

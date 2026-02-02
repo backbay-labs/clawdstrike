@@ -27,7 +27,7 @@ Guards operate on `GuardAction`:
 
 ## Built-in guards
 
-Hushclaw ships with:
+Clawdstrike ships with:
 
 - `ForbiddenPathGuard`
 - `EgressAllowlistGuard`

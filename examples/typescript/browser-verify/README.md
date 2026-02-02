@@ -1,6 +1,6 @@
 # Browser Receipt Verification Example
 
-Demonstrates how to verify hushclaw **SignedReceipts** in a web browser using the TypeScript SDK (pure JS crypto).
+Demonstrates how to verify clawdstrike **SignedReceipts** in a web browser using the TypeScript SDK (pure JS crypto).
 
 ## What It Does
 
@@ -12,7 +12,7 @@ Demonstrates how to verify hushclaw **SignedReceipts** in a web browser using th
 ## Prerequisites
 
 - Node.js 18+
-- A hushclaw receipt file (`.json`)
+- A clawdstrike receipt file (`.json`)
 
 ## Setup
 
@@ -34,10 +34,10 @@ Open http://localhost:5173 in your browser.
 
 ## How It Works
 
-The example uses the `@hushclaw/sdk` package:
+The example uses the `@clawdstrike/sdk` package:
 
 ```typescript
-import { SignedReceipt } from '@hushclaw/sdk';
+import { SignedReceipt } from '@clawdstrike/sdk';
 
 const signed = SignedReceipt.fromJSON(jsonText);
 const result = await signed.verify({ signer: signerPublicKeyHex });

@@ -2,7 +2,7 @@
 
 //! WebAssembly bindings for hush-core cryptographic primitives
 //!
-//! This crate provides browser-side verification of hushclaw attestations.
+//! This crate provides browser-side verification of clawdstrike attestations.
 
 use hush_core::{
     keccak256, receipt::PublicKeySet, sha256, Hash, MerkleProof, MerkleTree, PublicKey, Receipt,

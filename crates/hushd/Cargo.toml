@@ -1,13 +1,13 @@
 [package]
 name = "hushd"
-description = "Hushclaw daemon for runtime security enforcement"
+description = "Clawdstrike daemon for runtime security enforcement"
 publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["security", "daemon", "enforcement", "hushclaw"]
+keywords = ["security", "daemon", "enforcement", "clawdstrike"]
 categories = ["command-line-utilities", "authentication"]
 readme = "../../README.md"
 
@@ -22,7 +22,7 @@ path = "src/main.rs"
 [dependencies]
 hush-core.workspace = true
 hush-proxy.workspace = true
-hushclaw.workspace = true
+clawdstrike.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true

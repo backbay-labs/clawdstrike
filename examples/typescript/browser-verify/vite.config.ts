@@ -5,6 +5,6 @@ export default defineConfig({
     target: 'esnext',
   },
   optimizeDeps: {
-    exclude: ['@hushclaw/sdk'],
+    exclude: ['@clawdstrike/sdk'],
   },
 });

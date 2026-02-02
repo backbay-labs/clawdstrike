@@ -4,11 +4,11 @@ Policies can inherit from a base policy using `extends`. The base can be a built
 
 ## Built-in rulesets
 
-- `hushclaw:default`
-- `hushclaw:ai-agent`
-- `hushclaw:strict`
-- `hushclaw:cicd`
-- `hushclaw:permissive`
+- `clawdstrike:default`
+- `clawdstrike:ai-agent`
+- `clawdstrike:strict`
+- `clawdstrike:cicd`
+- `clawdstrike:permissive`
 
 List them via:
 
@@ -21,7 +21,7 @@ hush policy list
 ```yaml
 version: "1.0.0"
 name: My Policy
-extends: hushclaw:default
+extends: clawdstrike:default
 ```
 
 ## Extend a file
@@ -49,7 +49,7 @@ merge_strategy: deep_merge # default
 In `deep_merge`, egress config supports additive edits:
 
 ```yaml
-extends: hushclaw:default
+extends: clawdstrike:default
 
 guards:
   egress_allowlist:
@@ -62,7 +62,7 @@ guards:
 ## Add/remove forbidden paths
 
 ```yaml
-extends: hushclaw:default
+extends: clawdstrike:default
 
 guards:
   forbidden_path:

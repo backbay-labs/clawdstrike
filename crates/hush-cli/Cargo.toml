@@ -1,12 +1,12 @@
 [package]
 name = "hush-cli"
-description = "Command-line interface for hushclaw"
+description = "Command-line interface for clawdstrike"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["security", "cli", "verification", "hushclaw"]
+keywords = ["security", "cli", "verification", "clawdstrike"]
 categories = ["command-line-utilities", "authentication"]
 readme = "../../README.md"
 
@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 hush-core.workspace = true
-hushclaw.workspace = true
+clawdstrike.workspace = true
 clap.workspace = true
 clap_complete = "4.4"
 tokio.workspace = true

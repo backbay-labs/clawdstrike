@@ -36,5 +36,5 @@ Start from the built-in `cicd` ruleset:
 ```yaml
 version: "1.0.0"
 name: CI Policy
-extends: hushclaw:cicd
+extends: clawdstrike:cicd
 ```

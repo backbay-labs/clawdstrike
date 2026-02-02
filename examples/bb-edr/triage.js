@@ -63,7 +63,7 @@ async function main() {
 
   const canWriteReport = await checkPolicy(config, 'file_write', reportPath);
   if (canWriteReport.denied) {
-    console.error(`[hushclaw] DENY: file_write ${JSON.stringify(reportPath)} (${canWriteReport.guard}) - ${canWriteReport.reason}`);
+    console.error(`[clawdstrike] DENY: file_write ${JSON.stringify(reportPath)} (${canWriteReport.guard}) - ${canWriteReport.reason}`);
     process.exit(1);
   }
 
@@ -121,11 +121,11 @@ async function main() {
       fs.writeFileSync(blocklistPath, [...deniedHosts].sort().join('\n') + '\n', 'utf8');
       console.log(`Wrote blocklist: ${blocklistPath}`);
     } else {
-      console.log(`[hushclaw] DENY: file_write ${JSON.stringify(blocklistPath)} (${canWriteBlocklist.guard}) - ${canWriteBlocklist.reason}`);
+      console.log(`[clawdstrike] DENY: file_write ${JSON.stringify(blocklistPath)} (${canWriteBlocklist.guard}) - ${canWriteBlocklist.reason}`);
     }
   }
 
-  console.log('\nTry: npx hushclaw audit query --denied');
+  console.log('\nTry: npx clawdstrike audit query --denied');
 }
 
 main().catch((err) => {

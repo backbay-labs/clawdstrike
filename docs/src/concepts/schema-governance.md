@@ -1,6 +1,6 @@
 # Schema Governance
 
-Hushclaw is a multi-language repo (Rust crates + TypeScript/Python SDKs + an OpenClaw plugin). To avoid “looks right but silently ignored” security failures, we treat **schemas as compatibility boundaries**:
+Clawdstrike is a multi-language repo (Rust crates + TypeScript/Python SDKs + an OpenClaw plugin). To avoid “looks right but silently ignored” security failures, we treat **schemas as compatibility boundaries**:
 
 - **Unknown fields are rejected** (fail-closed) where parsing is security-critical.
 - **Versions are validated** and unsupported versions are rejected.
@@ -10,8 +10,8 @@ Hushclaw is a multi-language repo (Rust crates + TypeScript/Python SDKs + an Ope
 
 | Schema | Used by | Version field | File format | Notes |
 |---|---|---|---|---|
-| Rust **policy** schema | `hushclaw` engine + `hush` CLI + `hushd` | `policy.version` (`"1.0.0"`) | YAML | Parsed with strict semver + unknown-field rejection. |
-| OpenClaw **policy** schema | `@hushclaw/openclaw` | `policy.version` (`"hushclaw-v1.0"`) | YAML | **Not** the same as Rust policy schema; smaller surface and OpenClaw-shaped. Strict validation + unknown-field rejection. |
+| Rust **policy** schema | `clawdstrike` engine + `hush` CLI + `hushd` | `policy.version` (`"1.0.0"`) | YAML | Parsed with strict semver + unknown-field rejection. |
+| OpenClaw **policy** schema | `@clawdstrike/openclaw` | `policy.version` (`"clawdstrike-v1.0"`) | YAML | **Not** the same as Rust policy schema; smaller surface and OpenClaw-shaped. Strict validation + unknown-field rejection. |
 | **Receipt** schema | `hush-core` + SDKs | `receipt.version` (`"1.0.0"`) | JSON | Signed receipts use canonical JSON (RFC 8785 / JCS). |
 
 ## Rust vs OpenClaw policy compatibility (important)

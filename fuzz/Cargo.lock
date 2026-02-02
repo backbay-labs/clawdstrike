@@ -122,6 +122,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "clawdstrike"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "glob",
+ "globset",
+ "hush-core",
+ "hush-proxy",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -348,9 +368,9 @@ name = "hush-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",
+ "clawdstrike",
  "hush-core",
  "hush-proxy",
- "hushclaw",
  "libfuzzer-sys",
 ]
 
@@ -361,26 +381,6 @@ dependencies = [
  "globset",
  "serde",
  "thiserror",
-]
-
-[[package]]
-name = "hushclaw"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "glob",
- "globset",
- "hush-core",
- "hush-proxy",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]

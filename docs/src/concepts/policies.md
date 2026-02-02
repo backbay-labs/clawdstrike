@@ -1,6 +1,6 @@
 # Policies
 
-Policies are YAML files parsed into `hushclaw::Policy`. They configure the built-in guards and engine settings.
+Policies are YAML files parsed into `clawdstrike::Policy`. They configure the built-in guards and engine settings.
 
 ## Structure
 
@@ -11,7 +11,7 @@ version: "1.0.0"
 name: Example
 description: Optional
 
-extends: hushclaw:default     # optional
+extends: clawdstrike:default     # optional
 merge_strategy: deep_merge    # optional (default)
 
 guards:                       # optional (defaults apply if omitted)
@@ -33,7 +33,7 @@ See the [Policy Schema](../reference/policy-schema.md) for exact fields.
 
 `extends` supports:
 
-- built-in rulesets (`hushclaw:default`, `hushclaw:strict`, …)
+- built-in rulesets (`clawdstrike:default`, `clawdstrike:strict`, …)
 - local files (relative to the policy file)
 
 ## Merge strategy

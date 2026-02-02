@@ -13,7 +13,7 @@
 ## Task 1: Add clap_complete Dependency
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/Cargo.toml`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/Cargo.toml`
 
 **Step 1: Add clap_complete to dependencies**
 
@@ -22,7 +22,7 @@ Edit `crates/hush-cli/Cargo.toml` to add clap_complete:
 ```toml
 [dependencies]
 hush-core.workspace = true
-hushclaw.workspace = true
+clawdstrike.workspace = true
 clap.workspace = true
 clap_complete = "4.4"
 tokio.workspace = true
@@ -35,7 +35,7 @@ reqwest = { workspace = true, features = ["blocking"] }
 
 **Step 2: Verify compilation**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo check -p hush-cli`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo check -p hush-cli`
 Expected: Compiles without errors
 
 **Step 3: Commit**
@@ -50,7 +50,7 @@ git commit -m "chore(hush-cli): add clap_complete dependency for shell completio
 ## Task 2: Add Completions Subcommand to CLI
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/main.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/main.rs`
 
 **Step 1: Add the Completions variant to Commands enum**
 
@@ -133,12 +133,12 @@ Find the main match statement and add before the closing `Ok(())`:
 
 **Step 4: Verify compilation**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo check -p hush-cli`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo check -p hush-cli`
 Expected: Compiles without errors
 
 **Step 5: Test completions output**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo run -p hush-cli -- completions bash | head -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo run -p hush-cli -- completions bash | head -20`
 Expected: Bash completion script output starting with `_hush()`
 
 **Step 6: Commit**
@@ -153,8 +153,8 @@ git commit -m "feat(hush-cli): add completions subcommand for shell completion g
 ## Task 3: Create Test Module Structure
 
 **Files:**
-- Create: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/tests.rs`
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/main.rs`
+- Create: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/tests.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/main.rs`
 
 **Step 1: Create tests.rs with module structure**
 
@@ -196,7 +196,7 @@ mod tests;
 
 **Step 3: Verify compilation**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli --no-run`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli --no-run`
 Expected: Compiles without errors
 
 **Step 4: Commit**
@@ -211,7 +211,7 @@ git commit -m "test(hush-cli): add test module structure"
 ## Task 4: Test Check Command Parsing
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/tests.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/tests.rs`
 
 **Step 1: Write failing test for Check command**
 
@@ -306,7 +306,7 @@ mod completions {
 
 **Step 2: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
 Expected: All 3 tests pass
 
 **Step 3: Commit**
@@ -321,7 +321,7 @@ git commit -m "test(hush-cli): add Check command parsing tests"
 ## Task 5: Test Verify and Keygen Commands
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/tests.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/tests.rs`
 
 **Step 1: Add tests for Verify and Keygen**
 
@@ -379,7 +379,7 @@ Add these tests inside the `cli_parsing` module (after the existing tests):
 
 **Step 2: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
 Expected: All 6 tests pass
 
 **Step 3: Commit**
@@ -394,7 +394,7 @@ git commit -m "test(hush-cli): add Verify and Keygen command parsing tests"
 ## Task 6: Test Policy Subcommands
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/tests.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/tests.rs`
 
 **Step 1: Add tests for Policy subcommands**
 
@@ -469,7 +469,7 @@ Then add the tests:
 
 **Step 2: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
 Expected: All 10 tests pass
 
 **Step 3: Commit**
@@ -484,7 +484,7 @@ git commit -m "test(hush-cli): add Policy subcommand parsing tests"
 ## Task 7: Test Daemon Subcommands
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/tests.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/tests.rs`
 
 **Step 1: Add tests for Daemon subcommands**
 
@@ -579,7 +579,7 @@ Add these tests:
 
 **Step 2: Run tests to verify they pass**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
 Expected: All 14 tests pass
 
 **Step 3: Commit**
@@ -594,7 +594,7 @@ git commit -m "test(hush-cli): add Daemon subcommand parsing tests"
 ## Task 8: Test Completions Command and Error Cases
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/tests.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/tests.rs`
 
 **Step 1: Add tests for Completions and error handling**
 
@@ -668,7 +668,7 @@ Add these tests to the `cli_parsing` module:
 
 **Step 2: Run all tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli cli_parsing -- --nocapture`
 Expected: All 21 tests pass
 
 **Step 3: Commit**
@@ -683,7 +683,7 @@ git commit -m "test(hush-cli): add Completions and error handling tests"
 ## Task 9: Test Shell Completion Generation
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/crates/hush-cli/src/tests.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/crates/hush-cli/src/tests.rs`
 
 **Step 1: Add completion generation tests**
 
@@ -734,7 +734,7 @@ mod completions {
 
 **Step 2: Run completion tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli completions -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli completions -- --nocapture`
 Expected: All 3 tests pass
 
 **Step 3: Commit**
@@ -749,7 +749,7 @@ git commit -m "test(hush-cli): add shell completion generation tests"
 ## Task 10: Update CLI Documentation
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/docs/src/reference/api/cli.md`
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/docs/src/reference/api/cli.md`
 
 **Step 1: Update shell completion section**
 
@@ -805,7 +805,7 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`, `elvish`
 
 **Step 2: Verify markdown renders correctly**
 
-Run: `head -50 /Users/connor/Medica/hushclaw-ws11-cli-polish/docs/src/reference/api/cli.md && tail -30 /Users/connor/Medica/hushclaw-ws11-cli-polish/docs/src/reference/api/cli.md`
+Run: `head -50 /Users/connor/Medica/clawdstrike-ws11-cli-polish/docs/src/reference/api/cli.md && tail -30 /Users/connor/Medica/clawdstrike-ws11-cli-polish/docs/src/reference/api/cli.md`
 Expected: Clean markdown without syntax errors
 
 **Step 3: Commit**
@@ -820,7 +820,7 @@ git commit -m "docs(cli): update shell completions documentation"
 ## Task 11: Verify Homebrew Formula
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws11-cli-polish/HomebrewFormula/hush.rb` (if needed)
+- Modify: `/Users/connor/Medica/clawdstrike-ws11-cli-polish/HomebrewFormula/hush.rb` (if needed)
 
 **Step 1: Verify formula already has completions**
 
@@ -833,15 +833,15 @@ This is correct - Homebrew's `generate_completions_from_executable` will call `h
 
 **Step 2: Run all tests one final time**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli -- --nocapture`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli -- --nocapture`
 Expected: All 24 tests pass (21 parsing + 3 completions)
 
 **Step 3: Verify completions work manually**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo run -p hush-cli -- completions zsh | head -5`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo run -p hush-cli -- completions zsh | head -5`
 Expected: Zsh completion script output
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo run -p hush-cli -- completions fish | head -5`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo run -p hush-cli -- completions fish | head -5`
 Expected: Fish completion script output
 
 **Step 4: No commit needed if formula unchanged**
@@ -852,20 +852,20 @@ Expected: Fish completion script output
 
 **Step 1: Run full test suite**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo test -p hush-cli 2>&1`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo test -p hush-cli 2>&1`
 Expected: 24+ tests pass
 
 **Step 2: Verify help text for all commands**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo run -p hush-cli -- --help`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo run -p hush-cli -- --help`
 Expected: Help text shows all commands including `completions`
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo run -p hush-cli -- completions --help`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo run -p hush-cli -- completions --help`
 Expected: Help text explains shell argument
 
 **Step 3: Run clippy**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws11-cli-polish && cargo clippy -p hush-cli -- -D warnings 2>&1 | tail -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws11-cli-polish && cargo clippy -p hush-cli -- -D warnings 2>&1 | tail -20`
 Expected: No warnings (or only pre-existing ones from workspace)
 
 **Step 4: Create summary commit (if any uncommitted changes)**

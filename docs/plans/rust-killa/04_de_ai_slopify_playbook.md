@@ -1,4 +1,4 @@
-# De-AI-Slopify Playbook for Hushclaw (v3)
+# De-AI-Slopify Playbook for Clawdstrike (v3)
 
 This playbook is a *process document*: how to turn this repo into something that feels “Tokio/Serde-grade” in discipline,
 without turning it into a complicated framework.
@@ -20,7 +20,7 @@ Constraints:
 ## 1) Phase 0: Decide “contract vs roadmap” and stop doc drift
 
 ### 1.1 Identify the competing contracts
-- Contract A (current code): policy schema in `crates/hushclaw/src/policy.rs` and rulesets in `rulesets/*.yaml`.
+- Contract A (current code): policy schema in `crates/clawdstrike/src/policy.rs` and rulesets in `rulesets/*.yaml`.
 - Contract B (docs): mdBook schema in `docs/src/reference/policy-schema.md` with `extends`, `egress/filesystem/execution/tools`, `on_violation`.
 
 You cannot have both be true at the same time. Pick one.
@@ -105,7 +105,7 @@ This is where “elite Rust” matters most: spec correctness is security correc
 ### 5.3 Key material hygiene
 - Decide threat model: if in-scope, consider `zeroize` for private key material or avoid `Clone` on secret-bearing structs.
 
-## 6) Phase 5: Guard-specific de-slopify checklists (hushclaw)
+## 6) Phase 5: Guard-specific de-slopify checklists (clawdstrike)
 
 ### 6.1 ForbiddenPathGuard
 - Make glob compilation errors visible (validation report).
@@ -170,7 +170,7 @@ This is where “elite Rust” matters most: spec correctness is security correc
 4) Add a CLI command to print errors in a stable format.
 
 ### Recipe C: Add GuardReport and keep per-guard evidence
-1) Add new type `GuardReport` in `crates/hushclaw/src/guards/mod.rs` or `engine.rs`.
+1) Add new type `GuardReport` in `crates/clawdstrike/src/guards/mod.rs` or `engine.rs`.
 2) Update engine to collect per-guard results.
 3) Define overall semantics (blocked/warn/allow).
 4) Update CLI to display report when verbose.
@@ -215,7 +215,7 @@ This is where “elite Rust” matters most: spec correctness is security correc
   - align docs and rule examples to actual semantics
   - normalize domains consistently (lowercase, strip trailing dot) and test it
 
-### B.3 `crates/hushclaw` (policy + engine + guards)
+### B.3 `crates/clawdstrike` (policy + engine + guards)
 
 - Fix policy schema confusion:
   - current Rust Policy (guards/settings) does not match mdBook/OpenClaw policy schema
@@ -256,7 +256,7 @@ This is where “elite Rust” matters most: spec correctness is security correc
 Your repo contains multiple implementations/schemas:
 - Rust receipt schema (hush-core)
 - Python receipt schema (packages/hush-py)
-- OpenClaw policy schema (packages/hushclaw-openclaw)
+- OpenClaw policy schema (packages/clawdstrike-openclaw)
 - mdBook policy schema (docs)
 
 De-slopify goal:
@@ -290,7 +290,7 @@ Treat this mapping as a security boundary: it must be tested with fixtures.
 
 Terminology:
 - S1 = mdBook/OpenClaw schema (egress/filesystem/execution/tools/... + on_violation + extends)
-- S2 = Rust `Policy` schema implemented in `crates/hushclaw/src/policy.rs` (guards + settings)
+- S2 = Rust `Policy` schema implemented in `crates/clawdstrike/src/policy.rs` (guards + settings)
 
 ### E.1 High-level mapping
 - `egress.allowed_domains` -> `guards.egress_allowlist.allow`
@@ -307,7 +307,7 @@ Terminology:
 
 | S1 field | Meaning | S2 target | Notes/gaps |
 |---|---|---|---|
-| `version` | schema id (e.g., hushclaw-v1.0) | `Policy.version` | S2 currently uses semantic-looking version; decide meaning. |
+| `version` | schema id (e.g., clawdstrike-v1.0) | `Policy.version` | S2 currently uses semantic-looking version; decide meaning. |
 | `extends` | base policy id or URI | (new loader layer) | S2 has no extends; translation requires a loader/merge stage. |
 | `egress.mode` | allowlist/denylist/open | `EgressAllowlistConfig.default_action` | S2 only has allow/block default; may need richer enum. |
 | `egress.allowed_domains` | allowed host patterns | `EgressAllowlistConfig.allow` | Ensure wildcard semantics match. |
@@ -373,8 +373,8 @@ pub struct PolicyFieldError {
 ```
 
 Implementation steps:
-1) Add these types in `crates/hushclaw/src/error.rs` (or a new `validation.rs`).
-2) Implement `Policy::validate()` in `crates/hushclaw/src/policy.rs`:
+1) Add these types in `crates/clawdstrike/src/error.rs` (or a new `validation.rs`).
+2) Implement `Policy::validate()` in `crates/clawdstrike/src/policy.rs`:
    - for each guard config present, compile patterns
    - on error, push a `PolicyFieldError` with a path like `guards.secret_leak.patterns[3].pattern`
 3) Return `Err(PolicyValidationError(errors))` if any errors exist.

@@ -1,8 +1,8 @@
-# Example hushclaw policy for hushd (Docker Compose)
+# Example clawdstrike policy for hushd (Docker Compose)
 version: "1.0.0"
 name: "docker-compose-example"
 description: "Minimal hushd policy for local Docker Compose testing"
-extends: hushclaw:strict
+extends: clawdstrike:strict
 merge_strategy: deep_merge
 
 guards:

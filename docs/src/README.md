@@ -1,9 +1,9 @@
-# Hushclaw
+# Clawdstrike
 
-Hushclaw is a Rust library + CLI for **policy-driven security checks** in agent runtimes.
+Clawdstrike is a Rust library + CLI for **policy-driven security checks** in agent runtimes.
 It evaluates actions (filesystem, network egress, patches, and MCP tool calls) against a YAML policy and returns an allow / warn / block result.
 
-This book is a **contract for what is implemented in this repository** (Hushclaw `0.1.0`).
+This book is a **contract for what is implemented in this repository** (Clawdstrike `0.1.0`).
 If you are looking for a full process wrapper / sandbox (`hush run`), that is not shipped in the current Rust codebase—see `docs/plans/` for roadmap work.
 
 ## Quick Start (CLI)
@@ -30,7 +30,7 @@ They can inherit from a built-in ruleset or another file via `extends`.
 ```yaml
 version: "1.0.0"
 name: My Policy
-extends: hushclaw:default
+extends: clawdstrike:default
 
 guards:
   egress_allowlist:

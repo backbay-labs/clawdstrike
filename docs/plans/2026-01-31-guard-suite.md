@@ -1,8 +1,8 @@
-# Hushclaw Guard Suite Implementation Plan
+# Clawdstrike Guard Suite Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Implement 5 production-ready security guards with comprehensive pattern matching, a guard registry, and full test coverage for the hushclaw security library.
+**Goal:** Implement 5 production-ready security guards with comprehensive pattern matching, a guard registry, and full test coverage for the clawdstrike security library.
 
 **Architecture:** Guards are modular policy enforcement units that check execution events against configured security policies. Each guard implements a common `Guard` trait with async `check()` method. The `GuardRegistry` dispatches events to all enabled guards and returns deny/allow decisions. Patterns are ported from aegis-daemon with enhancements.
 
@@ -14,8 +14,8 @@
 
 Before starting, ensure:
 - Rust 1.85+ installed (`mise current` shows rust 1.85.1)
-- Working in `/Users/connor/Medica/hushclaw-ws3-guards`
-- On branch `hushclaw/ws3-guards`
+- Working in `/Users/connor/Medica/clawdstrike-ws3-guards`
+- On branch `clawdstrike/ws3-guards`
 
 ---
 
@@ -23,8 +23,8 @@ Before starting, ensure:
 
 **Files:**
 - Create: `Cargo.toml` (workspace root)
-- Create: `crates/hushclaw/Cargo.toml`
-- Create: `crates/hushclaw/src/lib.rs`
+- Create: `crates/clawdstrike/Cargo.toml`
+- Create: `crates/clawdstrike/src/lib.rs`
 
 **Step 1: Create workspace root Cargo.toml**
 
@@ -37,7 +37,7 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/anthropics/hushclaw"
+repository = "https://github.com/anthropics/clawdstrike"
 
 [workspace.dependencies]
 async-trait = "0.1"
@@ -53,11 +53,11 @@ tracing = "0.1"
 uuid = { version = "1.7", features = ["v4"] }
 ```
 
-**Step 2: Create hushclaw crate Cargo.toml**
+**Step 2: Create clawdstrike crate Cargo.toml**
 
 ```toml
 [package]
-name = "hushclaw"
+name = "clawdstrike"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -83,7 +83,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 **Step 3: Create lib.rs with module stubs**
 
 ```rust
-//! Hushclaw - Security policy enforcement guards for AI agent runtimes
+//! Clawdstrike - Security policy enforcement guards for AI agent runtimes
 //!
 //! This crate provides modular security guards that check execution events
 //! against configured security policies.
@@ -101,7 +101,7 @@ pub use policy::Policy;
 
 **Step 4: Verify workspace builds**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo check 2>&1 | head -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo check 2>&1 | head -20`
 Expected: Compilation errors about missing modules (expected at this stage)
 
 **Step 5: Commit**
@@ -116,20 +116,20 @@ git commit -m "chore: initialize cargo workspace structure"
 ## Task 2: Implement Error Types
 
 **Files:**
-- Create: `crates/hushclaw/src/error.rs`
+- Create: `crates/clawdstrike/src/error.rs`
 
 **Step 1: Write error module**
 
 ```rust
-//! Error types for hushclaw guards
+//! Error types for clawdstrike guards
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Result type alias using hushclaw Error
+/// Result type alias using clawdstrike Error
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Hushclaw error types
+/// Clawdstrike error types
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Policy violation: {reason}")]
@@ -215,13 +215,13 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw error 2>&1 | tail -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike error 2>&1 | tail -20`
 Expected: Compilation errors (event module missing)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/error.rs
+git add crates/clawdstrike/src/error.rs
 git commit -m "feat: add error types and severity levels"
 ```
 
@@ -230,7 +230,7 @@ git commit -m "feat: add error types and severity levels"
 ## Task 3: Implement Event Types
 
 **Files:**
-- Create: `crates/hushclaw/src/event.rs`
+- Create: `crates/clawdstrike/src/event.rs`
 
 **Step 1: Write event module**
 
@@ -465,13 +465,13 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw event 2>&1 | tail -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike event 2>&1 | tail -20`
 Expected: Compilation errors (policy and guards modules missing)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/event.rs
+git add crates/clawdstrike/src/event.rs
 git commit -m "feat: add event types for guard evaluation"
 ```
 
@@ -480,7 +480,7 @@ git commit -m "feat: add event types for guard evaluation"
 ## Task 4: Implement Policy Types
 
 **Files:**
-- Create: `crates/hushclaw/src/policy.rs`
+- Create: `crates/clawdstrike/src/policy.rs`
 
 **Step 1: Write policy module**
 
@@ -520,7 +520,7 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            name: "hushclaw-default".to_string(),
+            name: "clawdstrike-default".to_string(),
             filesystem: FilesystemPolicy::default(),
             egress: EgressPolicy::default(),
             execution: ExecutionPolicy::default(),
@@ -744,13 +744,13 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw policy 2>&1 | tail -20`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike policy 2>&1 | tail -20`
 Expected: Compilation errors (guards module missing)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/policy.rs
+git add crates/clawdstrike/src/policy.rs
 git commit -m "feat: add policy configuration types"
 ```
 
@@ -759,7 +759,7 @@ git commit -m "feat: add policy configuration types"
 ## Task 5: Implement Guard Trait and Module Structure
 
 **Files:**
-- Create: `crates/hushclaw/src/guards/mod.rs`
+- Create: `crates/clawdstrike/src/guards/mod.rs`
 
 **Step 1: Write guards module with trait and registry**
 
@@ -1050,13 +1050,13 @@ mod tests {
 
 **Step 2: Verify module structure**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo check -p hushclaw 2>&1 | head -30`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo check -p clawdstrike 2>&1 | head -30`
 Expected: Errors about missing guard submodules
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/mod.rs
+git add crates/clawdstrike/src/guards/mod.rs
 git commit -m "feat: add Guard trait and GuardRegistry"
 ```
 
@@ -1065,7 +1065,7 @@ git commit -m "feat: add Guard trait and GuardRegistry"
 ## Task 6: Implement ForbiddenPathGuard
 
 **Files:**
-- Create: `crates/hushclaw/src/guards/forbidden_path.rs`
+- Create: `crates/clawdstrike/src/guards/forbidden_path.rs`
 
 **Step 1: Write the forbidden path guard**
 
@@ -1421,13 +1421,13 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw forbidden_path 2>&1 | tail -30`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike forbidden_path 2>&1 | tail -30`
 Expected: Compilation errors (other guards missing)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/forbidden_path.rs
+git add crates/clawdstrike/src/guards/forbidden_path.rs
 git commit -m "feat: add ForbiddenPathGuard with glob patterns and symlink defense"
 ```
 
@@ -1436,7 +1436,7 @@ git commit -m "feat: add ForbiddenPathGuard with glob patterns and symlink defen
 ## Task 7: Implement EgressAllowlistGuard
 
 **Files:**
-- Create: `crates/hushclaw/src/guards/egress.rs`
+- Create: `crates/clawdstrike/src/guards/egress.rs`
 
 **Step 1: Write the egress allowlist guard**
 
@@ -1807,13 +1807,13 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw egress 2>&1 | tail -30`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike egress 2>&1 | tail -30`
 Expected: Compilation errors (other guards missing)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/egress.rs
+git add crates/clawdstrike/src/guards/egress.rs
 git commit -m "feat: add EgressAllowlistGuard with CIDR and SSRF prevention"
 ```
 
@@ -1822,7 +1822,7 @@ git commit -m "feat: add EgressAllowlistGuard with CIDR and SSRF prevention"
 ## Task 8: Implement SecretLeakGuard
 
 **Files:**
-- Create: `crates/hushclaw/src/guards/secret_leak.rs`
+- Create: `crates/clawdstrike/src/guards/secret_leak.rs`
 
 **Step 1: Write the secret leak guard with 15+ patterns**
 
@@ -2271,13 +2271,13 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw secret_leak 2>&1 | tail -30`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike secret_leak 2>&1 | tail -30`
 Expected: Compilation errors (other guards missing)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/secret_leak.rs
+git add crates/clawdstrike/src/guards/secret_leak.rs
 git commit -m "feat: add SecretLeakGuard with 30+ secret patterns"
 ```
 
@@ -2286,7 +2286,7 @@ git commit -m "feat: add SecretLeakGuard with 30+ secret patterns"
 ## Task 9: Implement PatchIntegrityGuard
 
 **Files:**
-- Create: `crates/hushclaw/src/guards/patch_integrity.rs`
+- Create: `crates/clawdstrike/src/guards/patch_integrity.rs`
 
 **Step 1: Write the patch integrity guard**
 
@@ -2796,13 +2796,13 @@ mod tests {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw patch_integrity 2>&1 | tail -30`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike patch_integrity 2>&1 | tail -30`
 Expected: Compilation errors (mcp_tool guard missing)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/patch_integrity.rs
+git add crates/clawdstrike/src/guards/patch_integrity.rs
 git commit -m "feat: add PatchIntegrityGuard with 30+ dangerous patterns"
 ```
 
@@ -2811,7 +2811,7 @@ git commit -m "feat: add PatchIntegrityGuard with 30+ dangerous patterns"
 ## Task 10: Implement McpToolGuard
 
 **Files:**
-- Create: `crates/hushclaw/src/guards/mcp_tool.rs`
+- Create: `crates/clawdstrike/src/guards/mcp_tool.rs`
 
 **Step 1: Write the MCP tool guard**
 
@@ -3090,13 +3090,13 @@ mod tests {
 
 **Step 2: Run all tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw 2>&1 | tail -50`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike 2>&1 | tail -50`
 Expected: All tests pass
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/mcp_tool.rs
+git add crates/clawdstrike/src/guards/mcp_tool.rs
 git commit -m "feat: add McpToolGuard with command and tool allowlists"
 ```
 
@@ -3105,11 +3105,11 @@ git commit -m "feat: add McpToolGuard with command and tool allowlists"
 ## Task 11: Final Integration Tests
 
 **Files:**
-- Modify: `crates/hushclaw/src/guards/mod.rs` (add integration tests)
+- Modify: `crates/clawdstrike/src/guards/mod.rs` (add integration tests)
 
 **Step 1: Add integration tests to guards/mod.rs**
 
-Append these tests to the end of `crates/hushclaw/src/guards/mod.rs`:
+Append these tests to the end of `crates/clawdstrike/src/guards/mod.rs`:
 
 ```rust
 #[cfg(test)]
@@ -3283,18 +3283,18 @@ mod integration_tests {
 
 **Step 2: Run all tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw 2>&1`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike 2>&1`
 Expected: All tests pass (90+ tests)
 
 **Step 3: Run clippy and format**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo fmt && cargo clippy -p hushclaw -- -D warnings 2>&1 | tail -30`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo fmt && cargo clippy -p clawdstrike -- -D warnings 2>&1 | tail -30`
 Expected: No warnings
 
 **Step 4: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/mod.rs
+git add crates/clawdstrike/src/guards/mod.rs
 git commit -m "test: add comprehensive integration tests for guard registry"
 ```
 
@@ -3304,12 +3304,12 @@ git commit -m "test: add comprehensive integration tests for guard registry"
 
 **Step 1: Run full test suite with coverage info**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo test -p hushclaw --all-features 2>&1`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo test -p clawdstrike --all-features 2>&1`
 Expected: All tests pass
 
 **Step 2: Verify build**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws3-guards && cargo build -p hushclaw --release 2>&1 | tail -10`
+Run: `cd /Users/connor/Medica/clawdstrike-ws3-guards && cargo build -p clawdstrike --release 2>&1 | tail -10`
 Expected: Build succeeds
 
 **Step 3: Create final summary commit**

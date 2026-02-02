@@ -1,5 +1,5 @@
 /**
- * @hushclaw/sdk - TypeScript SDK for hushclaw security verification
+ * @clawdstrike/sdk - TypeScript SDK for clawdstrike security verification
  * @packageDocumentation
  */
 

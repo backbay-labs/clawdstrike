@@ -1,0 +1,70 @@
+# Clawdstrike AI Agent Standard Policy
+# Recommended for general AI-assisted development
+
+version: "clawdstrike-v1.0"
+extends: ai-agent-minimal
+
+egress:
+  mode: allowlist
+  allowed_domains:
+    # AI Provider APIs
+    - "api.anthropic.com"
+    - "api.openai.com"
+    - "generativelanguage.googleapis.com"
+    # Package Registries
+    - "pypi.org"
+    - "files.pythonhosted.org"
+    - "registry.npmjs.org"
+    - "crates.io"
+    - "static.crates.io"
+    - "rubygems.org"
+    - "pkg.go.dev"
+    - "proxy.golang.org"
+    # Source Control
+    - "github.com"
+    - "api.github.com"
+    - "*.githubusercontent.com"
+    - "gitlab.com"
+    # Documentation
+    - "docs.python.org"
+    - "developer.mozilla.org"
+    - "docs.rs"
+  denied_domains:
+    - "*.onion"
+    - "localhost"
+    - "127.*"
+    - "10.*"
+    - "192.168.*"
+    - "172.16.*"
+
+filesystem:
+  forbidden_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.gnupg"
+    - "~/.config/gcloud"
+    - "~/.kube"
+    - "~/.docker/config.json"
+    - "~/.npmrc"
+    - "~/.pypirc"
+    - "~/.netrc"
+    - "/etc/shadow"
+    - "/etc/passwd"
+    - ".env"
+    - ".env.*"
+    - "*.pem"
+    - "*.key"
+    - "**/secrets/*"
+
+execution:
+  denied_patterns:
+    - "rm -rf /"
+    - "rm -rf /*"
+    - ":(){ :|:& };:"
+    - "curl.*|.*bash"
+    - "wget.*|.*sh"
+    - "dd if="
+    - "sudo su"
+    - "chmod 777"
+
+on_violation: cancel

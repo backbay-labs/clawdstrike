@@ -23,7 +23,7 @@ export interface ViolationRef {
 }
 
 export interface Provenance {
-  hushclaw_version?: string;
+  clawdstrike_version?: string;
   provider?: string;
   policy_hash?: Hash;
   ruleset?: string;
@@ -198,7 +198,7 @@ function normalizeProvenance(input: Provenance): Provenance {
   const prov = assertObject(input, "provenance");
   assertAllowedKeys(
     prov,
-    new Set(["hushclaw_version", "provider", "policy_hash", "ruleset", "violations"]),
+    new Set(["clawdstrike_version", "provider", "policy_hash", "ruleset", "violations"]),
     "provenance"
   );
 
@@ -213,8 +213,12 @@ function normalizeProvenance(input: Provenance): Provenance {
 
   const out: Provenance = {};
 
-  const hushclawVersion = optionalString(prov, "hushclaw_version", "provenance.hushclaw_version");
-  if (hushclawVersion !== undefined) out.hushclaw_version = hushclawVersion;
+  const clawdstrikeVersion = optionalString(
+    prov,
+    "clawdstrike_version",
+    "provenance.clawdstrike_version"
+  );
+  if (clawdstrikeVersion !== undefined) out.clawdstrike_version = clawdstrikeVersion;
 
   const provider = optionalString(prov, "provider", "provenance.provider");
   if (provider !== undefined) out.provider = provider;

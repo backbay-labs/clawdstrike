@@ -13,7 +13,7 @@
 ## Task 1: Add `MergeStrategy` Enum
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/policy.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/policy.rs`
 
 **Step 1: Write the failing test**
 
@@ -44,7 +44,7 @@ merge_strategy: replace
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_merge_strategy`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_merge_strategy`
 Expected: FAIL with "cannot find value `merge_strategy`"
 
 **Step 3: Write minimal implementation**
@@ -93,13 +93,13 @@ impl Default for Policy {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_merge_strategy`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_merge_strategy`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/policy.rs
+git add crates/clawdstrike/src/policy.rs
 git commit -m "feat(policy): add MergeStrategy enum for policy inheritance"
 ```
 
@@ -108,7 +108,7 @@ git commit -m "feat(policy): add MergeStrategy enum for policy inheritance"
 ## Task 2: Add `extends` Field to Policy
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/policy.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/policy.rs`
 
 **Step 1: Write the failing test**
 
@@ -137,7 +137,7 @@ name: Test
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_extends_field`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_extends_field`
 Expected: FAIL with "cannot find value `extends`"
 
 **Step 3: Write minimal implementation**
@@ -158,13 +158,13 @@ Update `Policy::default()` to include:
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_extends_field`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_extends_field`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/policy.rs
+git add crates/clawdstrike/src/policy.rs
 git commit -m "feat(policy): add extends field for policy inheritance"
 ```
 
@@ -173,9 +173,9 @@ git commit -m "feat(policy): add extends field for policy inheritance"
 ## Task 3: Add Merge Pattern Fields to Guard Configs
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/guards/forbidden_path.rs`
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/guards/egress_allowlist.rs`
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/guards/mcp_tool.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/guards/forbidden_path.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/guards/egress_allowlist.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/guards/mcp_tool.rs`
 
 **Step 1: Write the failing test**
 
@@ -200,7 +200,7 @@ remove_patterns:
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_additional_patterns`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_additional_patterns`
 Expected: FAIL with "missing field"
 
 **Step 3: Write minimal implementation**
@@ -261,13 +261,13 @@ Similarly update `McpToolConfig` in `mcp_tool.rs`:
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_additional_patterns`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_additional_patterns`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/forbidden_path.rs crates/hushclaw/src/guards/egress_allowlist.rs crates/hushclaw/src/guards/mcp_tool.rs
+git add crates/clawdstrike/src/guards/forbidden_path.rs crates/clawdstrike/src/guards/egress_allowlist.rs crates/clawdstrike/src/guards/mcp_tool.rs
 git commit -m "feat(guards): add additional/remove pattern fields for merge support"
 ```
 
@@ -276,7 +276,7 @@ git commit -m "feat(guards): add additional/remove pattern fields for merge supp
 ## Task 4: Implement `resolve_base()` Function
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/policy.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/policy.rs`
 
 **Step 1: Write the failing test**
 
@@ -302,7 +302,7 @@ fn test_resolve_base_unknown_returns_error() {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_resolve_base`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_resolve_base`
 Expected: FAIL with "cannot find function `resolve_base`"
 
 **Step 3: Write minimal implementation**
@@ -335,13 +335,13 @@ Add to `impl Policy`:
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_resolve_base`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_resolve_base`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/policy.rs
+git add crates/clawdstrike/src/policy.rs
 git commit -m "feat(policy): add resolve_base() for policy lookup"
 ```
 
@@ -350,9 +350,9 @@ git commit -m "feat(policy): add resolve_base() for policy lookup"
 ## Task 5: Implement Guard Config Merging Helpers
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/guards/forbidden_path.rs`
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/guards/egress_allowlist.rs`
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/guards/mcp_tool.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/guards/forbidden_path.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/guards/egress_allowlist.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/guards/mcp_tool.rs`
 
 **Step 1: Write the failing test**
 
@@ -385,7 +385,7 @@ fn test_merge_patterns() {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_merge_patterns`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_merge_patterns`
 Expected: FAIL with "cannot find function `merge_with`"
 
 **Step 3: Write minimal implementation**
@@ -543,13 +543,13 @@ impl McpToolConfig {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_merge_patterns`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_merge_patterns`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/guards/forbidden_path.rs crates/hushclaw/src/guards/egress_allowlist.rs crates/hushclaw/src/guards/mcp_tool.rs
+git add crates/clawdstrike/src/guards/forbidden_path.rs crates/clawdstrike/src/guards/egress_allowlist.rs crates/clawdstrike/src/guards/mcp_tool.rs
 git commit -m "feat(guards): implement merge_with() for guard config merging"
 ```
 
@@ -558,7 +558,7 @@ git commit -m "feat(guards): implement merge_with() for guard config merging"
 ## Task 6: Implement `GuardConfigs::merge_with()`
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/policy.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/policy.rs`
 
 **Step 1: Write the failing test**
 
@@ -592,7 +592,7 @@ fn test_guard_configs_merge() {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_guard_configs_merge`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_guard_configs_merge`
 Expected: FAIL with "cannot find function `merge_with`"
 
 **Step 3: Write minimal implementation**
@@ -631,13 +631,13 @@ impl GuardConfigs {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_guard_configs_merge`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_guard_configs_merge`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/policy.rs
+git add crates/clawdstrike/src/policy.rs
 git commit -m "feat(policy): implement GuardConfigs::merge_with()"
 ```
 
@@ -646,7 +646,7 @@ git commit -m "feat(policy): implement GuardConfigs::merge_with()"
 ## Task 7: Implement `Policy::merge()`
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/policy.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/policy.rs`
 
 **Step 1: Write the failing test**
 
@@ -706,7 +706,7 @@ fn test_policy_merge_replace() {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_policy_merge`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_policy_merge`
 Expected: FAIL with "cannot find function `merge`"
 
 **Step 3: Write minimal implementation**
@@ -804,13 +804,13 @@ pub struct PolicySettings {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_policy_merge`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_policy_merge`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/policy.rs
+git add crates/clawdstrike/src/policy.rs
 git commit -m "feat(policy): implement Policy::merge() with strategy support"
 ```
 
@@ -819,7 +819,7 @@ git commit -m "feat(policy): implement Policy::merge() with strategy support"
 ## Task 8: Implement `from_yaml_file_with_extends()`
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/src/policy.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/src/policy.rs`
 
 **Step 1: Write the failing test**
 
@@ -858,7 +858,7 @@ fn test_policy_circular_extends_error() {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_policy_extends`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_policy_extends`
 Expected: FAIL with "cannot find function"
 
 **Step 3: Write minimal implementation**
@@ -939,13 +939,13 @@ use std::path::Path;
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw test_policy_extends`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike test_policy_extends`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add crates/hushclaw/src/policy.rs
+git add crates/clawdstrike/src/policy.rs
 git commit -m "feat(policy): implement from_yaml_with_extends() with cycle detection"
 ```
 
@@ -954,7 +954,7 @@ git commit -m "feat(policy): implement from_yaml_with_extends() with cycle detec
 ## Task 9: Add CLI Support for `--resolve`
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hush-cli/src/main.rs`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/hush-cli/src/main.rs`
 
 **Step 1: Write the failing test**
 
@@ -996,7 +996,7 @@ fn test_policy_show_with_merged_flag() {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hush-cli test_policy_validate_with`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p hush-cli test_policy_validate_with`
 Expected: FAIL with "missing field"
 
 **Step 3: Write minimal implementation**
@@ -1076,7 +1076,7 @@ PolicyCommands::Validate { file, resolve } => {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hush-cli test_policy_validate_with`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p hush-cli test_policy_validate_with`
 Expected: PASS
 
 **Step 5: Commit**
@@ -1091,13 +1091,13 @@ git commit -m "feat(cli): add --resolve and --merged flags to policy commands"
 ## Task 10: Create Example Policies
 
 **Files:**
-- Create: `/Users/connor/Medica/hushclaw-ws21-policy-merge/examples/policies/extend-strict.yaml`
-- Create: `/Users/connor/Medica/hushclaw-ws21-policy-merge/examples/policies/project-base.yaml`
-- Create: `/Users/connor/Medica/hushclaw-ws21-policy-merge/examples/policies/project-dev.yaml`
+- Create: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/examples/policies/extend-strict.yaml`
+- Create: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/examples/policies/project-base.yaml`
+- Create: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/examples/policies/project-dev.yaml`
 
 **Step 1: Create example directory**
 
-Run: `mkdir -p /Users/connor/Medica/hushclaw-ws21-policy-merge/examples/policies`
+Run: `mkdir -p /Users/connor/Medica/clawdstrike-ws21-policy-merge/examples/policies`
 
 **Step 2: Create extend-strict.yaml**
 
@@ -1218,14 +1218,14 @@ git commit -m "docs: add example policies demonstrating extends feature"
 ## Task 11: Write Integration Tests
 
 **Files:**
-- Create: `/Users/connor/Medica/hushclaw-ws21-policy-merge/crates/hushclaw/tests/policy_extends.rs`
+- Create: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/crates/clawdstrike/tests/policy_extends.rs`
 
 **Step 1: Create the test file**
 
 ```rust
 //! Integration tests for policy extends feature
 
-use hushclaw::{Policy, RuleSet};
+use clawdstrike::{Policy, RuleSet};
 use std::fs;
 use tempfile::TempDir;
 
@@ -1377,13 +1377,13 @@ extends: {}
 
 **Step 2: Run tests to verify**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw --test policy_extends`
+Run: `cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike --test policy_extends`
 Expected: PASS
 
 **Step 3: Commit**
 
 ```bash
-git add crates/hushclaw/tests/policy_extends.rs
+git add crates/clawdstrike/tests/policy_extends.rs
 git commit -m "test: add integration tests for policy extends feature"
 ```
 
@@ -1392,8 +1392,8 @@ git commit -m "test: add integration tests for policy extends feature"
 ## Task 12: Update Documentation
 
 **Files:**
-- Modify: `/Users/connor/Medica/hushclaw-ws21-policy-merge/docs/src/concepts/policies.md`
-- Create: `/Users/connor/Medica/hushclaw-ws21-policy-merge/docs/src/guides/policy-inheritance.md`
+- Modify: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/docs/src/concepts/policies.md`
+- Create: `/Users/connor/Medica/clawdstrike-ws21-policy-merge/docs/src/guides/policy-inheritance.md`
 
 **Step 1: Update policies.md**
 
@@ -1604,17 +1604,17 @@ After completing all tasks:
 
 1. Run all tests:
 ```bash
-cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo test -p hushclaw && cargo test -p hush-cli
+cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo test -p clawdstrike && cargo test -p hush-cli
 ```
 
 2. Run clippy:
 ```bash
-cd /Users/connor/Medica/hushclaw-ws21-policy-merge && cargo clippy -p hushclaw -p hush-cli -- -D warnings
+cd /Users/connor/Medica/clawdstrike-ws21-policy-merge && cargo clippy -p clawdstrike -p hush-cli -- -D warnings
 ```
 
 3. Test example policies manually:
 ```bash
-cd /Users/connor/Medica/hushclaw-ws21-policy-merge
+cd /Users/connor/Medica/clawdstrike-ws21-policy-merge
 cargo run -p hush-cli -- policy validate --resolve examples/policies/extend-strict.yaml
 cargo run -p hush-cli -- policy validate --resolve examples/policies/project-dev.yaml
 ```

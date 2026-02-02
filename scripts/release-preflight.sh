@@ -74,14 +74,14 @@ errors.append(check("packages/hush-py/src/hush/__init__.py __version__", match.g
 
 for pkg in [
     "packages/hush-ts/package.json",
-    "packages/hushclaw-openclaw/package.json",
+    "packages/clawdstrike-openclaw/package.json",
     "crates/hush-wasm/package.json",
 ]:
     errors.append(check(pkg, read_json(pkg).get("version")))
 
 formula = (repo_root / "HomebrewFormula/hush.rb").read_text(encoding="utf-8")
 match = re.search(
-    r'^\s*url\s+"https://github\.com/hushclaw/hushclaw/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
+    r'^\s*url\s+"https://github\.com/clawdstrike/clawdstrike/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
     formula,
     flags=re.M,
 )

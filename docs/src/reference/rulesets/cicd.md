@@ -1,6 +1,6 @@
 # CI/CD
 
-**Ruleset ID:** `cicd` (also accepted as `hushclaw:cicd`)
+**Ruleset ID:** `cicd` (also accepted as `clawdstrike:cicd`)
 
 **Source:** `rulesets/cicd.yaml`
 

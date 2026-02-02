@@ -1,0 +1,39 @@
+[package]
+name = "clawdstrike"
+description = "Security guards and policy engine for AI agent execution"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["security", "ai-agent", "policy", "clawdstrike"]
+categories = ["authentication", "command-line-utilities"]
+readme = "../../README.md"
+
+[dependencies]
+hush-core.workspace = true
+hush-proxy.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+regex.workspace = true
+glob.workspace = true
+chrono.workspace = true
+globset.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+proptest = "1.4"
+tokio-test = "0.4"
+tempfile = "3.24"
+
+[features]
+default = []
+
+[lints]
+workspace = true

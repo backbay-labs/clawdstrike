@@ -55,8 +55,8 @@ jobs:
       - name: Wait for crates.io index update
         run: sleep 30
 
-      - name: Publish hushclaw
-        run: cargo publish -p hushclaw --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish clawdstrike
+        run: cargo publish -p clawdstrike --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -81,21 +81,21 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Build @hushclaw/openclaw
-        working-directory: packages/hushclaw-openclaw
+      - name: Build @clawdstrike/openclaw
+        working-directory: packages/clawdstrike-openclaw
         run: |
           npm ci
           npm run build
 
-      - name: Publish @hushclaw/openclaw
-        working-directory: packages/hushclaw-openclaw
+      - name: Publish @clawdstrike/openclaw
+        working-directory: packages/clawdstrike-openclaw
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  # Publish @hushclaw/sdk to npm
+  # Publish @clawdstrike/sdk to npm
   publish-hush-ts:
-    name: Publish @hushclaw/sdk to npm
+    name: Publish @clawdstrike/sdk to npm
     runs-on: ubuntu-latest
     needs: preflight
     steps:
@@ -126,7 +126,7 @@ jobs:
 
   # Publish WASM package to npm
   publish-wasm:
-    name: Publish @hushclaw/wasm to npm
+    name: Publish @clawdstrike/wasm to npm
     runs-on: ubuntu-latest
     needs: [preflight]
     steps:
@@ -313,7 +313,7 @@ jobs:
         id: sha
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          URL="https://github.com/hushclaw/hushclaw/archive/refs/tags/v${VERSION}.tar.gz"
+          URL="https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${VERSION}.tar.gz"
           echo "Downloading from: $URL"
           SHA=$(curl -sL "$URL" | shasum -a 256 | cut -d' ' -f1)
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
@@ -323,7 +323,7 @@ jobs:
       - name: Update formula
         run: |
           # Update URL with new version
-          sed -i 's|url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v[^"]*"|url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' HomebrewFormula/hush.rb
+          sed -i 's|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[^"]*"|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' HomebrewFormula/hush.rb
           # Update SHA256
           sed -i 's|sha256 "[^"]*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' HomebrewFormula/hush.rb
 

@@ -45,9 +45,9 @@ updates:
       - "dependencies"
       - "rust"
 
-  # npm dependencies (@hushclaw/openclaw plugin)
+  # npm dependencies (@clawdstrike/openclaw plugin)
   - package-ecosystem: "npm"
-    directory: "/packages/hushclaw-openclaw"
+    directory: "/packages/clawdstrike-openclaw"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -112,20 +112,20 @@ Update `HomebrewFormula/hush.rb` to have clear documentation:
 
 ```ruby
 # Homebrew formula for hush CLI
-# Install: brew install hushclaw/tap/hush
+# Install: brew install clawdstrike/tap/hush
 # Or from local: brew install --build-from-source ./HomebrewFormula/hush.rb
 #
 # SHA256 is automatically updated by the release workflow.
 # To calculate SHA256 manually:
-#   curl -sL https://github.com/hushclaw/hushclaw/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256
+#   curl -sL https://github.com/backbay-labs/clawdstrike/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256
 
 class Hush < Formula
-  desc "CLI for hushclaw security verification and policy enforcement"
-  homepage "https://github.com/hushclaw/hushclaw"
-  url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v0.1.0.tar.gz"
+  desc "CLI for clawdstrike security verification and policy enforcement"
+  homepage "https://github.com/backbay-labs/clawdstrike"
+  url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "PLACEHOLDER_SHA256_WILL_BE_UPDATED_ON_RELEASE"
   license "MIT"
-  head "https://github.com/hushclaw/hushclaw.git", branch: "main"
+  head "https://github.com/backbay-labs/clawdstrike.git", branch: "main"
 
   depends_on "rust" => :build
 
@@ -167,7 +167,7 @@ Append new job to `.github/workflows/release.yml` after the `create-release` job
         id: sha
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          URL="https://github.com/hushclaw/hushclaw/archive/refs/tags/v${VERSION}.tar.gz"
+          URL="https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${VERSION}.tar.gz"
           echo "Downloading from: $URL"
           SHA=$(curl -sL "$URL" | shasum -a 256 | cut -d' ' -f1)
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
@@ -177,7 +177,7 @@ Append new job to `.github/workflows/release.yml` after the `create-release` job
       - name: Update formula
         run: |
           # Update URL with new version
-          sed -i 's|url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v[^"]*"|url "https://github.com/hushclaw/hushclaw/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' HomebrewFormula/hush.rb
+          sed -i 's|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[^"]*"|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' HomebrewFormula/hush.rb
           # Update SHA256
           sed -i 's|sha256 "[^"]*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' HomebrewFormula/hush.rb
 
@@ -557,7 +557,7 @@ mod tests {
 
 **Step 5: Run the tests**
 
-Run: `cd /Users/connor/Medica/hushclaw-ws16-devops-polish && cargo test -p hush-proxy -- --test-threads=1`
+Run: `cd /Users/connor/Medica/clawdstrike-ws16-devops-polish && cargo test -p hush-proxy -- --test-threads=1`
 Expected: All tests pass
 
 **Step 6: Commit**

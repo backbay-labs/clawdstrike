@@ -1,13 +1,13 @@
 # Policy Schema
 
-Reference for the Rust policy type `hushclaw::Policy`.
+Reference for the Rust policy type `clawdstrike::Policy`.
 
 ## Top-level fields
 
 - `version` (string): policy version (defaults to `1.0.0`)
 - `name` (string)
 - `description` (string)
-- `extends` (string, optional): a built-in ruleset id (e.g. `hushclaw:default`) or a file path
+- `extends` (string, optional): a built-in ruleset id (e.g. `clawdstrike:default`) or a file path
 - `merge_strategy` (`replace` | `merge` | `deep_merge`)
 - `guards` (object): guard configurations (see below)
 - `settings` (object): engine settings (see below)
@@ -18,7 +18,7 @@ Reference for the Rust policy type `hushclaw::Policy`.
 version: "1.0.0"
 name: Example
 description: Example policy showing all fields
-extends: hushclaw:default
+extends: clawdstrike:default
 merge_strategy: deep_merge
 
 guards:

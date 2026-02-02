@@ -1,6 +1,6 @@
 # Rulesets
 
-Rulesets are built-in policy presets shipped with Hushclaw.
+Rulesets are built-in policy presets shipped with Clawdstrike.
 
 In this repository, rulesets are defined as YAML files in `rulesets/` and embedded into the Rust binary at build time.
 
@@ -27,7 +27,7 @@ hush check --action-type egress --ruleset default api.github.com:443
 ```yaml
 version: "1.0.0"
 name: My Policy
-extends: hushclaw:default
+extends: clawdstrike:default
 ```
 
 ### Inspect
@@ -43,7 +43,7 @@ Create a policy file that extends a ruleset and adds overrides:
 ```yaml
 version: "1.0.0"
 name: My CI Policy
-extends: hushclaw:cicd
+extends: clawdstrike:cicd
 
 guards:
   egress_allowlist:

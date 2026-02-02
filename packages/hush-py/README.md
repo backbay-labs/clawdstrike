@@ -1,6 +1,6 @@
 # hush-py
 
-Python SDK for hushclaw security verification.
+Python SDK for clawdstrike security verification.
 
 ## Installation
 

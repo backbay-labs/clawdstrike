@@ -25,9 +25,9 @@ updates:
       - "dependencies"
       - "rust"
 
-  # npm dependencies (@hushclaw/openclaw plugin)
+  # npm dependencies (@clawdstrike/openclaw plugin)
   - package-ecosystem: "npm"
-    directory: "/packages/hushclaw-openclaw"
+    directory: "/packages/clawdstrike-openclaw"
     schedule:
       interval: "weekly"
       day: "monday"

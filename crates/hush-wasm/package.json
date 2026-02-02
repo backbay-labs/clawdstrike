@@ -1,7 +1,7 @@
 {
-  "name": "@hushclaw/wasm",
+  "name": "@clawdstrike/wasm",
   "version": "0.1.0",
-  "description": "WebAssembly bindings for hushclaw cryptographic verification",
+  "description": "WebAssembly bindings for clawdstrike cryptographic verification",
   "main": "hush_wasm.js",
   "types": "hush_wasm.d.ts",
   "files": [
@@ -12,7 +12,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/hushclaw/hushclaw.git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
     "directory": "crates/hush-wasm"
   },
   "keywords": [
@@ -23,12 +23,12 @@
     "attestation",
     "ed25519",
     "merkle",
-    "hushclaw"
+    "clawdstrike"
   ],
-  "author": "Hushclaw Contributors",
+  "author": "Clawdstrike Contributors",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/hushclaw/hushclaw/issues"
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
   },
-  "homepage": "https://hushclaw.dev"
+  "homepage": "https://clawdstrike.dev"
 }

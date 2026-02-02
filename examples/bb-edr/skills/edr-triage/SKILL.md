@@ -1,10 +1,10 @@
 # bb-edr: Triage Skill
 
-Use this skill to turn hushclaw audit logs into an incident report and a minimal response plan.
+Use this skill to turn clawdstrike audit logs into an incident report and a minimal response plan.
 
 ## Inputs
 
-- `.hush/audit.jsonl` (JSONL) — hushclaw audit events (allowed/denied, guard, reason).
+- `.hush/audit.jsonl` (JSONL) — clawdstrike audit events (allowed/denied, guard, reason).
 - `policy.yaml` — the active security policy.
 
 ## Task
@@ -25,6 +25,6 @@ Use this skill to turn hushclaw audit logs into an incident report and a minimal
 
 ## Notes (important)
 
-- hushclaw enforces at the **tool boundary**. It is not an OS sandbox.
+- clawdstrike enforces at the **tool boundary**. It is not an OS sandbox.
 - If an operation is denied, treat it as a strong indicator of suspicious behavior or incorrect policy assumptions.
 

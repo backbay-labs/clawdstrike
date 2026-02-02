@@ -1,0 +1,14 @@
+{
+  "plugins": {
+    "entries": {
+      "@clawdstrike/openclaw": {
+        "enabled": true,
+        "config": {
+          "policy": "./policy.yaml",
+          "mode": "deterministic",
+          "logLevel": "debug"
+        }
+      }
+    }
+  }
+}

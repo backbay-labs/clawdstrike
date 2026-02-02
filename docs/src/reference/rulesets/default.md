@@ -1,6 +1,6 @@
 # Default
 
-**Ruleset ID:** `default` (also accepted as `hushclaw:default`)
+**Ruleset ID:** `default` (also accepted as `clawdstrike:default`)
 
 **Source:** `rulesets/default.yaml`
 

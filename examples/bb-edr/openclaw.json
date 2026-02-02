@@ -2,7 +2,7 @@
   "$schema": "https://openclaw.dev/schemas/config.json",
   "name": "bb-edr",
   "version": "0.1.0",
-  "description": "Agentic EDR-style example (hushclaw audit log -> triage agent)",
+  "description": "Agentic EDR-style example (clawdstrike audit log -> triage agent)",
 
   "agent": {
     "model": "gpt-4",
@@ -25,7 +25,7 @@
 
   "plugins": {
     "entries": {
-      "@hushclaw/openclaw": {
+      "@clawdstrike/openclaw": {
         "enabled": true,
         "config": {
           "policy": "./policy.yaml",

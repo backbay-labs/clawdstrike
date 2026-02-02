@@ -1,13 +1,13 @@
 # Architecture
 
-Hushclaw is a guard suite and attestation primitives for agent runtimes.
+Clawdstrike is a guard suite and attestation primitives for agent runtimes.
 It is **not** an operating system sandbox: it will not automatically intercept syscalls or “wrap” a process.
 
-The intended integration is at the **tool boundary** (your agent runtime calls Hushclaw before performing actions).
+The intended integration is at the **tool boundary** (your agent runtime calls Clawdstrike before performing actions).
 
 ## Components
 
-- `hushclaw` (Rust): policy type, built-in guards, `HushEngine`
+- `clawdstrike` (Rust): policy type, built-in guards, `HushEngine`
 - `hush-core` (Rust): hashing/signing, Merkle trees, `SignedReceipt`
 - `hush-proxy` (Rust): DNS/SNI parsing utilities and domain matching
 - `hush-cli` (Rust): `hush` CLI for ad-hoc checks and verification
@@ -21,9 +21,9 @@ The intended integration is at the **tool boundary** (your agent runtime calls H
 4. Your runtime uses the returned `GuardResult` to allow, warn, or block the action.
 5. Optionally, your runtime creates a signed receipt (`create_signed_receipt`) for a content hash that represents the run output/artifacts.
 
-## What Hushclaw can and cannot enforce
+## What Clawdstrike can and cannot enforce
 
-Hushclaw can enforce only what your runtime routes through it. If an agent has direct access to the filesystem/network without going through your tool layer, Hushclaw cannot stop it.
+Clawdstrike can enforce only what your runtime routes through it. If an agent has direct access to the filesystem/network without going through your tool layer, Clawdstrike cannot stop it.
 
 ## Threat model (explicit)
 
@@ -55,6 +55,6 @@ Hushclaw can enforce only what your runtime routes through it. If an agent has d
 ## Enforced vs attested (don’t conflate these)
 
 - **Enforced**: the action your runtime *chose not to perform* because a guard returned `allowed=false` (or required confirmation).
-- **Attested**: what Hushclaw recorded in a `Receipt`/`SignedReceipt` (policy hash, verdict, violations, timestamps).
+- **Attested**: what Clawdstrike recorded in a `Receipt`/`SignedReceipt` (policy hash, verdict, violations, timestamps).
 
-Receipts are only as strong as the integration: they prove what Hushclaw *observed/decided* under a specific policy, not that the underlying OS prevented all side effects.
+Receipts are only as strong as the integration: they prove what Clawdstrike *observed/decided* under a specific policy, not that the underlying OS prevented all side effects.

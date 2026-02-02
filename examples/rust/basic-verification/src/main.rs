@@ -1,6 +1,6 @@
 //! Basic receipt verification example
 //!
-//! This example demonstrates how to verify a signed hushclaw receipt.
+//! This example demonstrates how to verify a signed clawdstrike receipt.
 
 use std::env;
 use std::fs;

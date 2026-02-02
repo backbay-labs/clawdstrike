@@ -53,7 +53,7 @@ Create `policy.yaml`:
 ```yaml
 version: "1.0.0"
 name: My Policy
-extends: hushclaw:ai-agent
+extends: clawdstrike:ai-agent
 
 guards:
   egress_allowlist:
@@ -77,7 +77,7 @@ hush check --action-type egress --policy policy.yaml api.stripe.com:443
 ## Notes
 
 - `hush check` evaluates a single action; it does not sandbox or wrap a process.
-- For integration into an agent runtime, call the Rust API (`hushclaw::HushEngine`) before performing actions.
+- For integration into an agent runtime, call the Rust API (`clawdstrike::HushEngine`) before performing actions.
 
 ## Next Steps
 

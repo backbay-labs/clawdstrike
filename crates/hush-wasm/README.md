@@ -1,11 +1,11 @@
-# @hushclaw/wasm
+# @clawdstrike/wasm
 
-WebAssembly bindings for hushclaw cryptographic verification.
+WebAssembly bindings for clawdstrike cryptographic verification.
 
 ## Installation
 
 ```bash
-npm install @hushclaw/wasm
+npm install @clawdstrike/wasm
 ```
 
 ## Usage (Browser)
@@ -21,7 +21,7 @@ import init, {
   generate_merkle_proof,
   get_canonical_json,
   version
-} from '@hushclaw/wasm';
+} from '@clawdstrike/wasm';
 
 // Initialize WASM module
 await init();
@@ -54,7 +54,7 @@ const {
   hash_sha256,
   verify_ed25519,
   verify_receipt
-} = require('@hushclaw/wasm');
+} = require('@clawdstrike/wasm');
 
 // Functions work synchronously in Node.js
 const hash = hash_sha256(Buffer.from('hello'));

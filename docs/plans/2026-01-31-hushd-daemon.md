@@ -15,9 +15,9 @@
 Before starting, ensure you can build the project:
 
 ```bash
-cd /Users/connor/Medica/hushclaw-ws8-daemon
+cd /Users/connor/Medica/clawdstrike-ws8-daemon
 cargo build -p hushd
-cargo test -p hushclaw
+cargo test -p clawdstrike
 ```
 
 ---
@@ -34,7 +34,7 @@ Edit `crates/hushd/Cargo.toml` to add axum, rusqlite, tower, and other deps:
 ```toml
 [package]
 name = "hushd"
-description = "Hushclaw daemon for runtime security enforcement"
+description = "Clawdstrike daemon for runtime security enforcement"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -48,7 +48,7 @@ path = "src/main.rs"
 [dependencies]
 hush-core.workspace = true
 hush-proxy.workspace = true
-hushclaw.workspace = true
+clawdstrike.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -426,7 +426,7 @@ use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use hushclaw::guards::{GuardResult, Severity};
+use clawdstrike::guards::{GuardResult, Severity};
 
 /// Error type for audit operations
 #[derive(Debug, thiserror::Error)]
@@ -943,7 +943,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
 use hush_core::Keypair;
-use hushclaw::{HushEngine, Policy, RuleSet};
+use clawdstrike::{HushEngine, Policy, RuleSet};
 
 use crate::audit::{AuditEvent, AuditLedger};
 use crate::config::Config;
@@ -1142,7 +1142,7 @@ Create `crates/hushd/src/api/check.rs`:
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use hushclaw::guards::{GuardContext, GuardResult};
+use clawdstrike::guards::{GuardContext, GuardResult};
 
 use crate::audit::AuditEvent;
 use crate::state::{AppState, DaemonEvent};
@@ -1272,7 +1272,7 @@ Create `crates/hushd/src/api/policy.rs`:
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use hushclaw::Policy;
+use clawdstrike::Policy;
 
 use crate::state::AppState;
 
@@ -1307,8 +1307,8 @@ pub async fn get_policy(State(state): State<AppState>) -> Result<Json<PolicyResp
         .unwrap_or_else(|_| "unknown".to_string());
 
     // Get the ruleset name from config
-    let ruleset = hushclaw::RuleSet::by_name(&state.config.ruleset)
-        .unwrap_or_else(hushclaw::RuleSet::default_ruleset);
+    let ruleset = clawdstrike::RuleSet::by_name(&state.config.ruleset)
+        .unwrap_or_else(clawdstrike::RuleSet::default_ruleset);
 
     let yaml = ruleset.policy.to_yaml()
         .unwrap_or_else(|_| "# Unable to serialize policy".to_string());
@@ -1333,7 +1333,7 @@ pub async fn update_policy(
 
     // Update the engine
     let mut engine = state.engine.write().await;
-    *engine = hushclaw::HushEngine::with_policy(policy).with_generated_keypair();
+    *engine = clawdstrike::HushEngine::with_policy(policy).with_generated_keypair();
 
     tracing::info!("Policy updated via API");
 
@@ -1621,7 +1621,7 @@ git commit -m "feat(hushd): add HTTP API endpoints (health, check, policy, audit
 Replace the entire content of `crates/hushd/src/main.rs`:
 
 ```rust
-//! Hushd - Hushclaw security daemon
+//! Hushd - Clawdstrike security daemon
 //!
 //! This daemon provides:
 //! - HTTP API for action checking
@@ -1645,7 +1645,7 @@ use crate::state::AppState;
 
 #[derive(Parser)]
 #[command(name = "hushd")]
-#[command(about = "Hushclaw security daemon", long_about = None)]
+#[command(about = "Clawdstrike security daemon", long_about = None)]
 #[command(version)]
 struct Cli {
     /// Verbosity level (-v, -vv, -vvv)
@@ -2036,7 +2036,7 @@ git commit -m "feat(hush-cli): add daemon management commands (start/stop/status
 
 **Files:**
 - Create: `deploy/hushd.service`
-- Create: `deploy/com.hushclaw.hushd.plist`
+- Create: `deploy/com.clawdstrike.hushd.plist`
 - Create: `Dockerfile.hushd`
 - Create: `deploy/hushd.yaml.example`
 
@@ -2052,8 +2052,8 @@ Create `deploy/hushd.service`:
 
 ```ini
 [Unit]
-Description=Hushclaw Security Daemon
-Documentation=https://github.com/hushclaw/hushclaw
+Description=Clawdstrike Security Daemon
+Documentation=https://github.com/backbay-labs/clawdstrike
 After=network.target
 Wants=network-online.target
 
@@ -2095,7 +2095,7 @@ WantedBy=multi-user.target
 
 **Step 3: Create launchd plist**
 
-Create `deploy/com.hushclaw.hushd.plist`:
+Create `deploy/com.clawdstrike.hushd.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -2103,7 +2103,7 @@ Create `deploy/com.hushclaw.hushd.plist`:
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.hushclaw.hushd</string>
+    <string>com.clawdstrike.hushd</string>
 
     <key>ProgramArguments</key>
     <array>
