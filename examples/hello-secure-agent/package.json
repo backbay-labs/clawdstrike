@@ -5,7 +5,7 @@
   "main": "agent.js",
   "scripts": {
     "start": "node agent.js",
-    "policy:lint": "hushclaw policy lint ./policy.yaml"
+    "policy:lint": "node ./tools/hushclaw.js policy lint ./policy.yaml"
   },
   "keywords": [
     "openclaw",
@@ -14,7 +14,5 @@
     "security"
   ],
   "license": "MIT",
-  "dependencies": {
-    "@hushclaw/openclaw": "^0.1.0"
-  }
+  "dependencies": {}
 }

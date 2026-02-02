@@ -1,0 +1,46 @@
+{
+  "$schema": "https://openclaw.dev/schemas/config.json",
+  "name": "bb-edr",
+  "version": "0.1.0",
+  "description": "Agentic EDR-style example (hushclaw audit log -> triage agent)",
+
+  "agent": {
+    "model": "gpt-4",
+    "system_prompt": "You are an EDR triage agent. Use the available tools to read audit events, summarize suspicious activity, and propose a minimal, safe response.",
+    "max_tokens": 4096,
+    "temperature": 0.2
+  },
+
+  "skills": [
+    "./skills/edr-triage"
+  ],
+
+  "tools": {
+    "builtin": [
+      "read_file",
+      "write_file",
+      "list_directory"
+    ]
+  },
+
+  "plugins": {
+    "entries": {
+      "@hushclaw/openclaw": {
+        "enabled": true,
+        "config": {
+          "policy": "./policy.yaml",
+          "mode": "audit",
+          "logLevel": "info",
+          "guards": {
+            "forbidden_path": true,
+            "egress": true,
+            "secret_leak": true,
+            "patch_integrity": true,
+            "mcp_tool": false
+          }
+        }
+      }
+    }
+  }
+}
+

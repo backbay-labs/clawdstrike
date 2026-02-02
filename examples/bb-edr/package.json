@@ -1,0 +1,22 @@
+{
+  "name": "bb-edr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agentic EDR-style example for OpenClaw + hushclaw",
+  "main": "simulate.js",
+  "scripts": {
+    "policy:lint": "node ./tools/hushclaw.js policy lint ./policy.yaml",
+    "simulate": "node simulate.js",
+    "triage": "node triage.js",
+    "audit:denied": "node ./tools/hushclaw.js audit query --denied"
+  },
+  "keywords": [
+    "openclaw",
+    "hushclaw",
+    "edr",
+    "agentic",
+    "security"
+  ],
+  "license": "MIT",
+  "dependencies": {}
+}

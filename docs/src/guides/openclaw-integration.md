@@ -37,3 +37,5 @@ hushclaw policy lint .hush/policy.yaml
 
 - OpenClaw plugin docs: `packages/hushclaw-openclaw/docs/`
 - OpenClaw plugin code: `packages/hushclaw-openclaw/src/`
+- Example (minimal wiring): `examples/hello-secure-agent/`
+- Example (agentic EDR triage loop): `examples/bb-edr/`

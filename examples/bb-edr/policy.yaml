@@ -1,0 +1,41 @@
+# Hushclaw/OpenClaw policy for the bb-edr example.
+#
+# This file is consumed by the @hushclaw/openclaw plugin (not the Rust `hushclaw::Policy` type).
+# Validate it with:
+#   npx hushclaw policy lint ./policy.yaml
+
+version: "hushclaw-v1.0"
+
+filesystem:
+  # Keep the EDR "response" actions contained to local folders.
+  allowed_write_roots:
+    - "./.hush"
+    - "./reports"
+    - "./state"
+  forbidden_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.gnupg"
+    - ".env"
+    - ".env.*"
+
+egress:
+  mode: allowlist
+  allowed_domains:
+    - "api.github.com"
+    - "api.openai.com"
+  denied_domains:
+    - "*.onion"
+    - "localhost"
+    - "127.*"
+    - "10.*"
+    - "192.168.*"
+
+execution:
+  denied_patterns:
+    - "rm\\s+(-rf?|--recursive)\\s+[/\\\\]"
+    - "curl\\s+[^|]*\\|\\s*(bash|sh|zsh)"
+    - "wget\\s+[^|]*\\|\\s*(bash|sh|zsh)"
+
+on_violation: cancel
+

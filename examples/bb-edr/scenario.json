@@ -1,0 +1,41 @@
+{
+  "runId": "bb-edr-demo",
+  "actions": [
+    {
+      "action": "file_read",
+      "resource": "./README.md",
+      "note": "Read local documentation"
+    },
+    {
+      "action": "file_read",
+      "resource": "~/.ssh/id_rsa",
+      "note": "Simulated credential theft attempt"
+    },
+    {
+      "action": "network",
+      "resource": "https://api.github.com",
+      "note": "Allowed egress to GitHub API"
+    },
+    {
+      "action": "network",
+      "resource": "https://evil.com/exfil",
+      "note": "Simulated data exfiltration attempt"
+    },
+    {
+      "action": "command",
+      "resource": "ps aux",
+      "note": "Process inventory (policy-only check)"
+    },
+    {
+      "action": "command",
+      "resource": "rm -rf /",
+      "note": "Simulated destructive command"
+    },
+    {
+      "action": "file_write",
+      "resource": "./state/quarantine/evil.bin",
+      "note": "Simulated quarantine action"
+    }
+  ]
+}
+

@@ -14,9 +14,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const { importOpenclawSdk } = require('./tools/openclaw');
+
 // Main agent loop
 async function runAgent() {
-  const { checkPolicy } = await import('@hushclaw/openclaw');
+  const { checkPolicy } = await importOpenclawSdk();
 
   const config = {
     policy: './policy.yaml',

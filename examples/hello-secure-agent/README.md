@@ -31,19 +31,16 @@ hello-secure-agent/
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Verify policy syntax
+# 1. Verify policy syntax
 npm run policy:lint
 
-# 3. Dry-run policy checks (no OpenClaw required)
+# 2. Dry-run policy checks (no OpenClaw required)
 npm start
 
-# 4. Run the agent with OpenClaw + hushclaw enabled (requires OpenClaw CLI)
+# 3. Run the agent with OpenClaw + hushclaw enabled (requires OpenClaw CLI)
 # openclaw run --config ./openclaw.json
 
-# 5. Confirm enforcement (example)
+# 4. Confirm enforcement (example)
 # Try to read ~/.ssh/id_rsa via a tool and expect the plugin to block it.
 ```
 
