@@ -5,10 +5,10 @@
 <p align="center">
   <em>
     The claw strikes back.<br/>
-    At the boundary between intent and action,<br/>
-    it watches what leaves, what changes, what leaks.<br/>
+    At the boundary where intent becomes action,<br/>
+    it traces what you touch, what you send, what you change.<br/>
     If the rules drift, it fails closed.<br/>
-    If the story changes, the receipt won’t sign.
+    If the tale diverges, the receipt won’t sign.
   </em>
 </p>
 
