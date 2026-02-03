@@ -14,6 +14,10 @@ readme = "../../README.md"
 name = "hush"
 path = "src/main.rs"
 
+[[bin]]
+name = "clawdstrike"
+path = "src/clawdstrike.rs"
+
 [dependencies]
 hush-core.workspace = true
 clawdstrike.workspace = true
