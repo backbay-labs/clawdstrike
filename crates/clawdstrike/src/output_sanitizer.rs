@@ -312,11 +312,23 @@ fn preview_redacted(s: &str) -> String {
     }
 
     let prefix: String = s.chars().take(2).collect();
-    let suffix: String = s.chars().rev().take(2).collect::<String>().chars().rev().collect();
+    let suffix: String = s
+        .chars()
+        .rev()
+        .take(2)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
     format!("{prefix}***{suffix}")
 }
 
-fn replacement_for(strategy: &RedactionStrategy, category: &SensitiveCategory, data_type: &str, raw: &str) -> String {
+fn replacement_for(
+    strategy: &RedactionStrategy,
+    category: &SensitiveCategory,
+    data_type: &str,
+    raw: &str,
+) -> String {
     match strategy {
         RedactionStrategy::None => raw.to_string(),
         RedactionStrategy::Full => format!("[REDACTED:{data_type}]"),
@@ -440,8 +452,8 @@ impl OutputSanitizer {
         if self.config.categories.secrets && self.config.entropy.enabled {
             // A simple scan that finds "word-like" tokens and evaluates entropy.
             static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
-            let token_re =
-                TOKEN_RE.get_or_init(|| Regex::new(r"[A-Za-z0-9+/=_-]{32,}").expect("hardcoded regex"));
+            let token_re = TOKEN_RE
+                .get_or_init(|| Regex::new(r"[A-Za-z0-9+/=_-]{32,}").expect("hardcoded regex"));
             for m in token_re.find_iter(limited) {
                 let token = m.as_str();
                 if token.len() < self.config.entropy.min_token_len {
@@ -478,7 +490,8 @@ impl OutputSanitizer {
         // Apply redactions, preferring "stronger" redaction when multiple findings overlap.
         findings.sort_by_key(|f| (f.span.start, f.span.end));
 
-        let mut spans: Vec<(Span, RedactionStrategy, SensitiveCategory, String, String)> = Vec::new();
+        let mut spans: Vec<(Span, RedactionStrategy, SensitiveCategory, String, String)> =
+            Vec::new();
         for f in &findings {
             let strategy = self
                 .config
@@ -496,7 +509,11 @@ impl OutputSanitizer {
         }
 
         // Sort by start desc so replacements don't affect earlier spans.
-        spans.sort_by(|a, b| b.0.start.cmp(&a.0.start).then_with(|| b.0.end.cmp(&a.0.end)));
+        spans.sort_by(|a, b| {
+            b.0.start
+                .cmp(&a.0.start)
+                .then_with(|| b.0.end.cmp(&a.0.end))
+        });
 
         let mut sanitized = limited.to_string();
         let mut applied_any = false;

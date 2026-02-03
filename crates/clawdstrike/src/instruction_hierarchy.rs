@@ -386,10 +386,17 @@ fn markers_for(config: &HierarchyEnforcerConfig) -> CustomMarkers {
 fn wrap_with_markers(level: InstructionLevel, content: &str, markers: &CustomMarkers) -> String {
     match level {
         InstructionLevel::Platform | InstructionLevel::System => {
-            format!("{}\n{}\n{}", markers.system_start, content, markers.system_end)
+            format!(
+                "{}\n{}\n{}",
+                markers.system_start, content, markers.system_end
+            )
         }
-        InstructionLevel::User => format!("{}\n{}\n{}", markers.user_start, content, markers.user_end),
-        InstructionLevel::ToolOutput => format!("{}\n{}\n{}", markers.tool_start, content, markers.tool_end),
+        InstructionLevel::User => {
+            format!("{}\n{}\n{}", markers.user_start, content, markers.user_end)
+        }
+        InstructionLevel::ToolOutput => {
+            format!("{}\n{}\n{}", markers.tool_start, content, markers.tool_end)
+        }
         InstructionLevel::External => format!(
             "{}\n{}\n{}",
             markers.external_start, content, markers.external_end
@@ -524,7 +531,10 @@ impl InstructionHierarchyEnforcer {
 
         if d.fake_delimiters.is_match(&message.content) {
             let mut modified = message.content.clone();
-            modified = d.fake_delimiters.replace_all(&modified, "[REDACTED_DELIMITER]").to_string();
+            modified = d
+                .fake_delimiters
+                .replace_all(&modified, "[REDACTED_DELIMITER]")
+                .to_string();
             push(
                 "HIR-009",
                 ConflictSeverity::High,
@@ -551,7 +561,9 @@ impl InstructionHierarchyEnforcer {
             );
         }
 
-        if matches!(message.level, InstructionLevel::External) && d.override_attempt.is_match(&message.content) {
+        if matches!(message.level, InstructionLevel::External)
+            && d.override_attempt.is_match(&message.content)
+        {
             push(
                 "HIR-004",
                 ConflictSeverity::High,
@@ -646,7 +658,8 @@ impl InstructionHierarchyEnforcer {
             rule_id: "HIR-005".to_string(),
             severity: ConflictSeverity::Medium,
             message_id: "(sequence)".to_string(),
-            description: "Context overflow detected; truncating low-privilege messages.".to_string(),
+            description: "Context overflow detected; truncating low-privilege messages."
+                .to_string(),
             action: ConflictAction::Modify,
             modification: None,
             triggers: vec!["context_overflow".to_string()],
@@ -654,15 +667,24 @@ impl InstructionHierarchyEnforcer {
 
         // Truncate by dropping External first, then ToolOutput, then User, preserving System/Platform.
         while total_context_bytes(messages) > limit {
-            if let Some(pos) = messages.iter().position(|m| matches!(m.level, InstructionLevel::External)) {
+            if let Some(pos) = messages
+                .iter()
+                .position(|m| matches!(m.level, InstructionLevel::External))
+            {
                 messages.remove(pos);
                 continue;
             }
-            if let Some(pos) = messages.iter().position(|m| matches!(m.level, InstructionLevel::ToolOutput)) {
+            if let Some(pos) = messages
+                .iter()
+                .position(|m| matches!(m.level, InstructionLevel::ToolOutput))
+            {
                 messages.remove(pos);
                 continue;
             }
-            if let Some(pos) = messages.iter().position(|m| matches!(m.level, InstructionLevel::User)) {
+            if let Some(pos) = messages
+                .iter()
+                .position(|m| matches!(m.level, InstructionLevel::User))
+            {
                 messages.remove(pos);
                 continue;
             }

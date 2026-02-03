@@ -1,7 +1,8 @@
 use std::io::Read;
 
 use clawdstrike::{
-    PromptWatermarker, WatermarkConfig, WatermarkExtractor, WatermarkPayload, WatermarkVerifierConfig,
+    PromptWatermarker, WatermarkConfig, WatermarkExtractor, WatermarkPayload,
+    WatermarkVerifierConfig,
 };
 
 fn main() {
@@ -51,7 +52,9 @@ fn main() {
 
             let watermarker = PromptWatermarker::new(cfg).expect("watermarker");
             let payload = WatermarkPayload::new(app, session);
-            let out = watermarker.watermark(&input, Some(payload)).expect("watermark");
+            let out = watermarker
+                .watermark(&input, Some(payload))
+                .expect("watermark");
             println!("{}", out.watermarked);
         }
         "extract" => {
@@ -68,4 +71,3 @@ fn main() {
         }
     }
 }
-

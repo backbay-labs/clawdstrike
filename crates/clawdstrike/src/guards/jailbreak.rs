@@ -121,11 +121,13 @@ impl Guard for JailbreakGuard {
                 JailbreakSeverity::Suspicious => Severity::Warning,
                 JailbreakSeverity::Safe => Severity::Info,
             };
-            return GuardResult::block(&self.name, sev, "Jailbreak attempt detected").with_details(details);
+            return GuardResult::block(&self.name, sev, "Jailbreak attempt detected")
+                .with_details(details);
         }
 
         if r.risk_score >= self.config.detector.warn_threshold {
-            return GuardResult::warn(&self.name, "Potential jailbreak attempt detected").with_details(details);
+            return GuardResult::warn(&self.name, "Potential jailbreak attempt detected")
+                .with_details(details);
         }
 
         GuardResult::allow(&self.name)
@@ -146,7 +148,9 @@ mod tests {
 
         for kind in ["user_input", "hushclaw.user_input"] {
             assert!(guard.handles(&GuardAction::Custom(kind, &payload)));
-            let r = guard.check(&GuardAction::Custom(kind, &payload), &ctx).await;
+            let r = guard
+                .check(&GuardAction::Custom(kind, &payload), &ctx)
+                .await;
             let details = r.details.expect("details");
             let fp = details.get("fingerprint").and_then(|v| v.as_str()).unwrap();
             assert_eq!(fp.len(), 64);

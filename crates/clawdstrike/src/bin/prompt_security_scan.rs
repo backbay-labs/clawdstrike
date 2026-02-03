@@ -1,8 +1,6 @@
 use std::io::Read;
 
-use clawdstrike::{
-    detect_prompt_injection_with_limit, JailbreakDetector, OutputSanitizer,
-};
+use clawdstrike::{detect_prompt_injection_with_limit, JailbreakDetector, OutputSanitizer};
 
 fn main() {
     let mut max_scan_bytes: usize = 200_000;
@@ -49,4 +47,3 @@ fn main() {
 
     println!("{}", serde_json::to_string_pretty(&out).expect("json"));
 }
-

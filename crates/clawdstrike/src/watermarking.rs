@@ -164,7 +164,8 @@ impl PromptWatermarker {
     pub fn new(config: WatermarkConfig) -> Result<Self, WatermarkError> {
         let keypair = if let Some(seed_hex) = &config.private_key {
             let seed_hex = seed_hex.strip_prefix("0x").unwrap_or(seed_hex);
-            let bytes = hex::decode(seed_hex).map_err(|e| WatermarkError::ConfigError(e.to_string()))?;
+            let bytes =
+                hex::decode(seed_hex).map_err(|e| WatermarkError::ConfigError(e.to_string()))?;
             if bytes.len() != 32 {
                 return Err(WatermarkError::ConfigError(
                     "private_key must be 32-byte seed hex".to_string(),
@@ -286,16 +287,21 @@ pub enum WatermarkError {
 const META_PREFIX: &str = "<!--hushclaw.watermark:v1:";
 const META_SUFFIX: &str = "-->";
 
-fn embed_metadata_comment(prompt: &str, watermark: &EncodedWatermark) -> Result<String, WatermarkError> {
+fn embed_metadata_comment(
+    prompt: &str,
+    watermark: &EncodedWatermark,
+) -> Result<String, WatermarkError> {
     // Embed base64url(JSON) where JSON includes payload bytes (b64), signature (hex), public_key (hex).
-    let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&watermark.encoded_data);
+    let payload_b64 =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&watermark.encoded_data);
     let json = serde_json::json!({
         "encoding": watermark.encoding,
         "payload": payload_b64,
         "signature": watermark.signature,
         "publicKey": watermark.public_key,
     });
-    let blob = serde_json::to_vec(&json).map_err(|e| WatermarkError::EncodingError(e.to_string()))?;
+    let blob =
+        serde_json::to_vec(&json).map_err(|e| WatermarkError::EncodingError(e.to_string()))?;
     let blob_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(blob);
     Ok(format!("{META_PREFIX}{blob_b64}{META_SUFFIX}\n{prompt}"))
 }
@@ -316,9 +322,7 @@ fn extract_metadata_comment(text: &str) -> Result<Option<EncodedWatermark>, Stri
     let v: serde_json::Value =
         serde_json::from_slice(&blob).map_err(|e| format!("watermark json decode failed: {e}"))?;
 
-    let encoding = v
-        .get("encoding")
-        .ok_or("watermark missing encoding")?;
+    let encoding = v.get("encoding").ok_or("watermark missing encoding")?;
     let encoding: WatermarkEncoding = serde_json::from_value(encoding.clone())
         .map_err(|e| format!("watermark encoding parse failed: {e}"))?;
 

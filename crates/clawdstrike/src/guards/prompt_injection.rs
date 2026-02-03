@@ -181,10 +181,7 @@ mod tests {
         let payload = serde_json::json!("irrelevant");
 
         assert!(guard.handles(&GuardAction::Custom("untrusted_text", &payload)));
-        assert!(guard.handles(&GuardAction::Custom(
-            "hushclaw.untrusted_text",
-            &payload
-        )));
+        assert!(guard.handles(&GuardAction::Custom("hushclaw.untrusted_text", &payload)));
         assert!(!guard.handles(&GuardAction::Custom("something_else", &payload)));
     }
 
@@ -198,7 +195,9 @@ mod tests {
         });
 
         for kind in ["untrusted_text", "hushclaw.untrusted_text"] {
-            let r = guard.check(&GuardAction::Custom(kind, &payload), &ctx).await;
+            let r = guard
+                .check(&GuardAction::Custom(kind, &payload), &ctx)
+                .await;
             assert!(!r.allowed);
             assert_eq!(r.guard, "prompt_injection");
 
@@ -239,7 +238,9 @@ mod tests {
         let payload = serde_json::json!("regular article text");
 
         for kind in ["untrusted_text", "hushclaw.untrusted_text"] {
-            let r = guard.check(&GuardAction::Custom(kind, &payload), &ctx).await;
+            let r = guard
+                .check(&GuardAction::Custom(kind, &payload), &ctx)
+                .await;
             assert!(r.allowed);
         }
     }

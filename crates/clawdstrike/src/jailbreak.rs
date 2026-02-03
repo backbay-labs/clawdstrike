@@ -520,10 +520,18 @@ impl JailbreakDetector {
             let x_ignore = if has("jb_ignore_policy") { 1.0 } else { 0.0 };
             let x_dan = if has("jb_dan_unfiltered") { 1.0 } else { 0.0 };
             let x_role = if has("jb_role_change") { 1.0 } else { 0.0 };
-            let x_leak = if has("jb_system_prompt_extraction") { 1.0 } else { 0.0 };
+            let x_leak = if has("jb_system_prompt_extraction") {
+                1.0
+            } else {
+                0.0
+            };
             let x_enc = if has("jb_encoded_payload") { 1.0 } else { 0.0 };
             let x_punct = (pr * 2.0).clamp(0.0, 1.0);
-            let x_run = if long_run_of_symbols(&canonical) { 1.0 } else { 0.0 };
+            let x_run = if long_run_of_symbols(&canonical) {
+                1.0
+            } else {
+                0.0
+            };
 
             let z = self.model.bias
                 + self.model.w_ignore_policy * x_ignore
@@ -838,7 +846,11 @@ pub mod openai_judge {
 
     impl OpenAiLlmJudge {
         pub fn new(api_key: String, model: String) -> Self {
-            Self::with_endpoint(api_key, model, "https://api.openai.com/v1/chat/completions".to_string())
+            Self::with_endpoint(
+                api_key,
+                model,
+                "https://api.openai.com/v1/chat/completions".to_string(),
+            )
         }
 
         pub fn with_endpoint(api_key: String, model: String, endpoint: String) -> Self {
