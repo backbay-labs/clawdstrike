@@ -79,17 +79,17 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
 
   // Redact secrets from output
   if (result && typeof result === 'string') {
-    const redacted = policyEngine.redactSecrets(result);
-    if (redacted !== result) {
-      toolEvent.context.toolResult.result = redacted;
+    const sanitized = policyEngine.sanitizeOutput(result);
+    if (sanitized !== result) {
+      toolEvent.context.toolResult.result = sanitized;
     }
   } else if (result && typeof result === 'object') {
     // Try to redact secrets in JSON result
     try {
       const stringified = JSON.stringify(result);
-      const redacted = policyEngine.redactSecrets(stringified);
-      if (redacted !== stringified) {
-        toolEvent.context.toolResult.result = JSON.parse(redacted);
+      const sanitized = policyEngine.sanitizeOutput(stringified);
+      if (sanitized !== stringified) {
+        toolEvent.context.toolResult.result = JSON.parse(sanitized);
       }
     } catch {
       // Ignore JSON errors
