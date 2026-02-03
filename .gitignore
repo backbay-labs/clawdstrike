@@ -35,3 +35,5 @@ docs/book
 .DS_Store
 
 .env
+
+docs/plans/*
