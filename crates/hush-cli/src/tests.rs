@@ -321,7 +321,13 @@ mod cli_parsing {
 
     #[test]
     fn test_policy_diff_parses() {
-        let cli = Cli::parse_from(["hush", "policy", "diff", "clawdstrike:default", "policy.yaml"]);
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "diff",
+            "clawdstrike:default",
+            "policy.yaml",
+        ]);
 
         match cli.command {
             Commands::Policy { command } => match command {
@@ -1260,7 +1266,10 @@ mod policy_event_contract {
         let event: PolicyEvent = serde_json::from_value(input).expect("parse PolicyEvent");
         let normalized = serde_json::to_value(&event).expect("serialize normalized");
 
-        assert_eq!(normalized.get("eventId").and_then(|v| v.as_str()), Some("evt-123"));
+        assert_eq!(
+            normalized.get("eventId").and_then(|v| v.as_str()),
+            Some("evt-123")
+        );
         assert_eq!(
             normalized.get("eventType").and_then(|v| v.as_str()),
             Some("patch_apply")
@@ -1378,7 +1387,10 @@ mod policy_event_contract {
             meta.get("agentId").and_then(|v| v.as_str()),
             Some("agent-1")
         );
-        assert!(meta.get("context").is_some(), "metadata should include context");
+        assert!(
+            meta.get("context").is_some(),
+            "metadata should include context"
+        );
     }
 
     #[test]
@@ -1488,7 +1500,9 @@ mod policy_pac_contract {
             Some("policy_eval")
         );
         let decision = v.get("decision").expect("decision");
-        for key in ["allowed", "denied", "warn", "guard", "severity", "message", "reason"] {
+        for key in [
+            "allowed", "denied", "warn", "guard", "severity", "message", "reason",
+        ] {
             assert!(decision.get(key).is_some(), "missing decision.{key}");
         }
         assert!(v.get("report").is_some(), "missing report");
@@ -1538,23 +1552,24 @@ mod policy_pac_contract {
 
         let ids: std::collections::BTreeSet<String> = results
             .iter()
-            .filter_map(|r| r.get("eventId").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .filter_map(|r| {
+                r.get("eventId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
 
         for id in [
-            "evt-0001",
-            "evt-0002",
-            "evt-0003",
-            "evt-0004",
-            "evt-0005",
-            "evt-0006",
+            "evt-0001", "evt-0002", "evt-0003", "evt-0004", "evt-0005", "evt-0006",
         ] {
             assert!(ids.contains(id), "missing eventId {id}");
         }
 
         let first = &results[0];
         let decision = first.get("decision").expect("decision");
-        for key in ["allowed", "denied", "warn", "guard", "severity", "message", "reason"] {
+        for key in [
+            "allowed", "denied", "warn", "guard", "severity", "message", "reason",
+        ] {
             assert!(decision.get(key).is_some(), "missing decision.{key}");
         }
         assert!(first.get("report").is_some(), "missing report");
@@ -1625,11 +1640,14 @@ mod policy_pac_contract {
         assert_eq!(code, ExitCode::Fail);
 
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
-        assert_eq!(v.get("summary").and_then(|v| v.get("total")).and_then(|v| v.as_i64()), Some(6));
         assert_eq!(
-            v.get("results")
-                .and_then(|v| v.as_array())
-                .map(|a| a.len()),
+            v.get("summary")
+                .and_then(|v| v.get("total"))
+                .and_then(|v| v.as_i64()),
+            Some(6)
+        );
+        assert_eq!(
+            v.get("results").and_then(|v| v.as_array()).map(|a| a.len()),
             Some(0)
         );
     }
@@ -1661,7 +1679,12 @@ mod policy_pac_contract {
         assert_eq!(code, ExitCode::Ok);
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
         assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(0));
-        assert_eq!(v.get("summary").and_then(|v| v.get("blocked")).and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(
+            v.get("summary")
+                .and_then(|v| v.get("blocked"))
+                .and_then(|v| v.as_i64()),
+            Some(1)
+        );
     }
 }
 
@@ -1733,9 +1756,15 @@ suites:
         assert!(err.is_empty());
 
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
-        assert_eq!(v.get("command").and_then(|v| v.as_str()), Some("policy_test"));
+        assert_eq!(
+            v.get("command").and_then(|v| v.as_str()),
+            Some("policy_test")
+        );
         assert_eq!(v.get("failed").and_then(|v| v.as_i64()), Some(0));
         assert_eq!(v.get("passed").and_then(|v| v.as_i64()), Some(2));
-        assert!(v.get("coverage").is_some(), "expected coverage when enabled");
+        assert!(
+            v.get("coverage").is_some(),
+            "expected coverage when enabled"
+        );
     }
 }

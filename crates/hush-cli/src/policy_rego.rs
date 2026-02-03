@@ -2,7 +2,11 @@ use std::io::{Read as _, Write};
 
 use crate::{ExitCode, RegoCommands};
 
-pub fn cmd_policy_rego(command: RegoCommands, _stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCode {
+pub fn cmd_policy_rego(
+    command: RegoCommands,
+    _stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
     match command {
         RegoCommands::Compile { file } => {
             let _ = writeln!(
@@ -27,4 +31,3 @@ pub fn cmd_policy_rego(command: RegoCommands, _stdout: &mut dyn Write, stderr: &
         }
     }
 }
-

@@ -43,10 +43,11 @@ pub fn load_policy_from_arg(arg: &str, resolve: bool) -> Result<LoadedPolicy, Po
                 source: e,
             })?;
 
-            let policy = Policy::from_yaml_with_extends(&yaml, None).map_err(|e| PolicyLoadError {
-                message: format!("Failed to resolve ruleset extends: {}", e),
-                source: e,
-            })?;
+            let policy =
+                Policy::from_yaml_with_extends(&yaml, None).map_err(|e| PolicyLoadError {
+                    message: format!("Failed to resolve ruleset extends: {}", e),
+                    source: e,
+                })?;
 
             Ok(LoadedPolicy {
                 policy,
@@ -185,7 +186,10 @@ pub fn format_compact_value(value: &serde_json::Value, max_len: usize) -> String
         return s;
     }
 
-    let mut out = s.chars().take(max_len.saturating_sub(3)).collect::<String>();
+    let mut out = s
+        .chars()
+        .take(max_len.saturating_sub(3))
+        .collect::<String>();
     out.push_str("...");
     out
 }

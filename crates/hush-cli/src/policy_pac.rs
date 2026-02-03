@@ -80,12 +80,12 @@ pub struct PolicySimulateJsonOutput {
 
 fn policy_source_for_loaded(source: &crate::policy_diff::ResolvedPolicySource) -> PolicySource {
     match source {
-        crate::policy_diff::ResolvedPolicySource::Ruleset { id } => PolicySource::Ruleset {
-            name: id.clone(),
-        },
-        crate::policy_diff::ResolvedPolicySource::File { path } => PolicySource::PolicyFile {
-            path: path.clone(),
-        },
+        crate::policy_diff::ResolvedPolicySource::Ruleset { id } => {
+            PolicySource::Ruleset { name: id.clone() }
+        }
+        crate::policy_diff::ResolvedPolicySource::File { path } => {
+            PolicySource::PolicyFile { path: path.clone() }
+        }
     }
 }
 
@@ -358,10 +358,8 @@ pub async fn cmd_policy_simulate(
     let policy = policy_source_for_loaded(&loaded.source);
     let engine = HushEngine::with_policy(loaded.policy);
 
-    let is_interactive = events_path.is_none()
-        && std::io::stdin().is_terminal()
-        && !opts.json
-        && !opts.jsonl;
+    let is_interactive =
+        events_path.is_none() && std::io::stdin().is_terminal() && !opts.json && !opts.jsonl;
 
     if is_interactive {
         return cmd_policy_simulate_interactive(engine, stdout, stderr).await;
@@ -643,7 +641,14 @@ async fn cmd_policy_simulate_interactive(
 
                 let _ = writeln!(stdout, "Event History:");
                 for (idx, (event_id, summary, outcome)) in history.iter().enumerate() {
-                    let _ = writeln!(stdout, "  {}. {} {} -> {}", idx + 1, event_id, summary, outcome);
+                    let _ = writeln!(
+                        stdout,
+                        "  {}. {} {} -> {}",
+                        idx + 1,
+                        event_id,
+                        summary,
+                        outcome
+                    );
                 }
                 continue;
             }
@@ -837,6 +842,7 @@ async fn cmd_policy_simulate_interactive(
     ExitCode::Ok
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_policy_eval_error(
     json: bool,
     policy: PolicySource,
@@ -886,6 +892,7 @@ fn emit_policy_eval_error(
     code
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_policy_simulate_error(
     json: bool,
     policy: PolicySource,

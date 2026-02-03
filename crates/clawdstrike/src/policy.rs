@@ -8,9 +8,9 @@ use globset::GlobBuilder;
 
 use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
 use crate::guards::{
-    EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard,
-    Guard, McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard,
-    PromptInjectionConfig, PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
+    EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard, Guard,
+    McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard, PromptInjectionConfig,
+    PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
 };
 
 /// Current policy schema version.

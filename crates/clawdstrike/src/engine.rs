@@ -479,10 +479,7 @@ mod tests {
         let context = GuardContext::new();
 
         let report = engine
-            .check_action_report(
-                &GuardAction::FileAccess("/app/src/main.rs"),
-                &context,
-            )
+            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &context)
             .await
             .unwrap();
 
@@ -520,10 +517,7 @@ mod tests {
         let context = GuardContext::new();
 
         let report = engine
-            .check_action_report(
-                &GuardAction::FileAccess("/home/user/.ssh/id_rsa"),
-                &context,
-            )
+            .check_action_report(&GuardAction::FileAccess("/home/user/.ssh/id_rsa"), &context)
             .await
             .unwrap();
 
@@ -610,7 +604,10 @@ mod tests {
     #[tokio::test]
     async fn test_receipt_metadata_omitted_without_extra_guards() {
         let engine = HushEngine::new();
-        let receipt = engine.create_receipt(sha256(b"test content")).await.unwrap();
+        let receipt = engine
+            .create_receipt(sha256(b"test content"))
+            .await
+            .unwrap();
         assert!(receipt.metadata.is_none());
     }
 
@@ -622,7 +619,10 @@ mod tests {
             name: "extra_guard_metadata",
             calls: calls.clone(),
         });
-        let receipt = engine.create_receipt(sha256(b"test content")).await.unwrap();
+        let receipt = engine
+            .create_receipt(sha256(b"test content"))
+            .await
+            .unwrap();
 
         let metadata = receipt.metadata.expect("expected receipt metadata");
         assert_eq!(

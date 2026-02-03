@@ -145,13 +145,7 @@ pub async fn cmd_policy_test(
                 "config_error"
             };
             return emit_error(
-                json,
-                &test_file,
-                code,
-                error_kind,
-                &e.message,
-                stdout,
-                stderr,
+                json, &test_file, code, error_kind, &e.message, stdout, stderr,
             );
         }
     };
@@ -178,7 +172,11 @@ pub async fn cmd_policy_test(
     }
 
     let failed = total.saturating_sub(passed);
-    let code = if failed == 0 { ExitCode::Ok } else { ExitCode::Fail };
+    let code = if failed == 0 {
+        ExitCode::Ok
+    } else {
+        ExitCode::Fail
+    };
 
     if json {
         let output = PolicyTestJsonOutput {
@@ -189,11 +187,7 @@ pub async fn cmd_policy_test(
             total,
             passed,
             failed,
-            coverage: if coverage {
-                Some(guard_coverage)
-            } else {
-                None
-            },
+            coverage: if coverage { Some(guard_coverage) } else { None },
             exit_code: code.as_i32(),
             failures,
             error: None,
@@ -209,7 +203,11 @@ pub async fn cmd_policy_test(
 
     let _ = writeln!(stdout, "Policy test: {}", spec.name);
     let _ = writeln!(stdout, "Policy: {}", policy_ref);
-    let _ = writeln!(stdout, "Total: {}, Passed: {}, Failed: {}", total, passed, failed);
+    let _ = writeln!(
+        stdout,
+        "Total: {}, Passed: {}, Failed: {}",
+        total, passed, failed
+    );
 
     if coverage {
         let _ = writeln!(stdout, "Coverage (by guard):");
@@ -338,7 +336,10 @@ async fn run_case(
             .as_ref()
             .and_then(|m| m.time.clone())
             .unwrap_or_else(|| "2026-02-03T00:00:00Z".to_string());
-        obj.insert("timestamp".to_string(), serde_json::Value::String(timestamp));
+        obj.insert(
+            "timestamp".to_string(),
+            serde_json::Value::String(timestamp),
+        );
     }
 
     let mut event: PolicyEvent =
@@ -390,7 +391,11 @@ fn assert_expectations(case: &PolicyTestCase, report: &GuardReport) -> anyhow::R
 
     if let Some(ref needle) = expect.message_contains {
         if !report.overall.message.contains(needle) {
-            anyhow::bail!("expected message to contain {:?}, got {:?}", needle, report.overall.message);
+            anyhow::bail!(
+                "expected message to contain {:?}, got {:?}",
+                needle,
+                report.overall.message
+            );
         }
     }
 

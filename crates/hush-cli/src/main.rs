@@ -1118,7 +1118,11 @@ async fn cmd_policy(
                 Ok(v) => v,
                 Err(e) => {
                     let code = policy_error_exit_code(&e.source);
-                    let _ = writeln!(stderr, "Error loading right policy {right:?}: {}", e.message);
+                    let _ = writeln!(
+                        stderr,
+                        "Error loading right policy {right:?}: {}",
+                        e.message
+                    );
                     return Ok(code);
                 }
             };
@@ -1186,7 +1190,11 @@ async fn cmd_policy(
             );
 
             for d in diffs {
-                let path = if d.path.is_empty() { "/" } else { d.path.as_str() };
+                let path = if d.path.is_empty() {
+                    "/"
+                } else {
+                    d.path.as_str()
+                };
                 match d.kind {
                     policy_diff::DiffKind::Added => {
                         let new = d
@@ -1248,7 +1256,9 @@ async fn cmd_policy(
             resolve,
             json,
             coverage,
-        } => Ok(policy_test::cmd_policy_test(test_file, resolve, json, coverage, stdout, stderr).await),
+        } => Ok(
+            policy_test::cmd_policy_test(test_file, resolve, json, coverage, stdout, stderr).await,
+        ),
 
         PolicyCommands::Impact {
             old_policy,
@@ -1257,19 +1267,19 @@ async fn cmd_policy(
             resolve,
             json,
             fail_on_breaking,
-        } => Ok(
-            policy_impact::cmd_policy_impact(
-                old_policy,
-                new_policy,
-                events,
+        } => Ok(policy_impact::cmd_policy_impact(
+            old_policy,
+            new_policy,
+            events,
+            policy_impact::PolicyImpactOptions {
                 resolve,
                 json,
                 fail_on_breaking,
-                stdout,
-                stderr,
-            )
-            .await,
-        ),
+            },
+            stdout,
+            stderr,
+        )
+        .await),
 
         PolicyCommands::Version {
             policy_ref,
@@ -1279,16 +1289,18 @@ async fn cmd_policy(
             policy_ref, resolve, json, stdout, stderr,
         )),
 
-        PolicyCommands::Rego { command } => Ok(policy_rego::cmd_policy_rego(command, stdout, stderr)),
+        PolicyCommands::Rego { command } => {
+            Ok(policy_rego::cmd_policy_rego(command, stdout, stderr))
+        }
 
         PolicyCommands::Eval {
             policy_ref,
             event,
             resolve,
             json,
-        } => Ok(
-            policy_pac::cmd_policy_eval(policy_ref, event, resolve, json, stdout, stderr).await,
-        ),
+        } => {
+            Ok(policy_pac::cmd_policy_eval(policy_ref, event, resolve, json, stdout, stderr).await)
+        }
 
         PolicyCommands::Simulate {
             policy_ref,
@@ -1300,23 +1312,21 @@ async fn cmd_policy(
             fail_on_deny,
             no_fail_on_deny,
             benchmark,
-        } => Ok(
-            policy_pac::cmd_policy_simulate(
-                policy_ref,
-                events,
-                policy_pac::PolicySimulateOptions {
-                    resolve,
-                    json,
-                    jsonl,
-                    summary,
-                    fail_on_deny: fail_on_deny || !no_fail_on_deny,
-                    benchmark,
-                },
-                stdout,
-                stderr,
-            )
-            .await,
-        ),
+        } => Ok(policy_pac::cmd_policy_simulate(
+            policy_ref,
+            events,
+            policy_pac::PolicySimulateOptions {
+                resolve,
+                json,
+                jsonl,
+                summary,
+                fail_on_deny: fail_on_deny || !no_fail_on_deny,
+                benchmark,
+            },
+            stdout,
+            stderr,
+        )
+        .await),
     }
 }
 

@@ -6,7 +6,7 @@ use crate::policy_diff::ResolvedPolicySource;
 use crate::policy_event::map_policy_event;
 use crate::{CliJsonError, ExitCode, PolicySource, CLI_JSON_VERSION};
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct ImpactSummary {
     pub total: u64,
     pub changed: u64,
@@ -37,22 +37,27 @@ pub struct PolicyImpactJsonOutput {
     pub error: Option<CliJsonError>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct PolicyImpactOptions {
+    pub resolve: bool,
+    pub json: bool,
+    pub fail_on_breaking: bool,
+}
+
 pub async fn cmd_policy_impact(
     old_policy_ref: String,
     new_policy_ref: String,
     events_path: String,
-    resolve: bool,
-    json: bool,
-    fail_on_breaking: bool,
+    opts: PolicyImpactOptions,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
-    let old_loaded = match crate::policy_diff::load_policy_from_arg(&old_policy_ref, resolve) {
+    let old_loaded = match crate::policy_diff::load_policy_from_arg(&old_policy_ref, opts.resolve) {
         Ok(v) => v,
         Err(e) => {
             let code = crate::policy_error_exit_code(&e.source);
             return emit_error(
-                json,
+                opts.json,
                 guess_policy_source(&old_policy_ref),
                 guess_policy_source(&new_policy_ref),
                 &events_path,
@@ -70,12 +75,12 @@ pub async fn cmd_policy_impact(
         }
     };
 
-    let new_loaded = match crate::policy_diff::load_policy_from_arg(&new_policy_ref, resolve) {
+    let new_loaded = match crate::policy_diff::load_policy_from_arg(&new_policy_ref, opts.resolve) {
         Ok(v) => v,
         Err(e) => {
             let code = crate::policy_error_exit_code(&e.source);
             return emit_error(
-                json,
+                opts.json,
                 policy_source_for_loaded(&old_loaded.source),
                 guess_policy_source(&new_policy_ref),
                 &events_path,
@@ -102,7 +107,7 @@ pub async fn cmd_policy_impact(
         Ok(v) => v,
         Err(e) => {
             return emit_error(
-                json,
+                opts.json,
                 old_policy_source,
                 new_policy_source,
                 &events_path,
@@ -123,7 +128,7 @@ pub async fn cmd_policy_impact(
             Ok(v) => v,
             Err(e) => {
                 return emit_error(
-                    json,
+                    opts.json,
                     old_policy_source,
                     new_policy_source,
                     &events_path,
@@ -146,7 +151,7 @@ pub async fn cmd_policy_impact(
             Ok(v) => v,
             Err(e) => {
                 return emit_error(
-                    json,
+                    opts.json,
                     old_policy_source,
                     new_policy_source,
                     &events_path,
@@ -164,7 +169,7 @@ pub async fn cmd_policy_impact(
             Ok(v) => v,
             Err(e) => {
                 return emit_error(
-                    json,
+                    opts.json,
                     old_policy_source,
                     new_policy_source,
                     &events_path,
@@ -185,7 +190,7 @@ pub async fn cmd_policy_impact(
             Ok(v) => v,
             Err(e) => {
                 return emit_error(
-                    json,
+                    opts.json,
                     old_policy_source,
                     new_policy_source,
                     &events_path,
@@ -207,7 +212,7 @@ pub async fn cmd_policy_impact(
             Ok(v) => v,
             Err(e) => {
                 return emit_error(
-                    json,
+                    opts.json,
                     old_policy_source,
                     new_policy_source,
                     &events_path,
@@ -242,13 +247,13 @@ pub async fn cmd_policy_impact(
         }
     }
 
-    let code = if fail_on_breaking && summary.allow_to_block > 0 {
+    let code = if opts.fail_on_breaking && summary.allow_to_block > 0 {
         ExitCode::Fail
     } else {
         ExitCode::Ok
     };
 
-    if json {
+    if opts.json {
         let output = PolicyImpactJsonOutput {
             version: CLI_JSON_VERSION,
             command: "policy_impact",
@@ -282,26 +287,11 @@ pub async fn cmd_policy_impact(
     let _ = writeln!(stdout, "Block -> Allow: {}", summary.block_to_allow);
     let _ = writeln!(stdout, "Block -> Warn: {}", summary.block_to_warn);
 
-    if fail_on_breaking && summary.allow_to_block > 0 {
+    if opts.fail_on_breaking && summary.allow_to_block > 0 {
         let _ = writeln!(stderr, "Breaking changes detected (allow -> block).");
     }
 
     code
-}
-
-impl Default for ImpactSummary {
-    fn default() -> Self {
-        Self {
-            total: 0,
-            changed: 0,
-            allow_to_warn: 0,
-            allow_to_block: 0,
-            warn_to_allow: 0,
-            warn_to_block: 0,
-            block_to_allow: 0,
-            block_to_warn: 0,
-        }
-    }
 }
 
 fn outcome_for_report(report: &clawdstrike::GuardReport) -> &'static str {
@@ -314,6 +304,7 @@ fn outcome_for_report(report: &clawdstrike::GuardReport) -> &'static str {
     "allowed"
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_error(
     json: bool,
     old_policy: PolicySource,
@@ -371,4 +362,3 @@ fn guess_policy_source(policy_ref: &str) -> PolicySource {
         },
     }
 }
-

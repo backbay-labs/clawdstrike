@@ -183,12 +183,24 @@ impl Serialize for PolicyEventData {
         S: serde::Serializer,
     {
         let value = match self {
-            Self::File(inner) => serialize_typed_data("file", inner).map_err(serde::ser::Error::custom)?,
-            Self::Network(inner) => serialize_typed_data("network", inner).map_err(serde::ser::Error::custom)?,
-            Self::Command(inner) => serialize_typed_data("command", inner).map_err(serde::ser::Error::custom)?,
-            Self::Patch(inner) => serialize_typed_data("patch", inner).map_err(serde::ser::Error::custom)?,
-            Self::Tool(inner) => serialize_typed_data("tool", inner).map_err(serde::ser::Error::custom)?,
-            Self::Custom(inner) => serialize_typed_data("custom", inner).map_err(serde::ser::Error::custom)?,
+            Self::File(inner) => {
+                serialize_typed_data("file", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Network(inner) => {
+                serialize_typed_data("network", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Command(inner) => {
+                serialize_typed_data("command", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Patch(inner) => {
+                serialize_typed_data("patch", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Tool(inner) => {
+                serialize_typed_data("tool", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Custom(inner) => {
+                serialize_typed_data("custom", inner).map_err(serde::ser::Error::custom)?
+            }
             Self::Other { value, .. } => value.clone(),
         };
 
@@ -237,7 +249,10 @@ impl<'de> Deserialize<'de> for PolicyEventData {
     }
 }
 
-fn serialize_typed_data<T: Serialize>(type_name: &str, inner: &T) -> anyhow::Result<serde_json::Value> {
+fn serialize_typed_data<T: Serialize>(
+    type_name: &str,
+    inner: &T,
+) -> anyhow::Result<serde_json::Value> {
     let value = serde_json::to_value(inner).context("serialize event data")?;
     let serde_json::Value::Object(mut obj) = value else {
         anyhow::bail!("event data must serialize to an object");
@@ -265,7 +280,11 @@ pub struct FileEventData {
     pub content_base64: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
-    #[serde(default, alias = "content_hash", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "content_hash",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub content_hash: Option<String>,
 }
 
@@ -365,13 +384,32 @@ fn merge_context_into_metadata(
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MappedGuardAction {
-    FileAccess { path: String },
-    FileWrite { path: String, content: Vec<u8> },
-    NetworkEgress { host: String, port: u16 },
-    ShellCommand { commandline: String },
-    Patch { file_path: String, patch_content: String },
-    McpTool { tool_name: String, parameters: serde_json::Value },
-    Custom { custom_type: String, data: serde_json::Value },
+    FileAccess {
+        path: String,
+    },
+    FileWrite {
+        path: String,
+        content: Vec<u8>,
+    },
+    NetworkEgress {
+        host: String,
+        port: u16,
+    },
+    ShellCommand {
+        commandline: String,
+    },
+    Patch {
+        file_path: String,
+        patch_content: String,
+    },
+    McpTool {
+        tool_name: String,
+        parameters: serde_json::Value,
+    },
+    Custom {
+        custom_type: String,
+        data: serde_json::Value,
+    },
 }
 
 impl MappedGuardAction {

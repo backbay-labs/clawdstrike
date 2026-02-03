@@ -45,4 +45,3 @@ fn exit_with_status(status: ExitStatus) -> ! {
         None => std::process::exit(1),
     }
 }
-

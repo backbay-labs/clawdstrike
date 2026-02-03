@@ -119,4 +119,3 @@ fn guess_policy_source(policy_ref: &str) -> PolicySource {
         },
     }
 }
-

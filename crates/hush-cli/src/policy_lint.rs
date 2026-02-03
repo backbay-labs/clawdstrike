@@ -141,7 +141,9 @@ fn lint_policy(policy: &Policy) -> Vec<LintFinding> {
         if forbidden.patterns.iter().any(|p| p == "**" || p == "**/*") {
             warnings.push(LintFinding {
                 code: "SEC010",
-                message: "forbidden_path.patterns contains a catch-all pattern (may block everything)".to_string(),
+                message:
+                    "forbidden_path.patterns contains a catch-all pattern (may block everything)"
+                        .to_string(),
             });
         }
     }
@@ -164,4 +166,3 @@ fn guess_policy_source(policy_ref: &str) -> PolicySource {
         },
     }
 }
-
