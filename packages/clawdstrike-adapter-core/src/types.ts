@@ -28,7 +28,8 @@ export type EventType =
   | 'network_egress'
   | 'tool_call'
   | 'patch_apply'
-  | 'secret_access';
+  | 'secret_access'
+  | 'custom';
 
 export interface PolicyEvent {
   eventId: string;
@@ -45,7 +46,8 @@ export type EventData =
   | NetworkEventData
   | ToolEventData
   | PatchEventData
-  | SecretEventData;
+  | SecretEventData
+  | CustomEventData;
 
 export interface FileEventData {
   type: 'file';
@@ -87,6 +89,12 @@ export interface SecretEventData {
   type: 'secret';
   secretName: string;
   scope: string;
+}
+
+export interface CustomEventData {
+  type: 'custom';
+  customType: string;
+  [key: string]: unknown;
 }
 
 export interface Decision {
