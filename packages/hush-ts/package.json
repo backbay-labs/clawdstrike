@@ -23,7 +23,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "bench": "npx tsx benchmarks/guards.bench.ts",
+    "bench:json": "OUTPUT_JSON=1 npx tsx benchmarks/guards.bench.ts"
   },
   "keywords": [
     "clawdstrike",

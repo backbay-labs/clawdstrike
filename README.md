@@ -120,6 +120,18 @@ See `packages/clawdstrike-openclaw/docs/getting-started.md`.
 | **Fail-Closed Design**          | Invalid policies reject at load time; errors deny access                      |
 | **Signed Receipts**             | Tamper-evident audit trail with Ed25519 signatures                            |
 
+## Performance
+
+Guard checks add **<0.05ms** overhead per tool call. For context, typical LLM API calls take 500-2000ms.
+
+| Operation | Latency | % of LLM call |
+|-----------|---------|---------------|
+| Single guard check | <0.001ms | <0.0001% |
+| Full policy evaluation | ~0.04ms | ~0.004% |
+| Jailbreak detection (heuristic+statistical) | ~0.03ms | ~0.003% |
+
+No external API calls required for core detection. [Full benchmarks →](docs/src/reference/benchmarks.md)
+
 ## Documentation
 
 - [Design Philosophy](docs/src/concepts/design-philosophy.md) — Fail-closed, defense in depth

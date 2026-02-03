@@ -54,6 +54,7 @@
   - [TypeScript](reference/api/typescript.md)
   - [Python](reference/api/python.md)
   - [CLI](reference/api/cli.md)
+- [Benchmarks](reference/benchmarks.md)
 
 # Recipes
 
