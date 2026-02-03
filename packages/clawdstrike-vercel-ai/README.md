@@ -48,6 +48,14 @@ const tools = security.wrapTools({
 });
 ```
 
+## Model wrapper (AI SDK)
+
+```ts
+import { openai } from '@ai-sdk/openai';
+
+const model = security.wrapLanguageModel(openai('gpt-4o-mini'));
+```
+
 ## Errors
 
 Blocked tool calls throw `ClawdstrikeBlockedError` (includes `decision` and `toolName`).

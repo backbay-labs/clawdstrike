@@ -14,4 +14,7 @@ export type {
 } from './middleware.js';
 export { createClawdstrikeMiddleware } from './middleware.js';
 
+export type { StreamChunk, StreamingToolGuardOptions } from './streaming-tool-guard.js';
+export { StreamingToolGuard } from './streaming-tool-guard.js';
+
 export { VercelAIAdapter } from './vercel-ai-adapter.js';
