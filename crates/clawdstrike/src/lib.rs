@@ -45,6 +45,10 @@ pub mod engine;
 pub mod error;
 pub mod guards;
 pub mod hygiene;
+pub mod instruction_hierarchy;
+pub mod jailbreak;
+pub mod output_sanitizer;
+pub mod watermarking;
 pub mod irm;
 pub mod policy;
 
@@ -52,12 +56,34 @@ pub use engine::{GuardReport, HushEngine};
 pub use error::{Error, Result};
 pub use guards::{
     EgressAllowlistGuard, ForbiddenPathGuard, Guard, GuardContext, GuardResult, McpToolGuard,
-    PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard, Severity,
+    JailbreakGuard, PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard, Severity,
+    JailbreakConfig,
 };
 pub use hygiene::{
     detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,
     FingerprintDeduper, PromptInjectionLevel, PromptInjectionReport, USER_CONTENT_END,
     USER_CONTENT_START,
+};
+pub use instruction_hierarchy::{
+    ConflictAction, ConflictSeverity, ContentModification, CustomMarkers, EnforcementAction,
+    EnforcementActionType, HierarchyConflict, HierarchyEnforcementResult, HierarchyEnforcerConfig,
+    HierarchyError, HierarchyMessage, HierarchyState, HierarchyStats, InstructionHierarchyEnforcer,
+    InstructionLevel, MarkerFormat, MessageMetadata, MessageRole, MessageSource, ProcessingStats as HierarchyProcessingStats, RulesConfig,
+    SourceType,
+};
+pub use jailbreak::{
+    JailbreakCanonicalizationStats, JailbreakCategory, JailbreakDetectionResult, JailbreakDetector,
+    JailbreakGuardConfig, JailbreakSeverity, JailbreakSignal, LayerResult, LayerResults,
+    SessionRiskSnapshot,
+};
+pub use output_sanitizer::{
+    DetectorType, OutputSanitizer, OutputSanitizerConfig, ProcessingStats, Redaction,
+    RedactionStrategy, SanitizationResult, SensitiveCategory, SensitiveDataFinding, Span,
+};
+pub use watermarking::{
+    EncodedWatermark, PromptWatermarker, WatermarkConfig, WatermarkEncoding, WatermarkError,
+    WatermarkExtractionResult, WatermarkExtractor, WatermarkPayload, WatermarkVerifierConfig,
+    WatermarkedPrompt,
 };
 pub use policy::{Policy, RuleSet};
 

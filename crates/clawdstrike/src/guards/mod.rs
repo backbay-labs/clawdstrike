@@ -23,6 +23,7 @@
 
 mod egress_allowlist;
 mod forbidden_path;
+mod jailbreak;
 mod mcp_tool;
 mod patch_integrity;
 mod prompt_injection;
@@ -30,6 +31,7 @@ mod secret_leak;
 
 pub use egress_allowlist::{EgressAllowlistConfig, EgressAllowlistGuard};
 pub use forbidden_path::{ForbiddenPathConfig, ForbiddenPathGuard};
+pub use jailbreak::{JailbreakConfig, JailbreakGuard};
 pub use mcp_tool::{McpDefaultAction, McpToolConfig, McpToolGuard};
 pub use patch_integrity::{PatchIntegrityConfig, PatchIntegrityGuard};
 pub use prompt_injection::{PromptInjectionConfig, PromptInjectionGuard};

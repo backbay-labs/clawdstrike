@@ -87,6 +87,28 @@ describe('Tool Guard Hook', () => {
     expect(event.messages.some((m) => m.includes('Blocked'))).toBe(true);
   });
 
+  it('should redact PII in allowed tool output', async () => {
+    const event: ToolResultPersistEvent = {
+      type: 'tool_result_persist',
+      timestamp: new Date().toISOString(),
+      context: {
+        sessionId: 'test-session',
+        toolResult: {
+          toolName: 'read',
+          params: { path: '/project/notes.txt' },
+          result: 'Contact: alice@example.com',
+        },
+      },
+      messages: [],
+    };
+
+    await toolGuardHandler(event);
+
+    expect(event.context.toolResult.error).toBeUndefined();
+    expect(event.context.toolResult.result).toContain('[REDACTED:email]');
+    expect(event.context.toolResult.result).not.toContain('alice@example.com');
+  });
+
   it('should handle JSON results', async () => {
     const event: ToolResultPersistEvent = {
       type: 'tool_result_persist',
@@ -105,6 +127,29 @@ describe('Tool Guard Hook', () => {
     await toolGuardHandler(event);
 
     expect(event.context.toolResult.error).toBeUndefined();
+  });
+
+  it('should redact PII in JSON tool outputs', async () => {
+    const event: ToolResultPersistEvent = {
+      type: 'tool_result_persist',
+      timestamp: new Date().toISOString(),
+      context: {
+        sessionId: 'test-session',
+        toolResult: {
+          toolName: 'read',
+          params: { path: '/project/users.json' },
+          result: { user: { email: 'alice@example.com' }, note: 'ok' },
+        },
+      },
+      messages: [],
+    };
+
+    await toolGuardHandler(event);
+
+    expect(event.context.toolResult.error).toBeUndefined();
+    const result = event.context.toolResult.result as any;
+    expect(result.user.email).toContain('[REDACTED:email]');
+    expect(result.user.email).not.toContain('alice@example.com');
   });
 
   it('should block dangerous command execution output', async () => {

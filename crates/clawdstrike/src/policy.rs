@@ -11,6 +11,7 @@ use crate::guards::{
     EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard, Guard,
     McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard, PromptInjectionConfig,
     PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
+    JailbreakConfig, JailbreakGuard,
 };
 
 /// Current policy schema version.
@@ -99,6 +100,9 @@ pub struct GuardConfigs {
     /// Prompt injection guard config
     #[serde(default)]
     pub prompt_injection: Option<PromptInjectionConfig>,
+    /// Jailbreak detection guard config
+    #[serde(default)]
+    pub jailbreak: Option<JailbreakConfig>,
 }
 
 impl GuardConfigs {
@@ -140,6 +144,7 @@ impl GuardConfigs {
                 .prompt_injection
                 .clone()
                 .or_else(|| self.prompt_injection.clone()),
+            jailbreak: child.jailbreak.clone().or_else(|| self.jailbreak.clone()),
         }
     }
 }
@@ -504,6 +509,12 @@ impl Policy {
                 .clone()
                 .map(PromptInjectionGuard::with_config)
                 .unwrap_or_default(),
+            jailbreak: self
+                .guards
+                .jailbreak
+                .clone()
+                .map(JailbreakGuard::with_config)
+                .unwrap_or_default(),
         }
     }
 }
@@ -584,6 +595,7 @@ pub(crate) struct PolicyGuards {
     pub patch_integrity: PatchIntegrityGuard,
     pub mcp_tool: McpToolGuard,
     pub prompt_injection: PromptInjectionGuard,
+    pub jailbreak: JailbreakGuard,
 }
 
 impl PolicyGuards {
@@ -596,6 +608,7 @@ impl PolicyGuards {
             &self.patch_integrity as &dyn Guard,
             &self.mcp_tool as &dyn Guard,
             &self.prompt_injection as &dyn Guard,
+            &self.jailbreak as &dyn Guard,
         ]
         .into_iter()
     }

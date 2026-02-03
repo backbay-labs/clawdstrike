@@ -4,6 +4,7 @@ import path from 'node:path';
 import { mergeConfig } from '../config.js';
 import { EgressGuard, ForbiddenPathGuard, PatchIntegrityGuard, SecretLeakGuard } from '../guards/index.js';
 import type { Decision, EvaluationMode, ClawdstrikeConfig, Policy, PolicyEvent } from '../types.js';
+import { sanitizeOutputText } from '../sanitizer/output-sanitizer.js';
 
 import { loadPolicy } from './loader.js';
 import { validatePolicy } from './validator.js';
@@ -59,6 +60,13 @@ export class PolicyEngine {
 
   redactSecrets(content: string): string {
     return this.secretLeakGuard.redact(content);
+  }
+
+  sanitizeOutput(content: string): string {
+    // 1) Secrets (high-confidence tokens).
+    const secretsRedacted = this.secretLeakGuard.redact(content);
+    // 2) PII (emails/phones/SSN/CC, etc).
+    return sanitizeOutputText(secretsRedacted).sanitized;
   }
 
   async evaluate(event: PolicyEvent): Promise<Decision> {

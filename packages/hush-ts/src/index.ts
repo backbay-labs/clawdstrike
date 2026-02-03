@@ -72,3 +72,41 @@ export {
   type McpToolConfig,
   ToolDecision,
 } from "./guards";
+
+// Prompt watermarking
+export {
+  PromptWatermarker,
+  WatermarkExtractor,
+  type EncodedWatermark,
+  type WatermarkConfig,
+  type WatermarkEncoding,
+  type WatermarkExtractionResult,
+  type WatermarkPayload,
+  type WatermarkVerifierConfig,
+  type WatermarkedPrompt,
+} from "./watermarking";
+
+// Instruction hierarchy
+export {
+  InstructionHierarchyEnforcer,
+  InstructionLevel,
+  type ConflictAction,
+  type ConflictSeverity,
+  type EnforcementAction,
+  type HierarchyConflict,
+  type HierarchyEnforcementResult,
+  type HierarchyEnforcerConfig,
+  type HierarchyMessage,
+  type MessageRole,
+} from "./instruction-hierarchy";
+
+// Jailbreak detection
+export {
+  JailbreakDetector,
+  type JailbreakCategory,
+  type JailbreakDetectionResult,
+  type JailbreakDetectorConfig,
+  type JailbreakSeverity,
+  type JailbreakSignal,
+  type LayerResult,
+} from "./jailbreak";
