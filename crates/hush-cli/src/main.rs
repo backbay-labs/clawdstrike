@@ -12,6 +12,8 @@
 //! - `hush policy show` - Show current policy
 //! - `hush policy validate <file>` - Validate a policy file
 //! - `hush policy diff <left> <right>` - Diff two policies (rulesets or files)
+//! - `hush policy eval <policyRef> <eventPath|->` - Evaluate a PolicyEvent JSON against a policy
+//! - `hush policy simulate <policyRef> <eventsJsonlPath|->` - Evaluate a JSONL stream of PolicyEvents
 //! - `hush daemon start|stop|status|reload` - Daemon management
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -26,6 +28,8 @@ use clawdstrike::{GuardContext, GuardResult, HushEngine, Policy, RuleSet, Severi
 use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, SignedReceipt};
 
 mod policy_diff;
+mod policy_event;
+mod policy_pac;
 
 const CLI_JSON_VERSION: u8 = 1;
 
@@ -241,6 +245,34 @@ enum PolicyCommands {
 
     /// List available rulesets
     List,
+
+    /// Evaluate a canonical PolicyEvent JSON against a policy
+    Eval {
+        /// Policy reference (ruleset name or file path)
+        policy_ref: String,
+        /// Path to PolicyEvent JSON (use - for stdin)
+        event: String,
+        /// Resolve extends before evaluation
+        #[arg(long)]
+        resolve: bool,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Simulate canonical PolicyEvent JSONL against a policy
+    Simulate {
+        /// Policy reference (ruleset name or file path)
+        policy_ref: String,
+        /// Path to PolicyEvent JSONL (use - for stdin)
+        events: String,
+        /// Resolve extends before evaluation
+        #[arg(long)]
+        resolve: bool,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -413,7 +445,7 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCo
             }
         },
 
-        Commands::Policy { command } => match cmd_policy(command, stdout, stderr) {
+        Commands::Policy { command } => match cmd_policy(command, stdout, stderr).await {
             Ok(code) => code,
             Err(e) => {
                 let _ = writeln!(stderr, "Error: {}", e);
@@ -908,7 +940,7 @@ fn cmd_keygen(output: &str) -> anyhow::Result<(String, String, String)> {
     Ok((output.to_string(), public_path, public_hex))
 }
 
-fn cmd_policy(
+async fn cmd_policy(
     command: PolicyCommands,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
@@ -1094,6 +1126,25 @@ fn cmd_policy(
             }
             Ok(ExitCode::Ok)
         }
+
+        PolicyCommands::Eval {
+            policy_ref,
+            event,
+            resolve,
+            json,
+        } => Ok(
+            policy_pac::cmd_policy_eval(policy_ref, event, resolve, json, stdout, stderr).await,
+        ),
+
+        PolicyCommands::Simulate {
+            policy_ref,
+            events,
+            resolve,
+            json,
+        } => Ok(
+            policy_pac::cmd_policy_simulate(policy_ref, events, resolve, json, stdout, stderr)
+                .await,
+        ),
     }
 }
 

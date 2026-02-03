@@ -249,6 +249,67 @@ mod cli_parsing {
     }
 
     #[test]
+    fn test_policy_eval_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "eval",
+            "--resolve",
+            "--json",
+            "default",
+            "event.json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Eval {
+                    policy_ref,
+                    event,
+                    resolve,
+                    json,
+                } => {
+                    assert_eq!(policy_ref, "default");
+                    assert_eq!(event, "event.json");
+                    assert!(resolve);
+                    assert!(json);
+                }
+                _ => panic!("Expected Eval subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_simulate_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "simulate",
+            "default",
+            "events.jsonl",
+            "--json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Simulate {
+                    policy_ref,
+                    events,
+                    resolve,
+                    json,
+                } => {
+                    assert_eq!(policy_ref, "default");
+                    assert_eq!(events, "events.jsonl");
+                    assert!(!resolve);
+                    assert!(json);
+                }
+                _ => panic!("Expected Simulate subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
     fn test_policy_diff_parses() {
         let cli = Cli::parse_from(["hush", "policy", "diff", "clawdstrike:default", "policy.yaml"]);
 
@@ -999,5 +1060,247 @@ guards:
                 .and_then(|v| v.as_bool()),
             Some(false)
         );
+    }
+}
+
+#[cfg(test)]
+mod policy_event_contract {
+    use crate::policy_event::{map_policy_event, MappedGuardAction, PolicyEvent};
+
+    #[test]
+    fn policy_event_accepts_snake_case_aliases_and_normalizes_to_camel_case() {
+        let input = serde_json::json!({
+            "event_id": "evt-123",
+            "event_type": "patch_apply",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "session_id": "sess-123",
+            "data": {
+                "type": "patch",
+                "file_path": "src/lib.rs",
+                "patch_content": "+ hello",
+                "patch_hash": "sha256:deadbeef"
+            },
+            "metadata": {
+                "agent_id": "agent-123",
+                "tool_kind": "mcp"
+            }
+        });
+
+        let event: PolicyEvent = serde_json::from_value(input).expect("parse PolicyEvent");
+        let normalized = serde_json::to_value(&event).expect("serialize normalized");
+
+        assert_eq!(normalized.get("eventId").and_then(|v| v.as_str()), Some("evt-123"));
+        assert_eq!(
+            normalized.get("eventType").and_then(|v| v.as_str()),
+            Some("patch_apply")
+        );
+        assert_eq!(
+            normalized.get("sessionId").and_then(|v| v.as_str()),
+            Some("sess-123")
+        );
+
+        let data = normalized.get("data").expect("data");
+        assert_eq!(data.get("type").and_then(|v| v.as_str()), Some("patch"));
+        assert_eq!(
+            data.get("filePath").and_then(|v| v.as_str()),
+            Some("src/lib.rs")
+        );
+        assert_eq!(
+            data.get("patchContent").and_then(|v| v.as_str()),
+            Some("+ hello")
+        );
+        assert_eq!(
+            data.get("patchHash").and_then(|v| v.as_str()),
+            Some("sha256:deadbeef")
+        );
+    }
+
+    #[test]
+    fn custom_event_requires_data_custom_type() {
+        let input = serde_json::json!({
+            "eventId": "evt-1",
+            "eventType": "custom",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "data": { "type": "custom" }
+        });
+
+        let err = serde_json::from_value::<PolicyEvent>(input).unwrap_err();
+        assert!(
+            err.to_string().contains("customType"),
+            "error should mention customType"
+        );
+    }
+
+    #[test]
+    fn tool_call_maps_to_mcp_tool_when_metadata_declares_mcp() {
+        let input = serde_json::json!({
+            "eventId": "evt-mcp",
+            "eventType": "tool_call",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "data": {
+                "type": "tool",
+                "toolName": "read_file",
+                "parameters": { "path": "/tmp/x" }
+            },
+            "metadata": { "toolKind": "mcp" }
+        });
+
+        let event: PolicyEvent = serde_json::from_value(input).expect("parse");
+        let mapped = map_policy_event(&event).expect("map");
+        assert!(matches!(mapped.action, MappedGuardAction::McpTool { .. }));
+    }
+
+    #[test]
+    fn tool_call_maps_to_mcp_tool_when_tool_name_has_mcp_prefix() {
+        let input = serde_json::json!({
+            "eventId": "evt-mcp2",
+            "eventType": "tool_call",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "data": {
+                "type": "tool",
+                "toolName": "mcp__blender__execute_blender_code",
+                "parameters": { "code": "print('hi')" }
+            }
+        });
+
+        let event: PolicyEvent = serde_json::from_value(input).expect("parse");
+        let mapped = map_policy_event(&event).expect("map");
+        assert!(matches!(mapped.action, MappedGuardAction::McpTool { .. }));
+    }
+
+    #[test]
+    fn tool_call_maps_to_custom_when_not_mcp() {
+        let input = serde_json::json!({
+            "eventId": "evt-custom",
+            "eventType": "tool_call",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "data": {
+                "type": "tool",
+                "toolName": "shell_exec",
+                "parameters": { "command": "echo hi" }
+            },
+            "metadata": { "toolKind": "other" }
+        });
+
+        let event: PolicyEvent = serde_json::from_value(input).expect("parse");
+        let mapped = map_policy_event(&event).expect("map");
+        assert!(matches!(
+            mapped.action,
+            MappedGuardAction::Custom { ref custom_type, .. } if custom_type == "tool_call"
+        ));
+    }
+}
+
+#[cfg(test)]
+mod policy_pac_contract {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::policy_pac::{cmd_policy_eval, cmd_policy_simulate};
+    use crate::ExitCode;
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("hush_cli_{name}_{nanos}"))
+    }
+
+    #[tokio::test]
+    async fn policy_eval_json_includes_decision_schema_fields() {
+        let event_path = temp_path("policy_event.json");
+        std::fs::write(
+            &event_path,
+            r#"{"eventId":"evt-allow","eventType":"file_read","timestamp":"2026-02-03T00:00:00Z","data":{"type":"file","path":"/app/src/main.rs","operation":"read"}}"#,
+        )
+        .expect("write event");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_policy_eval(
+            "default".to_string(),
+            event_path.to_string_lossy().to_string(),
+            false,
+            true,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Ok);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(
+            v.get("command").and_then(|v| v.as_str()),
+            Some("policy_eval")
+        );
+        let decision = v.get("decision").expect("decision");
+        for key in ["allowed", "denied", "warn", "guard", "severity", "message", "reason"] {
+            assert!(decision.get(key).is_some(), "missing decision.{key}");
+        }
+        assert!(v.get("report").is_some(), "missing report");
+    }
+
+    #[tokio::test]
+    async fn policy_simulate_json_includes_results_and_event_ids_from_fixtures() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+
+        let code = cmd_policy_simulate(
+            "default".to_string(),
+            fixtures_path.to_string_lossy().to_string(),
+            false,
+            true,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert!(
+            matches!(code, ExitCode::Ok | ExitCode::Warn | ExitCode::Fail),
+            "unexpected exit code"
+        );
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(
+            v.get("command").and_then(|v| v.as_str()),
+            Some("policy_simulate")
+        );
+
+        let results = v
+            .get("results")
+            .and_then(|v| v.as_array())
+            .expect("results array");
+        assert_eq!(results.len(), 6, "expected one result per fixture line");
+
+        let ids: std::collections::BTreeSet<String> = results
+            .iter()
+            .filter_map(|r| r.get("eventId").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .collect();
+
+        for id in [
+            "evt-0001",
+            "evt-0002",
+            "evt-0003",
+            "evt-0004",
+            "evt-0005",
+            "evt-0006",
+        ] {
+            assert!(ids.contains(id), "missing eventId {id}");
+        }
+
+        let first = &results[0];
+        let decision = first.get("decision").expect("decision");
+        for key in ["allowed", "denied", "warn", "guard", "severity", "message", "reason"] {
+            assert!(decision.get(key).is_some(), "missing decision.{key}");
+        }
+        assert!(first.get("report").is_some(), "missing report");
     }
 }
