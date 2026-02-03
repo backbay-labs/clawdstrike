@@ -297,11 +297,21 @@ mod cli_parsing {
                     events,
                     resolve,
                     json,
+                    jsonl,
+                    summary,
+                    fail_on_deny,
+                    no_fail_on_deny,
+                    benchmark,
                 } => {
                     assert_eq!(policy_ref, "default");
-                    assert_eq!(events, "events.jsonl");
+                    assert_eq!(events, Some("events.jsonl".to_string()));
                     assert!(!resolve);
                     assert!(json);
+                    assert!(!jsonl);
+                    assert!(!summary);
+                    assert!(!fail_on_deny);
+                    assert!(!no_fail_on_deny);
+                    assert!(!benchmark);
                 }
                 _ => panic!("Expected Simulate subcommand"),
             },
@@ -684,6 +694,167 @@ mod cli_parsing {
                 _ => panic!("Expected Verify subcommand"),
             },
             _ => panic!("Expected Merkle command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_lint_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "lint",
+            "--resolve",
+            "--strict",
+            "--json",
+            "default",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Lint {
+                    policy_ref,
+                    resolve,
+                    strict,
+                    json,
+                } => {
+                    assert_eq!(policy_ref, "default");
+                    assert!(resolve);
+                    assert!(strict);
+                    assert!(json);
+                }
+                _ => panic!("Expected Lint subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_test_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "test",
+            "--resolve",
+            "--json",
+            "--coverage",
+            "tests/policy.test.yaml",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Test {
+                    test_file,
+                    resolve,
+                    json,
+                    coverage,
+                } => {
+                    assert_eq!(test_file, "tests/policy.test.yaml");
+                    assert!(resolve);
+                    assert!(json);
+                    assert!(coverage);
+                }
+                _ => panic!("Expected Test subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_impact_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "impact",
+            "default",
+            "strict",
+            "events.jsonl",
+            "--resolve",
+            "--json",
+            "--fail-on-breaking",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Impact {
+                    old_policy,
+                    new_policy,
+                    events,
+                    resolve,
+                    json,
+                    fail_on_breaking,
+                } => {
+                    assert_eq!(old_policy, "default");
+                    assert_eq!(new_policy, "strict");
+                    assert_eq!(events, "events.jsonl");
+                    assert!(resolve);
+                    assert!(json);
+                    assert!(fail_on_breaking);
+                }
+                _ => panic!("Expected Impact subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_version_parses() {
+        let cli = Cli::parse_from(["hush", "policy", "version", "--json", "default"]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Version {
+                    policy_ref,
+                    resolve,
+                    json,
+                } => {
+                    assert_eq!(policy_ref, "default");
+                    assert!(!resolve);
+                    assert!(json);
+                }
+                _ => panic!("Expected Version subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_simulate_jsonl_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "simulate",
+            "default",
+            "events.jsonl",
+            "--jsonl",
+            "--no-fail-on-deny",
+            "--benchmark",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Simulate {
+                    policy_ref,
+                    events,
+                    json,
+                    jsonl,
+                    summary,
+                    fail_on_deny,
+                    no_fail_on_deny,
+                    benchmark,
+                    ..
+                } => {
+                    assert_eq!(policy_ref, "default");
+                    assert_eq!(events, Some("events.jsonl".to_string()));
+                    assert!(!json);
+                    assert!(jsonl);
+                    assert!(!summary);
+                    assert!(!fail_on_deny);
+                    assert!(no_fail_on_deny);
+                    assert!(benchmark);
+                }
+                _ => panic!("Expected Simulate subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
         }
     }
 }
@@ -1132,6 +1303,85 @@ mod policy_event_contract {
     }
 
     #[test]
+    fn policy_event_rejects_invalid_rfc3339_timestamp() {
+        let input = serde_json::json!({
+            "eventId": "evt-1",
+            "eventType": "file_read",
+            "timestamp": "not-a-timestamp",
+            "data": { "type": "file", "path": "/tmp/x", "operation": "read" }
+        });
+
+        assert!(serde_json::from_value::<PolicyEvent>(input).is_err());
+    }
+
+    #[test]
+    fn policy_event_accepts_unknown_event_type_but_mapping_fails_closed() {
+        let input = serde_json::json!({
+            "eventId": "evt-future",
+            "eventType": "future_event",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "data": { "type": "file", "path": "/tmp/x", "operation": "read" }
+        });
+
+        let event: PolicyEvent = serde_json::from_value(input).expect("parse");
+        let err = map_policy_event(&event).unwrap_err();
+        assert!(
+            err.to_string().contains("unsupported eventType"),
+            "mapping should fail with unsupported eventType"
+        );
+    }
+
+    #[test]
+    fn command_exec_mapping_uses_posix_quoting_for_args() {
+        let input = serde_json::json!({
+            "eventId": "evt-cmd",
+            "eventType": "command_exec",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "data": {
+                "type": "command",
+                "command": "echo",
+                "args": ["hello world", "O'Reilly"]
+            }
+        });
+
+        let event: PolicyEvent = serde_json::from_value(input).expect("parse");
+        let mapped = map_policy_event(&event).expect("map");
+        match mapped.action {
+            MappedGuardAction::ShellCommand { commandline } => {
+                assert_eq!(commandline, "echo 'hello world' 'O'\"'\"'Reilly'");
+            }
+            other => panic!("expected ShellCommand, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn context_is_forwarded_into_guard_context_metadata_but_not_emitted_in_normalized_event() {
+        let input = serde_json::json!({
+            "eventId": "evt-ctx",
+            "eventType": "file_read",
+            "timestamp": "2026-02-03T00:00:00Z",
+            "data": { "type": "file", "path": "/tmp/x", "operation": "read" },
+            "metadata": { "agentId": "agent-1", "source": "cli" },
+            "context": { "user": { "id": "u1" } }
+        });
+
+        let event: PolicyEvent = serde_json::from_value(input).expect("parse");
+        let normalized = serde_json::to_value(&event).expect("serialize normalized");
+        assert!(
+            normalized.get("context").is_none(),
+            "normalized event should not include context"
+        );
+
+        let ctx = event.to_guard_context();
+        let meta = ctx.metadata.expect("metadata present");
+        assert_eq!(
+            meta.get("agentId").and_then(|v| v.as_str()),
+            Some("agent-1")
+        );
+        assert!(meta.get("context").is_some(), "metadata should include context");
+    }
+
+    #[test]
     fn tool_call_maps_to_mcp_tool_when_metadata_declares_mcp() {
         let input = serde_json::json!({
             "eventId": "evt-mcp",
@@ -1254,9 +1504,15 @@ mod policy_pac_contract {
 
         let code = cmd_policy_simulate(
             "default".to_string(),
-            fixtures_path.to_string_lossy().to_string(),
-            false,
-            true,
+            Some(fixtures_path.to_string_lossy().to_string()),
+            crate::policy_pac::PolicySimulateOptions {
+                resolve: false,
+                json: true,
+                jsonl: false,
+                summary: false,
+                fail_on_deny: true,
+                benchmark: false,
+            },
             &mut out,
             &mut err,
         )
@@ -1302,5 +1558,109 @@ mod policy_pac_contract {
             assert!(decision.get(key).is_some(), "missing decision.{key}");
         }
         assert!(first.get("report").is_some(), "missing report");
+    }
+
+    #[tokio::test]
+    async fn policy_simulate_jsonl_streams_one_json_object_per_event() {
+        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_policy_simulate(
+            "default".to_string(),
+            Some(fixtures_path.to_string_lossy().to_string()),
+            crate::policy_pac::PolicySimulateOptions {
+                resolve: false,
+                json: false,
+                jsonl: true,
+                summary: false,
+                fail_on_deny: true,
+                benchmark: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Fail, "fixtures include a blocked event");
+
+        let stdout = String::from_utf8(out).expect("utf8");
+        let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 6, "expected one JSON line per event");
+
+        for line in &lines {
+            let v: serde_json::Value = serde_json::from_str(line).expect("valid json line");
+            assert!(v.get("eventId").is_some());
+            assert!(v.get("decision").is_some());
+            assert!(v.get("report").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_simulate_json_summary_only_omits_results_but_preserves_counts() {
+        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_policy_simulate(
+            "default".to_string(),
+            Some(fixtures_path.to_string_lossy().to_string()),
+            crate::policy_pac::PolicySimulateOptions {
+                resolve: false,
+                json: true,
+                jsonl: false,
+                summary: true,
+                fail_on_deny: true,
+                benchmark: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Fail);
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("summary").and_then(|v| v.get("total")).and_then(|v| v.as_i64()), Some(6));
+        assert_eq!(
+            v.get("results")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len()),
+            Some(0)
+        );
+    }
+
+    #[tokio::test]
+    async fn policy_simulate_no_fail_on_deny_exit_code_ok() {
+        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_policy_simulate(
+            "default".to_string(),
+            Some(fixtures_path.to_string_lossy().to_string()),
+            crate::policy_pac::PolicySimulateOptions {
+                resolve: false,
+                json: true,
+                jsonl: false,
+                summary: true,
+                fail_on_deny: false,
+                benchmark: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Ok);
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(0));
+        assert_eq!(v.get("summary").and_then(|v| v.get("blocked")).and_then(|v| v.as_i64()), Some(1));
     }
 }

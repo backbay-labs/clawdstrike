@@ -1,11 +1,10 @@
 use anyhow::Context as _;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use chrono::{DateTime, Utc};
 use clawdstrike::guards::GuardAction;
 use clawdstrike::GuardContext;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum PolicyEventType {
     FileRead,
     FileWrite,
@@ -14,6 +13,87 @@ pub enum PolicyEventType {
     PatchApply,
     ToolCall,
     Custom,
+    Other(String),
+}
+
+impl PolicyEventType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::FileRead => "file_read",
+            Self::FileWrite => "file_write",
+            Self::NetworkEgress => "network_egress",
+            Self::CommandExec => "command_exec",
+            Self::PatchApply => "patch_apply",
+            Self::ToolCall => "tool_call",
+            Self::Custom => "custom",
+            Self::Other(s) => s.as_str(),
+        }
+    }
+}
+
+impl std::fmt::Debug for PolicyEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("PolicyEventType")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
+impl std::fmt::Display for PolicyEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl PartialEq for PolicyEventType {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for PolicyEventType {}
+
+impl Clone for PolicyEventType {
+    fn clone(&self) -> Self {
+        match self {
+            Self::FileRead => Self::FileRead,
+            Self::FileWrite => Self::FileWrite,
+            Self::NetworkEgress => Self::NetworkEgress,
+            Self::CommandExec => Self::CommandExec,
+            Self::PatchApply => Self::PatchApply,
+            Self::ToolCall => Self::ToolCall,
+            Self::Custom => Self::Custom,
+            Self::Other(s) => Self::Other(s.clone()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PolicyEventType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Ok(match raw.as_str() {
+            "file_read" => Self::FileRead,
+            "file_write" => Self::FileWrite,
+            "network_egress" => Self::NetworkEgress,
+            "command_exec" => Self::CommandExec,
+            "patch_apply" => Self::PatchApply,
+            "tool_call" => Self::ToolCall,
+            "custom" => Self::Custom,
+            other => Self::Other(other.to_string()),
+        })
+    }
+}
+
+impl Serialize for PolicyEventType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -23,12 +103,14 @@ pub struct PolicyEvent {
     pub event_id: String,
     #[serde(alias = "event_type")]
     pub event_type: PolicyEventType,
-    pub timestamp: String,
+    pub timestamp: DateTime<Utc>,
     #[serde(default, alias = "session_id", skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     pub data: PolicyEventData,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    #[serde(default, skip_serializing)]
+    pub context: Option<serde_json::Value>,
 }
 
 impl PolicyEvent {
@@ -37,23 +119,22 @@ impl PolicyEvent {
             anyhow::bail!("eventId must be a non-empty string");
         }
 
-        let matches = match (self.event_type, &self.data) {
-            (PolicyEventType::FileRead, PolicyEventData::File(_)) => true,
-            (PolicyEventType::FileWrite, PolicyEventData::File(_)) => true,
-            (PolicyEventType::NetworkEgress, PolicyEventData::Network(_)) => true,
-            (PolicyEventType::CommandExec, PolicyEventData::Command(_)) => true,
-            (PolicyEventType::PatchApply, PolicyEventData::Patch(_)) => true,
-            (PolicyEventType::ToolCall, PolicyEventData::Tool(_)) => true,
-            (PolicyEventType::Custom, PolicyEventData::Custom(_)) => true,
-            _ => false,
-        };
-
-        if !matches {
-            anyhow::bail!(
-                "eventType {:?} does not match data.type {}",
-                self.event_type,
-                self.data.data_type_name()
-            );
+        match (&self.event_type, &self.data) {
+            (PolicyEventType::FileRead, PolicyEventData::File(_)) => {}
+            (PolicyEventType::FileWrite, PolicyEventData::File(_)) => {}
+            (PolicyEventType::NetworkEgress, PolicyEventData::Network(_)) => {}
+            (PolicyEventType::CommandExec, PolicyEventData::Command(_)) => {}
+            (PolicyEventType::PatchApply, PolicyEventData::Patch(_)) => {}
+            (PolicyEventType::ToolCall, PolicyEventData::Tool(_)) => {}
+            (PolicyEventType::Custom, PolicyEventData::Custom(_)) => {}
+            (PolicyEventType::Other(_), _) => {}
+            (event_type, data) => {
+                anyhow::bail!(
+                    "eventType {} does not match data.type {}",
+                    event_type,
+                    data.data_type_key()
+                );
+            }
         }
 
         Ok(())
@@ -63,13 +144,12 @@ impl PolicyEvent {
         let mut ctx = GuardContext::new();
         ctx.session_id = self.session_id.clone();
         ctx.agent_id = extract_metadata_string(self.metadata.as_ref(), &["agentId", "agent_id"]);
-        ctx.metadata = self.metadata.clone();
+        ctx.metadata = merge_context_into_metadata(self.metadata.as_ref(), self.context.as_ref());
         ctx
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PolicyEventData {
     File(FileEventData),
     Network(NetworkEventData),
@@ -77,10 +157,14 @@ pub enum PolicyEventData {
     Patch(PatchEventData),
     Tool(ToolEventData),
     Custom(CustomEventData),
+    Other {
+        type_name: String,
+        value: serde_json::Value,
+    },
 }
 
 impl PolicyEventData {
-    fn data_type_name(&self) -> &'static str {
+    fn data_type_key(&self) -> &str {
         match self {
             Self::File(_) => "file",
             Self::Network(_) => "network",
@@ -88,8 +172,82 @@ impl PolicyEventData {
             Self::Patch(_) => "patch",
             Self::Tool(_) => "tool",
             Self::Custom(_) => "custom",
+            Self::Other { type_name, .. } => type_name.as_str(),
         }
     }
+}
+
+impl Serialize for PolicyEventData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let value = match self {
+            Self::File(inner) => serialize_typed_data("file", inner).map_err(serde::ser::Error::custom)?,
+            Self::Network(inner) => serialize_typed_data("network", inner).map_err(serde::ser::Error::custom)?,
+            Self::Command(inner) => serialize_typed_data("command", inner).map_err(serde::ser::Error::custom)?,
+            Self::Patch(inner) => serialize_typed_data("patch", inner).map_err(serde::ser::Error::custom)?,
+            Self::Tool(inner) => serialize_typed_data("tool", inner).map_err(serde::ser::Error::custom)?,
+            Self::Custom(inner) => serialize_typed_data("custom", inner).map_err(serde::ser::Error::custom)?,
+            Self::Other { value, .. } => value.clone(),
+        };
+
+        value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PolicyEventData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let serde_json::Value::Object(obj) = &value else {
+            return Err(serde::de::Error::custom("data must be an object"));
+        };
+
+        let Some(serde_json::Value::String(type_name)) = obj.get("type") else {
+            return Err(serde::de::Error::custom("data.type must be a string"));
+        };
+
+        match type_name.as_str() {
+            "file" => serde_json::from_value::<FileEventData>(value)
+                .map(Self::File)
+                .map_err(serde::de::Error::custom),
+            "network" => serde_json::from_value::<NetworkEventData>(value)
+                .map(Self::Network)
+                .map_err(serde::de::Error::custom),
+            "command" => serde_json::from_value::<CommandEventData>(value)
+                .map(Self::Command)
+                .map_err(serde::de::Error::custom),
+            "patch" => serde_json::from_value::<PatchEventData>(value)
+                .map(Self::Patch)
+                .map_err(serde::de::Error::custom),
+            "tool" => serde_json::from_value::<ToolEventData>(value)
+                .map(Self::Tool)
+                .map_err(serde::de::Error::custom),
+            "custom" => serde_json::from_value::<CustomEventData>(value)
+                .map(Self::Custom)
+                .map_err(serde::de::Error::custom),
+            other => Ok(Self::Other {
+                type_name: other.to_string(),
+                value,
+            }),
+        }
+    }
+}
+
+fn serialize_typed_data<T: Serialize>(type_name: &str, inner: &T) -> anyhow::Result<serde_json::Value> {
+    let value = serde_json::to_value(inner).context("serialize event data")?;
+    let serde_json::Value::Object(mut obj) = value else {
+        anyhow::bail!("event data must serialize to an object");
+    };
+
+    obj.insert(
+        "type".to_string(),
+        serde_json::Value::String(type_name.to_string()),
+    );
+    Ok(serde_json::Value::Object(obj))
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -184,6 +342,27 @@ fn metadata_tool_kind_is_mcp(metadata: Option<&serde_json::Value>) -> bool {
     kind.eq_ignore_ascii_case("mcp")
 }
 
+fn merge_context_into_metadata(
+    metadata: Option<&serde_json::Value>,
+    context: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let Some(context) = context else {
+        return metadata.cloned();
+    };
+
+    let mut out = match metadata.cloned() {
+        Some(serde_json::Value::Object(obj)) => serde_json::Value::Object(obj),
+        Some(other) => serde_json::json!({ "metadata": other }),
+        None => serde_json::Value::Object(serde_json::Map::new()),
+    };
+
+    if let serde_json::Value::Object(obj) = &mut out {
+        obj.insert("context".to_string(), context.clone());
+    }
+
+    Some(out)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum MappedGuardAction {
     FileAccess { path: String },
@@ -264,14 +443,12 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
             },
             None,
         ),
-        (PolicyEventType::CommandExec, PolicyEventData::Command(cmd)) => {
-            let mut commandline = cmd.command.clone();
-            for arg in &cmd.args {
-                commandline.push(' ');
-                commandline.push_str(arg);
-            }
-            (MappedGuardAction::ShellCommand { commandline }, None)
-        }
+        (PolicyEventType::CommandExec, PolicyEventData::Command(cmd)) => (
+            MappedGuardAction::ShellCommand {
+                commandline: shell_join_posix(&cmd.command, &cmd.args),
+            },
+            None,
+        ),
         (PolicyEventType::PatchApply, PolicyEventData::Patch(patch)) => (
             MappedGuardAction::Patch {
                 file_path: patch.file_path.clone(),
@@ -308,11 +485,14 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
             },
             None,
         ),
+        (PolicyEventType::Other(event_type), _) => {
+            anyhow::bail!("unsupported eventType: {}", event_type);
+        }
         _ => {
             anyhow::bail!(
                 "unsupported mapping for eventType {:?} with data.type {}",
                 event.event_type,
-                event.data.data_type_name()
+                event.data.data_type_key()
             )
         }
     };
@@ -321,5 +501,58 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
         context,
         action,
         decision_reason,
+    })
+}
+
+fn shell_join_posix(command: &str, args: &[String]) -> String {
+    let mut out = shell_quote_posix(command);
+    for arg in args {
+        out.push(' ');
+        out.push_str(&shell_quote_posix(arg));
+    }
+    out
+}
+
+fn shell_quote_posix(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+
+    if is_safe_shell_word(s) {
+        return s.to_string();
+    }
+
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+
+    for part in s.split('\'') {
+        out.push_str(part);
+        out.push_str("'\"'\"'");
+    }
+
+    // Remove the trailing escaped-quote sequence we added after the final segment.
+    out.truncate(out.len().saturating_sub("'\"'\"'".len()));
+    out.push('\'');
+    out
+}
+
+fn is_safe_shell_word(s: &str) -> bool {
+    s.bytes().all(|b| {
+        matches!(
+            b,
+            b'a'..=b'z'
+                | b'A'..=b'Z'
+                | b'0'..=b'9'
+                | b'_'
+                | b'-'
+                | b'.'
+                | b'/'
+                | b':'
+                | b'@'
+                | b'%'
+                | b'+'
+                | b'='
+                | b','
+        )
     })
 }
