@@ -22,7 +22,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core"
+    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core",
+    "@clawdstrike/sdk": "file:../hush-ts"
   },
   "peerDependencies": {
     "ai": ">=3.0.0",

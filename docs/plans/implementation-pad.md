@@ -73,6 +73,12 @@ Tier 3: Enterprise readiness (close deals)
   - Added `hush policy diff <left> <right> [--resolve] [--json]` (rulesets or files). This is an M0 baseline; the PaC spec still includes additional planned flags (`--breaking`, `--format`, etc.).
 - TypeScript adapter foundation:
   - Added `packages/clawdstrike-adapter-core/` (`@clawdstrike/adapter-core`) with `BaseToolInterceptor`, `DefaultOutputSanitizer`, `PolicyEventFactory`, and `InMemoryAuditLogger` + unit tests.
+- Prompt Security (P1 baseline + wiring):
+  - Watermark payload bytes are RFC 8785 (JCS) canonical in Rust + TS (portable signatures/fingerprints).
+  - Jailbreak detection: added session TTL + half-life decay + optional persistence hooks; linear model weights are configurable.
+  - Output sanitization: allow/deny lists + streaming-safe sanitizer + optional entity/NER hook; improved patterns (Anthropic key, JWT, internal IPs, etc) and Luhn validation for CC.
+  - Vercel AI: `createClawdstrikeMiddleware` supports `config.promptSecurity` to apply hierarchy, jailbreak detection, output sanitization, and watermarking to model calls; stream sanitization is supported for `text-delta`.
+  - Tool-boundary runtime convenience: Codex/OpenCode/Claude Code packages now ship `wrap*ToolDispatcher(...)` helpers for drop-in wiring into a tool dispatcher.
 
 ---
 

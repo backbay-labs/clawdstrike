@@ -16,6 +16,12 @@ export interface ClaudeCodeToolBoundaryOptions {
   createContext?: (runId: string) => SecurityContext;
 }
 
+export type ClaudeCodeToolDispatcher<TOutput = unknown> = (
+  toolName: string,
+  input: unknown,
+  runId: string,
+) => Promise<TOutput>;
+
 type PendingRun = {
   toolName: string;
   input: unknown;
@@ -101,4 +107,21 @@ export class ClaudeCodeToolBoundary {
     this.contexts.set(runId, ctx);
     return ctx;
   }
+}
+
+export function wrapClaudeCodeToolDispatcher<TOutput = unknown>(
+  boundary: ClaudeCodeToolBoundary,
+  dispatch: ClaudeCodeToolDispatcher<TOutput>,
+): ClaudeCodeToolDispatcher<TOutput> {
+  return async (toolName, input, runId) => {
+    await boundary.handleToolStart(toolName, input, runId);
+    try {
+      const output = await dispatch(toolName, input, runId);
+      return (await boundary.handleToolEnd(output, runId)) as TOutput;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      await boundary.handleToolError(error, runId);
+      throw err;
+    }
+  };
 }

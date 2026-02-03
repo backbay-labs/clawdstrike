@@ -14,13 +14,15 @@ npm install @clawdstrike/claude-code @clawdstrike/adapter-core
 
 ```ts
 import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
-import { ClaudeCodeToolBoundary } from '@clawdstrike/claude-code';
+import { ClaudeCodeToolBoundary, wrapClaudeCodeToolDispatcher } from '@clawdstrike/claude-code';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const boundary = new ClaudeCodeToolBoundary({ engine });
 
-await boundary.handleToolStart('read_file', { path: './README.md' }, 'run-1');
-const output = '...';
-await boundary.handleToolEnd(output, 'run-1');
-```
+const dispatchTool = wrapClaudeCodeToolDispatcher(boundary, async (toolName, input, runId) => {
+  // ...execute the tool...
+  return { toolName, input, runId };
+});
 
+await dispatchTool('read_file', { path: './README.md' }, 'run-1');
+```

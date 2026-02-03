@@ -5,6 +5,7 @@ export type StreamChunk = Record<string, unknown> & {
   type?: string;
   toolCallId?: string;
   toolName?: string;
+  toolCallType?: string;
   args?: unknown;
   argsTextDelta?: string;
   result?: unknown;
@@ -44,11 +45,12 @@ export class StreamingToolGuard {
       return chunk;
     }
 
-    if (type === 'tool-call-start') {
+    if (type === 'tool-call-start' || type === 'tool-call-streaming-start') {
       const toolCallId = chunk.toolCallId;
-      const toolName = chunk.toolName;
-      if (typeof toolCallId === 'string' && typeof toolName === 'string') {
-        this.pendingToolCalls.set(toolCallId, { id: toolCallId, name: toolName, argsText: '' });
+      const toolName = chunk.toolName ?? (chunk as any).name;
+      if (typeof toolCallId === 'string') {
+        const name = typeof toolName === 'string' ? toolName : 'unknown';
+        this.pendingToolCalls.set(toolCallId, { id: toolCallId, name, argsText: '' });
       }
       return chunk;
     }
@@ -58,10 +60,15 @@ export class StreamingToolGuard {
       if (typeof toolCallId !== 'string') {
         return chunk;
       }
-      const pending = this.pendingToolCalls.get(toolCallId);
-      if (!pending) {
-        return chunk;
-      }
+      const pending =
+        this.pendingToolCalls.get(toolCallId)
+        ?? (() => {
+          const toolName = chunk.toolName ?? (chunk as any).name;
+          const name = typeof toolName === 'string' ? toolName : 'unknown';
+          const entry = { id: toolCallId, name, argsText: '' };
+          this.pendingToolCalls.set(toolCallId, entry);
+          return entry;
+        })();
       if (typeof chunk.argsTextDelta === 'string') {
         pending.argsText += chunk.argsTextDelta;
       }
@@ -70,13 +77,15 @@ export class StreamingToolGuard {
 
     if (type === 'tool-call') {
       const toolCallId = chunk.toolCallId;
-      const toolName = chunk.toolName;
+      const toolName = chunk.toolName ?? (chunk as any).name;
       if (typeof toolCallId !== 'string' || typeof toolName !== 'string') {
         return chunk;
       }
 
       const pending = this.pendingToolCalls.get(toolCallId);
-      const args = pending ? parseJsonBestEffort(pending.argsText) : chunk.args;
+      const args = pending
+        ? parseJsonBestEffort(pending.argsText)
+        : parseJsonBestEffort(chunk.args);
       const context = this.getContext ? this.getContext(chunk) : this.context;
 
       const result = await this.interceptor.beforeExecute(toolName, args, context);
@@ -118,15 +127,15 @@ export class StreamingToolGuard {
   }
 }
 
-function parseJsonBestEffort(text: string): unknown {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return {};
+function parseJsonBestEffort(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value ?? {};
   }
+  const trimmed = value.trim();
+  if (!trimmed) return {};
   try {
     return JSON.parse(trimmed) as unknown;
   } catch {
-    return { raw: text };
+    return { raw: value };
   }
 }
-

@@ -4,13 +4,15 @@ export { secureTools } from './tools.js';
 export type { VercelAiInterceptorConfig } from './vercel-ai-interceptor.js';
 export { createVercelAiInterceptor } from './vercel-ai-interceptor.js';
 
-export { ClawdstrikeBlockedError } from './errors.js';
+export { ClawdstrikeBlockedError, ClawdstrikePromptSecurityError, type PromptSecurityBlockKind } from './errors.js';
 
 export type {
   ClawdstrikeMiddleware,
   CreateClawdstrikeMiddlewareOptions,
+  PromptSecurityMode,
   SecureToolsOptions,
   VercelAiClawdstrikeConfig,
+  VercelAiPromptSecurityConfig,
 } from './middleware.js';
 export { createClawdstrikeMiddleware } from './middleware.js';
 

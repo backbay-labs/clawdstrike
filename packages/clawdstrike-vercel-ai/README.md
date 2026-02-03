@@ -56,6 +56,43 @@ import { openai } from '@ai-sdk/openai';
 const model = security.wrapLanguageModel(openai('gpt-4o-mini'));
 ```
 
+## Prompt Security (P1)
+
+Enable prompt-security features (instruction hierarchy, jailbreak detection, output sanitization, optional watermarking)
+for model calls:
+
+```ts
+import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
+import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
+import { openai } from '@ai-sdk/openai';
+
+const engine = createHushCliEngine({ policyRef: 'default' });
+const security = createClawdstrikeMiddleware({
+  engine,
+  config: {
+    blockOnViolation: true,
+    // Tool-call streaming evaluation/annotation (best-effort; depends on AI SDK stream part shapes):
+    streamingEvaluation: true,
+    promptSecurity: {
+      enabled: true,
+      mode: 'block', // 'warn' | 'audit'
+      applicationId: 'my-app',
+      jailbreakDetection: { enabled: true },
+      instructionHierarchy: { enabled: true },
+      outputSanitization: { enabled: true },
+      // Optional: embed a signed watermark marker in a system message:
+      watermarking: { enabled: true },
+    },
+  },
+});
+
+const model = security.wrapLanguageModel(openai('gpt-4o-mini'));
+```
+
+Notes:
+- Prompt-security blocks throw `ClawdstrikePromptSecurityError` (no raw prompt contents included).
+- Prompt-security findings are recorded in `security.getAuditLog()` as `prompt_security_*` audit events.
+
 ## Errors
 
 Blocked tool calls throw `ClawdstrikeBlockedError` (includes `decision` and `toolName`).

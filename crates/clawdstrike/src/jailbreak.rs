@@ -23,6 +23,13 @@ pub trait LlmJudge: Send + Sync {
     async fn score(&self, input: &str) -> Result<f32, String>;
 }
 
+/// Optional persistence for session aggregation state.
+#[async_trait]
+pub trait SessionStore: Send + Sync {
+    async fn load(&self, session_id: &str) -> Result<Option<SessionAggPersisted>, String>;
+    async fn save(&self, session_id: &str, state: SessionAggPersisted) -> Result<(), String>;
+}
+
 /// Jailbreak detection severity levels.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -142,6 +149,15 @@ fn default_warn_threshold() -> u8 {
 fn default_max_input_bytes() -> usize {
     100_000
 }
+fn default_session_max_entries() -> usize {
+    1024
+}
+fn default_session_ttl_seconds() -> u64 {
+    60 * 60 // 1 hour
+}
+fn default_session_half_life_seconds() -> u64 {
+    15 * 60 // 15 minutes
+}
 
 /// Jailbreak detector configuration.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -149,6 +165,12 @@ fn default_max_input_bytes() -> usize {
 pub struct JailbreakGuardConfig {
     #[serde(default)]
     pub layers: LayerConfig,
+    /// Configurable weights for the lightweight linear model ("ML tier").
+    ///
+    /// This is intentionally simple so callers can replace the defaults with trained weights
+    /// without changing the code.
+    #[serde(default)]
+    pub linear_model: LinearModelConfig,
     /// Threshold for blocking (0-100).
     #[serde(default = "default_block_threshold")]
     pub block_threshold: u8,
@@ -161,16 +183,29 @@ pub struct JailbreakGuardConfig {
     /// Enable session aggregation (uses `GuardContext.session_id`).
     #[serde(default = "default_true")]
     pub session_aggregation: bool,
+    /// Maximum number of session IDs to retain in-memory (LRU-ish eviction).
+    #[serde(default = "default_session_max_entries")]
+    pub session_max_entries: usize,
+    /// TTL for session entries (seconds since last seen).
+    #[serde(default = "default_session_ttl_seconds")]
+    pub session_ttl_seconds: u64,
+    /// Half-life (seconds) for rolling risk decay. Set to 0 to disable decay.
+    #[serde(default = "default_session_half_life_seconds")]
+    pub session_half_life_seconds: u64,
 }
 
 impl Default for JailbreakGuardConfig {
     fn default() -> Self {
         Self {
             layers: LayerConfig::default(),
+            linear_model: LinearModelConfig::default(),
             block_threshold: default_block_threshold(),
             warn_threshold: default_warn_threshold(),
             max_input_bytes: default_max_input_bytes(),
             session_aggregation: true,
+            session_max_entries: default_session_max_entries(),
+            session_ttl_seconds: default_session_ttl_seconds(),
+            session_half_life_seconds: default_session_half_life_seconds(),
         }
     }
 }
@@ -324,6 +359,31 @@ fn long_run_of_symbols(s: &str) -> bool {
     false
 }
 
+fn shannon_entropy_ascii_nonws(s: &str) -> f64 {
+    let mut counts = [0u32; 128];
+    let mut total = 0u32;
+    for b in s.bytes() {
+        if b >= 128 || b.is_ascii_whitespace() {
+            continue;
+        }
+        counts[b as usize] = counts[b as usize].saturating_add(1);
+        total = total.saturating_add(1);
+    }
+    if total == 0 {
+        return 0.0;
+    }
+    let total_f = total as f64;
+    let mut entropy = 0.0f64;
+    for c in counts {
+        if c == 0 {
+            continue;
+        }
+        let p = (c as f64) / total_f;
+        entropy -= p * p.log2();
+    }
+    entropy
+}
+
 /// A small linear model for "ML tier".
 #[derive(Clone, Debug)]
 struct LinearModel {
@@ -338,19 +398,85 @@ struct LinearModel {
     w_symbol_run: f32,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinearModelConfig {
+    #[serde(default = "default_linear_bias")]
+    pub bias: f32,
+    #[serde(default = "default_linear_w_ignore_policy")]
+    pub w_ignore_policy: f32,
+    #[serde(default = "default_linear_w_dan")]
+    pub w_dan: f32,
+    #[serde(default = "default_linear_w_role_change")]
+    pub w_role_change: f32,
+    #[serde(default = "default_linear_w_prompt_extraction")]
+    pub w_prompt_extraction: f32,
+    #[serde(default = "default_linear_w_encoded")]
+    pub w_encoded: f32,
+    #[serde(default = "default_linear_w_punct")]
+    pub w_punct: f32,
+    #[serde(default = "default_linear_w_symbol_run")]
+    pub w_symbol_run: f32,
+}
+
+fn default_linear_bias() -> f32 {
+    -2.0
+}
+fn default_linear_w_ignore_policy() -> f32 {
+    2.5
+}
+fn default_linear_w_dan() -> f32 {
+    2.0
+}
+fn default_linear_w_role_change() -> f32 {
+    1.5
+}
+fn default_linear_w_prompt_extraction() -> f32 {
+    2.2
+}
+fn default_linear_w_encoded() -> f32 {
+    1.0
+}
+fn default_linear_w_punct() -> f32 {
+    2.0
+}
+fn default_linear_w_symbol_run() -> f32 {
+    1.5
+}
+
+impl Default for LinearModelConfig {
+    fn default() -> Self {
+        Self {
+            bias: default_linear_bias(),
+            w_ignore_policy: default_linear_w_ignore_policy(),
+            w_dan: default_linear_w_dan(),
+            w_role_change: default_linear_w_role_change(),
+            w_prompt_extraction: default_linear_w_prompt_extraction(),
+            w_encoded: default_linear_w_encoded(),
+            w_punct: default_linear_w_punct(),
+            w_symbol_run: default_linear_w_symbol_run(),
+        }
+    }
+}
+
+impl From<LinearModelConfig> for LinearModel {
+    fn from(value: LinearModelConfig) -> Self {
+        Self {
+            bias: value.bias,
+            w_ignore_policy: value.w_ignore_policy,
+            w_dan: value.w_dan,
+            w_role_change: value.w_role_change,
+            w_prompt_extraction: value.w_prompt_extraction,
+            w_encoded: value.w_encoded,
+            w_punct: value.w_punct,
+            w_symbol_run: value.w_symbol_run,
+        }
+    }
+}
+
 impl Default for LinearModel {
     fn default() -> Self {
-        // Tuned heuristically; outputs a probability-like score.
-        Self {
-            bias: -2.0,
-            w_ignore_policy: 2.5,
-            w_dan: 2.0,
-            w_role_change: 1.5,
-            w_prompt_extraction: 2.2,
-            w_encoded: 1.0,
-            w_punct: 2.0,
-            w_symbol_run: 1.5,
-        }
+        LinearModelConfig::default().into()
     }
 }
 
@@ -365,6 +491,12 @@ pub struct SessionRiskSnapshot {
     pub messages_seen: u64,
     pub suspicious_count: u64,
     pub cumulative_risk: u64,
+    /// Rolling risk score with time decay applied (bounded by `session_half_life_seconds`).
+    #[serde(default)]
+    pub rolling_risk: u64,
+    /// Last time this session was updated (unix ms).
+    #[serde(default)]
+    pub last_seen_ms: u64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -372,6 +504,42 @@ struct SessionAgg {
     messages_seen: u64,
     suspicious_count: u64,
     cumulative_risk: u64,
+    rolling_risk: f64,
+    last_seen_ms: u64,
+}
+
+/// Serializable snapshot of session aggregation state for persistence.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SessionAggPersisted {
+    pub messages_seen: u64,
+    pub suspicious_count: u64,
+    pub cumulative_risk: u64,
+    pub rolling_risk: f64,
+    pub last_seen_ms: u64,
+}
+
+impl From<&SessionAgg> for SessionAggPersisted {
+    fn from(value: &SessionAgg) -> Self {
+        Self {
+            messages_seen: value.messages_seen,
+            suspicious_count: value.suspicious_count,
+            cumulative_risk: value.cumulative_risk,
+            rolling_risk: value.rolling_risk,
+            last_seen_ms: value.last_seen_ms,
+        }
+    }
+}
+
+impl SessionAgg {
+    fn from_persisted(value: SessionAggPersisted) -> Self {
+        Self {
+            messages_seen: value.messages_seen,
+            suspicious_count: value.suspicious_count,
+            cumulative_risk: value.cumulative_risk,
+            rolling_risk: value.rolling_risk,
+            last_seen_ms: value.last_seen_ms,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -403,6 +571,7 @@ pub struct JailbreakDetector {
     config: JailbreakGuardConfig,
     model: LinearModel,
     llm_judge: Option<std::sync::Arc<dyn LlmJudge>>,
+    session_store: Option<std::sync::Arc<dyn SessionStore>>,
     sessions: Mutex<HashMap<String, SessionAgg>>,
     // Simple cache for identical payloads (fingerprint -> session-less baseline detection result).
     cache: Mutex<LruCache<Hash, JailbreakDetectionBase>>,
@@ -414,10 +583,12 @@ impl JailbreakDetector {
     }
 
     pub fn with_config(config: JailbreakGuardConfig) -> Self {
+        let model = config.linear_model.clone().into();
         Self {
             config,
-            model: LinearModel::default(),
+            model,
             llm_judge: None,
+            session_store: None,
             sessions: Mutex::new(HashMap::new()),
             cache: Mutex::new(LruCache::new(512)),
         }
@@ -431,8 +602,82 @@ impl JailbreakDetector {
         self
     }
 
+    pub fn with_session_store<S>(mut self, store: S) -> Self
+    where
+        S: SessionStore + 'static,
+    {
+        self.session_store = Some(std::sync::Arc::new(store));
+        self
+    }
+
     pub fn config(&self) -> &JailbreakGuardConfig {
         &self.config
+    }
+
+    async fn maybe_load_session_from_store(&self, session_id: &str) {
+        let Some(store) = self.session_store.clone() else {
+            return;
+        };
+
+        let already_loaded = self
+            .sessions
+            .lock()
+            .ok()
+            .map(|m| m.contains_key(session_id))
+            .unwrap_or(true);
+        if already_loaded {
+            return;
+        }
+
+        let loaded = match store.load(session_id).await {
+            Ok(v) => v,
+            Err(_) => None,
+        };
+
+        let Some(state) = loaded else {
+            return;
+        };
+
+        if let Ok(mut m) = self.sessions.lock() {
+            m.insert(session_id.to_string(), SessionAgg::from_persisted(state));
+        }
+    }
+
+    async fn maybe_persist_session_to_store(&self, session_id: &str) {
+        let Some(store) = self.session_store.clone() else {
+            return;
+        };
+
+        let state = self
+            .sessions
+            .lock()
+            .ok()
+            .and_then(|m| m.get(session_id).cloned())
+            .map(|agg| SessionAggPersisted::from(&agg));
+
+        let Some(state) = state else {
+            return;
+        };
+
+        let _ = store.save(session_id, state).await;
+    }
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    fn decay_factor(elapsed_ms: u64, half_life_seconds: u64) -> f64 {
+        if half_life_seconds == 0 {
+            return 1.0;
+        }
+        let half_life_ms = (half_life_seconds as f64) * 1000.0;
+        if half_life_ms <= 0.0 {
+            return 1.0;
+        }
+        0.5_f64.powf((elapsed_ms as f64) / half_life_ms)
     }
 
     fn apply_session_aggregation(
@@ -444,20 +689,62 @@ impl JailbreakDetector {
             return None;
         }
 
-        session_id.and_then(|sid| {
-            let mut map = self.sessions.lock().ok()?;
-            let e = map.entry(sid.to_string()).or_default();
-            e.messages_seen = e.messages_seen.saturating_add(1);
-            e.cumulative_risk = e.cumulative_risk.saturating_add(risk_score as u64);
-            if risk_score >= self.config.warn_threshold {
-                e.suspicious_count = e.suspicious_count.saturating_add(1);
+        let sid = session_id?;
+        let now = Self::now_ms();
+
+        let ttl_ms = self.config.session_ttl_seconds.saturating_mul(1000);
+        let max_entries = self.config.session_max_entries.max(1);
+
+        let mut map = self.sessions.lock().ok()?;
+
+        // Prune expired sessions (based on last seen).
+        if ttl_ms > 0 {
+            map.retain(|_, v| now.saturating_sub(v.last_seen_ms) <= ttl_ms);
+        }
+
+        // Simple eviction: ensure capacity for a new session ID.
+        if !map.contains_key(sid) {
+            while map.len().saturating_add(1) > max_entries {
+                let oldest = map
+                    .iter()
+                    .min_by_key(|(_, v)| v.last_seen_ms)
+                    .map(|(k, _)| k.clone());
+                match oldest {
+                    Some(k) => {
+                        map.remove(&k);
+                    }
+                    None => break,
+                }
             }
-            Some(SessionRiskSnapshot {
-                session_id: sid.to_string(),
-                messages_seen: e.messages_seen,
-                suspicious_count: e.suspicious_count,
-                cumulative_risk: e.cumulative_risk,
-            })
+        }
+
+        let entry = map
+            .entry(sid.to_string())
+            .or_insert_with(|| SessionAgg {
+                last_seen_ms: now,
+                ..SessionAgg::default()
+            });
+
+        let elapsed_ms = now.saturating_sub(entry.last_seen_ms);
+        let factor = Self::decay_factor(elapsed_ms, self.config.session_half_life_seconds);
+        entry.rolling_risk *= factor;
+
+        entry.last_seen_ms = now;
+        entry.messages_seen = entry.messages_seen.saturating_add(1);
+        entry.cumulative_risk = entry.cumulative_risk.saturating_add(risk_score as u64);
+        entry.rolling_risk = (entry.rolling_risk + (risk_score as f64)).min(u64::MAX as f64);
+
+        if risk_score >= self.config.warn_threshold {
+            entry.suspicious_count = entry.suspicious_count.saturating_add(1);
+        }
+
+        Some(SessionRiskSnapshot {
+            session_id: sid.to_string(),
+            messages_seen: entry.messages_seen,
+            suspicious_count: entry.suspicious_count,
+            cumulative_risk: entry.cumulative_risk,
+            rolling_risk: entry.rolling_risk.round().max(0.0) as u64,
+            last_seen_ms: entry.last_seen_ms,
         })
     }
 
@@ -497,6 +784,10 @@ impl JailbreakDetector {
         let pr = punctuation_ratio(&canonical);
         if pr >= 0.35 {
             stat_signals.push("stat_punctuation_ratio_high".to_string());
+        }
+        let entropy = shannon_entropy_ascii_nonws(&canonical);
+        if entropy >= 4.8 {
+            stat_signals.push("stat_char_entropy_high".to_string());
         }
         if canonicalization.zero_width_stripped > 0 {
             stat_signals.push("stat_zero_width_obfuscation".to_string());
@@ -622,6 +913,10 @@ impl JailbreakDetector {
 
         let base = self.detect_base_sync(input);
 
+        if let Some(sid) = session_id {
+            self.maybe_load_session_from_store(sid).await;
+        }
+
         let mut r = JailbreakDetectionResult {
             severity: base.severity.clone(),
             confidence: base.confidence,
@@ -637,12 +932,18 @@ impl JailbreakDetector {
 
         if !self.config.layers.llm_judge {
             r.session = self.apply_session_aggregation(r.risk_score, session_id);
+            if let Some(sid) = session_id {
+                self.maybe_persist_session_to_store(sid).await;
+            }
             r.latency_ms = start.elapsed().as_secs_f64() * 1000.0;
             return r;
         }
 
         let Some(judge) = self.llm_judge.clone() else {
             r.session = self.apply_session_aggregation(r.risk_score, session_id);
+            if let Some(sid) = session_id {
+                self.maybe_persist_session_to_store(sid).await;
+            }
             r.latency_ms = start.elapsed().as_secs_f64() * 1000.0;
             return r;
         };
@@ -672,6 +973,9 @@ impl JailbreakDetector {
         }
 
         r.session = self.apply_session_aggregation(r.risk_score, session_id);
+        if let Some(sid) = session_id {
+            self.maybe_persist_session_to_store(sid).await;
+        }
         r.latency_ms = start.elapsed().as_secs_f64() * 1000.0;
         r
     }
@@ -760,6 +1064,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap as StdHashMap;
+    use std::sync::{Arc, Mutex as StdMutex};
 
     #[test]
     fn detects_common_jailbreak_language() {
@@ -825,6 +1131,60 @@ mod tests {
         assert_eq!(snap.session_id, "s1");
         assert_eq!(snap.messages_seen, 1);
         assert_eq!(snap.suspicious_count, 1);
+    }
+
+    #[tokio::test]
+    async fn session_store_loads_and_persists_updates() {
+        #[derive(Clone, Default)]
+        struct MemStore {
+            state: Arc<StdMutex<StdHashMap<String, SessionAggPersisted>>>,
+        }
+
+        #[async_trait]
+        impl SessionStore for MemStore {
+            async fn load(&self, session_id: &str) -> Result<Option<SessionAggPersisted>, String> {
+                Ok(self.state.lock().unwrap().get(session_id).cloned())
+            }
+
+            async fn save(
+                &self,
+                session_id: &str,
+                state: SessionAggPersisted,
+            ) -> Result<(), String> {
+                self.state
+                    .lock()
+                    .unwrap()
+                    .insert(session_id.to_string(), state);
+                Ok(())
+            }
+        }
+
+        let store = MemStore::default();
+        store.state.lock().unwrap().insert(
+            "s1".to_string(),
+            SessionAggPersisted {
+                messages_seen: 5,
+                suspicious_count: 2,
+                cumulative_risk: 123,
+                rolling_risk: 42.0,
+                last_seen_ms: JailbreakDetector::now_ms(),
+            },
+        );
+
+        let mut cfg = JailbreakGuardConfig::default();
+        cfg.session_ttl_seconds = 60 * 60;
+        cfg.session_max_entries = 16;
+
+        let d = JailbreakDetector::with_config(cfg).with_session_store(store.clone());
+
+        let r = d.detect("dan", Some("s1")).await;
+        let snap = r.session.expect("session");
+        assert_eq!(snap.session_id, "s1");
+        assert_eq!(snap.messages_seen, 6);
+
+        let persisted = store.state.lock().unwrap().get("s1").cloned().expect("persisted");
+        assert_eq!(persisted.messages_seen, 6);
+        assert!(persisted.cumulative_risk >= 123);
     }
 }
 

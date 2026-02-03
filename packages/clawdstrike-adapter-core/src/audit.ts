@@ -8,6 +8,11 @@ export type AuditEventType =
   | 'tool_call_end'
   | 'tool_call_error'
   | 'output_sanitized'
+  | 'prompt_security_prompt_injection'
+  | 'prompt_security_jailbreak'
+  | 'prompt_security_instruction_hierarchy'
+  | 'prompt_security_watermark'
+  | 'prompt_security_output_sanitized'
   | 'session_start'
   | 'session_end';
 
@@ -92,4 +97,3 @@ export class InMemoryAuditLogger implements AuditLogger {
     return originalLength - this.events.length;
   }
 }
-

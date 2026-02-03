@@ -74,11 +74,12 @@ pub use instruction_hierarchy::{
 pub use jailbreak::{
     JailbreakCanonicalizationStats, JailbreakCategory, JailbreakDetectionResult, JailbreakDetector,
     JailbreakGuardConfig, JailbreakSeverity, JailbreakSignal, LayerResult, LayerResults,
-    SessionRiskSnapshot,
+    LinearModelConfig, LlmJudge, SessionAggPersisted, SessionRiskSnapshot, SessionStore,
 };
 pub use output_sanitizer::{
-    DetectorType, OutputSanitizer, OutputSanitizerConfig, ProcessingStats, Redaction,
-    RedactionStrategy, SanitizationResult, SensitiveCategory, SensitiveDataFinding, Span,
+    AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer, OutputSanitizer,
+    OutputSanitizerConfig, ProcessingStats, Redaction, RedactionStrategy, SanitizationResult,
+    SanitizationStream, SensitiveCategory, SensitiveDataFinding, Span, StreamingConfig,
 };
 pub use policy::{Policy, RuleSet};
 pub use watermarking::{

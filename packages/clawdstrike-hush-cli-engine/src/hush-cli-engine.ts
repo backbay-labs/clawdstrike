@@ -102,7 +102,13 @@ async function spawnJson(
           return;
         }
 
-        if (code !== 0) {
+        // `hush policy eval` uses stable exit codes:
+        // - 0: ok/allowed
+        // - 1: warn
+        // - 2: blocked
+        // Treat 0-2 as non-fatal so we can still parse the JSON decision.
+        const numericCode = typeof code === 'number' ? code : -1;
+        if (numericCode < 0 || numericCode > 2) {
           reject(
             new Error(
               `hush exited with code ${String(code)}${formatStderr(stderrChunks)}`,

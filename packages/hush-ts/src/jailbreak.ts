@@ -52,7 +52,23 @@ export interface JailbreakDetectionResult {
     messagesSeen: number;
     suspiciousCount: number;
     cumulativeRisk: number;
+    rollingRisk?: number;
+    lastSeenMs?: number;
   };
+}
+
+export interface JailbreakSessionState {
+  sessionId: string;
+  messagesSeen: number;
+  suspiciousCount: number;
+  cumulativeRisk: number;
+  rollingRisk: number;
+  lastSeenMs: number;
+}
+
+export interface JailbreakSessionStore {
+  load(sessionId: string): Promise<JailbreakSessionState | undefined>;
+  save(sessionId: string, state: JailbreakSessionState): Promise<void>;
 }
 
 export interface JailbreakDetectorConfig {
@@ -62,11 +78,27 @@ export interface JailbreakDetectorConfig {
     ml?: boolean;
     llmJudge?: boolean;
   };
+  linearModel?: JailbreakLinearModelConfig;
   blockThreshold?: number;
   warnThreshold?: number;
   maxInputBytes?: number;
   sessionAggregation?: boolean;
+  sessionMaxEntries?: number;
+  sessionTtlMs?: number;
+  sessionHalfLifeMs?: number;
+  sessionStore?: JailbreakSessionStore;
   llmJudge?: (input: string) => Promise<number>;
+}
+
+export interface JailbreakLinearModelConfig {
+  bias?: number;
+  wIgnorePolicy?: number;
+  wDan?: number;
+  wRoleChange?: number;
+  wPromptExtraction?: number;
+  wEncoded?: number;
+  wPunct?: number;
+  wSymbolRun?: number;
 }
 
 type ResolvedJailbreakLayers = {
@@ -82,6 +114,9 @@ type ResolvedJailbreakDetectorConfig = {
   warnThreshold: number;
   maxInputBytes: number;
   sessionAggregation: boolean;
+  sessionMaxEntries: number;
+  sessionTtlMs: number;
+  sessionHalfLifeMs: number;
 };
 
 const DEFAULT_CFG: ResolvedJailbreakDetectorConfig = {
@@ -90,6 +125,31 @@ const DEFAULT_CFG: ResolvedJailbreakDetectorConfig = {
   warnThreshold: 30,
   maxInputBytes: 100_000,
   sessionAggregation: true,
+  sessionMaxEntries: 1024,
+  sessionTtlMs: 60 * 60 * 1000,
+  sessionHalfLifeMs: 15 * 60 * 1000,
+};
+
+type LinearModel = Required<{
+  bias: number;
+  wIgnorePolicy: number;
+  wDan: number;
+  wRoleChange: number;
+  wPromptExtraction: number;
+  wEncoded: number;
+  wPunct: number;
+  wSymbolRun: number;
+}>;
+
+const DEFAULT_LINEAR_MODEL: LinearModel = {
+  bias: -2.0,
+  wIgnorePolicy: 2.5,
+  wDan: 2.0,
+  wRoleChange: 1.5,
+  wPromptExtraction: 2.2,
+  wEncoded: 1.0,
+  wPunct: 2.0,
+  wSymbolRun: 1.5,
 };
 
 const ZW_RE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
@@ -184,14 +244,38 @@ function longRunOfSymbols(s: string): boolean {
   return false;
 }
 
+function shannonEntropyAsciiNonWs(s: string): number {
+  const counts = new Array<number>(128).fill(0);
+  let total = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code >= 128) continue;
+    const ch = s[i] ?? "";
+    if (/\s/.test(ch)) continue;
+    counts[code] += 1;
+    total += 1;
+  }
+  if (total <= 0) return 0;
+
+  let entropy = 0;
+  for (const c of counts) {
+    if (c <= 0) continue;
+    const p = c / total;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
 }
 
 export class JailbreakDetector {
   private readonly cfg: ResolvedJailbreakDetectorConfig;
+  private readonly model: LinearModel;
   private readonly judge?: (input: string) => Promise<number>;
-  private readonly sessions = new Map<string, { messagesSeen: number; suspiciousCount: number; cumulativeRisk: number }>();
+  private readonly store?: JailbreakSessionStore;
+  private readonly sessions = new Map<string, JailbreakSessionState>();
 
   constructor(config: JailbreakDetectorConfig = {}) {
     this.cfg = {
@@ -200,8 +284,65 @@ export class JailbreakDetector {
       warnThreshold: config.warnThreshold ?? DEFAULT_CFG.warnThreshold,
       maxInputBytes: config.maxInputBytes ?? DEFAULT_CFG.maxInputBytes,
       sessionAggregation: config.sessionAggregation ?? DEFAULT_CFG.sessionAggregation,
+      sessionMaxEntries: config.sessionMaxEntries ?? DEFAULT_CFG.sessionMaxEntries,
+      sessionTtlMs: config.sessionTtlMs ?? DEFAULT_CFG.sessionTtlMs,
+      sessionHalfLifeMs: config.sessionHalfLifeMs ?? DEFAULT_CFG.sessionHalfLifeMs,
     };
+    this.model = { ...DEFAULT_LINEAR_MODEL, ...(config.linearModel ?? {}) };
     this.judge = config.llmJudge;
+    this.store = config.sessionStore;
+  }
+
+  private decayFactor(elapsedMs: number): number {
+    if (this.cfg.sessionHalfLifeMs <= 0) return 1;
+    return Math.pow(0.5, elapsedMs / this.cfg.sessionHalfLifeMs);
+  }
+
+  private pruneSessions(nowMs: number): void {
+    if (this.cfg.sessionTtlMs <= 0) return;
+    for (const [sid, st] of this.sessions) {
+      if (nowMs - st.lastSeenMs > this.cfg.sessionTtlMs) {
+        this.sessions.delete(sid);
+      }
+    }
+  }
+
+  private evictForCapacity(): void {
+    const maxEntries = Math.max(1, this.cfg.sessionMaxEntries);
+    while (this.sessions.size > maxEntries) {
+      let oldestId: string | undefined;
+      let oldestTs = Number.POSITIVE_INFINITY;
+      for (const [sid, st] of this.sessions) {
+        if (st.lastSeenMs < oldestTs) {
+          oldestTs = st.lastSeenMs;
+          oldestId = sid;
+        }
+      }
+      if (!oldestId) return;
+      this.sessions.delete(oldestId);
+    }
+  }
+
+  private async maybeLoadSession(sessionId: string): Promise<void> {
+    if (!this.store) return;
+    if (this.sessions.has(sessionId)) return;
+    try {
+      const loaded = await this.store.load(sessionId);
+      if (loaded) this.sessions.set(sessionId, loaded);
+    } catch {
+      // ignore store failures; session aggregation is best-effort
+    }
+  }
+
+  private async maybePersistSession(sessionId: string): Promise<void> {
+    if (!this.store) return;
+    const st = this.sessions.get(sessionId);
+    if (!st) return;
+    try {
+      await this.store.save(sessionId, st);
+    } catch {
+      // ignore store failures; session aggregation is best-effort
+    }
   }
 
   async detect(input: string, sessionId?: string): Promise<JailbreakDetectionResult> {
@@ -229,6 +370,8 @@ export class JailbreakDetector {
     if (this.cfg.layers.statistical) {
       const pr = punctuationRatio(canonical);
       if (pr >= 0.35) statSignals.push("stat_punctuation_ratio_high");
+      const ent = shannonEntropyAsciiNonWs(canonical);
+      if (ent >= 4.8) statSignals.push("stat_char_entropy_high");
       if (stats.zeroWidthStripped > 0) statSignals.push("stat_zero_width_obfuscation");
       if (longRunOfSymbols(canonical)) statSignals.push("stat_long_symbol_run");
     }
@@ -248,14 +391,14 @@ export class JailbreakDetector {
       const xRun = longRunOfSymbols(canonical) ? 1 : 0;
 
       const z =
-        -2.0 +
-        2.5 * xIgnore +
-        2.0 * xDan +
-        1.5 * xRole +
-        2.2 * xLeak +
-        1.0 * xEnc +
-        2.0 * xPunct +
-        1.5 * xRun;
+        this.model.bias +
+        this.model.wIgnorePolicy * xIgnore +
+        this.model.wDan * xDan +
+        this.model.wRoleChange * xRole +
+        this.model.wPromptExtraction * xLeak +
+        this.model.wEncoded * xEnc +
+        this.model.wPunct * xPunct +
+        this.model.wSymbolRun * xRun;
       mlScore = sigmoid(z);
       ml = { layer: "ml", score: mlScore, signals: ["ml_linear_model"] };
     }
@@ -300,12 +443,50 @@ export class JailbreakDetector {
 
     let session: JailbreakDetectionResult["session"] | undefined;
     if (this.cfg.sessionAggregation && sessionId) {
-      const s = this.sessions.get(sessionId) ?? { messagesSeen: 0, suspiciousCount: 0, cumulativeRisk: 0 };
-      s.messagesSeen += 1;
-      s.cumulativeRisk += riskScore;
-      if (riskScore >= this.cfg.warnThreshold) s.suspiciousCount += 1;
-      this.sessions.set(sessionId, s);
-      session = { sessionId, ...s };
+      const nowMs = Date.now();
+      this.pruneSessions(nowMs);
+      await this.maybeLoadSession(sessionId);
+
+      // Ensure room if inserting a new session.
+      if (!this.sessions.has(sessionId)) {
+        const maxEntries = Math.max(1, this.cfg.sessionMaxEntries);
+        while (this.sessions.size + 1 > maxEntries) {
+          this.evictForCapacity();
+          if (this.sessions.size + 1 <= maxEntries) break;
+        }
+      }
+
+      const st: JailbreakSessionState =
+        this.sessions.get(sessionId) ?? {
+          sessionId,
+          messagesSeen: 0,
+          suspiciousCount: 0,
+          cumulativeRisk: 0,
+          rollingRisk: 0,
+          lastSeenMs: nowMs,
+        };
+
+      const elapsedMs = Math.max(0, nowMs - st.lastSeenMs);
+      st.rollingRisk *= this.decayFactor(elapsedMs);
+      st.lastSeenMs = nowMs;
+
+      st.messagesSeen += 1;
+      st.cumulativeRisk += riskScore;
+      st.rollingRisk += riskScore;
+      if (riskScore >= this.cfg.warnThreshold) st.suspiciousCount += 1;
+
+      this.sessions.set(sessionId, st);
+      this.evictForCapacity();
+      await this.maybePersistSession(sessionId);
+
+      session = {
+        sessionId,
+        messagesSeen: st.messagesSeen,
+        suspiciousCount: st.suspiciousCount,
+        cumulativeRisk: st.cumulativeRisk,
+        rollingRisk: st.rollingRisk,
+        lastSeenMs: st.lastSeenMs,
+      };
     }
 
     return {

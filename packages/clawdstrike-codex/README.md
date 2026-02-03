@@ -14,14 +14,16 @@ npm install @clawdstrike/codex @clawdstrike/adapter-core
 
 ```ts
 import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
-import { CodexToolBoundary } from '@clawdstrike/codex';
+import { CodexToolBoundary, wrapCodexToolDispatcher } from '@clawdstrike/codex';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const boundary = new CodexToolBoundary({ engine });
 
-// Call these from your tool dispatcher:
-await boundary.handleToolStart('bash', { cmd: 'echo hello' }, 'run-123');
-const output = 'ok';
-await boundary.handleToolEnd(output, 'run-123');
-```
+// Drop-in wrapper around your real dispatcher:
+const dispatchTool = wrapCodexToolDispatcher(boundary, async (toolName, input, runId) => {
+  // ...execute the tool...
+  return { toolName, input, runId };
+});
 
+await dispatchTool('bash', { cmd: 'echo hello' }, 'run-123');
+```

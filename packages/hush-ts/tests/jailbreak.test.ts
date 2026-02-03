@@ -19,5 +19,30 @@ describe("jailbreak detection", () => {
     expect(json).not.toContain("SECRET_PHRASE_123");
     expect(json).not.toContain(input);
   });
-});
 
+  it("loads and persists session aggregation state when a store is provided", async () => {
+    const state = new Map<string, any>();
+    state.set("s1", {
+      sessionId: "s1",
+      messagesSeen: 5,
+      suspiciousCount: 1,
+      cumulativeRisk: 100,
+      rollingRisk: 10,
+      lastSeenMs: Date.now(),
+    });
+
+    const store = {
+      async load(sessionId: string) {
+        return state.get(sessionId);
+      },
+      async save(sessionId: string, st: any) {
+        state.set(sessionId, st);
+      },
+    };
+
+    const d = new JailbreakDetector({ sessionStore: store });
+    const r = await d.detect("dan", "s1");
+    expect(r.session?.messagesSeen).toBe(6);
+    expect(state.get("s1")?.messagesSeen).toBe(6);
+  });
+});

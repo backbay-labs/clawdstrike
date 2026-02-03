@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
-use hush_core::{sha256, Keypair, PublicKey, Signature};
+use hush_core::{canonical, sha256, Keypair, PublicKey, Signature};
 
 /// Watermark encoding strategies.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,13 +26,23 @@ impl Default for WatermarkEncoding {
 
 /// Watermark payload.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WatermarkPayload {
+    #[serde(alias = "application_id")]
     pub application_id: String,
+    #[serde(alias = "session_id")]
     pub session_id: String,
+    #[serde(alias = "created_at")]
     pub created_at: u64, // Unix timestamp ms
-    pub expires_at: Option<u64>,
+    #[serde(alias = "sequence_number")]
     pub sequence_number: u32,
+    #[serde(alias = "expires_at")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+    #[serde(alias = "total_messages")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_messages: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
 }
 
@@ -50,8 +60,11 @@ impl WatermarkPayload {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        // Canonical JSON to make the signature portable.
-        serde_json::to_vec(self).expect("payload json serialization")
+        // Canonical JSON (RFC 8785 JCS) to make signatures and fingerprints portable across languages.
+        let value = serde_json::to_value(self).expect("payload json serialization");
+        let canonical =
+            canonical::canonicalize(&value).expect("payload canonical json serialization");
+        canonical.into_bytes()
     }
 }
 
@@ -359,6 +372,25 @@ fn extract_metadata_comment(text: &str) -> Result<Option<EncodedWatermark>, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn payload_bytes_are_jcs_canonical_and_omit_nulls() {
+        let mut p = WatermarkPayload::new("app".to_string(), "session".to_string());
+        p.created_at = 1;
+        p.sequence_number = 2;
+        p.expires_at = None;
+        p.total_messages = None;
+        p.metadata = None;
+
+        let bytes = p.to_bytes();
+        let s = String::from_utf8(bytes).expect("utf8");
+
+        // Keys are sorted lexicographically (RFC 8785), no whitespace, and optional fields omitted.
+        assert_eq!(
+            s,
+            r#"{"applicationId":"app","createdAt":1,"sequenceNumber":2,"sessionId":"session"}"#
+        );
+    }
 
     #[test]
     fn roundtrips_metadata_watermark_and_verifies() {

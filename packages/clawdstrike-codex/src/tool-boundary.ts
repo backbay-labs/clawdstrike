@@ -16,6 +16,12 @@ export interface CodexToolBoundaryOptions {
   createContext?: (runId: string) => SecurityContext;
 }
 
+export type CodexToolDispatcher<TOutput = unknown> = (
+  toolName: string,
+  input: unknown,
+  runId: string,
+) => Promise<TOutput>;
+
 type PendingRun = {
   toolName: string;
   input: unknown;
@@ -101,4 +107,21 @@ export class CodexToolBoundary {
     this.contexts.set(runId, ctx);
     return ctx;
   }
+}
+
+export function wrapCodexToolDispatcher<TOutput = unknown>(
+  boundary: CodexToolBoundary,
+  dispatch: CodexToolDispatcher<TOutput>,
+): CodexToolDispatcher<TOutput> {
+  return async (toolName, input, runId) => {
+    await boundary.handleToolStart(toolName, input, runId);
+    try {
+      const output = await dispatch(toolName, input, runId);
+      return (await boundary.handleToolEnd(output, runId)) as TOutput;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      await boundary.handleToolError(error, runId);
+      throw err;
+    }
+  };
 }

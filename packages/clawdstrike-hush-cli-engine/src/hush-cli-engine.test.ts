@@ -122,6 +122,44 @@ describe('createHushCliEngine', () => {
     await expect(pending).resolves.toMatchObject({ warn: true, message: 'heads up' });
   });
 
+  it('parses decision even when hush exits with warn (code 1)', async () => {
+    const child = createMockChildProcess();
+    spawnMock.mockReturnValueOnce(child);
+
+    const engine = createHushCliEngine({ policyRef: 'default' });
+    const pending = engine.evaluate(exampleEvent);
+
+    child.stdout.write(
+      JSON.stringify({
+        version: 1,
+        command: 'policy_eval',
+        decision: { allowed: true, denied: false, warn: true, reason: 'warned' },
+      }),
+    );
+    child.emit('close', 1, null);
+
+    await expect(pending).resolves.toMatchObject({ warn: true, reason: 'warned' });
+  });
+
+  it('parses decision even when hush exits with blocked (code 2)', async () => {
+    const child = createMockChildProcess();
+    spawnMock.mockReturnValueOnce(child);
+
+    const engine = createHushCliEngine({ policyRef: 'default' });
+    const pending = engine.evaluate(exampleEvent);
+
+    child.stdout.write(
+      JSON.stringify({
+        version: 1,
+        command: 'policy_eval',
+        decision: { allowed: false, denied: true, warn: false, reason: 'blocked' },
+      }),
+    );
+    child.emit('close', 2, null);
+
+    await expect(pending).resolves.toMatchObject({ denied: true, reason: 'blocked' });
+  });
+
   it('fails closed on malformed JSON', async () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);

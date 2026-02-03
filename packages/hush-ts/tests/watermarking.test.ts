@@ -18,5 +18,23 @@ describe("watermarking", () => {
     expect(r.watermark?.payload.applicationId).toBe("app");
     expect(r.watermark?.payload.sessionId).toBe("session");
   });
-});
 
+  it("encodes payload as RFC 8785 canonical JSON bytes", async () => {
+    const w = await PromptWatermarker.create({
+      // deterministic keys help keep this test stable
+      privateKeyHex: "11".repeat(32),
+    });
+
+    const out = await w.watermark("hello", {
+      applicationId: "app",
+      sessionId: "session",
+      createdAt: 1,
+      sequenceNumber: 2,
+    });
+
+    const decoded = new TextDecoder().decode(out.watermark.encodedData);
+    expect(decoded).toBe(
+      '{"applicationId":"app","createdAt":1,"sequenceNumber":2,"sessionId":"session"}',
+    );
+  });
+});

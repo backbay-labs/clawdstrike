@@ -26,7 +26,8 @@ export function canonicalize(obj: JsonValue): string {
     if (!Number.isFinite(obj)) {
       throw new Error("Non-finite numbers are not valid JSON");
     }
-    return String(obj);
+    // RFC 8785 references ECMAScript JSON number serialization rules.
+    return JSON.stringify(obj);
   }
 
   if (typeof obj === "string") {

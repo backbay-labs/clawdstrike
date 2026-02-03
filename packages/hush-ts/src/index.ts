@@ -106,7 +106,29 @@ export {
   type JailbreakCategory,
   type JailbreakDetectionResult,
   type JailbreakDetectorConfig,
+  type JailbreakLinearModelConfig,
   type JailbreakSeverity,
   type JailbreakSignal,
   type LayerResult,
 } from "./jailbreak";
+
+// Output sanitization
+export {
+  OutputSanitizer,
+  SanitizationStream,
+  type AllowlistConfig,
+  type DenylistConfig,
+  type DetectorType,
+  type EntityFinding,
+  type EntityRecognizer,
+  type EntropyConfig,
+  type OutputSanitizerConfig,
+  type ProcessingStats,
+  type Redaction,
+  type RedactionStrategy,
+  type SanitizationResult,
+  type SensitiveCategory,
+  type SensitiveDataFinding,
+  type Span,
+  type StreamingConfig,
+} from "./output-sanitizer";
