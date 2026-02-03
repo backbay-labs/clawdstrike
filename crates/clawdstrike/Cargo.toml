@@ -25,6 +25,7 @@ glob.workspace = true
 chrono.workspace = true
 globset.workspace = true
 uuid = { workspace = true, features = ["v4"] }
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
