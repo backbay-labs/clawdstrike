@@ -1,17 +1,73 @@
 # Architecture
 
 Clawdstrike is a guard suite and attestation primitives for agent runtimes.
-It is **not** an operating system sandbox: it will not automatically intercept syscalls or “wrap” a process.
+It is **not** an operating system sandbox: it will not automatically intercept syscalls or "wrap" a process.
 
 The intended integration is at the **tool boundary** (your agent runtime calls Clawdstrike before performing actions).
 
+## System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                    HushEngine                                        │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐    │
+│  │ Forbidden   │ │   Egress    │ │ SecretLeak  │ │   Patch     │ │  MCP Tool   │    │
+│  │    Path     │ │  Allowlist  │ │    Guard    │ │  Integrity  │ │    Guard    │    │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘    │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                                    │
+│  │  Prompt     │ │  Jailbreak  │ │   Output    │    ┌───────────────────────────┐   │
+│  │  Injection  │ │   Guard     │ │  Sanitizer  │    │     Watermarking          │   │
+│  └─────────────┘ └─────────────┘ └─────────────┘    └───────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                              Inline Reference Monitors                               │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                                    │
+│  │ Filesystem  │ │   Network   │ │  Execution  │                                    │
+│  │     IRM     │ │     IRM     │ │     IRM     │                                    │
+│  └─────────────┘ └─────────────┘ └─────────────┘                                    │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                Policy Engine (YAML)                                  │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                              Receipt Signing & Attestation                           │
+│        Ed25519 │ SHA-256/Keccak │ Merkle Trees │ Canonical JSON (RFC 8785)          │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+┌─────────────────────────────────────────┼───────────────────────────────────────────┐
+│                              Framework Adapters                                      │
+│  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐ ┌──────┐ ┌──────────┐        │
+│  │ OpenClaw│ │ Vercel AI│ │ LangChain │ │Claude Code│ │ Codex│ │ OpenCode │        │
+│  └─────────┘ └──────────┘ └───────────┘ └───────────┘ └──────┘ └──────────┘        │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Components
 
-- `clawdstrike` (Rust): policy type, built-in guards, `HushEngine`
-- `hush-core` (Rust): hashing/signing, Merkle trees, `SignedReceipt`
-- `hush-proxy` (Rust): DNS/SNI parsing utilities and domain matching
-- `hush-cli` (Rust): `hush` CLI for ad-hoc checks and verification
-- `hushd` (Rust, optional): HTTP daemon for centralized checks (WIP)
+### Rust Crates
+
+| Crate | Description |
+|-------|-------------|
+| `clawdstrike` | Policy type, built-in guards, `HushEngine`, jailbreak detection, output sanitization |
+| `hush-core` | Hashing/signing, Merkle trees, `SignedReceipt`, canonical JSON |
+| `hush-proxy` | DNS/SNI parsing utilities and domain matching |
+| `hush-cli` | `hush` CLI for ad-hoc checks and verification |
+| `hush-wasm` | WebAssembly bindings for browser/Node.js |
+| `hushd` | HTTP daemon for centralized checks (WIP) |
+
+### TypeScript Packages
+
+| Package | Description |
+|---------|-------------|
+| `@clawdstrike/sdk` | Core TypeScript SDK with full guard parity |
+| `@clawdstrike/adapter-core` | Framework-agnostic adapter interfaces |
+| `@clawdstrike/openclaw` | OpenClaw plugin |
+| `@clawdstrike/vercel-ai` | Vercel AI SDK integration |
+| `@clawdstrike/langchain` | LangChain integration |
+| `@clawdstrike/hush-cli-engine` | Node.js bridge to Rust CLI |
+
+### Python Packages
+
+| Package | Description |
+|---------|-------------|
+| `hush-py` | Pure Python SDK with optional PyO3 bindings |
 
 ## Data flow (typical integration)
 
@@ -58,3 +114,35 @@ Clawdstrike can enforce only what your runtime routes through it. If an agent ha
 - **Attested**: what Clawdstrike recorded in a `Receipt`/`SignedReceipt` (policy hash, verdict, violations, timestamps).
 
 Receipts are only as strong as the integration: they prove what Clawdstrike *observed/decided* under a specific policy, not that the underlying OS prevented all side effects.
+
+## Inline Reference Monitors (IRMs)
+
+For deeper integration scenarios, Clawdstrike provides Inline Reference Monitors that intercept operations from sandboxed modules:
+
+| IRM | Operations | Use Case |
+|-----|------------|----------|
+| **FilesystemIrm** | Read, Write, Delete, List | Sandbox file access |
+| **NetworkIrm** | TCP/UDP connect, DNS resolve, Listen | Sandbox network access |
+| **ExecutionIrm** | Command execution | Sandbox process spawning |
+
+IRMs integrate with the guard pipeline:
+
+```rust
+use clawdstrike::irm::{IrmRouter, FilesystemIrm, NetworkIrm};
+
+let router = IrmRouter::new()
+    .with_irm(FilesystemIrm::new(engine.clone()))
+    .with_irm(NetworkIrm::new(engine.clone()));
+
+// Intercept a sandboxed module's file read
+let decision = router.intercept(IrmEvent::FsRead {
+    path: "/etc/passwd".into(),
+    module_id: "untrusted-plugin".into(),
+}).await;
+
+if !decision.allowed {
+    // Block the operation
+}
+```
+
+IRMs emit telemetry events for audit logging and can aggregate decisions across multiple operations.
