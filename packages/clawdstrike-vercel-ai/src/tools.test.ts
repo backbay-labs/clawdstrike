@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { BaseToolInterceptor } from '@clawdstrike/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
 import type { PolicyEngineLike, ToolInterceptor } from '@clawdstrike/adapter-core';
 
 import { secureTools } from './tools.js';
+import { ClawdstrikeBlockedError } from './errors.js';
 
 describe('secureTools', () => {
   it('allows tool execution when decision allows', async () => {
@@ -51,7 +52,9 @@ describe('secureTools', () => {
     const execute = vi.fn(async () => 'should-not-run');
     const tools = secureTools({ bash: { execute } }, interceptor);
 
-    await expect(tools.bash.execute({ cmd: 'rm -rf /' })).rejects.toThrow(/blocked/i);
+    await expect(tools.bash.execute({ cmd: 'rm -rf /' })).rejects.toBeInstanceOf(
+      ClawdstrikeBlockedError,
+    );
     expect(execute).toHaveBeenCalledTimes(0);
   });
 
@@ -81,5 +84,38 @@ describe('secureTools', () => {
     await expect(tools.boom.execute({})).rejects.toThrow('boom');
     expect(onError).toHaveBeenCalledTimes(1);
   });
-});
 
+  it('can create a context per execution', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ allowed: true, denied: false, warn: false }),
+    };
+    const interceptor = new BaseToolInterceptor(engine, {});
+
+    const sessionIds: string[] = [];
+    const tools = secureTools(
+      {
+        ping: {
+          async execute() {
+            return 'pong';
+          },
+        },
+      },
+      interceptor,
+      {
+        getContext: () => {
+          const created = createSecurityContext({
+            sessionId: `sess-${Math.random().toString(36).slice(2, 7)}`,
+          });
+          sessionIds.push(created.sessionId);
+          return created;
+        },
+      },
+    );
+
+    await tools.ping.execute({});
+    await tools.ping.execute({});
+
+    expect(sessionIds.length).toBe(2);
+    expect(sessionIds[0]).not.toBe(sessionIds[1]);
+  });
+});

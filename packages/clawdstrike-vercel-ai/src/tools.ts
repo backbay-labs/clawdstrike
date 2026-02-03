@@ -1,17 +1,25 @@
 import { createSecurityContext } from '@clawdstrike/adapter-core';
 import type { SecurityContext, ToolInterceptor } from '@clawdstrike/adapter-core';
 
+import { ClawdstrikeBlockedError } from './errors.js';
+
 export type VercelAiToolLike<TInput = unknown, TOutput = unknown> = {
   execute: (input: TInput, ...rest: unknown[]) => Promise<TOutput> | TOutput;
 };
 
 export type VercelAiToolSet = Record<string, VercelAiToolLike>;
 
+export interface SecureToolsOptions {
+  context?: SecurityContext;
+  getContext?: (toolName: string, input: unknown) => SecurityContext;
+}
+
 export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
   tools: TTools,
   interceptor: ToolInterceptor,
+  options?: SecureToolsOptions,
 ): TTools {
-  const context = createSecurityContext({
+  const defaultContext = options?.context ?? createSecurityContext({
     metadata: { framework: 'vercel-ai' },
   });
 
@@ -19,7 +27,7 @@ export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
   for (const [toolName, tool] of Object.entries(tools)) {
     (secured as Record<string, VercelAiToolLike>)[toolName] = {
       ...(tool as object),
-      execute: wrapExecute(toolName, tool.execute, interceptor, context),
+      execute: wrapExecute(toolName, tool.execute, interceptor, defaultContext, options?.getContext),
     } as VercelAiToolLike;
   }
 
@@ -30,9 +38,12 @@ function wrapExecute<TInput, TOutput>(
   toolName: string,
   execute: (input: TInput, ...rest: unknown[]) => Promise<TOutput> | TOutput,
   interceptor: ToolInterceptor,
-  context: SecurityContext,
+  defaultContext: SecurityContext,
+  getContext?: (toolName: string, input: unknown) => SecurityContext,
 ): (input: TInput, ...rest: unknown[]) => Promise<TOutput> {
   return async (input: TInput, ...rest: unknown[]): Promise<TOutput> => {
+    const context = getContext ? getContext(toolName, input) : defaultContext;
+
     let interceptResult;
     try {
       interceptResult = await interceptor.beforeExecute(toolName, input, context);
@@ -44,8 +55,7 @@ function wrapExecute<TInput, TOutput>(
 
     if (!interceptResult.proceed) {
       const { decision } = interceptResult;
-      const detail = decision.message ?? decision.reason ?? 'denied';
-      throw new Error(`Tool '${toolName}' blocked: ${detail}`);
+      throw new ClawdstrikeBlockedError(toolName, decision);
     }
 
     const nextInput = (interceptResult.modifiedParameters as unknown as TInput) ?? input;
@@ -71,4 +81,3 @@ function wrapExecute<TInput, TOutput>(
     }
   };
 }
-
