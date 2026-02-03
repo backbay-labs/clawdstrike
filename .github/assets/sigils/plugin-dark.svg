@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- outer sigil frame (notched diamond) -->
+  <path d="M12 3.5 L18 9.5 L20.5 12 L18 14.5 L12 20.5 L6 14.5 L3.5 12 L6 9.5 Z"
+        stroke="#E5E7EB" stroke-width="2" stroke-linejoin="miter"/>
+
+  <!-- binding ring -->
+  <circle cx="12" cy="12" r="1.6"
+          stroke="#E5E7EB" stroke-width="2"/>
+
+  <!-- twin hooks (interlock) -->
+  <path d="M10 8.6 L8.8 9.8 H7.6 V14.2 H8.8 L10 15.4"
+        stroke="#E5E7EB" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M14 8.6 L15.2 9.8 H16.4 V14.2 H15.2 L14 15.4"
+        stroke="#E5E7EB" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"/>
+
+  <!-- spine -->
+  <path d="M12 6.8 V10.2 M12 13.8 V17.2"
+        stroke="#E5E7EB" stroke-width="2" stroke-linecap="square"/>
+</svg>

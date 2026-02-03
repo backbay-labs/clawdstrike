@@ -3,45 +3,93 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/medica/clawdstrike/actions"><img src="https://img.shields.io/github/actions/workflow/status/medica/clawdstrike/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI Status"></a>
+  <a href="https://crates.io/crates/clawdstrike"><img src="https://img.shields.io/crates/v/clawdstrike?style=flat-square&logo=rust" alt="crates.io"></a>
+  <a href="https://docs.rs/clawdstrike"><img src="https://img.shields.io/docsrs/clawdstrike?style=flat-square&logo=docs.rs" alt="docs.rs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/MSRV-1.75-orange?style=flat-square&logo=rust" alt="MSRV: 1.75">
+</p>
+
+<p align="center">
   <em>
     The claw strikes back.<br/>
     At the boundary between intent and action,<br/>
     it watches what leaves, what changes, what leaks.<br/>
     If the rules drift, it fails closed.<br/>
-    If the story changes, the receipt won’t sign.
+    If the tale diverges, the receipt won’t sign.
   </em>
 </p>
 
----
+<p align="center">
+  <img src=".github/assets/divider.png" alt="" width="520" />
+</p>
+
+<p align="center">
+  <img src=".github/assets/sigils/claw-light.svg#gh-light-mode-only" height="42" alt="" />
+  <img src=".github/assets/sigils/claw-dark.svg#gh-dark-mode-only"   height="42" alt="" />
+</p>
 
 <h1 align="center">Clawdstrike</h1>
 
 <p align="center">
-  Security guards and attestation primitives for OpenClaw agents.
+  <em>Fail closed. Sign the truth.</em>
 </p>
 
 <p align="center">
-  🔒 Tool-boundary enforcement • 🧾 Signed receipts • 🧩 OpenClaw plugin
+  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/boundary-dark.svg"><img src=".github/assets/sigils/boundary-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Tool-boundary enforcement
+   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
+  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/seal-dark.svg"><img src=".github/assets/sigils/seal-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Signed receipts
+  <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
+  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/plugin-dark.svg"><img src=".github/assets/sigils/plugin-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;OpenClaw plugin
 </p>
 
 <p align="center">
-  <a href="docs/src/getting-started/quick-start.md">Docs</a> •
-  <a href="packages/clawdstrike-openclaw/docs/getting-started.md">OpenClaw integration</a> •
+  <a href="docs/src/getting-started/quick-start.md">Docs</a>
+  <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
+  <a href="packages/clawdstrike-openclaw/docs/getting-started.md">OpenClaw integration</a>
+  <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
   <a href="examples">Examples</a>
 </p>
 
 ## Overview
 
-Clawdstrike provides runtime security enforcement for OpenClaw agents, including:
+Clawdstrike provides runtime security enforcement for agents, designed for developers building EDR solutions and security infrastructure on top of OpenClaw.
 
-- 🔒 **Security Guards** - Composable checks for file access, network egress, secret detection, patch validation, and tool invocation
-- 🧩 **Policy Engine** - YAML-based configuration for guard behavior
-- 🧾 **Cryptographic Attestation** - Ed25519 signing, Merkle trees, and receipt generation for verifiable execution
-- 🧰 **Pre-configured Rulesets** - Ready-to-use security profiles for different environments
+Includes:
+
+- <img src=".github/assets/sigils/boundary-light.svg#gh-light-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> <img src=".github/assets/sigils/boundary-dark.svg#gh-dark-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> **Security Guards** — Composable checks for file access, network egress, secret detection, patch validation, and tool invocation
+- <img src=".github/assets/sigils/policy-light.svg#gh-light-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> <img src=".github/assets/sigils/policy-dark.svg#gh-dark-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> **Policy Engine** — YAML-based configuration for guard behavior
+- <img src=".github/assets/sigils/seal-light.svg#gh-light-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> <img src=".github/assets/sigils/seal-dark.svg#gh-dark-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> **Cryptographic Attestation** — Ed25519 signing, Merkle trees, and receipt generation for verifiable execution
+- <img src=".github/assets/sigils/ruleset-light.svg#gh-light-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> <img src=".github/assets/sigils/ruleset-dark.svg#gh-dark-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;" /> **Pre-configured Rulesets** — Ready-to-use security profiles for different environments
 
 ### OpenClaw Integration
 
-Clawdstrike ships an OpenClaw plugin in `packages/clawdstrike-openclaw` (published as `@clawdstrike/openclaw`). For setup and policy schema details, see `packages/clawdstrike-openclaw/docs/getting-started.md`.
+Clawdstrike ships an OpenClaw plugin in `packages/clawdstrike-openclaw` (published as `@clawdstrike/openclaw`). Get started in under a minute:
+
+```typescript
+// openclaw.config.ts
+import { clawdstrike } from "@clawdstrike/openclaw";
+
+export default {
+  plugins: [
+    clawdstrike({
+      ruleset: "ai-agent",
+      signing: { enabled: true },
+    }),
+  ],
+};
+```
+
+For full setup and policy schema details, see the [OpenClaw integration guide](packages/clawdstrike-openclaw/docs/getting-started.md).
+
+### Terminology
+
+| Term              | Definition                                                                       |
+| ----------------- | -------------------------------------------------------------------------------- |
+| **Guard**         | A composable security check (e.g., `ForbiddenPathGuard`, `EgressAllowlistGuard`) |
+| **Policy**        | YAML configuration that defines guard behavior and rules                         |
+| **Receipt**       | An attestation record capturing tool invocations, verdicts, and provenance       |
+| **SignedReceipt** | A `Receipt` cryptographically signed with Ed25519 for tamper-evidence            |
 
 ## Threat model & limitations (explicit)
 
@@ -53,6 +101,8 @@ The purpose of Clawdstrike is to provide a solid and reliable foundation of tool
 - **Attested**: what is recorded in `Receipt`/`SignedReceipt` (verdict + provenance such as policy hash and violations).
 
 If an agent can bypass your tool layer and access the filesystem/network directly, Clawdstrike cannot prevent it.
+
+**Recommended**: Pair Clawdstrike with an OS-level or container sandbox (e.g., seccomp, gVisor, Firecracker) for syscall-level isolation.
 
 ## Crates
 
@@ -273,6 +323,27 @@ cargo fmt
 # Lint
 cargo clippy
 ```
+
+## Security
+
+We take security seriously. If you discover a vulnerability:
+
+- **For sensitive issues**: Email [connor@backbay.io](mailto:connor@backbay.io) with details. We aim to respond within 48 hours.
+- **For non-sensitive issues**: Open a [GitHub issue](https://github.com/backbay-labs/clawdstrike/issues) with the `security` label.
+
+Please include steps to reproduce, affected versions, and any relevant context.
+
+## Contributing
+
+Contributions are welcome! To get started:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-improvement`)
+3. Make your changes with tests
+4. Run `cargo fmt && cargo clippy && cargo test`
+5. Submit a pull request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on code style, commit messages, and the review process.
 
 ## License
 
