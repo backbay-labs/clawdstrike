@@ -465,26 +465,26 @@ rego:
 
 ```bash
 # Compile YAML + Rego into OPA bundle
-clawdstrike policy compile policy.yaml -o policy.bundle
+hush policy compile policy.yaml -o policy.bundle
 
 # Compile with strict validation
-clawdstrike policy compile --strict policy.yaml
+hush policy compile --strict policy.yaml
 
 # Verify existing bundle
-clawdstrike policy compile --verify policy.bundle
+hush policy compile --verify policy.bundle
 ```
 
 ### Policy Evaluation
 
 ```bash
 # Evaluate single event
-clawdstrike policy eval policy.yaml --input event.json
+hush policy eval policy.yaml --input event.json
 
 # Evaluate with trace output
-clawdstrike policy eval policy.yaml --input event.json --trace
+hush policy eval policy.yaml --input event.json --trace
 
 # Evaluate Rego policy directly
-clawdstrike policy eval policy.rego --input event.json --package clawdstrike.guards.egress
+hush policy eval policy.rego --input event.json --package clawdstrike.guards.egress
 ```
 
 ### Rego Development
@@ -654,10 +654,10 @@ rego:
 
 ```bash
 # Sign compiled bundle
-clawdstrike policy sign policy.bundle --key private.pem
+hush policy sign policy.bundle --key private.pem
 
 # Verify signature before loading
-clawdstrike policy verify policy.bundle --key public.pem
+hush policy verify policy.bundle --key public.pem
 
 # Require signed policies in config
 ```

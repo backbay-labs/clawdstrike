@@ -426,7 +426,7 @@ resolution:
 
 ```bash
 # Check for deprecated APIs in your guard
-clawdstrike guard check-deprecated
+hush guard check-deprecated
 
 # Output:
 # Checking for deprecated APIs...
@@ -443,10 +443,10 @@ clawdstrike guard check-deprecated
 #   Migration: Use severity: "low" or "medium"
 #   Removal: SDK 2.0
 #
-# Run `clawdstrike guard migrate` for automatic fixes.
+# Run `hush guard migrate` for automatic fixes.
 
 # Automatic migration
-clawdstrike guard migrate
+hush guard migrate
 
 # Output:
 # Migrating deprecated APIs...
@@ -456,7 +456,7 @@ clawdstrike guard migrate
 # Migration complete. Please review changes and run tests.
 
 # Migrate policy file
-clawdstrike policy migrate policy.yaml --target-version 2.0.0
+hush policy migrate policy.yaml --target-version 2.0.0
 
 # Output:
 # Migrating policy.yaml to schema 2.0.0...
@@ -1013,7 +1013,7 @@ async function verifyPackageIntegrity(
 
 - [ ] Lockfile generation
 - [ ] Lockfile validation
-- [ ] `clawdstrike guard lock` command
+- [ ] `hush guard lock` command
 
 ### Phase 3: Migration Tooling (Weeks 5-6)
 

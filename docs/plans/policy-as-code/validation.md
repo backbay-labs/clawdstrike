@@ -101,43 +101,43 @@ Current policy validation in Clawdstrike is limited to basic schema checks, miss
 
 ```bash
 # Lint single policy
-clawdstrike policy lint policy.yaml
+hush policy lint policy.yaml
 
 # Lint with strict mode (warnings are errors)
-clawdstrike policy lint --strict policy.yaml
+hush policy lint --strict policy.yaml
 
 # Lint multiple policies
-clawdstrike policy lint *.yaml
+hush policy lint *.yaml
 
 # Lint with specific ruleset
-clawdstrike policy lint --rules security policy.yaml
+hush policy lint --rules security policy.yaml
 
 # Lint with custom rules
-clawdstrike policy lint --config .clawdstrike-lint.yaml policy.yaml
+hush policy lint --config .clawdstrike-lint.yaml policy.yaml
 
 # Output formats
-clawdstrike policy lint --format pretty policy.yaml
-clawdstrike policy lint --format json policy.yaml
-clawdstrike policy lint --format sarif policy.yaml  # GitHub Code Scanning
+hush policy lint --format pretty policy.yaml
+hush policy lint --format json policy.yaml
+hush policy lint --format sarif policy.yaml  # GitHub Code Scanning
 
 # Fix auto-fixable issues
-clawdstrike policy lint --fix policy.yaml
+hush policy lint --fix policy.yaml
 ```
 
 ### Rule Management
 
 ```bash
 # List available rules
-clawdstrike policy lint --list-rules
+hush policy lint --list-rules
 
 # Show rule details
-clawdstrike policy lint --explain SEC001
+hush policy lint --explain SEC001
 
 # Enable/disable specific rules
-clawdstrike policy lint --enable SEC001,SEC002 --disable STYLE001 policy.yaml
+hush policy lint --enable SEC001,SEC002 --disable STYLE001 policy.yaml
 
 # Generate default config
-clawdstrike policy lint --init > .clawdstrike-lint.yaml
+hush policy lint --init > .clawdstrike-lint.yaml
 ```
 
 ---
@@ -468,7 +468,7 @@ rules:
 ### Pretty Output (Default)
 
 ```
-$ clawdstrike policy lint policy.yaml
+$ hush policy lint policy.yaml
 
 Linting: policy.yaml
 ====================
@@ -641,7 +641,7 @@ Policy is INVALID (1 error)
 ### Pattern Coverage Analysis
 
 ```
-$ clawdstrike policy lint --coverage policy.yaml
+$ hush policy lint --coverage policy.yaml
 
 Pattern Coverage Analysis
 =========================
@@ -660,13 +660,13 @@ Missing Coverage:
 Recommendations:
   1. Add "/etc/passwd" to forbidden_path patterns
   2. Add AI API domains to egress allow list
-  3. Run: clawdstrike policy lint --suggest-patterns
+  3. Run: hush policy lint --suggest-patterns
 ```
 
 ### Conflict Detection
 
 ```
-$ clawdstrike policy lint --conflicts policy.yaml
+$ hush policy lint --conflicts policy.yaml
 
 Conflict Analysis
 =================
@@ -718,7 +718,7 @@ manual_fix:
 ### Fix Preview
 
 ```bash
-$ clawdstrike policy lint --fix --dry-run policy.yaml
+$ hush policy lint --fix --dry-run policy.yaml
 
 Auto-fix Preview
 ================
@@ -877,7 +877,7 @@ jobs:
 
       - name: Lint Policies
         run: |
-          clawdstrike policy lint \
+          hush policy lint \
             --format sarif \
             --output results.sarif \
             **/*.yaml
@@ -897,14 +897,14 @@ policy-lint:
   image: clawdstrike/cli:latest
   script:
     - |
-      clawdstrike policy lint \
+      hush policy lint \
         --format json \
         --output lint-results.json \
         policy.yaml
     - |
       # Strict mode for production branches
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        clawdstrike policy lint --strict policy.yaml
+        hush policy lint --strict policy.yaml
       fi
   artifacts:
     paths:
@@ -927,7 +927,7 @@ repos:
     hooks:
       - id: clawdstrike-lint
         name: Lint Clawdstrike Policies
-        entry: clawdstrike policy lint --strict
+        entry: hush policy lint --strict
         language: system
         files: 'policy\.ya?ml$'
         pass_filenames: true

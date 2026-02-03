@@ -105,18 +105,18 @@ Deploying policy changes to production without understanding their impact is ris
 
 ```bash
 # Start interactive simulation
-clawdstrike policy simulate policy.yaml
+hush policy simulate policy.yaml
 
 # With specific context
-clawdstrike policy simulate policy.yaml --context context.json
+hush policy simulate policy.yaml --context context.json
 
 # With real-time event input
-clawdstrike policy simulate policy.yaml --stdin
+hush policy simulate policy.yaml --stdin
 ```
 
 Interactive Session:
 ```
-$ clawdstrike policy simulate policy.yaml
+$ hush policy simulate policy.yaml
 
 Clawdstrike Policy Simulator
 ============================
@@ -160,36 +160,36 @@ Session ended. 4 events evaluated.
 
 ```bash
 # Process event file
-clawdstrike policy simulate policy.yaml --events events.json
+hush policy simulate policy.yaml --events events.json
 
 # Process with expected outcomes
-clawdstrike policy simulate policy.yaml --events events.json --expected expected.json
+hush policy simulate policy.yaml --events events.json --expected expected.json
 
 # CI-friendly output
-clawdstrike policy simulate policy.yaml --events events.json --format json
+hush policy simulate policy.yaml --events events.json --format json
 
 # Fail if any unexpected denials
-clawdstrike policy simulate policy.yaml --events events.json --fail-on-deny
+hush policy simulate policy.yaml --events events.json --fail-on-deny
 
 # Summary only
-clawdstrike policy simulate policy.yaml --events events.json --summary
+hush policy simulate policy.yaml --events events.json --summary
 ```
 
 ### Replay Mode
 
 ```bash
 # Replay audit log against new policy
-clawdstrike policy simulate new-policy.yaml --replay audit.json
+hush policy simulate new-policy.yaml --replay audit.json
 
 # Compare old vs new policy
-clawdstrike policy simulate new-policy.yaml --replay audit.json --compare old-policy.yaml
+hush policy simulate new-policy.yaml --replay audit.json --compare old-policy.yaml
 
 # Replay with time range
-clawdstrike policy simulate policy.yaml --replay audit.json \
+hush policy simulate policy.yaml --replay audit.json \
   --since "2024-01-01" --until "2024-01-15"
 
 # Replay with filters
-clawdstrike policy simulate policy.yaml --replay audit.json \
+hush policy simulate policy.yaml --replay audit.json \
   --filter-guard egress_allowlist \
   --filter-decision denied
 ```
@@ -198,13 +198,13 @@ clawdstrike policy simulate policy.yaml --replay audit.json \
 
 ```bash
 # Run in shadow mode (log decisions, don't enforce)
-clawdstrike policy shadow policy.yaml --port 8080
+hush policy shadow policy.yaml --port 8080
 
 # Shadow with comparison to existing policy
-clawdstrike policy shadow new-policy.yaml --compare current-policy.yaml
+hush policy shadow new-policy.yaml --compare current-policy.yaml
 
 # Shadow with alerting
-clawdstrike policy shadow policy.yaml --alert-on-diff --webhook https://alerts.example.com
+hush policy shadow policy.yaml --alert-on-diff --webhook https://alerts.example.com
 ```
 
 ---
@@ -282,7 +282,7 @@ shortcuts:
 ### Decision Report
 
 ```
-$ clawdstrike policy simulate policy.yaml --events events.json
+$ hush policy simulate policy.yaml --events events.json
 
 Simulation Report
 =================
@@ -323,7 +323,7 @@ Event #23:
 ### Comparison Report
 
 ```
-$ clawdstrike policy simulate new.yaml --replay audit.json --compare old.yaml
+$ hush policy simulate new.yaml --replay audit.json --compare old.yaml
 
 Policy Comparison Simulation
 ============================
@@ -367,7 +367,7 @@ Recommendation:
 ### Performance Report
 
 ```
-$ clawdstrike policy simulate policy.yaml --events events.json --benchmark
+$ hush policy simulate policy.yaml --events events.json --benchmark
 
 Performance Benchmark
 =====================
@@ -499,36 +499,36 @@ metrics:
 
 ```bash
 # Start shadow mode
-clawdstrike policy shadow new-policy.yaml
+hush policy shadow new-policy.yaml
 
 # With comparison
-clawdstrike policy shadow new-policy.yaml --compare current-policy.yaml
+hush policy shadow new-policy.yaml --compare current-policy.yaml
 
 # With duration
-clawdstrike policy shadow new-policy.yaml --duration 24h
+hush policy shadow new-policy.yaml --duration 24h
 
 # With sampling
-clawdstrike policy shadow new-policy.yaml --sample-rate 0.1
+hush policy shadow new-policy.yaml --sample-rate 0.1
 
 # With alerting
-clawdstrike policy shadow new-policy.yaml \
+hush policy shadow new-policy.yaml \
   --alert-on-diff \
   --slack-webhook "$SLACK_URL"
 
 # View shadow metrics
-clawdstrike policy shadow --status
+hush policy shadow --status
 
 # Promote shadow to primary
-clawdstrike policy shadow --promote
+hush policy shadow --promote
 
 # Abort shadow mode
-clawdstrike policy shadow --abort
+hush policy shadow --abort
 ```
 
 ### Shadow Metrics
 
 ```
-$ clawdstrike policy shadow --status
+$ hush policy shadow --status
 
 Shadow Mode Status
 ==================
@@ -723,7 +723,7 @@ jobs:
       - name: Simulate Policy Changes
         id: simulate
         run: |
-          clawdstrike policy simulate policy.yaml \
+          hush policy simulate policy.yaml \
             --replay audit.json \
             --compare origin/main:policy.yaml \
             --format json \
@@ -790,7 +790,7 @@ jobs:
 
       - name: Start Shadow Mode
         run: |
-          clawdstrike policy shadow policy.yaml \
+          hush policy shadow policy.yaml \
             --duration 24h \
             --compare ${{ secrets.CURRENT_POLICY_URL }} \
             --webhook ${{ secrets.ALERT_WEBHOOK }}
@@ -805,7 +805,7 @@ jobs:
       - name: Check Shadow Results
         id: check
         run: |
-          DIFF_RATE=$(clawdstrike policy shadow --status --format json | jq '.diff_rate')
+          DIFF_RATE=$(hush policy shadow --status --format json | jq '.diff_rate')
           echo "diff_rate=$DIFF_RATE" >> $GITHUB_OUTPUT
 
           if (( $(echo "$DIFF_RATE > 0.05" | bc -l) )); then
@@ -815,7 +815,7 @@ jobs:
       - name: Promote Policy
         if: steps.check.outputs.diff_rate < 0.05
         run: |
-          clawdstrike policy shadow --promote
+          hush policy shadow --promote
           echo "Policy promoted to production"
 ```
 
@@ -840,7 +840,7 @@ policy-simulate:
         --output audit.json
     - |
       # Run simulation against audit log
-      clawdstrike policy simulate policy.yaml \
+      hush policy simulate policy.yaml \
         --replay audit.json \
         --compare $CI_MERGE_REQUEST_DIFF_BASE_SHA:policy.yaml \
         --format json \
@@ -867,14 +867,14 @@ policy-shadow:
   image: clawdstrike/cli:latest
   script:
     - |
-      clawdstrike policy shadow policy.yaml \
+      hush policy shadow policy.yaml \
         --duration 4h \
         --sample-rate 0.1 \
         --webhook $ALERT_WEBHOOK
     - |
       # Wait and check results
       sleep 14400  # 4 hours
-      DIFF_RATE=$(clawdstrike policy shadow --status --format json | jq '.diff_rate')
+      DIFF_RATE=$(hush policy shadow --status --format json | jq '.diff_rate')
       if (( $(echo "$DIFF_RATE > 0.05" | bc -l) )); then
         echo "High diff rate: $DIFF_RATE - manual review required"
         exit 1
@@ -889,7 +889,7 @@ policy-deploy:
   stage: deploy
   image: clawdstrike/cli:latest
   script:
-    - clawdstrike policy shadow --promote
+    - hush policy shadow --promote
     - echo "Policy deployed to production"
   needs:
     - policy-shadow
@@ -1015,7 +1015,7 @@ ALLOWED [no_violation] Event passed all guards
 ```
 
 ```bash
-$ clawdstrike policy simulate policy.yaml --events events-all-guards.json
+$ hush policy simulate policy.yaml --events events-all-guards.json
 
 Simulation Report
 =================

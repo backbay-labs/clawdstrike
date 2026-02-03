@@ -143,25 +143,25 @@ guards:
 
 ```bash
 # Check policy compatibility with current SDK
-clawdstrike policy version policy.yaml
+hush policy version policy.yaml
 
 # Check compatibility with specific SDK version
-clawdstrike policy version policy.yaml --sdk-version 2.0.0
+hush policy version policy.yaml --sdk-version 2.0.0
 
 # Check if policy can be upgraded
-clawdstrike policy version policy.yaml --check-upgrade
+hush policy version policy.yaml --check-upgrade
 
 # List required features
-clawdstrike policy version policy.yaml --features
+hush policy version policy.yaml --features
 
 # Show deprecation warnings
-clawdstrike policy version policy.yaml --deprecations
+hush policy version policy.yaml --deprecations
 ```
 
 ### Output Examples
 
 ```
-$ clawdstrike policy version policy.yaml
+$ hush policy version policy.yaml
 
 Policy Version Information
 ==========================
@@ -183,11 +183,11 @@ Deprecation Warnings:
   - None
 
 Upgrade Available:
-  - Schema 1.1.0 available (run: clawdstrike policy migrate)
+  - Schema 1.1.0 available (run: hush policy migrate)
 ```
 
 ```
-$ clawdstrike policy version policy.yaml --sdk-version 0.9.0
+$ hush policy version policy.yaml --sdk-version 0.9.0
 
 Policy Version Information
 ==========================
@@ -278,7 +278,7 @@ deprecations:
 ### Deprecation Warnings
 
 ```
-$ clawdstrike policy lint policy.yaml
+$ hush policy lint policy.yaml
 
 Policy Validation: policy.yaml
 ==============================
@@ -287,7 +287,7 @@ Warnings:
   - DEPRECATED: guards.forbidden_path is deprecated since v1.5.0
     Will be removed in: v2.0.0
     Replacement: guards.filesystem
-    Run: clawdstrike policy migrate --to 1.5.0 policy.yaml
+    Run: hush policy migrate --to 1.5.0 policy.yaml
 
   - DEPRECATED: settings.timeout is deprecated since v1.3.0
     Will be removed in: v2.0.0
@@ -345,7 +345,7 @@ features:
 ### Feature Compatibility Check
 
 ```bash
-$ clawdstrike policy version policy.yaml --features
+$ hush policy version policy.yaml --features
 
 Features Analysis
 =================
@@ -370,22 +370,22 @@ SDK Feature Coverage: 100% (3/3 required features supported)
 
 ```bash
 # Show current version
-clawdstrike policy version policy.yaml
+hush policy version policy.yaml
 
 # Bump patch version (1.2.0 -> 1.2.1)
-clawdstrike policy version --bump patch policy.yaml
+hush policy version --bump patch policy.yaml
 
 # Bump minor version (1.2.1 -> 1.3.0)
-clawdstrike policy version --bump minor policy.yaml
+hush policy version --bump minor policy.yaml
 
 # Bump major version (1.3.0 -> 2.0.0)
-clawdstrike policy version --bump major policy.yaml
+hush policy version --bump major policy.yaml
 
 # Set specific version
-clawdstrike policy version --set 2.0.0-beta.1 policy.yaml
+hush policy version --set 2.0.0-beta.1 policy.yaml
 
 # Bump with automatic changelog
-clawdstrike policy version --bump minor --changelog policy.yaml
+hush policy version --bump minor --changelog policy.yaml
 ```
 
 ### Version Bump Rules
@@ -414,7 +414,7 @@ version_bump_rules:
 ### Automatic Version Suggestion
 
 ```bash
-$ clawdstrike policy version --suggest-bump policy.yaml
+$ hush policy version --suggest-bump policy.yaml
 
 Analyzing changes from last committed version...
 
@@ -471,7 +471,7 @@ sdk_versions:
 ### Matrix Visualization
 
 ```
-$ clawdstrike policy version --matrix
+$ hush policy version --matrix
 
 Clawdstrike Compatibility Matrix
 ================================
@@ -620,18 +620,18 @@ jobs:
       - name: Check Version Bump
         run: |
           # Get versions
-          OLD_VERSION=$(git show HEAD~1:policy.yaml | clawdstrike policy version --format json | jq -r '.policy')
-          NEW_VERSION=$(clawdstrike policy version policy.yaml --format json | jq -r '.policy')
+          OLD_VERSION=$(git show HEAD~1:policy.yaml | hush policy version --format json | jq -r '.policy')
+          NEW_VERSION=$(hush policy version policy.yaml --format json | jq -r '.policy')
 
           if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
             echo "::error::Policy changed but version not bumped"
-            echo "Run: clawdstrike policy version --bump <patch|minor|major> policy.yaml"
+            echo "Run: hush policy version --bump <patch|minor|major> policy.yaml"
             exit 1
           fi
 
       - name: Verify Compatibility
         run: |
-          clawdstrike policy version policy.yaml --check-upgrade
+          hush policy version policy.yaml --check-upgrade
           if [ $? -ne 0 ]; then
             echo "::error::Policy has compatibility issues"
             exit 1
@@ -639,10 +639,10 @@ jobs:
 
       - name: Check Deprecations
         run: |
-          DEPRECATIONS=$(clawdstrike policy version policy.yaml --deprecations --format json | jq '.count')
+          DEPRECATIONS=$(hush policy version policy.yaml --deprecations --format json | jq '.count')
           if [ "$DEPRECATIONS" -gt 0 ]; then
             echo "::warning::Policy uses $DEPRECATIONS deprecated features"
-            clawdstrike policy version policy.yaml --deprecations
+            hush policy version policy.yaml --deprecations
           fi
 ```
 
@@ -668,7 +668,7 @@ jobs:
       - name: Generate Changelog
         run: |
           VERSION=$(echo ${{ github.ref_name }} | sed 's/policy-v//')
-          clawdstrike policy changelog --from policy-v$(echo $VERSION | awk -F. '{print $1"."$2-1".0"}') --to ${{ github.ref_name }} > CHANGELOG.md
+          hush policy changelog --from policy-v$(echo $VERSION | awk -F. '{print $1"."$2-1".0"}') --to ${{ github.ref_name }} > CHANGELOG.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -687,8 +687,8 @@ policy-version-check:
   script:
     - |
       # Check version was bumped
-      OLD_VERSION=$(git show HEAD~1:policy.yaml | clawdstrike policy version --format json | jq -r '.policy')
-      NEW_VERSION=$(clawdstrike policy version policy.yaml --format json | jq -r '.policy')
+      OLD_VERSION=$(git show HEAD~1:policy.yaml | hush policy version --format json | jq -r '.policy')
+      NEW_VERSION=$(hush policy version policy.yaml --format json | jq -r '.policy')
 
       if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
         echo "ERROR: Policy changed but version not bumped"
@@ -696,13 +696,13 @@ policy-version-check:
       fi
     - |
       # Check compatibility
-      clawdstrike policy version policy.yaml --check-upgrade
+      hush policy version policy.yaml --check-upgrade
     - |
       # Check deprecations
-      DEPRECATIONS=$(clawdstrike policy version policy.yaml --deprecations --format json | jq '.count')
+      DEPRECATIONS=$(hush policy version policy.yaml --deprecations --format json | jq '.count')
       if [ "$DEPRECATIONS" -gt 0 ]; then
         echo "WARNING: Policy uses $DEPRECATIONS deprecated features"
-        clawdstrike policy version policy.yaml --deprecations
+        hush policy version policy.yaml --deprecations
       fi
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -715,7 +715,7 @@ policy-release:
   script:
     - |
       VERSION=$(echo $CI_COMMIT_TAG | sed 's/policy-v//')
-      clawdstrike policy changelog \
+      hush policy changelog \
         --from policy-v$(echo $VERSION | awk -F. '{print $1"."$2-1".0"}') \
         --to $CI_COMMIT_TAG > CHANGELOG.md
     - |
@@ -767,12 +767,12 @@ DON'T:
 ### Upgrade Process
 
 ```
-1. Check compatibility: clawdstrike policy version --check-upgrade
-2. Review deprecations: clawdstrike policy version --deprecations
-3. Run migration: clawdstrike policy migrate --dry-run
-4. Update tests: clawdstrike policy test
-5. Apply migration: clawdstrike policy migrate
-6. Bump version: clawdstrike policy version --bump minor
+1. Check compatibility: hush policy version --check-upgrade
+2. Review deprecations: hush policy version --deprecations
+3. Run migration: hush policy migrate --dry-run
+4. Update tests: hush policy test
+5. Apply migration: hush policy migrate
+6. Bump version: hush policy version --bump minor
 7. Commit and deploy
 ```
 

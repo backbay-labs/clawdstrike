@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import sys
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+
+@dataclass(frozen=True)
+class ValidationError:
+    path: pathlib.Path
+    line: int
+    message: str
+
+    def format(self) -> str:
+        return f"{self.path}:{self.line}: {self.message}"
+
+
+KNOWN_EVENT_TYPES = {
+    "file_read",
+    "file_write",
+    "network_egress",
+    "command_exec",
+    "patch_apply",
+    "tool_call",
+    "custom",
+}
+
+
+def parse_rfc3339(ts: str) -> bool:
+    try:
+        if ts.endswith("Z"):
+            datetime.fromisoformat(ts[:-1] + "+00:00")
+        else:
+            datetime.fromisoformat(ts)
+        return True
+    except ValueError:
+        return False
+
+
+def is_object(value: Any) -> bool:
+    return isinstance(value, dict)
+
+
+def validate_event(path: pathlib.Path, line_no: int, event: Any, strict: bool) -> list[ValidationError]:
+    errors: list[ValidationError] = []
+
+    if not is_object(event):
+        return [ValidationError(path, line_no, "event must be a JSON object")]
+
+    event_id = event.get("eventId")
+    if not isinstance(event_id, str) or not event_id.strip():
+        errors.append(ValidationError(path, line_no, "missing/invalid required field: eventId (string)"))
+
+    event_type = event.get("eventType")
+    if not isinstance(event_type, str) or not event_type.strip():
+        errors.append(ValidationError(path, line_no, "missing/invalid required field: eventType (string)"))
+        event_type = None
+    else:
+        if strict and event_type not in KNOWN_EVENT_TYPES:
+            errors.append(ValidationError(path, line_no, f"unknown eventType {event_type!r} (strict mode)"))
+
+    timestamp = event.get("timestamp")
+    if not isinstance(timestamp, str) or not parse_rfc3339(timestamp):
+        errors.append(ValidationError(path, line_no, "missing/invalid required field: timestamp (RFC3339 string)"))
+
+    session_id = event.get("sessionId")
+    if session_id is not None and (not isinstance(session_id, str) or not session_id.strip()):
+        errors.append(ValidationError(path, line_no, "invalid optional field: sessionId (string)"))
+
+    metadata = event.get("metadata")
+    if metadata is not None and not is_object(metadata):
+        errors.append(ValidationError(path, line_no, "invalid optional field: metadata (object)"))
+
+    data = event.get("data")
+    if not is_object(data):
+        errors.append(ValidationError(path, line_no, "missing/invalid required field: data (object)"))
+        return errors
+
+    data_type = data.get("type")
+    if not isinstance(data_type, str) or not data_type.strip():
+        errors.append(ValidationError(path, line_no, "missing/invalid required field: data.type (string)"))
+        return errors
+
+    # Event-specific checks (best-effort; keep fixtures honest)
+    if event_type in {"file_read", "file_write"}:
+        if data_type != "file":
+            errors.append(ValidationError(path, line_no, "file_* events must use data.type == 'file'"))
+        if not isinstance(data.get("path"), str) or not data.get("path"):
+            errors.append(ValidationError(path, line_no, "file_* events require data.path (string)"))
+        operation = data.get("operation")
+        expected = "read" if event_type == "file_read" else "write"
+        if operation != expected:
+            errors.append(
+                ValidationError(
+                    path,
+                    line_no,
+                    f"{event_type} requires data.operation == {expected!r}",
+                )
+            )
+        content_hash = data.get("contentHash")
+        if content_hash is not None and not isinstance(content_hash, str):
+            errors.append(ValidationError(path, line_no, "file_* events: data.contentHash must be string if present"))
+
+    elif event_type == "network_egress":
+        if data_type != "network":
+            errors.append(ValidationError(path, line_no, "network_egress events must use data.type == 'network'"))
+        if not isinstance(data.get("host"), str) or not data.get("host"):
+            errors.append(ValidationError(path, line_no, "network_egress events require data.host (string)"))
+        port = data.get("port")
+        if not isinstance(port, int) or port <= 0:
+            errors.append(ValidationError(path, line_no, "network_egress events require data.port (positive int)"))
+
+    elif event_type == "command_exec":
+        if data_type != "command":
+            errors.append(ValidationError(path, line_no, "command_exec events must use data.type == 'command'"))
+        if not isinstance(data.get("command"), str) or not data.get("command"):
+            errors.append(ValidationError(path, line_no, "command_exec events require data.command (string)"))
+        args = data.get("args")
+        if args is not None and (not isinstance(args, list) or not all(isinstance(x, str) for x in args)):
+            errors.append(ValidationError(path, line_no, "command_exec events: data.args must be string[] if present"))
+
+    elif event_type == "patch_apply":
+        if data_type != "patch":
+            errors.append(ValidationError(path, line_no, "patch_apply events must use data.type == 'patch'"))
+        if not isinstance(data.get("filePath"), str) or not data.get("filePath"):
+            errors.append(ValidationError(path, line_no, "patch_apply events require data.filePath (string)"))
+        if not isinstance(data.get("patchContent"), str) or not data.get("patchContent"):
+            errors.append(ValidationError(path, line_no, "patch_apply events require data.patchContent (string)"))
+
+    elif event_type == "tool_call":
+        if data_type != "tool":
+            errors.append(ValidationError(path, line_no, "tool_call events must use data.type == 'tool'"))
+        if not isinstance(data.get("toolName"), str) or not data.get("toolName"):
+            errors.append(ValidationError(path, line_no, "tool_call events require data.toolName (string)"))
+        parameters = data.get("parameters")
+        if not is_object(parameters):
+            errors.append(ValidationError(path, line_no, "tool_call events require data.parameters (object)"))
+
+    elif event_type == "custom":
+        if data_type != "custom":
+            errors.append(ValidationError(path, line_no, "custom events must use data.type == 'custom'"))
+        if not isinstance(data.get("customType"), str) or not data.get("customType"):
+            errors.append(ValidationError(path, line_no, "custom events require data.customType (string)"))
+
+    return errors
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Validate policy-events JSONL fixtures (no execution).")
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="One or more .jsonl files (default: fixtures/policy-events/v1/events.jsonl)",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail on unknown eventType values (still allows eventType=custom).",
+    )
+    args = parser.parse_args(argv)
+
+    paths = [pathlib.Path(p) for p in args.paths] if args.paths else [pathlib.Path("fixtures/policy-events/v1/events.jsonl")]
+
+    errors: list[ValidationError] = []
+    total_events = 0
+
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            errors.append(ValidationError(path, 0, "file not found"))
+            continue
+
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                errors.append(ValidationError(path, line_no, f"invalid JSON: {e.msg}"))
+                continue
+            total_events += 1
+            errors.extend(validate_event(path, line_no, obj, strict=args.strict))
+
+    if errors:
+        for e in errors:
+            print(e.format(), file=sys.stderr)
+        return 1
+
+    print(f"OK: validated {total_events} event(s)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

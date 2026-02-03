@@ -32,11 +32,11 @@ Policy changes in production environments are inherently risky. Without proper t
 |                    Policy Diff & Migration System                  |
 +------------------------------------------------------------------+
 |                                                                    |
-|   clawdstrike policy diff     - Compare two policy versions          |
-|   clawdstrike policy impact   - Analyze impact of changes            |
-|   clawdstrike policy migrate  - Upgrade policy schema                |
-|   clawdstrike policy rollback - Revert to previous version           |
-|   clawdstrike policy history  - View policy change history           |
+|   hush policy diff     - Compare two policy versions          |
+|   hush policy impact   - Analyze impact of changes            |
+|   hush policy migrate  - Upgrade policy schema                |
+|   hush policy rollback - Revert to previous version           |
+|   hush policy history  - View policy change history           |
 |                                                                    |
 +------------------------------------------------------------------+
 ```
@@ -91,78 +91,78 @@ Policy changes in production environments are inherently risky. Without proper t
 
 ```bash
 # Basic diff between two policy files
-clawdstrike policy diff old.yaml new.yaml
+hush policy diff old.yaml new.yaml
 
 # Diff with breaking change detection
-clawdstrike policy diff --breaking old.yaml new.yaml
+hush policy diff --breaking old.yaml new.yaml
 
 # Diff between git commits
-clawdstrike policy diff HEAD~1:policy.yaml HEAD:policy.yaml
+hush policy diff HEAD~1:policy.yaml HEAD:policy.yaml
 
 # Diff against built-in ruleset
-clawdstrike policy diff clawdstrike:strict ./my-policy.yaml
+hush policy diff clawdstrike:strict ./my-policy.yaml
 
 # Output formats
-clawdstrike policy diff old.yaml new.yaml --format unified
-clawdstrike policy diff old.yaml new.yaml --format json
-clawdstrike policy diff old.yaml new.yaml --format markdown > diff.md
+hush policy diff old.yaml new.yaml --format unified
+hush policy diff old.yaml new.yaml --format json
+hush policy diff old.yaml new.yaml --format markdown > diff.md
 
 # Ignore specific sections
-clawdstrike policy diff old.yaml new.yaml --ignore version,description
+hush policy diff old.yaml new.yaml --ignore version,description
 
 # Focus on specific guards
-clawdstrike policy diff old.yaml new.yaml --guards forbidden_path,egress_allowlist
+hush policy diff old.yaml new.yaml --guards forbidden_path,egress_allowlist
 ```
 
 ### Impact Analysis
 
 ```bash
 # Analyze impact of policy change
-clawdstrike policy impact old.yaml new.yaml
+hush policy impact old.yaml new.yaml
 
 # Impact against audit log (what would have changed?)
-clawdstrike policy impact old.yaml new.yaml --replay audit.json
+hush policy impact old.yaml new.yaml --replay audit.json
 
 # Impact summary
-clawdstrike policy impact old.yaml new.yaml --summary
+hush policy impact old.yaml new.yaml --summary
 
 # CI-friendly impact check
-clawdstrike policy impact old.yaml new.yaml --fail-on-breaking
+hush policy impact old.yaml new.yaml --fail-on-breaking
 ```
 
 ### Migration
 
 ```bash
 # Check if migration is needed
-clawdstrike policy migrate --check policy.yaml
+hush policy migrate --check policy.yaml
 
 # Migrate to latest schema version
-clawdstrike policy migrate policy.yaml
+hush policy migrate policy.yaml
 
 # Migrate to specific version
-clawdstrike policy migrate --to 2.0.0 policy.yaml
+hush policy migrate --to 2.0.0 policy.yaml
 
 # Dry-run migration
-clawdstrike policy migrate --dry-run policy.yaml
+hush policy migrate --dry-run policy.yaml
 
 # Generate migration script
-clawdstrike policy migrate --script policy.yaml > migrate.sh
+hush policy migrate --script policy.yaml > migrate.sh
 ```
 
 ### History and Rollback
 
 ```bash
 # View policy change history (requires git)
-clawdstrike policy history policy.yaml
+hush policy history policy.yaml
 
 # Show specific historical version
-clawdstrike policy history policy.yaml --revision abc123
+hush policy history policy.yaml --revision abc123
 
 # Rollback to previous version
-clawdstrike policy rollback policy.yaml --to HEAD~1
+hush policy rollback policy.yaml --to HEAD~1
 
 # Create rollback commit
-clawdstrike policy rollback policy.yaml --to HEAD~1 --commit
+hush policy rollback policy.yaml --to HEAD~1 --commit
 ```
 
 ---
@@ -295,11 +295,11 @@ Breaking Changes (1):
 **Mitigation:**
 1. Review all egress destinations in your application
 2. Add required domains to `egress_allowlist.allow`
-3. Test with `clawdstrike policy simulate` before deploying
+3. Test with `hush policy simulate` before deploying
 
 ## Recommendations
 
-1. Run impact analysis: `clawdstrike policy impact old.yaml new.yaml --replay audit.json`
+1. Run impact analysis: `hush policy impact old.yaml new.yaml --replay audit.json`
 2. Update tests to cover new patterns
 3. Notify teams of egress behavior change
 ```
@@ -395,7 +395,7 @@ rules:
 
 ```bash
 # Analyze what would change with new policy
-clawdstrike policy impact old.yaml new.yaml --replay audit.json
+hush policy impact old.yaml new.yaml --replay audit.json
 ```
 
 Output:
@@ -428,7 +428,7 @@ Newly Denied Events (Top 10):
 
 Recommendation:
   Before deploying, address the 89 newly denied events
-  Run: clawdstrike policy simulate new.yaml --events audit.json
+  Run: hush policy simulate new.yaml --events audit.json
 ```
 
 ### Statistical Summary
@@ -554,13 +554,13 @@ transformations:
 
 ```bash
 # Check current version and migration path
-$ clawdstrike policy migrate --check policy.yaml
+$ hush policy migrate --check policy.yaml
 Current version: 1.0.0
 Latest version: 2.0.0
 Migration path: 1.0.0 -> 1.1.0 -> 2.0.0
 
 # Preview migration
-$ clawdstrike policy migrate --dry-run policy.yaml
+$ hush policy migrate --dry-run policy.yaml
 Migrating policy.yaml from v1.0.0 to v2.0.0
 
 Changes:
@@ -572,7 +572,7 @@ Changes:
 Run without --dry-run to apply changes
 
 # Apply migration
-$ clawdstrike policy migrate policy.yaml
+$ hush policy migrate policy.yaml
 Migrating policy.yaml from v1.0.0 to v2.0.0...
 Backup created: policy.yaml.bak
 Migration complete.
@@ -580,7 +580,7 @@ Validating migrated policy...
 Policy is valid.
 
 # Migrate with backup disabled (CI)
-$ clawdstrike policy migrate --no-backup policy.yaml
+$ hush policy migrate --no-backup policy.yaml
 ```
 
 ---
@@ -590,7 +590,7 @@ $ clawdstrike policy migrate --no-backup policy.yaml
 ### Policy History
 
 ```bash
-$ clawdstrike policy history policy.yaml
+$ hush policy history policy.yaml
 
 Policy History: policy.yaml
 ===========================
@@ -632,33 +632,33 @@ Date:   2024-01-05
 
 ```bash
 # Diff between commits
-$ clawdstrike policy diff HEAD~2:policy.yaml HEAD:policy.yaml
+$ hush policy diff HEAD~2:policy.yaml HEAD:policy.yaml
 
 # Diff between branches
-$ clawdstrike policy diff main:policy.yaml feature/new-guards:policy.yaml
+$ hush policy diff main:policy.yaml feature/new-guards:policy.yaml
 
 # Diff between tags
-$ clawdstrike policy diff v1.0.0:policy.yaml v2.0.0:policy.yaml
+$ hush policy diff v1.0.0:policy.yaml v2.0.0:policy.yaml
 ```
 
 ### Rollback
 
 ```bash
 # View available rollback targets
-$ clawdstrike policy rollback --list policy.yaml
+$ hush policy rollback --list policy.yaml
 Available rollback targets:
   HEAD~1 (def456): Tighten egress policy
   HEAD~2 (789ghi): Initial policy configuration
 
 # Preview rollback
-$ clawdstrike policy rollback --dry-run policy.yaml --to HEAD~1
+$ hush policy rollback --dry-run policy.yaml --to HEAD~1
 Rolling back to def456
 Changes:
   - guards.mcp_tool.max_args_size (removing)
   - guards.patch_integrity.max_additions (removing)
 
 # Perform rollback
-$ clawdstrike policy rollback policy.yaml --to HEAD~1
+$ hush policy rollback policy.yaml --to HEAD~1
 Rolled back to def456
 Run 'git commit' to save or 'git checkout policy.yaml' to undo
 ```
@@ -796,7 +796,7 @@ jobs:
 
       - name: Generate Diff Report
         run: |
-          clawdstrike policy diff \
+          hush policy diff \
             origin/main:policy.yaml \
             HEAD:policy.yaml \
             --format markdown > diff-report.md
@@ -804,7 +804,7 @@ jobs:
       - name: Check Breaking Changes
         id: breaking
         run: |
-          if clawdstrike policy diff --breaking --fail-on-breaking \
+          if hush policy diff --breaking --fail-on-breaking \
             origin/main:policy.yaml HEAD:policy.yaml; then
             echo "breaking=false" >> $GITHUB_OUTPUT
           else
@@ -849,12 +849,12 @@ policy-diff:
   image: clawdstrike/cli:latest
   script:
     - |
-      clawdstrike policy diff \
+      hush policy diff \
         $CI_MERGE_REQUEST_DIFF_BASE_SHA:policy.yaml \
         HEAD:policy.yaml \
         --format json > diff.json
     - |
-      if clawdstrike policy diff --breaking --fail-on-breaking \
+      if hush policy diff --breaking --fail-on-breaking \
         $CI_MERGE_REQUEST_DIFF_BASE_SHA:policy.yaml HEAD:policy.yaml; then
         echo "No breaking changes"
       else

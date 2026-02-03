@@ -63,10 +63,10 @@ Before building custom guards, ensure you have:
 npm install -g @clawdstrike/cli
 
 # Verify installation
-clawdstrike --version
+hush --version
 
 # Create new guard project
-clawdstrike guard init my-custom-guard
+hush guard init my-custom-guard
 cd my-custom-guard
 
 # Project structure created:
@@ -91,10 +91,10 @@ npm test
 npm run build
 
 # Validate plugin
-clawdstrike guard validate
+hush guard validate
 
 # Start development server (hot reload)
-clawdstrike guard dev
+hush guard dev
 ```
 
 ### 2.3 Rust Quick Start
@@ -948,14 +948,14 @@ describe('Integration with PolicyEngine', () => {
 
 ```bash
 # Create TypeScript guard project
-clawdstrike guard init my-guard --language typescript
+hush guard init my-guard --language typescript
 
 # Create Rust guard project
-clawdstrike guard init my-guard --language rust
+hush guard init my-guard --language rust
 
 # Create from template
-clawdstrike guard init my-guard --template async-guard
-clawdstrike guard init my-guard --template compliance-guard
+hush guard init my-guard --template async-guard
+hush guard init my-guard --template compliance-guard
 
 # Available templates:
 # - basic (default)       Simple synchronous guard
@@ -968,7 +968,7 @@ clawdstrike guard init my-guard --template compliance-guard
 
 ```bash
 # Validate plugin manifest
-clawdstrike guard validate
+hush guard validate
 
 # Output:
 # Validating clawdstrike.plugin.json...
@@ -981,7 +981,7 @@ clawdstrike guard validate
 # Validation passed.
 
 # Validate with strict mode (for publishing)
-clawdstrike guard validate --strict
+hush guard validate --strict
 
 # Additional checks in strict mode:
 # - README.md exists
@@ -995,7 +995,7 @@ clawdstrike guard validate --strict
 
 ```bash
 # Start development server with hot reload
-clawdstrike guard dev
+hush guard dev
 
 # Output:
 # Starting development server...
@@ -1010,17 +1010,17 @@ clawdstrike guard dev
 #     -d '{"eventType":"file_write","data":{"type":"file","path":"/app/test.txt"}}'
 
 # With custom port
-clawdstrike guard dev --port 4000
+hush guard dev --port 4000
 
 # With specific config
-clawdstrike guard dev --config ./test-config.json
+hush guard dev --config ./test-config.json
 ```
 
 ### 5.4 WASM Build
 
 ```bash
 # Build WASM target (TypeScript)
-clawdstrike guard build-wasm
+hush guard build-wasm
 
 # Output:
 # Compiling to WASM...
@@ -1031,29 +1031,29 @@ clawdstrike guard build-wasm
 # WASM build complete: dist/guard.wasm (145 KB)
 
 # Build with size optimization
-clawdstrike guard build-wasm --optimize-size
+hush guard build-wasm --optimize-size
 
 # Build with debug symbols
-clawdstrike guard build-wasm --debug
+hush guard build-wasm --debug
 ```
 
 ### 5.5 Testing Commands
 
 ```bash
 # Run all tests
-clawdstrike guard test
+hush guard test
 
 # Run with coverage
-clawdstrike guard test --coverage
+hush guard test --coverage
 
 # Run specific test file
-clawdstrike guard test tests/guard.test.ts
+hush guard test tests/guard.test.ts
 
 # Run in watch mode
-clawdstrike guard test --watch
+hush guard test --watch
 
 # Run security scan
-clawdstrike guard security-scan
+hush guard security-scan
 ```
 
 ---
@@ -1189,19 +1189,19 @@ npm version patch  # or minor, major
 # Add entry for new version
 
 # 3. Run full validation
-clawdstrike guard validate --strict
+hush guard validate --strict
 
 # 4. Run tests with coverage
-clawdstrike guard test --coverage
+hush guard test --coverage
 
 # 5. Run security scan
-clawdstrike guard security-scan
+hush guard security-scan
 
 # 6. Build WASM
-clawdstrike guard build-wasm
+hush guard build-wasm
 
 # 7. Test in sandbox
-clawdstrike guard test-sandbox
+hush guard test-sandbox
 
 # 8. Review all files to be published
 npm pack --dry-run
@@ -1240,7 +1240,7 @@ cargo publish
 
 ```bash
 # After publishing, request verification
-clawdstrike guard request-verification
+hush guard request-verification
 
 # Requirements for verification:
 # - Public source repository
@@ -1250,7 +1250,7 @@ clawdstrike guard request-verification
 # - Documentation complete
 
 # Track verification status
-clawdstrike guard verification-status
+hush guard verification-status
 ```
 
 ---
@@ -1293,7 +1293,7 @@ clawdstrike guard verification-status
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| Guard not loading | Invalid manifest | Run `clawdstrike guard validate` |
+| Guard not loading | Invalid manifest | Run `hush guard validate` |
 | WASM build fails | Unsupported APIs | Check capability restrictions |
 | Slow performance | Expensive sync operations | Move to async or cache results |
 | Memory errors | Exceeded limits | Increase limits or optimize code |
@@ -1302,13 +1302,13 @@ clawdstrike guard verification-status
 
 ```bash
 # Enable debug logging
-DEBUG=clawdstrike:* clawdstrike guard dev
+DEBUG=clawdstrike:* hush guard dev
 
 # Verbose validation
-clawdstrike guard validate --verbose
+hush guard validate --verbose
 
 # Profile guard execution
-clawdstrike guard profile --event ./test-event.json
+hush guard profile --event ./test-event.json
 ```
 
 ### 9.3 Getting Help

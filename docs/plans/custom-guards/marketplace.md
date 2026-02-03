@@ -453,7 +453,7 @@ security_scan:
 
 ```bash
 # Search for guards
-$ clawdstrike guard search "secret detection"
+$ hush guard search "secret detection"
 
 Found 12 guards matching "secret detection":
 
@@ -467,7 +467,7 @@ Found 12 guards matching "secret detection":
     Gitleaks integration for Clawdstrike
 
 # View guard details
-$ clawdstrike guard info @clawdstrike-guard/certified-secrets
+$ hush guard info @clawdstrike-guard/certified-secrets
 
 @clawdstrike-guard/certified-secrets v2.1.0
 Enterprise-grade secret detection with 200+ patterns
@@ -485,7 +485,7 @@ Capabilities:
 Clawdstrike:  >= 0.5.0
 
 # Install a guard
-$ clawdstrike guard install @clawdstrike-guard/certified-secrets
+$ hush guard install @clawdstrike-guard/certified-secrets
 
 Installing @clawdstrike-guard/certified-secrets@2.1.0...
   ✓ Downloaded package

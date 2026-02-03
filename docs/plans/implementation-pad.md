@@ -69,6 +69,17 @@ Tier 3: Enterprise readiness (close deals)
 
 ---
 
+## Parallel worktrees (M0 / Feb 2026)
+
+These are intended to run in parallel; avoid cross-editing across worktrees:
+
+- `hushclaw-p0-integ` *(this worktree)*: decisions + coordination artifacts (`docs/plans/**`, `fixtures/**`, lightweight validators).
+- `hushclaw-p0-rust`: Rust runtime work (`crates/**`) — schema, engine/guards, adapters.
+- `hushclaw-p0-ts`: TypeScript runtime work (`packages/**`) — OpenClaw policy engine + schema compatibility.
+- `hushclaw-p0-cli`: CLI UX work (command surface, aliases/wrappers, help text), plus doc updates once naming is confirmed.
+
+---
+
 ## Working structure (suggested owners)
 
 Fill these in with real people/handles once assigned; keep one DRI per workstream.
@@ -84,15 +95,20 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 
 ## “Decisions We Must Make” (blockers)
 
+### Decision records (ACCEPTED 2026-02-03)
+
+- ADR 0001: CLI surface (`hush` vs `clawdstrike`): `decisions/0001-cli-command-surface.md`
+- ADR 0002: Policy schema convergence: `decisions/0002-policy-schema-convergence.md`
+- ADR 0003: Canonical `PolicyEvent` + severity: `decisions/0003-policy-event-and-severity.md`
+
 ### Naming / UX
-- [ ] Decide canonical CLI surface: keep `hush` as primary, add `clawdstrike` wrapper/alias, or converge to one.
-- [ ] Decide canonical docs/examples command naming; update all docs accordingly.
+- [x] Decide canonical CLI surface: `hush` canonical; `clawdstrike` wrapper/alias forwards to `hush`. (See `decisions/0001-cli-command-surface.md`)
+- [x] Decide canonical docs/examples command naming; update docs accordingly (`hush` canonical, `clawdstrike` only when TS/OpenClaw-specific).
 
 ### Policy schema
-- [ ] Decide canonical policy schema for v1 going forward:
-  - Option A (recommended): converge TS to Rust’s guard-centric schema (`version: "1.0.0"`, `guards.*`) and provide a migration shim for `clawdstrike-v1.0`.
-  - Option B: maintain two schemas permanently (higher ongoing cost; hurts portability).
-- [ ] Define a single canonical `PolicyEvent` schema across SDKs (TypeScript + Rust) and commit to compatibility testing.
+- [x] Decide canonical policy schema for v1 going forward: guard-centric `version: "1.0.0"`; legacy `clawdstrike-v1.0` supported via migration/translation. (See `decisions/0002-policy-schema-convergence.md`)
+- [x] Confirm compatibility stance + migration plan. (See `decisions/0002-policy-schema-convergence.md`)
+- [x] Define a single canonical `PolicyEvent` schema across SDKs (TypeScript + Rust). (See `decisions/0003-policy-event-and-severity.md`)
 
 ### Plugin execution model
 - [ ] Decide Node plugin loading strategy: native TS guards vs WASM-only for “untrusted”.
@@ -112,8 +128,8 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 ## Milestones (ship slices, not a big bang)
 
 ### M0: Baseline convergence (P0 prerequisite)
-- [ ] Policy schema convergence plan written (decision + migration path).
-- [ ] Canonical event model documented + fixture corpus created.
+- [x] Policy schema convergence plan written (decision + migration path). (See `decisions/0002-policy-schema-convergence.md`)
+- [x] Canonical event model documented + fixture corpus created. (See `decisions/0003-policy-event-and-severity.md` and `../../fixtures/policy-events/v1/`)
 - [ ] Cross-SDK parity tests scaffolded (same events, same expected decisions).
 
 ### M1: P0 Foundation shipped (Custom Guards + Agent Frameworks + Policy-as-Code)

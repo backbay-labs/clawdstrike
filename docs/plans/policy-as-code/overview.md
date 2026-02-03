@@ -147,32 +147,32 @@ Tools should be intuitive and helpful:
 
 ```bash
 # Policy Validation
-clawdstrike policy lint policy.yaml              # Validate syntax and semantics
-clawdstrike policy lint --strict policy.yaml     # Strict mode with warnings as errors
+hush policy lint policy.yaml              # Validate syntax and semantics
+hush policy lint --strict policy.yaml     # Strict mode with warnings as errors
 
 # Policy Testing
-clawdstrike policy test policy.yaml              # Run test suite
-clawdstrike policy test --coverage policy.yaml   # With coverage report
-clawdstrike policy test --watch policy.yaml      # Watch mode for development
+hush policy test policy.yaml              # Run test suite
+hush policy test --coverage policy.yaml   # With coverage report
+hush policy test --watch policy.yaml      # Watch mode for development
 
 # Policy Diff & Migration
-clawdstrike policy diff old.yaml new.yaml        # Show differences
-clawdstrike policy diff --breaking old.yaml new.yaml  # Check for breaking changes
-clawdstrike policy migrate --from v1 --to v2 policy.yaml
+hush policy diff old.yaml new.yaml        # Show differences
+hush policy diff --breaking old.yaml new.yaml  # Check for breaking changes
+hush policy migrate --from v1 --to v2 policy.yaml
 
 # Policy Simulation
-clawdstrike policy simulate policy.yaml          # Interactive simulation
-clawdstrike policy simulate --replay audit.json  # Replay production events
-clawdstrike policy simulate --ci events.json     # CI-friendly batch mode
+hush policy simulate policy.yaml          # Interactive simulation
+hush policy simulate --replay audit.json  # Replay production events
+hush policy simulate --ci events.json     # CI-friendly batch mode
 
 # Version Management
-clawdstrike policy version policy.yaml           # Show version info
-clawdstrike policy version --check-compat policy.yaml  # SDK compatibility check
-clawdstrike policy version --bump minor policy.yaml    # Bump version
+hush policy version policy.yaml           # Show version info
+hush policy version --check-compat policy.yaml  # SDK compatibility check
+hush policy version --bump minor policy.yaml    # Bump version
 
 # OPA/Rego
-clawdstrike policy compile policy.rego           # Compile Rego to bundle
-clawdstrike policy eval policy.rego --input event.json  # Evaluate single event
+hush policy compile policy.rego           # Compile Rego to bundle
+hush policy eval policy.rego --input event.json  # Evaluate single event
 ```
 
 ---
@@ -188,7 +188,7 @@ repos:
     hooks:
       - id: clawdstrike-lint
         name: Clawdstrike Policy Lint
-        entry: clawdstrike policy lint
+        entry: hush policy lint
         files: '\.(yaml|rego)$'
         types: [file]
 ```
@@ -267,7 +267,7 @@ jobs:
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Policy Test Coverage | >80% | `clawdstrike policy test --coverage` |
+| Policy Test Coverage | >80% | `hush policy test --coverage` |
 | CI Pipeline Pass Rate | >95% | GitHub Actions metrics |
 | Mean Time to Policy Deploy | <15 min | Pipeline duration |
 | Policy-Related Incidents | 0 per month | Incident tracking |
