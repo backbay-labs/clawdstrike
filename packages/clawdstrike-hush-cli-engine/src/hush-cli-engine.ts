@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { setTimeout as delay } from 'node:timers/promises';
 
 import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
 
@@ -66,20 +65,34 @@ async function spawnJson(
     return fn();
   };
 
-  const abortController = new AbortController();
-  const timeoutSignal = abortController.signal;
+  child.stdin.write(JSON.stringify(input));
+  child.stdin.end();
 
-  const exitPromise = new Promise<string>((resolve, reject) => {
+  return await new Promise<string>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      settleOnce(() => {
+        child.kill('SIGKILL');
+        reject(
+          new Error(
+            `hush timed out after ${timeoutMs}ms${formatStderr(stderrChunks)}`,
+          ),
+        );
+      });
+    }, timeoutMs);
+
+    timeoutId.unref?.();
+
     child.once('error', err => {
       settleOnce(() => {
-        abortController.abort();
+        clearTimeout(timeoutId);
         reject(err);
       });
     });
 
     child.once('close', (code, signal) => {
       settleOnce(() => {
-        abortController.abort();
+        clearTimeout(timeoutId);
+
         if (signal) {
           reject(
             new Error(
@@ -102,31 +115,6 @@ async function spawnJson(
       });
     });
   });
-
-  const timeoutPromise = (async () => {
-    try {
-      await delay(timeoutMs, undefined, { signal: timeoutSignal });
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Process completed; timer cancelled.
-        return '';
-      }
-      throw error;
-    }
-
-    settleOnce(() => {
-      child.kill('SIGKILL');
-    });
-
-    throw new Error(
-      `hush timed out after ${timeoutMs}ms${formatStderr(stderrChunks)}`,
-    );
-  })();
-
-  child.stdin.write(JSON.stringify(input));
-  child.stdin.end();
-
-  return await Promise.race([exitPromise, timeoutPromise]);
 }
 
 function parsePolicyEvalResponse(raw: string): HushPolicyEvalResponseV1 {
