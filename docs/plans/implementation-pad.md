@@ -53,8 +53,26 @@ Tier 3: Enterprise readiness (close deals)
   - TS OpenClaw policy schema is `version: "clawdstrike-v1.0"` and config lives under `egress/filesystem/execution/...`.
   - The new P0/P1 specs (custom guards, PaC, composition) assume a guard-centric schema.
 - Guard parity mismatch (built-ins differ between Rust and TS; prompt-injection exists in Rust, not in TS).
-- Engine architecture mismatch (Rust `HushEngine` uses a fixed list of built-in guards; plugins/composition need a dynamic registry).
-- CLI naming mismatch (`hush` vs `clawdstrike`). Decide and standardize.
+- Engine architecture gap (still): plugins/composition need a dynamic registry + policy representation. **Progress:** `HushEngine` now supports runtime appended guards (built-ins first, extras last).
+- CLI naming mismatch (resolved): `hush` is canonical; `clawdstrike` is TS/OpenClaw-specific + planned wrapper/alias to forward to `hush` (ADR 0001).
+
+---
+
+## Feb 2026 progress (merged to `main`)
+
+- Decisions + conventions:
+  - ADR 0001 (`hush` vs `clawdstrike`): `docs/plans/decisions/0001-cli-command-surface.md`
+  - ADR 0002 (policy schema convergence): `docs/plans/decisions/0002-policy-schema-convergence.md`
+  - ADR 0003 (canonical `PolicyEvent` + severity): `docs/plans/decisions/0003-policy-event-and-severity.md`
+- Fixture corpus (parity scaffolding):
+  - Canonical policy events: `fixtures/policy-events/v1/events.jsonl`
+  - Validator: `tools/scripts/validate-policy-events`
+- Rust engine extensibility:
+  - `HushEngine` supports runtime `extra_guards` (built-ins first, extras last) and records extras in receipt metadata.
+- Rust CLI (PaC start):
+  - Added `hush policy diff <left> <right> [--resolve] [--json]` (rulesets or files). This is an M0 baseline; the PaC spec still includes additional planned flags (`--breaking`, `--format`, etc.).
+- TypeScript adapter foundation:
+  - Added `packages/clawdstrike-adapter-core/` (`@clawdstrike/adapter-core`) with `BaseToolInterceptor`, `DefaultOutputSanitizer`, `PolicyEventFactory`, and `InMemoryAuditLogger` + unit tests.
 
 ---
 
@@ -134,8 +152,8 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 
 ### M1: P0 Foundation shipped (Custom Guards + Agent Frameworks + Policy-as-Code)
 - [ ] Custom guards plugin system (dev-mode first; production hardening later).
-- [ ] `@clawdstrike/adapter-core` + at least 2 “real” integrations (Vercel AI + LangChain).
-- [ ] Policy-as-code CLI: lint + test (YAML test suite) + diff + simulate.
+- [ ] `@clawdstrike/adapter-core` + at least 2 “real” integrations (Vercel AI + LangChain). *(Adapter core merged; integrations pending.)*
+- [ ] Policy-as-code CLI: lint + test (YAML test suite) + diff + simulate. *(Diff baseline merged; lint/test/simulate pending.)*
 
 ### M2: P1 Differentiation shipped (Prompt Security + Multi-Agent primitives)
 - [ ] Prompt security baseline: stronger injection/jailbreak detection + output sanitization.
@@ -153,7 +171,7 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 Primary specs: `docs/plans/custom-guards/*`
 
 ### A0. Core refactors (enables everything else)
-- [ ] Refactor Rust `HushEngine` to use a dynamic guard registry (vector/graph), not a fixed `[Guard; 6]`.
+- [ ] Refactor Rust `HushEngine` to use a dynamic guard registry (vector/graph), not a fixed `[Guard; 6]`. *(Partial: runtime `extra_guards` supported; full plugin registry TBD.)*
 - [ ] Extend Rust policy model to represent “custom guards” and “compositions” without breaking existing policies.
 - [ ] Add structured “per-guard evidence” to all SDKs (Rust already has `GuardReport`; ensure TS parity).
 
@@ -213,13 +231,13 @@ Primary specs: `docs/plans/custom-guards/*`
 Primary specs: `docs/plans/agent-frameworks/*`
 
 ### B0. Adapter core (shared)
-- [ ] Create `@clawdstrike/adapter-core` package (interfaces + base implementations).
-- [ ] Define the “interception contract”:
+- [x] Create `@clawdstrike/adapter-core` package (interfaces + base implementations): `packages/clawdstrike-adapter-core/`.
+- [x] Define the “interception contract” (captured in exported types + base interceptor):
   - Pre-call: build `PolicyEvent` + evaluate + block/warn/allow.
   - Post-call: sanitize output + audit + optional block persistence.
   - Bootstrap: inject security prompt + load policy.
   - Error: convert failures to safe denies, never silent-allow.
-- [ ] Provide “default” implementations: tool interceptor, output sanitizer, event factory, in-memory audit logger.
+- [x] Provide “default” implementations: tool interceptor, output sanitizer, event factory, in-memory audit logger.
 
 ### B1. Policy engine packaging strategy (TS)
 - [ ] Decide: keep policy engine in `@clawdstrike/openclaw` and depend on it, OR extract to `@clawdstrike/policy` for reuse.
@@ -270,7 +288,7 @@ Primary specs: `docs/plans/policy-as-code/*`
 - [ ] Add snapshot testing for decisions + mutation testing (later, likely P1).
 
 ### C3. Diff + migration tooling
-- [ ] Structural diff that resolves `extends` first (deep merge normalization).
+- [x] M0 baseline: `hush policy diff <left> <right> [--resolve] [--json]` (rulesets or files; optional extends resolution).
 - [ ] Breaking-change detector (configurable rules; CI `--fail-on-breaking`).
 - [ ] Migration transforms for schema upgrades (and a “dry-run” mode).
 
