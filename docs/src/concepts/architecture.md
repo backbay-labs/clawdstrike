@@ -58,7 +58,7 @@ The intended integration is at the **tool boundary** (your agent runtime calls C
 |---------|-------------|
 | `@clawdstrike/sdk` | Crypto/receipts + a subset of guards + prompt-security utilities (no full policy engine) |
 | `@clawdstrike/adapter-core` | Framework-agnostic adapter interfaces |
-| `@clawdstrike/openclaw` | OpenClaw plugin |
+| `@clawdstrike/clawdstrike-security` | OpenClaw plugin (plugin id: `clawdstrike-security`) |
 | `@clawdstrike/vercel-ai` | Vercel AI SDK integration |
 | `@clawdstrike/langchain` | LangChain integration |
 | `@clawdstrike/hush-cli-engine` | Node.js bridge to Rust CLI |

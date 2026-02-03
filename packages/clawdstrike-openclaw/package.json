@@ -1,5 +1,5 @@
 {
-  "name": "@clawdstrike/openclaw",
+  "name": "@clawdstrike/clawdstrike-security",
   "version": "0.1.0",
   "description": "Clawdstrike security plugin for OpenClaw",
   "type": "module",
@@ -56,5 +56,10 @@
     "clawdstrike",
     "ai-agent"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "openclaw": {
+    "extensions": [
+      "./dist/plugin.js"
+    ]
+  }
 }

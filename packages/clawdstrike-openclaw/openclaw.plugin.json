@@ -1,9 +1,9 @@
 {
-  "id": "clawdstrike",
+  "id": "clawdstrike-security",
   "version": "0.1.0",
   "name": "Clawdstrike Security Plugin",
   "description": "Tool-layer security guardrails for OpenClaw agents (policy_check preflight + post-action tool output blocking/redaction). Provides policy-based access control decisions, secret detection, and egress allowlist guidance.",
-  "main": "./dist/index.js",
+  "main": "./dist/plugin.js",
   "configSchema": {
     "type": "object",
     "properties": {

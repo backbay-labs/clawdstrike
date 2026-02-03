@@ -23,24 +23,25 @@
     ]
   },
 
-  "plugins": [
-    {
-      "name": "@clawdstrike/openclaw",
-      "version": "^0.1.0",
-      "config": {
-        "policy": "./policy.yaml",
-        "mode": "deterministic",
-        "logLevel": "info",
-        "guards": {
-          "forbidden_path": true,
-          "egress": true,
-          "secret_leak": true,
-          "patch_integrity": true,
-          "mcp_tool": false
+  "plugins": {
+    "entries": {
+      "clawdstrike-security": {
+        "enabled": true,
+        "config": {
+          "policy": "./policy.yaml",
+          "mode": "deterministic",
+          "logLevel": "info",
+          "guards": {
+            "forbidden_path": true,
+            "egress": true,
+            "secret_leak": true,
+            "patch_integrity": true,
+            "mcp_tool": false
+          }
         }
       }
     }
-  ],
+  },
 
   "environment": {
     "HUSH_LOG_LEVEL": "info"
