@@ -521,8 +521,11 @@ impl OutputSanitizer {
         }
 
         if truncated {
-            // If truncated for analysis, append the unprocessed suffix unchanged.
-            sanitized.push_str(&output[limited.len()..]);
+            // If we truncated the input for analysis, we intentionally do NOT append the
+            // unscanned suffix. Appending it would risk leaking secrets/PII that were not
+            // analyzed/redacted.
+            sanitized.push_str("\n[TRUNCATED_UNSCANNED_OUTPUT]");
+            applied_any = true;
         }
 
         if !self.config.include_findings {
@@ -584,5 +587,21 @@ mod tests {
         assert!(r.was_redacted);
         assert_eq!(r.findings.len(), 1);
         assert_ne!(r.findings[0].preview, input);
+    }
+
+    #[test]
+    fn does_not_append_unscanned_suffix_by_default() {
+        let mut cfg = OutputSanitizerConfig::default();
+        cfg.max_input_bytes = 24;
+        let s = OutputSanitizer::with_config(cfg);
+
+        let input =
+            "prefix that fits in max bytes then secret: ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let r = s.sanitize_sync(input);
+
+        assert!(r.was_redacted);
+        assert!(r.sanitized.contains("[TRUNCATED_UNSCANNED_OUTPUT]"));
+        assert!(!r.sanitized.contains("ghp_aaaaaaaa"));
+        assert!(r.sanitized.starts_with("prefix"));
     }
 }

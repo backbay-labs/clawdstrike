@@ -77,6 +77,59 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     );
   }
 
+  function sanitizeUnknown(
+    value: unknown,
+    sanitizeString: (s: string) => string,
+    seen: WeakSet<object>,
+    depth: number,
+  ): { value: unknown; changed: boolean } {
+    if (typeof value === 'string') {
+      const sanitized = sanitizeString(value);
+      return { value: sanitized, changed: sanitized !== value };
+    }
+
+    if (!value || typeof value !== 'object') {
+      return { value, changed: false };
+    }
+
+    if (seen.has(value)) {
+      return { value, changed: false };
+    }
+
+    if (depth > 32) {
+      return { value, changed: false };
+    }
+
+    // Preserve non-plain objects (Dates, Buffers, class instances, etc).
+    const isArray = Array.isArray(value);
+    const isPlainObject = Object.prototype.toString.call(value) === '[object Object]';
+    if (!isArray && !isPlainObject) {
+      return { value, changed: false };
+    }
+
+    seen.add(value);
+
+    if (isArray) {
+      let changed = false;
+      const out = (value as unknown[]).map((item) => {
+        const r = sanitizeUnknown(item, sanitizeString, seen, depth + 1);
+        changed = changed || r.changed;
+        return r.value;
+      });
+      return { value: changed ? out : value, changed };
+    }
+
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    let changed = false;
+    for (const [k, v] of Object.entries(obj)) {
+      const r = sanitizeUnknown(v, sanitizeString, seen, depth + 1);
+      out[k] = r.value;
+      changed = changed || r.changed;
+    }
+    return { value: changed ? out : value, changed };
+  }
+
   // Redact secrets from output
   if (result && typeof result === 'string') {
     const sanitized = policyEngine.sanitizeOutput(result);
@@ -84,15 +137,14 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
       toolEvent.context.toolResult.result = sanitized;
     }
   } else if (result && typeof result === 'object') {
-    // Try to redact secrets in JSON result
-    try {
-      const stringified = JSON.stringify(result);
-      const sanitized = policyEngine.sanitizeOutput(stringified);
-      if (sanitized !== stringified) {
-        toolEvent.context.toolResult.result = JSON.parse(sanitized);
-      }
-    } catch {
-      // Ignore JSON errors
+    const { value: sanitized, changed } = sanitizeUnknown(
+      result,
+      (s) => policyEngine.sanitizeOutput(s),
+      new WeakSet<object>(),
+      0,
+    );
+    if (changed) {
+      toolEvent.context.toolResult.result = sanitized;
     }
   }
 };

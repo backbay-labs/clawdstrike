@@ -129,6 +129,29 @@ describe('Tool Guard Hook', () => {
     expect(event.context.toolResult.error).toBeUndefined();
   });
 
+  it('should redact PII in JSON tool outputs', async () => {
+    const event: ToolResultPersistEvent = {
+      type: 'tool_result_persist',
+      timestamp: new Date().toISOString(),
+      context: {
+        sessionId: 'test-session',
+        toolResult: {
+          toolName: 'read',
+          params: { path: '/project/users.json' },
+          result: { user: { email: 'alice@example.com' }, note: 'ok' },
+        },
+      },
+      messages: [],
+    };
+
+    await toolGuardHandler(event);
+
+    expect(event.context.toolResult.error).toBeUndefined();
+    const result = event.context.toolResult.result as any;
+    expect(result.user.email).toContain('[REDACTED:email]');
+    expect(result.user.email).not.toContain('alice@example.com');
+  });
+
   it('should block dangerous command execution output', async () => {
     const event: ToolResultPersistEvent = {
       type: 'tool_result_persist',
