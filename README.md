@@ -15,8 +15,7 @@
     The claw strikes back.<br/>
     At the boundary between intent and action,<br/>
     it watches what leaves, what changes, what leaks.<br/>
-    Not “visibility.” Not “AI.” Just enforcement.<br/>
-    Logs are stories—proof is a signature.<br/>
+    Not “visibility.” Not “AI.” Logs are stories—proof is a signature.<br/>
     If the tale diverges, the receipt won’t sign.
   </em>
 </p>
