@@ -249,6 +249,60 @@ mod cli_parsing {
     }
 
     #[test]
+    fn test_policy_diff_parses() {
+        let cli = Cli::parse_from(["hush", "policy", "diff", "clawdstrike:default", "policy.yaml"]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Diff {
+                    left,
+                    right,
+                    resolve,
+                    json,
+                } => {
+                    assert_eq!(left, "clawdstrike:default");
+                    assert_eq!(right, "policy.yaml");
+                    assert!(!resolve);
+                    assert!(!json);
+                }
+                _ => panic!("Expected Diff subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_diff_parses_with_flags() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "diff",
+            "--resolve",
+            "--json",
+            "left.yaml",
+            "clawdstrike:strict",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Diff {
+                    left,
+                    right,
+                    resolve,
+                    json,
+                } => {
+                    assert_eq!(left, "left.yaml");
+                    assert_eq!(right, "clawdstrike:strict");
+                    assert!(resolve);
+                    assert!(json);
+                }
+                _ => panic!("Expected Diff subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
     fn test_daemon_start_defaults() {
         let cli = Cli::parse_from(["hush", "daemon", "start"]);
 

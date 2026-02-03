@@ -11,6 +11,7 @@
 //! - `hush merkle root|proof|verify` - Merkle tree operations
 //! - `hush policy show` - Show current policy
 //! - `hush policy validate <file>` - Validate a policy file
+//! - `hush policy diff <left> <right>` - Diff two policies (rulesets or files)
 //! - `hush daemon start|stop|status|reload` - Daemon management
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -23,6 +24,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use clawdstrike::{GuardContext, GuardResult, HushEngine, Policy, RuleSet, Severity};
 use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, SignedReceipt};
+
+mod policy_diff;
 
 const CLI_JSON_VERSION: u8 = 1;
 
@@ -220,6 +223,20 @@ enum PolicyCommands {
         /// Resolve extends and show merged policy
         #[arg(long)]
         resolve: bool,
+    },
+
+    /// Diff two policies (rulesets or files)
+    Diff {
+        /// Left policy (ruleset id or file path)
+        left: String,
+        /// Right policy (ruleset id or file path)
+        right: String,
+        /// Resolve extends before diffing
+        #[arg(long)]
+        resolve: bool,
+        /// Emit machine-readable JSON (array of diff entries)
+        #[arg(long)]
+        json: bool,
     },
 
     /// List available rulesets
@@ -894,7 +911,7 @@ fn cmd_keygen(output: &str) -> anyhow::Result<(String, String, String)> {
 fn cmd_policy(
     command: PolicyCommands,
     stdout: &mut dyn Write,
-    _stderr: &mut dyn Write,
+    stderr: &mut dyn Write,
 ) -> anyhow::Result<ExitCode> {
     match command {
         PolicyCommands::Show { ruleset, merged } => {
@@ -944,6 +961,129 @@ fn cmd_policy(
             Ok(ExitCode::Ok)
         }
 
+        PolicyCommands::Diff {
+            left,
+            right,
+            resolve,
+            json,
+        } => {
+            let left_loaded = match policy_diff::load_policy_from_arg(&left, resolve) {
+                Ok(v) => v,
+                Err(e) => {
+                    let code = policy_error_exit_code(&e.source);
+                    let _ = writeln!(stderr, "Error loading left policy {left:?}: {}", e.message);
+                    return Ok(code);
+                }
+            };
+            let right_loaded = match policy_diff::load_policy_from_arg(&right, resolve) {
+                Ok(v) => v,
+                Err(e) => {
+                    let code = policy_error_exit_code(&e.source);
+                    let _ = writeln!(stderr, "Error loading right policy {right:?}: {}", e.message);
+                    return Ok(code);
+                }
+            };
+
+            let left_policy = left_loaded.policy;
+            let right_policy = right_loaded.policy;
+
+            let left_value = match serde_json::to_value(&left_policy) {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error: Failed to serialize left policy: {}", e);
+                    return Ok(ExitCode::RuntimeError);
+                }
+            };
+            let right_value = match serde_json::to_value(&right_policy) {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error: Failed to serialize right policy: {}", e);
+                    return Ok(ExitCode::RuntimeError);
+                }
+            };
+
+            let diffs = policy_diff::diff_values(&left_value, &right_value);
+
+            if json {
+                let _ = writeln!(
+                    stdout,
+                    "{}",
+                    serde_json::to_string_pretty(&diffs).unwrap_or_else(|_| "[]".to_string())
+                );
+                return Ok(ExitCode::Ok);
+            }
+
+            let _ = writeln!(
+                stdout,
+                "Diff: {} -> {}{}",
+                left_loaded.source.describe(),
+                right_loaded.source.describe(),
+                if resolve { " (resolved)" } else { "" }
+            );
+
+            if diffs.is_empty() {
+                let _ = writeln!(stdout, "No changes.");
+                return Ok(ExitCode::Ok);
+            }
+
+            let mut added = 0usize;
+            let mut removed = 0usize;
+            let mut changed = 0usize;
+            for d in &diffs {
+                match d.kind {
+                    policy_diff::DiffKind::Added => added += 1,
+                    policy_diff::DiffKind::Removed => removed += 1,
+                    policy_diff::DiffKind::Changed => changed += 1,
+                }
+            }
+
+            let _ = writeln!(
+                stdout,
+                "Found {} change(s): {} changed, {} added, {} removed",
+                diffs.len(),
+                changed,
+                added,
+                removed
+            );
+
+            for d in diffs {
+                let path = if d.path.is_empty() { "/" } else { d.path.as_str() };
+                match d.kind {
+                    policy_diff::DiffKind::Added => {
+                        let new = d
+                            .new
+                            .as_ref()
+                            .map(|v| policy_diff::format_compact_value(v, 120))
+                            .unwrap_or_else(|| "null".to_string());
+                        let _ = writeln!(stdout, "+ {}: null -> {}", path, new);
+                    }
+                    policy_diff::DiffKind::Removed => {
+                        let old = d
+                            .old
+                            .as_ref()
+                            .map(|v| policy_diff::format_compact_value(v, 120))
+                            .unwrap_or_else(|| "null".to_string());
+                        let _ = writeln!(stdout, "- {}: {} -> null", path, old);
+                    }
+                    policy_diff::DiffKind::Changed => {
+                        let old = d
+                            .old
+                            .as_ref()
+                            .map(|v| policy_diff::format_compact_value(v, 120))
+                            .unwrap_or_else(|| "null".to_string());
+                        let new = d
+                            .new
+                            .as_ref()
+                            .map(|v| policy_diff::format_compact_value(v, 120))
+                            .unwrap_or_else(|| "null".to_string());
+                        let _ = writeln!(stdout, "~ {}: {} -> {}", path, old, new);
+                    }
+                }
+            }
+
+            Ok(ExitCode::Ok)
+        }
+
         PolicyCommands::List => {
             let _ = writeln!(stdout, "Available rulesets:");
             for id in RuleSet::list() {
@@ -954,6 +1094,13 @@ fn cmd_policy(
             }
             Ok(ExitCode::Ok)
         }
+    }
+}
+
+fn policy_error_exit_code(err: &clawdstrike::Error) -> ExitCode {
+    match err {
+        clawdstrike::Error::IoError(_) | clawdstrike::Error::CoreError(_) => ExitCode::RuntimeError,
+        _ => ExitCode::ConfigError,
     }
 }
 
