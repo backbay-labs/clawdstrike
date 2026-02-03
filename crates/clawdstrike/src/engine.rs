@@ -26,6 +26,8 @@ pub struct HushEngine {
     policy: Policy,
     /// Instantiated guards
     guards: PolicyGuards,
+    /// Additional guards appended at runtime (evaluated after built-ins)
+    extra_guards: Vec<Box<dyn Guard>>,
     /// Signing keypair (optional)
     keypair: Option<Keypair>,
     /// Session state
@@ -55,6 +57,7 @@ impl HushEngine {
         Self {
             policy,
             guards,
+            extra_guards: Vec::new(),
             keypair: None,
             state: Arc::new(RwLock::new(EngineState::default())),
         }
@@ -79,7 +82,51 @@ impl HushEngine {
         self
     }
 
-    /// Get the policy hash
+    /// Append an additional guard (evaluated after all built-in guards).
+    ///
+    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
+    /// will not run.
+    pub fn with_extra_guard<G>(mut self, guard: G) -> Self
+    where
+        G: Guard + 'static,
+    {
+        self.extra_guards.push(Box::new(guard));
+        self
+    }
+
+    /// Append an additional guard (evaluated after all built-in guards).
+    ///
+    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
+    /// will not run.
+    pub fn with_extra_guard_box(mut self, guard: Box<dyn Guard>) -> Self {
+        self.extra_guards.push(guard);
+        self
+    }
+
+    /// Append an additional guard (evaluated after all built-in guards).
+    ///
+    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
+    /// will not run.
+    pub fn add_extra_guard<G>(&mut self, guard: G) -> &mut Self
+    where
+        G: Guard + 'static,
+    {
+        self.extra_guards.push(Box::new(guard));
+        self
+    }
+
+    /// Append an additional guard (evaluated after all built-in guards).
+    ///
+    /// Note: when `fail_fast` is enabled, guards after the first violation (including extras)
+    /// will not run.
+    pub fn add_extra_guard_box(&mut self, guard: Box<dyn Guard>) -> &mut Self {
+        self.extra_guards.push(guard);
+        self
+    }
+
+    /// Get the policy hash (derived from the policy YAML).
+    ///
+    /// Note: this does not include any runtime `extra_guards`.
     pub fn policy_hash(&self) -> Result<Hash> {
         let yaml = self.policy.to_yaml()?;
         Ok(sha256(yaml.as_bytes()))
@@ -178,18 +225,11 @@ impl HushEngine {
         action: &GuardAction<'_>,
         context: &GuardContext,
     ) -> Result<GuardReport> {
-        let guards: [&dyn Guard; 6] = [
-            &self.guards.forbidden_path,
-            &self.guards.egress_allowlist,
-            &self.guards.secret_leak,
-            &self.guards.patch_integrity,
-            &self.guards.mcp_tool,
-            &self.guards.prompt_injection,
-        ];
+        let builtins = self.guards.builtin_guards_in_order();
+        let mut per_guard: Vec<GuardResult> =
+            Vec::with_capacity(builtins.len() + self.extra_guards.len());
 
-        let mut per_guard: Vec<GuardResult> = Vec::with_capacity(guards.len());
-
-        for guard in guards {
+        for guard in builtins.chain(self.extra_guards.iter().map(|g| g.as_ref())) {
             if !guard.handles(action) {
                 continue;
             }
@@ -258,7 +298,18 @@ impl HushEngine {
             violations: state.violations.clone(),
         };
 
-        Ok(Receipt::new(content_hash, verdict).with_provenance(provenance))
+        let mut receipt = Receipt::new(content_hash, verdict).with_provenance(provenance);
+
+        if !self.extra_guards.is_empty() {
+            let extra_guards: Vec<&str> = self.extra_guards.iter().map(|g| g.name()).collect();
+            receipt = receipt.with_metadata(serde_json::json!({
+                "clawdstrike": {
+                    "extra_guards": extra_guards,
+                }
+            }));
+        }
+
+        Ok(receipt)
     }
 
     /// Create and sign a receipt
@@ -339,6 +390,34 @@ fn aggregate_overall(results: &[GuardResult]) -> GuardResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    struct TestExtraGuard {
+        name: &'static str,
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Guard for TestExtraGuard {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn handles(&self, action: &GuardAction<'_>) -> bool {
+            match action {
+                GuardAction::Custom(kind, _) => *kind == "extra_guard_test",
+                GuardAction::FileAccess(_) => self.name == "extra_guard_order",
+                _ => false,
+            }
+        }
+
+        async fn check(&self, _action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            GuardResult::allow(self.name())
+        }
+    }
 
     #[tokio::test]
     async fn test_engine_new() {
@@ -366,6 +445,90 @@ mod tests {
             .await
             .unwrap();
         assert!(!result.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_extra_guard_executes_for_custom_action() {
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let engine = HushEngine::new().with_extra_guard(TestExtraGuard {
+            name: "extra_guard_test",
+            calls: calls.clone(),
+        });
+        let context = GuardContext::new();
+        let payload = serde_json::json!({ "test": true });
+
+        let report = engine
+            .check_action_report(&GuardAction::Custom("extra_guard_test", &payload), &context)
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert_eq!(report.per_guard.len(), 1);
+        assert_eq!(report.per_guard[0].guard, "extra_guard_test");
+    }
+
+    #[tokio::test]
+    async fn test_extra_guard_runs_after_builtins() {
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let engine = HushEngine::new().with_extra_guard(TestExtraGuard {
+            name: "extra_guard_order",
+            calls: calls.clone(),
+        });
+        let context = GuardContext::new();
+
+        let report = engine
+            .check_action_report(
+                &GuardAction::FileAccess("/app/src/main.rs"),
+                &context,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(report.overall.allowed);
+        assert!(report
+            .per_guard
+            .iter()
+            .any(|r| r.guard != "extra_guard_order"));
+        assert_eq!(
+            report.per_guard.last().map(|r| r.guard.as_str()),
+            Some("extra_guard_order")
+        );
+        assert_eq!(
+            report
+                .per_guard
+                .iter()
+                .filter(|r| r.guard == "extra_guard_order")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fail_fast_skips_extra_guards_after_deny() {
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let mut policy = Policy::new();
+        policy.settings.fail_fast = true;
+
+        let engine = HushEngine::with_policy(policy).with_extra_guard(TestExtraGuard {
+            name: "extra_guard_order",
+            calls: calls.clone(),
+        });
+        let context = GuardContext::new();
+
+        let report = engine
+            .check_action_report(
+                &GuardAction::FileAccess("/home/user/.ssh/id_rsa"),
+                &context,
+            )
+            .await
+            .unwrap();
+
+        assert!(!report.overall.allowed);
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
@@ -442,6 +605,30 @@ mod tests {
 
         assert!(receipt.verdict.passed);
         assert!(receipt.provenance.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_receipt_metadata_omitted_without_extra_guards() {
+        let engine = HushEngine::new();
+        let receipt = engine.create_receipt(sha256(b"test content")).await.unwrap();
+        assert!(receipt.metadata.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_receipt_metadata_includes_extra_guards() {
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let engine = HushEngine::new().with_extra_guard(TestExtraGuard {
+            name: "extra_guard_metadata",
+            calls: calls.clone(),
+        });
+        let receipt = engine.create_receipt(sha256(b"test content")).await.unwrap();
+
+        let metadata = receipt.metadata.expect("expected receipt metadata");
+        assert_eq!(
+            metadata["clawdstrike"]["extra_guards"],
+            serde_json::json!(["extra_guard_metadata"])
+        );
     }
 
     #[tokio::test]

@@ -9,8 +9,8 @@ use globset::GlobBuilder;
 use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
 use crate::guards::{
     EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard,
-    McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard, PromptInjectionConfig,
-    PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
+    Guard, McpToolConfig, McpToolGuard, PatchIntegrityConfig, PatchIntegrityGuard,
+    PromptInjectionConfig, PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
 };
 
 /// Current policy schema version.
@@ -584,6 +584,21 @@ pub(crate) struct PolicyGuards {
     pub patch_integrity: PatchIntegrityGuard,
     pub mcp_tool: McpToolGuard,
     pub prompt_injection: PromptInjectionGuard,
+}
+
+impl PolicyGuards {
+    /// Built-in guards, in a stable evaluation order.
+    pub(crate) fn builtin_guards_in_order(&self) -> impl ExactSizeIterator<Item = &dyn Guard> + '_ {
+        [
+            &self.forbidden_path as &dyn Guard,
+            &self.egress_allowlist as &dyn Guard,
+            &self.secret_leak as &dyn Guard,
+            &self.patch_integrity as &dyn Guard,
+            &self.mcp_tool as &dyn Guard,
+            &self.prompt_injection as &dyn Guard,
+        ]
+        .into_iter()
+    }
 }
 
 /// Named ruleset with pre-configured policies
