@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-use std::io::Write as _;
+use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -880,7 +880,6 @@ guards:
         // TLS ClientHello from hush-proxy test (SNI = example.com)
         let hello = include_bytes!("../../hush-proxy/testdata/client_hello_example.bin");
 
-        let (tx, _rx) = mpsc::unbounded_channel();
         let outcome = RunOutcome::new();
 
         // Build a fake CONNECT target of an IP, and ensure policy host uses SNI.
@@ -897,6 +896,5 @@ guards:
         // Ensure outcome tracking is updated for allowed events.
         outcome.observe_guard_result(&result);
         assert_eq!(outcome.exit_code(), 0);
-        let _ = tx;
     }
 }

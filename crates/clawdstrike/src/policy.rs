@@ -19,6 +19,7 @@ use crate::guards::{
 /// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
 /// unsupported versions to prevent silent drift.
 pub const POLICY_SCHEMA_VERSION: &str = "1.1.0";
+pub const SUPPORTED_POLICY_SCHEMA_VERSIONS: &[&str] = &["1.0.0", "1.1.0"];
 
 fn default_true() -> bool {
     true
@@ -28,10 +29,10 @@ fn default_json_object() -> serde_json::Value {
     serde_json::Value::Object(serde_json::Map::new())
 }
 
-/// Policy-driven custom guard configuration.
+/// Policy-driven custom guard configuration resolved via `CustomGuardRegistry`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CustomGuardSpec {
+pub struct CustomGuardRegistrySpec {
     /// Installed guard id (resolved via `CustomGuardRegistry`).
     pub id: String,
     /// Enable/disable this custom guard.
@@ -143,6 +144,19 @@ pub enum MergeStrategy {
     DeepMerge,
 }
 
+/// Policy-level action to take on any violation.
+///
+/// This is primarily intended for agent runtimes (cancel vs warn/log vs isolate/escalate).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnViolationAction {
+    Cancel,
+    Warn,
+    Log,
+    Isolate,
+    Escalate,
+}
+
 /// Complete policy configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -167,10 +181,13 @@ pub struct Policy {
     pub guards: GuardConfigs,
     /// Policy-driven custom guards (resolved by runtimes via a registry).
     #[serde(default)]
-    pub custom_guards: Vec<CustomGuardSpec>,
+    pub custom_guards: Vec<CustomGuardRegistrySpec>,
     /// Global settings
     #[serde(default)]
     pub settings: PolicySettings,
+    /// Policy-level action on violation (cancel/warn/log/isolate/escalate).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_violation: Option<OnViolationAction>,
 }
 
 fn default_version() -> String {
@@ -188,6 +205,7 @@ impl Default for Policy {
             guards: GuardConfigs::default(),
             custom_guards: Vec::new(),
             settings: PolicySettings::default(),
+            on_violation: None,
         }
     }
 }
@@ -702,6 +720,10 @@ impl Policy {
                 } else {
                     self.settings.clone()
                 },
+                on_violation: child
+                    .on_violation
+                    .clone()
+                    .or_else(|| self.on_violation.clone()),
             },
             MergeStrategy::DeepMerge => Self {
                 version: if child.version != default_version() {
@@ -734,6 +756,10 @@ impl Policy {
                         .session_timeout_secs
                         .or(self.settings.session_timeout_secs),
                 },
+                on_violation: child
+                    .on_violation
+                    .clone()
+                    .or_else(|| self.on_violation.clone()),
             },
         }
     }
@@ -860,7 +886,10 @@ impl Policy {
     }
 }
 
-fn merge_custom_guards(base: &[CustomGuardSpec], child: &[CustomGuardSpec]) -> Vec<CustomGuardSpec> {
+fn merge_custom_guards(
+    base: &[CustomGuardRegistrySpec],
+    child: &[CustomGuardRegistrySpec],
+) -> Vec<CustomGuardRegistrySpec> {
     if child.is_empty() {
         return base.to_vec();
     }
@@ -868,7 +897,7 @@ fn merge_custom_guards(base: &[CustomGuardSpec], child: &[CustomGuardSpec]) -> V
         return child.to_vec();
     }
 
-    let mut out: Vec<CustomGuardSpec> = base.to_vec();
+    let mut out: Vec<CustomGuardRegistrySpec> = base.to_vec();
     let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for (i, cg) in out.iter().enumerate() {
         index.insert(cg.id.clone(), i);
@@ -893,10 +922,10 @@ fn validate_policy_version(version: &str) -> Result<()> {
         });
     }
 
-    if version != POLICY_SCHEMA_VERSION {
+    if !SUPPORTED_POLICY_SCHEMA_VERSIONS.contains(&version) {
         return Err(Error::UnsupportedPolicyVersion {
             found: version.to_string(),
-            supported: POLICY_SCHEMA_VERSION.to_string(),
+            supported: SUPPORTED_POLICY_SCHEMA_VERSIONS.join(", "),
         });
     }
 

@@ -72,6 +72,7 @@ pub enum PolicyAction {
     /// Allow the connection
     Allow,
     /// Block the connection
+    #[serde(alias = "deny")]
     #[default]
     Block,
     /// Log but allow

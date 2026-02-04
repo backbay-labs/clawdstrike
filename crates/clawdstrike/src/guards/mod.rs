@@ -49,10 +49,13 @@ use crate::identity::{IdentityPrincipal, OrganizationContext, RequestContext, Se
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Informational, logged but allowed
+    #[serde(alias = "low")]
     Info,
     /// Warning, logged and may be flagged
+    #[serde(alias = "medium")]
     Warning,
     /// Error, action is blocked
+    #[serde(alias = "high")]
     Error,
     /// Critical, action is blocked and session may be terminated
     Critical,

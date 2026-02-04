@@ -8,9 +8,12 @@ use hush_proxy::policy::{DomainPolicy, PolicyAction};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for EgressAllowlistGuard
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EgressAllowlistConfig {
+    /// Enable/disable this guard.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// Allowed domain patterns
     #[serde(default)]
     pub allow: Vec<String>,
@@ -34,10 +37,21 @@ pub struct EgressAllowlistConfig {
     pub remove_block: Vec<String>,
 }
 
+impl Default for EgressAllowlistConfig {
+    fn default() -> Self {
+        Self::with_defaults()
+    }
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
 impl EgressAllowlistConfig {
     /// Create default config with common allowed domains
     pub fn with_defaults() -> Self {
         Self {
+            enabled: true,
             allow: vec![
                 // Common AI/ML APIs
                 "*.openai.com".to_string(),
@@ -90,6 +104,7 @@ impl EgressAllowlistConfig {
         }
 
         Self {
+            enabled: child.enabled,
             allow,
             block,
             default_action: child
@@ -107,6 +122,7 @@ impl EgressAllowlistConfig {
 /// Guard that controls network egress via domain allowlist
 pub struct EgressAllowlistGuard {
     name: String,
+    enabled: bool,
     policy: DomainPolicy,
 }
 
@@ -118,6 +134,7 @@ impl EgressAllowlistGuard {
 
     /// Create with custom configuration
     pub fn with_config(config: EgressAllowlistConfig) -> Self {
+        let enabled = config.enabled;
         let mut policy = DomainPolicy::new();
         policy.set_default_action(config.default_action.unwrap_or_default());
         policy.extend_allow(config.allow);
@@ -125,6 +142,7 @@ impl EgressAllowlistGuard {
 
         Self {
             name: "egress_allowlist".to_string(),
+            enabled,
             policy,
         }
     }
@@ -148,10 +166,18 @@ impl Guard for EgressAllowlistGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
         matches!(action, GuardAction::NetworkEgress(_, _))
     }
 
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+        if !self.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let (host, port) = match action {
             GuardAction::NetworkEgress(h, p) => (*h, *p),
             _ => return GuardResult::allow(&self.name),

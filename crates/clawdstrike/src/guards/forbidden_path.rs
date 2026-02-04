@@ -7,9 +7,12 @@ use serde::{Deserialize, Serialize};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for ForbiddenPathGuard
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForbiddenPathConfig {
+    /// Enable/disable this guard.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// Glob patterns for forbidden paths
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patterns: Option<Vec<String>>,
@@ -22,6 +25,16 @@ pub struct ForbiddenPathConfig {
     /// Patterns to remove when merging (for extends)
     #[serde(default)]
     pub remove_patterns: Vec<String>,
+}
+
+impl Default for ForbiddenPathConfig {
+    fn default() -> Self {
+        Self::with_defaults()
+    }
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_forbidden_patterns() -> Vec<String> {
@@ -63,6 +76,7 @@ impl ForbiddenPathConfig {
     /// Create config with default forbidden patterns
     pub fn with_defaults() -> Self {
         Self {
+            enabled: true,
             patterns: None,
             exceptions: vec![],
             additional_patterns: vec![],
@@ -126,6 +140,7 @@ impl ForbiddenPathConfig {
         };
 
         Self {
+            enabled: child.enabled,
             patterns,
             exceptions,
             additional_patterns: vec![],
@@ -137,6 +152,7 @@ impl ForbiddenPathConfig {
 /// Guard that blocks access to sensitive paths
 pub struct ForbiddenPathGuard {
     name: String,
+    enabled: bool,
     patterns: Vec<Pattern>,
     exceptions: Vec<Pattern>,
 }
@@ -149,6 +165,7 @@ impl ForbiddenPathGuard {
 
     /// Create with custom configuration
     pub fn with_config(config: ForbiddenPathConfig) -> Self {
+        let enabled = config.enabled;
         let patterns = config
             .effective_patterns()
             .iter()
@@ -163,6 +180,7 @@ impl ForbiddenPathGuard {
 
         Self {
             name: "forbidden_path".to_string(),
+            enabled,
             patterns,
             exceptions,
         }
@@ -204,6 +222,10 @@ impl Guard for ForbiddenPathGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
         matches!(
             action,
             GuardAction::FileAccess(_) | GuardAction::FileWrite(_, _) | GuardAction::Patch(_, _)
@@ -211,6 +233,10 @@ impl Guard for ForbiddenPathGuard {
     }
 
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+        if !self.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let path = match action {
             GuardAction::FileAccess(p) => *p,
             GuardAction::FileWrite(p, _) => *p,
@@ -291,6 +317,7 @@ remove_patterns:
     #[test]
     fn test_merge_patterns() {
         let base = ForbiddenPathConfig {
+            enabled: true,
             patterns: Some(vec!["**/.ssh/**".to_string(), "**/.env".to_string()]),
             exceptions: vec![],
             additional_patterns: vec![],
@@ -298,6 +325,7 @@ remove_patterns:
         };
 
         let child = ForbiddenPathConfig {
+            enabled: true,
             patterns: None,
             exceptions: vec![],
             additional_patterns: vec!["**/secrets/**".to_string()],

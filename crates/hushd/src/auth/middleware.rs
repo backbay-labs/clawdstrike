@@ -139,6 +139,30 @@ pub async fn require_scope(
                         return Err(StatusCode::FORBIDDEN);
                     }
                 }
+                Scope::CertificationsRead | Scope::CertificationsVerify | Scope::EvidenceRead => {
+                    let ok = principal.roles.iter().any(|r| {
+                        r == "policy-viewer"
+                            || r == "audit-viewer"
+                            || r == "policy-admin"
+                            || r == "super-admin"
+                            || r == "certification-viewer"
+                            || r == "certification-admin"
+                    });
+                    if !ok {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                }
+                Scope::CertificationsWrite
+                | Scope::EvidenceExport
+                | Scope::BadgesGenerate
+                | Scope::WebhooksManage => {
+                    let ok = principal.roles.iter().any(|r| {
+                        r == "policy-admin" || r == "super-admin" || r == "certification-admin"
+                    });
+                    if !ok {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                }
                 Scope::All => {}
             }
         }

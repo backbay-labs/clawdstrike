@@ -41,6 +41,7 @@ from hush.merkle import (
 )
 from hush.canonical import canonicalize, canonical_hash
 from hush.native import NATIVE_AVAILABLE
+from hush.certification_badge import verify_certification_badge
 
 __version__ = "0.1.0"
 
@@ -95,6 +96,8 @@ __all__ = [
     # Canonical JSON
     "canonicalize",
     "canonical_hash",
+    # Certification badges
+    "verify_certification_badge",
     # Native backend
     "NATIVE_AVAILABLE",
 ]

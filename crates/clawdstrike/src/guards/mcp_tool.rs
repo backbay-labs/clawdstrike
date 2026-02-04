@@ -13,18 +13,22 @@ use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 pub enum McpDefaultAction {
     #[default]
     Allow,
+    #[serde(alias = "deny")]
     Block,
 }
 
 /// Configuration for McpToolGuard
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpToolConfig {
+    /// Enable/disable this guard.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// Allowed tool names (if empty, all are allowed except blocked)
     #[serde(default)]
     pub allow: Vec<String>,
     /// Blocked tool names (takes precedence)
-    #[serde(default)]
+    #[serde(default, alias = "deny")]
     pub block: Vec<String>,
     /// Tools that require confirmation
     #[serde(default)]
@@ -47,6 +51,16 @@ pub struct McpToolConfig {
     /// Tools to remove from block list when merging
     #[serde(default)]
     pub remove_block: Vec<String>,
+}
+
+impl Default for McpToolConfig {
+    fn default() -> Self {
+        Self::with_defaults()
+    }
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_max_args_size() -> usize {
@@ -78,6 +92,7 @@ impl McpToolConfig {
     /// Create config with default blocked tools
     pub fn with_defaults() -> Self {
         Self {
+            enabled: true,
             allow: vec![],
             block: vec![
                 // Dangerous shell operations
@@ -135,6 +150,7 @@ impl McpToolConfig {
         }
 
         Self {
+            enabled: child.enabled,
             allow,
             block,
             require_confirmation,
@@ -151,6 +167,7 @@ impl McpToolConfig {
 /// Guard that controls MCP tool invocations
 pub struct McpToolGuard {
     name: String,
+    enabled: bool,
     config: McpToolConfig,
     allow_set: HashSet<String>,
     block_set: HashSet<String>,
@@ -165,12 +182,14 @@ impl McpToolGuard {
 
     /// Create with custom configuration
     pub fn with_config(config: McpToolConfig) -> Self {
+        let enabled = config.enabled;
         let allow_set: HashSet<_> = config.allow.iter().cloned().collect();
         let block_set: HashSet<_> = config.block.iter().cloned().collect();
         let confirm_set: HashSet<_> = config.require_confirmation.iter().cloned().collect();
 
         Self {
             name: "mcp_tool".to_string(),
+            enabled,
             config,
             allow_set,
             block_set,
@@ -230,10 +249,18 @@ impl Guard for McpToolGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
         matches!(action, GuardAction::McpTool(_, _))
     }
 
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+        if !self.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let (tool_name, args) = match action {
             GuardAction::McpTool(name, args) => (*name, *args),
             _ => return GuardResult::allow(&self.name),

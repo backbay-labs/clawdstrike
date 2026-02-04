@@ -1,0 +1,28 @@
+[package]
+name = "hush-certification"
+description = "Certification, audit ledger v2, and evidence bundle primitives for Clawdstrike"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hush-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hex.workspace = true
+base64.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+
+zip = "0.6.6"
+
+[lints]
+workspace = true
+

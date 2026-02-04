@@ -1,0 +1,173 @@
+# hipaa-policy.yaml
+# Clawdstrike HIPAA Compliance Policy Template
+# Version: 1.0.0
+
+version: "1.0.0"
+name: "HIPAA Compliance Policy"
+description: "Policy template for HIPAA-covered AI agent deployments"
+extends: clawdstrike:strict
+
+guards:
+  # PHI Access Protection
+  forbidden_path:
+    enabled: true
+    patterns:
+      # PHI storage locations
+      - "**/phi/**"
+      - "**/patient_data/**"
+      - "**/medical_records/**"
+      - "**/ehr/**"
+      - "**/emr/**"
+      - "**/claims/**"
+      - "**/billing/**"
+
+      # PHI identifiers in filenames
+      - "**/*ssn*"
+      - "**/*social_security*"
+      - "**/*mrn*"
+      - "**/*medical_record_number*"
+      - "**/*dob*"
+      - "**/*date_of_birth*"
+
+      # Credential files (standard)
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.gnupg/**"
+      - "**/secrets/**"
+      - "**/.env"
+      - "**/*.pem"
+      - "**/*.key"
+
+    exceptions:
+      # Allow specific PHI access for authorized operations
+      - "**/phi/de-identified/**"
+
+    additional_patterns:
+      # Organization-specific PHI locations
+      # Add your paths here
+      - "**/custom_phi_path/**"
+
+  # Network Egress Control
+  egress_allowlist:
+    enabled: true
+    default_action: deny
+    allow:
+      # Healthcare APIs (add your approved endpoints)
+      - "api.yourehr.com"
+      - "fhir.yourorg.com"
+
+      # Package registries (for development)
+      - "pypi.org"
+      - "registry.npmjs.org"
+
+      # AI provider APIs
+      - "api.anthropic.com"
+      - "api.openai.com"
+
+    block:
+      # Explicitly blocked
+      - "*.onion"
+      - "localhost"
+      - "127.0.0.1"
+      - "10.*"
+      - "192.168.*"
+
+      # Consumer cloud storage (PHI exfiltration risk)
+      - "*.dropbox.com"
+      - "*.box.com"
+      - "drive.google.com"
+
+  # PHI Detection and Redaction
+  secret_leak:
+    enabled: true
+    redact: true
+    severity_threshold: warning
+    patterns:
+      # Standard secrets
+      - name: "api_key"
+        pattern: '(?i)(api[_-]?key|apikey)["\s:=]+["'']?([a-zA-Z0-9_\-]{20,})["'']?'
+
+      # PHI-specific patterns
+      - name: "ssn"
+        pattern: '\b\d{3}-\d{2}-\d{4}\b'
+        severity: critical
+        description: "Social Security Number"
+
+      - name: "mrn"
+        pattern: '\b(MRN|mrn)[:\s]*(\d{6,12})\b'
+        severity: critical
+        description: "Medical Record Number"
+
+      - name: "npi"
+        pattern: '\b\d{10}\b'  # NPI is 10 digits
+        severity: high
+        description: "National Provider Identifier"
+
+      - name: "dea"
+        pattern: '\b[A-Z]{2}\d{7}\b'
+        severity: high
+        description: "DEA Number"
+
+      - name: "icd10"
+        pattern: '\b[A-Z]\d{2}(\.\d{1,4})?\b'
+        severity: medium
+        description: "ICD-10 Diagnosis Code"
+
+      - name: "cpt"
+        pattern: '\b\d{5}[A-Z]?\b'
+        severity: medium
+        description: "CPT Procedure Code"
+
+      - name: "dob"
+        pattern: '\b(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}\b'
+        severity: high
+        description: "Date of Birth (MM/DD/YYYY)"
+
+      - name: "patient_name"
+        pattern: '(?i)(patient|pt)[:\s]+([A-Z][a-z]+\s+[A-Z][a-z]+)'
+        severity: high
+        description: "Patient Name"
+
+  # Patch Integrity
+  patch_integrity:
+    enabled: true
+    forbidden_patterns:
+      # Dangerous patterns (standard)
+      - 'eval\s*\('
+      - 'exec\s*\('
+      - 'system\s*\('
+      - 'subprocess\.call'
+
+      # PHI-specific dangerous patterns
+      - 'SELECT.*FROM.*patient'
+      - 'INSERT.*INTO.*medical'
+      - 'UPDATE.*SET.*phi'
+      - 'DELETE.*FROM.*claims'
+
+  # MCP Tool Restrictions
+  mcp_tool:
+    enabled: true
+    default_action: deny
+    allow:
+      - "read"
+      - "glob"
+      - "grep"
+      - "bash"  # With command restrictions below
+
+    deny:
+      - "webfetch"  # Prevent arbitrary network access
+      - "mcp_*"     # Block unknown MCP tools
+
+  # Prompt Injection Defense
+  prompt_injection:
+    enabled: true
+    max_scan_bytes: 100000
+    warn_at_or_above: low
+    block_at_or_above: medium
+
+settings:
+  fail_fast: true
+  verbose_logging: true
+  session_timeout_secs: 3600  # 1 hour max session
+
+on_violation: cancel

@@ -220,6 +220,255 @@ async fn test_eval_policy_event() {
     assert_eq!(json["report"]["overall"]["allowed"], true);
 }
 
+#[tokio::test]
+async fn test_v1_certification_lifecycle_basic() {
+    let (client, url) = test_setup();
+
+    // Create a certification (auth is disabled in integration harness by default).
+    let resp = client
+        .post(format!("{}/v1/certifications", url))
+        .json(&serde_json::json!({
+            "subject": {
+                "type": "agent",
+                "id": "agent_test_1",
+                "name": "test-agent",
+                "organizationId": "org_test"
+            },
+            "tier": "silver",
+            "frameworks": ["soc2"],
+            "policy": { "hash": "sha256:deadbeef", "version": "1.0.0", "ruleset": "clawdstrike:strict" },
+            "validityDays": 30
+        }))
+        .send()
+        .await
+        .expect("Failed to create certification");
+
+    assert!(resp.status().is_success());
+    let created: serde_json::Value = resp.json().await.unwrap();
+    let cert_id = created["data"]["certificationId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Fetch certification.
+    let resp = client
+        .get(format!("{}/v1/certifications/{}", url, cert_id))
+        .send()
+        .await
+        .expect("Failed to get certification");
+    assert!(resp.status().is_success());
+    let got: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(got["data"]["certificationId"].as_str(), Some(cert_id.as_str()));
+
+    // Verify certification.
+    let resp = client
+        .post(format!("{}/v1/certifications/{}/verify", url, cert_id))
+        .json(&serde_json::json!({
+            "verificationContext": {
+                "requiredTier": "certified",
+                "checkRevocation": true,
+                "checkExpiry": true
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to verify certification");
+    assert!(resp.status().is_success());
+    let verified: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(verified["data"]["valid"], true);
+
+    // Badge (SVG).
+    let resp = client
+        .get(format!("{}/v1/certifications/{}/badge", url, cert_id))
+        .header("accept", "image/svg+xml")
+        .send()
+        .await
+        .expect("Failed to get badge");
+    assert!(resp.status().is_success());
+    let ctype = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(ctype.contains("image/svg+xml"));
+
+    // Revoke certification.
+    let resp = client
+        .post(format!("{}/v1/certifications/{}/revoke", url, cert_id))
+        .json(&serde_json::json!({ "reason": "security_incident", "details": "test" }))
+        .send()
+        .await
+        .expect("Failed to revoke certification");
+    assert!(resp.status().is_success());
+
+    // Revocation status.
+    let resp = client
+        .get(format!("{}/v1/certifications/{}/revocation", url, cert_id))
+        .send()
+        .await
+        .expect("Failed to get revocation status");
+    assert!(resp.status().is_success());
+    let rev: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(rev["data"]["revoked"], true);
+}
+
+#[tokio::test]
+async fn test_v1_evidence_export_roundtrip() {
+    let (client, url) = test_setup();
+
+    // Create certification.
+    let resp = client
+        .post(format!("{}/v1/certifications", url))
+        .json(&serde_json::json!({
+            "subject": { "type": "agent", "id": "agent_test_2", "name": "test-agent-2", "organizationId": "org_test" },
+            "tier": "certified",
+            "frameworks": ["soc2"],
+            "policy": { "hash": "sha256:deadbeef", "version": "1.0.0" },
+            "validityDays": 30
+        }))
+        .send()
+        .await
+        .expect("Failed to create certification");
+    assert!(resp.status().is_success());
+    let created: serde_json::Value = resp.json().await.unwrap();
+    let cert_id = created["data"]["certificationId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Export evidence (will likely be empty in tests, but should still produce a signed bundle).
+    let resp = client
+        .post(format!(
+            "{}/v1/certifications/{}/evidence/export",
+            url, cert_id
+        ))
+        .json(&serde_json::json!({
+            "format": "zip",
+            "dateRange": { "start": "2026-02-01T00:00:00Z", "end": "2026-02-04T00:00:00Z" },
+            "includeTypes": ["audit_log"],
+            "complianceTemplate": "soc2"
+        }))
+        .send()
+        .await
+        .expect("Failed to start evidence export");
+    assert!(resp.status().is_success());
+    let started: serde_json::Value = resp.json().await.unwrap();
+    let export_id = started["data"]["exportId"].as_str().unwrap().to_string();
+
+    // Poll for completion (should be quick).
+    let mut status = serde_json::Value::Null;
+    for _ in 0..50 {
+        let resp = client
+            .get(format!("{}/v1/evidence-exports/{}", url, export_id))
+            .send()
+            .await
+            .expect("Failed to poll export status");
+        assert!(resp.status().is_success());
+        status = resp.json().await.unwrap();
+        if status["data"]["status"] == "completed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    assert_eq!(status["data"]["status"], "completed");
+    let download_url = status["data"]["downloadUrl"].as_str().unwrap();
+    assert!(download_url.contains(&export_id));
+
+    // Download bundle.
+    let resp = client
+        .get(format!("{}{}", url, download_url))
+        .send()
+        .await
+        .expect("Failed to download evidence export");
+    assert!(resp.status().is_success());
+    let ctype = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(ctype.contains("application/zip"));
+    let bytes = resp.bytes().await.unwrap();
+    assert!(!bytes.is_empty());
+}
+
+#[tokio::test]
+async fn test_v1_webhooks_delivery_on_certification_issued() {
+    use axum::{routing::post, Router};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    let (client, url) = test_setup();
+
+    // Local webhook receiver.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let hook_url = format!("http://{}/hook", addr);
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<serde_json::Value>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+
+    let app = Router::new().route(
+        "/hook",
+        post({
+            let tx = tx.clone();
+            move |headers: axum::http::HeaderMap, body: axum::body::Bytes| {
+                let tx = tx.clone();
+                async move {
+                    assert!(headers.get("x-clawdstrike-event").is_some());
+                    assert!(headers.get("x-clawdstrike-signature").is_some());
+                    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    if let Some(sender) = tx.lock().await.take() {
+                        let _ = sender.send(json);
+                    }
+                    axum::http::StatusCode::OK
+                }
+            }
+        }),
+    );
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    // Register webhook.
+    let resp = client
+        .post(format!("{}/v1/webhooks", url))
+        .json(&serde_json::json!({
+            "url": hook_url,
+            "events": ["certification.issued"],
+            "secret": "secret",
+            "enabled": true
+        }))
+        .send()
+        .await
+        .expect("Failed to create webhook");
+    assert!(resp.status().is_success());
+
+    // Trigger event.
+    let resp = client
+        .post(format!("{}/v1/certifications", url))
+        .json(&serde_json::json!({
+            "subject": { "type": "agent", "id": "agent_webhook", "name": "webhook-agent", "organizationId": "org_test" },
+            "tier": "certified",
+            "frameworks": ["soc2"],
+            "policy": { "hash": "sha256:deadbeef", "version": "1.0.0" },
+            "validityDays": 30
+        }))
+        .send()
+        .await
+        .expect("Failed to create certification");
+    assert!(resp.status().is_success());
+
+    // Wait for webhook delivery.
+    let received = tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+        .await
+        .expect("Timed out waiting for webhook")
+        .expect("Webhook channel closed");
+
+    assert_eq!(received["event"], "certification.issued");
+    assert!(received["data"]["certificationId"].is_string());
+}
+
 // Unit tests that don't require daemon
 #[test]
 fn test_config_default() {

@@ -1765,12 +1765,14 @@ mod policy_pac_contract {
 
         let mut out = Vec::new();
         let mut err = Vec::new();
+        let remote_extends = crate::remote_extends::RemoteExtendsConfig::disabled();
 
         let code = cmd_policy_simulate(
             "default".to_string(),
             Some(fixtures_path.to_string_lossy().to_string()),
             crate::policy_pac::PolicySimulateOptions {
                 resolve: false,
+                remote_extends: &remote_extends,
                 json: true,
                 jsonl: false,
                 summary: false,

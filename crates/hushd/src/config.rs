@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
-use crate::auth::{ApiKey, AuthStore, Scope};
+use crate::auth::{ApiKey, ApiKeyTier, AuthStore, Scope};
 
 pub(crate) fn expand_env_refs(value: &str) -> anyhow::Result<String> {
     let mut out = String::new();
@@ -33,6 +33,20 @@ pub(crate) fn expand_env_refs(value: &str) -> anyhow::Result<String> {
     Ok(out)
 }
 
+fn infer_api_key_tier(key: &str) -> Option<ApiKeyTier> {
+    let key = key.trim();
+    if key.starts_with("cs_pub_") {
+        return Some(ApiKeyTier::Free);
+    }
+    if key.starts_with("cs_test_") {
+        return Some(ApiKeyTier::Silver);
+    }
+    if key.starts_with("cs_live_") {
+        return Some(ApiKeyTier::Gold);
+    }
+    None
+}
+
 /// TLS configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TlsConfig {
@@ -49,6 +63,9 @@ pub struct ApiKeyConfig {
     pub name: String,
     /// The actual API key (will be hashed, never stored plaintext)
     pub key: String,
+    /// Optional rate limit tier for this key (free, silver, gold, platinum).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<ApiKeyTier>,
     /// Scopes granted to this key (check, read, admin, *)
     #[serde(default)]
     pub scopes: Vec<String>,
@@ -750,10 +767,15 @@ impl Config {
             let key = expand_env_refs(&key_config.key)
                 .map_err(|e| anyhow::anyhow!("Invalid auth.api_keys[{}].key value: {}", idx, e))?;
 
+            let tier = key_config
+                .tier
+                .or_else(|| infer_api_key_tier(&key));
+
             let api_key = ApiKey {
                 id: uuid::Uuid::new_v4().to_string(),
                 key_hash: AuthStore::hash_key(&key),
                 name: key_config.name.clone(),
+                tier,
                 scopes,
                 created_at: chrono::Utc::now(),
                 expires_at: key_config.expires_at,

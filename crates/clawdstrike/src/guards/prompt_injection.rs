@@ -10,6 +10,9 @@ use crate::hygiene::{detect_prompt_injection_with_limit, PromptInjectionLevel};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PromptInjectionConfig {
+    /// Enable/disable this guard.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// Emit a warning when detection is at-or-above this level.
     #[serde(default = "default_warn_at_or_above")]
     pub warn_at_or_above: PromptInjectionLevel,
@@ -21,6 +24,10 @@ pub struct PromptInjectionConfig {
     /// Maximum number of bytes to scan (prefix).
     #[serde(default = "default_max_scan_bytes")]
     pub max_scan_bytes: usize,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_warn_at_or_above() -> PromptInjectionLevel {
@@ -38,6 +45,7 @@ fn default_max_scan_bytes() -> usize {
 impl Default for PromptInjectionConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             warn_at_or_above: default_warn_at_or_above(),
             block_at_or_above: default_block_at_or_above(),
             max_scan_bytes: default_max_scan_bytes(),
@@ -52,6 +60,7 @@ impl Default for PromptInjectionConfig {
 /// `GuardAction::Custom("hushclaw.untrusted_text", {"text": "...", "source": "..."})`.
 pub struct PromptInjectionGuard {
     name: String,
+    enabled: bool,
     config: PromptInjectionConfig,
 }
 
@@ -61,8 +70,10 @@ impl PromptInjectionGuard {
     }
 
     pub fn with_config(config: PromptInjectionConfig) -> Self {
+        let enabled = config.enabled;
         Self {
             name: "prompt_injection".to_string(),
+            enabled,
             config,
         }
     }
@@ -101,10 +112,15 @@ impl Guard for PromptInjectionGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
-        matches!(action, GuardAction::Custom(kind, _) if is_untrusted_text_action_kind(kind))
+        self.enabled
+            && matches!(action, GuardAction::Custom(kind, _) if is_untrusted_text_action_kind(kind))
     }
 
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+        if !self.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let payload = match action {
             GuardAction::Custom(_, payload) => payload,
             _ => return GuardResult::allow(&self.name),

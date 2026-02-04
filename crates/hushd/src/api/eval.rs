@@ -4,6 +4,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::{GuardReport, GuardResult, Severity};
+use hush_certification::audit::NewAuditEventV2;
 
 use crate::audit::AuditEvent;
 use crate::policy_event::{map_policy_event, PolicyEvent};
@@ -163,6 +164,50 @@ pub async fn eval_policy_event(
         tracing::warn!(error = %e, "Failed to record audit event");
     }
 
+    // Record to audit ledger v2 (best-effort).
+    {
+        let policy_yaml = engine.policy().to_yaml().unwrap_or_default();
+        let policy_hash = format!("sha256:{}", hush_core::sha256(policy_yaml.as_bytes()).to_hex());
+
+        let organization_id = mapped
+            .context
+            .organization
+            .as_ref()
+            .map(|o| o.id.clone())
+            .or_else(|| mapped.context.identity.as_ref().and_then(|p| p.organization_id.clone()));
+
+        let provenance = mapped.context.request.as_ref().map(|r| {
+            serde_json::json!({
+                "requestId": r.request_id,
+                "sourceIp": r.source_ip,
+                "userAgent": r.user_agent,
+                "timestamp": r.timestamp,
+            })
+        });
+
+        let _ = state.audit_v2.record(NewAuditEventV2 {
+            session_id: mapped
+                .context
+                .session_id
+                .clone()
+                .unwrap_or_else(|| state.session_id.clone()),
+            agent_id: mapped.context.agent_id.clone(),
+            organization_id,
+            correlation_id: None,
+            action_type: mapped.action.action_type().to_string(),
+            action_resource: mapped.action.target().unwrap_or_default(),
+            action_parameters: Some(serde_json::to_value(&event).unwrap_or(serde_json::Value::Null)),
+            action_result: None,
+            decision_allowed: report.overall.allowed,
+            decision_guard: Some(report.overall.guard.clone()),
+            decision_severity: Some(canonical_guard_severity(&report.overall.severity).to_string()),
+            decision_reason: Some(report.overall.message.clone()),
+            decision_policy_hash: policy_hash,
+            provenance,
+            extensions: None,
+        });
+    }
+
     // Broadcast event
     state.broadcast(DaemonEvent {
         event_type: if decision.allowed { "eval" } else { "violation" }.to_string(),
@@ -181,4 +226,3 @@ pub async fn eval_policy_event(
         report: GuardReportJson::from_report(&report),
     }))
 }
-

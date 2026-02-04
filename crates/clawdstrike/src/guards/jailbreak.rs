@@ -7,11 +7,27 @@ use crate::guards::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 use crate::jailbreak::{JailbreakDetector, JailbreakGuardConfig, JailbreakSeverity};
 
 /// Configuration for JailbreakGuard.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JailbreakConfig {
+    /// Enable/disable this guard.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     #[serde(default)]
     pub detector: JailbreakGuardConfig,
+}
+
+impl Default for JailbreakConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            detector: JailbreakGuardConfig::default(),
+        }
+    }
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 /// Guard that evaluates jailbreak risk for user input.
@@ -20,6 +36,7 @@ pub struct JailbreakConfig {
 /// `GuardAction::Custom("user_input", {"text": "..."} )` or `GuardAction::Custom("hushclaw.user_input", ...)`.
 pub struct JailbreakGuard {
     name: String,
+    enabled: bool,
     config: JailbreakConfig,
     detector: JailbreakDetector,
 }
@@ -30,9 +47,11 @@ impl JailbreakGuard {
     }
 
     pub fn with_config(config: JailbreakConfig) -> Self {
+        let enabled = config.enabled;
         let detector = JailbreakDetector::with_config(config.detector.clone());
         Self {
             name: "jailbreak_detection".to_string(),
+            enabled,
             config,
             detector,
         }
@@ -70,10 +89,15 @@ impl Guard for JailbreakGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
-        matches!(action, GuardAction::Custom(kind, _) if is_user_input_action_kind(kind))
+        self.enabled
+            && matches!(action, GuardAction::Custom(kind, _) if is_user_input_action_kind(kind))
     }
 
     async fn check(&self, action: &GuardAction<'_>, context: &GuardContext) -> GuardResult {
+        if !self.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let payload = match action {
             GuardAction::Custom(_, payload) => payload,
             _ => return GuardResult::allow(&self.name),

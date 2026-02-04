@@ -40,8 +40,10 @@ pub enum PromptInjectionLevel {
     #[default]
     Safe,
     /// Contains weak signals; treat as untrusted data.
+    #[serde(alias = "low")]
     Suspicious,
     /// Strong prompt-injection signals.
+    #[serde(alias = "medium")]
     High,
     /// Strong prompt-injection signals with explicit exfiltration / override intent.
     Critical,

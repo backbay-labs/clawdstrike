@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 
 use clawdstrike::guards::{GuardContext, GuardResult, Severity};
 use clawdstrike::{HushEngine, RequestContext};
+use hush_certification::audit::NewAuditEventV2;
 
 use crate::auth::AuthenticatedActor;
 use crate::audit::AuditEvent;
+use crate::certification_webhooks::emit_webhook_event;
 use crate::state::{AppState, DaemonEvent};
 
 fn parse_egress_target(target: &str) -> Result<(String, u16), String> {
@@ -368,17 +370,86 @@ pub async fn check_action(
         tracing::warn!(error = %e, "Failed to record audit event");
     }
 
+    // Record to audit ledger v2 (best-effort).
+    {
+        let organization_id = session_for_audit
+            .as_ref()
+            .and_then(|s| s.identity.organization_id.clone())
+            .or_else(|| principal_for_audit.as_ref().and_then(|p| p.organization_id.clone()));
+
+        let provenance = serde_json::json!({
+            "sourceIp": request_context.source_ip,
+            "userAgent": request_context.user_agent,
+            "requestId": request_context.request_id,
+            "timestamp": request_context.timestamp,
+        });
+
+        let mut extensions = serde_json::Map::new();
+        if let Some(details) = result.details.clone() {
+            extensions.insert("guardDetails".to_string(), details);
+        }
+
+        if let Some(session) = session_for_audit.as_ref() {
+            extensions.insert(
+                "userSessionId".to_string(),
+                serde_json::Value::String(session.session_id.clone()),
+            );
+        }
+
+        let _ = state.audit_v2.record(NewAuditEventV2 {
+            session_id: request
+                .session_id
+                .clone()
+                .unwrap_or_else(|| state.session_id.clone()),
+            agent_id: request.agent_id.clone(),
+            organization_id,
+            correlation_id: None,
+            action_type: request.action_type.clone(),
+            action_resource: request.target.clone(),
+            action_parameters: request.args.clone(),
+            action_result: None,
+            decision_allowed: result.allowed,
+            decision_guard: Some(result.guard.clone()),
+            decision_severity: Some(canonical_guard_severity(&result.severity).to_string()),
+            decision_reason: Some(result.message.clone()),
+            decision_policy_hash: policy_hash.clone(),
+            provenance: Some(provenance),
+            extensions: Some(serde_json::Value::Object(extensions)),
+        });
+    }
+
+    let action_type = request.action_type.clone();
+    let target = request.target.clone();
+    let session_id = request.session_id.clone();
+    let agent_id = request.agent_id.clone();
+
     // Broadcast event
     state.broadcast(DaemonEvent {
         event_type: if result.allowed { "check" } else { "violation" }.to_string(),
         data: serde_json::json!({
-            "action_type": request.action_type,
-            "target": request.target,
+            "action_type": &action_type,
+            "target": &target,
             "allowed": result.allowed,
-            "guard": result.guard,
-            "policy_hash": policy_hash,
+            "guard": &result.guard,
+            "policy_hash": &policy_hash,
         }),
     });
+
+    if !result.allowed {
+        emit_webhook_event(
+            state.clone(),
+            "violation.detected",
+            serde_json::json!({
+                "actionType": &action_type,
+                "target": &target,
+                "guard": &result.guard,
+                "severity": canonical_guard_severity(&result.severity),
+                "policyHash": &policy_hash,
+                "sessionId": &session_id,
+                "agentId": &agent_id,
+            }),
+        );
+    }
 
     Ok(Json(result.into()))
 }

@@ -10,6 +10,9 @@ use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PatchIntegrityConfig {
+    /// Enable/disable this guard.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// Maximum lines added in a single patch
     #[serde(default = "default_max_additions")]
     pub max_additions: usize,
@@ -25,6 +28,10 @@ pub struct PatchIntegrityConfig {
     /// Maximum imbalance ratio (additions/deletions)
     #[serde(default = "default_max_imbalance")]
     pub max_imbalance_ratio: f64,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_max_additions() -> usize {
@@ -59,6 +66,7 @@ fn default_max_imbalance() -> f64 {
 impl Default for PatchIntegrityConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             max_additions: default_max_additions(),
             max_deletions: default_max_deletions(),
             forbidden_patterns: default_forbidden_patterns(),
@@ -71,6 +79,7 @@ impl Default for PatchIntegrityConfig {
 /// Guard that validates patch safety
 pub struct PatchIntegrityGuard {
     name: String,
+    enabled: bool,
     config: PatchIntegrityConfig,
     forbidden_regexes: Vec<Regex>,
 }
@@ -83,6 +92,7 @@ impl PatchIntegrityGuard {
 
     /// Create with custom configuration
     pub fn with_config(config: PatchIntegrityConfig) -> Self {
+        let enabled = config.enabled;
         let forbidden_regexes = config
             .forbidden_patterns
             .iter()
@@ -91,6 +101,7 @@ impl PatchIntegrityGuard {
 
         Self {
             name: "patch_integrity".to_string(),
+            enabled,
             config,
             forbidden_regexes,
         }
@@ -183,10 +194,18 @@ impl Guard for PatchIntegrityGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
         matches!(action, GuardAction::Patch(_, _))
     }
 
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+        if !self.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let (path, diff) = match action {
             GuardAction::Patch(p, d) => (*p, *d),
             _ => return GuardResult::allow(&self.name),

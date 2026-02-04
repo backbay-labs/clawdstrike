@@ -1,0 +1,183 @@
+# soc2-policy.yaml
+# Clawdstrike SOC2 Compliance Policy Template
+# Version: 1.0.0
+
+version: "1.0.0"
+name: "SOC2 Compliance Policy"
+description: "Policy template for SOC2-compliant AI agent deployments"
+extends: clawdstrike:strict
+
+guards:
+  # CC6.1 - Logical Access Security
+  forbidden_path:
+    enabled: true
+    patterns:
+      # System configuration
+      - "**/config/**"
+      - "**/settings/**"
+      - "**/.config/**"
+
+      # Credentials and secrets
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.gnupg/**"
+      - "**/secrets/**"
+      - "**/vault/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/*.pem"
+      - "**/*.key"
+      - "**/*.p12"
+
+      # Database files
+      - "**/*.sqlite"
+      - "**/*.db"
+      - "**/database/**"
+
+      # Log files (prevent log poisoning)
+      - "**/logs/**"
+      - "**/*.log"
+
+      # Customer data
+      - "**/customer_data/**"
+      - "**/user_data/**"
+      - "**/pii/**"
+
+    exceptions:
+      # Application-specific exceptions
+      - "**/logs/debug.log"  # If needed for debugging
+
+  # CC6.6 - Transmission Security
+  egress_allowlist:
+    enabled: true
+    default_action: deny
+    allow:
+      # Production API endpoints
+      # Add your specific endpoints
+
+      # AI provider APIs
+      - "api.anthropic.com"
+      - "api.openai.com"
+
+      # Package registries
+      - "pypi.org"
+      - "registry.npmjs.org"
+      - "crates.io"
+
+      # Cloud provider APIs
+      - "*.amazonaws.com"
+      - "*.azure.com"
+      - "*.googleapis.com"
+
+    block:
+      # Consumer services
+      - "*.dropbox.com"
+      - "*.box.com"
+      - "drive.google.com"
+
+      # Tor/anonymization
+      - "*.onion"
+
+      # Local networks
+      - "localhost"
+      - "127.0.0.1"
+      - "10.*"
+      - "192.168.*"
+
+  # CC7.1 - Vulnerability Detection
+  secret_leak:
+    enabled: true
+    redact: true
+    severity_threshold: warning
+    patterns:
+      # API keys
+      - name: "generic_api_key"
+        pattern: '(?i)(api[_-]?key|apikey)["\s:=]+["'']?([a-zA-Z0-9_\-]{20,})["'']?'
+        severity: high
+
+      # AWS credentials
+      - name: "aws_access_key"
+        pattern: 'AKIA[0-9A-Z]{16}'
+        severity: critical
+
+      - name: "aws_secret_key"
+        pattern: '(?i)aws[_-]?secret[_-]?access[_-]?key["\s:=]+["'']?([a-zA-Z0-9/+=]{40})["'']?'
+        severity: critical
+
+      # Database connection strings
+      - name: "connection_string"
+        pattern: '(?i)(mysql|postgres|mongodb|redis)://[^\s]+'
+        severity: critical
+
+      # JWT tokens
+      - name: "jwt_token"
+        pattern: 'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'
+        severity: high
+
+      # Private keys
+      - name: "private_key"
+        pattern: '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
+        severity: critical
+
+      # PII patterns
+      - name: "email"
+        pattern: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        severity: medium
+
+      - name: "phone"
+        pattern: '\b\d{3}[-.]?\d{3}[-.]?\d{4}\b'
+        severity: medium
+
+      - name: "ssn"
+        pattern: '\b\d{3}-\d{2}-\d{4}\b'
+        severity: critical
+
+  # CC7.2 - Security Anomaly Detection
+  prompt_injection:
+    enabled: true
+    max_scan_bytes: 100000
+    warn_at_or_above: low
+    block_at_or_above: medium
+
+  # CC8.1 - Change Authorization
+  patch_integrity:
+    enabled: true
+    forbidden_patterns:
+      # Code injection risks
+      - 'eval\s*\('
+      - 'exec\s*\('
+      - 'system\s*\('
+      - 'subprocess\.call'
+      - '__import__\s*\('
+
+      # SQL injection
+      - 'DROP\s+TABLE'
+      - 'DELETE\s+FROM.*WHERE\s+1=1'
+      - 'TRUNCATE\s+TABLE'
+
+      # Privilege escalation
+      - 'chmod\s+777'
+      - 'chown\s+root'
+      - 'sudo\s+'
+      - 'su\s+-'
+
+      # Malicious patterns
+      - 'rm\s+-rf\s+/'
+      - 'mkfs\.'
+      - 'dd\s+if='
+
+  # CC6.7 - Tool Restrictions
+  mcp_tool:
+    enabled: true
+    default_action: allow
+    deny:
+      - "database_query"  # Direct DB access
+      - "admin_*"         # Administrative tools
+      - "system_*"        # System-level tools
+
+settings:
+  fail_fast: true
+  verbose_logging: true
+  session_timeout_secs: 3600  # 1 hour
+
+on_violation: cancel

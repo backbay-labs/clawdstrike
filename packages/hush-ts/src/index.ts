@@ -132,3 +132,26 @@ export {
   type Span,
   type StreamingConfig,
 } from "./output-sanitizer";
+
+// Certification + Compliance
+export {
+  verifyCertificationBadge,
+  type CertificationBadge,
+  type CertificationBadgeIssuer,
+  type CertificationBadgeSubject,
+  type CertificationBadgePolicyBinding,
+  type CertificationBadgeEvidenceBinding,
+  type CertificationBadgeCertificationBinding,
+  type CertificationTier,
+} from "./certification-badge";
+
+export {
+  ClawdstrikeClient,
+  ClawdstrikeError,
+  type ClawdstrikeClientOptions,
+  type V1Links,
+  type V1Meta,
+  type V1Response,
+  type V1ErrorBody,
+  type V1ErrorEnvelope,
+} from "./client";

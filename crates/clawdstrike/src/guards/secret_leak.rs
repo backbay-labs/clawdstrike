@@ -17,6 +17,22 @@ pub struct SecretPattern {
     /// Severity level
     #[serde(default = "default_severity")]
     pub severity: Severity,
+    /// Optional pattern description (useful for compliance evidence).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Optional Luhn validation gate (e.g., for card numbers).
+    #[serde(default)]
+    pub luhn_check: bool,
+    /// Optional masking configuration for redaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub masking: Option<SecretMasking>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecretMasking {
+    pub first: u8,
+    pub last: u8,
 }
 
 fn default_severity() -> Severity {
@@ -27,6 +43,15 @@ fn default_severity() -> Severity {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SecretLeakConfig {
+    /// Enable/disable this guard.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// Whether to redact matched secrets in logs/audit details.
+    #[serde(default = "default_redact")]
+    pub redact: bool,
+    /// Block when the highest matched severity is at-or-above this level.
+    #[serde(default = "default_severity_threshold")]
+    pub severity_threshold: Severity,
     /// Secret patterns to detect
     #[serde(default = "default_patterns")]
     pub patterns: Vec<SecretPattern>,
@@ -35,12 +60,27 @@ pub struct SecretLeakConfig {
     pub skip_paths: Vec<String>,
 }
 
+fn default_enabled() -> bool {
+    true
+}
+
+fn default_redact() -> bool {
+    true
+}
+
+fn default_severity_threshold() -> Severity {
+    Severity::Error
+}
+
 fn default_patterns() -> Vec<SecretPattern> {
     vec![
         SecretPattern {
             name: "aws_access_key".to_string(),
             pattern: r"AKIA[0-9A-Z]{16}".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "aws_secret_key".to_string(),
@@ -48,46 +88,73 @@ fn default_patterns() -> Vec<SecretPattern> {
                 r#"(?i)aws[_\-]?secret[_\-]?access[_\-]?key['"]?\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}"#
                     .to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "github_token".to_string(),
             pattern: r"gh[ps]_[A-Za-z0-9]{36}".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "github_pat".to_string(),
             pattern: r"github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "openai_key".to_string(),
             pattern: r"sk-[A-Za-z0-9]{48}".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "anthropic_key".to_string(),
             pattern: r"sk-ant-[A-Za-z0-9\-]{95}".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "private_key".to_string(),
             pattern: r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "npm_token".to_string(),
             pattern: r"npm_[A-Za-z0-9]{36}".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "slack_token".to_string(),
             pattern: r"xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*".to_string(),
             severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "generic_api_key".to_string(),
             pattern: r#"(?i)(api[_\-]?key|apikey)['"]?\s*[:=]\s*['"]?[A-Za-z0-9]{32,}"#.to_string(),
             severity: Severity::Warning,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
         SecretPattern {
             name: "generic_secret".to_string(),
@@ -95,6 +162,9 @@ fn default_patterns() -> Vec<SecretPattern> {
                 r#"(?i)(secret|password|passwd|pwd)['"]?\s*[:=]\s*['"]?[A-Za-z0-9!@#$%^&*]{8,}"#
                     .to_string(),
             severity: Severity::Warning,
+            description: None,
+            luhn_check: false,
+            masking: None,
         },
     ]
 }
@@ -102,6 +172,9 @@ fn default_patterns() -> Vec<SecretPattern> {
 impl Default for SecretLeakConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
+            redact: default_redact(),
+            severity_threshold: default_severity_threshold(),
             patterns: default_patterns(),
             skip_paths: vec![
                 "**/test/**".to_string(),
@@ -118,11 +191,17 @@ struct CompiledPattern {
     name: String,
     regex: Regex,
     severity: Severity,
+    description: Option<String>,
+    luhn_check: bool,
+    masking: Option<SecretMasking>,
 }
 
 /// Guard that detects potential secret exposure in content
 pub struct SecretLeakGuard {
     name: String,
+    enabled: bool,
+    redact: bool,
+    severity_threshold: Severity,
     patterns: Vec<CompiledPattern>,
     skip_paths: Vec<glob::Pattern>,
 }
@@ -135,6 +214,9 @@ impl SecretLeakGuard {
 
     /// Create with custom configuration
     pub fn with_config(config: SecretLeakConfig) -> Self {
+        let enabled = config.enabled;
+        let redact = config.redact;
+        let severity_threshold = config.severity_threshold.clone();
         let patterns = config
             .patterns
             .into_iter()
@@ -143,6 +225,9 @@ impl SecretLeakGuard {
                     name: p.name,
                     regex,
                     severity: p.severity,
+                    description: p.description,
+                    luhn_check: p.luhn_check,
+                    masking: p.masking,
                 })
             })
             .collect();
@@ -155,6 +240,9 @@ impl SecretLeakGuard {
 
         Self {
             name: "secret_leak".to_string(),
+            enabled,
+            redact,
+            severity_threshold,
             patterns,
             skip_paths,
         }
@@ -170,13 +258,24 @@ impl SecretLeakGuard {
         let mut matches = Vec::new();
         for pattern in &self.patterns {
             for m in pattern.regex.find_iter(content) {
+                let matched = m.as_str();
+                if pattern.luhn_check && !is_luhn_valid_card_number(matched) {
+                    continue;
+                }
+
+                let redacted = if self.redact {
+                    mask_value(matched, pattern.masking.as_ref())
+                } else {
+                    matched.to_string()
+                };
+
                 matches.push(SecretMatch {
                     pattern_name: pattern.name.clone(),
                     severity: pattern.severity.clone(),
+                    description: pattern.description.clone(),
                     offset: m.start(),
                     length: m.len(),
-                    // Don't include the actual secret in the match!
-                    redacted: redact_secret(m.as_str()),
+                    redacted,
                 });
             }
         }
@@ -205,23 +304,78 @@ impl Default for SecretLeakGuard {
 pub struct SecretMatch {
     pub pattern_name: String,
     pub severity: Severity,
+    pub description: Option<String>,
     pub offset: usize,
     pub length: usize,
     pub redacted: String,
 }
 
-/// Redact a secret, keeping only first/last chars
-fn redact_secret(s: &str) -> String {
-    if s.len() <= 8 {
-        "*".repeat(s.len())
-    } else {
-        format!(
-            "{}{}{}",
-            &s[..4],
-            "*".repeat(s.len() - 8),
-            &s[s.len() - 4..]
-        )
+fn severity_rank(severity: &Severity) -> u8 {
+    match severity {
+        Severity::Info => 0,
+        Severity::Warning => 1,
+        Severity::Error => 2,
+        Severity::Critical => 3,
     }
+}
+
+fn mask_value(s: &str, masking: Option<&SecretMasking>) -> String {
+    let first = masking.map(|m| m.first as usize).unwrap_or(4);
+    let last = masking.map(|m| m.last as usize).unwrap_or(4);
+
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let len = s.chars().count();
+    if first + last >= len {
+        return "*".repeat(len);
+    }
+
+    let first_chars: String = s.chars().take(first).collect();
+    let last_chars: String = s
+        .chars()
+        .rev()
+        .take(last)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    format!(
+        "{}{}{}",
+        first_chars,
+        "*".repeat(len - first - last),
+        last_chars
+    )
+}
+
+fn is_luhn_valid_card_number(text: &str) -> bool {
+    let digits: Vec<u8> = text
+        .bytes()
+        .filter(|b| b.is_ascii_digit())
+        .map(|b| b - b'0')
+        .collect();
+    if !(13..=19).contains(&digits.len()) {
+        return false;
+    }
+    if digits.iter().all(|d| *d == digits[0]) {
+        return false;
+    }
+
+    let mut sum: u32 = 0;
+    let mut double = false;
+    for d in digits.iter().rev() {
+        let mut v = *d as u32;
+        if double {
+            v *= 2;
+            if v > 9 {
+                v -= 9;
+            }
+        }
+        sum = sum.saturating_add(v);
+        double = !double;
+    }
+    sum.is_multiple_of(10)
 }
 
 #[async_trait]
@@ -231,6 +385,10 @@ impl Guard for SecretLeakGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
         matches!(
             action,
             GuardAction::FileWrite(_, _) | GuardAction::Patch(_, _)
@@ -238,6 +396,10 @@ impl Guard for SecretLeakGuard {
     }
 
     async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+        if !self.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let (path, content) = match action {
             GuardAction::FileWrite(p, c) => (*p, *c),
             GuardAction::Patch(p, diff) => (*p, diff.as_bytes()),
@@ -259,39 +421,31 @@ impl Guard for SecretLeakGuard {
         let max_severity = matches
             .iter()
             .map(|m| &m.severity)
-            .max_by(|a, b| {
-                use Severity::*;
-                match (a, b) {
-                    (Critical, _) => std::cmp::Ordering::Greater,
-                    (_, Critical) => std::cmp::Ordering::Less,
-                    (Error, _) => std::cmp::Ordering::Greater,
-                    (_, Error) => std::cmp::Ordering::Less,
-                    (Warning, _) => std::cmp::Ordering::Greater,
-                    (_, Warning) => std::cmp::Ordering::Less,
-                    _ => std::cmp::Ordering::Equal,
-                }
-            })
+            .max_by(|a, b| severity_rank(a).cmp(&severity_rank(b)))
             .cloned()
             .unwrap_or(Severity::Warning);
 
         let pattern_names: Vec<_> = matches.iter().map(|m| m.pattern_name.clone()).collect();
 
-        if matches!(max_severity, Severity::Critical | Severity::Error) {
+        let details = serde_json::json!({
+            "path": path,
+            "matches": matches.iter().map(|m| {
+                serde_json::json!({
+                    "pattern": m.pattern_name,
+                    "severity": m.severity,
+                    "description": m.description,
+                    "redacted": m.redacted,
+                })
+            }).collect::<Vec<_>>(),
+        });
+
+        if severity_rank(&max_severity) >= severity_rank(&self.severity_threshold) {
             GuardResult::block(
                 &self.name,
                 max_severity,
                 format!("Potential secrets detected: {}", pattern_names.join(", ")),
             )
-            .with_details(serde_json::json!({
-                "path": path,
-                "matches": matches.iter().map(|m| {
-                    serde_json::json!({
-                        "pattern": m.pattern_name,
-                        "severity": m.severity,
-                        "redacted": m.redacted,
-                    })
-                }).collect::<Vec<_>>(),
-            }))
+            .with_details(details)
         } else {
             GuardResult::warn(
                 &self.name,
@@ -300,6 +454,7 @@ impl Guard for SecretLeakGuard {
                     pattern_names.join(", ")
                 ),
             )
+            .with_details(details)
         }
     }
 }
@@ -345,9 +500,9 @@ mod tests {
 
     #[test]
     fn test_redaction() {
-        assert_eq!(redact_secret("short"), "*****");
+        assert_eq!(mask_value("short", None), "*****");
         assert_eq!(
-            redact_secret("AKIAIOSFODNN7EXAMPLE"),
+            mask_value("AKIAIOSFODNN7EXAMPLE", None),
             "AKIA************MPLE"
         );
     }

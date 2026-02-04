@@ -4,6 +4,7 @@ members = [
     "crates/hush-core",
     "crates/hush-proxy",
     "crates/clawdstrike",
+    "crates/hush-certification",
     "crates/hush-cli",
     "crates/hushd",
     "crates/hush-wasm",
@@ -57,7 +58,7 @@ chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = { version = "0.10", features = ["serde"] }
 
 # UUID
-uuid = { version = "1.20", features = ["v4", "serde", "js"] }
+uuid = { version = "1.20", features = ["v4", "v7", "serde", "js"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
@@ -95,6 +96,7 @@ jsonwebtoken = "9"
 hush-core = { path = "crates/hush-core", version = "0.1.0" }
 hush-proxy = { path = "crates/hush-proxy", version = "0.1.0" }
 clawdstrike = { path = "crates/clawdstrike", version = "0.1.0" }
+hush-certification = { path = "crates/hush-certification", version = "0.1.0" }
 
 [profile.release]
 lto = true

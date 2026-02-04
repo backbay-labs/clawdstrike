@@ -23,6 +23,7 @@ path = "src/main.rs"
 hush-core.workspace = true
 hush-proxy.workspace = true
 clawdstrike.workspace = true
+hush-certification.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
