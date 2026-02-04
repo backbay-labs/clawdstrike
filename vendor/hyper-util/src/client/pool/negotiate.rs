@@ -49,9 +49,8 @@ mod internal {
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::{Arc, Mutex};
-    use std::task::{self, Poll};
+    use std::task::{self, ready, Poll};
 
-    use futures_core::ready;
     use pin_project_lite::pin_project;
     use tower_layer::Layer;
     use tower_service::Service;
@@ -580,7 +579,7 @@ mod tests {
             .upgrade(layer_fn(|s| s))
             .build();
 
-        crate::common::future::poll_fn(|cx| negotiate.poll_ready(cx))
+        std::future::poll_fn(|cx| negotiate.poll_ready(cx))
             .await
             .unwrap();
 
@@ -605,7 +604,7 @@ mod tests {
             .upgrade(layer_fn(|s| s))
             .build();
 
-        crate::common::future::poll_fn(|cx| negotiate.poll_ready(cx))
+        std::future::poll_fn(|cx| negotiate.poll_ready(cx))
             .await
             .unwrap();
 

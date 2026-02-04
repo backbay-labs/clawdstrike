@@ -444,7 +444,7 @@ pub struct MappedPolicyEvent {
 pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent> {
     event.validate()?;
 
-    let context = event.to_guard_context();
+    let mut context = event.to_guard_context();
 
     let data_json = serde_json::to_value(&event.data).context("serialize event data")?;
 
@@ -537,9 +537,79 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
         }
     };
 
+    // Attach small, non-sensitive helpers so guards can access richer context without changing the
+    // GuardAction enum (e.g. URL, missing-content signal, or precomputed hashes).
+    if let Some(ref reason) = decision_reason {
+        context.metadata = merge_metadata(
+            context.metadata,
+            serde_json::json!({ "policy_event": { "decision_reason": reason } }),
+        );
+    }
+
+    if let PolicyEventData::Network(net) = &event.data {
+        if let Some(ref url) = net.url {
+            context.metadata = merge_metadata(
+                context.metadata,
+                serde_json::json!({ "policy_event": { "network": { "url": url } } }),
+            );
+        }
+    }
+
+    if let PolicyEventData::File(file) = &event.data {
+        if let Some(ref h) = file.content_hash {
+            context.metadata = merge_metadata(
+                context.metadata,
+                serde_json::json!({ "policy_event": { "file": { "content_hash": h } } }),
+            );
+        }
+    }
+
     Ok(MappedPolicyEvent {
         context,
         action,
         decision_reason,
     })
+}
+
+fn merge_metadata(
+    existing: Option<serde_json::Value>,
+    extra: serde_json::Value,
+) -> Option<serde_json::Value> {
+    let mut out = match existing {
+        None => serde_json::Value::Object(serde_json::Map::new()),
+        Some(serde_json::Value::Object(obj)) => serde_json::Value::Object(obj),
+        Some(other) => serde_json::json!({ "metadata": other }),
+    };
+
+    merge_json(&mut out, extra);
+
+    Some(out)
+}
+
+fn merge_json(target: &mut serde_json::Value, source: serde_json::Value) {
+    let serde_json::Value::Object(source_obj) = source else {
+        *target = source;
+        return;
+    };
+
+    let serde_json::Value::Object(target_obj) = target else {
+        *target = serde_json::Value::Object(serde_json::Map::new());
+        merge_json(target, serde_json::Value::Object(source_obj));
+        return;
+    };
+
+    for (k, v) in source_obj {
+        match (target_obj.get_mut(&k), v) {
+            (Some(existing), serde_json::Value::Object(v_obj)) => {
+                if existing.is_object() {
+                    merge_json(existing, serde_json::Value::Object(v_obj));
+                } else {
+                    *existing = serde_json::Value::Object(v_obj);
+                }
+            }
+            (_, v) => {
+                target_obj.insert(k, v);
+            }
+        }
+    }
 }

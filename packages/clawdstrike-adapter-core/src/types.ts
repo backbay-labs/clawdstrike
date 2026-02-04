@@ -52,6 +52,8 @@ export type EventData =
 export interface FileEventData {
   type: 'file';
   path: string;
+  content?: string;
+  contentBase64?: string;
   contentHash?: string;
   operation: 'read' | 'write';
 }

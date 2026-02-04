@@ -102,6 +102,10 @@ export interface FileEventData {
   type: 'file';
   /** Absolute path to the file */
   path: string;
+  /** Optional raw content (small files only; best-effort) */
+  content?: string;
+  /** Optional base64-encoded content */
+  contentBase64?: string;
   /** Optional content hash (for write verification) */
   contentHash?: string;
   /** Operation type */
@@ -226,7 +230,7 @@ export interface Policy {
   /** Resource limits */
   limits?: ResourceLimits;
   /** Guard-level toggles */
-  guards?: GuardToggles;
+  guards?: GuardToggles & { custom?: unknown };
   /** Action to take on violation */
   on_violation?: ViolationAction;
 }

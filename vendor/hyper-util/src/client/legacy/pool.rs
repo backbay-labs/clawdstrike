@@ -9,12 +9,11 @@ use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
-use std::task::{self, Poll};
+use std::task::{self, ready, Poll};
 
 use std::time::{Duration, Instant};
 
 use futures_channel::oneshot;
-use futures_core::ready;
 use tracing::{debug, trace};
 
 use hyper::rt::Timer as _;

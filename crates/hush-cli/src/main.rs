@@ -511,7 +511,7 @@ async fn main() {
     };
 
     tracing_subscriber::registry()
-        // Logs go to stderr so machine-readable JSON on stdout stays parseable.
+        // Keep stdout clean for machine-readable output (`--json`, `--jsonl`).
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
         .with(tracing_subscriber::filter::LevelFilter::from_level(
             log_level,
