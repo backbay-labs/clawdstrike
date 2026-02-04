@@ -56,18 +56,34 @@ pub(crate) struct PolicyMigrateError {
     pub message: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct PolicyMigrateCommand {
+    pub input: String,
+    pub from: Option<String>,
+    pub to: String,
+    pub legacy_openclaw: bool,
+    pub output: Option<String>,
+    pub in_place: bool,
+    pub json: bool,
+    pub dry_run: bool,
+}
+
 pub fn cmd_policy_migrate(
-    input: String,
-    from: Option<String>,
-    to: String,
-    legacy_openclaw: bool,
-    output: Option<String>,
-    in_place: bool,
-    json: bool,
-    dry_run: bool,
+    command: PolicyMigrateCommand,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
+    let PolicyMigrateCommand {
+        input,
+        from,
+        to,
+        legacy_openclaw,
+        output,
+        in_place,
+        json,
+        dry_run,
+    } = command;
+
     let supported_to = clawdstrike::policy::POLICY_SCHEMA_VERSION.to_string();
     if to != supported_to {
         return emit_error(
@@ -428,8 +444,7 @@ pub(crate) fn migrate_policy_yaml(
 
     let out_value = if is_legacy {
         legacy_openclaw = Some(input_value.clone());
-        let translated = translate_legacy_openclaw(&input_value, &opts.to, &mut warnings);
-        translated
+        translate_legacy_openclaw(&input_value, &opts.to, &mut warnings)
     } else {
         obj.insert(
             "version".to_string(),
@@ -539,7 +554,7 @@ fn translate_legacy_openclaw(
         if let Some(forbidden) = fs
             .get("forbidden_paths")
             .and_then(|v| v.as_array())
-            .and_then(string_array)
+            .and_then(|values| string_array(values))
         {
             guards.insert(
                 "forbidden_path".to_string(),
@@ -554,18 +569,18 @@ fn translate_legacy_openclaw(
         let allow = egress
             .get("allowed_domains")
             .and_then(|v| v.as_array())
-            .and_then(string_array)
+            .and_then(|values| string_array(values))
             .unwrap_or_default();
         let block = egress
             .get("denied_domains")
             .and_then(|v| v.as_array())
-            .and_then(string_array)
+            .and_then(|values| string_array(values))
             .unwrap_or_default();
 
         if let Some(cidrs) = egress
             .get("allowed_cidrs")
             .and_then(|v| v.as_array())
-            .and_then(string_array)
+            .and_then(|values| string_array(values))
         {
             if !cidrs.is_empty() {
                 warnings.push(
@@ -604,12 +619,12 @@ fn translate_legacy_openclaw(
         let allow = tools
             .get("allowed")
             .and_then(|v| v.as_array())
-            .and_then(string_array)
+            .and_then(|values| string_array(values))
             .unwrap_or_default();
         let block = tools
             .get("denied")
             .and_then(|v| v.as_array())
-            .and_then(string_array)
+            .and_then(|values| string_array(values))
             .unwrap_or_default();
 
         if !allow.is_empty() || !block.is_empty() {
@@ -629,7 +644,7 @@ fn translate_legacy_openclaw(
     serde_json::Value::Object(out)
 }
 
-fn string_array(values: &Vec<serde_json::Value>) -> Option<Vec<String>> {
+fn string_array(values: &[serde_json::Value]) -> Option<Vec<String>> {
     if !values.iter().all(|v| v.is_string()) {
         return None;
     }
