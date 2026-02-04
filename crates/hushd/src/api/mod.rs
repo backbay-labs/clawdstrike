@@ -13,6 +13,7 @@ pub mod rbac;
 pub mod saml;
 pub mod session;
 pub mod shutdown;
+pub mod siem;
 pub mod webhooks;
 
 use axum::{
@@ -94,6 +95,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
         .route("/api/v1/events", get(events::stream_events))
+        .route("/api/v1/siem/exporters", get(siem::exporters))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     // Admin routes - require auth + admin scope

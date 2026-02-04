@@ -36,6 +36,21 @@ async fn test_health_endpoint() {
 }
 
 #[tokio::test]
+async fn test_siem_exporters_endpoint() {
+    let (client, url) = test_setup();
+    let resp = client
+        .get(format!("{}/api/v1/siem/exporters", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body.get("enabled").is_some());
+    assert!(body.get("exporters").is_some());
+}
+
+#[tokio::test]
 async fn test_check_file_access_allowed() {
     let (client, url) = test_setup();
     let resp = client
@@ -290,7 +305,9 @@ async fn test_metrics_endpoint() {
 
     assert!(resp.status().is_success());
     let body = resp.text().await.unwrap();
+    assert!(body.contains("hushd_uptime_seconds"));
     assert!(body.contains("hushd_http_requests_total"));
+    assert!(body.contains("hushd_siem_enabled"));
 }
 
 #[tokio::test]

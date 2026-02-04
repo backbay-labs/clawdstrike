@@ -1,0 +1,14 @@
+{
+  "name": "Clawdstrike High Denial Rate",
+  "type": "metric alert",
+  "query": "sum(last_5m):sum:clawdstrike.security.events.denied{*}.as_count() > 100",
+  "message": "@slack-security High number of policy denials detected.\n\nThis may indicate:\n- Misconfigured policy\n- Potential attack\n- Misbehaving agent",
+  "tags": ["team:security", "source:clawdstrike"],
+  "options": {
+    "thresholds": {
+      "warning": 50,
+      "critical": 100
+    }
+  }
+}
+

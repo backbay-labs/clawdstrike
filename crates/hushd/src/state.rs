@@ -1,7 +1,7 @@
 //! Shared application state for the daemon
 
 use std::sync::Arc;
-use tokio::sync::{broadcast, Notify, RwLock};
+use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 use clawdstrike::{HushEngine, Policy, RuleSet};
 use hush_core::Keypair;
@@ -10,7 +10,7 @@ use hush_core::PublicKey;
 use crate::audit::forward::AuditForwarder;
 use crate::audit::{AuditEvent, AuditLedger};
 use crate::auth::AuthStore;
-use crate::config::Config;
+use crate::config::{Config, SiemPrivacyConfig};
 use crate::control_db::ControlDb;
 use crate::identity::oidc::OidcValidator;
 use crate::identity_rate_limit::IdentityRateLimiter;
@@ -21,6 +21,19 @@ use crate::rate_limit::RateLimitState;
 use crate::rbac::{RbacManager, SqliteRbacStore};
 use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
 use crate::session::{SessionManager, SqliteSessionStore};
+use crate::siem::dlq::DeadLetterQueue;
+use crate::siem::exporters::alerting::AlertingExporter;
+use crate::siem::exporters::datadog::DatadogExporter;
+use crate::siem::exporters::elastic::ElasticExporter;
+use crate::siem::exporters::splunk::SplunkExporter;
+use crate::siem::exporters::sumo_logic::SumoLogicExporter;
+use crate::siem::exporters::webhooks::WebhookExporter;
+use crate::siem::manager::{
+    spawn_exporter_worker, ExporterHandle, ExporterHealth, ExporterManager,
+};
+use crate::siem::threat_intel::guard::ThreatIntelGuard;
+use crate::siem::threat_intel::service::{ThreatIntelService, ThreatIntelState};
+use crate::siem::types::{SecurityEvent, SecurityEventContext};
 
 /// Event broadcast for SSE streaming
 #[derive(Clone, Debug)]
@@ -42,6 +55,10 @@ pub struct AppState {
     pub metrics: Arc<Metrics>,
     /// Event broadcaster
     pub event_tx: broadcast::Sender<DaemonEvent>,
+    /// Canonical security event broadcaster (for SIEM/SOAR exporters)
+    pub security_event_tx: broadcast::Sender<SecurityEvent>,
+    /// Default context for canonical security events
+    pub security_ctx: Arc<RwLock<SecurityEventContext>>,
     /// Configuration
     pub config: Arc<Config>,
     /// Control-plane DB (sessions/RBAC/scoped policies, rate limits, ...).
@@ -68,8 +85,22 @@ pub struct AppState {
     pub rate_limit: RateLimitState,
     /// Identity-based rate limiter (sliding window, SQLite baseline)
     pub identity_rate_limiter: Arc<IdentityRateLimiter>,
+    /// Threat intel state (if enabled)
+    pub threat_intel_state: Option<Arc<RwLock<ThreatIntelState>>>,
+    /// Threat intel background task (if enabled)
+    pub threat_intel_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Exporter health handles (if SIEM is enabled)
+    pub siem_exporters: Arc<RwLock<Vec<ExporterStatusHandle>>>,
+    /// Exporter manager (fanout task) if SIEM is enabled
+    pub siem_manager: Arc<Mutex<Option<ExporterManager>>>,
     /// Shutdown notifier (used for API-triggered shutdown)
     pub shutdown: Arc<Notify>,
+}
+
+#[derive(Clone)]
+pub struct ExporterStatusHandle {
+    pub name: String,
+    pub health: Arc<RwLock<ExporterHealth>>,
 }
 
 impl AppState {
@@ -98,6 +129,19 @@ impl AppState {
 
         // Create engine (fail closed if custom guards are requested but unavailable)
         let mut engine = HushEngine::builder(policy).build()?;
+
+        // Optional threat intelligence guard + polling.
+        let (threat_intel_state, threat_intel_task) = if config.threat_intel.enabled {
+            let state = Arc::new(RwLock::new(ThreatIntelState::default()));
+            engine.add_extra_guard(ThreatIntelGuard::new(
+                state.clone(),
+                config.threat_intel.actions.clone(),
+            ));
+            let task = ThreatIntelService::new(config.threat_intel.clone(), state.clone()).start();
+            (Some(state), Some(task))
+        } else {
+            (None, None)
+        };
 
         // Load signing key
         if let Some(ref key_path) = config.signing_key {
@@ -167,8 +211,9 @@ impl AppState {
             config.session.clone(),
         ));
 
-        // Create event channel
+        // Create event channels
         let (event_tx, _) = broadcast::channel(1024);
+        let (security_event_tx, _) = broadcast::channel(1024);
 
         let metrics = Arc::new(Metrics::default());
 
@@ -211,12 +256,167 @@ impl AppState {
         // Generate session ID
         let session_id = uuid::Uuid::new_v4().to_string();
 
+        // Initialize canonical SecurityEvent context.
+        let mut base_security_ctx = SecurityEventContext::hushd(session_id.clone());
+        base_security_ctx.policy_hash = engine.policy_hash().ok().map(|h| h.to_hex_prefixed());
+        base_security_ctx.ruleset = Some(engine.policy().name.clone());
+        if config.siem.enabled {
+            base_security_ctx.environment = config.siem.environment.clone();
+            base_security_ctx.tenant_id = config.siem.tenant_id.clone();
+            base_security_ctx.labels.extend(config.siem.labels.clone());
+        }
+        let security_ctx = Arc::new(RwLock::new(base_security_ctx));
+
+        // Optional SIEM exporters.
+        let (siem_exporters, siem_manager): (Vec<ExporterStatusHandle>, Option<ExporterManager>) =
+            if config.siem.enabled {
+                let mut handles: Vec<ExporterHandle> = Vec::new();
+                let mut statuses: Vec<ExporterStatusHandle> = Vec::new();
+
+                let exporters = &config.siem.exporters;
+
+                if let Some(settings) = &exporters.splunk {
+                    if settings.enabled {
+                        let exporter = SplunkExporter::new(settings.config.clone())
+                            .map_err(|e| anyhow::anyhow!("splunk exporter: {e}"))?;
+                        let dlq = settings.dlq.clone().map(DeadLetterQueue::new);
+                        let handle = spawn_exporter_worker(
+                            Box::new(exporter),
+                            settings.runtime.clone(),
+                            dlq,
+                            settings.filter.clone(),
+                            settings.queue_capacity,
+                        );
+                        statuses.push(ExporterStatusHandle {
+                            name: handle.name.clone(),
+                            health: handle.health.clone(),
+                        });
+                        handles.push(handle);
+                    }
+                }
+
+                if let Some(settings) = &exporters.elastic {
+                    if settings.enabled {
+                        let exporter = ElasticExporter::new(settings.config.clone())
+                            .map_err(|e| anyhow::anyhow!("elastic exporter: {e}"))?;
+                        let dlq = settings.dlq.clone().map(DeadLetterQueue::new);
+                        let handle = spawn_exporter_worker(
+                            Box::new(exporter),
+                            settings.runtime.clone(),
+                            dlq,
+                            settings.filter.clone(),
+                            settings.queue_capacity,
+                        );
+                        statuses.push(ExporterStatusHandle {
+                            name: handle.name.clone(),
+                            health: handle.health.clone(),
+                        });
+                        handles.push(handle);
+                    }
+                }
+
+                if let Some(settings) = &exporters.datadog {
+                    if settings.enabled {
+                        let exporter = DatadogExporter::new(settings.config.clone())
+                            .map_err(|e| anyhow::anyhow!("datadog exporter: {e}"))?;
+                        let dlq = settings.dlq.clone().map(DeadLetterQueue::new);
+                        let handle = spawn_exporter_worker(
+                            Box::new(exporter),
+                            settings.runtime.clone(),
+                            dlq,
+                            settings.filter.clone(),
+                            settings.queue_capacity,
+                        );
+                        statuses.push(ExporterStatusHandle {
+                            name: handle.name.clone(),
+                            health: handle.health.clone(),
+                        });
+                        handles.push(handle);
+                    }
+                }
+
+                if let Some(settings) = &exporters.sumo_logic {
+                    if settings.enabled {
+                        let exporter = SumoLogicExporter::new(settings.config.clone())
+                            .map_err(|e| anyhow::anyhow!("sumo exporter: {e}"))?;
+                        let dlq = settings.dlq.clone().map(DeadLetterQueue::new);
+                        let handle = spawn_exporter_worker(
+                            Box::new(exporter),
+                            settings.runtime.clone(),
+                            dlq,
+                            settings.filter.clone(),
+                            settings.queue_capacity,
+                        );
+                        statuses.push(ExporterStatusHandle {
+                            name: handle.name.clone(),
+                            health: handle.health.clone(),
+                        });
+                        handles.push(handle);
+                    }
+                }
+
+                if let Some(settings) = &exporters.alerting {
+                    if settings.enabled {
+                        let exporter = AlertingExporter::new(settings.config.clone())
+                            .map_err(|e| anyhow::anyhow!("alerting exporter: {e}"))?;
+                        let dlq = settings.dlq.clone().map(DeadLetterQueue::new);
+                        let handle = spawn_exporter_worker(
+                            Box::new(exporter),
+                            settings.runtime.clone(),
+                            dlq,
+                            settings.filter.clone(),
+                            settings.queue_capacity,
+                        );
+                        statuses.push(ExporterStatusHandle {
+                            name: handle.name.clone(),
+                            health: handle.health.clone(),
+                        });
+                        handles.push(handle);
+                    }
+                }
+
+                if let Some(settings) = &exporters.webhooks {
+                    if settings.enabled {
+                        let exporter = WebhookExporter::new(settings.config.clone())
+                            .map_err(|e| anyhow::anyhow!("webhooks exporter: {e}"))?;
+                        let dlq = settings.dlq.clone().map(DeadLetterQueue::new);
+                        let handle = spawn_exporter_worker(
+                            Box::new(exporter),
+                            settings.runtime.clone(),
+                            dlq,
+                            settings.filter.clone(),
+                            settings.queue_capacity,
+                        );
+                        statuses.push(ExporterStatusHandle {
+                            name: handle.name.clone(),
+                            health: handle.health.clone(),
+                        });
+                        handles.push(handle);
+                    }
+                }
+
+                let manager = if handles.is_empty() {
+                    None
+                } else {
+                    Some(ExporterManager::start(
+                        security_event_tx.subscribe(),
+                        handles,
+                    ))
+                };
+
+                (statuses, manager)
+            } else {
+                (Vec::new(), None)
+            };
+
         let state = Self {
             engine: Arc::new(RwLock::new(engine)),
             ledger,
             audit_forwarder,
             metrics,
             event_tx,
+            security_event_tx,
+            security_ctx,
             config: Arc::new(config),
             control_db: control_db.clone(),
             auth_store,
@@ -230,11 +430,25 @@ impl AppState {
             started_at: chrono::Utc::now(),
             rate_limit,
             identity_rate_limiter,
+            threat_intel_state,
+            threat_intel_task: Arc::new(Mutex::new(threat_intel_task)),
+            siem_exporters: Arc::new(RwLock::new(siem_exporters)),
+            siem_manager: Arc::new(Mutex::new(siem_manager)),
             shutdown: Arc::new(Notify::new()),
         };
 
         // Record session start (after forwarder is initialized).
-        state.record_audit_event(AuditEvent::session_start(&state.session_id, None));
+        let start_event = AuditEvent::session_start(&state.session_id, None);
+        {
+            let ctx = state.security_ctx.read().await.clone();
+            let event = SecurityEvent::from_audit_event(&start_event, &ctx);
+            if let Err(err) = event.validate() {
+                tracing::warn!(error = %err, "Generated invalid SecurityEvent");
+            } else {
+                state.emit_security_event(event);
+            }
+        }
+        state.record_audit_event(start_event);
 
         Ok(state)
     }
@@ -243,6 +457,14 @@ impl AppState {
     pub fn broadcast(&self, event: DaemonEvent) {
         // Ignore send errors (no subscribers)
         let _ = self.event_tx.send(event);
+    }
+
+    pub fn emit_security_event(&self, event: SecurityEvent) {
+        let mut event = event;
+        if self.config.siem.enabled {
+            apply_siem_privacy(&mut event, &self.config.siem.privacy);
+        }
+        let _ = self.security_event_tx.send(event);
     }
 
     /// Request graceful shutdown of the daemon.
@@ -259,6 +481,17 @@ impl AppState {
         }
         if let Some(forwarder) = &self.audit_forwarder {
             forwarder.try_enqueue(event);
+        }
+    }
+
+    pub async fn shutdown_background_tasks(&self) {
+        if let Some(manager) = self.siem_manager.lock().await.take() {
+            manager.shutdown().await;
+        }
+
+        if let Some(task) = self.threat_intel_task.lock().await.take() {
+            task.abort();
+            let _ = task.await;
         }
     }
 
@@ -280,6 +513,8 @@ impl AppState {
             Some(keypair) => new_engine.with_keypair(keypair),
             None => new_engine.with_generated_keypair(),
         };
+        let new_policy_hash = new_engine.policy_hash().ok().map(|h| h.to_hex_prefixed());
+        let new_ruleset = Some(new_engine.policy().name.clone());
         *engine = new_engine;
         self.policy_engine_cache.clear();
 
@@ -308,6 +543,12 @@ impl AppState {
             data: serde_json::json!({"timestamp": chrono::Utc::now().to_rfc3339()}),
         });
 
+        {
+            let mut ctx = self.security_ctx.write().await;
+            ctx.policy_hash = new_policy_hash;
+            ctx.ruleset = new_ruleset;
+        }
+
         Ok(())
     }
 
@@ -319,5 +560,64 @@ impl AppState {
     /// Check if authentication is enabled
     pub fn auth_enabled(&self) -> bool {
         self.config.auth.enabled
+    }
+}
+
+fn apply_siem_privacy(event: &mut SecurityEvent, privacy: &SiemPrivacyConfig) {
+    if privacy.drop_metadata || privacy.deny_fields.iter().any(|f| f == "metadata") {
+        event.metadata = serde_json::json!({});
+    }
+    if privacy.drop_labels || privacy.deny_fields.iter().any(|f| f == "labels") {
+        event.labels.clear();
+    }
+
+    let replacement = privacy.redaction_replacement.clone();
+
+    for field in &privacy.deny_fields {
+        match field.as_str() {
+            "session.user_id" => event.session.user_id = None,
+            "session.tenant_id" => event.session.tenant_id = None,
+            "session.environment" => event.session.environment = None,
+            "decision.policy_hash" => event.decision.policy_hash = None,
+            "decision.ruleset" => event.decision.ruleset = None,
+            "resource.path" => event.resource.path = None,
+            "resource.host" => event.resource.host = None,
+            "resource.port" => event.resource.port = None,
+            // Required strings: treat "deny" as redaction.
+            "decision.reason" => event.decision.reason = replacement.clone(),
+            "agent.id" => event.agent.id = replacement.clone(),
+            _ => {}
+        }
+    }
+
+    for field in &privacy.redact_fields {
+        match field.as_str() {
+            "decision.reason" => event.decision.reason = replacement.clone(),
+            "agent.id" => event.agent.id = replacement.clone(),
+            "session.id" => event.session.id = replacement.clone(),
+            "session.user_id" => {
+                event.session.user_id = event.session.user_id.as_ref().map(|_| replacement.clone())
+            }
+            "session.tenant_id" => {
+                event.session.tenant_id = event
+                    .session
+                    .tenant_id
+                    .as_ref()
+                    .map(|_| replacement.clone())
+            }
+            "resource.name" => event.resource.name = replacement.clone(),
+            "resource.path" => {
+                event.resource.path = event.resource.path.as_ref().map(|_| replacement.clone())
+            }
+            "resource.host" => {
+                event.resource.host = event.resource.host.as_ref().map(|_| replacement.clone())
+            }
+            "threat.indicator.value" => {
+                if let Some(ind) = &mut event.threat.indicator {
+                    ind.value = replacement.clone();
+                }
+            }
+            _ => {}
+        }
     }
 }

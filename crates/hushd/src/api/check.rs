@@ -11,6 +11,7 @@ use clawdstrike::{HushEngine, RequestContext};
 use crate::audit::AuditEvent;
 use crate::auth::AuthenticatedActor;
 use crate::identity_rate_limit::IdentityRateLimitError;
+use crate::siem::types::SecurityEvent;
 use crate::state::{AppState, DaemonEvent};
 
 fn parse_egress_target(target: &str) -> Result<(String, u16), String> {
@@ -419,6 +420,17 @@ pub async fn check_action(
         }
 
         audit_event.metadata = Some(serde_json::Value::Object(obj));
+    }
+
+    // Emit canonical SecurityEvent for exporters.
+    {
+        let ctx = state.security_ctx.read().await.clone();
+        let event = SecurityEvent::from_audit_event(&audit_event, &ctx);
+        if let Err(err) = event.validate() {
+            tracing::warn!(error = %err, "Generated invalid SecurityEvent");
+        } else {
+            state.emit_security_event(event);
+        }
     }
 
     state.record_audit_event(audit_event);

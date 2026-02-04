@@ -18,5 +18,6 @@ pub mod rate_limit;
 pub mod rbac;
 pub mod remote_extends;
 pub mod session;
+pub mod siem;
 pub mod state;
 pub mod tls;

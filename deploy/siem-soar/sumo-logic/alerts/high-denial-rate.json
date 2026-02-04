@@ -1,0 +1,21 @@
+{
+  "type": "SavedSearchWithScheduleSyncDefinition",
+  "name": "Clawdstrike High Denial Rate",
+  "search": {
+    "queryText": "_sourceCategory=*/security/clawdstrike | json field=_raw \"decision.allowed\" as allowed | where allowed = \"false\" | count",
+    "defaultTimeRange": "-5m"
+  },
+  "schedule": {
+    "cronExpression": "0 0/5 * * * ? *",
+    "threshold": {
+      "thresholdType": "GreaterThan",
+      "count": 100
+    },
+    "notification": {
+      "taskType": "WebhookSearchNotificationSyncDefinition",
+      "webhookId": "xxx-webhook-id",
+      "payload": "{\"text\": \"High denial rate: {{ResultsCount}} violations in 5 minutes\"}"
+    }
+  }
+}
+
