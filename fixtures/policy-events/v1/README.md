@@ -5,6 +5,7 @@ This directory contains a small, representative corpus of **policy evaluation in
 ## Files
 
 - `events.jsonl`: newline-delimited JSON (`.jsonl`). Each line is one `PolicyEvent`.
+- `expected/default.decisions.json`: expected `Decision` objects for `hush policy simulate default` over `events.jsonl` (used to keep parity fixtures stable).
 
 ## Canonical shape (M0 draft)
 
@@ -30,4 +31,3 @@ If present, run the lightweight validator script:
 ```sh
 tools/scripts/validate-policy-events fixtures/policy-events/v1/events.jsonl
 ```
-
