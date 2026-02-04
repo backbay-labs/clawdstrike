@@ -1,5 +1,6 @@
 //! SQLite-backed audit ledger for security events
 
+pub mod forward;
 mod schema;
 
 use std::path::Path;
@@ -11,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use clawdstrike::guards::GuardResult;
+use ring::aead;
+use ring::rand::SystemRandom;
 
 /// Error type for audit operations
 #[derive(Debug, thiserror::Error)]
@@ -21,9 +24,65 @@ pub enum AuditError {
     Serialization(#[from] serde_json::Error),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Encryption error: {0}")]
+    Crypto(String),
 }
 
 pub type Result<T> = std::result::Result<T, AuditError>;
+
+#[derive(Clone)]
+struct AuditEncryption {
+    key: aead::LessSafeKey,
+    rng: SystemRandom,
+}
+
+const AEAD_NONCE_LEN: usize = 12;
+const AEAD_TAG_LEN: usize = 16;
+
+impl AuditEncryption {
+    fn new(key_bytes: [u8; 32]) -> Result<Self> {
+        let unbound = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &key_bytes)
+            .map_err(|_| AuditError::Crypto("invalid encryption key".to_string()))?;
+        Ok(Self {
+            key: aead::LessSafeKey::new(unbound),
+            rng: SystemRandom::new(),
+        })
+    }
+
+    fn encrypt(&self, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+        let mut nonce_bytes = [0u8; AEAD_NONCE_LEN];
+        ring::rand::SecureRandom::fill(&self.rng, &mut nonce_bytes)
+            .map_err(|_| AuditError::Crypto("failed to generate nonce".to_string()))?;
+        let nonce = aead::Nonce::assume_unique_for_key(nonce_bytes);
+
+        let mut in_out = plaintext.to_vec();
+        self.key
+            .seal_in_place_append_tag(nonce, aead::Aad::from(aad), &mut in_out)
+            .map_err(|_| AuditError::Crypto("encryption failed".to_string()))?;
+
+        let mut out = Vec::with_capacity(AEAD_NONCE_LEN + in_out.len());
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&in_out);
+        Ok(out)
+    }
+
+    fn decrypt(&self, aad: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
+        if blob.len() < AEAD_NONCE_LEN + AEAD_TAG_LEN {
+            return Err(AuditError::Crypto("ciphertext too short".to_string()));
+        }
+
+        let mut nonce = [0u8; AEAD_NONCE_LEN];
+        nonce.copy_from_slice(&blob[..AEAD_NONCE_LEN]);
+        let nonce = aead::Nonce::assume_unique_for_key(nonce);
+
+        let mut in_out = blob[AEAD_NONCE_LEN..].to_vec();
+        let plain = self
+            .key
+            .open_in_place(nonce, aead::Aad::from(aad), &mut in_out)
+            .map_err(|_| AuditError::Crypto("decryption failed".to_string()))?;
+        Ok(plain.to_vec())
+    }
+}
 
 /// Audit event record
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -222,6 +281,7 @@ fn csv_escape_field(field: &str) -> String {
 pub struct AuditLedger {
     conn: Mutex<Connection>,
     max_entries: usize,
+    encryption: Option<AuditEncryption>,
 }
 
 impl AuditLedger {
@@ -243,10 +303,12 @@ impl AuditLedger {
 
         // Create tables
         conn.execute_batch(schema::CREATE_TABLES)?;
+        maybe_add_metadata_enc_column(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
             max_entries: 0,
+            encryption: None,
         })
     }
 
@@ -254,10 +316,12 @@ impl AuditLedger {
     pub fn in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(schema::CREATE_TABLES)?;
+        maybe_add_metadata_enc_column(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
             max_entries: 0,
+            encryption: None,
         })
     }
 
@@ -267,9 +331,25 @@ impl AuditLedger {
         self
     }
 
+    pub fn with_encryption_key(mut self, key: [u8; 32]) -> Result<Self> {
+        self.encryption = Some(AuditEncryption::new(key)?);
+        Ok(self)
+    }
+
     /// Record an audit event
     pub fn record(&self, event: &AuditEvent) -> Result<()> {
         let conn = self.lock_conn();
+
+        let (metadata_str, metadata_enc) = match (event.metadata.as_ref(), self.encryption.as_ref())
+        {
+            (None, _) => (None, None),
+            (Some(v), None) => (Some(serde_json::to_string(v)?), None),
+            (Some(v), Some(enc)) => {
+                let bytes = serde_json::to_vec(v)?;
+                let enc = enc.encrypt(event.id.as_bytes(), &bytes)?;
+                (None, Some(enc))
+            }
+        };
 
         conn.execute(
             schema::INSERT_EVENT,
@@ -285,10 +365,8 @@ impl AuditLedger {
                 event.message,
                 event.session_id,
                 event.agent_id,
-                event
-                    .metadata
-                    .as_ref()
-                    .and_then(|m| serde_json::to_string(m).ok()),
+                metadata_str,
+                metadata_enc,
             ],
         )?;
 
@@ -325,20 +403,37 @@ impl AuditLedger {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = conn.prepare(&sql)?;
-        let events = stmt.query_map(params_refs.as_slice(), |row| {
-            let metadata_str: Option<String> = row.get(11)?;
-            let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+        let mut rows = stmt.query(params_refs.as_slice())?;
+
+        let mut events = Vec::new();
+        while let Some(row) = rows.next()? {
+            let id: String = row.get(0)?;
             let timestamp_str: String = row.get(1)?;
             let timestamp = DateTime::parse_from_rfc3339(&timestamp_str).map_err(|err| {
-                rusqlite::Error::FromSqlConversionFailure(
+                AuditError::Database(rusqlite::Error::FromSqlConversionFailure(
                     1,
                     rusqlite::types::Type::Text,
                     Box::new(err),
-                )
+                ))
             })?;
 
-            Ok(AuditEvent {
-                id: row.get(0)?,
+            let metadata_str: Option<String> = row.get(11)?;
+            let metadata_enc: Option<Vec<u8>> = row.get(12)?;
+
+            let metadata = if let Some(enc) = metadata_enc {
+                if let Some(ref crypto) = self.encryption {
+                    let bytes = crypto.decrypt(id.as_bytes(), &enc)?;
+                    Some(serde_json::from_slice(&bytes)?)
+                } else {
+                    // Encryption disabled; fall back to plaintext if available.
+                    metadata_str.and_then(|s| serde_json::from_str(&s).ok())
+                }
+            } else {
+                metadata_str.and_then(|s| serde_json::from_str(&s).ok())
+            };
+
+            events.push(AuditEvent {
+                id,
                 timestamp: timestamp.with_timezone(&Utc),
                 event_type: row.get(2)?,
                 action_type: row.get(3)?,
@@ -350,12 +445,10 @@ impl AuditLedger {
                 session_id: row.get(9)?,
                 agent_id: row.get(10)?,
                 metadata,
-            })
-        })?;
+            });
+        }
 
-        events
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(AuditError::from)
+        Ok(events)
     }
 
     /// Get event count
@@ -427,6 +520,21 @@ impl AuditLedger {
     }
 }
 
+fn maybe_add_metadata_enc_column(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(audit_events)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "metadata_enc" {
+            return Ok(());
+        }
+    }
+
+    // Existing DB from schema_version=1; migrate in place.
+    conn.execute_batch("ALTER TABLE audit_events ADD COLUMN metadata_enc BLOB;")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,6 +566,51 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].id, "test-1");
         assert_eq!(events[0].decision, "blocked");
+    }
+
+    #[test]
+    fn test_ledger_encryption_roundtrip_and_ciphertext_storage() {
+        let ledger = AuditLedger::in_memory()
+            .unwrap()
+            .with_encryption_key([7u8; 32])
+            .unwrap();
+
+        let event = AuditEvent {
+            id: "enc-1".to_string(),
+            timestamp: Utc::now(),
+            event_type: "violation".to_string(),
+            action_type: "file_write".to_string(),
+            target: Some("/tmp/out.txt".to_string()),
+            decision: "blocked".to_string(),
+            guard: Some("secret_leak".to_string()),
+            severity: Some("Critical".to_string()),
+            message: Some("Potential secrets detected".to_string()),
+            session_id: Some("session-enc".to_string()),
+            agent_id: None,
+            metadata: Some(serde_json::json!({
+                "matches": [{"pattern": "github_token"}],
+            })),
+        };
+
+        ledger.record(&event).unwrap();
+        let events = ledger.query(&AuditFilter::default()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].metadata.as_ref().unwrap()["matches"][0]["pattern"],
+            "github_token"
+        );
+
+        // Ensure ciphertext is stored, and plaintext metadata is not.
+        let conn = ledger.lock_conn();
+        let (plain, enc): (Option<String>, Option<Vec<u8>>) = conn
+            .query_row(
+                "SELECT metadata, metadata_enc FROM audit_events WHERE id = ?1",
+                params![event.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(plain.is_none());
+        assert!(enc.is_some());
     }
 
     #[test]

@@ -4,6 +4,16 @@ export const POLICY_SCHEMA_VERSION = 'clawdstrike-v1.0';
 
 const VALID_EGRESS_MODES = new Set(['allowlist', 'denylist', 'open', 'deny_all']);
 const VALID_VIOLATION_ACTIONS = new Set(['cancel', 'warn', 'isolate', 'escalate']);
+const VALID_TIMEOUT_BEHAVIORS = new Set(['allow', 'deny', 'warn', 'defer']);
+const VALID_EXECUTION_MODES = new Set(['parallel', 'sequential', 'background']);
+
+const PLACEHOLDER_RE = /\$\{([^}]+)\}/g;
+
+const RESERVED_PACKAGES = new Set([
+  'clawdstrike-virustotal',
+  'clawdstrike-safe-browsing',
+  'clawdstrike-snyk',
+]);
 
 const POLICY_KEYS = new Set([
   'version',
@@ -22,7 +32,7 @@ const FILESYSTEM_KEYS = new Set(['allowed_write_roots', 'allowed_read_paths', 'f
 const EXECUTION_KEYS = new Set(['allowed_commands', 'denied_patterns']);
 const TOOLS_KEYS = new Set(['allowed', 'denied']);
 const LIMITS_KEYS = new Set(['max_execution_seconds', 'max_memory_mb', 'max_output_bytes']);
-const GUARDS_KEYS = new Set(['forbidden_path', 'egress', 'secret_leak', 'patch_integrity', 'mcp_tool']);
+const GUARDS_KEYS = new Set(['forbidden_path', 'egress', 'secret_leak', 'patch_integrity', 'mcp_tool', 'custom']);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -206,8 +216,22 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
       ensureBoolean((p.guards as any).secret_leak, 'guards.secret_leak', errors);
       ensureBoolean((p.guards as any).patch_integrity, 'guards.patch_integrity', errors);
       ensureBoolean((p.guards as any).mcp_tool, 'guards.mcp_tool', errors);
+
+      const custom = (p.guards as any).custom;
+      if (custom !== undefined) {
+        if (!Array.isArray(custom)) {
+          errors.push('guards.custom must be an array');
+        } else {
+          for (let i = 0; i < custom.length; i++) {
+            validateCustomGuardSpec(custom[i], `guards.custom[${i}]`, errors);
+          }
+        }
+      }
     }
   }
+
+  // Validate placeholders across the entire policy tree (fail closed on missing env).
+  validatePlaceholders(policy, 'policy', errors);
 
   // on_violation validation
   if (p.on_violation !== undefined) {
@@ -217,4 +241,209 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
   }
 
   return { valid: errors.length === 0, errors, warnings };
+}
+
+function validateCustomGuardSpec(value: unknown, base: string, errors: string[]): void {
+  if (!isPlainObject(value)) {
+    errors.push(`${base} must be an object`);
+    return;
+  }
+
+  const pkg = value.package;
+  if (typeof pkg !== 'string' || pkg.trim() === '') {
+    errors.push(`${base}.package must be a non-empty string`);
+    return;
+  }
+
+  if (!RESERVED_PACKAGES.has(pkg)) {
+    errors.push(`${base}.package unsupported custom guard package: ${pkg}`);
+    return;
+  }
+
+  const enabled = value.enabled;
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    errors.push(`${base}.enabled must be a boolean`);
+  }
+
+  const config = value.config;
+  if (config !== undefined && !isPlainObject(config)) {
+    errors.push(`${base}.config must be an object`);
+    return;
+  }
+
+  const cfg = (isPlainObject(config) ? config : {}) as Record<string, unknown>;
+  if (pkg === 'clawdstrike-virustotal') {
+    requireString(cfg, `${base}.config.api_key`, errors);
+  } else if (pkg === 'clawdstrike-safe-browsing') {
+    requireString(cfg, `${base}.config.api_key`, errors);
+    requireString(cfg, `${base}.config.client_id`, errors);
+  } else if (pkg === 'clawdstrike-snyk') {
+    requireString(cfg, `${base}.config.api_token`, errors);
+    requireString(cfg, `${base}.config.org_id`, errors);
+  }
+
+  const asyncCfg = (value as any).async;
+  if (asyncCfg !== undefined) {
+    validateAsyncConfig(asyncCfg, `${base}.async`, errors);
+  }
+}
+
+function validateAsyncConfig(value: unknown, base: string, errors: string[]): void {
+  if (!isPlainObject(value)) {
+    errors.push(`${base} must be an object`);
+    return;
+  }
+
+  const timeoutMs = (value as any).timeout_ms;
+  if (timeoutMs !== undefined && (!isFiniteNumber(timeoutMs) || timeoutMs < 100 || timeoutMs > 300_000)) {
+    errors.push(`${base}.timeout_ms must be between 100 and 300000`);
+  }
+
+  const onTimeout = (value as any).on_timeout;
+  if (onTimeout !== undefined && (typeof onTimeout !== 'string' || !VALID_TIMEOUT_BEHAVIORS.has(onTimeout))) {
+    errors.push(`${base}.on_timeout must be one of: ${[...VALID_TIMEOUT_BEHAVIORS].join(', ')}`);
+  }
+
+  const mode = (value as any).execution_mode;
+  if (mode !== undefined && (typeof mode !== 'string' || !VALID_EXECUTION_MODES.has(mode))) {
+    errors.push(`${base}.execution_mode must be one of: ${[...VALID_EXECUTION_MODES].join(', ')}`);
+  }
+
+  if ((value as any).rate_limit !== undefined) {
+    if (!isPlainObject((value as any).rate_limit)) {
+      errors.push(`${base}.rate_limit must be an object`);
+    } else {
+      const rl = (value as any).rate_limit as Record<string, unknown>;
+      const rps = rl.requests_per_second;
+      const rpm = rl.requests_per_minute;
+      if (rps !== undefined && (!isFiniteNumber(rps) || rps <= 0)) {
+        errors.push(`${base}.rate_limit.requests_per_second must be > 0`);
+      }
+      if (rpm !== undefined && (!isFiniteNumber(rpm) || rpm <= 0)) {
+        errors.push(`${base}.rate_limit.requests_per_minute must be > 0`);
+      }
+      if (rps !== undefined && rpm !== undefined) {
+        errors.push(`${base}.rate_limit must specify only one of requests_per_second or requests_per_minute`);
+      }
+      const burst = rl.burst;
+      if (burst !== undefined && (typeof burst !== 'number' || !Number.isInteger(burst) || burst < 1)) {
+        errors.push(`${base}.rate_limit.burst must be >= 1`);
+      }
+    }
+  }
+
+  if ((value as any).cache !== undefined) {
+    if (!isPlainObject((value as any).cache)) {
+      errors.push(`${base}.cache must be an object`);
+    } else {
+      const cache = (value as any).cache as Record<string, unknown>;
+      const ttl = cache.ttl_seconds;
+      if (ttl !== undefined && (typeof ttl !== 'number' || !Number.isInteger(ttl) || ttl < 1)) {
+        errors.push(`${base}.cache.ttl_seconds must be >= 1`);
+      }
+      const max = cache.max_size_mb;
+      if (max !== undefined && (typeof max !== 'number' || !Number.isInteger(max) || max < 1)) {
+        errors.push(`${base}.cache.max_size_mb must be >= 1`);
+      }
+    }
+  }
+
+  if ((value as any).circuit_breaker !== undefined) {
+    if (!isPlainObject((value as any).circuit_breaker)) {
+      errors.push(`${base}.circuit_breaker must be an object`);
+    } else {
+      const cb = (value as any).circuit_breaker as Record<string, unknown>;
+      const f = cb.failure_threshold;
+      if (f !== undefined && (typeof f !== 'number' || !Number.isInteger(f) || f < 1)) {
+        errors.push(`${base}.circuit_breaker.failure_threshold must be >= 1`);
+      }
+      const reset = cb.reset_timeout_ms;
+      if (reset !== undefined && (typeof reset !== 'number' || !Number.isInteger(reset) || reset < 1000)) {
+        errors.push(`${base}.circuit_breaker.reset_timeout_ms must be >= 1000`);
+      }
+      const s = cb.success_threshold;
+      if (s !== undefined && (typeof s !== 'number' || !Number.isInteger(s) || s < 1)) {
+        errors.push(`${base}.circuit_breaker.success_threshold must be >= 1`);
+      }
+    }
+  }
+
+  if ((value as any).retry !== undefined) {
+    if (!isPlainObject((value as any).retry)) {
+      errors.push(`${base}.retry must be an object`);
+    } else {
+      const retry = (value as any).retry as Record<string, unknown>;
+      const mult = retry.multiplier;
+      if (mult !== undefined && (!isFiniteNumber(mult) || mult < 1)) {
+        errors.push(`${base}.retry.multiplier must be >= 1`);
+      }
+      const init = retry.initial_backoff_ms;
+      if (init !== undefined && (typeof init !== 'number' || !Number.isInteger(init) || init < 100)) {
+        errors.push(`${base}.retry.initial_backoff_ms must be >= 100`);
+      }
+      const max = retry.max_backoff_ms;
+      if (max !== undefined && (typeof max !== 'number' || !Number.isInteger(max) || max < 100)) {
+        errors.push(`${base}.retry.max_backoff_ms must be >= 100`);
+      }
+      if (typeof init === 'number' && typeof max === 'number' && max < init) {
+        errors.push(`${base}.retry.max_backoff_ms must be >= initial_backoff_ms`);
+      }
+    }
+  }
+}
+
+function requireString(obj: Record<string, unknown>, field: string, errors: string[]): void {
+  const key = field.split('.').slice(-1)[0] ?? '';
+  const value = obj[key];
+  if (typeof value !== 'string' || value.trim() === '') {
+    errors.push(`${field} missing/invalid required string`);
+  }
+}
+
+function validatePlaceholders(value: unknown, base: string, errors: string[]): void {
+  if (typeof value === 'string') {
+    for (const match of value.matchAll(PLACEHOLDER_RE)) {
+      const raw = match[1] ?? '';
+      const envName = envVarForPlaceholder(raw);
+      if (!envName.ok) {
+        errors.push(`${base}: ${envName.error}`);
+        continue;
+      }
+      if (process.env[envName.value] === undefined) {
+        errors.push(`${base}: missing environment variable ${envName.value}`);
+      }
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      validatePlaceholders(value[i], `${base}[${i}]`, errors);
+    }
+    return;
+  }
+
+  if (isPlainObject(value)) {
+    for (const [k, v] of Object.entries(value)) {
+      validatePlaceholders(v, `${base}.${k}`, errors);
+    }
+  }
+}
+
+function envVarForPlaceholder(raw: string): { ok: true; value: string } | { ok: false; error: string } {
+  if (raw.startsWith('secrets.')) {
+    const name = raw.slice('secrets.'.length);
+    if (!name) {
+      return { ok: false, error: 'placeholder ${secrets.} is invalid' };
+    }
+    return { ok: true, value: name };
+  }
+  if (!raw) {
+    return { ok: false, error: 'placeholder ${} is invalid' };
+  }
+  return { ok: true, value: raw };
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }

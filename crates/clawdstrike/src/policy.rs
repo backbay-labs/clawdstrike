@@ -2,7 +2,7 @@
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use globset::GlobBuilder;
 
@@ -18,7 +18,117 @@ use crate::guards::{
 ///
 /// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
 /// unsupported versions to prevent silent drift.
-pub const POLICY_SCHEMA_VERSION: &str = "1.0.0";
+pub const POLICY_SCHEMA_VERSION: &str = "1.1.0";
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_json_object() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
+/// Policy-driven custom guard configuration (`policy.custom_guards[]`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyCustomGuardSpec {
+    /// Installed guard id (resolved via `CustomGuardRegistry`).
+    pub id: String,
+    /// Enable/disable this custom guard.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Factory configuration (JSON object).
+    #[serde(default = "default_json_object")]
+    pub config: serde_json::Value,
+}
+
+/// Location context for resolving policy `extends`.
+///
+/// This is used by `PolicyResolver` implementations to resolve relative references and enforce
+/// security rules around remote resolution.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PolicyLocation {
+    /// No location context (inline YAML).
+    None,
+    /// A local file path.
+    File(PathBuf),
+    /// A remote URL (without fragment).
+    Url(String),
+    /// A file path within a git repository.
+    Git {
+        repo: String,
+        commit: String,
+        path: String,
+    },
+    /// A built-in ruleset identifier.
+    Ruleset { id: String },
+}
+
+/// A resolved policy source returned by a `PolicyResolver`.
+#[derive(Clone, Debug)]
+pub struct ResolvedPolicySource {
+    /// Canonical key for cycle detection (stable across equivalent references).
+    pub key: String,
+    /// YAML content.
+    pub yaml: String,
+    /// Location context for resolving nested `extends`.
+    pub location: PolicyLocation,
+}
+
+/// Extends resolver interface.
+///
+/// Implementations may resolve local files, built-in rulesets, and/or remote sources.
+pub trait PolicyResolver {
+    fn resolve(&self, reference: &str, from: &PolicyLocation) -> Result<ResolvedPolicySource>;
+}
+
+/// Default resolver that supports only built-in rulesets and local filesystem paths.
+#[derive(Clone, Debug, Default)]
+pub struct LocalPolicyResolver;
+
+impl LocalPolicyResolver {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl PolicyResolver for LocalPolicyResolver {
+    fn resolve(&self, reference: &str, from: &PolicyLocation) -> Result<ResolvedPolicySource> {
+        if let Some((yaml, id)) = RuleSet::yaml_by_name(reference) {
+            return Ok(ResolvedPolicySource {
+                key: format!("ruleset:{}", id),
+                yaml: yaml.to_string(),
+                location: PolicyLocation::Ruleset { id },
+            });
+        }
+
+        let extends_path = match from {
+            PolicyLocation::File(base_path) => base_path
+                .parent()
+                .unwrap_or(base_path.as_path())
+                .join(reference),
+            _ => PathBuf::from(reference),
+        };
+
+        if !extends_path.exists() {
+            return Err(Error::ConfigError(format!(
+                "Unknown ruleset or file not found: {}",
+                reference
+            )));
+        }
+
+        let yaml = std::fs::read_to_string(&extends_path)?;
+        let key = std::fs::canonicalize(&extends_path)
+            .map(|p| format!("file:{}", p.display()))
+            .unwrap_or_else(|_| format!("file:{}", extends_path.display()));
+
+        Ok(ResolvedPolicySource {
+            key,
+            yaml,
+            location: PolicyLocation::File(extends_path),
+        })
+    }
+}
 
 /// Strategy for merging policies when using extends
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +165,9 @@ pub struct Policy {
     /// Guard configurations
     #[serde(default)]
     pub guards: GuardConfigs,
+    /// Policy-driven custom guards (resolved by runtimes via a registry).
+    #[serde(default)]
+    pub custom_guards: Vec<PolicyCustomGuardSpec>,
     /// Global settings
     #[serde(default)]
     pub settings: PolicySettings,
@@ -73,6 +186,7 @@ impl Default for Policy {
             extends: None,
             merge_strategy: MergeStrategy::default(),
             guards: GuardConfigs::default(),
+            custom_guards: Vec::new(),
             settings: PolicySettings::default(),
         }
     }
@@ -103,6 +217,12 @@ pub struct GuardConfigs {
     /// Jailbreak detection guard config
     #[serde(default)]
     pub jailbreak: Option<JailbreakConfig>,
+    /// Custom (plugin-shaped) guards.
+    ///
+    /// Note: for now, only a small reserved set of built-in packages is supported. Unknown
+    /// packages must fail closed.
+    #[serde(default)]
+    pub custom: Vec<CustomGuardSpec>,
 }
 
 impl GuardConfigs {
@@ -145,8 +265,116 @@ impl GuardConfigs {
                 .clone()
                 .or_else(|| self.prompt_injection.clone()),
             jailbreak: child.jailbreak.clone().or_else(|| self.jailbreak.clone()),
+            custom: if !child.custom.is_empty() {
+                child.custom.clone()
+            } else {
+                self.custom.clone()
+            },
         }
     }
+}
+
+fn default_custom_guard_enabled() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeoutBehavior {
+    Allow,
+    Deny,
+    Warn,
+    Defer,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AsyncExecutionMode {
+    Parallel,
+    Sequential,
+    Background,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncCachePolicyConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size_mb: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncRateLimitPolicyConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests_per_second: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests_per_minute: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub burst: Option<u32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncCircuitBreakerPolicyConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_threshold: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub success_threshold: Option<u32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncRetryPolicyConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_backoff_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_backoff_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiplier: Option<f64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncGuardPolicyConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_timeout: Option<TimeoutBehavior>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<AsyncExecutionMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache: Option<AsyncCachePolicyConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_limit: Option<AsyncRateLimitPolicyConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub circuit_breaker: Option<AsyncCircuitBreakerPolicyConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<AsyncRetryPolicyConfig>,
+}
+
+/// A plugin-shaped guard reference in policy (`guards.custom[]`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomGuardSpec {
+    pub package: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default = "default_custom_guard_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub config: serde_json::Value,
+    #[serde(default, rename = "async", skip_serializing_if = "Option::is_none")]
+    pub async_config: Option<AsyncGuardPolicyConfig>,
 }
 
 /// Global policy settings
@@ -196,9 +424,13 @@ impl Policy {
 
     /// Parse from YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self> {
-        let policy: Self = serde_yaml::from_str(yaml)?;
+        let policy = Self::from_yaml_unvalidated(yaml)?;
         policy.validate()?;
         Ok(policy)
+    }
+
+    fn from_yaml_unvalidated(yaml: &str) -> Result<Self> {
+        Ok(serde_yaml::from_str(yaml)?)
     }
 
     /// Export to YAML string
@@ -214,11 +446,45 @@ impl Policy {
 
         let mut errors: Vec<PolicyFieldError> = Vec::new();
 
+        if !self.custom_guards.is_empty() {
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for (idx, cg) in self.custom_guards.iter().enumerate() {
+                if cg.id.trim().is_empty() {
+                    errors.push(PolicyFieldError::new(
+                        format!("custom_guards[{}].id", idx),
+                        "id must be non-empty".to_string(),
+                    ));
+                }
+                if !seen.insert(cg.id.as_str()) {
+                    errors.push(PolicyFieldError::new(
+                        format!("custom_guards[{}].id", idx),
+                        format!("duplicate custom guard id: {}", cg.id),
+                    ));
+                }
+                if !cg.config.is_object() {
+                    errors.push(PolicyFieldError::new(
+                        format!("custom_guards[{}].config", idx),
+                        "config must be a JSON object".to_string(),
+                    ));
+                }
+            }
+        }
+
         if let Some(cfg) = &self.guards.forbidden_path {
             if let Some(patterns) = cfg.patterns.as_ref() {
                 validate_globs(&mut errors, "guards.forbidden_path.patterns", patterns);
+                validate_placeholders_in_strings(
+                    &mut errors,
+                    "guards.forbidden_path.patterns",
+                    patterns,
+                );
             }
             validate_globs(
+                &mut errors,
+                "guards.forbidden_path.exceptions",
+                &cfg.exceptions,
+            );
+            validate_placeholders_in_strings(
                 &mut errors,
                 "guards.forbidden_path.exceptions",
                 &cfg.exceptions,
@@ -228,7 +494,17 @@ impl Policy {
                 "guards.forbidden_path.additional_patterns",
                 &cfg.additional_patterns,
             );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.forbidden_path.additional_patterns",
+                &cfg.additional_patterns,
+            );
             validate_globs(
+                &mut errors,
+                "guards.forbidden_path.remove_patterns",
+                &cfg.remove_patterns,
+            );
+            validate_placeholders_in_strings(
                 &mut errors,
                 "guards.forbidden_path.remove_patterns",
                 &cfg.remove_patterns,
@@ -258,10 +534,52 @@ impl Policy {
                 "guards.egress_allowlist.remove_block",
                 &cfg.remove_block,
             );
+
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.egress_allowlist.allow",
+                &cfg.allow,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.egress_allowlist.block",
+                &cfg.block,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.egress_allowlist.additional_allow",
+                &cfg.additional_allow,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.egress_allowlist.additional_block",
+                &cfg.additional_block,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.egress_allowlist.remove_allow",
+                &cfg.remove_allow,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.egress_allowlist.remove_block",
+                &cfg.remove_block,
+            );
         }
 
         if let Some(cfg) = &self.guards.secret_leak {
             for (idx, p) in cfg.patterns.iter().enumerate() {
+                validate_placeholders_in_string(
+                    &mut errors,
+                    &format!("guards.secret_leak.patterns[{}].name", idx),
+                    &p.name,
+                );
+                validate_placeholders_in_string(
+                    &mut errors,
+                    &format!("guards.secret_leak.patterns[{}].pattern", idx),
+                    &p.pattern,
+                );
+
                 if let Err(e) = Regex::new(&p.pattern) {
                     errors.push(PolicyFieldError::new(
                         format!("guards.secret_leak.patterns[{}].pattern", idx),
@@ -270,6 +588,11 @@ impl Policy {
                 }
             }
             validate_globs(
+                &mut errors,
+                "guards.secret_leak.skip_paths",
+                &cfg.skip_paths,
+            );
+            validate_placeholders_in_strings(
                 &mut errors,
                 "guards.secret_leak.skip_paths",
                 &cfg.skip_paths,
@@ -284,6 +607,11 @@ impl Policy {
                         format!("invalid regex: {}", e),
                     ));
                 }
+                validate_placeholders_in_string(
+                    &mut errors,
+                    &format!("guards.patch_integrity.forbidden_patterns[{}]", idx),
+                    pattern,
+                );
             }
         }
 
@@ -300,6 +628,10 @@ impl Policy {
                     "warn_at_or_above must be <= block_at_or_above".to_string(),
                 ));
             }
+        }
+
+        if !self.guards.custom.is_empty() {
+            validate_custom_guards(&mut errors, &self.guards.custom);
         }
 
         if errors.is_empty() {
@@ -360,6 +692,11 @@ impl Policy {
                 } else {
                     self.guards.clone()
                 },
+                custom_guards: if !child.custom_guards.is_empty() {
+                    child.custom_guards.clone()
+                } else {
+                    self.custom_guards.clone()
+                },
                 settings: if child.settings != PolicySettings::default() {
                     child.settings.clone()
                 } else {
@@ -385,6 +722,7 @@ impl Policy {
                 extends: None,
                 merge_strategy: MergeStrategy::default(),
                 guards: self.guards.merge_with(&child.guards),
+                custom_guards: merge_custom_guards(&self.custom_guards, &child.custom_guards),
                 settings: PolicySettings {
                     fail_fast: child.settings.fail_fast.or(self.settings.fail_fast),
                     verbose_logging: child
@@ -405,56 +743,63 @@ impl Policy {
     /// If the policy has an `extends` field, loads the base and merges.
     /// Detects circular dependencies.
     pub fn from_yaml_with_extends(yaml: &str, base_path: Option<&Path>) -> Result<Self> {
-        Self::from_yaml_with_extends_internal(
+        let resolver = LocalPolicyResolver::new();
+        Self::from_yaml_with_extends_resolver(yaml, base_path, &resolver)
+    }
+
+    /// Load from YAML string with extends resolution using a custom resolver.
+    ///
+    /// This allows callers to support remote `extends` while keeping the default path
+    /// filesystem-only.
+    pub fn from_yaml_with_extends_resolver(
+        yaml: &str,
+        base_path: Option<&Path>,
+        resolver: &impl PolicyResolver,
+    ) -> Result<Self> {
+        let location = base_path
+            .map(|p| PolicyLocation::File(p.to_path_buf()))
+            .unwrap_or(PolicyLocation::None);
+
+        Self::from_yaml_with_extends_internal_resolver(
             yaml,
-            base_path,
+            location,
+            resolver,
             &mut std::collections::HashSet::new(),
         )
     }
 
-    fn from_yaml_with_extends_internal(
+    fn from_yaml_with_extends_internal_resolver(
         yaml: &str,
-        base_path: Option<&Path>,
+        location: PolicyLocation,
+        resolver: &impl PolicyResolver,
         visited: &mut std::collections::HashSet<String>,
     ) -> Result<Self> {
-        let child = Policy::from_yaml(yaml)?;
+        let child = Policy::from_yaml_unvalidated(yaml)?;
 
         if let Some(ref extends) = child.extends {
+            let resolved = resolver.resolve(extends, &location)?;
+
             // Check for circular dependency
-            if visited.contains(extends) {
+            if visited.contains(&resolved.key) {
                 return Err(Error::ConfigError(format!(
                     "Circular policy extension detected: {}",
                     extends
                 )));
             }
-            visited.insert(extends.clone());
+            visited.insert(resolved.key);
 
-            // Resolve base policy
-            let base = if let Some(ruleset) = RuleSet::by_name(extends)? {
-                ruleset.policy
-            } else {
-                // Try as file path, relative to base_path if provided
-                let extends_path = if let Some(bp) = base_path {
-                    bp.parent().unwrap_or(bp).join(extends)
-                } else {
-                    std::path::PathBuf::from(extends)
-                };
-
-                if !extends_path.exists() {
-                    return Err(Error::ConfigError(format!(
-                        "Unknown ruleset or file not found: {}",
-                        extends
-                    )));
-                }
-
-                let base_yaml = std::fs::read_to_string(&extends_path)?;
-                Self::from_yaml_with_extends_internal(&base_yaml, Some(&extends_path), visited)?
-            };
+            let base = Self::from_yaml_with_extends_internal_resolver(
+                &resolved.yaml,
+                resolved.location,
+                resolver,
+                visited,
+            )?;
 
             let merged = base.merge(&child);
             merged.validate()?;
             Ok(merged)
         } else {
+            child.validate()?;
             Ok(child)
         }
     }
@@ -513,6 +858,35 @@ impl Policy {
                 .unwrap_or_default(),
         }
     }
+}
+
+fn merge_custom_guards(
+    base: &[PolicyCustomGuardSpec],
+    child: &[PolicyCustomGuardSpec],
+) -> Vec<PolicyCustomGuardSpec> {
+    if child.is_empty() {
+        return base.to_vec();
+    }
+    if base.is_empty() {
+        return child.to_vec();
+    }
+
+    let mut out: Vec<PolicyCustomGuardSpec> = base.to_vec();
+    let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, cg) in out.iter().enumerate() {
+        index.insert(cg.id.clone(), i);
+    }
+
+    for cg in child {
+        if let Some(i) = index.get(&cg.id).copied() {
+            out[i] = cg.clone();
+        } else {
+            index.insert(cg.id.clone(), out.len());
+            out.push(cg.clone());
+        }
+    }
+
+    out
 }
 
 fn validate_policy_version(version: &str) -> Result<()> {
@@ -583,6 +957,295 @@ fn validate_domain_globs(errors: &mut Vec<PolicyFieldError>, field: &str, patter
     }
 }
 
+fn env_var_for_placeholder(raw: &str) -> std::result::Result<String, String> {
+    if let Some(rest) = raw.strip_prefix("secrets.") {
+        if rest.is_empty() {
+            return Err("placeholder ${secrets.} is invalid".to_string());
+        }
+        return Ok(rest.to_string());
+    }
+
+    if raw.is_empty() {
+        return Err("placeholder ${} is invalid".to_string());
+    }
+
+    Ok(raw.to_string())
+}
+
+fn validate_placeholders_in_string(errors: &mut Vec<PolicyFieldError>, field: &str, value: &str) {
+    let mut i = 0usize;
+    while let Some(start_rel) = value[i..].find("${") {
+        let start = i + start_rel;
+        let after = start + 2;
+
+        let Some(end_rel) = value[after..].find('}') else {
+            break;
+        };
+        let end = after + end_rel;
+
+        let raw = &value[after..end];
+        let env_name = match env_var_for_placeholder(raw) {
+            Ok(v) => v,
+            Err(msg) => {
+                errors.push(PolicyFieldError::new(field, msg));
+                i = end + 1;
+                continue;
+            }
+        };
+
+        if std::env::var(&env_name).is_err() {
+            errors.push(PolicyFieldError::new(
+                field,
+                format!("missing environment variable {}", env_name),
+            ));
+        }
+
+        i = end + 1;
+    }
+}
+
+fn validate_placeholders_in_strings(
+    errors: &mut Vec<PolicyFieldError>,
+    field: &str,
+    values: &[String],
+) {
+    for (idx, v) in values.iter().enumerate() {
+        validate_placeholders_in_string(errors, &format!("{}[{}]", field, idx), v);
+    }
+}
+
+fn validate_placeholders_in_json(
+    errors: &mut Vec<PolicyFieldError>,
+    field: &str,
+    value: &serde_json::Value,
+) {
+    match value {
+        serde_json::Value::String(s) => validate_placeholders_in_string(errors, field, s),
+        serde_json::Value::Array(items) => {
+            for (idx, v) in items.iter().enumerate() {
+                validate_placeholders_in_json(errors, &format!("{}[{}]", field, idx), v);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                validate_placeholders_in_json(errors, &format!("{}.{}", field, k), v);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn validate_custom_guards(errors: &mut Vec<PolicyFieldError>, guards: &[CustomGuardSpec]) {
+    for (idx, spec) in guards.iter().enumerate() {
+        let base = format!("guards.custom[{}]", idx);
+
+        validate_placeholders_in_string(errors, &format!("{base}.package"), &spec.package);
+        if let Some(v) = spec.version.as_ref() {
+            validate_placeholders_in_string(errors, &format!("{base}.version"), v);
+        }
+        if let Some(r) = spec.registry.as_ref() {
+            validate_placeholders_in_string(errors, &format!("{base}.registry"), r);
+        }
+
+        validate_placeholders_in_json(errors, &format!("{base}.config"), &spec.config);
+
+        if let Some(async_cfg) = spec.async_config.as_ref() {
+            validate_async_policy_config(errors, &format!("{base}.async"), async_cfg);
+        }
+
+        if !spec.enabled {
+            continue;
+        }
+
+        match spec.package.as_str() {
+            "clawdstrike-virustotal" => validate_virustotal_spec(errors, &base, &spec.config),
+            "clawdstrike-safe-browsing" => validate_safe_browsing_spec(errors, &base, &spec.config),
+            "clawdstrike-snyk" => validate_snyk_spec(errors, &base, &spec.config),
+            other => errors.push(PolicyFieldError::new(
+                format!("{base}.package"),
+                format!("unsupported custom guard package: {}", other),
+            )),
+        }
+    }
+}
+
+fn validate_async_policy_config(
+    errors: &mut Vec<PolicyFieldError>,
+    base: &str,
+    cfg: &AsyncGuardPolicyConfig,
+) {
+    if let Some(timeout_ms) = cfg.timeout_ms {
+        if !(100..=300_000).contains(&timeout_ms) {
+            errors.push(PolicyFieldError::new(
+                format!("{}.timeout_ms", base),
+                "timeout_ms must be between 100 and 300000".to_string(),
+            ));
+        }
+    }
+
+    if let Some(cache) = cfg.cache.as_ref() {
+        if let Some(ttl) = cache.ttl_seconds {
+            if ttl == 0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.cache.ttl_seconds", base),
+                    "ttl_seconds must be >= 1".to_string(),
+                ));
+            }
+        }
+        if let Some(max) = cache.max_size_mb {
+            if max == 0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.cache.max_size_mb", base),
+                    "max_size_mb must be >= 1".to_string(),
+                ));
+            }
+        }
+    }
+
+    if let Some(rl) = cfg.rate_limit.as_ref() {
+        if let Some(rps) = rl.requests_per_second {
+            if rps <= 0.0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.rate_limit.requests_per_second", base),
+                    "requests_per_second must be > 0".to_string(),
+                ));
+            }
+        }
+        if let Some(rpm) = rl.requests_per_minute {
+            if rpm <= 0.0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.rate_limit.requests_per_minute", base),
+                    "requests_per_minute must be > 0".to_string(),
+                ));
+            }
+        }
+        if rl.requests_per_second.is_some() && rl.requests_per_minute.is_some() {
+            errors.push(PolicyFieldError::new(
+                format!("{}.rate_limit", base),
+                "specify only one of requests_per_second or requests_per_minute".to_string(),
+            ));
+        }
+        if let Some(burst) = rl.burst {
+            if burst == 0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.rate_limit.burst", base),
+                    "burst must be >= 1".to_string(),
+                ));
+            }
+        }
+    }
+
+    if let Some(cb) = cfg.circuit_breaker.as_ref() {
+        if let Some(thr) = cb.failure_threshold {
+            if thr == 0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.circuit_breaker.failure_threshold", base),
+                    "failure_threshold must be >= 1".to_string(),
+                ));
+            }
+        }
+        if let Some(ms) = cb.reset_timeout_ms {
+            if ms < 1000 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.circuit_breaker.reset_timeout_ms", base),
+                    "reset_timeout_ms must be >= 1000".to_string(),
+                ));
+            }
+        }
+        if let Some(thr) = cb.success_threshold {
+            if thr == 0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.circuit_breaker.success_threshold", base),
+                    "success_threshold must be >= 1".to_string(),
+                ));
+            }
+        }
+    }
+
+    if let Some(retry) = cfg.retry.as_ref() {
+        if let Some(mult) = retry.multiplier {
+            if mult < 1.0 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.retry.multiplier", base),
+                    "multiplier must be >= 1".to_string(),
+                ));
+            }
+        }
+        if let Some(ms) = retry.initial_backoff_ms {
+            if ms < 100 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.retry.initial_backoff_ms", base),
+                    "initial_backoff_ms must be >= 100".to_string(),
+                ));
+            }
+        }
+        if let Some(ms) = retry.max_backoff_ms {
+            if ms < 100 {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.retry.max_backoff_ms", base),
+                    "max_backoff_ms must be >= 100".to_string(),
+                ));
+            }
+        }
+        if let (Some(init), Some(max)) = (retry.initial_backoff_ms, retry.max_backoff_ms) {
+            if max < init {
+                errors.push(PolicyFieldError::new(
+                    format!("{}.retry.max_backoff_ms", base),
+                    "max_backoff_ms must be >= initial_backoff_ms".to_string(),
+                ));
+            }
+        }
+    }
+}
+
+fn require_config_string(
+    errors: &mut Vec<PolicyFieldError>,
+    base: &str,
+    config: &serde_json::Value,
+    key: &str,
+) -> Option<String> {
+    let serde_json::Value::Object(map) = config else {
+        errors.push(PolicyFieldError::new(
+            format!("{base}.config"),
+            "config must be an object".to_string(),
+        ));
+        return None;
+    };
+
+    match map.get(key) {
+        Some(serde_json::Value::String(s)) if !s.trim().is_empty() => Some(s.clone()),
+        _ => {
+            errors.push(PolicyFieldError::new(
+                format!("{base}.config.{key}"),
+                "missing/invalid required string".to_string(),
+            ));
+            None
+        }
+    }
+}
+
+fn validate_virustotal_spec(
+    errors: &mut Vec<PolicyFieldError>,
+    base: &str,
+    config: &serde_json::Value,
+) {
+    let _ = require_config_string(errors, base, config, "api_key");
+}
+
+fn validate_safe_browsing_spec(
+    errors: &mut Vec<PolicyFieldError>,
+    base: &str,
+    config: &serde_json::Value,
+) {
+    let _ = require_config_string(errors, base, config, "api_key");
+    let _ = require_config_string(errors, base, config, "client_id");
+}
+
+fn validate_snyk_spec(errors: &mut Vec<PolicyFieldError>, base: &str, config: &serde_json::Value) {
+    let _ = require_config_string(errors, base, config, "api_token");
+    let _ = require_config_string(errors, base, config, "org_id");
+}
+
 /// Guards instantiated from a policy
 pub(crate) struct PolicyGuards {
     pub forbidden_path: ForbiddenPathGuard,
@@ -624,7 +1287,7 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    pub fn by_name(name: &str) -> Result<Option<Self>> {
+    pub fn yaml_by_name(name: &str) -> Option<(&'static str, String)> {
         let id = name.strip_prefix("clawdstrike:").unwrap_or(name);
 
         let yaml = match id {
@@ -634,15 +1297,19 @@ impl RuleSet {
             "cicd" => Some(include_str!("../../../rulesets/cicd.yaml")),
             "permissive" => Some(include_str!("../../../rulesets/permissive.yaml")),
             _ => None,
-        };
+        }?;
 
-        let Some(yaml) = yaml else {
+        Some((yaml, id.to_string()))
+    }
+
+    pub fn by_name(name: &str) -> Result<Option<Self>> {
+        let Some((yaml, id)) = Self::yaml_by_name(name) else {
             return Ok(None);
         };
 
         let policy = Policy::from_yaml_with_extends(yaml, None)?;
         Ok(Some(Self {
-            id: id.to_string(),
+            id,
             name: policy.name.clone(),
             description: policy.description.clone(),
             policy,
@@ -663,7 +1330,7 @@ mod tests {
     #[test]
     fn test_default_policy() {
         let policy = Policy::new();
-        assert_eq!(policy.version, "1.0.0");
+        assert_eq!(policy.version, "1.1.0");
     }
 
     #[test]
@@ -677,7 +1344,7 @@ mod tests {
     #[test]
     fn test_policy_validation_rejects_invalid_glob() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 guards:
   forbidden_path:
@@ -701,7 +1368,7 @@ guards:
     #[test]
     fn test_policy_validation_rejects_invalid_domain_glob() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 guards:
   egress_allowlist:
@@ -725,7 +1392,7 @@ guards:
     #[test]
     fn test_policy_validation_rejects_invalid_regex() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 guards:
   secret_leak:
@@ -864,7 +1531,7 @@ name: Test
     #[test]
     fn test_merge_strategy_default() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 "#;
         let policy = Policy::from_yaml(yaml).unwrap();
@@ -874,7 +1541,7 @@ name: Test
     #[test]
     fn test_merge_strategy_parse() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 merge_strategy: replace
 "#;
@@ -885,7 +1552,7 @@ merge_strategy: replace
     #[test]
     fn test_extends_field_parse() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 extends: strict
 "#;
@@ -896,7 +1563,7 @@ extends: strict
     #[test]
     fn test_extends_field_none_by_default() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 "#;
         let policy = Policy::from_yaml(yaml).unwrap();
@@ -1001,7 +1668,7 @@ name: Test
     #[test]
     fn test_policy_extends_builtin() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: CustomStrict
 extends: strict
 settings:
@@ -1021,7 +1688,7 @@ settings:
     fn test_policy_extends_with_additional_patterns() {
         // Test adding patterns via additional_patterns
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: CustomDefault
 extends: default
 guards:

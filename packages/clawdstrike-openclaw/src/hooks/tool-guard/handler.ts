@@ -221,9 +221,14 @@ function createEventData(
     case 'file_read':
     case 'file_write': {
       const path = extractPath(params);
+      const contentHash = typeof params.contentHash === 'string' ? params.contentHash : undefined;
+      const { content, contentBase64 } = extractFileContent(params, result, eventType);
       return {
         type: 'file',
         path: path ?? '',
+        content,
+        contentBase64,
+        contentHash,
         operation: eventType === 'file_read' ? 'read' : 'write',
       } as FileEventData;
     }
@@ -293,6 +298,37 @@ function extractPath(params: Record<string, unknown>): string | undefined {
   }
 
   return undefined;
+}
+
+function extractFileContent(
+  params: Record<string, unknown>,
+  result: unknown,
+  eventType: PolicyEvent['eventType'],
+): { content?: string; contentBase64?: string } {
+  const maxChars = 2_000_000; // Best-effort cap: avoid huge payloads.
+
+  const contentBase64 =
+    typeof params.contentBase64 === 'string'
+      ? params.contentBase64
+      : typeof params.base64 === 'string'
+        ? params.base64
+        : undefined;
+
+  if (contentBase64) {
+    return { contentBase64: contentBase64.length > maxChars ? contentBase64.slice(0, maxChars) : contentBase64 };
+  }
+
+  const content =
+    typeof params.content === 'string'
+      ? params.content
+      : typeof params.text === 'string'
+        ? params.text
+        : eventType === 'file_read' && typeof result === 'string'
+          ? result
+          : undefined;
+
+  if (!content) return {};
+  return { content: content.length > maxChars ? content.slice(0, maxChars) : content };
 }
 
 /**

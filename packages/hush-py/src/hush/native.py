@@ -18,6 +18,11 @@ verify_receipt_native: Optional[Callable[[str, str, str], bool]] = None
 verify_ed25519_native: Optional[Callable[[bytes, bytes, bytes], bool]] = None
 generate_merkle_proof_native: Optional[Callable[[List[bytes], int], Tuple[int, int, List[str]]]] = None
 canonicalize_native: Optional[Callable[[str], str]] = None
+detect_jailbreak_native: Optional[Callable[..., dict]] = None
+sanitize_output_native: Optional[Callable[..., dict]] = None
+watermark_public_key_native: Optional[Callable[[str], str]] = None
+watermark_prompt_native: Optional[Callable[..., dict]] = None
+extract_watermark_native: Optional[Callable[..., dict]] = None
 
 try:
     from hush_native import (
@@ -58,6 +63,36 @@ try:
     except ImportError:
         pass
 
+    try:
+        from hush_native import detect_jailbreak_native as _detect_jailbreak_native
+        detect_jailbreak_native = _detect_jailbreak_native
+    except ImportError:
+        pass
+
+    try:
+        from hush_native import sanitize_output_native as _sanitize_output_native
+        sanitize_output_native = _sanitize_output_native
+    except ImportError:
+        pass
+
+    try:
+        from hush_native import watermark_public_key_native as _watermark_public_key_native
+        watermark_public_key_native = _watermark_public_key_native
+    except ImportError:
+        pass
+
+    try:
+        from hush_native import watermark_prompt_native as _watermark_prompt_native
+        watermark_prompt_native = _watermark_prompt_native
+    except ImportError:
+        pass
+
+    try:
+        from hush_native import extract_watermark_native as _extract_watermark_native
+        extract_watermark_native = _extract_watermark_native
+    except ImportError:
+        pass
+
 except ImportError:
     pass
 
@@ -72,4 +107,9 @@ __all__ = [
     "verify_ed25519_native",
     "generate_merkle_proof_native",
     "canonicalize_native",
+    "detect_jailbreak_native",
+    "sanitize_output_native",
+    "watermark_public_key_native",
+    "watermark_prompt_native",
+    "extract_watermark_native",
 ]

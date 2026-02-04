@@ -1,0 +1,25 @@
+# hushd collector for the EDR pipeline example
+
+services:
+  hushd:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.hushd
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/hushd/config.yaml:ro
+      - ./policy.yaml:/etc/hushd/policy.yaml:ro
+      - hushd-data:/var/lib/hushd
+    environment:
+      - HUSHD_API_KEY=${HUSHD_API_KEY:-changeme}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  hushd-data:
+

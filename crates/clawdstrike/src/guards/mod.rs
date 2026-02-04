@@ -21,6 +21,7 @@
 //! # })
 //! ```
 
+mod custom;
 mod egress_allowlist;
 mod forbidden_path;
 mod jailbreak;
@@ -29,6 +30,7 @@ mod patch_integrity;
 mod prompt_injection;
 mod secret_leak;
 
+pub use custom::{CustomGuardFactory, CustomGuardRegistry};
 pub use egress_allowlist::{EgressAllowlistConfig, EgressAllowlistGuard};
 pub use forbidden_path::{ForbiddenPathConfig, ForbiddenPathGuard};
 pub use jailbreak::{JailbreakConfig, JailbreakGuard};
@@ -39,6 +41,8 @@ pub use secret_leak::{SecretLeakConfig, SecretLeakGuard};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+use crate::identity::{IdentityPrincipal, OrganizationContext, RequestContext, SessionContext};
 
 /// Severity level for violations
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,6 +127,18 @@ pub struct GuardContext {
     pub agent_id: Option<String>,
     /// Additional context
     pub metadata: Option<serde_json::Value>,
+    /// Authenticated identity principal
+    pub identity: Option<IdentityPrincipal>,
+    /// Organization context
+    pub organization: Option<OrganizationContext>,
+    /// Request context
+    pub request: Option<RequestContext>,
+    /// Effective roles
+    pub roles: Option<Vec<String>>,
+    /// Effective permissions
+    pub permissions: Option<Vec<String>>,
+    /// Session context snapshot (control-plane view)
+    pub session: Option<SessionContext>,
 }
 
 impl GuardContext {
@@ -146,6 +162,42 @@ impl GuardContext {
     /// Set the agent ID
     pub fn with_agent_id(mut self, id: impl Into<String>) -> Self {
         self.agent_id = Some(id.into());
+        self
+    }
+
+    /// Set the identity principal.
+    pub fn with_identity(mut self, identity: IdentityPrincipal) -> Self {
+        self.identity = Some(identity);
+        self
+    }
+
+    /// Set the organization context.
+    pub fn with_organization(mut self, organization: OrganizationContext) -> Self {
+        self.organization = Some(organization);
+        self
+    }
+
+    /// Set the request context.
+    pub fn with_request(mut self, request: RequestContext) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    /// Set effective roles.
+    pub fn with_roles(mut self, roles: Vec<String>) -> Self {
+        self.roles = Some(roles);
+        self
+    }
+
+    /// Set effective permissions.
+    pub fn with_permissions(mut self, permissions: Vec<String>) -> Self {
+        self.permissions = Some(permissions);
+        self
+    }
+
+    /// Set the session context snapshot.
+    pub fn with_session(mut self, session: SessionContext) -> Self {
+        self.session = Some(session);
         self
     }
 }

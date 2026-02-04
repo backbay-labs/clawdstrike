@@ -8,8 +8,9 @@ use hush_core::receipt::{Provenance, Verdict, ViolationRef};
 use hush_core::{sha256, Hash, Keypair, Receipt, SignedReceipt};
 use serde::{Deserialize, Serialize};
 
+use crate::async_guards::{AsyncGuard, AsyncGuardRuntime};
 use crate::error::{Error, Result};
-use crate::guards::{Guard, GuardAction, GuardContext, GuardResult, Severity};
+use crate::guards::{CustomGuardRegistry, Guard, GuardAction, GuardContext, GuardResult, Severity};
 use crate::policy::{Policy, PolicyGuards, RuleSet};
 
 /// Per-guard evidence + an aggregated verdict.
@@ -26,12 +27,22 @@ pub struct HushEngine {
     policy: Policy,
     /// Instantiated guards
     guards: PolicyGuards,
+    /// Policy-driven custom guards (evaluated after built-ins)
+    custom_guards: Vec<Box<dyn Guard>>,
     /// Additional guards appended at runtime (evaluated after built-ins)
     extra_guards: Vec<Box<dyn Guard>>,
     /// Signing keypair (optional)
     keypair: Option<Keypair>,
     /// Session state
     state: Arc<RwLock<EngineState>>,
+    /// Sticky configuration error (fail-closed).
+    config_error: Option<String>,
+    /// Async guard runtime
+    async_runtime: Arc<AsyncGuardRuntime>,
+    /// Async guards instantiated from policy
+    async_guards: Vec<Arc<dyn AsyncGuard>>,
+    /// Async guard initialization error (fail closed)
+    async_guard_init_error: Option<String>,
 }
 
 /// Engine session state
@@ -51,15 +62,40 @@ impl HushEngine {
         Self::with_policy(Policy::default())
     }
 
+    pub fn builder(policy: Policy) -> HushEngineBuilder {
+        HushEngineBuilder {
+            policy,
+            custom_guard_registry: None,
+            keypair: None,
+        }
+    }
+
     /// Create with a specific policy
     pub fn with_policy(policy: Policy) -> Self {
         let guards = policy.create_guards();
+        let async_runtime = Arc::new(AsyncGuardRuntime::new());
+        let (async_guards, async_guard_init_error) =
+            match crate::async_guards::registry::build_async_guards(&policy) {
+                Ok(v) => (v, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            };
+
+        let (custom_guards, config_error) = match build_custom_guards_from_policy(&policy, None) {
+            Ok(v) => (v, None),
+            Err(e) => (Vec::new(), Some(e.to_string())),
+        };
+
         Self {
             policy,
             guards,
+            custom_guards,
             extra_guards: Vec::new(),
             keypair: None,
             state: Arc::new(RwLock::new(EngineState::default())),
+            config_error,
+            async_runtime,
+            async_guards,
+            async_guard_init_error,
         }
     }
 
@@ -240,11 +276,21 @@ impl HushEngine {
         action: &GuardAction<'_>,
         context: &GuardContext,
     ) -> Result<GuardReport> {
+        if let Some(msg) = self.config_error.as_ref() {
+            return Err(Error::ConfigError(msg.clone()));
+        }
+        if let Some(msg) = self.async_guard_init_error.as_ref() {
+            return Err(Error::ConfigError(msg.clone()));
+        }
+
         let builtins = self.guards.builtin_guards_in_order();
         let mut per_guard: Vec<GuardResult> =
-            Vec::with_capacity(builtins.len() + self.extra_guards.len());
+            Vec::with_capacity(builtins.len() + self.custom_guards.len() + self.extra_guards.len());
 
-        for guard in builtins.chain(self.extra_guards.iter().map(|g| g.as_ref())) {
+        for guard in builtins
+            .chain(self.custom_guards.iter().map(|g| g.as_ref()))
+            .chain(self.extra_guards.iter().map(|g| g.as_ref()))
+        {
             if !guard.handles(action) {
                 continue;
             }
@@ -283,6 +329,55 @@ impl HushEngine {
                 && per_guard.last().is_some_and(|r| !r.allowed)
             {
                 break;
+            }
+        }
+
+        // If we've already denied locally, don't run async guards (avoids unnecessary network calls).
+        if per_guard.iter().all(|r| r.allowed) && !self.async_guards.is_empty() {
+            let async_results = self
+                .async_runtime
+                .evaluate_async_guards(
+                    &self.async_guards,
+                    action,
+                    context,
+                    self.policy.settings.effective_fail_fast(),
+                )
+                .await;
+
+            for result in async_results {
+                if self.policy.settings.effective_verbose_logging() {
+                    debug!(
+                        guard = result.guard,
+                        allowed = result.allowed,
+                        severity = ?result.severity,
+                        "Guard check completed"
+                    );
+                }
+
+                if !result.allowed {
+                    let mut state = self.state.write().await;
+                    state.violation_count += 1;
+                    state.violations.push(ViolationRef {
+                        guard: result.guard.clone(),
+                        severity: format!("{:?}", result.severity),
+                        message: result.message.clone(),
+                        action: None,
+                    });
+
+                    warn!(
+                        guard = result.guard,
+                        message = result.message,
+                        "Security violation detected"
+                    );
+                }
+
+                per_guard.push(result);
+
+                if self.policy.settings.effective_fail_fast()
+                    && per_guard.last().is_some_and(|r| !r.allowed)
+                {
+                    break;
+                }
             }
         }
 
@@ -355,6 +450,79 @@ impl HushEngine {
         *state = EngineState::default();
         info!("Engine state reset");
     }
+}
+
+pub struct HushEngineBuilder {
+    policy: Policy,
+    custom_guard_registry: Option<CustomGuardRegistry>,
+    keypair: Option<Keypair>,
+}
+
+impl HushEngineBuilder {
+    pub fn with_custom_guard_registry(mut self, registry: CustomGuardRegistry) -> Self {
+        self.custom_guard_registry = Some(registry);
+        self
+    }
+
+    pub fn with_keypair(mut self, keypair: Keypair) -> Self {
+        self.keypair = Some(keypair);
+        self
+    }
+
+    pub fn with_generated_keypair(mut self) -> Self {
+        self.keypair = Some(Keypair::generate());
+        self
+    }
+
+    pub fn build(self) -> Result<HushEngine> {
+        let guards = self.policy.create_guards();
+        let async_runtime = Arc::new(AsyncGuardRuntime::new());
+        let (async_guards, async_guard_init_error) =
+            match crate::async_guards::registry::build_async_guards(&self.policy) {
+                Ok(v) => (v, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            };
+        let custom_guards =
+            build_custom_guards_from_policy(&self.policy, self.custom_guard_registry.as_ref())?;
+
+        Ok(HushEngine {
+            policy: self.policy,
+            guards,
+            custom_guards,
+            extra_guards: Vec::new(),
+            keypair: self.keypair,
+            state: Arc::new(RwLock::new(EngineState::default())),
+            config_error: None,
+            async_runtime,
+            async_guards,
+            async_guard_init_error,
+        })
+    }
+}
+
+fn build_custom_guards_from_policy(
+    policy: &Policy,
+    registry: Option<&CustomGuardRegistry>,
+) -> Result<Vec<Box<dyn Guard>>> {
+    let mut out: Vec<Box<dyn Guard>> = Vec::new();
+
+    for spec in &policy.custom_guards {
+        if !spec.enabled {
+            continue;
+        }
+
+        let Some(registry) = registry else {
+            return Err(Error::ConfigError(format!(
+                "Policy requires custom guard {} but no CustomGuardRegistry was provided",
+                spec.id
+            )));
+        };
+
+        let guard = registry.build(&spec.id, spec.config.clone())?;
+        out.push(guard);
+    }
+
+    Ok(out)
 }
 
 impl Default for HushEngine {
@@ -692,5 +860,97 @@ mod tests {
 
         engine.reset().await;
         assert_eq!(engine.stats().await.violation_count, 0);
+    }
+
+    struct AlwaysWarnGuard;
+
+    #[async_trait]
+    impl Guard for AlwaysWarnGuard {
+        fn name(&self) -> &str {
+            "acme.always_warn"
+        }
+
+        fn handles(&self, _action: &GuardAction<'_>) -> bool {
+            true
+        }
+
+        async fn check(&self, _action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
+            GuardResult::warn(self.name(), "Policy-driven custom guard warning")
+        }
+    }
+
+    struct AlwaysWarnFactory;
+
+    impl crate::guards::CustomGuardFactory for AlwaysWarnFactory {
+        fn id(&self) -> &str {
+            "acme.always_warn"
+        }
+
+        fn build(&self, _config: serde_json::Value) -> Result<Box<dyn Guard>> {
+            Ok(Box::new(AlwaysWarnGuard))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_policy_custom_guards_run_after_builtins_when_registry_provided() {
+        let yaml = r#"
+version: "1.1.0"
+name: Custom
+custom_guards:
+  - id: "acme.always_warn"
+    enabled: true
+    config: {}
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+
+        let mut registry = CustomGuardRegistry::new();
+        registry.register(AlwaysWarnFactory);
+
+        let engine = HushEngine::builder(policy)
+            .with_custom_guard_registry(registry)
+            .build()
+            .unwrap();
+
+        let context = GuardContext::new();
+        let report = engine
+            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &context)
+            .await
+            .unwrap();
+
+        assert!(report.overall.allowed);
+        assert_eq!(report.overall.severity, Severity::Warning);
+        assert_eq!(
+            report.per_guard.last().map(|r| r.guard.as_str()),
+            Some("acme.always_warn")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_policy_custom_guards_fail_closed_when_registry_missing() {
+        let yaml = r#"
+version: "1.1.0"
+name: Custom
+custom_guards:
+  - id: "acme.always_warn"
+    enabled: true
+    config: {}
+"#;
+        let policy = Policy::from_yaml(yaml).unwrap();
+
+        // Builder should fail closed.
+        let err = match HushEngine::builder(policy.clone()).build() {
+            Ok(_) => panic!("Expected builder to fail without CustomGuardRegistry"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("CustomGuardRegistry"));
+
+        // Legacy constructor should also fail closed at evaluation time.
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new();
+        let err = engine
+            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &context)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("CustomGuardRegistry"));
     }
 }

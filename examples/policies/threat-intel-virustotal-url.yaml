@@ -1,0 +1,23 @@
+# Example: VirusTotal URL reputation checks (canonical policy)
+#
+# Required env:
+#   VT_API_KEY
+version: "1.0.0"
+name: Threat Intel - VirusTotal (URL)
+
+guards:
+  custom:
+    - package: "clawdstrike-virustotal"
+      enabled: true
+      config:
+        api_key: "${VT_API_KEY}"
+        min_detections: 2
+      async:
+        timeout_ms: 3000
+        on_timeout: warn
+        execution_mode: parallel
+        cache:
+          enabled: true
+          ttl_seconds: 3600
+          max_size_mb: 64
+

@@ -25,7 +25,7 @@ hush check --action-type egress --ruleset default api.github.com:443
 ### As a base policy
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: My Policy
 extends: clawdstrike:default
 ```
@@ -41,7 +41,7 @@ hush policy show strict
 Create a policy file that extends a ruleset and adds overrides:
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: My CI Policy
 extends: clawdstrike:cicd
 
@@ -51,7 +51,7 @@ guards:
       - "api.mycompany.com"
 ```
 
-Note: `extends` currently supports built-in ruleset ids and local file paths (resolved relative to the policy file). URL/Git-based `extends` are not implemented.
+Note: `extends` supports built-in ruleset ids, local file paths (resolved relative to the policy file), and pinned remote `https://…#sha256=…` / `git+…#sha256=…` references when enabled via the remote-extends allowlist.
 
 ## Next steps
 

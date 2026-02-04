@@ -9,6 +9,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::audit::{AuditEvent, AuditFilter, ExportFormat};
+use crate::auth::{AuthenticatedActor, Scope};
+use crate::authz::require_api_key_scope_or_user_permission;
+use crate::rbac::{Action, ResourceType};
 use crate::state::AppState;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -50,6 +53,7 @@ pub struct AuditStatsResponse {
 pub async fn query_audit(
     State(state): State<AppState>,
     Query(query): Query<AuditQuery>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let filter = AuditFilter {
         event_type: query.event_type,
@@ -63,6 +67,19 @@ pub async fn query_audit(
 
     // Handle export formats
     if let Some(format_str) = query.format {
+        let required_action = match format_str.to_lowercase().as_str() {
+            "csv" | "jsonl" => Action::Export,
+            _ => Action::Read,
+        };
+
+        require_api_key_scope_or_user_permission(
+            actor.as_ref().map(|e| &e.0),
+            &state.rbac,
+            Scope::Read,
+            ResourceType::AuditLog,
+            required_action,
+        )?;
+
         let format = match format_str.to_lowercase().as_str() {
             "csv" => ExportFormat::Csv,
             "jsonl" => ExportFormat::Jsonl,
@@ -82,6 +99,14 @@ pub async fn query_audit(
 
         return Ok(([(header::CONTENT_TYPE, content_type)], data).into_response());
     }
+
+    require_api_key_scope_or_user_permission(
+        actor.as_ref().map(|e| &e.0),
+        &state.rbac,
+        Scope::Read,
+        ResourceType::AuditLog,
+        Action::Read,
+    )?;
 
     let events = state
         .ledger
@@ -108,7 +133,16 @@ pub async fn query_audit(
 /// GET /api/v1/audit/stats
 pub async fn audit_stats(
     State(state): State<AppState>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
 ) -> Result<Json<AuditStatsResponse>, (StatusCode, String)> {
+    require_api_key_scope_or_user_permission(
+        actor.as_ref().map(|e| &e.0),
+        &state.rbac,
+        Scope::Read,
+        ResourceType::AuditLog,
+        Action::Read,
+    )?;
+
     let total = state
         .ledger
         .count()

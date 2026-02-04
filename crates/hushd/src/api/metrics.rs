@@ -1,55 +1,71 @@
-//! Prometheus-style metrics endpoint
+//! Prometheus metrics endpoint and middleware.
 
-use axum::{extract::State, response::IntoResponse};
+use std::sync::Arc;
 
+use axum::{
+    body::Body,
+    extract::State,
+    http::{header, Request},
+    middleware::Next,
+    response::{IntoResponse, Response},
+};
+
+use crate::metrics::Metrics;
 use crate::state::AppState;
 
 /// GET /metrics
-pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
-    let mut out = String::new();
+pub async fn metrics(State(state): State<AppState>) -> Response {
+    let dropped = state.audit_forwarder.as_ref().map(|f| f.dropped_total());
+    let mut body = state
+        .metrics
+        .render_prometheus(state.uptime_secs(), dropped);
 
-    let audit_count = state.ledger.count().unwrap_or(0) as u64;
-    out.push_str("# TYPE hushd_uptime_seconds gauge\n");
-    out.push_str(&format!("hushd_uptime_seconds {}\n", state.uptime_secs()));
-    out.push_str("# TYPE hushd_audit_count gauge\n");
-    out.push_str(&format!("hushd_audit_count {audit_count}\n"));
-    out.push_str("# TYPE hushd_siem_enabled gauge\n");
-    out.push_str(&format!(
+    // SIEM exporter metrics (best-effort; this endpoint should never fail due to exporter state).
+    body.push_str("# HELP hushd_siem_enabled Whether SIEM export is enabled.\n");
+    body.push_str("# TYPE hushd_siem_enabled gauge\n");
+    body.push_str(&format!(
         "hushd_siem_enabled {}\n",
         if state.config.siem.enabled { 1 } else { 0 }
     ));
 
+    body.push_str("# HELP hushd_siem_exported_total SIEM events exported.\n");
+    body.push_str("# TYPE hushd_siem_exported_total counter\n");
+    body.push_str("# HELP hushd_siem_failed_total SIEM export failures.\n");
+    body.push_str("# TYPE hushd_siem_failed_total counter\n");
+    body.push_str("# HELP hushd_siem_dlq_total SIEM events sent to dead-letter queue.\n");
+    body.push_str("# TYPE hushd_siem_dlq_total counter\n");
+    body.push_str("# HELP hushd_siem_dropped_total SIEM events dropped.\n");
+    body.push_str("# TYPE hushd_siem_dropped_total counter\n");
+    body.push_str("# HELP hushd_siem_queue_depth Current SIEM exporter queue depth.\n");
+    body.push_str("# TYPE hushd_siem_queue_depth gauge\n");
+    body.push_str("# HELP hushd_siem_exporter_running Whether SIEM exporter worker is running.\n");
+    body.push_str("# TYPE hushd_siem_exporter_running gauge\n");
+
     let exporters = state.siem_exporters.read().await.clone();
     for handle in exporters {
         let health = handle.health.read().await.clone();
-        let name = sanitize_label_value(&handle.name);
-        out.push_str("# TYPE hushd_siem_exported_total counter\n");
-        out.push_str(&format!(
+        let name = escape_label_value(&handle.name);
+        body.push_str(&format!(
             "hushd_siem_exported_total{{exporter=\"{}\"}} {}\n",
             name, health.exported_total
         ));
-        out.push_str("# TYPE hushd_siem_failed_total counter\n");
-        out.push_str(&format!(
+        body.push_str(&format!(
             "hushd_siem_failed_total{{exporter=\"{}\"}} {}\n",
             name, health.failed_total
         ));
-        out.push_str("# TYPE hushd_siem_dlq_total counter\n");
-        out.push_str(&format!(
+        body.push_str(&format!(
             "hushd_siem_dlq_total{{exporter=\"{}\"}} {}\n",
             name, health.dlq_total
         ));
-        out.push_str("# TYPE hushd_siem_dropped_total counter\n");
-        out.push_str(&format!(
+        body.push_str(&format!(
             "hushd_siem_dropped_total{{exporter=\"{}\"}} {}\n",
             name, health.dropped_total
         ));
-        out.push_str("# TYPE hushd_siem_queue_depth gauge\n");
-        out.push_str(&format!(
+        body.push_str(&format!(
             "hushd_siem_queue_depth{{exporter=\"{}\"}} {}\n",
             name, health.queue_depth
         ));
-        out.push_str("# TYPE hushd_siem_exporter_running gauge\n");
-        out.push_str(&format!(
+        body.push_str(&format!(
             "hushd_siem_exporter_running{{exporter=\"{}\"}} {}\n",
             name,
             if health.running { 1 } else { 0 }
@@ -57,20 +73,32 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     }
 
     (
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "text/plain; version=0.0.4",
-        )],
-        out,
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        body,
     )
+        .into_response()
 }
 
-fn sanitize_label_value(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| match c {
-            '"' | '\\' => '_',
-            _ => c,
-        })
-        .collect()
+/// Request-level metrics middleware (method/path/status + latency).
+pub async fn metrics_middleware(
+    State(metrics): State<Arc<Metrics>>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let method = req.method().as_str().to_string();
+    let path = req.uri().path().to_string();
+
+    let start = std::time::Instant::now();
+    let resp = next.run(req).await;
+    metrics.observe_http_request(&method, &path, resp.status().as_u16(), start.elapsed());
+    resp
 }
+
+fn escape_label_value(value: &str) -> String {
+    // Prometheus label escaping: backslash, double-quote, and newlines.
+    value
+        .replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('"', "\\\"")
+}
+

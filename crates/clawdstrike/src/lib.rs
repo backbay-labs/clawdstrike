@@ -33,38 +33,45 @@
 //! use clawdstrike::Policy;
 //!
 //! let yaml = r#"
-//! version: "1.0.0"
+//! version: "1.1.0"
 //! name: "example"
 //! settings:
 //!   fail_fast: true
 //! "#;
 //!
 //! let policy = Policy::from_yaml(yaml).unwrap();
-//! assert_eq!(policy.version, "1.0.0");
+//! assert_eq!(policy.version, "1.1.0");
 //! ```
 
+pub mod async_guards;
 pub mod engine;
 pub mod error;
 pub mod guards;
 pub mod hygiene;
+pub mod identity;
 pub mod instruction_hierarchy;
 pub mod irm;
 pub mod jailbreak;
 pub mod output_sanitizer;
 pub mod policy;
+pub mod policy_bundle;
 pub mod watermarking;
 
 pub use engine::{GuardReport, HushEngine};
 pub use error::{Error, Result};
 pub use guards::{
-    EgressAllowlistGuard, ForbiddenPathGuard, Guard, GuardContext, GuardResult, JailbreakConfig,
-    JailbreakGuard, McpToolGuard, PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard,
-    Severity,
+    CustomGuardFactory, CustomGuardRegistry, EgressAllowlistGuard, ForbiddenPathGuard, Guard,
+    GuardContext, GuardResult, JailbreakConfig, JailbreakGuard, McpToolGuard, PatchIntegrityGuard,
+    PromptInjectionGuard, SecretLeakGuard, Severity,
 };
 pub use hygiene::{
     detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,
     FingerprintDeduper, PromptInjectionLevel, PromptInjectionReport, USER_CONTENT_END,
     USER_CONTENT_START,
+};
+pub use identity::{
+    AuthMethod, GeoLocation, IdentityPrincipal, IdentityProvider, OrganizationContext,
+    OrganizationTier, RequestContext, SessionContext, SessionMetadata,
 };
 pub use instruction_hierarchy::{
     ConflictAction, ConflictSeverity, ContentModification, CustomMarkers, EnforcementAction,
@@ -85,6 +92,7 @@ pub use output_sanitizer::{
     StreamingConfig,
 };
 pub use policy::{Policy, RuleSet};
+pub use policy_bundle::{PolicyBundle, SignedPolicyBundle, POLICY_BUNDLE_SCHEMA_VERSION};
 pub use watermarking::{
     EncodedWatermark, PromptWatermarker, WatermarkConfig, WatermarkEncoding, WatermarkError,
     WatermarkExtractionResult, WatermarkExtractor, WatermarkPayload, WatermarkVerifierConfig,

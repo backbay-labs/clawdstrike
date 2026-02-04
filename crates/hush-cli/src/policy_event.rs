@@ -2,7 +2,9 @@ use anyhow::Context as _;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 use clawdstrike::guards::GuardAction;
-use clawdstrike::GuardContext;
+use clawdstrike::{
+    GuardContext, IdentityPrincipal, OrganizationContext, RequestContext, SessionContext,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::canonical_commandline::canonical_shell_commandline;
@@ -14,6 +16,7 @@ pub enum PolicyEventType {
     CommandExec,
     PatchApply,
     ToolCall,
+    SecretAccess,
     Custom,
     Other(String),
 }
@@ -27,6 +30,7 @@ impl PolicyEventType {
             Self::CommandExec => "command_exec",
             Self::PatchApply => "patch_apply",
             Self::ToolCall => "tool_call",
+            Self::SecretAccess => "secret_access",
             Self::Custom => "custom",
             Self::Other(s) => s.as_str(),
         }
@@ -64,6 +68,7 @@ impl Clone for PolicyEventType {
             Self::CommandExec => Self::CommandExec,
             Self::PatchApply => Self::PatchApply,
             Self::ToolCall => Self::ToolCall,
+            Self::SecretAccess => Self::SecretAccess,
             Self::Custom => Self::Custom,
             Self::Other(s) => Self::Other(s.clone()),
         }
@@ -83,6 +88,7 @@ impl<'de> Deserialize<'de> for PolicyEventType {
             "command_exec" => Self::CommandExec,
             "patch_apply" => Self::PatchApply,
             "tool_call" => Self::ToolCall,
+            "secret_access" => Self::SecretAccess,
             "custom" => Self::Custom,
             other => Self::Other(other.to_string()),
         })
@@ -128,6 +134,7 @@ impl PolicyEvent {
             (PolicyEventType::CommandExec, PolicyEventData::Command(_)) => {}
             (PolicyEventType::PatchApply, PolicyEventData::Patch(_)) => {}
             (PolicyEventType::ToolCall, PolicyEventData::Tool(_)) => {}
+            (PolicyEventType::SecretAccess, PolicyEventData::Secret(_)) => {}
             (PolicyEventType::Custom, PolicyEventData::Custom(_)) => {}
             (PolicyEventType::Other(_), _) => {}
             (event_type, data) => {
@@ -147,7 +154,61 @@ impl PolicyEvent {
         ctx.session_id = self.session_id.clone();
         ctx.agent_id = extract_metadata_string(self.metadata.as_ref(), &["agentId", "agent_id"]);
         ctx.metadata = merge_context_into_metadata(self.metadata.as_ref(), self.context.as_ref());
+
+        // Optional identity/session enrichment (best-effort; never fails closed here).
+        if let Some(serde_json::Value::Object(obj)) = ctx.metadata.as_ref() {
+            if let Some(value) = obj.get("identity") {
+                if let Ok(principal) = serde_json::from_value::<IdentityPrincipal>(value.clone()) {
+                    ctx.identity = Some(principal);
+                }
+            }
+
+            if let Some(value) = obj.get("organization") {
+                if let Ok(org) = serde_json::from_value::<OrganizationContext>(value.clone()) {
+                    ctx.organization = Some(org);
+                }
+            }
+
+            if let Some(value) = obj.get("request") {
+                if let Ok(req) = serde_json::from_value::<RequestContext>(value.clone()) {
+                    ctx.request = Some(req);
+                }
+            }
+
+            if let Some(value) = obj.get("session") {
+                if let Ok(session) = serde_json::from_value::<SessionContext>(value.clone()) {
+                    ctx.session = Some(session);
+                }
+            }
+
+            if let Some(value) = obj.get("roles") {
+                if let Some(roles) = parse_string_array(value) {
+                    ctx.roles = Some(roles);
+                }
+            }
+
+            if let Some(value) = obj.get("permissions") {
+                if let Some(permissions) = parse_string_array(value) {
+                    ctx.permissions = Some(permissions);
+                }
+            }
+        }
+
         ctx
+    }
+}
+
+fn parse_string_array(value: &serde_json::Value) -> Option<Vec<String>> {
+    match value {
+        serde_json::Value::String(s) => Some(vec![s.clone()]),
+        serde_json::Value::Array(items) => {
+            let out: Vec<String> = items
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            (!out.is_empty()).then_some(out)
+        }
+        _ => None,
     }
 }
 
@@ -158,6 +219,7 @@ pub enum PolicyEventData {
     Command(CommandEventData),
     Patch(PatchEventData),
     Tool(ToolEventData),
+    Secret(SecretEventData),
     Custom(CustomEventData),
     Other {
         type_name: String,
@@ -173,6 +235,7 @@ impl PolicyEventData {
             Self::Command(_) => "command",
             Self::Patch(_) => "patch",
             Self::Tool(_) => "tool",
+            Self::Secret(_) => "secret",
             Self::Custom(_) => "custom",
             Self::Other { type_name, .. } => type_name.as_str(),
         }
@@ -199,6 +262,9 @@ impl Serialize for PolicyEventData {
             }
             Self::Tool(inner) => {
                 serialize_typed_data("tool", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Secret(inner) => {
+                serialize_typed_data("secret", inner).map_err(serde::ser::Error::custom)?
             }
             Self::Custom(inner) => {
                 serialize_typed_data("custom", inner).map_err(serde::ser::Error::custom)?
@@ -239,6 +305,9 @@ impl<'de> Deserialize<'de> for PolicyEventData {
                 .map_err(serde::de::Error::custom),
             "tool" => serde_json::from_value::<ToolEventData>(value)
                 .map(Self::Tool)
+                .map_err(serde::de::Error::custom),
+            "secret" => serde_json::from_value::<SecretEventData>(value)
+                .map(Self::Secret)
                 .map_err(serde::de::Error::custom),
             "custom" => serde_json::from_value::<CustomEventData>(value)
                 .map(Self::Custom)
@@ -327,6 +396,14 @@ pub struct ToolEventData {
     pub tool_name: String,
     #[serde(default = "default_empty_object")]
     pub parameters: serde_json::Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretEventData {
+    #[serde(alias = "secret_name")]
+    pub secret_name: String,
+    pub scope: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -444,7 +521,7 @@ pub struct MappedPolicyEvent {
 pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent> {
     event.validate()?;
 
-    let context = event.to_guard_context();
+    let mut context = event.to_guard_context();
 
     let data_json = serde_json::to_value(&event.data).context("serialize event data")?;
 
@@ -518,6 +595,13 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
                 )
             }
         }
+        (PolicyEventType::SecretAccess, PolicyEventData::Secret(_secret)) => (
+            MappedGuardAction::Custom {
+                custom_type: "secret_access".to_string(),
+                data: data_json,
+            },
+            None,
+        ),
         (PolicyEventType::Custom, PolicyEventData::Custom(custom)) => (
             MappedGuardAction::Custom {
                 custom_type: custom.custom_type.clone(),
@@ -537,9 +621,105 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
         }
     };
 
+    // Attach small, non-sensitive helpers so guards can access richer context without changing the
+    // GuardAction enum (e.g. URL, missing-content signal, or precomputed hashes).
+    if let Some(ref reason) = decision_reason {
+        context.metadata = merge_metadata(
+            context.metadata,
+            serde_json::json!({ "policy_event": { "decision_reason": reason } }),
+        );
+    }
+
+    if let PolicyEventData::Network(net) = &event.data {
+        if let Some(ref url) = net.url {
+            context.metadata = merge_metadata(
+                context.metadata,
+                serde_json::json!({ "policy_event": { "network": { "url": url } } }),
+            );
+        }
+    }
+
+    if let PolicyEventData::File(file) = &event.data {
+        if let Some(ref h) = file.content_hash {
+            context.metadata = merge_metadata(
+                context.metadata,
+                serde_json::json!({ "policy_event": { "file": { "content_hash": h } } }),
+            );
+        }
+    }
+
     Ok(MappedPolicyEvent {
         context,
         action,
         decision_reason,
     })
+}
+
+fn merge_metadata(
+    existing: Option<serde_json::Value>,
+    extra: serde_json::Value,
+) -> Option<serde_json::Value> {
+    let mut out = match existing {
+        None => serde_json::Value::Object(serde_json::Map::new()),
+        Some(serde_json::Value::Object(obj)) => serde_json::Value::Object(obj),
+        Some(other) => serde_json::json!({ "metadata": other }),
+    };
+
+    merge_json(&mut out, extra);
+
+    Some(out)
+}
+
+fn merge_json(target: &mut serde_json::Value, source: serde_json::Value) {
+    let serde_json::Value::Object(source_obj) = source else {
+        *target = source;
+        return;
+    };
+
+    let serde_json::Value::Object(target_obj) = target else {
+        *target = serde_json::Value::Object(serde_json::Map::new());
+        merge_json(target, serde_json::Value::Object(source_obj));
+        return;
+    };
+
+    for (k, v) in source_obj {
+        match (target_obj.get_mut(&k), v) {
+            (Some(existing), serde_json::Value::Object(v_obj)) => {
+                if existing.is_object() {
+                    merge_json(existing, serde_json::Value::Object(v_obj));
+                } else {
+                    *existing = serde_json::Value::Object(v_obj);
+                }
+            }
+            (_, v) => {
+                target_obj.insert(k, v);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixtures_policy_events_v1_parse_and_validate() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let text =
+            std::fs::read_to_string(&path).expect("read fixtures/policy-events/v1/events.jsonl");
+
+        for (line_no, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let event: PolicyEvent = serde_json::from_str(line)
+                .unwrap_or_else(|_| panic!("invalid JSON at line {}", line_no + 1));
+            event
+                .validate()
+                .unwrap_or_else(|e| panic!("invalid PolicyEvent at line {}: {}", line_no + 1, e));
+        }
+    }
 }

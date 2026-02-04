@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hushd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hushd
+  template:
+    metadata:
+      labels:
+        app: hushd
+    spec:
+      containers:
+        - name: hushd
+          image: clawdstrike/hushd:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/hushd/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 9876
+          envFrom:
+            - secretRef:
+                name: hushd-secrets
+          volumeMounts:
+            - name: hushd-config
+              mountPath: /etc/hushd/config.yaml
+              subPath: config.yaml
+            - name: hushd-data
+              mountPath: /var/lib/hushd
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: hushd-config
+          configMap:
+            name: hushd-config
+        - name: hushd-data
+          emptyDir: {}
+

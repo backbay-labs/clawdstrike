@@ -12,6 +12,9 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module"] }
 hush-core = { workspace = true }
+clawdstrike = { workspace = true }
+futures = { workspace = true }
+base64 = { workspace = true }
 hex = "0.4"
 serde_json = "1.0"
 

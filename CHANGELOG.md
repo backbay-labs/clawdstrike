@@ -41,7 +41,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 #### Policy Engine
 
-- YAML-based policy configuration (`version: "1.0.0"` for Rust)
+- YAML-based policy configuration (`version: "1.1.0"` for Rust)
 - Pre-configured rulesets: `default`, `strict`, `ai-agent`, `cicd`, `permissive`
 - Policy inheritance and merging
 - Runtime policy validation with fail-closed semantics
@@ -51,11 +51,21 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 - `hush check` - Check file access, egress, or MCP tool against policy
 - `hush verify` - Verify a signed receipt with public key
-- `hush keygen` - Generate Ed25519 signing keypair
+- `hush keygen` - Generate Ed25519 signing keypair (hex seed + `.pub`)
+- `hush keygen --tpm-seal` - Generate a TPM2-sealed Ed25519 seed (best-effort, requires `tpm2-tools`)
 - `hush policy show` - Display ruleset policy
 - `hush policy validate` - Validate a policy YAML file
 - `hush policy list` - List available rulesets
+- `hush run` - Best-effort process wrapper (CONNECT proxy egress enforcement + audit log + signed receipt)
 - `hush completions` - Generate shell completions (bash, zsh, fish, powershell, elvish)
+
+#### Daemon (`hushd`)
+
+- Central policy enforcement with HTTP API
+- Native TLS support (optional)
+- Prometheus `/metrics` endpoint
+- Canonical PolicyEvent evaluation (`POST /api/v1/eval`)
+- SQLite audit ledger with optional at-rest encryption for metadata
 
 #### TypeScript SDK (`@clawdstrike/sdk`, `hush-ts`)
 
@@ -70,6 +80,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 - `@clawdstrike/adapter-core` - Framework-agnostic primitives (PolicyEventFactory, SecurityContext, BaseToolInterceptor)
 - `@clawdstrike/hush-cli-engine` - Node.js bridge to Rust CLI for policy evaluation
+- `@clawdstrike/hushd-engine` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
 - `@clawdstrike/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
 - `@clawdstrike/langchain` - Tool wrappers and callback handlers for LangChain
 

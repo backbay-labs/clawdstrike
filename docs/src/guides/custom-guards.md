@@ -39,4 +39,4 @@ let policy = Policy::from_yaml_file("policy.yaml")?;
 let engine = HushEngine::with_policy(policy).with_extra_guard(Box::new(AlwaysWarn));
 ```
 
-Policy-driven configuration for custom guards (registries/marketplaces) is planned work (see `docs/plans/`).
+`guards.custom[]` supports a small reserved set of built-in threat-intel guards (see [Threat Intel Guards](threat-intel.md)). Dynamic plugin loading/marketplaces are still planned work.
