@@ -54,14 +54,15 @@ pub mod irm;
 pub mod jailbreak;
 pub mod output_sanitizer;
 pub mod policy;
+pub mod policy_bundle;
 pub mod watermarking;
 
 pub use engine::{GuardReport, HushEngine};
 pub use error::{Error, Result};
 pub use guards::{
     CustomGuardFactory, CustomGuardRegistry, EgressAllowlistGuard, ForbiddenPathGuard, Guard,
-    GuardContext, GuardResult, JailbreakConfig, JailbreakGuard, McpToolGuard,
-    PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard, Severity,
+    GuardContext, GuardResult, JailbreakConfig, JailbreakGuard, McpToolGuard, PatchIntegrityGuard,
+    PromptInjectionGuard, SecretLeakGuard, Severity,
 };
 pub use hygiene::{
     detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,
@@ -91,6 +92,7 @@ pub use output_sanitizer::{
     StreamingConfig,
 };
 pub use policy::{Policy, RuleSet};
+pub use policy_bundle::{PolicyBundle, SignedPolicyBundle, POLICY_BUNDLE_SCHEMA_VERSION};
 pub use watermarking::{
     EncodedWatermark, PromptWatermarker, WatermarkConfig, WatermarkEncoding, WatermarkError,
     WatermarkExtractionResult, WatermarkExtractor, WatermarkPayload, WatermarkVerifierConfig,

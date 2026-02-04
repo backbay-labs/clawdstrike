@@ -172,4 +172,3 @@ pub struct SessionContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<HashMap<String, serde_json::Value>>,
 }
-

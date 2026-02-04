@@ -1,0 +1,12 @@
+{
+  "name": "secure-coding-assistant-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secure coding assistant preflight example using hush policy eval",
+  "main": "simulate.js",
+  "scripts": {
+    "start": "node simulate.js"
+  },
+  "license": "MIT"
+}
+

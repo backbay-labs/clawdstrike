@@ -1,0 +1,69 @@
+{
+  "title": "Clawdstrike Security Dashboard",
+  "description": "AI Agent Security Posture",
+  "widgets": [
+    {
+      "definition": {
+        "title": "Policy Violations (24h)",
+        "type": "query_value",
+        "requests": [
+          {
+            "q": "sum:clawdstrike.security.events.denied{*}.as_count()",
+            "aggregator": "sum"
+          }
+        ],
+        "precision": 0,
+        "custom_unit": "violations"
+      }
+    },
+    {
+      "definition": {
+        "title": "Events by Severity",
+        "type": "toplist",
+        "requests": [
+          {
+            "q": "top(sum:clawdstrike.security.events.by_severity{*} by {severity}.as_count(), 5, 'sum', 'desc')"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Events by Guard",
+        "type": "pie",
+        "requests": [
+          {
+            "q": "sum:clawdstrike.security.events.by_guard{*} by {guard}.as_count()"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Event Timeline",
+        "type": "timeseries",
+        "requests": [
+          {
+            "q": "sum:clawdstrike.security.events.total{*}.as_count()",
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Recent Critical Events",
+        "type": "log_stream",
+        "query": "service:clawdstrike status:critical",
+        "columns": [
+          "timestamp",
+          "message",
+          "security.guard",
+          "security.reason"
+        ]
+      }
+    }
+  ],
+  "layout_type": "ordered"
+}
+

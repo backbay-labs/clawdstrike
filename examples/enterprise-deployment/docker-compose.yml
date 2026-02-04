@@ -1,0 +1,26 @@
+# Enterprise-ish hushd compose: signed policy bundles + auth + persisted audit
+
+services:
+  hushd:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.hushd
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/hushd/config.yaml:ro
+      - hushd-data:/var/lib/hushd
+    environment:
+      - HUSHD_API_KEY=${HUSHD_API_KEY:-changeme}
+      - HUSHD_ADMIN_KEY=${HUSHD_ADMIN_KEY:-admin}
+      - HUSHD_POLICY_BUNDLE_PUBKEY=${HUSHD_POLICY_BUNDLE_PUBKEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  hushd-data:
+

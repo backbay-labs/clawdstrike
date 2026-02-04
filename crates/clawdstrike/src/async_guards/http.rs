@@ -37,22 +37,40 @@ pub struct HttpResponse {
 
 #[derive(Clone)]
 pub struct HttpClient {
-    client: reqwest::Client,
+    client: Option<reqwest::Client>,
+    build_error: Option<String>,
 }
 
 impl HttpClient {
     pub fn new() -> Self {
-        let client = match reqwest::Client::builder()
+        match reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
         {
-            Ok(client) => client,
+            Ok(client) => Self {
+                client: Some(client),
+                build_error: None,
+            },
             Err(e) => {
-                tracing::warn!(error = %e, "failed to build reqwest client; falling back to default client");
-                reqwest::Client::new()
+                tracing::warn!(error = %e, "failed to build reqwest client; async guard http disabled");
+                Self {
+                    client: None,
+                    build_error: Some(e.to_string()),
+                }
             }
-        };
-        Self { client }
+        }
+    }
+
+    fn client(&self) -> Result<&reqwest::Client, AsyncGuardError> {
+        self.client.as_ref().ok_or_else(|| {
+            AsyncGuardError::new(
+                AsyncGuardErrorKind::Other,
+                format!(
+                    "http client unavailable: {}",
+                    self.build_error.as_deref().unwrap_or("unknown build error")
+                ),
+            )
+        })
     }
 
     pub async fn request_json(
@@ -117,7 +135,7 @@ impl HttpClient {
         }
 
         let mut req = self
-            .client
+            .client()?
             .request(method.clone(), url.clone())
             .headers(headers)
             .timeout(policy.timeout);

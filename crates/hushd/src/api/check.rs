@@ -9,9 +9,11 @@ use clawdstrike::guards::{GuardContext, GuardResult, Severity};
 use clawdstrike::{HushEngine, RequestContext};
 use hush_certification::audit::NewAuditEventV2;
 
-use crate::auth::AuthenticatedActor;
 use crate::audit::AuditEvent;
+use crate::auth::AuthenticatedActor;
 use crate::certification_webhooks::emit_webhook_event;
+use crate::identity_rate_limit::IdentityRateLimitError;
+use crate::siem::types::SecurityEvent;
 use crate::state::{AppState, DaemonEvent};
 
 fn parse_egress_target(target: &str) -> Result<(String, u16), String> {
@@ -130,7 +132,16 @@ pub async fn check_action(
             .get(axum::http::header::USER_AGENT)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string()),
-        geo_location: None,
+        geo_location: headers
+            .get("X-Hush-Country")
+            .and_then(|v| v.to_str().ok())
+            .map(|c| clawdstrike::GeoLocation {
+                country: Some(c.to_string()),
+                region: None,
+                city: None,
+                latitude: None,
+                longitude: None,
+            }),
         is_vpn: None,
         is_corporate_network: None,
         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -174,8 +185,13 @@ pub async fn check_action(
         if let Some(ext) = actor.as_ref() {
             match &ext.0 {
                 AuthenticatedActor::User(principal) => {
-                    if principal.id != session.identity.id || principal.issuer != session.identity.issuer {
-                        return Err((StatusCode::FORBIDDEN, "session_identity_mismatch".to_string()));
+                    if principal.id != session.identity.id
+                        || principal.issuer != session.identity.issuer
+                    {
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "session_identity_mismatch".to_string(),
+                        ));
                     }
                 }
                 AuthenticatedActor::ApiKey(key) => {
@@ -186,16 +202,29 @@ pub async fn check_action(
                         .and_then(|s| s.get("bound_api_key_id"))
                         .and_then(|v| v.as_str());
                     let Some(bound_id) = bound else {
-                        return Err((StatusCode::FORBIDDEN, "api_key_cannot_use_unbound_sessions".to_string()));
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "api_key_cannot_use_unbound_sessions".to_string(),
+                        ));
                     };
                     if bound_id != key.id.as_str() {
-                        return Err((StatusCode::FORBIDDEN, "api_key_session_binding_mismatch".to_string()));
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "api_key_session_binding_mismatch".to_string(),
+                        ));
                     }
                 }
             }
         }
 
-        context = state.sessions.create_guard_context(&session, Some(&request_context));
+        state
+            .sessions
+            .validate_session_binding(&session, &request_context)
+            .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
+
+        context = state
+            .sessions
+            .create_guard_context(&session, Some(&request_context));
         session_for_audit = Some(session);
     } else if let Some(ext) = actor.as_ref() {
         if let AuthenticatedActor::User(principal) = &ext.0 {
@@ -218,6 +247,27 @@ pub async fn check_action(
         context = context.with_agent_id(agent_id);
     }
 
+    // Identity-based rate limiting (per-user/per-org sliding window).
+    let identity_for_rate_limit: Option<&clawdstrike::IdentityPrincipal> = session_for_audit
+        .as_ref()
+        .map(|s| &s.identity)
+        .or(principal_for_audit.as_ref());
+
+    if let Some(identity) = identity_for_rate_limit {
+        if let Err(err) = state
+            .identity_rate_limiter
+            .check_and_increment(identity, request.action_type.as_str())
+        {
+            return match err {
+                IdentityRateLimitError::RateLimited { retry_after_secs } => Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    format!("identity_rate_limited_retry_after_secs={retry_after_secs}"),
+                )),
+                other => Err((StatusCode::INTERNAL_SERVER_ERROR, other.to_string())),
+            };
+        }
+    }
+
     // Resolve identity-scoped policy for this request and get a compiled engine for it.
     let resolved = state
         .policy_resolver
@@ -231,9 +281,11 @@ pub async fn check_action(
     let policy_hash = hush_core::sha256(resolved_yaml.as_bytes()).to_hex();
 
     let engine: Arc<HushEngine> = match keypair {
-        Some(keypair) => state.policy_engine_cache.get_or_insert_with(&policy_hash, || {
-            Arc::new(HushEngine::with_policy(resolved.policy.clone()).with_keypair(keypair))
-        }),
+        Some(keypair) => state
+            .policy_engine_cache
+            .get_or_insert_with(&policy_hash, || {
+                Arc::new(HushEngine::with_policy(resolved.policy.clone()).with_keypair(keypair))
+            }),
         None => Arc::new(HushEngine::with_policy(resolved.policy.clone()).with_generated_keypair()),
     };
 
@@ -295,10 +347,14 @@ pub async fn check_action(
             None => serde_json::Map::new(),
         };
 
-        obj.insert("policy_hash".to_string(), serde_json::Value::String(policy_hash.clone()));
+        obj.insert(
+            "policy_hash".to_string(),
+            serde_json::Value::String(policy_hash.clone()),
+        );
         obj.insert(
             "contributing_policies".to_string(),
-            serde_json::to_value(&resolved.contributing_policies).unwrap_or(serde_json::Value::Null),
+            serde_json::to_value(&resolved.contributing_policies)
+                .unwrap_or(serde_json::Value::Null),
         );
 
         audit_event.metadata = Some(serde_json::Value::Object(obj));
@@ -353,7 +409,10 @@ pub async fn check_action(
             serde_json::to_value(principal_for_audit.as_ref()).unwrap_or(serde_json::Value::Null),
         );
         if let Some(roles) = roles_for_audit.as_ref() {
-            obj.insert("roles".to_string(), serde_json::to_value(roles).unwrap_or(serde_json::Value::Null));
+            obj.insert(
+                "roles".to_string(),
+                serde_json::to_value(roles).unwrap_or(serde_json::Value::Null),
+            );
         }
         if let Some(perms) = permissions_for_audit.as_ref() {
             obj.insert(
@@ -365,10 +424,20 @@ pub async fn check_action(
         audit_event.metadata = Some(serde_json::Value::Object(obj));
     }
 
-    if let Err(e) = state.ledger.record(&audit_event) {
-        state.metrics.inc_audit_write_failure();
-        tracing::warn!(error = %e, "Failed to record audit event");
+    // Emit canonical SecurityEvent for exporters.
+    {
+        let ctx = state.security_ctx.read().await.clone();
+        let event = SecurityEvent::from_audit_event(&audit_event, &ctx);
+        if let Err(err) = event.validate() {
+            tracing::warn!(error = %err, "Generated invalid SecurityEvent");
+        } else {
+            state.emit_security_event(event);
+        }
     }
+
+    state.record_audit_event(audit_event);
+
+    let policy_hash_sha256 = format!("sha256:{policy_hash}");
 
     // Record to audit ledger v2 (best-effort).
     {
@@ -378,10 +447,10 @@ pub async fn check_action(
             .or_else(|| principal_for_audit.as_ref().and_then(|p| p.organization_id.clone()));
 
         let provenance = serde_json::json!({
-            "sourceIp": request_context.source_ip,
-            "userAgent": request_context.user_agent,
-            "requestId": request_context.request_id,
-            "timestamp": request_context.timestamp,
+            "sourceIp": request_context.source_ip.clone(),
+            "userAgent": request_context.user_agent.clone(),
+            "requestId": request_context.request_id.clone(),
+            "timestamp": request_context.timestamp.clone(),
         });
 
         let mut extensions = serde_json::Map::new();
@@ -412,7 +481,7 @@ pub async fn check_action(
             decision_guard: Some(result.guard.clone()),
             decision_severity: Some(canonical_guard_severity(&result.severity).to_string()),
             decision_reason: Some(result.message.clone()),
-            decision_policy_hash: policy_hash.clone(),
+            decision_policy_hash: policy_hash_sha256.clone(),
             provenance: Some(provenance),
             extensions: Some(serde_json::Value::Object(extensions)),
         });
@@ -444,7 +513,7 @@ pub async fn check_action(
                 "target": &target,
                 "guard": &result.guard,
                 "severity": canonical_guard_severity(&result.severity),
-                "policyHash": &policy_hash,
+                "policyHash": &policy_hash_sha256,
                 "sessionId": &session_id,
                 "agentId": &agent_id,
             }),

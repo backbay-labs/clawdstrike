@@ -1,0 +1,7 @@
+severity,severity_level,severity_color
+info,1,green
+low,2,yellow
+medium,3,orange
+high,4,red
+critical,5,purple
+

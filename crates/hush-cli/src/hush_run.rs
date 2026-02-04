@@ -10,14 +10,14 @@ use std::time::Duration;
 use anyhow::Context as _;
 use chrono::Utc;
 use clawdstrike::{GuardContext, GuardResult, HushEngine, Severity};
-use hush_core::{sha256, Keypair, Receipt, SignedReceipt, Verdict};
+use hush_core::{sha256, Keypair, PublicKey, Receipt, SignedReceipt, Signer, Verdict};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::policy_diff::{self, LoadedPolicy, ResolvedPolicySource};
+use crate::policy_diff::{self, LoadedPolicy};
 use crate::policy_event::{
     CommandEventData, CustomEventData, NetworkEventData, PolicyEvent, PolicyEventData,
     PolicyEventType,
@@ -117,21 +117,39 @@ impl HushdForwarder {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct RunArgs {
+    pub policy: String,
+    pub events_out: String,
+    pub receipt_out: String,
+    pub signing_key: String,
+    pub no_proxy: bool,
+    pub proxy_port: u16,
+    pub sandbox: bool,
+    pub hushd_url: Option<String>,
+    pub hushd_token: Option<String>,
+    pub command: Vec<String>,
+}
+
 pub async fn cmd_run(
-    policy: String,
-    events_out: String,
-    receipt_out: String,
-    signing_key: String,
-    no_proxy: bool,
-    proxy_port: u16,
-    sandbox: bool,
-    hushd_url: Option<String>,
-    hushd_token: Option<String>,
-    command: Vec<String>,
+    args: RunArgs,
     remote_extends: &remote_extends::RemoteExtendsConfig,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
+    let RunArgs {
+        policy,
+        events_out,
+        receipt_out,
+        signing_key,
+        no_proxy,
+        proxy_port,
+        sandbox,
+        hushd_url,
+        hushd_token,
+        command,
+    } = args;
+
     if command.is_empty() {
         let _ = writeln!(stderr, "Error: missing command");
         return ExitCode::InvalidArgs.as_i32();
@@ -145,8 +163,8 @@ pub async fn cmd_run(
         }
     };
 
-    let keypair = match load_or_create_keypair(Path::new(&signing_key), stderr) {
-        Ok(k) => k,
+    let signer = match load_or_create_signer(Path::new(&signing_key), stderr) {
+        Ok(s) => s,
         Err(e) => {
             let _ = writeln!(stderr, "Error: {}", e);
             return ExitCode::RuntimeError.as_i32();
@@ -154,7 +172,7 @@ pub async fn cmd_run(
     };
 
     let engine = match HushEngine::builder(loaded.policy).build() {
-        Ok(engine) => engine.with_keypair(keypair),
+        Ok(engine) => engine,
         Err(e) => {
             let _ = writeln!(stderr, "Error: failed to initialize engine: {}", e);
             return ExitCode::ConfigError.as_i32();
@@ -360,10 +378,7 @@ pub async fn cmd_run(
         ..receipt
     };
 
-    let signed = match engine.keypair() {
-        Some(k) => SignedReceipt::sign(receipt, k).map_err(anyhow::Error::from),
-        None => Err(anyhow::anyhow!("engine missing signing keypair")),
-    };
+    let signed = SignedReceipt::sign_with(receipt, signer.as_ref()).map_err(anyhow::Error::from);
 
     let signed = match signed {
         Ok(s) => s,
@@ -437,24 +452,33 @@ fn load_policy(
     policy: &str,
     remote_extends: &remote_extends::RemoteExtendsConfig,
 ) -> anyhow::Result<LoadedPolicy> {
-    let loaded = policy_diff::load_policy_from_arg(policy, true, remote_extends).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to load policy {}: {}",
-            e.source.to_string(),
-            e.message
-        )
-    })?;
+    let loaded = policy_diff::load_policy_from_arg(policy, true, remote_extends)
+        .map_err(|e| anyhow::anyhow!("Failed to load policy {}: {}", e.source, e.message))?;
 
     Ok(loaded)
 }
 
-fn load_or_create_keypair(path: &Path, stderr: &mut dyn Write) -> anyhow::Result<Keypair> {
+fn load_or_create_signer(path: &Path, stderr: &mut dyn Write) -> anyhow::Result<Box<dyn Signer>> {
     if path.exists() {
-        let hex = std::fs::read_to_string(path)
+        let raw = std::fs::read_to_string(path)
             .with_context(|| format!("read signing key {}", path.display()))?;
-        let hex = hex.trim();
-        return Keypair::from_hex(hex)
-            .map_err(|e| anyhow::anyhow!("Invalid signing key {}: {}", path.display(), e));
+        let raw = raw.trim();
+
+        if raw.starts_with('{') {
+            let blob: hush_core::TpmSealedBlob =
+                serde_json::from_str(raw).context("parse TPM sealed key blob JSON")?;
+            let pub_path = PathBuf::from(format!("{}.pub", path.display()));
+            let pub_hex = std::fs::read_to_string(&pub_path)
+                .with_context(|| format!("read public key {}", pub_path.display()))?;
+            let public_key = PublicKey::from_hex(pub_hex.trim()).context("parse public key hex")?;
+            return Ok(Box::new(hush_core::TpmSealedSeedSigner::new(
+                public_key, blob,
+            )));
+        }
+
+        let keypair = Keypair::from_hex(raw)
+            .map_err(|e| anyhow::anyhow!("Invalid signing key {}: {}", path.display(), e))?;
+        return Ok(Box::new(keypair));
     }
 
     if let Some(parent) = path.parent() {
@@ -479,13 +503,20 @@ fn load_or_create_keypair(path: &Path, stderr: &mut dyn Write) -> anyhow::Result
         pub_path.display()
     );
 
-    Ok(keypair)
+    Ok(Box::new(keypair))
 }
 
 #[derive(Clone, Debug)]
 enum SandboxWrapper {
     None,
-    SandboxExec { profile_path: PathBuf },
+    #[cfg(target_os = "macos")]
+    SandboxExec {
+        profile_path: PathBuf,
+    },
+    #[cfg(target_os = "linux")]
+    Bwrap {
+        args: Vec<String>,
+    },
 }
 
 fn maybe_prepare_sandbox(
@@ -520,11 +551,26 @@ fn maybe_prepare_sandbox(
 
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = writeln!(
-            stderr,
-            "Warning: sandbox wrapper not implemented for this OS; sandbox disabled"
-        );
-        Ok((SandboxWrapper::None, "disabled".to_string()))
+        #[cfg(target_os = "linux")]
+        {
+            if find_in_path("bwrap").is_none() {
+                let _ = writeln!(stderr, "Warning: bwrap not found; sandbox disabled");
+                return Ok((SandboxWrapper::None, "disabled".to_string()));
+            }
+
+            let cwd = std::env::current_dir().context("get current directory")?;
+            let args = generate_bwrap_args(&cwd);
+            Ok((SandboxWrapper::Bwrap { args }, "bwrap".to_string()))
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = writeln!(
+                stderr,
+                "Warning: sandbox wrapper not implemented for this OS; sandbox disabled"
+            );
+            Ok((SandboxWrapper::None, "disabled".to_string()))
+        }
     }
 }
 
@@ -583,9 +629,18 @@ async fn spawn_and_wait_child(
             c.args(&command[1..]);
             c
         }
+        #[cfg(target_os = "macos")]
         SandboxWrapper::SandboxExec { profile_path } => {
             let mut c = Command::new("/usr/bin/sandbox-exec");
             c.arg("-f").arg(profile_path);
+            c.arg(&command[0]);
+            c.args(&command[1..]);
+            c
+        }
+        #[cfg(target_os = "linux")]
+        SandboxWrapper::Bwrap { args } => {
+            let mut c = Command::new("bwrap");
+            c.args(args);
             c.arg(&command[0]);
             c.args(&command[1..]);
             c
@@ -638,8 +693,8 @@ async fn start_connect_proxy(
             let outcome = outcome.clone();
 
             tokio::spawn(async move {
-                let _ = handle_connect_proxy_client(socket, engine, context, event_tx, outcome)
-                    .await;
+                let _ =
+                    handle_connect_proxy_client(socket, engine, context, event_tx, outcome).await;
             });
         }
     });
@@ -658,8 +713,7 @@ async fn handle_connect_proxy_client(
         .await
         .context("read proxy request header")?;
 
-    let header_str =
-        std::str::from_utf8(&header).context("proxy request header must be UTF-8")?;
+    let header_str = std::str::from_utf8(&header).context("proxy request header must be UTF-8")?;
     let mut lines = header_str.split("\r\n");
     let request_line = lines
         .next()
@@ -669,7 +723,7 @@ async fn handle_connect_proxy_client(
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("");
 
-    if method.to_ascii_uppercase() != "CONNECT" {
+    if !method.eq_ignore_ascii_case("CONNECT") {
         client
             .write_all(b"HTTP/1.1 501 Not Implemented\r\n\r\n")
             .await?;
@@ -717,9 +771,7 @@ async fn handle_connect_proxy_client(
     if !result.allowed {
         // If we already sent 200 (IP + SNI path), we can only close the tunnel.
         if sni_buf.is_empty() {
-            client
-                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
-                .await?;
+            client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
         }
         return Ok(());
     }
@@ -838,11 +890,79 @@ fn network_event(
     }
 }
 
+#[cfg(target_os = "linux")]
+fn find_in_path(cmd: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for p in std::env::split_paths(&path) {
+        let candidate = p.join(cmd);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn generate_bwrap_args(workspace: &Path) -> Vec<String> {
+    // Best-effort bwrap sandbox:
+    // - bind the workspace into a new mount namespace
+    // - provide read-only access to common system directories
+    // - do not mount /home by default (deny home unless the workspace is there)
+    let mut args: Vec<String> = Vec::new();
+
+    args.push("--unshare-all".to_string());
+    args.push("--die-with-parent".to_string());
+
+    // Create parent directories for the workspace path inside the sandbox.
+    let mut cur = PathBuf::new();
+    for component in workspace.components() {
+        cur.push(component);
+        if cur.as_os_str().is_empty() {
+            continue;
+        }
+        args.push("--dir".to_string());
+        args.push(cur.to_string_lossy().to_string());
+    }
+
+    args.push("--bind".to_string());
+    args.push(workspace.to_string_lossy().to_string());
+    args.push(workspace.to_string_lossy().to_string());
+
+    for ro in ["/usr", "/bin", "/lib", "/lib64", "/etc"] {
+        if Path::new(ro).exists() {
+            args.push("--ro-bind".to_string());
+            args.push(ro.to_string());
+            args.push(ro.to_string());
+        }
+    }
+
+    if Path::new("/dev").exists() {
+        args.push("--dev-bind".to_string());
+        args.push("/dev".to_string());
+        args.push("/dev".to_string());
+    }
+    if Path::new("/proc").exists() {
+        args.push("--proc".to_string());
+        args.push("/proc".to_string());
+    }
+
+    args.push("--tmpfs".to_string());
+    args.push("/tmp".to_string());
+
+    args.push("--chdir".to_string());
+    args.push(workspace.to_string_lossy().to_string());
+
+    args.push("--".to_string());
+
+    args
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn macos_profile_denies_sensitive_home_subpaths() {
         let home = Path::new("/Users/alice");
         let workspace = Path::new("/Users/alice/work/project");
@@ -853,6 +973,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn macos_profile_denies_entire_home_when_safe() {
         let home = Path::new("/Users/alice");
         let workspace = Path::new("/tmp/project");
@@ -896,5 +1017,15 @@ guards:
         // Ensure outcome tracking is updated for allowed events.
         outcome.observe_guard_result(&result);
         assert_eq!(outcome.exit_code(), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bwrap_args_include_workspace_bind() {
+        let ws = Path::new("/work/project");
+        let args = generate_bwrap_args(ws);
+        let joined = args.join(" ");
+        assert!(joined.contains("--bind /work/project /work/project"));
+        assert!(joined.contains("--tmpfs /tmp"));
     }
 }

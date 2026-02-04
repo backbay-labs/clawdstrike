@@ -149,13 +149,18 @@ impl OidcValidator {
             return Ok(());
         }
 
-        let jti = claim_get(claims, "jti").and_then(|v| v.as_str()).map(str::to_string);
-        if jti.as_deref().unwrap_or("").is_empty() {
-            if self.replay_protection.require_jti {
-                return Err(OidcError::MissingRequiredClaim("jti".to_string()));
+        let jti = claim_get(claims, "jti")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let jti = match jti {
+            Some(jti) if !jti.is_empty() => jti,
+            _ => {
+                if self.replay_protection.require_jti {
+                    return Err(OidcError::MissingRequiredClaim("jti".to_string()));
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
+        };
 
         let Some(db) = self.replay_db.as_ref() else {
             // Replay protection was enabled but no DB was provided; fail closed.
@@ -168,7 +173,6 @@ impl OidcValidator {
             .ok_or_else(|| OidcError::InvalidClaim("exp".to_string()))?;
 
         let now = chrono::Utc::now().to_rfc3339();
-        let jti = jti.expect("checked above");
 
         let conn = db.lock_conn();
         // Best-effort cleanup to keep the table bounded.
@@ -220,7 +224,10 @@ impl OidcValidator {
         Ok(())
     }
 
-    fn claims_to_principal(&self, claims: &serde_json::Value) -> Result<IdentityPrincipal, OidcError> {
+    fn claims_to_principal(
+        &self,
+        claims: &serde_json::Value,
+    ) -> Result<IdentityPrincipal, OidcError> {
         let id = claim_get(claims, &self.claim_mapping.user_id)
             .and_then(|v| v.as_str())
             .map(str::to_string)
@@ -338,7 +345,10 @@ impl OidcValidator {
 
 fn looks_like_jwt(token: &str) -> bool {
     let mut parts = token.split('.');
-    matches!((parts.next(), parts.next(), parts.next(), parts.next()), (Some(_), Some(_), Some(_), None))
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(_), Some(_), Some(_), None)
+    )
 }
 
 fn claim_get<'a>(claims: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
@@ -416,7 +426,10 @@ fn map_amr_to_auth_method(value: &serde_json::Value) -> Option<AuthMethod> {
     None
 }
 
-fn select_jwk<'a>(jwks: &'a JwkSet, kid: Option<&str>) -> Result<&'a jsonwebtoken::jwk::Jwk, OidcError> {
+fn select_jwk<'a>(
+    jwks: &'a JwkSet,
+    kid: Option<&str>,
+) -> Result<&'a jsonwebtoken::jwk::Jwk, OidcError> {
     if jwks.keys.is_empty() {
         return Err(OidcError::NoJwksKeys);
     }
@@ -470,11 +483,7 @@ async fn discover_jwks_uri(http: &Client, issuer: &str) -> Result<String, OidcEr
 }
 
 async fn fetch_jwks(http: &Client, jwks_uri: &str) -> Result<JwkSet, String> {
-    let resp = http
-        .get(jwks_uri)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let resp = http.get(jwks_uri).send().await.map_err(|e| e.to_string())?;
 
     if !resp.status().is_success() {
         return Err(format!("GET {} returned {}", jwks_uri, resp.status()));
@@ -536,10 +545,7 @@ Jrkx/3dCu23NhjN0NIZzYRXJ
 
     async fn spawn_jwks_server() -> (String, tokio::sync::oneshot::Sender<()>) {
         let jwks: serde_json::Value = serde_json::from_str(TEST_JWKS_JSON).expect("jwks json");
-        let app = Router::new().route(
-            "/jwks",
-            get(move || async move { Json(jwks.clone()) }),
-        );
+        let app = Router::new().route("/jwks", get(move || async move { Json(jwks.clone()) }));
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
@@ -575,10 +581,18 @@ Jrkx/3dCu23NhjN0NIZzYRXJ
             replay_protection: replay,
         };
 
-        OidcValidator::from_config(cfg, db).await.expect("validator")
+        OidcValidator::from_config(cfg, db)
+            .await
+            .expect("validator")
     }
 
-    fn sign_token(issuer: &str, aud: &str, kid: &str, exp_offset_secs: i64, jti: Option<&str>) -> String {
+    fn sign_token(
+        issuer: &str,
+        aud: &str,
+        kid: &str,
+        exp_offset_secs: i64,
+        jti: Option<&str>,
+    ) -> String {
         let now = chrono::Utc::now().timestamp();
         let mut claims = serde_json::json!({
             "iss": issuer,
@@ -591,7 +605,10 @@ Jrkx/3dCu23NhjN0NIZzYRXJ
             "roles": ["policy-admin"],
         });
         if let Some(jti) = jti {
-            claims.as_object_mut().unwrap().insert("jti".to_string(), serde_json::Value::String(jti.to_string()));
+            claims.as_object_mut().unwrap().insert(
+                "jti".to_string(),
+                serde_json::Value::String(jti.to_string()),
+            );
         }
 
         let mut header = Header::new(Algorithm::RS256);
@@ -693,7 +710,8 @@ Jrkx/3dCu23NhjN0NIZzYRXJ
         )
         .await;
 
-        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"alg":"none","typ":"JWT"}"#);
         let now = chrono::Utc::now().timestamp();
         let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
             serde_json::json!({
@@ -709,7 +727,10 @@ Jrkx/3dCu23NhjN0NIZzYRXJ
         let token = format!("{header}.{payload}.");
 
         let err = validator.validate_token(&token).await.expect_err("invalid");
-        assert!(matches!(err, OidcError::InvalidHeader(_) | OidcError::UnsupportedAlgorithm(_)));
+        assert!(matches!(
+            err,
+            OidcError::InvalidHeader(_) | OidcError::UnsupportedAlgorithm(_)
+        ));
         let _ = shutdown.send(());
     }
 

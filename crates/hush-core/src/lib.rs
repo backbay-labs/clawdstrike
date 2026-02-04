@@ -50,18 +50,25 @@ pub mod hashing;
 pub mod merkle;
 pub mod receipt;
 pub mod signing;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod tpm;
 
 pub use canonical::canonicalize as canonicalize_json;
 pub use error::{Error, Result};
 pub use hashing::{keccak256, keccak256_hex, sha256, sha256_hex, Hash};
 pub use merkle::{MerkleProof, MerkleTree};
 pub use receipt::{Provenance, Receipt, SignedReceipt, Verdict};
-pub use signing::{Keypair, PublicKey, Signature};
+pub use signing::{Keypair, PublicKey, Signature, Signer};
+#[cfg(not(target_arch = "wasm32"))]
+pub use tpm::{TpmSealedBlob, TpmSealedSeedSigner};
 
 /// Commonly used types
 pub mod prelude {
     pub use crate::{
         keccak256, sha256, Error, Hash, Keypair, MerkleProof, MerkleTree, PublicKey, Receipt,
-        Result, Signature, SignedReceipt,
+        Result, Signature, SignedReceipt, Signer,
     };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use crate::{TpmSealedBlob, TpmSealedSeedSigner};
 }

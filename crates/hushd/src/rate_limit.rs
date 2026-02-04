@@ -246,6 +246,7 @@ mod tests {
             burst_size: 50,
             trusted_proxies: vec![],
             trust_xff_from_any: false,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         assert!(!state.is_enabled());
@@ -260,6 +261,7 @@ mod tests {
             burst_size: 50,
             trusted_proxies: vec![],
             trust_xff_from_any: false,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         assert!(state.is_enabled());
@@ -274,6 +276,7 @@ mod tests {
             burst_size: 5,
             trusted_proxies: vec![],
             trust_xff_from_any: false,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         let ip: IpAddr = "192.168.1.1".parse().unwrap();
@@ -292,6 +295,7 @@ mod tests {
             burst_size: 3,
             trusted_proxies: vec![],
             trust_xff_from_any: false,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         let ip: IpAddr = "192.168.1.1".parse().unwrap();
@@ -313,6 +317,7 @@ mod tests {
             burst_size: 2,
             trusted_proxies: vec![],
             trust_xff_from_any: false,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         let ip1: IpAddr = "192.168.1.1".parse().unwrap();
@@ -338,6 +343,7 @@ mod tests {
             burst_size: 50,
             trusted_proxies: vec![],
             trust_xff_from_any: true, // Trust headers (for testing)
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
@@ -361,6 +367,7 @@ mod tests {
             burst_size: 50,
             trusted_proxies: vec![],
             trust_xff_from_any: false, // Don't trust headers
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
@@ -382,6 +389,7 @@ mod tests {
             burst_size: 50,
             trusted_proxies: vec![],
             trust_xff_from_any: true,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
@@ -402,6 +410,7 @@ mod tests {
             burst_size: 50,
             trusted_proxies: vec![],
             trust_xff_from_any: false,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
@@ -419,6 +428,7 @@ mod tests {
             burst_size: 50,
             trusted_proxies: vec!["10.0.0.1".to_string(), "10.0.0.2".to_string()],
             trust_xff_from_any: false,
+            identity: Default::default(),
         };
         let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 

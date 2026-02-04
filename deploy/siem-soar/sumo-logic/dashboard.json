@@ -1,0 +1,25 @@
+{
+  "type": "DashboardV2SyncDefinition",
+  "name": "Clawdstrike Security Posture",
+  "panels": [
+    {
+      "panelType": "SumoSearchPanel",
+      "title": "Violations by Guard",
+      "queryString": "_sourceCategory=*/security/clawdstrike | json \"decision.guard\" as guard, \"decision.allowed\" as allowed | where allowed = \"false\" | count by guard",
+      "visualSettings": "{\"general\":{\"type\":\"pie\"}}"
+    },
+    {
+      "panelType": "SumoSearchPanel",
+      "title": "Event Timeline",
+      "queryString": "_sourceCategory=*/security/clawdstrike | json \"decision.allowed\" as allowed | timeslice 5m | count by _timeslice, allowed",
+      "visualSettings": "{\"general\":{\"type\":\"area\"}}"
+    },
+    {
+      "panelType": "SumoSearchPanel",
+      "title": "Top Blocked Resources",
+      "queryString": "_sourceCategory=*/security/clawdstrike | json \"decision.allowed\" as allowed, \"resource.name\" as resource | where allowed = \"false\" | count by resource | top 10 resource",
+      "visualSettings": "{\"general\":{\"type\":\"bar\"}}"
+    }
+  ]
+}
+

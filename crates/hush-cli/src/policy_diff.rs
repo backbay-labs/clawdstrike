@@ -34,10 +34,11 @@ pub fn load_policy_from_arg(
     resolve: bool,
     remote_extends: &RemoteExtendsConfig,
 ) -> Result<LoadedPolicy, PolicyLoadError> {
-    let resolver = RemotePolicyResolver::new(remote_extends.clone()).map_err(|e| PolicyLoadError {
-        message: format!("Failed to initialize remote extends resolver: {}", e),
-        source: e,
-    })?;
+    let resolver =
+        RemotePolicyResolver::new(remote_extends.clone()).map_err(|e| PolicyLoadError {
+            message: format!("Failed to initialize remote extends resolver: {}", e),
+            source: e,
+        })?;
 
     match RuleSet::by_name(arg) {
         Ok(Some(rs)) => {

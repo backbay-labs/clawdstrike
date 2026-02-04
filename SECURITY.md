@@ -82,8 +82,8 @@ The following security features have limited or no support in v0.1.0:
 | Feature              | Status      | Notes                                          |
 | -------------------- | ----------- | ---------------------------------------------- |
 | Rate limiting        | Implemented | Per-IP token bucket with trusted proxy support |
-| TPM integration      | Planned     | Hardware key storage not supported             |
-| Audit log encryption | Planned     | Logs stored in plaintext SQLite                |
+| TPM integration      | Implemented | Best-effort via TPM2-sealed Ed25519 seed       |
+| Audit log encryption | Implemented | Optional at-rest encryption for audit metadata |
 | Network isolation    | Partial     | Relies on policy, no kernel enforcement        |
 
 ### Rate Limiting Security Note

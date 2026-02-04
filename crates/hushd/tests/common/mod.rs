@@ -44,23 +44,26 @@ pub struct TestDaemon {
 impl TestDaemon {
     /// Spawn a new test daemon on an available port
     pub fn spawn() -> Self {
-        let port = find_available_port();
-        let url = format!("http://127.0.0.1:{}", port);
-
-        let test_dir = std::env::temp_dir().join(format!("hushd-test-{}", port));
-        std::fs::create_dir_all(&test_dir).expect("Failed to create test directory");
-
-        // Use an isolated config so tests don't write to user data dirs.
-        let config = Config {
-            listen: format!("127.0.0.1:{}", port),
-            audit_db: test_dir.join("audit.db"),
+        Self::spawn_with_config(Config {
             cors_enabled: false,
             rate_limit: RateLimitConfig {
                 enabled: false,
                 ..Default::default()
             },
             ..Default::default()
-        };
+        })
+    }
+
+    pub fn spawn_with_config(mut config: Config) -> Self {
+        let port = find_available_port();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        let test_dir = std::env::temp_dir().join(format!("hushd-test-{}", port));
+        std::fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+        // Always isolate storage to the temp dir, regardless of caller config.
+        config.listen = format!("127.0.0.1:{}", port);
+        config.audit_db = test_dir.join("audit.db");
 
         let config_path = test_dir.join("hushd.yaml");
         let yaml = serde_yaml::to_string(&config).expect("Failed to serialize config");

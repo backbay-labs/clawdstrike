@@ -1,0 +1,27 @@
+{
+  "name": "Clawdstrike Critical Policy Violation",
+  "description": "Detects critical severity policy violations from Clawdstrike",
+  "risk_score": 73,
+  "severity": "high",
+  "type": "query",
+  "query": "event.severity >= 5 and agent.type:clawdstrike and event.outcome:failure",
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0005",
+        "name": "Defense Evasion"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "action_type_id": ".pagerduty",
+      "params": {
+        "severity": "critical",
+        "summary": "Critical Clawdstrike policy violation detected"
+      }
+    }
+  ]
+}
+

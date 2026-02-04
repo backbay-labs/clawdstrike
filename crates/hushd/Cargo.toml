@@ -26,6 +26,7 @@ clawdstrike.workspace = true
 hush-certification.workspace = true
 clap.workspace = true
 tokio.workspace = true
+async-trait.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde.workspace = true
@@ -33,13 +34,14 @@ serde_json.workspace = true
 serde_yaml.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
-rand.workspace = true
 chrono-tz.workspace = true
+rand.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
 hex.workspace = true
 base64.workspace = true
+ring = "0.17"
 
 # HTTP server
 axum.workspace = true
@@ -55,6 +57,8 @@ dashmap.workspace = true
 regex.workspace = true
 globset.workspace = true
 roxmltree.workspace = true
+openssl.workspace = true
+rust-xmlsec.workspace = true
 
 # Database
 rusqlite.workspace = true
@@ -67,11 +71,11 @@ futures.workspace = true
 toml.workspace = true
 dirs.workspace = true
 
-# HTTP client (for status command + remote policy extends)
+# HTTP client (for status command + remote policy extends + SIEM exporters)
 reqwest = { workspace = true, features = ["blocking"] }
-
-# JWT (OIDC)
 jsonwebtoken.workspace = true
+flate2.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

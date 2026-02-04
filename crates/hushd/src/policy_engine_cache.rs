@@ -44,7 +44,11 @@ impl PolicyEngineCache {
         self.inner.clear();
     }
 
-    pub fn get_or_insert_with(&self, key: &str, build: impl FnOnce() -> Arc<HushEngine>) -> Arc<HushEngine> {
+    pub fn get_or_insert_with(
+        &self,
+        key: &str,
+        build: impl FnOnce() -> Arc<HushEngine>,
+    ) -> Arc<HushEngine> {
         if !self.enabled {
             return build();
         }
@@ -71,4 +75,3 @@ impl PolicyEngineCache {
         engine
     }
 }
-

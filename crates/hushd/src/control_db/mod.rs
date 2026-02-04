@@ -50,4 +50,3 @@ impl ControlDb {
         self.conn.lock().unwrap_or_else(|err| err.into_inner())
     }
 }
-

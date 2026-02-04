@@ -9,6 +9,9 @@
 mod common;
 
 use common::daemon_url;
+use hushd::config::{
+    AuditConfig, AuditEncryptionConfig, AuditEncryptionKeySource, Config, RateLimitConfig,
+};
 
 /// Helper to get client and URL
 fn test_setup() -> (reqwest::Client, String) {
@@ -30,6 +33,21 @@ async fn test_health_endpoint() {
     assert_eq!(health["status"], "healthy");
     assert!(health["version"].is_string());
     assert!(health["uptime_secs"].is_number());
+}
+
+#[tokio::test]
+async fn test_siem_exporters_endpoint() {
+    let (client, url) = test_setup();
+    let resp = client
+        .get(format!("{}/api/v1/siem/exporters", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body.get("enabled").is_some());
+    assert!(body.get("exporters").is_some());
 }
 
 #[tokio::test]
@@ -107,12 +125,48 @@ async fn test_get_policy() {
 }
 
 #[tokio::test]
+async fn test_update_policy_bundle_rejects_policy_hash_mismatch() {
+    let (client, url) = test_setup();
+
+    let signer = hush_core::Keypair::generate();
+    let policy = clawdstrike::Policy::new();
+    let correct_hash = clawdstrike::PolicyBundle::new(policy.clone())
+        .unwrap()
+        .policy_hash;
+    let bad_hash = {
+        let mut bytes = *correct_hash.as_bytes();
+        bytes[0] ^= 0x01;
+        hush_core::Hash::from_bytes(bytes)
+    };
+
+    let bundle = clawdstrike::PolicyBundle {
+        version: clawdstrike::POLICY_BUNDLE_SCHEMA_VERSION.to_string(),
+        bundle_id: "test-bundle".to_string(),
+        compiled_at: chrono::Utc::now().to_rfc3339(),
+        policy,
+        policy_hash: bad_hash,
+        sources: Vec::new(),
+        metadata: None,
+    };
+    let signed = clawdstrike::SignedPolicyBundle::sign_with_public_key(bundle, &signer).unwrap();
+
+    let resp = client
+        .put(format!("{}/api/v1/policy/bundle", url))
+        .json(&signed)
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert_eq!(resp.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
 async fn test_audit_query() {
     let (client, url) = test_setup();
 
     // First, make some actions to audit
     client
-        .post(format!("{}/api/v1/check", url))
+        .post(format!("{}/api/v1/check", &url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/test/file.txt"
@@ -123,7 +177,7 @@ async fn test_audit_query() {
 
     // Query audit log
     let resp = client
-        .get(format!("{}/api/v1/audit?limit=10", url))
+        .get(format!("{}/api/v1/audit?limit=10", &url))
         .send()
         .await
         .expect("Failed to query audit");
@@ -133,6 +187,74 @@ async fn test_audit_query() {
     let audit: serde_json::Value = resp.json().await.unwrap();
     assert!(audit["events"].is_array());
     assert!(audit["total"].is_number());
+}
+
+#[tokio::test]
+async fn test_audit_encryption_stores_ciphertext_and_decrypts_on_query() {
+    let key_path =
+        std::env::temp_dir().join(format!("hushd-audit-key-{}.hex", uuid::Uuid::new_v4()));
+    std::fs::write(&key_path, hex::encode([9u8; 32])).unwrap();
+
+    let daemon = common::TestDaemon::spawn_with_config(Config {
+        cors_enabled: false,
+        rate_limit: RateLimitConfig {
+            enabled: false,
+            ..Default::default()
+        },
+        audit: AuditConfig {
+            encryption: AuditEncryptionConfig {
+                enabled: true,
+                key_source: AuditEncryptionKeySource::File,
+                key_path: Some(key_path),
+                ..Default::default()
+            },
+        },
+        ..Default::default()
+    });
+
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
+
+    // Trigger an event with metadata (SecretLeakGuard emits details).
+    client
+        .post(format!("{}/api/v1/check", url))
+        .json(&serde_json::json!({
+            "action_type": "file_write",
+            "target": "/tmp/out.txt",
+            "content": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }))
+        .send()
+        .await
+        .expect("Failed to check action");
+
+    // Query audit log: should return decrypted metadata.
+    let resp = client
+        .get(format!("{}/api/v1/audit?limit=10", url))
+        .send()
+        .await
+        .expect("Failed to query audit");
+    assert!(resp.status().is_success());
+
+    let audit: serde_json::Value = resp.json().await.unwrap();
+    let events = audit["events"].as_array().unwrap();
+    let violation = events
+        .iter()
+        .find(|e| e["decision"] == "blocked")
+        .expect("expected at least one blocked event");
+    assert!(violation.get("metadata").is_some());
+
+    // Verify ciphertext is stored in SQLite (metadata_enc present, metadata NULL).
+    let db_path = daemon.test_dir.join("audit.db");
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let (plain, enc): (Option<String>, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT metadata, metadata_enc FROM audit_events WHERE decision = 'blocked' LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(plain.is_none());
+    assert!(enc.is_some());
 }
 
 #[tokio::test]
@@ -183,7 +305,9 @@ async fn test_metrics_endpoint() {
 
     assert!(resp.status().is_success());
     let body = resp.text().await.unwrap();
+    assert!(body.contains("hushd_uptime_seconds"));
     assert!(body.contains("hushd_http_requests_total"));
+    assert!(body.contains("hushd_siem_enabled"));
 }
 
 #[tokio::test]
@@ -468,7 +592,6 @@ async fn test_v1_webhooks_delivery_on_certification_issued() {
     assert_eq!(received["event"], "certification.issued");
     assert!(received["data"]["certificationId"].is_string());
 }
-
 // Unit tests that don't require daemon
 #[test]
 fn test_config_default() {

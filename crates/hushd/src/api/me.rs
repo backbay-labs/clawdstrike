@@ -35,7 +35,12 @@ pub async fn me(
 
     match actor {
         AuthenticatedActor::ApiKey(key) => {
-            let mut scopes: Vec<String> = key.scopes.iter().map(Scope::as_str).map(str::to_string).collect();
+            let mut scopes: Vec<String> = key
+                .scopes
+                .iter()
+                .map(Scope::as_str)
+                .map(str::to_string)
+                .collect();
             scopes.sort();
             Ok(Json(MeResponse {
                 actor_type: "api_key".to_string(),
@@ -54,4 +59,3 @@ pub async fn me(
         })),
     }
 }
-

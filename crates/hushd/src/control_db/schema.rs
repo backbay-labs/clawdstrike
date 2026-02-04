@@ -102,5 +102,13 @@ CREATE TABLE IF NOT EXISTS oidc_jti (
 
 CREATE INDEX IF NOT EXISTS idx_oidc_jti_expires_at ON oidc_jti(expires_at);
 
-INSERT OR REPLACE INTO control_metadata (key, value) VALUES ('schema_version', '4');
+-- Identity rate limiting (sliding window event log)
+CREATE TABLE IF NOT EXISTS identity_rate_limit_events (
+    identity_key TEXT NOT NULL,
+    ts INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_identity_rate_limit_events_key_ts ON identity_rate_limit_events(identity_key, ts);
+
+INSERT OR REPLACE INTO control_metadata (key, value) VALUES ('schema_version', '5');
 "#;

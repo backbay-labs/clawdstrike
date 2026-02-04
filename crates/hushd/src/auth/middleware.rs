@@ -134,7 +134,10 @@ pub async fn require_scope(
                     }
                 }
                 Scope::Admin => {
-                    let ok = principal.roles.iter().any(|r| r == "policy-admin" || r == "super-admin");
+                    let ok = principal
+                        .roles
+                        .iter()
+                        .any(|r| r == "policy-admin" || r == "super-admin");
                     if !ok {
                         return Err(StatusCode::FORBIDDEN);
                     }

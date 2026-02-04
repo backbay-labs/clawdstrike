@@ -6,11 +6,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-use clawdstrike::policy::{LocalPolicyResolver, PolicyLocation, PolicyResolver, ResolvedPolicySource};
+use clawdstrike::policy::{
+    LocalPolicyResolver, PolicyLocation, PolicyResolver, ResolvedPolicySource,
+};
 use clawdstrike::{Error, Result};
 use hush_core::sha256;
 use rand::Rng as _;
 use reqwest::blocking::Client;
+use reqwest::header::LOCATION;
+use reqwest::Url;
 
 use crate::config::RemoteExtendsConfig;
 
@@ -24,10 +28,7 @@ pub struct RemoteExtendsResolverConfig {
 
 impl RemoteExtendsResolverConfig {
     pub fn from_config(cfg: &RemoteExtendsConfig) -> Self {
-        let cache_dir = cfg
-            .cache_dir
-            .clone()
-            .unwrap_or_else(|| default_cache_dir());
+        let cache_dir = cfg.cache_dir.clone().unwrap_or_else(default_cache_dir);
 
         Self {
             allowed_hosts: cfg
@@ -58,22 +59,28 @@ fn default_cache_dir() -> PathBuf {
 pub struct RemotePolicyResolver {
     cfg: RemoteExtendsResolverConfig,
     local: LocalPolicyResolver,
-    client: &'static Client,
+    client: Option<&'static Client>,
 }
 
 impl RemotePolicyResolver {
     pub fn new(cfg: RemoteExtendsResolverConfig) -> Result<Self> {
         Ok(Self {
+            client: if cfg.remote_enabled() {
+                Some(blocking_http_client()?)
+            } else {
+                None
+            },
             cfg,
             local: LocalPolicyResolver::new(),
-            client: blocking_http_client()?,
         })
     }
 
     fn ensure_host_allowed(&self, host: &str) -> Result<()> {
         let host = host.trim().to_ascii_lowercase();
         if host.is_empty() {
-            return Err(Error::ConfigError("Remote extends URL missing host".to_string()));
+            return Err(Error::ConfigError(
+                "Remote extends URL missing host".to_string(),
+            ));
         }
         if !self.cfg.allowed_hosts.contains(&host) {
             return Err(Error::ConfigError(format!(
@@ -131,34 +138,94 @@ impl RemotePolicyResolver {
     }
 
     fn fetch_http_bytes(&self, url: &str) -> Result<Vec<u8>> {
-        let resp = self
-            .client
-            .get(url)
-            .send()
-            .map_err(|e| Error::ConfigError(format!("Failed to fetch remote policy: {}", e)))?;
+        let Some(client) = self.client else {
+            return Err(Error::ConfigError(
+                "Remote extends are disabled (no allowlisted hosts)".to_string(),
+            ));
+        };
 
-        if let Some(len) = resp.content_length() {
-            if len > (self.cfg.max_fetch_bytes as u64) {
+        const MAX_REDIRECTS: usize = 5;
+
+        let mut current =
+            Url::parse(url).map_err(|e| Error::ConfigError(format!("Invalid URL: {}", e)))?;
+
+        for _ in 0..=MAX_REDIRECTS {
+            let host = current
+                .host_str()
+                .ok_or_else(|| Error::ConfigError(format!("Invalid URL host: {}", current)))?;
+            self.ensure_host_allowed(host)?;
+
+            let resp = client
+                .get(current.clone())
+                .send()
+                .map_err(|e| Error::ConfigError(format!("Failed to fetch remote policy: {}", e)))?;
+
+            if resp.status().is_redirection() {
+                let location = resp
+                    .headers()
+                    .get(LOCATION)
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| {
+                        Error::ConfigError(format!(
+                            "Remote policy redirect missing Location header: {}",
+                            current
+                        ))
+                    })?;
+
+                let mut next = current
+                    .join(location)
+                    .map_err(|e| Error::ConfigError(format!("Invalid redirect URL: {}", e)))?;
+
+                // Fragments are never sent to servers; drop to keep keys consistent.
+                next.set_fragment(None);
+
+                match next.scheme() {
+                    "http" | "https" => {}
+                    other => {
+                        return Err(Error::ConfigError(format!(
+                            "Unsupported URL scheme for remote extends: {}",
+                            other
+                        )));
+                    }
+                }
+
+                current = next;
+                continue;
+            }
+
+            if !resp.status().is_success() {
                 return Err(Error::ConfigError(format!(
-                    "Remote policy exceeds max_fetch_bytes ({} > {})",
-                    len, self.cfg.max_fetch_bytes
+                    "Failed to fetch remote policy: HTTP {}",
+                    resp.status()
                 )));
             }
+
+            if let Some(len) = resp.content_length() {
+                if len > (self.cfg.max_fetch_bytes as u64) {
+                    return Err(Error::ConfigError(format!(
+                        "Remote policy exceeds max_fetch_bytes ({} > {})",
+                        len, self.cfg.max_fetch_bytes
+                    )));
+                }
+            }
+
+            let mut bytes = Vec::new();
+            let mut limited = resp.take((self.cfg.max_fetch_bytes as u64) + 1);
+            limited.read_to_end(&mut bytes).map_err(Error::IoError)?;
+            if bytes.len() > self.cfg.max_fetch_bytes {
+                return Err(Error::ConfigError(format!(
+                    "Remote policy exceeds max_fetch_bytes ({} > {})",
+                    bytes.len(),
+                    self.cfg.max_fetch_bytes
+                )));
+            }
+            return Ok(bytes);
         }
 
-        let mut bytes = Vec::new();
-        let mut limited = resp.take((self.cfg.max_fetch_bytes as u64) + 1);
-        limited
-            .read_to_end(&mut bytes)
-            .map_err(Error::IoError)?;
-        if bytes.len() > self.cfg.max_fetch_bytes {
-            return Err(Error::ConfigError(format!(
-                "Remote policy exceeds max_fetch_bytes ({} > {})",
-                bytes.len(),
-                self.cfg.max_fetch_bytes
-            )));
-        }
-        Ok(bytes)
+        Err(Error::ConfigError(format!(
+            "Remote policy exceeded max redirects (>{})",
+            MAX_REDIRECTS
+        )))
     }
 
     fn resolve_git_absolute(&self, reference: &str) -> Result<ResolvedPolicySource> {
@@ -341,7 +408,9 @@ fn split_sha256_pin(reference: &str) -> Result<(&str, &str)> {
         ));
     }
     if path.is_empty() {
-        return Err(Error::ConfigError("Remote extends reference is empty".to_string()));
+        return Err(Error::ConfigError(
+            "Remote extends reference is empty".to_string(),
+        ));
     }
     Ok((path, fragment))
 }
@@ -358,9 +427,9 @@ fn verify_sha256_pin(bytes: &[u8], expected_hex: &str) -> Result<()> {
 }
 
 fn parse_url_host(url: &str) -> Result<String> {
-    let (scheme, rest) = url.split_once("://").ok_or_else(|| {
-        Error::ConfigError(format!("Invalid URL in remote extends: {}", url))
-    })?;
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| Error::ConfigError(format!("Invalid URL in remote extends: {}", url)))?;
     if scheme != "http" && scheme != "https" {
         return Err(Error::ConfigError(format!(
             "Unsupported URL scheme for remote extends: {}",
@@ -473,13 +542,33 @@ fn enforce_cache_size_limit(cache_dir: &Path, max_bytes: usize) {
 }
 
 fn blocking_http_client() -> Result<&'static Client> {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    Ok(CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .unwrap_or_else(|_| Client::new())
-    }))
+    static CLIENT: OnceLock<std::result::Result<Client, String>> = OnceLock::new();
+
+    let res = CLIENT.get_or_init(|| {
+        let build = || {
+            Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|e| format!("Failed to build HTTP client: {}", e))
+        };
+
+        // reqwest::blocking spins up its own runtime; initializing that runtime from within an
+        // async Tokio context can panic. If we appear to be inside a Tokio runtime, build the
+        // blocking client in a fresh OS thread.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            std::thread::spawn(build)
+                .join()
+                .unwrap_or_else(|_| Err("Failed to build HTTP client".to_string()))
+        } else {
+            build()
+        }
+    });
+
+    match res {
+        Ok(client) => Ok(client),
+        Err(msg) => Err(Error::ConfigError(msg.clone())),
+    }
 }
 
 struct TempGitDir {
@@ -524,3 +613,117 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<()> {
     )))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write as _;
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    fn spawn_server<F>(
+        handler: F,
+    ) -> (
+        u16,
+        Arc<AtomicUsize>,
+        Arc<AtomicBool>,
+        thread::JoinHandle<()>,
+    )
+    where
+        F: Fn(&mut std::net::TcpStream) + Send + Sync + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        listener.set_nonblocking(true).expect("set_nonblocking");
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let stop = Arc::new(AtomicBool::new(false));
+        let calls_thread = calls.clone();
+        let stop_thread = stop.clone();
+        let handler = Arc::new(handler);
+
+        let handle = thread::spawn(move || {
+            while !stop_thread.load(Ordering::Relaxed) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        calls_thread.fetch_add(1, Ordering::Relaxed);
+                        handler(&mut stream);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        (port, calls, stop, handle)
+    }
+
+    #[test]
+    fn redirect_does_not_bypass_allowlist() {
+        let (b_port, b_calls, b_stop, b_handle) = spawn_server(|stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            let body = b"ok\n";
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(body);
+        });
+
+        let redirect_target = format!("http://localhost:{}/policy.yaml", b_port);
+        let (a_port, _a_calls, a_stop, a_handle) = spawn_server(move |stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            let resp = format!(
+                "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                redirect_target
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        });
+
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!(
+            "http://127.0.0.1:{}/policy.yaml#sha256={}",
+            a_port,
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("redirect to disallowed host should fail");
+        assert!(
+            err.to_string().contains("allowlisted"),
+            "expected allowlist failure, got: {err}"
+        );
+
+        thread::sleep(Duration::from_millis(100));
+        assert_eq!(b_calls.load(Ordering::Relaxed), 0);
+
+        a_stop.store(true, Ordering::Relaxed);
+        b_stop.store(true, Ordering::Relaxed);
+        let _ = a_handle.join();
+        let _ = b_handle.join();
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+}

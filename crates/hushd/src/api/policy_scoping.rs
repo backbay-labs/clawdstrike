@@ -9,25 +9,86 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use clawdstrike::{guards::GuardContext, Policy};
 use clawdstrike::policy::MergeStrategy;
+use clawdstrike::{guards::GuardContext, Policy};
 
 use crate::audit::AuditEvent;
 use crate::auth::{AuthenticatedActor, Scope};
-use crate::authz::require_api_key_scope_or_user_permission;
-use crate::rbac::{Action, ResourceType};
+use crate::authz::{
+    require_api_key_scope_or_user_permission, require_api_key_scope_or_user_permission_with_context,
+};
+use crate::rbac::{
+    Action, ResourceRef, ResourceType, RoleScope as RbacRoleScope, ScopeType as RbacScopeType,
+};
 use crate::state::AppState;
 
 use crate::policy_scoping::{
-    PolicyAssignment, PolicyAssignmentTarget, PolicyMetadata, PolicyScope, PolicyScopeType, ResolvedPolicy,
-    ScopedPolicy,
+    PolicyAssignment, PolicyAssignmentTarget, PolicyMetadata, PolicyScope, PolicyScopeType,
+    ResolvedPolicy, ScopedPolicy,
 };
 
 fn actor_string(actor: Option<&AuthenticatedActor>) -> String {
     match actor {
         Some(AuthenticatedActor::ApiKey(key)) => format!("api_key:{}", key.id),
-        Some(AuthenticatedActor::User(principal)) => format!("user:{}:{}", principal.issuer, principal.id),
+        Some(AuthenticatedActor::User(principal)) => {
+            format!("user:{}:{}", principal.issuer, principal.id)
+        }
         None => "system".to_string(),
+    }
+}
+
+fn actor_is_super_admin(state: &AppState, actor: Option<&AuthenticatedActor>) -> bool {
+    let Some(AuthenticatedActor::User(principal)) = actor else {
+        return false;
+    };
+    state
+        .rbac
+        .effective_roles_for_identity(principal)
+        .iter()
+        .any(|r| r == "super-admin")
+}
+
+fn scope_org_id(scope: &PolicyScope) -> Option<&str> {
+    if scope.scope_type == PolicyScopeType::Organization {
+        return scope.id.as_deref();
+    }
+    scope.parent.as_deref().and_then(scope_org_id)
+}
+
+fn rbac_scope_for_policy_scope(scope: &PolicyScope) -> Option<RbacRoleScope> {
+    let scope_type = match scope.scope_type {
+        PolicyScopeType::Global => RbacScopeType::Global,
+        PolicyScopeType::Organization => RbacScopeType::Organization,
+        PolicyScopeType::Team => RbacScopeType::Team,
+        PolicyScopeType::Project => RbacScopeType::Project,
+        PolicyScopeType::User => RbacScopeType::User,
+        PolicyScopeType::Role => {
+            // RBAC doesn't treat "role" as a tenant scope; fail closed for scoped roles.
+            return None;
+        }
+    };
+
+    Some(RbacRoleScope {
+        scope_type,
+        scope_id: scope.id.clone(),
+        include_children: false,
+    })
+}
+
+fn rbac_scope_for_assignment_target(target: &PolicyAssignmentTarget) -> RbacRoleScope {
+    let scope_type = match target.target_type {
+        crate::policy_scoping::PolicyAssignmentTargetType::Organization => {
+            RbacScopeType::Organization
+        }
+        crate::policy_scoping::PolicyAssignmentTargetType::Team => RbacScopeType::Team,
+        crate::policy_scoping::PolicyAssignmentTargetType::Project => RbacScopeType::Project,
+        crate::policy_scoping::PolicyAssignmentTargetType::User => RbacScopeType::User,
+    };
+
+    RbacRoleScope {
+        scope_type,
+        scope_id: Some(target.id.clone()),
+        include_children: false,
     }
 }
 
@@ -85,12 +146,30 @@ pub async fn create_scoped_policy(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<CreateScopedPolicyRequest>,
 ) -> Result<Json<ScopedPolicy>, (StatusCode, String)> {
-    require_api_key_scope_or_user_permission(
-        actor.as_ref().map(|e| &e.0),
+    // RBAC does not currently have a first-class "role" scope type.
+    // Fail closed: only super-admin users may mutate role-scoped policies.
+    let actor_ref = actor.as_ref().map(|e| &e.0);
+    if request.scope.scope_type == PolicyScopeType::Role
+        && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
+        && !actor_is_super_admin(&state, actor_ref)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "role_scoped_policy_requires_super_admin".to_string(),
+        ));
+    }
+
+    require_api_key_scope_or_user_permission_with_context(
+        actor_ref,
         &state.rbac,
         Scope::Admin,
-        ResourceType::Policy,
+        ResourceRef {
+            resource_type: ResourceType::Policy,
+            id: None,
+            attributes: None,
+        },
         Action::Create,
+        rbac_scope_for_policy_scope(&request.scope),
     )?;
 
     // Validate policy yaml eagerly.
@@ -98,13 +177,38 @@ pub async fn create_scoped_policy(
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid policy_yaml: {e}")))?;
 
     // Basic scope validation.
-    if request.scope.scope_type != PolicyScopeType::Global && request.scope.id.as_deref().unwrap_or("").is_empty() {
+    if request.scope.scope_type != PolicyScopeType::Global
+        && request.scope.id.as_deref().unwrap_or("").is_empty()
+    {
         return Err((StatusCode::BAD_REQUEST, "scope.id_required".to_string()));
     }
 
+    // Tenant scoping: non-super-admin users can only create policies in their org.
+    if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
+        if let AuthenticatedActor::User(principal) = actor {
+            if !actor_is_super_admin(&state, Some(actor)) {
+                let policy_org = scope_org_id(&request.scope);
+                let actor_org = principal.organization_id.as_deref();
+
+                if let Some(policy_org) = policy_org {
+                    if actor_org.is_some() && actor_org != Some(policy_org) {
+                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                    }
+                    if actor_org.is_none() {
+                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    }
+                } else if request.scope.scope_type != PolicyScopeType::Global {
+                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                }
+            }
+        }
+    }
+
     let now = chrono::Utc::now().to_rfc3339();
-    let id = request.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let created_by = actor_string(actor.as_ref().map(|e| &e.0));
+    let id = request
+        .id
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let actor_id = actor_string(actor.as_ref().map(|e| &e.0));
 
     let policy = ScopedPolicy {
         id: id.clone(),
@@ -117,7 +221,7 @@ pub async fn create_scoped_policy(
         metadata: Some(PolicyMetadata {
             created_at: now.clone(),
             updated_at: now.clone(),
-            created_by,
+            created_by: actor_id.clone(),
             description: request.description,
             tags: request.tags,
         }),
@@ -128,14 +232,15 @@ pub async fn create_scoped_policy(
         .store()
         .insert_scoped_policy(&policy)
         .map_err(|e| {
-            if let crate::policy_scoping::PolicyScopingError::Database(db) = &e {
-                if let rusqlite::Error::SqliteFailure(err, _) = db {
-                    if matches!(
-                        err.code,
-                        rusqlite::ErrorCode::ConstraintViolation
-                    ) {
-                        return (StatusCode::CONFLICT, "scoped_policy_already_exists".to_string());
-                    }
+            if let crate::policy_scoping::PolicyScopingError::Database(
+                rusqlite::Error::SqliteFailure(err, _),
+            ) = &e
+            {
+                if matches!(err.code, rusqlite::ErrorCode::ConstraintViolation) {
+                    return (
+                        StatusCode::CONFLICT,
+                        "scoped_policy_already_exists".to_string(),
+                    );
                 }
             }
             (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
@@ -148,8 +253,11 @@ pub async fn create_scoped_policy(
     audit.action_type = "scoped_policy".to_string();
     audit.target = Some(id.clone());
     audit.message = Some("Scoped policy created".to_string());
-    audit.metadata = Some(serde_json::json!({ "policy": policy }));
-    let _ = state.ledger.record(&audit);
+    audit.metadata = Some(serde_json::json!({
+        "actor": actor_id,
+        "policy": policy.clone(),
+    }));
+    state.record_audit_event(audit);
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "scoped_policy_created".to_string(),
@@ -178,6 +286,27 @@ pub async fn list_scoped_policies(
         .list_scoped_policies()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let actor_ref = actor.as_ref().map(|e| &e.0);
+    let is_super_admin = actor_is_super_admin(&state, actor_ref);
+
+    let policies = match actor_ref {
+        Some(AuthenticatedActor::User(principal)) if !is_super_admin => {
+            let actor_org = principal.organization_id.as_deref();
+            policies
+                .into_iter()
+                .filter(|p| {
+                    let policy_org = scope_org_id(&p.scope);
+                    match (actor_org, policy_org) {
+                        (Some(a), Some(o)) => a == o,
+                        (None, Some(_)) => false,
+                        (_, None) => p.scope.scope_type == PolicyScopeType::Global,
+                    }
+                })
+                .collect()
+        }
+        _ => policies,
+    };
+
     Ok(Json(ListScopedPoliciesResponse { policies }))
 }
 
@@ -188,14 +317,7 @@ pub async fn update_scoped_policy(
     Path(id): Path<String>,
     Json(request): Json<UpdateScopedPolicyRequest>,
 ) -> Result<Json<ScopedPolicy>, (StatusCode, String)> {
-    require_api_key_scope_or_user_permission(
-        actor.as_ref().map(|e| &e.0),
-        &state.rbac,
-        Scope::Admin,
-        ResourceType::Policy,
-        Action::Update,
-    )?;
-
+    let actor_ref = actor.as_ref().map(|e| &e.0);
     let Some(mut existing) = state
         .policy_resolver
         .store()
@@ -205,11 +327,15 @@ pub async fn update_scoped_policy(
         return Err((StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()));
     };
 
+    let before = existing.clone();
+
     if let Some(name) = request.name {
         existing.name = name;
     }
     if let Some(scope) = request.scope {
-        if scope.scope_type != PolicyScopeType::Global && scope.id.as_deref().unwrap_or("").is_empty() {
+        if scope.scope_type != PolicyScopeType::Global
+            && scope.id.as_deref().unwrap_or("").is_empty()
+        {
             return Err((StatusCode::BAD_REQUEST, "scope.id_required".to_string()));
         }
         existing.scope = scope;
@@ -221,12 +347,57 @@ pub async fn update_scoped_policy(
         existing.merge_strategy = ms;
     }
     if let Some(yaml) = request.policy_yaml {
-        Policy::from_yaml(&yaml).map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid policy_yaml: {e}")))?;
+        Policy::from_yaml(&yaml)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid policy_yaml: {e}")))?;
         existing.policy_yaml = yaml;
     }
     if let Some(enabled) = request.enabled {
         existing.enabled = enabled;
     }
+
+    // Tenant scoping: non-super-admin users can only modify policies in their org.
+    if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
+        if let AuthenticatedActor::User(principal) = actor {
+            if !actor_is_super_admin(&state, Some(actor)) {
+                let policy_org = scope_org_id(&existing.scope);
+                let actor_org = principal.organization_id.as_deref();
+                if let Some(policy_org) = policy_org {
+                    if actor_org.is_some() && actor_org != Some(policy_org) {
+                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                    }
+                    if actor_org.is_none() {
+                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    }
+                } else if existing.scope.scope_type != PolicyScopeType::Global {
+                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                }
+            }
+        }
+    }
+
+    // RBAC: apply scope constraints using the updated policy scope.
+    if existing.scope.scope_type == PolicyScopeType::Role
+        && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
+        && !actor_is_super_admin(&state, actor_ref)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "role_scoped_policy_requires_super_admin".to_string(),
+        ));
+    }
+
+    require_api_key_scope_or_user_permission_with_context(
+        actor_ref,
+        &state.rbac,
+        Scope::Admin,
+        ResourceRef {
+            resource_type: ResourceType::Policy,
+            id: Some(id.clone()),
+            attributes: None,
+        },
+        Action::Update,
+        rbac_scope_for_policy_scope(&existing.scope),
+    )?;
 
     let now = chrono::Utc::now().to_rfc3339();
     existing.metadata = Some(match existing.metadata.take() {
@@ -257,13 +428,18 @@ pub async fn update_scoped_policy(
 
     state.policy_engine_cache.clear();
 
+    let after = existing.clone();
     let mut audit = AuditEvent::session_start(&state.session_id, None);
     audit.event_type = "scoped_policy_updated".to_string();
     audit.action_type = "scoped_policy".to_string();
     audit.target = Some(id.clone());
     audit.message = Some("Scoped policy updated".to_string());
-    audit.metadata = Some(serde_json::json!({ "policy": existing }));
-    let _ = state.ledger.record(&audit);
+    audit.metadata = Some(serde_json::json!({
+        "actor": actor_string(actor.as_ref().map(|e| &e.0)),
+        "before": before,
+        "after": after,
+    }));
+    state.record_audit_event(audit);
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "scoped_policy_updated".to_string(),
@@ -279,13 +455,56 @@ pub async fn delete_scoped_policy(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    require_api_key_scope_or_user_permission(
-        actor.as_ref().map(|e| &e.0),
+    let actor_ref = actor.as_ref().map(|e| &e.0);
+    let existing = state
+        .policy_resolver
+        .store()
+        .get_scoped_policy(&id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()))?;
+
+    if existing.scope.scope_type == PolicyScopeType::Role
+        && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
+        && !actor_is_super_admin(&state, actor_ref)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "role_scoped_policy_requires_super_admin".to_string(),
+        ));
+    }
+
+    require_api_key_scope_or_user_permission_with_context(
+        actor_ref,
         &state.rbac,
         Scope::Admin,
-        ResourceType::Policy,
+        ResourceRef {
+            resource_type: ResourceType::Policy,
+            id: Some(id.clone()),
+            attributes: None,
+        },
         Action::Delete,
+        rbac_scope_for_policy_scope(&existing.scope),
     )?;
+
+    // Tenant scoping.
+    if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
+        if let AuthenticatedActor::User(principal) = actor {
+            if !actor_is_super_admin(&state, Some(actor)) {
+                let policy_org = scope_org_id(&existing.scope);
+                let actor_org = principal.organization_id.as_deref();
+                if let Some(policy_org) = policy_org {
+                    if actor_org.is_some() && actor_org != Some(policy_org) {
+                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                    }
+                    if actor_org.is_none() {
+                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    }
+                } else if existing.scope.scope_type != PolicyScopeType::Global {
+                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                }
+            }
+        }
+    }
 
     let deleted = state
         .policy_resolver
@@ -303,8 +522,11 @@ pub async fn delete_scoped_policy(
     audit.action_type = "scoped_policy".to_string();
     audit.target = Some(id.clone());
     audit.message = Some("Scoped policy deleted".to_string());
-    audit.metadata = Some(serde_json::json!({ "id": id }));
-    let _ = state.ledger.record(&audit);
+    audit.metadata = Some(serde_json::json!({
+        "actor": actor_string(actor.as_ref().map(|e| &e.0)),
+        "policy": existing,
+    }));
+    state.record_audit_event(audit);
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "scoped_policy_deleted".to_string(),
@@ -339,23 +561,54 @@ pub async fn create_assignment(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<CreateAssignmentRequest>,
 ) -> Result<Json<PolicyAssignment>, (StatusCode, String)> {
-    require_api_key_scope_or_user_permission(
+    require_api_key_scope_or_user_permission_with_context(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
         Scope::Admin,
-        ResourceType::PolicyAssignment,
+        ResourceRef {
+            resource_type: ResourceType::PolicyAssignment,
+            id: None,
+            attributes: None,
+        },
         Action::Assign,
+        Some(rbac_scope_for_assignment_target(&request.target)),
     )?;
 
     // Ensure policy exists.
-    let exists = state
+    let policy = state
         .policy_resolver
         .store()
         .get_scoped_policy(&request.policy_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .is_some();
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()));
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()))?;
+
+    // Tenant scoping: policy and target must remain within the actor's org (unless super-admin).
+    if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
+        if let AuthenticatedActor::User(principal) = actor {
+            if !actor_is_super_admin(&state, Some(actor)) {
+                let policy_org = scope_org_id(&policy.scope);
+                let actor_org = principal.organization_id.as_deref();
+                if let Some(policy_org) = policy_org {
+                    if actor_org.is_some() && actor_org != Some(policy_org) {
+                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                    }
+                    if actor_org.is_none() {
+                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    }
+                    if request.target.target_type
+                        == crate::policy_scoping::PolicyAssignmentTargetType::Organization
+                        && request.target.id != policy_org
+                    {
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "cross_org_assignment_denied".to_string(),
+                        ));
+                    }
+                } else if policy.scope.scope_type != PolicyScopeType::Global {
+                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                }
+            }
+        }
     }
 
     let assigned_at = chrono::Utc::now().to_rfc3339();
@@ -384,7 +637,7 @@ pub async fn create_assignment(
     audit.action_type = "policy_assignment".to_string();
     audit.target = Some(assignment.id.clone());
     audit.message = Some("Policy assignment created".to_string());
-    audit.metadata = Some(serde_json::json!({ "assignment": assignment }));
+    audit.metadata = Some(serde_json::json!({ "assignment": assignment.clone() }));
     let _ = state.ledger.record(&audit);
 
     state.broadcast(crate::state::DaemonEvent {
@@ -400,19 +653,92 @@ pub async fn list_assignments(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
 ) -> Result<Json<ListAssignmentsResponse>, (StatusCode, String)> {
-    require_api_key_scope_or_user_permission(
+    // API keys still require explicit scope; user principals are filtered by RBAC below.
+    if matches!(
         actor.as_ref().map(|e| &e.0),
-        &state.rbac,
-        Scope::Read,
-        ResourceType::PolicyAssignment,
-        Action::Read,
-    )?;
+        Some(AuthenticatedActor::ApiKey(_))
+    ) {
+        require_api_key_scope_or_user_permission(
+            actor.as_ref().map(|e| &e.0),
+            &state.rbac,
+            Scope::Read,
+            ResourceType::PolicyAssignment,
+            Action::Read,
+        )?;
+    }
 
     let assignments = state
         .policy_resolver
         .store()
         .list_assignments()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let actor_ref = actor.as_ref().map(|e| &e.0);
+    let is_super_admin = actor_is_super_admin(&state, actor_ref);
+
+    let assignments = match actor_ref {
+        Some(AuthenticatedActor::User(principal)) if !is_super_admin => {
+            let actor_org = principal.organization_id.as_deref();
+            let mut out = Vec::new();
+            for a in assignments {
+                let Some(policy) = state
+                    .policy_resolver
+                    .store()
+                    .get_scoped_policy(&a.policy_id)
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                else {
+                    continue;
+                };
+                let policy_org = scope_org_id(&policy.scope);
+                match (actor_org, policy_org) {
+                    (Some(aorg), Some(porg)) if aorg == porg => {
+                        let scope = rbac_scope_for_assignment_target(&a.target);
+                        let allowed = state
+                            .rbac
+                            .check_permission_for_identity_with_context(
+                                principal,
+                                ResourceRef {
+                                    resource_type: ResourceType::PolicyAssignment,
+                                    id: Some(a.id.clone()),
+                                    attributes: None,
+                                },
+                                Action::Read,
+                                Some(scope),
+                            )
+                            .map(|r| r.allowed)
+                            .unwrap_or(false);
+                        if allowed {
+                            out.push(a);
+                        }
+                    }
+                    (Some(_), Some(_)) => {}
+                    (None, Some(_)) => {}
+                    (_, None) => {
+                        let scope = rbac_scope_for_assignment_target(&a.target);
+                        let allowed = state
+                            .rbac
+                            .check_permission_for_identity_with_context(
+                                principal,
+                                ResourceRef {
+                                    resource_type: ResourceType::PolicyAssignment,
+                                    id: Some(a.id.clone()),
+                                    attributes: None,
+                                },
+                                Action::Read,
+                                Some(scope),
+                            )
+                            .map(|r| r.allowed)
+                            .unwrap_or(false);
+                        if allowed {
+                            out.push(a);
+                        }
+                    }
+                }
+            }
+            out
+        }
+        _ => assignments,
+    };
 
     Ok(Json(ListAssignmentsResponse { assignments }))
 }
@@ -423,13 +749,59 @@ pub async fn delete_assignment(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    require_api_key_scope_or_user_permission(
+    let existing = state
+        .policy_resolver
+        .store()
+        .get_assignment(&id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "policy_assignment_not_found".to_string(),
+            )
+        })?;
+
+    require_api_key_scope_or_user_permission_with_context(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
         Scope::Admin,
-        ResourceType::PolicyAssignment,
+        ResourceRef {
+            resource_type: ResourceType::PolicyAssignment,
+            id: Some(id.clone()),
+            attributes: None,
+        },
         Action::Unassign,
+        Some(rbac_scope_for_assignment_target(&existing.target)),
     )?;
+
+    // Tenant scoping.
+    if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
+        if let AuthenticatedActor::User(principal) = actor {
+            if !actor_is_super_admin(&state, Some(actor)) {
+                let actor_org = principal.organization_id.as_deref();
+                let policy = state
+                    .policy_resolver
+                    .store()
+                    .get_scoped_policy(&existing.policy_id)
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                    .ok_or_else(|| {
+                        (StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string())
+                    })?;
+
+                let policy_org = scope_org_id(&policy.scope);
+                if let Some(policy_org) = policy_org {
+                    if actor_org.is_some() && actor_org != Some(policy_org) {
+                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                    }
+                    if actor_org.is_none() {
+                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    }
+                } else if policy.scope.scope_type != PolicyScopeType::Global {
+                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                }
+            }
+        }
+    }
 
     let deleted = state
         .policy_resolver
@@ -437,7 +809,10 @@ pub async fn delete_assignment(
         .delete_assignment(&id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if !deleted {
-        return Err((StatusCode::NOT_FOUND, "policy_assignment_not_found".to_string()));
+        return Err((
+            StatusCode::NOT_FOUND,
+            "policy_assignment_not_found".to_string(),
+        ));
     }
 
     state.policy_engine_cache.clear();
@@ -447,7 +822,10 @@ pub async fn delete_assignment(
     audit.action_type = "policy_assignment".to_string();
     audit.target = Some(id.clone());
     audit.message = Some("Policy assignment deleted".to_string());
-    audit.metadata = Some(serde_json::json!({ "id": id }));
+    audit.metadata = Some(serde_json::json!({
+        "actor": actor_string(actor.as_ref().map(|e| &e.0)),
+        "assignment": existing,
+    }));
     let _ = state.ledger.record(&audit);
 
     state.broadcast(crate::state::DaemonEvent {
@@ -502,12 +880,21 @@ pub async fn resolve_policy(
             .get(axum::http::header::USER_AGENT)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string()),
-        geo_location: None,
+        geo_location: headers
+            .get("X-Hush-Country")
+            .and_then(|v| v.to_str().ok())
+            .map(|c| clawdstrike::GeoLocation {
+                country: Some(c.to_string()),
+                region: None,
+                city: None,
+                latitude: None,
+                longitude: None,
+            }),
         is_vpn: None,
         is_corporate_network: None,
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
-    ctx = ctx.with_request(request_ctx);
+    ctx = ctx.with_request(request_ctx.clone());
 
     if let Some(session_id) = query.session_id.as_deref() {
         let validation = state
@@ -528,8 +915,13 @@ pub async fn resolve_policy(
         if let Some(ext) = actor.as_ref() {
             match &ext.0 {
                 AuthenticatedActor::User(principal) => {
-                    if principal.id != session.identity.id || principal.issuer != session.identity.issuer {
-                        return Err((StatusCode::FORBIDDEN, "session_identity_mismatch".to_string()));
+                    if principal.id != session.identity.id
+                        || principal.issuer != session.identity.issuer
+                    {
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "session_identity_mismatch".to_string(),
+                        ));
                     }
                 }
                 AuthenticatedActor::ApiKey(key) => {
@@ -539,16 +931,29 @@ pub async fn resolve_policy(
                         .and_then(|s| s.get("bound_api_key_id"))
                         .and_then(|v| v.as_str());
                     let Some(bound_id) = bound else {
-                        return Err((StatusCode::FORBIDDEN, "api_key_cannot_use_unbound_sessions".to_string()));
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "api_key_cannot_use_unbound_sessions".to_string(),
+                        ));
                     };
                     if bound_id != key.id.as_str() {
-                        return Err((StatusCode::FORBIDDEN, "api_key_session_binding_mismatch".to_string()));
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "api_key_session_binding_mismatch".to_string(),
+                        ));
                     }
                 }
             }
         }
 
-        ctx = state.sessions.create_guard_context(&session, ctx.request.as_ref());
+        state
+            .sessions
+            .validate_session_binding(&session, &request_ctx)
+            .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
+
+        ctx = state
+            .sessions
+            .create_guard_context(&session, ctx.request.as_ref());
     } else if let Some(ext) = actor.as_ref() {
         if let AuthenticatedActor::User(principal) = &ext.0 {
             let roles = state.rbac.effective_roles_for_identity(principal);
@@ -576,9 +981,14 @@ pub async fn resolve_policy(
 
     // Prime cache (optional).
     if let Some(keypair) = keypair {
-        let engine = state.policy_engine_cache.get_or_insert_with(&policy_hash, || {
-            Arc::new(clawdstrike::HushEngine::with_policy(resolved.policy.clone()).with_keypair(keypair))
-        });
+        let engine = state
+            .policy_engine_cache
+            .get_or_insert_with(&policy_hash, || {
+                Arc::new(
+                    clawdstrike::HushEngine::with_policy(resolved.policy.clone())
+                        .with_keypair(keypair),
+                )
+            });
         drop(engine);
     }
 
@@ -587,4 +997,84 @@ pub async fn resolve_policy(
         policy_yaml,
         policy_hash,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use axum::extract::State;
+    use axum::Json;
+
+    fn test_policy_admin(org_id: &str) -> AuthenticatedActor {
+        AuthenticatedActor::User(clawdstrike::IdentityPrincipal {
+            id: "user-1".to_string(),
+            provider: clawdstrike::IdentityProvider::Oidc,
+            issuer: "https://issuer.example".to_string(),
+            display_name: None,
+            email: None,
+            email_verified: None,
+            organization_id: Some(org_id.to_string()),
+            teams: Vec::new(),
+            roles: vec!["policy-admin".to_string()],
+            attributes: std::collections::HashMap::new(),
+            authenticated_at: chrono::Utc::now().to_rfc3339(),
+            auth_method: None,
+            expires_at: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn role_scoped_policy_mutation_requires_super_admin() {
+        let test_dir =
+            std::env::temp_dir().join(format!("hushd-role-scope-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&test_dir).expect("create temp dir");
+
+        let config = crate::config::Config {
+            cors_enabled: false,
+            audit_db: test_dir.join("audit.db"),
+            control_db: Some(test_dir.join("control.db")),
+            ..Default::default()
+        };
+        let state = AppState::new(config).await.expect("state");
+
+        let role_scope = PolicyScope {
+            scope_type: PolicyScopeType::Role,
+            id: Some("role-1".to_string()),
+            name: Some("Role 1".to_string()),
+            parent: Some(Box::new(PolicyScope {
+                scope_type: PolicyScopeType::Organization,
+                id: Some("org-1".to_string()),
+                name: None,
+                parent: None,
+                conditions: Vec::new(),
+            })),
+            conditions: Vec::new(),
+        };
+
+        let request = CreateScopedPolicyRequest {
+            id: None,
+            name: "role-scoped".to_string(),
+            scope: role_scope,
+            priority: 0,
+            merge_strategy: MergeStrategy::Merge,
+            policy_yaml: Policy::new().to_yaml().expect("serialize default policy"),
+            enabled: true,
+            description: None,
+            tags: None,
+        };
+
+        let res = create_scoped_policy(
+            State(state),
+            Some(axum::extract::Extension(test_policy_admin("org-1"))),
+            Json(request),
+        )
+        .await;
+
+        let (status, msg) = res.expect_err("expected forbidden");
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(msg, "role_scoped_policy_requires_super_admin");
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
 }

@@ -20,7 +20,10 @@ fn timing_safe_eq(a: &str, b: &str) -> bool {
 }
 
 fn extract_bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
-    let auth_header = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
+    let auth_header = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
     let auth_header = auth_header.trim();
     let (scheme, token) = auth_header.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("bearer") {
@@ -57,16 +60,25 @@ pub async fn okta_webhook(
     }
 
     let Some(webhooks) = okta.webhooks.as_ref() else {
-        return Err((StatusCode::NOT_FOUND, "okta_webhooks_not_configured".to_string()));
+        return Err((
+            StatusCode::NOT_FOUND,
+            "okta_webhooks_not_configured".to_string(),
+        ));
     };
 
     let expected = expand_env_refs(&webhooks.verification_key)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let Some(token) = extract_bearer_token(&headers) else {
-        return Err((StatusCode::UNAUTHORIZED, "missing_authorization".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "missing_authorization".to_string(),
+        ));
     };
     if !timing_safe_eq(&token, &expected) {
-        return Err((StatusCode::UNAUTHORIZED, "invalid_authorization".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid_authorization".to_string(),
+        ));
     }
 
     let payload: serde_json::Value =
@@ -118,7 +130,9 @@ pub async fn okta_webhook(
         data: serde_json::json!({ "terminated_sessions": terminated }),
     });
 
-    Ok(Json(serde_json::json!({ "ok": true, "terminated_sessions": terminated })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "terminated_sessions": terminated }),
+    ))
 }
 
 fn extract_okta_user_ids(event: &serde_json::Value) -> Vec<String> {
@@ -151,16 +165,25 @@ pub async fn auth0_webhook(
         return Err((StatusCode::NOT_FOUND, "auth0_not_configured".to_string()));
     };
     let Some(log_stream) = auth0.log_stream.as_ref() else {
-        return Err((StatusCode::NOT_FOUND, "auth0_log_stream_not_configured".to_string()));
+        return Err((
+            StatusCode::NOT_FOUND,
+            "auth0_log_stream_not_configured".to_string(),
+        ));
     };
 
     let expected = expand_env_refs(&log_stream.authorization)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let Some(token) = extract_bearer_token(&headers) else {
-        return Err((StatusCode::UNAUTHORIZED, "missing_authorization".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "missing_authorization".to_string(),
+        ));
     };
     if !timing_safe_eq(&token, &expected) {
-        return Err((StatusCode::UNAUTHORIZED, "invalid_authorization".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid_authorization".to_string(),
+        ));
     }
 
     let payload: serde_json::Value =
@@ -191,7 +214,9 @@ pub async fn auth0_webhook(
         data: serde_json::json!({ "terminated_sessions": terminated }),
     });
 
-    Ok(Json(serde_json::json!({ "ok": true, "terminated_sessions": terminated })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "terminated_sessions": terminated }),
+    ))
 }
 
 fn extract_auth0_events(payload: &serde_json::Value) -> Vec<(String, String)> {
@@ -236,4 +261,3 @@ fn find_string_field(value: &serde_json::Value, keys: &[&str]) -> Option<String>
         _ => None,
     }
 }
-

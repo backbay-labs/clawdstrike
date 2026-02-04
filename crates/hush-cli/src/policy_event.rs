@@ -2,7 +2,9 @@ use anyhow::Context as _;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 use clawdstrike::guards::GuardAction;
-use clawdstrike::{GuardContext, IdentityPrincipal, OrganizationContext, RequestContext, SessionContext};
+use clawdstrike::{
+    GuardContext, IdentityPrincipal, OrganizationContext, RequestContext, SessionContext,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::canonical_commandline::canonical_shell_commandline;
@@ -715,9 +717,9 @@ mod tests {
 
             let event: PolicyEvent = serde_json::from_str(line)
                 .unwrap_or_else(|_| panic!("invalid JSON at line {}", line_no + 1));
-            event.validate().unwrap_or_else(|e| {
-                panic!("invalid PolicyEvent at line {}: {}", line_no + 1, e)
-            });
+            event
+                .validate()
+                .unwrap_or_else(|e| panic!("invalid PolicyEvent at line {}: {}", line_no + 1, e));
         }
     }
 }

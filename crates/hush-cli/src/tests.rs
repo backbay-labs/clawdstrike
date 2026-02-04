@@ -11,7 +11,9 @@
 mod cli_parsing {
     use clap::Parser;
 
-    use crate::{Cli, Commands, DaemonCommands, MerkleCommands, PolicyCommands};
+    use crate::{
+        Cli, Commands, DaemonCommands, MerkleCommands, PolicyBundleCommands, PolicyCommands,
+    };
 
     #[test]
     fn test_check_command_parses_with_required_args() {
@@ -137,8 +139,9 @@ mod cli_parsing {
         let cli = Cli::parse_from(["hush", "keygen"]);
 
         match cli.command {
-            Commands::Keygen { output } => {
+            Commands::Keygen { output, tpm_seal } => {
                 assert_eq!(output, "hush.key"); // default
+                assert!(!tpm_seal);
             }
             _ => panic!("Expected Keygen command"),
         }
@@ -149,8 +152,22 @@ mod cli_parsing {
         let cli = Cli::parse_from(["hush", "keygen", "--output", "/custom/path/my.key"]);
 
         match cli.command {
-            Commands::Keygen { output } => {
+            Commands::Keygen { output, tpm_seal } => {
                 assert_eq!(output, "/custom/path/my.key");
+                assert!(!tpm_seal);
+            }
+            _ => panic!("Expected Keygen command"),
+        }
+    }
+
+    #[test]
+    fn test_keygen_command_tpm_seal_parses() {
+        let cli = Cli::parse_from(["hush", "keygen", "--tpm-seal", "--out", "hush.keyblob"]);
+
+        match cli.command {
+            Commands::Keygen { output, tpm_seal } => {
+                assert_eq!(output, "hush.keyblob");
+                assert!(tpm_seal);
             }
             _ => panic!("Expected Keygen command"),
         }
@@ -864,6 +881,81 @@ mod cli_parsing {
             _ => panic!("Expected Policy command"),
         }
     }
+
+    #[test]
+    fn test_policy_bundle_build_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "bundle",
+            "build",
+            "ai-agent",
+            "--resolve",
+            "--key",
+            "bundle.key",
+            "--embed-pubkey",
+            "--output",
+            "policy.bundle.json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Bundle { command } => match command {
+                    PolicyBundleCommands::Build {
+                        policy_ref,
+                        resolve,
+                        key,
+                        output,
+                        embed_pubkey,
+                        json,
+                        ..
+                    } => {
+                        assert_eq!(policy_ref, "ai-agent");
+                        assert!(resolve);
+                        assert_eq!(key, "bundle.key");
+                        assert_eq!(output, "policy.bundle.json");
+                        assert!(embed_pubkey);
+                        assert!(!json);
+                    }
+                    _ => panic!("Expected Bundle Build subcommand"),
+                },
+                _ => panic!("Expected Bundle subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_bundle_verify_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "bundle",
+            "verify",
+            "./policy.bundle.json",
+            "--pubkey",
+            "./bundle.key.pub",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Bundle { command } => match command {
+                    PolicyBundleCommands::Verify {
+                        bundle,
+                        pubkey,
+                        json,
+                    } => {
+                        assert_eq!(bundle, "./policy.bundle.json");
+                        assert_eq!(pubkey, Some("./bundle.key.pub".to_string()));
+                        assert!(!json);
+                    }
+                    _ => panic!("Expected Bundle Verify subcommand"),
+                },
+                _ => panic!("Expected Bundle subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1003,7 +1095,7 @@ mod cli_contract {
     use hush_core::{sha256, Keypair, Receipt, SignedReceipt, Verdict};
 
     use crate::remote_extends::RemoteExtendsConfig;
-    use crate::{cmd_check, cmd_verify, ExitCode};
+    use crate::{cmd_check, cmd_verify, CheckArgs, ExitCode};
 
     fn temp_path(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -1020,11 +1112,13 @@ mod cli_contract {
         let remote = RemoteExtendsConfig::disabled();
 
         let code = cmd_check(
-            "file".to_string(),
-            "/app/src/main.rs".to_string(),
-            true,
-            None,
-            Some("default".to_string()),
+            CheckArgs {
+                action_type: "file".to_string(),
+                target: "/app/src/main.rs".to_string(),
+                json: true,
+                policy: None,
+                ruleset: Some("default".to_string()),
+            },
             &remote,
             &mut out,
             &mut err,
@@ -1053,11 +1147,13 @@ mod cli_contract {
         let remote = RemoteExtendsConfig::disabled();
 
         let code = cmd_check(
-            "file".to_string(),
-            "/home/user/.ssh/id_rsa".to_string(),
-            true,
-            None,
-            Some("default".to_string()),
+            CheckArgs {
+                action_type: "file".to_string(),
+                target: "/home/user/.ssh/id_rsa".to_string(),
+                json: true,
+                policy: None,
+                ruleset: Some("default".to_string()),
+            },
             &remote,
             &mut out,
             &mut err,
@@ -1098,11 +1194,13 @@ guards:
         let remote = RemoteExtendsConfig::disabled();
 
         let code = cmd_check(
-            "egress".to_string(),
-            "evil.example:443".to_string(),
-            true,
-            Some(policy_path.to_string_lossy().to_string()),
-            None,
+            CheckArgs {
+                action_type: "egress".to_string(),
+                target: "evil.example:443".to_string(),
+                json: true,
+                policy: Some(policy_path.to_string_lossy().to_string()),
+                ruleset: None,
+            },
             &remote,
             &mut out,
             &mut err,
@@ -1765,6 +1863,7 @@ mod policy_pac_contract {
 
         let mut out = Vec::new();
         let mut err = Vec::new();
+
         let remote_extends = crate::remote_extends::RemoteExtendsConfig::disabled();
 
         let code = cmd_policy_simulate(
@@ -1921,9 +2020,7 @@ mod remote_extends_contract {
             let addr = listener.local_addr().expect("addr");
             let base_url = format!("http://{}", addr);
 
-            listener
-                .set_nonblocking(true)
-                .expect("set_nonblocking");
+            listener.set_nonblocking(true).expect("set_nonblocking");
 
             let shutdown = Arc::new(AtomicBool::new(false));
             let shutdown2 = shutdown.clone();
@@ -1962,9 +2059,9 @@ mod remote_extends_contract {
             self.shutdown.store(true, Ordering::Relaxed);
             // Best-effort wake accept loop.
             let _ = TcpStream::connect_timeout(
-                &self.base_url["http://".len()..].parse().unwrap_or_else(|_| {
-                    std::net::SocketAddr::from(([127, 0, 0, 1], 0))
-                }),
+                &self.base_url["http://".len()..]
+                    .parse()
+                    .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], 0))),
                 Duration::from_millis(50),
             );
             if let Some(handle) = self.handle.take() {
@@ -1973,7 +2070,10 @@ mod remote_extends_contract {
         }
     }
 
-    fn handle_connection(stream: &mut TcpStream, routes: &HashMap<String, Vec<u8>>) -> std::io::Result<()> {
+    fn handle_connection(
+        stream: &mut TcpStream,
+        routes: &HashMap<String, Vec<u8>>,
+    ) -> std::io::Result<()> {
         stream.set_read_timeout(Some(Duration::from_millis(200)))?;
         stream.set_write_timeout(Some(Duration::from_millis(200)))?;
 
@@ -2155,8 +2255,14 @@ settings:
         let resolver = resolver_for_localhost();
         let policy = Policy::from_yaml_with_extends_resolver(&top, None, &resolver)
             .expect("remote chain should resolve");
-        assert!(policy.settings.effective_fail_fast(), "nested setting preserved");
-        assert!(policy.settings.effective_verbose_logging(), "base setting preserved");
+        assert!(
+            policy.settings.effective_fail_fast(),
+            "nested setting preserved"
+        );
+        assert!(
+            policy.settings.effective_verbose_logging(),
+            "base setting preserved"
+        );
         assert_eq!(policy.settings.effective_session_timeout_secs(), 120);
     }
 }

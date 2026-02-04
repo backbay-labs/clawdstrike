@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use globset::{Glob, GlobMatcher};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,8 @@ pub enum RbacError {
     Serialization(#[from] serde_json::Error),
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
+    #[error("invalid timestamp: {0}")]
+    InvalidTimestamp(String),
 }
 
 pub type Result<T> = std::result::Result<T, RbacError>;
@@ -210,7 +212,7 @@ pub struct Principal {
     pub id: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrincipalType {
     User,
@@ -290,7 +292,15 @@ pub struct ApprovalRequest {
 pub trait RbacStore: Send + Sync {
     fn get_role(&self, role_id: &str) -> Result<Option<Role>>;
     fn upsert_role(&self, role: &Role) -> Result<()>;
+    fn delete_role(&self, role_id: &str) -> Result<bool>;
     fn list_roles(&self) -> Result<Vec<Role>>;
+
+    fn insert_role_assignment(&self, assignment: &RoleAssignment) -> Result<()>;
+    fn delete_role_assignment(&self, id: &str) -> Result<bool>;
+    fn list_role_assignments_for_principal(
+        &self,
+        principal: &Principal,
+    ) -> Result<Vec<RoleAssignment>>;
 
     fn insert_approval_request(&self, request: &ApprovalRequest) -> Result<()>;
 }
@@ -302,6 +312,7 @@ pub struct InMemoryRbacStore {
 
 struct InMemoryInner {
     roles: HashMap<String, Role>,
+    assignments: HashMap<String, RoleAssignment>,
     approval_requests: HashMap<String, ApprovalRequest>,
 }
 
@@ -310,6 +321,7 @@ impl InMemoryRbacStore {
         Self {
             inner: Arc::new(Mutex::new(InMemoryInner {
                 roles: HashMap::new(),
+                assignments: HashMap::new(),
                 approval_requests: HashMap::new(),
             })),
         }
@@ -324,7 +336,13 @@ impl Default for InMemoryRbacStore {
 
 impl RbacStore for InMemoryRbacStore {
     fn get_role(&self, role_id: &str) -> Result<Option<Role>> {
-        Ok(self.inner.lock().unwrap_or_else(|e| e.into_inner()).roles.get(role_id).cloned())
+        Ok(self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .roles
+            .get(role_id)
+            .cloned())
     }
 
     fn upsert_role(&self, role: &Role) -> Result<()> {
@@ -336,6 +354,16 @@ impl RbacStore for InMemoryRbacStore {
         Ok(())
     }
 
+    fn delete_role(&self, role_id: &str) -> Result<bool> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .roles
+            .remove(role_id)
+            .is_some())
+    }
+
     fn list_roles(&self) -> Result<Vec<Role>> {
         Ok(self
             .inner
@@ -343,6 +371,43 @@ impl RbacStore for InMemoryRbacStore {
             .unwrap_or_else(|e| e.into_inner())
             .roles
             .values()
+            .cloned()
+            .collect())
+    }
+
+    fn insert_role_assignment(&self, assignment: &RoleAssignment) -> Result<()> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .assignments
+            .insert(assignment.id.clone(), assignment.clone());
+        Ok(())
+    }
+
+    fn delete_role_assignment(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .assignments
+            .remove(id)
+            .is_some())
+    }
+
+    fn list_role_assignments_for_principal(
+        &self,
+        principal: &Principal,
+    ) -> Result<Vec<RoleAssignment>> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .assignments
+            .values()
+            .filter(|a| {
+                a.principal.id == principal.id
+                    && a.principal.principal_type == principal.principal_type
+            })
             .cloned()
             .collect())
     }
@@ -400,6 +465,15 @@ VALUES (?1, ?2, ?3, ?4, ?5)
         Ok(())
     }
 
+    fn delete_role(&self, role_id: &str) -> Result<bool> {
+        let conn = self.db.lock_conn();
+        let changed = conn.execute(
+            "DELETE FROM rbac_roles WHERE id = ?1",
+            rusqlite::params![role_id],
+        )?;
+        Ok(changed > 0)
+    }
+
     fn list_roles(&self) -> Result<Vec<Role>> {
         let conn = self.db.lock_conn();
         let mut stmt = conn.prepare("SELECT role_json FROM rbac_roles ORDER BY id ASC")?;
@@ -409,6 +483,90 @@ VALUES (?1, ?2, ?3, ?4, ?5)
             let role_json: String = row.get(0)?;
             let role: Role = serde_json::from_str(&role_json)?;
             out.push(role);
+        }
+        Ok(out)
+    }
+
+    fn insert_role_assignment(&self, assignment: &RoleAssignment) -> Result<()> {
+        let conn = self.db.lock_conn();
+        let scope_json = serde_json::to_string(&assignment.scope)?;
+        conn.execute(
+            r#"
+INSERT OR REPLACE INTO rbac_role_assignments
+    (id, principal_type, principal_id, role_id, scope_json, granted_by, granted_at, expires_at, reason)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "#,
+            rusqlite::params![
+                assignment.id,
+                principal_type_to_str(&assignment.principal.principal_type),
+                assignment.principal.id,
+                assignment.role_id,
+                scope_json,
+                assignment.granted_by,
+                assignment.granted_at,
+                assignment.expires_at,
+                assignment.reason
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn delete_role_assignment(&self, id: &str) -> Result<bool> {
+        let conn = self.db.lock_conn();
+        let changed = conn.execute(
+            "DELETE FROM rbac_role_assignments WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+        Ok(changed > 0)
+    }
+
+    fn list_role_assignments_for_principal(
+        &self,
+        principal: &Principal,
+    ) -> Result<Vec<RoleAssignment>> {
+        let conn = self.db.lock_conn();
+        let mut stmt = conn.prepare(
+            r#"
+SELECT id, principal_type, principal_id, role_id, scope_json, granted_by, granted_at, expires_at, reason
+FROM rbac_role_assignments
+WHERE principal_type = ?1 AND principal_id = ?2
+ORDER BY granted_at DESC
+            "#,
+        )?;
+
+        let mut rows = stmt.query(rusqlite::params![
+            principal_type_to_str(&principal.principal_type),
+            principal.id
+        ])?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            let id: String = row.get(0)?;
+            let principal_type: String = row.get(1)?;
+            let principal_id: String = row.get(2)?;
+            let role_id: String = row.get(3)?;
+            let scope_json: String = row.get(4)?;
+            let granted_by: String = row.get(5)?;
+            let granted_at: String = row.get(6)?;
+            let expires_at: Option<String> = row.get(7)?;
+            let reason: Option<String> = row.get(8)?;
+
+            let principal_type =
+                principal_type_from_str(&principal_type).unwrap_or(PrincipalType::User);
+            let scope: RoleScope = serde_json::from_str(&scope_json)?;
+
+            out.push(RoleAssignment {
+                id,
+                principal: Principal {
+                    principal_type,
+                    id: principal_id,
+                },
+                role_id,
+                scope,
+                granted_by,
+                granted_at,
+                expires_at,
+                reason,
+            });
         }
         Ok(out)
     }
@@ -482,16 +640,102 @@ impl RbacManager {
         Ok(())
     }
 
-    pub fn effective_roles_for_identity(&self, identity: &clawdstrike::IdentityPrincipal) -> Vec<String> {
+    pub fn store(&self) -> &Arc<dyn RbacStore> {
+        &self.store
+    }
+
+    pub fn get_role(&self, role_id: &str) -> Result<Option<Role>> {
+        self.store.get_role(role_id)
+    }
+
+    pub fn upsert_role(&self, mut role: Role) -> Result<Role> {
+        let now = Utc::now().to_rfc3339();
+        if role.created_at.is_empty() {
+            role.created_at = now.clone();
+        }
+        role.updated_at = now;
+        self.store.upsert_role(&role)?;
+        Ok(role)
+    }
+
+    pub fn delete_role(&self, role_id: &str) -> Result<bool> {
+        self.store.delete_role(role_id)
+    }
+
+    pub fn list_roles(&self) -> Result<Vec<Role>> {
+        self.store.list_roles()
+    }
+
+    pub fn assign_role(
+        &self,
+        principal: Principal,
+        role_id: String,
+        scope: RoleScope,
+        granted_by: String,
+        expires_at: Option<String>,
+        reason: Option<String>,
+    ) -> Result<RoleAssignment> {
+        let now = Utc::now().to_rfc3339();
+        let assignment = RoleAssignment {
+            id: uuid::Uuid::new_v4().to_string(),
+            principal,
+            role_id,
+            scope,
+            granted_by,
+            granted_at: now,
+            expires_at,
+            reason,
+        };
+        self.store.insert_role_assignment(&assignment)?;
+        Ok(assignment)
+    }
+
+    pub fn revoke_role_assignment(&self, id: &str) -> Result<bool> {
+        self.store.delete_role_assignment(id)
+    }
+
+    pub fn list_role_assignments_for_principal(
+        &self,
+        principal: &Principal,
+    ) -> Result<Vec<RoleAssignment>> {
+        let assignments = self.store.list_role_assignments_for_principal(principal)?;
+        Ok(assignments)
+    }
+
+    pub fn effective_roles_for_identity(
+        &self,
+        identity: &clawdstrike::IdentityPrincipal,
+    ) -> Vec<String> {
+        let mut out: HashSet<String> = self
+            .mapped_roles_for_identity(identity)
+            .into_iter()
+            .collect();
+
+        // Also include explicitly assigned roles (non-expired).
+        let principal = Principal {
+            principal_type: PrincipalType::User,
+            id: identity.id.clone(),
+        };
+        if let Ok(assignments) = self.store.list_role_assignments_for_principal(&principal) {
+            let now = Utc::now();
+            for a in assignments {
+                if is_assignment_expired(&a, now) {
+                    continue;
+                }
+                out.insert(a.role_id);
+            }
+        }
+
+        sort_strings(out)
+    }
+
+    fn mapped_roles_for_identity(&self, identity: &clawdstrike::IdentityPrincipal) -> Vec<String> {
         // If RBAC is disabled, treat identity roles as role IDs (legacy behavior).
         if !self.config.enabled {
             return dedupe_strings(identity.roles.clone());
         }
 
         let mut out: HashSet<String> = HashSet::new();
-
-        // Baseline role for authenticated users (read-only policies).
-        out.insert("policy-viewer".to_string());
 
         if !self.mapping.configured {
             out.extend(identity.roles.iter().cloned());
@@ -598,7 +842,36 @@ impl RbacManager {
             });
         }
 
-        let roles = self.effective_roles_for_identity(identity);
+        let mut roles: HashSet<String> = self
+            .mapped_roles_for_identity(identity)
+            .into_iter()
+            .collect();
+
+        // Include explicit role assignments that apply to this scope/resource context.
+        let principal = Principal {
+            principal_type: PrincipalType::User,
+            id: identity.id.clone(),
+        };
+        let assignments = self
+            .store
+            .list_role_assignments_for_principal(&principal)
+            .unwrap_or_default();
+        let now = Utc::now();
+        for a in assignments {
+            if is_assignment_expired(&a, now) {
+                continue;
+            }
+            if assignment_applies_to_scope(
+                &a.scope,
+                scope.as_ref(),
+                resource.attributes.as_ref(),
+                identity,
+            ) {
+                roles.insert(a.role_id);
+            }
+        }
+
+        let roles = sort_strings(roles);
         let role_closure = self.expand_role_inheritance(&roles)?;
 
         let now = Utc::now();
@@ -651,7 +924,8 @@ impl RbacManager {
                 if let Some(ac) = approval {
                     let request_id = uuid::Uuid::new_v4().to_string();
                     let created_at = now.to_rfc3339();
-                    let expires_at = (now + chrono::Duration::seconds(ac.approval_ttl_secs as i64)).to_rfc3339();
+                    let expires_at =
+                        (now + chrono::Duration::seconds(ac.approval_ttl_secs as i64)).to_rfc3339();
 
                     self.store.insert_approval_request(&ApprovalRequest {
                         id: request_id.clone(),
@@ -727,6 +1001,178 @@ impl RbacManager {
     }
 }
 
+fn principal_type_to_str(value: &PrincipalType) -> &'static str {
+    match value {
+        PrincipalType::User => "user",
+        PrincipalType::ServiceAccount => "service_account",
+        PrincipalType::Group => "group",
+    }
+}
+
+fn principal_type_from_str(value: &str) -> Option<PrincipalType> {
+    match value {
+        "user" => Some(PrincipalType::User),
+        "service_account" => Some(PrincipalType::ServiceAccount),
+        "group" => Some(PrincipalType::Group),
+        _ => None,
+    }
+}
+
+fn is_assignment_expired(assignment: &RoleAssignment, now: DateTime<Utc>) -> bool {
+    let Some(ref expires_at) = assignment.expires_at else {
+        return false;
+    };
+    match DateTime::parse_from_rfc3339(expires_at) {
+        Ok(dt) => now >= dt.with_timezone(&Utc),
+        Err(_) => true,
+    }
+}
+
+fn assignment_applies_to_scope(
+    assignment_scope: &RoleScope,
+    requested_scope: Option<&RoleScope>,
+    resource_attributes: Option<&serde_json::Value>,
+    identity: &clawdstrike::IdentityPrincipal,
+) -> bool {
+    if assignment_scope.scope_type == ScopeType::Global {
+        return true;
+    }
+
+    let ctx = ScopeContext::from_inputs(requested_scope, resource_attributes, identity);
+    assignment_scope_contains(assignment_scope, &ctx)
+}
+
+#[derive(Default)]
+struct ScopeContext {
+    scope_type: Option<ScopeType>,
+    scope_id: Option<String>,
+    org_id: Option<String>,
+    team_id: Option<String>,
+    project_id: Option<String>,
+    user_id: Option<String>,
+}
+
+impl ScopeContext {
+    fn from_inputs(
+        requested_scope: Option<&RoleScope>,
+        attributes: Option<&serde_json::Value>,
+        identity: &clawdstrike::IdentityPrincipal,
+    ) -> Self {
+        let mut out = Self::default();
+        if let Some(scope) = requested_scope {
+            out.scope_type = Some(scope.scope_type.clone());
+            out.scope_id = scope.scope_id.clone();
+            match scope.scope_type {
+                ScopeType::Organization => out.org_id = scope.scope_id.clone(),
+                ScopeType::Team => out.team_id = scope.scope_id.clone(),
+                ScopeType::Project => out.project_id = scope.scope_id.clone(),
+                ScopeType::User => out.user_id = scope.scope_id.clone(),
+                ScopeType::Global => {}
+            }
+        }
+
+        if out.org_id.is_none() {
+            out.org_id = identity.organization_id.clone();
+        }
+
+        if let Some(serde_json::Value::Object(obj)) = attributes {
+            out.org_id = out
+                .org_id
+                .clone()
+                .or_else(|| get_str(obj, &["organization_id", "org_id", "orgId"]));
+            out.team_id = out
+                .team_id
+                .clone()
+                .or_else(|| get_str(obj, &["team_id", "teamId"]));
+            out.project_id = out
+                .project_id
+                .clone()
+                .or_else(|| get_str(obj, &["project_id", "projectId"]));
+            out.user_id = out
+                .user_id
+                .clone()
+                .or_else(|| get_str(obj, &["user_id", "userId"]));
+        }
+
+        out
+    }
+}
+
+fn get_str(map: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> Option<String> {
+    for k in keys {
+        if let Some(s) = map.get(*k).and_then(|v| v.as_str()) {
+            return Some(s.to_string());
+        }
+    }
+    None
+}
+
+fn assignment_scope_contains(assignment: &RoleScope, ctx: &ScopeContext) -> bool {
+    match assignment.scope_type {
+        ScopeType::Global => true,
+        ScopeType::Organization => {
+            let Some(ref org_id) = assignment.scope_id else {
+                return false;
+            };
+            let Some(ref ctx_org) = ctx.org_id else {
+                return false;
+            };
+            if ctx_org != org_id {
+                return false;
+            }
+            if ctx.scope_type == Some(ScopeType::Organization)
+                && ctx.scope_id.as_deref() == Some(org_id.as_str())
+            {
+                return true;
+            }
+            assignment.include_children
+        }
+        ScopeType::Team => {
+            let Some(ref team_id) = assignment.scope_id else {
+                return false;
+            };
+            let Some(ref ctx_team) = ctx.team_id else {
+                return false;
+            };
+            if ctx_team != team_id {
+                return false;
+            }
+            if ctx.scope_type == Some(ScopeType::Team)
+                && ctx.scope_id.as_deref() == Some(team_id.as_str())
+            {
+                return true;
+            }
+            assignment.include_children
+        }
+        ScopeType::Project => {
+            let Some(ref project_id) = assignment.scope_id else {
+                return false;
+            };
+            let Some(ref ctx_project) = ctx.project_id else {
+                return false;
+            };
+            if ctx_project != project_id {
+                return false;
+            }
+            if ctx.scope_type == Some(ScopeType::Project)
+                && ctx.scope_id.as_deref() == Some(project_id.as_str())
+            {
+                return true;
+            }
+            assignment.include_children
+        }
+        ScopeType::User => {
+            let Some(ref user_id) = assignment.scope_id else {
+                return false;
+            };
+            let Some(ref ctx_user) = ctx.user_id else {
+                return false;
+            };
+            ctx_user == user_id
+        }
+    }
+}
+
 fn compile_group_mapping(cfg: &GroupMappingConfig) -> Result<GroupMappingCompiled> {
     let configured = !cfg.direct.is_empty() || !cfg.patterns.is_empty() || cfg.include_all_groups;
 
@@ -739,8 +1185,9 @@ fn compile_group_mapping(cfg: &GroupMappingConfig) -> Result<GroupMappingCompile
         }
 
         if p.is_regex {
-            let re = Regex::new(&p.pattern)
-                .map_err(|e| RbacError::InvalidConfig(format!("invalid regex {}: {e}", p.pattern)))?;
+            let re = Regex::new(&p.pattern).map_err(|e| {
+                RbacError::InvalidConfig(format!("invalid regex {}: {e}", p.pattern))
+            })?;
             regex_patterns.push((re, p.roles.clone()));
         } else {
             let glob = Glob::new(&p.pattern).map_err(|e| {
@@ -761,12 +1208,16 @@ fn compile_group_mapping(cfg: &GroupMappingConfig) -> Result<GroupMappingCompile
 }
 
 fn permission_matches(permission: &Permission, resource: &ResourceType, action: &Action) -> bool {
-    let resource_match = permission.resource == ResourceType::All || permission.resource == *resource;
+    let resource_match =
+        permission.resource == ResourceType::All || permission.resource == *resource;
     if !resource_match {
         return false;
     }
 
-    permission.actions.iter().any(|a| *a == Action::All || *a == *action)
+    permission
+        .actions
+        .iter()
+        .any(|a| *a == Action::All || *a == *action)
 }
 
 fn time_constraint_allows(tc: &TimeConstraint, now: DateTime<Utc>) -> bool {
@@ -808,7 +1259,7 @@ fn scope_constraint_allows(sc: &ScopeConstraint, scope: Option<&RoleScope>) -> b
         return false;
     };
 
-    if !sc.scope_types.iter().any(|t| *t == scope.scope_type) {
+    if !sc.scope_types.contains(&scope.scope_type) {
         return false;
     }
 
@@ -1150,6 +1601,16 @@ fn builtin_roles(now: String) -> Vec<Role> {
     ]
 }
 
+fn dedupe_strings(input: Vec<String>) -> Vec<String> {
+    sort_strings(input.into_iter().collect())
+}
+
+fn sort_strings(input: HashSet<String>) -> Vec<String> {
+    let mut out: Vec<String> = input.into_iter().collect();
+    out.sort();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1170,6 +1631,70 @@ mod tests {
             auth_method: None,
             expires_at: None,
         }
+    }
+
+    #[test]
+    fn explicit_role_assignments_grant_permissions() {
+        let store = Arc::new(InMemoryRbacStore::new());
+        let cfg = Arc::new(RbacConfig::default());
+        let rbac = RbacManager::new(store.clone(), cfg).expect("rbac");
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let role = Role {
+            id: "assigned-policy-admin".to_string(),
+            name: "Assigned Policy Admin".to_string(),
+            description: "Allows updating policies".to_string(),
+            permissions: vec![Permission {
+                resource: ResourceType::Policy,
+                actions: vec![Action::Update],
+                constraints: Vec::new(),
+            }],
+            inherits: Vec::new(),
+            scope: None,
+            builtin: false,
+            metadata: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        store.upsert_role(&role).expect("upsert role");
+
+        let principal = Principal {
+            principal_type: PrincipalType::User,
+            id: "user-1".to_string(),
+        };
+        rbac.assign_role(
+            principal,
+            "assigned-policy-admin".to_string(),
+            RoleScope {
+                scope_type: ScopeType::Organization,
+                scope_id: Some("org-1".to_string()),
+                include_children: true,
+            },
+            "admin-user".to_string(),
+            None,
+            Some("test".to_string()),
+        )
+        .expect("assign");
+
+        let identity = test_identity_with_role("nonexistent");
+
+        let res = rbac
+            .check_permission_for_identity_with_context(
+                &identity,
+                ResourceRef {
+                    resource_type: ResourceType::Policy,
+                    id: Some("policy-1".to_string()),
+                    attributes: Some(serde_json::json!({"organization_id": "org-1"})),
+                },
+                Action::Update,
+                Some(RoleScope {
+                    scope_type: ScopeType::Organization,
+                    scope_id: Some("org-1".to_string()),
+                    include_children: false,
+                }),
+            )
+            .expect("check");
+        assert!(res.allowed);
     }
 
     #[test]
@@ -1299,16 +1824,3 @@ mod tests {
         assert!(!bad.allowed);
     }
 }
-
-fn dedupe_strings(input: Vec<String>) -> Vec<String> {
-    sort_strings(input.into_iter().collect())
-}
-
-fn sort_strings(input: HashSet<String>) -> Vec<String> {
-    let mut out: Vec<String> = input.into_iter().collect();
-    out.sort();
-    out
-}
-
-// chrono `Datelike/Timelike` helpers
-use chrono::{Datelike, Timelike};

@@ -121,7 +121,7 @@ impl AsyncGuardRuntime {
         guards: &[Arc<dyn AsyncGuard>],
         action: &GuardAction<'_>,
         context: &GuardContext,
-        _fail_fast: bool,
+        fail_fast: bool,
     ) -> Vec<GuardResult> {
         let mut out: Vec<GuardResult> = Vec::new();
 
@@ -145,8 +145,9 @@ impl AsyncGuardRuntime {
         sequential.sort_by_key(|(idx, _)| *idx);
         for (_idx, g) in sequential {
             let result = self.evaluate_one(g, action, context).await;
+            let denied = !result.allowed;
             out.push(result);
-            if out.last().is_some_and(|r| !r.allowed) {
+            if fail_fast && denied {
                 return out;
             }
         }
@@ -168,19 +169,21 @@ impl AsyncGuardRuntime {
                     denied = true;
                 }
                 results_by_idx.insert(idx, res);
-                if denied {
+                if fail_fast && denied {
                     break;
                 }
             }
 
-            // Remaining futures are dropped here (best-effort cancellation).
-            drop(futs);
+            if fail_fast && denied {
+                // Remaining futures are dropped here (best-effort cancellation).
+                drop(futs);
+            }
 
             for (idx, g) in parallel {
                 if let Some((_, res)) = results_by_idx.remove(&idx) {
                     let denied = !res.allowed;
                     out.push(res);
-                    if denied {
+                    if fail_fast && denied {
                         return out;
                     }
                 } else {
@@ -195,7 +198,7 @@ impl AsyncGuardRuntime {
                 }
             }
 
-            if denied {
+            if fail_fast && denied {
                 return out;
             }
         }
@@ -360,14 +363,22 @@ impl AsyncGuardRuntime {
                     self.cache_for(&name, &cfg),
                 )
             }
-            Err(_) => fallback(
-                &name,
-                &cfg,
-                AsyncGuardErrorKind::Timeout,
-                "timeout",
-                cache_key.as_deref(),
-                self.cache_for(&name, &cfg),
-            ),
+            Err(_) => {
+                if cfg.circuit_breaker.is_some() {
+                    if let Some(b) = self.breakers.get(&name) {
+                        b.record_failure().await;
+                    }
+                }
+
+                fallback(
+                    &name,
+                    &cfg,
+                    AsyncGuardErrorKind::Timeout,
+                    "timeout",
+                    cache_key.as_deref(),
+                    self.cache_for(&name, &cfg),
+                )
+            }
         }
     }
 

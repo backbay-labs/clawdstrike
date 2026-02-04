@@ -4,9 +4,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
-use clawdstrike::{GuardContext, IdentityPrincipal, RequestContext, SessionContext};
+use clawdstrike::{
+    AuthMethod, GuardContext, IdentityPrincipal, RequestContext, SessionContext, SessionMetadata,
+};
 use serde::{Deserialize, Serialize};
 
+use crate::config::SessionHardeningConfig;
 use crate::control_db::ControlDb;
 use crate::rbac::RbacManager;
 
@@ -18,6 +21,8 @@ pub enum SessionError {
     Serialization(#[from] serde_json::Error),
     #[error("invalid session timestamp: {0}")]
     InvalidTimestamp(String),
+    #[error("invalid session binding: {0}")]
+    InvalidBinding(String),
 }
 
 pub type Result<T> = std::result::Result<T, SessionError>;
@@ -219,7 +224,10 @@ WHERE session_id = ?1
 
     fn delete(&self, session_id: &str) -> Result<bool> {
         let conn = self.db.lock_conn();
-        let changed = conn.execute("DELETE FROM sessions WHERE session_id = ?1", rusqlite::params![session_id])?;
+        let changed = conn.execute(
+            "DELETE FROM sessions WHERE session_id = ?1",
+            rusqlite::params![session_id],
+        )?;
         Ok(changed > 0)
     }
 
@@ -252,7 +260,10 @@ ORDER BY created_at DESC
     fn cleanup_expired(&self, now: DateTime<Utc>) -> Result<u64> {
         let conn = self.db.lock_conn();
         let now = now.to_rfc3339();
-        let changed = conn.execute("DELETE FROM sessions WHERE expires_at <= ?1", rusqlite::params![now])?;
+        let changed = conn.execute(
+            "DELETE FROM sessions WHERE expires_at <= ?1",
+            rusqlite::params![now],
+        )?;
         Ok(changed as u64)
     }
 }
@@ -263,6 +274,7 @@ pub struct SessionManager {
     default_ttl_seconds: u64,
     max_ttl_seconds: u64,
     rbac: Option<Arc<RbacManager>>,
+    hardening: SessionHardeningConfig,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -301,12 +313,14 @@ impl SessionManager {
         default_ttl_seconds: u64,
         max_ttl_seconds: u64,
         rbac: Option<Arc<RbacManager>>,
+        hardening: SessionHardeningConfig,
     ) -> Self {
         Self {
             store,
             default_ttl_seconds,
             max_ttl_seconds,
             rbac,
+            hardening,
         }
     }
 
@@ -318,16 +332,71 @@ impl SessionManager {
         let now = Utc::now();
         let options = options.unwrap_or_default();
 
+        let parent_session_id = if self.hardening.rotate_on_create {
+            let sessions = self.store.list_by_user(&identity.id)?;
+            let parent = sessions.first().map(|s| s.session.session_id.clone());
+            for record in sessions {
+                let _ = self.terminate_session(&record.session.session_id, Some("rotation"));
+            }
+            parent
+        } else {
+            None
+        };
+
         let ttl = options.ttl_seconds.unwrap_or(self.default_ttl_seconds);
         let ttl = ttl.min(self.max_ttl_seconds).max(1);
 
         let expires_at = now + Duration::seconds(ttl as i64);
 
-        let state = match options.state {
+        let mut state: Option<HashMap<String, serde_json::Value>> = match options.state {
             Some(serde_json::Value::Object(obj)) => Some(obj.into_iter().collect()),
             Some(_) => None,
             None => None,
         };
+
+        if self.hardening.bind_user_agent
+            || self.hardening.bind_source_ip
+            || self.hardening.bind_country
+        {
+            let request = options.request.as_ref().ok_or_else(|| {
+                SessionError::InvalidBinding("request_context_required_for_binding".to_string())
+            })?;
+
+            let state_map = state.get_or_insert_with(HashMap::new);
+
+            if self.hardening.bind_user_agent {
+                let ua = request.user_agent.as_deref().ok_or_else(|| {
+                    SessionError::InvalidBinding("missing_user_agent".to_string())
+                })?;
+                state_map.insert(
+                    "bound_user_agent_hash".to_string(),
+                    serde_json::Value::String(hush_core::sha256(ua.as_bytes()).to_hex()),
+                );
+            }
+
+            if self.hardening.bind_source_ip {
+                let ip = request
+                    .source_ip
+                    .as_deref()
+                    .ok_or_else(|| SessionError::InvalidBinding("missing_source_ip".to_string()))?;
+                state_map.insert(
+                    "bound_source_ip".to_string(),
+                    serde_json::Value::String(ip.to_string()),
+                );
+            }
+
+            if self.hardening.bind_country {
+                let country = request
+                    .geo_location
+                    .as_ref()
+                    .and_then(|g| g.country.as_deref())
+                    .ok_or_else(|| SessionError::InvalidBinding("missing_country".to_string()))?;
+                state_map.insert(
+                    "bound_country".to_string(),
+                    serde_json::Value::String(country.to_string()),
+                );
+            }
+        }
 
         let effective_roles = match self.rbac.as_ref() {
             Some(rbac) => rbac.effective_roles_for_identity(&identity),
@@ -351,7 +420,13 @@ impl SessionManager {
             effective_roles,
             effective_permissions,
             request: options.request.clone(),
-            metadata: None,
+            metadata: Some(SessionMetadata {
+                auth_method: identity.auth_method.clone().unwrap_or(AuthMethod::Sso),
+                idp_issuer: Some(identity.issuer.clone()),
+                token_id: None,
+                parent_session_id,
+                tags: None,
+            }),
             state,
         };
 
@@ -422,15 +497,13 @@ impl SessionManager {
 
     pub fn touch_session(&self, session_id: &str) -> Result<()> {
         let now = Utc::now().to_rfc3339();
-        let _ = self
-            .store
-            .update(
-                session_id,
-                SessionUpdates {
-                    last_activity_at: Some(now),
-                    ..Default::default()
-                },
-            )?;
+        let _ = self.store.update(
+            session_id,
+            SessionUpdates {
+                last_activity_at: Some(now),
+                ..Default::default()
+            },
+        )?;
         Ok(())
     }
 
@@ -457,7 +530,11 @@ impl SessionManager {
         Ok(count)
     }
 
-    pub fn create_guard_context(&self, session: &SessionContext, request: Option<&RequestContext>) -> GuardContext {
+    pub fn create_guard_context(
+        &self,
+        session: &SessionContext,
+        request: Option<&RequestContext>,
+    ) -> GuardContext {
         let mut ctx = GuardContext::new().with_session_id(session.session_id.clone());
         ctx = ctx
             .with_identity(session.identity.clone())
@@ -470,6 +547,54 @@ impl SessionManager {
         }
 
         ctx
+    }
+
+    pub fn validate_session_binding(
+        &self,
+        session: &SessionContext,
+        request: &RequestContext,
+    ) -> Result<()> {
+        let Some(state) = session.state.as_ref() else {
+            return Ok(());
+        };
+
+        if let Some(expected) = state.get("bound_user_agent_hash").and_then(|v| v.as_str()) {
+            let ua = request
+                .user_agent
+                .as_deref()
+                .ok_or_else(|| SessionError::InvalidBinding("missing_user_agent".to_string()))?;
+            let got = hush_core::sha256(ua.as_bytes()).to_hex();
+            if got != expected {
+                return Err(SessionError::InvalidBinding(
+                    "user_agent_mismatch".to_string(),
+                ));
+            }
+        }
+
+        if let Some(expected) = state.get("bound_source_ip").and_then(|v| v.as_str()) {
+            let ip = request
+                .source_ip
+                .as_deref()
+                .ok_or_else(|| SessionError::InvalidBinding("missing_source_ip".to_string()))?;
+            if ip != expected {
+                return Err(SessionError::InvalidBinding(
+                    "source_ip_mismatch".to_string(),
+                ));
+            }
+        }
+
+        if let Some(expected) = state.get("bound_country").and_then(|v| v.as_str()) {
+            let country = request
+                .geo_location
+                .as_ref()
+                .and_then(|g| g.country.as_deref())
+                .ok_or_else(|| SessionError::InvalidBinding("missing_country".to_string()))?;
+            if country != expected {
+                return Err(SessionError::InvalidBinding("country_mismatch".to_string()));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -502,4 +627,99 @@ fn parse_rfc3339(value: &str) -> Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|_| SessionError::InvalidTimestamp(value.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_identity() -> IdentityPrincipal {
+        IdentityPrincipal {
+            id: "user-1".to_string(),
+            provider: clawdstrike::IdentityProvider::Oidc,
+            issuer: "https://issuer.example".to_string(),
+            display_name: None,
+            email: None,
+            email_verified: None,
+            organization_id: Some("org-1".to_string()),
+            teams: Vec::new(),
+            roles: Vec::new(),
+            attributes: std::collections::HashMap::new(),
+            authenticated_at: chrono::Utc::now().to_rfc3339(),
+            auth_method: None,
+            expires_at: None,
+        }
+    }
+
+    fn test_request(user_agent: &str, source_ip: &str) -> RequestContext {
+        RequestContext {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            source_ip: Some(source_ip.to_string()),
+            user_agent: Some(user_agent.to_string()),
+            geo_location: None,
+            is_vpn: None,
+            is_corporate_network: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn session_binding_user_agent_mismatch_denies() {
+        let store = Arc::new(InMemorySessionStore::new());
+        let manager = SessionManager::new(
+            store,
+            3600,
+            86_400,
+            None,
+            SessionHardeningConfig {
+                bind_user_agent: true,
+                ..Default::default()
+            },
+        );
+
+        let session = manager
+            .create_session(
+                test_identity(),
+                Some(CreateSessionOptions {
+                    ttl_seconds: Some(3600),
+                    request: Some(test_request("ua-1", "10.0.0.1")),
+                    state: None,
+                }),
+            )
+            .expect("create");
+
+        manager
+            .validate_session_binding(&session, &test_request("ua-1", "10.0.0.1"))
+            .expect("ok");
+
+        let err = manager
+            .validate_session_binding(&session, &test_request("ua-2", "10.0.0.1"))
+            .expect_err("mismatch");
+        assert!(matches!(err, SessionError::InvalidBinding(_)));
+    }
+
+    #[test]
+    fn rotate_on_create_terminates_existing_sessions() {
+        let store = Arc::new(InMemorySessionStore::new());
+        let manager = SessionManager::new(
+            store.clone(),
+            3600,
+            86_400,
+            None,
+            SessionHardeningConfig {
+                rotate_on_create: true,
+                ..Default::default()
+            },
+        );
+
+        let s1 = manager
+            .create_session(test_identity(), None)
+            .expect("create1");
+        assert!(manager.get_session(&s1.session_id).expect("get1").is_some());
+
+        let _s2 = manager
+            .create_session(test_identity(), None)
+            .expect("create2");
+        assert!(manager.get_session(&s1.session_id).expect("get1").is_none());
+    }
 }

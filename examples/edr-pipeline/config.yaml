@@ -1,0 +1,13 @@
+# hushd config for the EDR pipeline example
+listen: "0.0.0.0:8080"
+policy_path: "/etc/hushd/policy.yaml"
+audit_db: "/var/lib/hushd/audit.db"
+log_level: "info"
+
+auth:
+  enabled: true
+  api_keys:
+    - name: "default"
+      key: "${HUSHD_API_KEY}"
+      scopes: ["check", "read"]
+

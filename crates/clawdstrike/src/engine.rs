@@ -73,17 +73,17 @@ impl HushEngine {
     /// Create with a specific policy
     pub fn with_policy(policy: Policy) -> Self {
         let guards = policy.create_guards();
-        let (custom_guards, config_error) = match build_custom_guards_from_policy(&policy, None) {
-            Ok(v) => (v, None),
-            Err(e) => (Vec::new(), Some(e.to_string())),
-        };
-
         let async_runtime = Arc::new(AsyncGuardRuntime::new());
         let (async_guards, async_guard_init_error) =
             match crate::async_guards::registry::build_async_guards(&policy) {
                 Ok(v) => (v, None),
                 Err(e) => (Vec::new(), Some(e.to_string())),
             };
+
+        let (custom_guards, config_error) = match build_custom_guards_from_policy(&policy, None) {
+            Ok(v) => (v, None),
+            Err(e) => (Vec::new(), Some(e.to_string())),
+        };
 
         Self {
             policy,
@@ -476,17 +476,14 @@ impl HushEngineBuilder {
 
     pub fn build(self) -> Result<HushEngine> {
         let guards = self.policy.create_guards();
-        let custom_guards = build_custom_guards_from_policy(
-            &self.policy,
-            self.custom_guard_registry.as_ref(),
-        )?;
-
         let async_runtime = Arc::new(AsyncGuardRuntime::new());
         let (async_guards, async_guard_init_error) =
             match crate::async_guards::registry::build_async_guards(&self.policy) {
                 Ok(v) => (v, None),
                 Err(e) => (Vec::new(), Some(e.to_string())),
             };
+        let custom_guards =
+            build_custom_guards_from_policy(&self.policy, self.custom_guard_registry.as_ref())?;
 
         Ok(HushEngine {
             policy: self.policy,

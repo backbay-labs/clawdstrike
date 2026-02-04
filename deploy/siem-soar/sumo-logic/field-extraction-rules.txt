@@ -1,0 +1,14 @@
+JSON FER
+
+| json field=_raw "event_id", "event_type", "timestamp", "decision.guard" as guard,
+    "decision.severity" as severity, "decision.allowed" as allowed,
+    "decision.reason" as reason, "session.id" as session_id,
+    "session.user_id" as user_id, "session.tenant_id" as tenant_id,
+    "resource.type" as resource_type, "resource.path" as resource_path,
+    "resource.host" as resource_host
+
+Key-Value parse expression
+
+| parse "timestamp=\"*\" event_id=\"*\" event_type=\"*\" guard=\"*\" severity=\"*\" allowed=\"*\""
+    as timestamp, event_id, event_type, guard, severity, allowed
+

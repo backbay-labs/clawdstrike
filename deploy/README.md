@@ -9,6 +9,7 @@ This directory contains deployment configurations for running the hushd security
 | Linux | systemd | `systemd/` | [README](systemd/README.md) |
 | macOS | launchd | `launchd/` | [README](launchd/README.md) |
 | Container | Docker/Podman | `../Dockerfile.hushd` | See below |
+| Kubernetes | Kustomize | `kubernetes/hushd/` | [README](kubernetes/hushd/README.md) |
 
 ## Quick Start
 
@@ -125,6 +126,20 @@ chmod 750 /var/lib/hushd
 chown hushd:hushd /var/lib/hushd
 ```
 
+### Audit encryption
+
+If your guard details/metadata may contain sensitive data, enable encryption at rest for the audit ledger:
+
+- Set `audit.encryption.enabled: true`
+- Provide a 32-byte hex key via `audit.encryption.key_source` (`file` or `env`).
+
+Example:
+
+```bash
+openssl rand -hex 32 > /etc/hushd/audit.key
+chmod 600 /etc/hushd/audit.key
+```
+
 ## Monitoring
 
 ### Health endpoint
@@ -136,6 +151,10 @@ curl http://localhost:9876/health
 ### Prometheus metrics
 
 Prometheus metrics are available at `/metrics` (text exposition format).
+
+```bash
+curl http://localhost:9876/metrics
+```
 
 - If auth is enabled, `/metrics` requires a key with `read` scope.
 

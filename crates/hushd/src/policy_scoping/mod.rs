@@ -208,6 +208,7 @@ pub trait PolicyScopingStore: Send + Sync {
     fn delete_scoped_policy(&self, id: &str) -> Result<bool>;
 
     fn insert_assignment(&self, assignment: &PolicyAssignment) -> Result<()>;
+    fn get_assignment(&self, id: &str) -> Result<Option<PolicyAssignment>>;
     fn list_assignments(&self) -> Result<Vec<PolicyAssignment>>;
     fn delete_assignment(&self, id: &str) -> Result<bool>;
 }
@@ -228,7 +229,7 @@ impl PolicyScopingStore for SqlitePolicyScopingStore {
         let conn = self.db.lock_conn();
         let mut stmt = conn.prepare(
             r#"
-SELECT name, scope_json, priority, merge_strategy, policy_yaml, enabled, metadata_json, created_at, updated_at
+SELECT id, name, scope_json, priority, merge_strategy, policy_yaml, enabled, metadata_json, created_at, updated_at
 FROM scoped_policies
 WHERE id = ?1
             "#,
@@ -239,28 +240,7 @@ WHERE id = ?1
             return Ok(None);
         };
 
-        let name: String = row.get(0)?;
-        let scope_json: String = row.get(1)?;
-        let priority: i32 = row.get(2)?;
-        let merge_strategy: String = row.get(3)?;
-        let policy_yaml: String = row.get(4)?;
-        let enabled: i64 = row.get(5)?;
-        let metadata_json: Option<String> = row.get(6)?;
-        let created_at: String = row.get(7)?;
-        let updated_at: String = row.get(8)?;
-
-        Ok(Some(scoped_policy_from_row(
-            id.to_string(),
-            name,
-            scope_json,
-            priority,
-            merge_strategy,
-            policy_yaml,
-            enabled != 0,
-            metadata_json,
-            created_at,
-            updated_at,
-        )?))
+        Ok(Some(scoped_policy_from_row(row)?))
     }
 
     fn list_scoped_policies(&self) -> Result<Vec<ScopedPolicy>> {
@@ -276,29 +256,7 @@ ORDER BY id ASC
         let mut rows = stmt.query([])?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
-            let id: String = row.get(0)?;
-            let name: String = row.get(1)?;
-            let scope_json: String = row.get(2)?;
-            let priority: i32 = row.get(3)?;
-            let merge_strategy: String = row.get(4)?;
-            let policy_yaml: String = row.get(5)?;
-            let enabled: i64 = row.get(6)?;
-            let metadata_json: Option<String> = row.get(7)?;
-            let created_at: String = row.get(8)?;
-            let updated_at: String = row.get(9)?;
-
-            out.push(scoped_policy_from_row(
-                id,
-                name,
-                scope_json,
-                priority,
-                merge_strategy,
-                policy_yaml,
-                enabled != 0,
-                metadata_json,
-                created_at,
-                updated_at,
-            )?);
+            out.push(scoped_policy_from_row(row)?);
         }
 
         Ok(out)
@@ -399,8 +357,10 @@ WHERE id = ?1
 
     fn delete_scoped_policy(&self, id: &str) -> Result<bool> {
         let conn = self.db.lock_conn();
-        let changed =
-            conn.execute("DELETE FROM scoped_policies WHERE id = ?1", rusqlite::params![id])?;
+        let changed = conn.execute(
+            "DELETE FROM scoped_policies WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
         Ok(changed > 0)
     }
 
@@ -426,6 +386,48 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
             ],
         )?;
         Ok(())
+    }
+
+    fn get_assignment(&self, id: &str) -> Result<Option<PolicyAssignment>> {
+        let conn = self.db.lock_conn();
+        let mut stmt = conn.prepare(
+            r#"
+SELECT policy_id, target_type, target_id, priority, effective_from, effective_until, assigned_by, assigned_at, reason
+FROM policy_assignments
+WHERE id = ?1
+            "#,
+        )?;
+
+        let mut rows = stmt.query(rusqlite::params![id])?;
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
+
+        let policy_id: String = row.get(0)?;
+        let target_type: String = row.get(1)?;
+        let target_id: String = row.get(2)?;
+        let priority: i32 = row.get(3)?;
+        let effective_from: Option<String> = row.get(4)?;
+        let effective_until: Option<String> = row.get(5)?;
+        let assigned_by: String = row.get(6)?;
+        let assigned_at: String = row.get(7)?;
+        let reason: Option<String> = row.get(8)?;
+
+        Ok(Some(PolicyAssignment {
+            id: id.to_string(),
+            policy_id,
+            target: PolicyAssignmentTarget {
+                target_type: policy_assignment_target_type_from_str(&target_type)
+                    .unwrap_or(PolicyAssignmentTargetType::Organization),
+                id: target_id,
+            },
+            priority,
+            effective_from,
+            effective_until,
+            assigned_by,
+            assigned_at,
+            reason,
+        }))
     }
 
     fn list_assignments(&self) -> Result<Vec<PolicyAssignment>> {
@@ -456,7 +458,8 @@ ORDER BY assigned_at DESC
                 id,
                 policy_id,
                 target: PolicyAssignmentTarget {
-                    target_type: policy_assignment_target_type_from_str(&target_type).unwrap_or(PolicyAssignmentTargetType::Organization),
+                    target_type: policy_assignment_target_type_from_str(&target_type)
+                        .unwrap_or(PolicyAssignmentTargetType::Organization),
                     id: target_id,
                 },
                 priority,
@@ -473,24 +476,26 @@ ORDER BY assigned_at DESC
 
     fn delete_assignment(&self, id: &str) -> Result<bool> {
         let conn = self.db.lock_conn();
-        let changed =
-            conn.execute("DELETE FROM policy_assignments WHERE id = ?1", rusqlite::params![id])?;
+        let changed = conn.execute(
+            "DELETE FROM policy_assignments WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
         Ok(changed > 0)
     }
 }
 
-fn scoped_policy_from_row(
-    id: String,
-    name: String,
-    scope_json: String,
-    priority: i32,
-    merge_strategy: String,
-    policy_yaml: String,
-    enabled: bool,
-    metadata_json: Option<String>,
-    created_at: String,
-    updated_at: String,
-) -> Result<ScopedPolicy> {
+fn scoped_policy_from_row(row: &rusqlite::Row<'_>) -> Result<ScopedPolicy> {
+    let id: String = row.get(0)?;
+    let name: String = row.get(1)?;
+    let scope_json: String = row.get(2)?;
+    let priority: i32 = row.get(3)?;
+    let merge_strategy: String = row.get(4)?;
+    let policy_yaml: String = row.get(5)?;
+    let enabled: i64 = row.get(6)?;
+    let metadata_json: Option<String> = row.get(7)?;
+    let created_at: String = row.get(8)?;
+    let updated_at: String = row.get(9)?;
+
     let scope: PolicyScope = serde_json::from_str(&scope_json)?;
     let merge_strategy = merge_strategy_from_str(&merge_strategy);
     let stored_meta: Option<StoredPolicyMetadata> = metadata_json
@@ -513,7 +518,7 @@ fn scoped_policy_from_row(
         priority,
         merge_strategy,
         policy_yaml,
-        enabled,
+        enabled: enabled != 0,
         metadata,
     })
 }
@@ -564,7 +569,11 @@ pub struct PolicyResolver {
 }
 
 pub trait CustomConditionEvaluator: Send + Sync {
-    fn evaluate(&self, context: &GuardContext, params: Option<&HashMap<String, serde_json::Value>>) -> bool;
+    fn evaluate(
+        &self,
+        context: &GuardContext,
+        params: Option<&HashMap<String, serde_json::Value>>,
+    ) -> bool;
 }
 
 impl PolicyResolver {
@@ -584,7 +593,11 @@ impl PolicyResolver {
         &self.store
     }
 
-    pub fn resolve_policy(&self, default_policy: &Policy, context: &GuardContext) -> Result<ResolvedPolicy> {
+    pub fn resolve_policy(
+        &self,
+        default_policy: &Policy,
+        context: &GuardContext,
+    ) -> Result<ResolvedPolicy> {
         if !self.config.enabled {
             return Ok(ResolvedPolicy {
                 policy: default_policy.clone(),
@@ -787,7 +800,8 @@ fn evaluate_identity_condition(cond: &IdentityCondition, context: &GuardContext)
     };
 
     let identity_val = serde_json::to_value(identity)?;
-    let value = get_nested_value(&identity_val, &cond.attribute).unwrap_or(&serde_json::Value::Null);
+    let value =
+        get_nested_value(&identity_val, &cond.attribute).unwrap_or(&serde_json::Value::Null);
     eval_operator(value, &cond.operator, &cond.value)
 }
 
@@ -850,10 +864,12 @@ fn evaluate_time_condition(cond: &TimeCondition) -> Result<bool> {
     }
 
     if let Some(ref range) = cond.date_range {
-        let start = chrono::DateTime::parse_from_rfc3339(&range.start)
-            .map_err(|e| PolicyScopingError::InvalidCondition(format!("invalid date_range.start: {e}")))?;
-        let end = chrono::DateTime::parse_from_rfc3339(&range.end)
-            .map_err(|e| PolicyScopingError::InvalidCondition(format!("invalid date_range.end: {e}")))?;
+        let start = chrono::DateTime::parse_from_rfc3339(&range.start).map_err(|e| {
+            PolicyScopingError::InvalidCondition(format!("invalid date_range.start: {e}"))
+        })?;
+        let end = chrono::DateTime::parse_from_rfc3339(&range.end).map_err(|e| {
+            PolicyScopingError::InvalidCondition(format!("invalid date_range.end: {e}"))
+        })?;
 
         if now_utc < start.with_timezone(&Utc) || now_utc > end.with_timezone(&Utc) {
             return Ok(false);
@@ -874,7 +890,11 @@ fn get_nested_value<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a s
     Some(cur)
 }
 
-fn eval_operator(actual: &serde_json::Value, op: &ConditionOperator, expected: &serde_json::Value) -> Result<bool> {
+fn eval_operator(
+    actual: &serde_json::Value,
+    op: &ConditionOperator,
+    expected: &serde_json::Value,
+) -> Result<bool> {
     Ok(match op {
         ConditionOperator::Eq => actual == expected,
         ConditionOperator::Ne => actual != expected,
@@ -933,9 +953,10 @@ fn validate_policy_escalation(
                 }
             }
             "guards.mcp_tool.block" => {
-                if let (Some(parent_cfg), Some(child_cfg)) =
-                    (parent.guards.mcp_tool.as_ref(), child.guards.mcp_tool.as_ref())
-                {
+                if let (Some(parent_cfg), Some(child_cfg)) = (
+                    parent.guards.mcp_tool.as_ref(),
+                    child.guards.mcp_tool.as_ref(),
+                ) {
                     for removed in &child_cfg.remove_block {
                         if parent_cfg.block.iter().any(|t| t == removed) {
                             return Err(PolicyScopingError::InvalidCondition(format!(

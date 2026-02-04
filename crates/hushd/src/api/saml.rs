@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthenticatedActor;
 use crate::session::CreateSessionOptions;
+use crate::session::SessionError;
 use crate::state::AppState;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -49,7 +50,16 @@ pub async fn exchange_saml(
             .get(axum::http::header::USER_AGENT)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string()),
-        geo_location: None,
+        geo_location: headers
+            .get("X-Hush-Country")
+            .and_then(|v| v.to_str().ok())
+            .map(|c| clawdstrike::GeoLocation {
+                country: Some(c.to_string()),
+                region: None,
+                city: None,
+                latitude: None,
+                longitude: None,
+            }),
         is_vpn: None,
         is_corporate_network: None,
         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -68,10 +78,16 @@ pub async fn exchange_saml(
         options.state = Some(serde_json::Value::Object(state_obj));
     }
 
-    let session = state
-        .sessions
-        .create_session(identity, Some(options))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let session = match state.sessions.create_session(identity, Some(options)) {
+        Ok(session) => session,
+        Err(SessionError::InvalidBinding(_)) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "invalid_session_binding".to_string(),
+            ));
+        }
+        Err(err) => return Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    };
 
     // Audit + broadcast.
     let mut audit = crate::audit::AuditEvent::session_start(&state.session_id, None);
@@ -89,4 +105,3 @@ pub async fn exchange_saml(
 
     Ok(Json(SamlExchangeResponse { session }))
 }
-

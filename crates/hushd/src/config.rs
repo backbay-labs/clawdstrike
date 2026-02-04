@@ -4,7 +4,17 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
-use crate::auth::{ApiKey, ApiKeyTier, AuthStore, Scope};
+use crate::auth::{ApiKey, AuthStore, Scope};
+use crate::siem::dlq::DeadLetterQueueConfig;
+use crate::siem::exporter::ExporterConfig as SiemExporterConfig;
+use crate::siem::exporters::alerting::AlertingConfig;
+use crate::siem::exporters::datadog::DatadogConfig;
+use crate::siem::exporters::elastic::ElasticConfig;
+use crate::siem::exporters::splunk::SplunkConfig;
+use crate::siem::exporters::sumo_logic::SumoLogicConfig;
+use crate::siem::exporters::webhooks::WebhookExporterConfig;
+use crate::siem::filter::EventFilter;
+use crate::siem::threat_intel::config::ThreatIntelConfig;
 
 pub(crate) fn expand_env_refs(value: &str) -> anyhow::Result<String> {
     let mut out = String::new();
@@ -33,18 +43,23 @@ pub(crate) fn expand_env_refs(value: &str) -> anyhow::Result<String> {
     Ok(out)
 }
 
-fn infer_api_key_tier(key: &str) -> Option<ApiKeyTier> {
-    let key = key.trim();
-    if key.starts_with("cs_pub_") {
-        return Some(ApiKeyTier::Free);
-    }
-    if key.starts_with("cs_test_") {
-        return Some(ApiKeyTier::Silver);
-    }
-    if key.starts_with("cs_live_") {
-        return Some(ApiKeyTier::Gold);
-    }
-    None
+fn expand_secret_ref(value: &str) -> anyhow::Result<String> {
+    let expanded = expand_env_refs(value)?;
+    let expanded = expanded.trim().to_string();
+
+    let path = if let Some(rest) = expanded.strip_prefix("file:") {
+        rest.trim()
+    } else if let Some(rest) = expanded.strip_prefix('@') {
+        rest.trim()
+    } else {
+        return Ok(expanded);
+    };
+
+    let bytes = std::fs::read(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read secret file {}: {e}", path))?;
+    let s = String::from_utf8(bytes)
+        .map_err(|e| anyhow::anyhow!("Secret file {} is not valid UTF-8: {e}", path))?;
+    Ok(s.trim().to_string())
 }
 
 /// TLS configuration
@@ -63,9 +78,6 @@ pub struct ApiKeyConfig {
     pub name: String,
     /// The actual API key (will be hashed, never stored plaintext)
     pub key: String,
-    /// Optional rate limit tier for this key (free, silver, gold, platinum).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tier: Option<ApiKeyTier>,
     /// Scopes granted to this key (check, read, admin, *)
     #[serde(default)]
     pub scopes: Vec<String>,
@@ -109,7 +121,7 @@ pub struct OktaConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OktaWebhookConfig {
-    /// Shared secret token for verifying Okta event hooks (Authorization: Bearer <token>).
+    /// Shared secret token for verifying Okta event hooks (`Authorization: Bearer <token>`).
     pub verification_key: String,
 }
 
@@ -121,7 +133,7 @@ pub struct Auth0Config {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Auth0LogStreamConfig {
-    /// Shared bearer token for verifying Auth0 log stream webhooks (Authorization: Bearer <token>).
+    /// Shared bearer token for verifying Auth0 log stream webhooks (`Authorization: Bearer <token>`).
     pub authorization: String,
 }
 
@@ -129,7 +141,12 @@ pub struct Auth0LogStreamConfig {
 pub struct SamlConfig {
     /// Service Provider entity ID (audience)
     pub entity_id: String,
-    /// Whether to validate assertion signature (not implemented yet; enable at your own risk).
+    /// IdP signing certificate (PEM), used to validate assertion signatures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idp_signing_cert_pem: Option<String>,
+    /// Whether to validate assertion signature.
+    ///
+    /// When enabled, `idp_signing_cert_pem` must be set.
     #[serde(default)]
     pub validate_signature: bool,
     /// Whether to validate assertion conditions (NotBefore/NotOnOrAfter/AudienceRestriction).
@@ -262,7 +279,7 @@ impl Default for PolicyScopingCacheConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PolicyScopingEscalationPreventionConfig {
     /// Whether escalation prevention checks are enabled.
     #[serde(default)]
@@ -270,15 +287,6 @@ pub struct PolicyScopingEscalationPreventionConfig {
     /// Fields that scoped policies are not allowed to relax/override.
     #[serde(default)]
     pub locked_fields: Vec<String>,
-}
-
-impl Default for PolicyScopingEscalationPreventionConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            locked_fields: Vec::new(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -457,6 +465,53 @@ pub struct RateLimitConfig {
     /// Whether to trust X-Forwarded-For from any source (INSECURE - use trusted_proxies instead)
     #[serde(default)]
     pub trust_xff_from_any: bool,
+
+    /// Identity-based rate limiting for authenticated users.
+    #[serde(default)]
+    pub identity: IdentityRateLimitConfig,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IdentityRateLimitConfig {
+    /// Whether identity-based rate limiting is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Sliding window size (seconds).
+    #[serde(default = "default_identity_rate_window_secs")]
+    pub window_secs: u64,
+    /// Max requests per window per user (0 = unlimited).
+    #[serde(default = "default_identity_rate_max_user")]
+    pub max_requests_per_window_user: u32,
+    /// Max requests per window per org (0 = unlimited).
+    #[serde(default = "default_identity_rate_max_org")]
+    pub max_requests_per_window_org: u32,
+    /// Check action types this limiter applies to. Empty = all check actions.
+    #[serde(default)]
+    pub apply_to_actions: Vec<String>,
+}
+
+fn default_identity_rate_window_secs() -> u64 {
+    3600
+}
+
+fn default_identity_rate_max_user() -> u32 {
+    1000
+}
+
+fn default_identity_rate_max_org() -> u32 {
+    10_000
+}
+
+impl Default for IdentityRateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            window_secs: default_identity_rate_window_secs(),
+            max_requests_per_window_user: default_identity_rate_max_user(),
+            max_requests_per_window_org: default_identity_rate_max_org(),
+            apply_to_actions: vec!["shell".to_string()],
+        }
+    }
 }
 
 fn default_rate_limit_enabled() -> bool {
@@ -479,8 +534,25 @@ impl Default for RateLimitConfig {
             burst_size: default_burst_size(),
             trusted_proxies: Vec::new(),
             trust_xff_from_any: false,
+            identity: IdentityRateLimitConfig::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SessionHardeningConfig {
+    /// Rotate (terminate) existing user sessions when creating a new session.
+    #[serde(default)]
+    pub rotate_on_create: bool,
+    /// Bind sessions to a user-agent hash.
+    #[serde(default)]
+    pub bind_user_agent: bool,
+    /// Bind sessions to the source IP.
+    #[serde(default)]
+    pub bind_source_ip: bool,
+    /// Bind sessions to request geo country (requires `request.geo_location.country`).
+    #[serde(default)]
+    pub bind_country: bool,
 }
 
 fn default_remote_max_fetch_bytes() -> usize {
@@ -516,6 +588,203 @@ impl Default for RemoteExtendsConfig {
             max_fetch_bytes: default_remote_max_fetch_bytes(),
             max_cache_bytes: default_remote_max_cache_bytes(),
         }
+    }
+}
+
+/// Audit ledger encryption key source.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditEncryptionKeySource {
+    /// Load key bytes from a file containing a hex string (32 bytes / 64 hex chars).
+    #[default]
+    File,
+    /// Load key bytes from an environment variable containing a hex string (32 bytes / 64 hex chars).
+    Env,
+    /// Load key bytes from a TPM-sealed blob (JSON written by `hush keygen --tpm-seal`).
+    TpmSealedBlob,
+}
+
+/// Audit ledger encryption configuration.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AuditEncryptionConfig {
+    /// Enable encryption at rest for the audit metadata blob.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Key source for encryption.
+    #[serde(default)]
+    pub key_source: AuditEncryptionKeySource,
+
+    /// File containing the hex-encoded key (required for `file` key_source).
+    #[serde(default)]
+    pub key_path: Option<PathBuf>,
+
+    /// Environment variable name containing the hex-encoded key (required for `env` key_source).
+    #[serde(default)]
+    pub key_env: Option<String>,
+
+    /// Path to a TPM-sealed blob JSON file (required for `tpm_sealed_blob` key_source).
+    #[serde(default)]
+    pub tpm_sealed_blob_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AuditConfig {
+    #[serde(default)]
+    pub encryption: AuditEncryptionConfig,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AuditSinkConfig {
+    /// Print each audit event as JSONL to stdout.
+    StdoutJsonl,
+    /// Append each audit event as JSONL to a file.
+    FileJsonl { path: PathBuf },
+    /// POST each audit event to a webhook endpoint.
+    Webhook {
+        url: String,
+        #[serde(default)]
+        headers: Option<std::collections::HashMap<String, String>>,
+    },
+    /// Send audit events to Splunk HTTP Event Collector.
+    SplunkHec {
+        url: String,
+        token: String,
+        #[serde(default)]
+        index: Option<String>,
+        #[serde(default)]
+        sourcetype: Option<String>,
+        #[serde(default)]
+        source: Option<String>,
+    },
+    /// Index audit events into Elasticsearch.
+    Elastic {
+        url: String,
+        #[serde(default)]
+        api_key: Option<String>,
+        #[serde(default)]
+        index: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuditForwardConfig {
+    /// Whether forwarding is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// In-memory queue size for forwarding.
+    #[serde(default = "default_audit_forward_queue_size")]
+    pub queue_size: usize,
+    /// Per-sink send timeout (milliseconds).
+    #[serde(default = "default_audit_forward_timeout_ms")]
+    pub timeout_ms: u64,
+    /// Configured sinks.
+    #[serde(default)]
+    pub sinks: Vec<AuditSinkConfig>,
+}
+
+fn default_audit_forward_queue_size() -> usize {
+    8192
+}
+
+fn default_audit_forward_timeout_ms() -> u64 {
+    2_000
+}
+
+impl Default for AuditForwardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            queue_size: default_audit_forward_queue_size(),
+            timeout_ms: default_audit_forward_timeout_ms(),
+            sinks: Vec::new(),
+        }
+    }
+}
+
+impl AuditForwardConfig {
+    pub fn resolve_env_refs(&self) -> anyhow::Result<Self> {
+        let mut out = self.clone();
+
+        let mut sinks = Vec::with_capacity(out.sinks.len());
+        for (idx, sink) in out.sinks.into_iter().enumerate() {
+            let sink = match sink {
+                AuditSinkConfig::StdoutJsonl => AuditSinkConfig::StdoutJsonl,
+                AuditSinkConfig::FileJsonl { path } => AuditSinkConfig::FileJsonl { path },
+                AuditSinkConfig::Webhook { url, headers } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let headers = headers
+                        .map(|h| {
+                            h.into_iter()
+                                .map(|(k, v)| Ok((k, expand_env_refs(&v)?)))
+                                .collect::<anyhow::Result<std::collections::HashMap<_, _>>>()
+                        })
+                        .transpose()
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid audit_forward.sinks[{}].headers value: {}",
+                                idx,
+                                e
+                            )
+                        })?;
+                    AuditSinkConfig::Webhook { url, headers }
+                }
+                AuditSinkConfig::SplunkHec {
+                    url,
+                    token,
+                    index,
+                    sourcetype,
+                    source,
+                } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let token = expand_env_refs(&token).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].token value: {}", idx, e)
+                    })?;
+                    AuditSinkConfig::SplunkHec {
+                        url,
+                        token,
+                        index,
+                        sourcetype,
+                        source,
+                    }
+                }
+                AuditSinkConfig::Elastic {
+                    url,
+                    api_key,
+                    index,
+                } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let api_key =
+                        api_key
+                            .map(|k| expand_env_refs(&k))
+                            .transpose()
+                            .map_err(|e| {
+                                anyhow::anyhow!(
+                                    "Invalid audit_forward.sinks[{}].api_key value: {}",
+                                    idx,
+                                    e
+                                )
+                            })?;
+                    AuditSinkConfig::Elastic {
+                        url,
+                        api_key,
+                        index,
+                    }
+                }
+            };
+
+            sinks.push(sink);
+        }
+        out.sinks = sinks;
+
+        Ok(out)
     }
 }
 /// Daemon configuration
@@ -555,6 +824,12 @@ pub struct Config {
     #[serde(default)]
     pub signing_key: Option<PathBuf>,
 
+    /// Trusted public keys for verifying incoming signed policy bundles (hex, 32 bytes).
+    ///
+    /// Supports `${VAR}` environment variable references.
+    #[serde(default)]
+    pub policy_bundle_trusted_pubkeys: Vec<String>,
+
     /// Enable CORS for browser access
     #[serde(default = "default_cors")]
     pub cors_enabled: bool,
@@ -562,6 +837,14 @@ pub struct Config {
     /// Maximum audit log entries to keep (0 = unlimited)
     #[serde(default)]
     pub max_audit_entries: usize,
+
+    /// Audit ledger configuration.
+    #[serde(default)]
+    pub audit: AuditConfig,
+
+    /// Audit forwarding configuration (optional).
+    #[serde(default)]
+    pub audit_forward: AuditForwardConfig,
 
     /// API authentication configuration
     #[serde(default)]
@@ -579,9 +862,21 @@ pub struct Config {
     #[serde(default)]
     pub policy_scoping: PolicyScopingConfig,
 
+    /// Session hardening configuration (binding/rotation).
+    #[serde(default)]
+    pub session: SessionHardeningConfig,
+
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+
+    /// Threat intelligence (STIX/TAXII) configuration
+    #[serde(default)]
+    pub threat_intel: ThreatIntelConfig,
+
+    /// SIEM/SOAR export configuration
+    #[serde(default)]
+    pub siem: SiemSoarConfig,
 
     /// Remote `extends` configuration (disabled unless allowlisted).
     #[serde(default)]
@@ -622,16 +917,94 @@ impl Default for Config {
             log_level: default_log_level(),
             tls: None,
             signing_key: None,
+            policy_bundle_trusted_pubkeys: Vec::new(),
             cors_enabled: default_cors(),
             max_audit_entries: 0,
+            audit: AuditConfig::default(),
+            audit_forward: AuditForwardConfig::default(),
             auth: AuthConfig::default(),
             identity: IdentityConfig::default(),
             rbac: RbacConfig::default(),
             policy_scoping: PolicyScopingConfig::default(),
+            session: SessionHardeningConfig::default(),
             rate_limit: RateLimitConfig::default(),
+            threat_intel: ThreatIntelConfig::default(),
+            siem: SiemSoarConfig::default(),
             remote_extends: RemoteExtendsConfig::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SiemSoarConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub environment: Option<String>,
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    #[serde(default)]
+    pub labels: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub privacy: SiemPrivacyConfig,
+    #[serde(default)]
+    pub exporters: SiemExportersConfig,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SiemPrivacyConfig {
+    #[serde(default)]
+    pub drop_metadata: bool,
+    #[serde(default)]
+    pub drop_labels: bool,
+    /// Field paths to remove (best-effort, limited to known fields).
+    #[serde(default)]
+    pub deny_fields: Vec<String>,
+    /// Field paths to redact to a static replacement (best-effort, limited to known fields).
+    #[serde(default)]
+    pub redact_fields: Vec<String>,
+    #[serde(default = "default_redaction_replacement")]
+    pub redaction_replacement: String,
+}
+
+fn default_redaction_replacement() -> String {
+    "[REDACTED]".to_string()
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SiemExportersConfig {
+    #[serde(default)]
+    pub splunk: Option<ExporterSettings<SplunkConfig>>,
+    #[serde(default)]
+    pub elastic: Option<ExporterSettings<ElasticConfig>>,
+    #[serde(default)]
+    pub datadog: Option<ExporterSettings<DatadogConfig>>,
+    #[serde(default)]
+    pub sumo_logic: Option<ExporterSettings<SumoLogicConfig>>,
+    #[serde(default)]
+    pub alerting: Option<ExporterSettings<AlertingConfig>>,
+    #[serde(default)]
+    pub webhooks: Option<ExporterSettings<WebhookExporterConfig>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExporterSettings<T> {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub runtime: SiemExporterConfig,
+    #[serde(default)]
+    pub filter: EventFilter,
+    #[serde(default)]
+    pub dlq: Option<DeadLetterQueueConfig>,
+    #[serde(default = "default_exporter_queue_capacity")]
+    pub queue_capacity: usize,
+    #[serde(flatten)]
+    pub config: T,
+}
+
+fn default_exporter_queue_capacity() -> usize {
+    10_000
 }
 
 impl Config {
@@ -640,7 +1013,7 @@ impl Config {
         let content = std::fs::read_to_string(path.as_ref())?;
 
         // Support both YAML and TOML based on extension
-        let config = if path
+        let mut config: Config = if path
             .as_ref()
             .extension()
             .is_some_and(|e| e == "yaml" || e == "yml")
@@ -650,6 +1023,7 @@ impl Config {
             toml::from_str(&content)?
         };
 
+        config.expand_env_refs()?;
         Ok(config)
     }
 
@@ -664,7 +1038,216 @@ impl Config {
                 )
             })?;
         }
+
+        if self.audit_forward.enabled {
+            if self.audit_forward.queue_size == 0 {
+                return Err(anyhow::anyhow!("audit_forward.queue_size must be > 0"));
+            }
+            if self.audit_forward.timeout_ms == 0 {
+                return Err(anyhow::anyhow!("audit_forward.timeout_ms must be > 0"));
+            }
+        }
+
+        if self.audit.encryption.enabled {
+            match self.audit.encryption.key_source {
+                AuditEncryptionKeySource::File => {
+                    if self.audit.encryption.key_path.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.key_path is required when audit.encryption.key_source = file"
+                        ));
+                    }
+                }
+                AuditEncryptionKeySource::Env => {
+                    if self.audit.encryption.key_env.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.key_env is required when audit.encryption.key_source = env"
+                        ));
+                    }
+                }
+                AuditEncryptionKeySource::TpmSealedBlob => {
+                    if self.audit.encryption.tpm_sealed_blob_path.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.tpm_sealed_blob_path is required when audit.encryption.key_source = tpm_sealed_blob"
+                        ));
+                    }
+                }
+            }
+        }
         Ok(())
+    }
+
+    pub fn expand_env_refs(&mut self) -> anyhow::Result<()> {
+        // Threat intel auth.
+        for server in &mut self.threat_intel.servers {
+            if let Some(auth) = &mut server.auth {
+                if let Some(v) = &auth.username {
+                    auth.username = Some(expand_secret_ref(v)?);
+                }
+                if let Some(v) = &auth.password {
+                    auth.password = Some(expand_secret_ref(v)?);
+                }
+                if let Some(v) = &auth.api_key {
+                    auth.api_key = Some(expand_secret_ref(v)?);
+                }
+            }
+        }
+
+        // SIEM exporter credentials.
+        if let Some(splunk) = &mut self.siem.exporters.splunk {
+            splunk.config.hec_url = expand_env_refs(&splunk.config.hec_url)?;
+            splunk.config.hec_token = expand_secret_ref(&splunk.config.hec_token)?;
+        }
+        if let Some(elastic) = &mut self.siem.exporters.elastic {
+            elastic.config.base_url = expand_env_refs(&elastic.config.base_url)?;
+            if let Some(v) = &elastic.config.auth.api_key {
+                elastic.config.auth.api_key = Some(expand_secret_ref(v)?);
+            }
+            if let Some(v) = &elastic.config.auth.username {
+                elastic.config.auth.username = Some(expand_secret_ref(v)?);
+            }
+            if let Some(v) = &elastic.config.auth.password {
+                elastic.config.auth.password = Some(expand_secret_ref(v)?);
+            }
+        }
+        if let Some(datadog) = &mut self.siem.exporters.datadog {
+            datadog.config.api_key = expand_secret_ref(&datadog.config.api_key)?;
+            if let Some(v) = &datadog.config.app_key {
+                datadog.config.app_key = Some(expand_secret_ref(v)?);
+            }
+        }
+        if let Some(sumo) = &mut self.siem.exporters.sumo_logic {
+            sumo.config.http_source_url = expand_secret_ref(&sumo.config.http_source_url)?;
+        }
+        if let Some(alerting) = &mut self.siem.exporters.alerting {
+            if let Some(pd) = &mut alerting.config.pagerduty {
+                pd.routing_key = expand_secret_ref(&pd.routing_key)?;
+            }
+            if let Some(og) = &mut alerting.config.opsgenie {
+                og.api_key = expand_secret_ref(&og.api_key)?;
+            }
+        }
+        if let Some(webhooks) = &mut self.siem.exporters.webhooks {
+            if let Some(slack) = &mut webhooks.config.slack {
+                slack.webhook_url = expand_secret_ref(&slack.webhook_url)?;
+            }
+            if let Some(teams) = &mut webhooks.config.teams {
+                teams.webhook_url = expand_secret_ref(&teams.webhook_url)?;
+            }
+            for hook in &mut webhooks.config.webhooks {
+                hook.url = expand_env_refs(&hook.url)?;
+                for (_k, v) in hook.headers.iter_mut() {
+                    *v = expand_env_refs(v)?;
+                }
+                if let Some(v) = &hook.content_type {
+                    hook.content_type = Some(expand_env_refs(v)?);
+                }
+                if let Some(v) = &hook.body_template {
+                    hook.body_template = Some(expand_env_refs(v)?);
+                }
+                if let Some(auth) = &mut hook.auth {
+                    if let Some(v) = &auth.token {
+                        auth.token = Some(expand_secret_ref(v)?);
+                    }
+                    if let Some(v) = &auth.username {
+                        auth.username = Some(expand_secret_ref(v)?);
+                    }
+                    if let Some(v) = &auth.password {
+                        auth.password = Some(expand_secret_ref(v)?);
+                    }
+                    if let Some(v) = &auth.header_value {
+                        auth.header_value = Some(expand_secret_ref(v)?);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn audit_encryption_key(&self) -> anyhow::Result<Option<[u8; 32]>> {
+        if !self.audit.encryption.enabled {
+            return Ok(None);
+        }
+
+        let bytes = match self.audit.encryption.key_source {
+            AuditEncryptionKeySource::File => {
+                let path = self.audit.encryption.key_path.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("audit.encryption.key_path is required for file key_source")
+                })?;
+                std::fs::read_to_string(path)
+                    .map_err(|e| anyhow::anyhow!("Failed to read audit encryption key: {}", e))?
+            }
+            AuditEncryptionKeySource::Env => {
+                let name = self.audit.encryption.key_env.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("audit.encryption.key_env is required for env key_source")
+                })?;
+                expand_env_refs(&format!("${{{}}}", name))?
+            }
+            AuditEncryptionKeySource::TpmSealedBlob => {
+                let path = self
+                    .audit
+                    .encryption
+                    .tpm_sealed_blob_path
+                    .as_ref()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "audit.encryption.tpm_sealed_blob_path is required for tpm_sealed_blob key_source"
+                        )
+                    })?;
+                let raw = std::fs::read_to_string(path).map_err(|e| {
+                    anyhow::anyhow!("Failed to read TPM sealed audit key blob: {}", e)
+                })?;
+                let blob: hush_core::TpmSealedBlob = serde_json::from_str(raw.trim())
+                    .map_err(|e| anyhow::anyhow!("Invalid TPM sealed blob JSON: {}", e))?;
+                let unsealed = blob
+                    .unseal()
+                    .map_err(|e| anyhow::anyhow!("TPM unseal failed: {}", e))?;
+                if unsealed.len() != 32 {
+                    return Err(anyhow::anyhow!(
+                        "Audit encryption key must be 32 bytes, got {}",
+                        unsealed.len()
+                    ));
+                }
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&unsealed);
+                return Ok(Some(arr));
+            }
+        };
+
+        let hex_str = bytes.trim().strip_prefix("0x").unwrap_or(bytes.trim());
+        let decoded = hex::decode(hex_str)
+            .map_err(|e| anyhow::anyhow!("Invalid audit encryption key hex: {}", e))?;
+        if decoded.len() != 32 {
+            return Err(anyhow::anyhow!(
+                "Audit encryption key must be 32 bytes (64 hex chars), got {} bytes",
+                decoded.len()
+            ));
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&decoded);
+        Ok(Some(arr))
+    }
+
+    pub fn load_trusted_policy_bundle_keys(&self) -> anyhow::Result<Vec<hush_core::PublicKey>> {
+        let mut keys = Vec::new();
+        for (idx, key) in self.policy_bundle_trusted_pubkeys.iter().enumerate() {
+            let key = expand_env_refs(key).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid policy_bundle_trusted_pubkeys[{}] value: {}",
+                    idx,
+                    e
+                )
+            })?;
+            let pk = hush_core::PublicKey::from_hex(key.trim()).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid policy_bundle_trusted_pubkeys[{}] public key: {}",
+                    idx,
+                    e
+                )
+            })?;
+            keys.push(pk);
+        }
+        Ok(keys)
     }
 
     /// Load from default locations or create default
@@ -767,15 +1350,10 @@ impl Config {
             let key = expand_env_refs(&key_config.key)
                 .map_err(|e| anyhow::anyhow!("Invalid auth.api_keys[{}].key value: {}", idx, e))?;
 
-            let tier = key_config
-                .tier
-                .or_else(|| infer_api_key_tier(&key));
-
             let api_key = ApiKey {
                 id: uuid::Uuid::new_v4().to_string(),
                 key_hash: AuthStore::hash_key(&key),
                 name: key_config.name.clone(),
-                tier,
                 scopes,
                 created_at: chrono::Utc::now(),
                 expires_at: key_config.expires_at,
@@ -802,6 +1380,8 @@ mod tests {
         assert_eq!(config.listen, "127.0.0.1:9876");
         assert_eq!(config.ruleset, "default");
         assert!(config.cors_enabled);
+        assert!(!config.audit.encryption.enabled);
+        assert!(!config.audit_forward.enabled);
     }
 
     #[test]

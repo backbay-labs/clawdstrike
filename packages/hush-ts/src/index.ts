@@ -155,3 +155,6 @@ export {
   type V1ErrorBody,
   type V1ErrorEnvelope,
 } from "./client";
+
+// SIEM/SOAR
+export * as siem from "./siem";

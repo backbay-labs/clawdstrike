@@ -41,11 +41,23 @@ pub enum Error {
 
     #[error("Unsupported receipt version: {found} (supported: {supported})")]
     UnsupportedReceiptVersion { found: String, supported: String },
+
+    #[error("IO error: {0}")]
+    IoError(String),
+
+    #[error("TPM error: {0}")]
+    TpmError(String),
 }
 
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
         Error::JsonError(e.to_string())
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::IoError(e.to_string())
     }
 }
 

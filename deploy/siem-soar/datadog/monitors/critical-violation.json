@@ -1,0 +1,16 @@
+{
+  "name": "Clawdstrike Critical Policy Violation",
+  "type": "log alert",
+  "query": "logs(\"service:clawdstrike status:critical\").index(\"*\").rollup(\"count\").last(\"5m\") > 0",
+  "message": "@pagerduty-security Critical policy violation detected by Clawdstrike.\n\nGuard: {{security.guard}}\nReason: {{security.reason}}\nSession: {{session.id}}",
+  "tags": ["team:security", "source:clawdstrike"],
+  "options": {
+    "thresholds": {
+      "critical": 0
+    },
+    "notify_audit": true,
+    "include_tags": true,
+    "escalation_message": "Critical violation unacknowledged after 15 minutes"
+  }
+}
+
