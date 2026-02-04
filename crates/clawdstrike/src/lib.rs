@@ -47,6 +47,7 @@ pub mod engine;
 pub mod error;
 pub mod guards;
 pub mod hygiene;
+pub mod identity;
 pub mod instruction_hierarchy;
 pub mod irm;
 pub mod jailbreak;
@@ -65,6 +66,10 @@ pub use hygiene::{
     detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,
     FingerprintDeduper, PromptInjectionLevel, PromptInjectionReport, USER_CONTENT_END,
     USER_CONTENT_START,
+};
+pub use identity::{
+    AuthMethod, GeoLocation, IdentityPrincipal, IdentityProvider, OrganizationContext,
+    OrganizationTier, RequestContext, SessionContext, SessionMetadata,
 };
 pub use instruction_hierarchy::{
     ConflictAction, ConflictSeverity, ContentModification, CustomMarkers, EnforcementAction,

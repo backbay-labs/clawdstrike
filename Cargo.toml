@@ -27,6 +27,7 @@ rand = "0.9"
 rand_core = { version = "0.6", features = ["getrandom"] }
 hex = "0.4"
 base64 = "0.22"
+openssl = { version = "0.10", features = ["vendored"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -42,6 +43,8 @@ async-trait = "0.1"
 regex = "1.12"
 glob = "0.3"
 globset = "0.4"
+roxmltree = "0.21"
+rust-xmlsec = "1.0.0"
 
 # Error handling
 thiserror = "2.0"
@@ -53,6 +56,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
 
 # UUID
 uuid = { version = "1.20", features = ["v4", "serde", "js"] }
@@ -82,6 +86,9 @@ dirs = "6.0"
 
 # HTTP client
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+# JWT (OIDC)
+jsonwebtoken = "9"
 
 # Internal crates
 hush-core = { path = "crates/hush-core", version = "0.1.0" }

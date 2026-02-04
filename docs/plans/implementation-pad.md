@@ -385,7 +385,7 @@ Primary specs: `docs/plans/multi-agent/*`
 
 ## Workstream F — Enterprise readiness (P2)
 
-These items don’t have full specs in `docs/plans/**` yet; treat as placeholders until written.
+Some items don’t have full specs in `docs/plans/**` yet; treat as placeholders until written.
 
 ### F1. Human-in-the-loop approvals + breakglass
 - [ ] Define approval request/response schema (who, what, why, expiry).
@@ -394,9 +394,14 @@ These items don’t have full specs in `docs/plans/**` yet; treat as placeholder
 - [ ] Breakglass flow: audited, time-limited, with explicit reason capture.
 
 ### F2. Identity & access (RBAC/SSO)
-- [ ] Policy scoping by org/team/project/environment.
-- [ ] RBAC model for who can change policies, approve actions, view audit logs.
-- [ ] SSO integration points (Auth0/Okta) — likely via `hushd` or a control plane.
+Primary specs: `docs/plans/identity-access/*`
+
+- [ ] Overview: `docs/plans/identity-access/overview.md`
+- [ ] Session context: `docs/plans/identity-access/session-context.md`
+- [ ] RBAC: `docs/plans/identity-access/rbac.md`
+- [ ] Policy scoping: `docs/plans/identity-access/policy-scoping.md`
+- [ ] OIDC/SAML: `docs/plans/identity-access/oidc-saml.md`
+- [ ] Okta/Auth0: `docs/plans/identity-access/okta-auth0.md`
 
 ### F3. SIEM/SOAR + audit exports
 - [ ] Define audit sink interface (stdout/jsonl, webhook, OTLP, Splunk HEC, Datadog logs).
@@ -445,3 +450,11 @@ These items don’t have full specs in `docs/plans/**` yet; treat as placeholder
 ### P1
 - Prompt security: `docs/plans/prompt-security/overview.md`
 - Multi-agent: `docs/plans/multi-agent/overview.md`
+
+### P2
+- Identity & access (IAM): `docs/plans/identity-access/overview.md`
+- Session context: `docs/plans/identity-access/session-context.md`
+- RBAC: `docs/plans/identity-access/rbac.md`
+- Policy scoping: `docs/plans/identity-access/policy-scoping.md`
+- OIDC/SAML: `docs/plans/identity-access/oidc-saml.md`
+- Okta/Auth0: `docs/plans/identity-access/okta-auth0.md`

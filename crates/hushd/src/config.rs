@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::auth::{ApiKey, AuthStore, Scope};
 
-fn expand_env_refs(value: &str) -> anyhow::Result<String> {
+pub(crate) fn expand_env_refs(value: &str) -> anyhow::Result<String> {
     let mut out = String::new();
     let mut rest = value;
 
@@ -68,6 +68,356 @@ pub struct AuthConfig {
     pub api_keys: Vec<ApiKeyConfig>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct IdentityConfig {
+    /// OIDC (JWT) identity configuration
+    #[serde(default)]
+    pub oidc: Option<OidcConfig>,
+    /// Okta-specific configuration (optional)
+    #[serde(default)]
+    pub okta: Option<OktaConfig>,
+    /// Auth0-specific configuration (optional)
+    #[serde(default)]
+    pub auth0: Option<Auth0Config>,
+    /// SAML configuration (optional)
+    #[serde(default)]
+    pub saml: Option<SamlConfig>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct OktaConfig {
+    #[serde(default)]
+    pub webhooks: Option<OktaWebhookConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OktaWebhookConfig {
+    /// Shared secret token for verifying Okta event hooks (Authorization: Bearer <token>).
+    pub verification_key: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Auth0Config {
+    #[serde(default)]
+    pub log_stream: Option<Auth0LogStreamConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Auth0LogStreamConfig {
+    /// Shared bearer token for verifying Auth0 log stream webhooks (Authorization: Bearer <token>).
+    pub authorization: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SamlConfig {
+    /// Service Provider entity ID (audience)
+    pub entity_id: String,
+    /// IdP signing certificate (PEM), used to validate assertion signatures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idp_signing_cert_pem: Option<String>,
+    /// Whether to validate assertion signature.
+    ///
+    /// When enabled, `idp_signing_cert_pem` must be set.
+    #[serde(default)]
+    pub validate_signature: bool,
+    /// Whether to validate assertion conditions (NotBefore/NotOnOrAfter/AudienceRestriction).
+    #[serde(default = "default_validate_saml_conditions")]
+    pub validate_conditions: bool,
+    /// Attribute mapping configuration
+    #[serde(default)]
+    pub attribute_mapping: SamlAttributeMapping,
+    /// Maximum assertion age (seconds)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_assertion_age_secs: Option<u64>,
+}
+
+fn default_validate_saml_conditions() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SamlAttributeMapping {
+    /// Attribute name for user ID (defaults to NameID when unset)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teams: Option<String>,
+    #[serde(default)]
+    pub additional_attributes: Vec<String>,
+}
+
+impl Default for SamlAttributeMapping {
+    fn default() -> Self {
+        Self {
+            user_id: None,
+            email: Some("email".to_string()),
+            display_name: Some("displayName".to_string()),
+            organization_id: None,
+            roles: Some("roles".to_string()),
+            teams: Some("teams".to_string()),
+            additional_attributes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RbacConfig {
+    /// Whether RBAC is enabled for user principals.
+    #[serde(default = "default_rbac_enabled")]
+    pub enabled: bool,
+    /// Mapping from identity groups/roles/teams to RBAC roles.
+    #[serde(default)]
+    pub group_mapping: GroupMappingConfig,
+}
+
+fn default_rbac_enabled() -> bool {
+    true
+}
+
+impl Default for RbacConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_rbac_enabled(),
+            group_mapping: GroupMappingConfig::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PolicyScopingConfig {
+    /// Whether identity-based policy scoping is enabled.
+    #[serde(default = "default_policy_scoping_enabled")]
+    pub enabled: bool,
+    /// Engine cache settings (policy-hash -> compiled guards).
+    #[serde(default)]
+    pub cache: PolicyScopingCacheConfig,
+    /// Escalation prevention settings (optional hardening).
+    #[serde(default)]
+    pub escalation_prevention: PolicyScopingEscalationPreventionConfig,
+}
+
+fn default_policy_scoping_enabled() -> bool {
+    true
+}
+
+impl Default for PolicyScopingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_policy_scoping_enabled(),
+            cache: PolicyScopingCacheConfig::default(),
+            escalation_prevention: PolicyScopingEscalationPreventionConfig::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PolicyScopingCacheConfig {
+    #[serde(default = "default_policy_scoping_cache_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_policy_scoping_cache_ttl_seconds")]
+    pub ttl_seconds: u64,
+    #[serde(default = "default_policy_scoping_cache_max_entries")]
+    pub max_entries: usize,
+}
+
+fn default_policy_scoping_cache_enabled() -> bool {
+    true
+}
+
+fn default_policy_scoping_cache_ttl_seconds() -> u64 {
+    60
+}
+
+fn default_policy_scoping_cache_max_entries() -> usize {
+    1000
+}
+
+impl Default for PolicyScopingCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_policy_scoping_cache_enabled(),
+            ttl_seconds: default_policy_scoping_cache_ttl_seconds(),
+            max_entries: default_policy_scoping_cache_max_entries(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PolicyScopingEscalationPreventionConfig {
+    /// Whether escalation prevention checks are enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Fields that scoped policies are not allowed to relax/override.
+    #[serde(default)]
+    pub locked_fields: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct GroupMappingConfig {
+    /// Direct mapping: identity group -> RBAC roles
+    #[serde(default)]
+    pub direct: std::collections::HashMap<String, Vec<String>>,
+    /// Pattern mapping (glob/regex): group pattern -> RBAC roles
+    #[serde(default)]
+    pub patterns: Vec<GroupPattern>,
+    /// Include all identity groups as roles (optionally prefixed)
+    #[serde(default)]
+    pub include_all_groups: bool,
+    /// Prefix for auto-generated roles from identity groups
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_prefix: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GroupPattern {
+    pub pattern: String,
+    pub roles: Vec<String>,
+    #[serde(default)]
+    pub is_regex: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OidcConfig {
+    /// OIDC issuer URL
+    pub issuer: String,
+
+    /// Expected audience (client ID)
+    #[serde(deserialize_with = "deserialize_string_or_vec")]
+    pub audience: Vec<String>,
+
+    /// JWKS URI (auto-discovered if not provided)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jwks_uri: Option<String>,
+
+    /// Clock tolerance for expiration checks (seconds)
+    #[serde(default = "default_clock_tolerance_secs")]
+    pub clock_tolerance_secs: u64,
+
+    /// Maximum token age (seconds)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_age_secs: Option<u64>,
+
+    /// Required claims (must exist and be non-empty)
+    #[serde(default)]
+    pub required_claims: Vec<String>,
+
+    /// Claim mapping to Clawdstrike identity
+    #[serde(default)]
+    pub claim_mapping: OidcClaimMapping,
+
+    /// JWKS cache TTL (seconds)
+    #[serde(default = "default_jwks_cache_ttl_secs")]
+    pub jwks_cache_ttl_secs: u64,
+
+    /// Replay protection settings (OIDC `jti` tracking).
+    #[serde(default)]
+    pub replay_protection: OidcReplayProtectionConfig,
+}
+
+fn default_clock_tolerance_secs() -> u64 {
+    30
+}
+
+fn default_jwks_cache_ttl_secs() -> u64 {
+    3600
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct OidcReplayProtectionConfig {
+    /// Whether replay protection is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Whether `jti` is required when replay protection is enabled.
+    #[serde(default)]
+    pub require_jti: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OidcClaimMapping {
+    /// Claim for user ID (default: "sub")
+    #[serde(default = "default_claim_sub")]
+    pub user_id: String,
+
+    /// Claim for email (default: "email")
+    #[serde(default = "default_claim_email")]
+    pub email: String,
+
+    /// Claim for display name (default: "name")
+    #[serde(default = "default_claim_name")]
+    pub display_name: String,
+
+    /// Claim for organization ID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization_id: Option<String>,
+
+    /// Claim for roles (default: "roles")
+    #[serde(default = "default_claim_roles")]
+    pub roles: String,
+
+    /// Claim for teams
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teams: Option<String>,
+
+    /// Additional claims to extract
+    #[serde(default)]
+    pub additional_claims: Vec<String>,
+}
+
+fn default_claim_sub() -> String {
+    "sub".to_string()
+}
+
+fn default_claim_email() -> String {
+    "email".to_string()
+}
+
+fn default_claim_name() -> String {
+    "name".to_string()
+}
+
+fn default_claim_roles() -> String {
+    "roles".to_string()
+}
+
+impl Default for OidcClaimMapping {
+    fn default() -> Self {
+        Self {
+            user_id: default_claim_sub(),
+            email: default_claim_email(),
+            display_name: default_claim_name(),
+            organization_id: None,
+            roles: default_claim_roles(),
+            teams: None,
+            additional_claims: Vec::new(),
+        }
+    }
+}
+
+fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        String(String),
+        Vec(Vec<String>),
+    }
+
+    match StringOrVec::deserialize(deserializer)? {
+        StringOrVec::String(value) => Ok(vec![value]),
+        StringOrVec::Vec(values) => Ok(values),
+    }
+}
+
 /// Rate limiting configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RateLimitConfig {
@@ -86,6 +436,53 @@ pub struct RateLimitConfig {
     /// Whether to trust X-Forwarded-For from any source (INSECURE - use trusted_proxies instead)
     #[serde(default)]
     pub trust_xff_from_any: bool,
+
+    /// Identity-based rate limiting for authenticated users.
+    #[serde(default)]
+    pub identity: IdentityRateLimitConfig,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IdentityRateLimitConfig {
+    /// Whether identity-based rate limiting is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Sliding window size (seconds).
+    #[serde(default = "default_identity_rate_window_secs")]
+    pub window_secs: u64,
+    /// Max requests per window per user (0 = unlimited).
+    #[serde(default = "default_identity_rate_max_user")]
+    pub max_requests_per_window_user: u32,
+    /// Max requests per window per org (0 = unlimited).
+    #[serde(default = "default_identity_rate_max_org")]
+    pub max_requests_per_window_org: u32,
+    /// Check action types this limiter applies to. Empty = all check actions.
+    #[serde(default)]
+    pub apply_to_actions: Vec<String>,
+}
+
+fn default_identity_rate_window_secs() -> u64 {
+    3600
+}
+
+fn default_identity_rate_max_user() -> u32 {
+    1000
+}
+
+fn default_identity_rate_max_org() -> u32 {
+    10_000
+}
+
+impl Default for IdentityRateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            window_secs: default_identity_rate_window_secs(),
+            max_requests_per_window_user: default_identity_rate_max_user(),
+            max_requests_per_window_org: default_identity_rate_max_org(),
+            apply_to_actions: vec!["shell".to_string()],
+        }
+    }
 }
 
 fn default_rate_limit_enabled() -> bool {
@@ -108,8 +505,25 @@ impl Default for RateLimitConfig {
             burst_size: default_burst_size(),
             trusted_proxies: Vec::new(),
             trust_xff_from_any: false,
+            identity: IdentityRateLimitConfig::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SessionHardeningConfig {
+    /// Rotate (terminate) existing user sessions when creating a new session.
+    #[serde(default)]
+    pub rotate_on_create: bool,
+    /// Bind sessions to a user-agent hash.
+    #[serde(default)]
+    pub bind_user_agent: bool,
+    /// Bind sessions to the source IP.
+    #[serde(default)]
+    pub bind_source_ip: bool,
+    /// Bind sessions to request geo country (requires `request.geo_location.country`).
+    #[serde(default)]
+    pub bind_country: bool,
 }
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -129,6 +543,12 @@ pub struct Config {
     /// Path to SQLite audit database
     #[serde(default = "default_audit_db")]
     pub audit_db: PathBuf,
+
+    /// Path to SQLite control database (sessions/RBAC/scoped policies).
+    ///
+    /// If unset, defaults to `audit_db` to keep deployments single-file.
+    #[serde(default)]
+    pub control_db: Option<PathBuf>,
 
     /// Log level (trace, debug, info, warn, error)
     #[serde(default = "default_log_level")]
@@ -153,6 +573,22 @@ pub struct Config {
     /// API authentication configuration
     #[serde(default)]
     pub auth: AuthConfig,
+
+    /// Identity configuration (OIDC/SAML/etc)
+    #[serde(default)]
+    pub identity: IdentityConfig,
+
+    /// RBAC configuration
+    #[serde(default)]
+    pub rbac: RbacConfig,
+
+    /// Policy scoping configuration
+    #[serde(default)]
+    pub policy_scoping: PolicyScopingConfig,
+
+    /// Session hardening configuration (binding/rotation).
+    #[serde(default)]
+    pub session: SessionHardeningConfig,
 
     /// Rate limiting configuration
     #[serde(default)]
@@ -189,12 +625,17 @@ impl Default for Config {
             policy_path: None,
             ruleset: default_ruleset(),
             audit_db: default_audit_db(),
+            control_db: None,
             log_level: default_log_level(),
             tls: None,
             signing_key: None,
             cors_enabled: default_cors(),
             max_audit_entries: 0,
             auth: AuthConfig::default(),
+            identity: IdentityConfig::default(),
+            rbac: RbacConfig::default(),
+            policy_scoping: PolicyScopingConfig::default(),
+            session: SessionHardeningConfig::default(),
             rate_limit: RateLimitConfig::default(),
         }
     }

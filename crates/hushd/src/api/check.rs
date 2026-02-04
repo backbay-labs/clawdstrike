@@ -1,11 +1,16 @@
 //! Action checking endpoint
 
+use std::sync::Arc;
+
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::guards::{GuardContext, GuardResult};
+use clawdstrike::{HushEngine, RequestContext};
 
 use crate::audit::AuditEvent;
+use crate::auth::AuthenticatedActor;
+use crate::identity_rate_limit::IdentityRateLimitError;
 use crate::state::{AppState, DaemonEvent};
 
 fn parse_egress_target(target: &str) -> Result<(String, u16), String> {
@@ -98,19 +103,179 @@ impl From<GuardResult> for CheckResponse {
 /// POST /api/v1/check
 pub async fn check_action(
     State(state): State<AppState>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
+    headers: axum::http::HeaderMap,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     Json(request): Json<CheckRequest>,
 ) -> Result<Json<CheckResponse>, (StatusCode, String)> {
-    let engine = state.engine.read().await;
+    let (default_policy, keypair) = {
+        let engine = state.engine.read().await;
+        (engine.policy().clone(), engine.keypair().cloned())
+    };
 
-    let mut context = GuardContext::new().with_session_id(
-        request
-            .session_id
-            .clone()
-            .unwrap_or_else(|| state.session_id.clone()),
-    );
+    let request_context = RequestContext {
+        request_id: uuid::Uuid::new_v4().to_string(),
+        source_ip: Some(addr.ip().to_string()),
+        user_agent: headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+        geo_location: headers
+            .get("X-Hush-Country")
+            .and_then(|v| v.to_str().ok())
+            .map(|c| clawdstrike::GeoLocation {
+                country: Some(c.to_string()),
+                region: None,
+                city: None,
+                latitude: None,
+                longitude: None,
+            }),
+        is_vpn: None,
+        is_corporate_network: None,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    };
+
+    let mut context = GuardContext::new().with_request(request_context.clone());
+    let mut session_for_audit: Option<clawdstrike::SessionContext> = None;
+    let mut principal_for_audit: Option<clawdstrike::IdentityPrincipal> = None;
+    let mut roles_for_audit: Option<Vec<String>> = None;
+    let mut permissions_for_audit: Option<Vec<String>> = None;
+
+    if let Some(session_id) = request.session_id.clone() {
+        // Validate session existence + liveness.
+        let validation = state
+            .sessions
+            .validate_session(&session_id)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        if !validation.valid {
+            return Err((
+                StatusCode::FORBIDDEN,
+                format!(
+                    "invalid_session: {}",
+                    validation
+                        .reason
+                        .as_ref()
+                        .map(|r| format!("{r:?}"))
+                        .unwrap_or_else(|| "unknown".to_string())
+                ),
+            ));
+        }
+
+        let session = validation.session.ok_or_else(|| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "session_validation_missing_session".to_string(),
+            )
+        })?;
+
+        // Enforce that user sessions can only be used by the same authenticated user.
+        if let Some(ext) = actor.as_ref() {
+            match &ext.0 {
+                AuthenticatedActor::User(principal) => {
+                    if principal.id != session.identity.id
+                        || principal.issuer != session.identity.issuer
+                    {
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "session_identity_mismatch".to_string(),
+                        ));
+                    }
+                }
+                AuthenticatedActor::ApiKey(key) => {
+                    // Allow service accounts to use sessions only when the session is explicitly bound.
+                    let bound = session
+                        .state
+                        .as_ref()
+                        .and_then(|s| s.get("bound_api_key_id"))
+                        .and_then(|v| v.as_str());
+                    let Some(bound_id) = bound else {
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "api_key_cannot_use_unbound_sessions".to_string(),
+                        ));
+                    };
+                    if bound_id != key.id.as_str() {
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            "api_key_session_binding_mismatch".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        state
+            .sessions
+            .validate_session_binding(&session, &request_context)
+            .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
+
+        context = state
+            .sessions
+            .create_guard_context(&session, Some(&request_context));
+        session_for_audit = Some(session);
+    } else if let Some(ext) = actor.as_ref() {
+        if let AuthenticatedActor::User(principal) = &ext.0 {
+            let roles = state.rbac.effective_roles_for_identity(principal);
+            let perms = state
+                .rbac
+                .effective_permission_strings_for_roles(&roles)
+                .unwrap_or_default();
+            principal_for_audit = Some(principal.clone());
+            roles_for_audit = Some(roles.clone());
+            permissions_for_audit = Some(perms.clone());
+            context = context
+                .with_identity(principal.clone())
+                .with_roles(roles)
+                .with_permissions(perms);
+        }
+    }
+
     if let Some(agent_id) = request.agent_id.clone() {
         context = context.with_agent_id(agent_id);
     }
+
+    // Identity-based rate limiting (per-user/per-org sliding window).
+    let identity_for_rate_limit: Option<&clawdstrike::IdentityPrincipal> = session_for_audit
+        .as_ref()
+        .map(|s| &s.identity)
+        .or(principal_for_audit.as_ref());
+
+    if let Some(identity) = identity_for_rate_limit {
+        if let Err(err) = state
+            .identity_rate_limiter
+            .check_and_increment(identity, request.action_type.as_str())
+        {
+            return match err {
+                IdentityRateLimitError::RateLimited { retry_after_secs } => Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    format!("identity_rate_limited_retry_after_secs={retry_after_secs}"),
+                )),
+                other => Err((StatusCode::INTERNAL_SERVER_ERROR, other.to_string())),
+            };
+        }
+    }
+
+    // Resolve identity-scoped policy for this request and get a compiled engine for it.
+    let resolved = state
+        .policy_resolver
+        .resolve_policy(&default_policy, &context)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let resolved_yaml = resolved
+        .policy
+        .to_yaml()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let policy_hash = hush_core::sha256(resolved_yaml.as_bytes()).to_hex();
+
+    let engine: Arc<HushEngine> = match keypair {
+        Some(keypair) => state
+            .policy_engine_cache
+            .get_or_insert_with(&policy_hash, || {
+                Arc::new(HushEngine::with_policy(resolved.policy.clone()).with_keypair(keypair))
+            }),
+        None => Arc::new(HushEngine::with_policy(resolved.policy.clone()).with_generated_keypair()),
+    };
 
     let result = match request.action_type.as_str() {
         "file_access" => engine.check_file_access(&request.target, &context).await,
@@ -147,13 +312,102 @@ pub async fn check_action(
     let result = result.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Record to audit ledger
-    let audit_event = AuditEvent::from_guard_result(
+    let mut audit_event = AuditEvent::from_guard_result(
         &request.action_type,
         Some(&request.target),
         &result,
         request.session_id.as_deref(),
         request.agent_id.as_deref(),
     );
+
+    // Policy resolver metadata.
+    {
+        let mut obj = match audit_event.metadata.take() {
+            Some(serde_json::Value::Object(obj)) => obj,
+            Some(other) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("details".to_string(), other);
+                obj
+            }
+            None => serde_json::Map::new(),
+        };
+
+        obj.insert(
+            "policy_hash".to_string(),
+            serde_json::Value::String(policy_hash.clone()),
+        );
+        obj.insert(
+            "contributing_policies".to_string(),
+            serde_json::to_value(&resolved.contributing_policies)
+                .unwrap_or(serde_json::Value::Null),
+        );
+
+        audit_event.metadata = Some(serde_json::Value::Object(obj));
+    }
+
+    // Enrich audit metadata with identity/session context when available.
+    if let Some(session) = session_for_audit.as_ref() {
+        let mut obj = match audit_event.metadata.take() {
+            Some(serde_json::Value::Object(obj)) => obj,
+            Some(other) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("details".to_string(), other);
+                obj
+            }
+            None => serde_json::Map::new(),
+        };
+
+        obj.insert(
+            "principal".to_string(),
+            serde_json::to_value(&session.identity).unwrap_or(serde_json::Value::Null),
+        );
+        obj.insert(
+            "user_session_id".to_string(),
+            serde_json::Value::String(session.session_id.clone()),
+        );
+        obj.insert(
+            "roles".to_string(),
+            serde_json::to_value(&session.effective_roles).unwrap_or(serde_json::Value::Null),
+        );
+        obj.insert(
+            "permissions".to_string(),
+            serde_json::to_value(&session.effective_permissions).unwrap_or(serde_json::Value::Null),
+        );
+
+        audit_event.metadata = Some(serde_json::Value::Object(obj));
+    }
+
+    // If there's an authenticated principal but no session, still attribute the action.
+    if session_for_audit.is_none() && principal_for_audit.is_some() {
+        let mut obj = match audit_event.metadata.take() {
+            Some(serde_json::Value::Object(obj)) => obj,
+            Some(other) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("details".to_string(), other);
+                obj
+            }
+            None => serde_json::Map::new(),
+        };
+
+        obj.insert(
+            "principal".to_string(),
+            serde_json::to_value(principal_for_audit.as_ref()).unwrap_or(serde_json::Value::Null),
+        );
+        if let Some(roles) = roles_for_audit.as_ref() {
+            obj.insert(
+                "roles".to_string(),
+                serde_json::to_value(roles).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        if let Some(perms) = permissions_for_audit.as_ref() {
+            obj.insert(
+                "permissions".to_string(),
+                serde_json::to_value(perms).unwrap_or(serde_json::Value::Null),
+            );
+        }
+
+        audit_event.metadata = Some(serde_json::Value::Object(obj));
+    }
 
     if let Err(e) = state.ledger.record(&audit_event) {
         tracing::warn!(error = %e, "Failed to record audit event");
@@ -167,6 +421,7 @@ pub async fn check_action(
             "target": request.target,
             "allowed": result.allowed,
             "guard": result.guard,
+            "policy_hash": policy_hash,
         }),
     });
 
