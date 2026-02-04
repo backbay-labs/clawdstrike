@@ -1283,7 +1283,8 @@ impl Config {
         }
 
         if !errors.is_empty() {
-            let mut msg = String::from("Failed to load clawdstriked config from existing file(s):\n");
+            let mut msg =
+                String::from("Failed to load clawdstriked config from existing file(s):\n");
             for (path, err) in errors {
                 msg.push_str(&format!("  - {}: {err}\n", path.display()));
             }
