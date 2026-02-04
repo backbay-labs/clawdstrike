@@ -16,10 +16,13 @@ use crate::state::AppState;
 /// GET /metrics
 pub async fn metrics(State(state): State<AppState>) -> Response {
     let body = state.metrics.render_prometheus();
-    ([(
-        header::CONTENT_TYPE,
-        "text/plain; version=0.0.4; charset=utf-8",
-    )], body)
+    (
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    )
         .into_response()
 }
 
@@ -37,4 +40,3 @@ pub async fn metrics_middleware(
     metrics.observe_http_request(&method, &path, resp.status().as_u16(), start.elapsed());
     resp
 }
-

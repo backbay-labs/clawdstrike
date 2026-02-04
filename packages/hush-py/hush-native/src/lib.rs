@@ -232,8 +232,9 @@ fn sanitize_output_native(
     json_value_to_py(py, &v)
 }
 
-static WATERMARKERS: OnceLock<Mutex<HashMap<String, std::sync::Arc<clawdstrike::PromptWatermarker>>>> =
-    OnceLock::new();
+static WATERMARKERS: OnceLock<
+    Mutex<HashMap<String, std::sync::Arc<clawdstrike::PromptWatermarker>>>,
+> = OnceLock::new();
 
 fn watermark_key(config_json: &str) -> Result<String, String> {
     let v: serde_json::Value =
@@ -249,7 +250,9 @@ fn get_or_create_watermarker(
         serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {}", e))?;
 
     let map = WATERMARKERS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = map.lock().map_err(|_| "watermarker lock poisoned".to_string())?;
+    let mut guard = map
+        .lock()
+        .map_err(|_| "watermarker lock poisoned".to_string())?;
     if !guard.contains_key(&key) {
         let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{:?}", e))?;
         guard.insert(key.clone(), std::sync::Arc::new(wm));
@@ -309,11 +312,7 @@ fn watermark_prompt_native(
 ///
 /// `config_json` is a JSON serialization of `clawdstrike::WatermarkVerifierConfig`.
 #[pyfunction]
-fn extract_watermark_native(
-    py: Python<'_>,
-    text: &str,
-    config_json: &str,
-) -> PyResult<Py<PyAny>> {
+fn extract_watermark_native(py: Python<'_>, text: &str, config_json: &str) -> PyResult<Py<PyAny>> {
     use clawdstrike::{WatermarkExtractor, WatermarkVerifierConfig};
 
     let cfg: WatermarkVerifierConfig = serde_json::from_str(config_json).map_err(|e| {

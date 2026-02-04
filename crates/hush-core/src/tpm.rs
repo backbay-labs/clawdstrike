@@ -71,11 +71,9 @@ impl TpmSealedBlob {
 
         // Best-effort cleanup of transient contexts.
         let _ = Command::new("tpm2_flushcontext")
-            .args([
-                primary_ctx
-                    .to_str()
-                    .ok_or_else(|| Error::TpmError("temp path not utf-8".to_string()))?,
-            ])
+            .args([primary_ctx
+                .to_str()
+                .ok_or_else(|| Error::TpmError("temp path not utf-8".to_string()))?])
             .output();
 
         let pub_bytes = std::fs::read(&sealed_pub)?;
@@ -153,18 +151,14 @@ impl TpmSealedBlob {
 
         // Best-effort cleanup of transient contexts.
         let _ = Command::new("tpm2_flushcontext")
-            .args([
-                sealed_ctx
-                    .to_str()
-                    .ok_or_else(|| Error::TpmError("temp path not utf-8".to_string()))?,
-            ])
+            .args([sealed_ctx
+                .to_str()
+                .ok_or_else(|| Error::TpmError("temp path not utf-8".to_string()))?])
             .output();
         let _ = Command::new("tpm2_flushcontext")
-            .args([
-                primary_ctx
-                    .to_str()
-                    .ok_or_else(|| Error::TpmError("temp path not utf-8".to_string()))?,
-            ])
+            .args([primary_ctx
+                .to_str()
+                .ok_or_else(|| Error::TpmError("temp path not utf-8".to_string()))?])
             .output();
 
         if out.len() > self.expected_len {

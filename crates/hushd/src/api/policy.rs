@@ -74,7 +74,12 @@ pub async fn update_policy(
 
     let base_path = state.config.policy_path.as_deref();
     let policy = Policy::from_yaml_with_extends_resolver(&request.yaml, base_path, &resolver)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy YAML: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid policy YAML: {}", e),
+            )
+        })?;
 
     // Update the engine
     let mut engine = state.engine.write().await;

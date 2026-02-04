@@ -2,8 +2,8 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use clawdstrike::Policy;
 use clawdstrike::policy::{PolicyLocation, PolicyResolver, ResolvedPolicySource};
+use clawdstrike::Policy;
 use std::fs;
 use tempfile::TempDir;
 
@@ -250,7 +250,11 @@ fn test_policy_extends_resolver_detects_cycles_across_non_file_keys() {
     }
 
     impl PolicyResolver for MapResolver {
-        fn resolve(&self, reference: &str, _from: &PolicyLocation) -> clawdstrike::Result<ResolvedPolicySource> {
+        fn resolve(
+            &self,
+            reference: &str,
+            _from: &PolicyLocation,
+        ) -> clawdstrike::Result<ResolvedPolicySource> {
             let yaml = self.policies.get(reference).cloned().ok_or_else(|| {
                 clawdstrike::Error::ConfigError(format!("Unknown policy ref: {}", reference))
             })?;

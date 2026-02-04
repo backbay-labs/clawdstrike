@@ -35,7 +35,6 @@ use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, Signe
 mod canonical_commandline;
 mod guard_report_json;
 mod hush_run;
-mod remote_extends;
 mod policy_diff;
 mod policy_event;
 mod policy_impact;
@@ -44,6 +43,7 @@ mod policy_pac;
 mod policy_rego;
 mod policy_test;
 mod policy_version;
+mod remote_extends;
 
 const CLI_JSON_VERSION: u8 = 1;
 
@@ -620,7 +620,10 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     } = cli;
 
     let mut remote_extends = remote_extends::RemoteExtendsConfig::new(remote_extends_allow_host)
-        .with_limits(remote_extends_max_fetch_bytes, remote_extends_max_cache_bytes);
+        .with_limits(
+            remote_extends_max_fetch_bytes,
+            remote_extends_max_cache_bytes,
+        );
     if let Some(dir) = remote_extends_cache_dir {
         remote_extends = remote_extends.with_cache_dir(dir);
     }
@@ -658,24 +661,26 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
             hushd_url,
             hushd_token,
             command,
-        } => hush_run::cmd_run(
-            hush_run::RunArgs {
-                policy,
-                events_out,
-                receipt_out,
-                signing_key,
-                no_proxy,
-                proxy_port,
-                sandbox,
-                hushd_url,
-                hushd_token,
-                command,
-            },
-            &remote_extends,
-            stdout,
-            stderr,
-        )
-        .await,
+        } => {
+            hush_run::cmd_run(
+                hush_run::RunArgs {
+                    policy,
+                    events_out,
+                    receipt_out,
+                    signing_key,
+                    no_proxy,
+                    proxy_port,
+                    sandbox,
+                    hushd_url,
+                    hushd_token,
+                    command,
+                },
+                &remote_extends,
+                stdout,
+                stderr,
+            )
+            .await
+        }
 
         Commands::Verify {
             receipt,
@@ -697,13 +702,15 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
             }
         },
 
-        Commands::Policy { command } => match cmd_policy(command, &remote_extends, stdout, stderr).await {
-            Ok(code) => code.as_i32(),
-            Err(e) => {
-                let _ = writeln!(stderr, "Error: {}", e);
-                ExitCode::RuntimeError.as_i32()
+        Commands::Policy { command } => {
+            match cmd_policy(command, &remote_extends, stdout, stderr).await {
+                Ok(code) => code.as_i32(),
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error: {}", e);
+                    ExitCode::RuntimeError.as_i32()
+                }
             }
-        },
+        }
 
         Commands::Daemon { command } => cmd_daemon(command, stdout, stderr).as_i32(),
 
@@ -840,10 +847,7 @@ async fn cmd_check(
                     }
                 };
 
-                (
-                    engine,
-                    PolicySource::PolicyFile { path: policy_path },
-                )
+                (engine, PolicySource::PolicyFile { path: policy_path })
             }
             Err(e) => {
                 return emit_check_error(
@@ -1381,28 +1385,29 @@ async fn cmd_policy(
             resolve,
             json,
         } => {
-            let left_loaded = match policy_diff::load_policy_from_arg(&left, resolve, remote_extends)
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    let code = policy_error_exit_code(&e.source);
-                    let _ = writeln!(stderr, "Error loading left policy {left:?}: {}", e.message);
-                    return Ok(code);
-                }
-            };
+            let left_loaded =
+                match policy_diff::load_policy_from_arg(&left, resolve, remote_extends) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let code = policy_error_exit_code(&e.source);
+                        let _ =
+                            writeln!(stderr, "Error loading left policy {left:?}: {}", e.message);
+                        return Ok(code);
+                    }
+                };
             let right_loaded =
                 match policy_diff::load_policy_from_arg(&right, resolve, remote_extends) {
-                Ok(v) => v,
-                Err(e) => {
-                    let code = policy_error_exit_code(&e.source);
-                    let _ = writeln!(
-                        stderr,
-                        "Error loading right policy {right:?}: {}",
-                        e.message
-                    );
-                    return Ok(code);
-                }
-            };
+                    Ok(v) => v,
+                    Err(e) => {
+                        let code = policy_error_exit_code(&e.source);
+                        let _ = writeln!(
+                            stderr,
+                            "Error loading right policy {right:?}: {}",
+                            e.message
+                        );
+                        return Ok(code);
+                    }
+                };
 
             let left_policy = left_loaded.policy;
             let right_policy = right_loaded.policy;
@@ -1539,18 +1544,16 @@ async fn cmd_policy(
             resolve,
             json,
             coverage,
-        } => Ok(
-            policy_test::cmd_policy_test(
-                test_file,
-                resolve,
-                remote_extends,
-                json,
-                coverage,
-                stdout,
-                stderr,
-            )
-            .await,
-        ),
+        } => Ok(policy_test::cmd_policy_test(
+            test_file,
+            resolve,
+            remote_extends,
+            json,
+            coverage,
+            stdout,
+            stderr,
+        )
+        .await),
 
         PolicyCommands::Impact {
             old_policy,
@@ -1596,20 +1599,16 @@ async fn cmd_policy(
             event,
             resolve,
             json,
-        } => {
-            Ok(
-                policy_pac::cmd_policy_eval(
-                    policy_ref,
-                    event,
-                    resolve,
-                    remote_extends,
-                    json,
-                    stdout,
-                    stderr,
-                )
-                .await,
-            )
-        }
+        } => Ok(policy_pac::cmd_policy_eval(
+            policy_ref,
+            event,
+            resolve,
+            remote_extends,
+            json,
+            stdout,
+            stderr,
+        )
+        .await),
 
         PolicyCommands::Simulate {
             policy_ref,

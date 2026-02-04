@@ -1787,11 +1787,14 @@ mod policy_pac_contract {
         let mut out = Vec::new();
         let mut err = Vec::new();
 
+        let remote_extends = crate::remote_extends::RemoteExtendsConfig::disabled();
+
         let code = cmd_policy_simulate(
             "default".to_string(),
             Some(fixtures_path.to_string_lossy().to_string()),
             crate::policy_pac::PolicySimulateOptions {
                 resolve: false,
+                remote_extends: &remote_extends,
                 json: true,
                 jsonl: false,
                 summary: false,
@@ -1940,9 +1943,7 @@ mod remote_extends_contract {
             let addr = listener.local_addr().expect("addr");
             let base_url = format!("http://{}", addr);
 
-            listener
-                .set_nonblocking(true)
-                .expect("set_nonblocking");
+            listener.set_nonblocking(true).expect("set_nonblocking");
 
             let shutdown = Arc::new(AtomicBool::new(false));
             let shutdown2 = shutdown.clone();
@@ -1981,9 +1982,9 @@ mod remote_extends_contract {
             self.shutdown.store(true, Ordering::Relaxed);
             // Best-effort wake accept loop.
             let _ = TcpStream::connect_timeout(
-                &self.base_url["http://".len()..].parse().unwrap_or_else(|_| {
-                    std::net::SocketAddr::from(([127, 0, 0, 1], 0))
-                }),
+                &self.base_url["http://".len()..]
+                    .parse()
+                    .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], 0))),
                 Duration::from_millis(50),
             );
             if let Some(handle) = self.handle.take() {
@@ -1992,7 +1993,10 @@ mod remote_extends_contract {
         }
     }
 
-    fn handle_connection(stream: &mut TcpStream, routes: &HashMap<String, Vec<u8>>) -> std::io::Result<()> {
+    fn handle_connection(
+        stream: &mut TcpStream,
+        routes: &HashMap<String, Vec<u8>>,
+    ) -> std::io::Result<()> {
         stream.set_read_timeout(Some(Duration::from_millis(200)))?;
         stream.set_write_timeout(Some(Duration::from_millis(200)))?;
 
@@ -2174,8 +2178,14 @@ settings:
         let resolver = resolver_for_localhost();
         let policy = Policy::from_yaml_with_extends_resolver(&top, None, &resolver)
             .expect("remote chain should resolve");
-        assert!(policy.settings.effective_fail_fast(), "nested setting preserved");
-        assert!(policy.settings.effective_verbose_logging(), "base setting preserved");
+        assert!(
+            policy.settings.effective_fail_fast(),
+            "nested setting preserved"
+        );
+        assert!(
+            policy.settings.effective_verbose_logging(),
+            "base setting preserved"
+        );
         assert_eq!(policy.settings.effective_session_timeout_secs(), 120);
     }
 }

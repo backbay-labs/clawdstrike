@@ -165,7 +165,12 @@ pub async fn eval_policy_event(
 
     // Broadcast event
     state.broadcast(DaemonEvent {
-        event_type: if decision.allowed { "eval" } else { "violation" }.to_string(),
+        event_type: if decision.allowed {
+            "eval"
+        } else {
+            "violation"
+        }
+        .to_string(),
         data: serde_json::json!({
             "event_id": event.event_id,
             "event_type": event.event_type.as_str(),
@@ -181,4 +186,3 @@ pub async fn eval_policy_event(
         report: GuardReportJson::from_report(&report),
     }))
 }
-

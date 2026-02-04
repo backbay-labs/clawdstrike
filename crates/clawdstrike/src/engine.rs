@@ -482,10 +482,8 @@ impl HushEngineBuilder {
                 Ok(v) => (v, None),
                 Err(e) => (Vec::new(), Some(e.to_string())),
             };
-        let custom_guards = build_custom_guards_from_policy(
-            &self.policy,
-            self.custom_guard_registry.as_ref(),
-        )?;
+        let custom_guards =
+            build_custom_guards_from_policy(&self.policy, self.custom_guard_registry.as_ref())?;
 
         Ok(HushEngine {
             policy: self.policy,

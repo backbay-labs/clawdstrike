@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-use clawdstrike::policy::{LocalPolicyResolver, PolicyLocation, PolicyResolver, ResolvedPolicySource};
+use clawdstrike::policy::{
+    LocalPolicyResolver, PolicyLocation, PolicyResolver, ResolvedPolicySource,
+};
 use clawdstrike::{Error, Result};
 use hush_core::sha256;
 use rand::Rng as _;
@@ -37,8 +39,8 @@ impl RemoteExtendsConfig {
                 .filter(|h| !h.is_empty())
                 .collect(),
             cache_dir: default_cache_dir(),
-            max_fetch_bytes: 1_048_576,      // 1 MiB
-            max_cache_bytes: 100_000_000,    // 100 MB
+            max_fetch_bytes: 1_048_576,   // 1 MiB
+            max_cache_bytes: 100_000_000, // 100 MB
         }
     }
 
@@ -89,7 +91,9 @@ impl RemotePolicyResolver {
     fn ensure_host_allowed(&self, host: &str) -> Result<()> {
         let host = host.trim().to_ascii_lowercase();
         if host.is_empty() {
-            return Err(Error::ConfigError("Remote extends URL missing host".to_string()));
+            return Err(Error::ConfigError(
+                "Remote extends URL missing host".to_string(),
+            ));
         }
         if !self.cfg.allowed_hosts.contains(&host) {
             return Err(Error::ConfigError(format!(
@@ -169,9 +173,7 @@ impl RemotePolicyResolver {
 
         let mut bytes = Vec::new();
         let mut limited = resp.take((self.cfg.max_fetch_bytes as u64) + 1);
-        limited
-            .read_to_end(&mut bytes)
-            .map_err(Error::IoError)?;
+        limited.read_to_end(&mut bytes).map_err(Error::IoError)?;
         if bytes.len() > self.cfg.max_fetch_bytes {
             return Err(Error::ConfigError(format!(
                 "Remote policy exceeds max_fetch_bytes ({} > {})",
@@ -362,7 +364,9 @@ fn split_sha256_pin(reference: &str) -> Result<(&str, &str)> {
         ));
     }
     if path.is_empty() {
-        return Err(Error::ConfigError("Remote extends reference is empty".to_string()));
+        return Err(Error::ConfigError(
+            "Remote extends reference is empty".to_string(),
+        ));
     }
     Ok((path, fragment))
 }
@@ -379,9 +383,9 @@ fn verify_sha256_pin(bytes: &[u8], expected_hex: &str) -> Result<()> {
 }
 
 fn parse_url_host(url: &str) -> Result<String> {
-    let (scheme, rest) = url.split_once("://").ok_or_else(|| {
-        Error::ConfigError(format!("Invalid URL in remote extends: {}", url))
-    })?;
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| Error::ConfigError(format!("Invalid URL in remote extends: {}", url)))?;
     if scheme != "http" && scheme != "https" {
         return Err(Error::ConfigError(format!(
             "Unsupported URL scheme for remote extends: {}",

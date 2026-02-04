@@ -9,7 +9,9 @@
 mod common;
 
 use common::daemon_url;
-use hushd::config::{AuditConfig, AuditEncryptionConfig, AuditEncryptionKeySource, Config, RateLimitConfig};
+use hushd::config::{
+    AuditConfig, AuditEncryptionConfig, AuditEncryptionKeySource, Config, RateLimitConfig,
+};
 
 /// Helper to get client and URL
 fn test_setup() -> (reqwest::Client, String) {
@@ -138,10 +140,8 @@ async fn test_audit_query() {
 
 #[tokio::test]
 async fn test_audit_encryption_stores_ciphertext_and_decrypts_on_query() {
-    let key_path = std::env::temp_dir().join(format!(
-        "hushd-audit-key-{}.hex",
-        uuid::Uuid::new_v4()
-    ));
+    let key_path =
+        std::env::temp_dir().join(format!("hushd-audit-key-{}.hex", uuid::Uuid::new_v4()));
     std::fs::write(&key_path, hex::encode([9u8; 32])).unwrap();
 
     let daemon = common::TestDaemon::spawn_with_config(Config {

@@ -85,7 +85,10 @@ impl Metrics {
         };
         *map.entry(key).or_insert(0) += 1;
 
-        let mut hist = self.http_latency.lock().unwrap_or_else(|err| err.into_inner());
+        let mut hist = self
+            .http_latency
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         hist.observe(duration);
     }
 
@@ -130,7 +133,9 @@ impl Metrics {
             self.http_requests_total.load(Ordering::Relaxed)
         ));
 
-        out.push_str("# HELP hushd_http_requests_by_route_status_total Requests by method/path/status.\n");
+        out.push_str(
+            "# HELP hushd_http_requests_by_route_status_total Requests by method/path/status.\n",
+        );
         out.push_str("# TYPE hushd_http_requests_by_route_status_total counter\n");
         let map = self
             .http_requests_by_key
@@ -148,25 +153,25 @@ impl Metrics {
         drop(map);
 
         // Latency histogram (global)
-        out.push_str("# HELP hushd_http_request_duration_seconds HTTP request latency (seconds).\n");
+        out.push_str(
+            "# HELP hushd_http_request_duration_seconds HTTP request latency (seconds).\n",
+        );
         out.push_str("# TYPE hushd_http_request_duration_seconds histogram\n");
-        let hist = self.http_latency.lock().unwrap_or_else(|err| err.into_inner());
+        let hist = self
+            .http_latency
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let mut cumulative: u64 = 0;
         for (idx, upper) in LATENCY_BUCKETS_SECS.iter().enumerate() {
             cumulative = cumulative.saturating_add(hist.buckets[idx]);
             out.push_str(&format!(
                 "hushd_http_request_duration_seconds_bucket{{le=\"{}\"}} {}\n",
-                upper,
-                cumulative
+                upper, cumulative
             ));
         }
         // +Inf bucket
-        cumulative = cumulative.saturating_add(
-            *hist
-                .buckets
-                .get(LATENCY_BUCKETS_SECS.len())
-                .unwrap_or(&0),
-        );
+        cumulative =
+            cumulative.saturating_add(*hist.buckets.get(LATENCY_BUCKETS_SECS.len()).unwrap_or(&0));
         out.push_str(&format!(
             "hushd_http_request_duration_seconds_bucket{{le=\"+Inf\"}} {}\n",
             cumulative
@@ -220,7 +225,9 @@ impl Metrics {
             self.audit_write_failures_total.load(Ordering::Relaxed)
         ));
 
-        out.push_str("# HELP hushd_rate_limit_dropped_total Requests dropped due to rate limiting.\n");
+        out.push_str(
+            "# HELP hushd_rate_limit_dropped_total Requests dropped due to rate limiting.\n",
+        );
         out.push_str("# TYPE hushd_rate_limit_dropped_total counter\n");
         out.push_str(&format!(
             "hushd_rate_limit_dropped_total {}\n",

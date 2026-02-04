@@ -10,8 +10,8 @@ use crate::audit::{AuditEvent, AuditLedger};
 use crate::auth::AuthStore;
 use crate::config::Config;
 use crate::metrics::Metrics;
-use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
 use crate::rate_limit::RateLimitState;
+use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
 
 /// Event broadcast for SSE streaming
 #[derive(Clone, Debug)]

@@ -50,4 +50,3 @@ impl CustomGuardRegistry {
         factory.build(config)
     }
 }
-

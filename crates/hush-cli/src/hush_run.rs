@@ -452,13 +452,8 @@ fn load_policy(
     policy: &str,
     remote_extends: &remote_extends::RemoteExtendsConfig,
 ) -> anyhow::Result<LoadedPolicy> {
-    let loaded = policy_diff::load_policy_from_arg(policy, true, remote_extends).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to load policy {}: {}",
-            e.source,
-            e.message
-        )
-    })?;
+    let loaded = policy_diff::load_policy_from_arg(policy, true, remote_extends)
+        .map_err(|e| anyhow::anyhow!("Failed to load policy {}: {}", e.source, e.message))?;
 
     Ok(loaded)
 }
@@ -475,8 +470,7 @@ fn load_or_create_signer(path: &Path, stderr: &mut dyn Write) -> anyhow::Result<
             let pub_path = PathBuf::from(format!("{}.pub", path.display()));
             let pub_hex = std::fs::read_to_string(&pub_path)
                 .with_context(|| format!("read public key {}", pub_path.display()))?;
-            let public_key =
-                PublicKey::from_hex(pub_hex.trim()).context("parse public key hex")?;
+            let public_key = PublicKey::from_hex(pub_hex.trim()).context("parse public key hex")?;
             return Ok(Box::new(hush_core::TpmSealedSeedSigner::new(
                 public_key, blob,
             )));
@@ -515,9 +509,13 @@ fn load_or_create_signer(path: &Path, stderr: &mut dyn Write) -> anyhow::Result<
 #[derive(Clone, Debug)]
 enum SandboxWrapper {
     None,
-    SandboxExec { profile_path: PathBuf },
+    SandboxExec {
+        profile_path: PathBuf,
+    },
     #[cfg(target_os = "linux")]
-    Bwrap { args: Vec<String> },
+    Bwrap {
+        args: Vec<String>,
+    },
 }
 
 fn maybe_prepare_sandbox(
@@ -693,8 +691,8 @@ async fn start_connect_proxy(
             let outcome = outcome.clone();
 
             tokio::spawn(async move {
-                let _ = handle_connect_proxy_client(socket, engine, context, event_tx, outcome)
-                    .await;
+                let _ =
+                    handle_connect_proxy_client(socket, engine, context, event_tx, outcome).await;
             });
         }
     });
@@ -713,8 +711,7 @@ async fn handle_connect_proxy_client(
         .await
         .context("read proxy request header")?;
 
-    let header_str =
-        std::str::from_utf8(&header).context("proxy request header must be UTF-8")?;
+    let header_str = std::str::from_utf8(&header).context("proxy request header must be UTF-8")?;
     let mut lines = header_str.split("\r\n");
     let request_line = lines
         .next()
@@ -772,9 +769,7 @@ async fn handle_connect_proxy_client(
     if !result.allowed {
         // If we already sent 200 (IP + SNI path), we can only close the tunnel.
         if sni_buf.is_empty() {
-            client
-                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
-                .await?;
+            client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
         }
         return Ok(());
     }

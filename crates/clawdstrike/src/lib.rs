@@ -59,8 +59,8 @@ pub use engine::{GuardReport, HushEngine};
 pub use error::{Error, Result};
 pub use guards::{
     CustomGuardFactory, CustomGuardRegistry, EgressAllowlistGuard, ForbiddenPathGuard, Guard,
-    GuardContext, GuardResult, JailbreakConfig, JailbreakGuard, McpToolGuard,
-    PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard, Severity,
+    GuardContext, GuardResult, JailbreakConfig, JailbreakGuard, McpToolGuard, PatchIntegrityGuard,
+    PromptInjectionGuard, SecretLeakGuard, Severity,
 };
 pub use hygiene::{
     detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,

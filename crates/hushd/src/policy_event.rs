@@ -407,13 +407,32 @@ fn merge_context_into_metadata(
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MappedGuardAction {
-    FileAccess { path: String },
-    FileWrite { path: String, content: Vec<u8> },
-    NetworkEgress { host: String, port: u16 },
-    ShellCommand { commandline: String },
-    Patch { file_path: String, patch_content: String },
-    McpTool { tool_name: String, parameters: serde_json::Value },
-    Custom { custom_type: String, data: serde_json::Value },
+    FileAccess {
+        path: String,
+    },
+    FileWrite {
+        path: String,
+        content: Vec<u8>,
+    },
+    NetworkEgress {
+        host: String,
+        port: u16,
+    },
+    ShellCommand {
+        commandline: String,
+    },
+    Patch {
+        file_path: String,
+        patch_content: String,
+    },
+    McpTool {
+        tool_name: String,
+        parameters: serde_json::Value,
+    },
+    Custom {
+        custom_type: String,
+        data: serde_json::Value,
+    },
 }
 
 impl MappedGuardAction {
@@ -633,4 +652,3 @@ fn is_safe_shell_word(word: &str) -> bool {
         )
     })
 }
-

@@ -36,40 +36,40 @@ pub fn cmd_policy_lint(
 ) -> ExitCode {
     let loaded =
         match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve, remote_extends) {
-        Ok(v) => v,
-        Err(e) => {
-            let code = crate::policy_error_exit_code(&e.source);
-            let error_kind = if code == ExitCode::RuntimeError {
-                "runtime_error"
-            } else {
-                "config_error"
-            };
-
-            if json {
-                let output = PolicyLintJsonOutput {
-                    version: CLI_JSON_VERSION,
-                    command: "policy_lint",
-                    policy: guess_policy_source(&policy_ref),
-                    valid: false,
-                    warnings: Vec::new(),
-                    exit_code: code.as_i32(),
-                    error: Some(CliJsonError {
-                        kind: error_kind,
-                        message: e.message,
-                    }),
+            Ok(v) => v,
+            Err(e) => {
+                let code = crate::policy_error_exit_code(&e.source);
+                let error_kind = if code == ExitCode::RuntimeError {
+                    "runtime_error"
+                } else {
+                    "config_error"
                 };
-                let _ = writeln!(
-                    stdout,
-                    "{}",
-                    serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
-                );
+
+                if json {
+                    let output = PolicyLintJsonOutput {
+                        version: CLI_JSON_VERSION,
+                        command: "policy_lint",
+                        policy: guess_policy_source(&policy_ref),
+                        valid: false,
+                        warnings: Vec::new(),
+                        exit_code: code.as_i32(),
+                        error: Some(CliJsonError {
+                            kind: error_kind,
+                            message: e.message,
+                        }),
+                    };
+                    let _ = writeln!(
+                        stdout,
+                        "{}",
+                        serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
+                    );
+                    return code;
+                }
+
+                let _ = writeln!(stderr, "Error: {}", e.message);
                 return code;
             }
-
-            let _ = writeln!(stderr, "Error: {}", e.message);
-            return code;
-        }
-    };
+        };
 
     let policy_source = policy_source_for_loaded(&loaded.source);
     let warnings = lint_policy(&loaded.policy);

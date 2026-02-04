@@ -650,8 +650,8 @@ mod tests {
     fn fixtures_policy_events_v1_parse_and_validate() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/policy-events/v1/events.jsonl");
-        let text = std::fs::read_to_string(&path)
-            .expect("read fixtures/policy-events/v1/events.jsonl");
+        let text =
+            std::fs::read_to_string(&path).expect("read fixtures/policy-events/v1/events.jsonl");
 
         for (line_no, line) in text.lines().enumerate() {
             let line = line.trim();

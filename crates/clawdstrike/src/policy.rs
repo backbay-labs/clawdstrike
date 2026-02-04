@@ -28,10 +28,10 @@ fn default_json_object() -> serde_json::Value {
     serde_json::Value::Object(serde_json::Map::new())
 }
 
-/// Policy-driven custom guard configuration.
+/// Policy-driven custom guard configuration (`policy.custom_guards[]`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CustomGuardSpec {
+pub struct PolicyCustomGuardSpec {
     /// Installed guard id (resolved via `CustomGuardRegistry`).
     pub id: String,
     /// Enable/disable this custom guard.
@@ -167,7 +167,7 @@ pub struct Policy {
     pub guards: GuardConfigs,
     /// Policy-driven custom guards (resolved by runtimes via a registry).
     #[serde(default)]
-    pub custom_guards: Vec<CustomGuardSpec>,
+    pub custom_guards: Vec<PolicyCustomGuardSpec>,
     /// Global settings
     #[serde(default)]
     pub settings: PolicySettings,
@@ -860,7 +860,10 @@ impl Policy {
     }
 }
 
-fn merge_custom_guards(base: &[CustomGuardSpec], child: &[CustomGuardSpec]) -> Vec<CustomGuardSpec> {
+fn merge_custom_guards(
+    base: &[PolicyCustomGuardSpec],
+    child: &[PolicyCustomGuardSpec],
+) -> Vec<PolicyCustomGuardSpec> {
     if child.is_empty() {
         return base.to_vec();
     }
@@ -868,7 +871,7 @@ fn merge_custom_guards(base: &[CustomGuardSpec], child: &[CustomGuardSpec]) -> V
         return child.to_vec();
     }
 
-    let mut out: Vec<CustomGuardSpec> = base.to_vec();
+    let mut out: Vec<PolicyCustomGuardSpec> = base.to_vec();
     let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for (i, cg) in out.iter().enumerate() {
         index.insert(cg.id.clone(), i);

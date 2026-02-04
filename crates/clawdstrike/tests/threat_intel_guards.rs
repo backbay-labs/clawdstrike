@@ -63,7 +63,7 @@ async fn virustotal_file_hash_denies_and_caches() {
     std::env::set_var("VT_BASE_URL_TEST", format!("{}/api/v3", base));
 
     let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: "ti"
 guards:
   custom:
@@ -118,7 +118,7 @@ async fn safe_browsing_denies_on_match() {
     std::env::set_var("GSB_BASE_URL_TEST", format!("{}/v4", base));
 
     let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: "ti"
 guards:
   egress_allowlist:
@@ -175,7 +175,7 @@ async fn snyk_denies_on_upgradable_vulns() {
     std::env::set_var("SNYK_BASE_URL_TEST", format!("{}/api/v1", base));
 
     let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: "ti"
 guards:
   custom:

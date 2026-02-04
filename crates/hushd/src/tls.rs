@@ -29,8 +29,8 @@ impl<'a> Connected<serve::IncomingStream<'a, TlsListener>> for TlsConnectInfo {
 
 impl TlsListener {
     pub fn new(listener: TcpListener, tls: &TlsConfig) -> anyhow::Result<Self> {
-        let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(&tls.cert_path)?
-            .collect::<Result<Vec<_>, _>>()?;
+        let certs: Vec<CertificateDer<'static>> =
+            CertificateDer::pem_file_iter(&tls.cert_path)?.collect::<Result<Vec<_>, _>>()?;
         if certs.is_empty() {
             anyhow::bail!(
                 "TLS cert file contained no certificates: {}",
