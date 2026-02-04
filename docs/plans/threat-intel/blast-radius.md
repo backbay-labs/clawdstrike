@@ -1274,7 +1274,7 @@ properties:
 ### 5.1 Policy Configuration
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: "blast-radius-enabled"
 guards:
   blast_radius:

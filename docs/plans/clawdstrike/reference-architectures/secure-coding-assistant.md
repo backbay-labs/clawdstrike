@@ -89,7 +89,7 @@ Organizations want to leverage AI coding assistants (Claude, GPT, etc.) for deve
 
 ```yaml
 # policy.yaml - Secure Coding Assistant Policy
-version: "1.0.0"
+version: "1.1.0"
 name: "Secure Coding Assistant"
 description: "Security policy for AI coding assistants"
 extends: "ai-agent"
@@ -853,13 +853,13 @@ services:
 
 2. **Create project policy**
    ```bash
-   # In your project root
-   cat > clawdstrike.yaml << 'EOF'
-   version: "1.0.0"
-   extends: "ai-agent"
-   name: "my-project"
-   guards:
-     forbidden_path:
+	   # In your project root
+	   cat > clawdstrike.yaml << 'EOF'
+	   version: "1.1.0"
+	   extends: "ai-agent"
+	   name: "my-project"
+	   guards:
+	     forbidden_path:
        additional_patterns:
          - "**/secrets/**"
    EOF
@@ -974,7 +974,7 @@ async function checkWithCache(path: string): Promise<Decision> {
 **Solution**: Create separate CI policy:
 ```yaml
 # ci-policy.yaml
-version: "1.0.0"
+version: "1.1.0"
 extends: "ai-agent"
 name: "CI Policy"
 guards:

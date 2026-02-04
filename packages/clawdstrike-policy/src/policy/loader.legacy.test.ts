@@ -19,7 +19,7 @@ tools:
 
     const policy = loadPolicyFromString(legacyYaml, { resolve: false, onWarning: (m) => warnings.push(m) });
 
-    expect(policy.version).toBe('1.0.0');
+    expect(policy.version).toBe('1.1.0');
     expect(warnings.join('\n')).toMatch(/legacy OpenClaw policy/i);
     expect((policy as any).legacy_openclaw).toBeTruthy();
     expect((policy.guards as any)?.forbidden_path?.patterns).toEqual(['~/.ssh']);
@@ -27,4 +27,3 @@ tools:
     expect((policy.guards as any)?.mcp_tool?.block).toEqual(['shell_exec']);
   });
 });
-

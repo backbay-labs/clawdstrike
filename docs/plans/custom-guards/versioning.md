@@ -57,7 +57,7 @@ A guard ecosystem introduces complex versioning requirements:
 |  Clawdstrike Runtime                                              |
 |  ├── Version: 1.2.3                                               |
 |  ├── SDK API Version: 1.0                                         |
-|  └── Policy Schema Version: 1.0.0                                 |
+|  └── Policy Schema Version: 1.1.0                                 |
 |                                                                    |
 |  Guard Plugin                                                      |
 |  ├── Package Version: 2.0.1                                       |
@@ -65,7 +65,7 @@ A guard ecosystem introduces complex versioning requirements:
 |  └── Max SDK Version: 2.x                                         |
 |                                                                    |
 |  Policy File                                                       |
-|  └── Schema Version: 1.0.0                                        |
+|  └── Schema Version: 1.1.0                                        |
 |                                                                    |
 +------------------------------------------------------------------+
 ```
@@ -201,7 +201,7 @@ Guards declare SDK compatibility using npm-style version ranges:
 
 ```yaml
 # policy.yaml
-version: "1.0.0"  # Policy schema version
+version: "1.1.0"  # Policy schema version
 
 guards:
   custom:
@@ -225,8 +225,8 @@ guards:
 {
   "lockfileVersion": 1,
   "clawdstrikeVersion": "1.2.3",
-  "sdkVersion": "1.0.0",
-  "policySchemaVersion": "1.0.0",
+  "sdkVersion": "1.1.0",
+  "policySchemaVersion": "1.1.0",
   "guards": {
     "@guard/secrets": {
       "version": "1.5.2",
@@ -372,7 +372,7 @@ class VersionResolver {
 
 ```yaml
 # policy.yaml
-version: "1.0.0"
+version: "1.1.0"
 
 # Version resolution configuration
 resolution:
@@ -593,12 +593,20 @@ guards:
     forbidden:
       - "**/.ssh/**"
 
-# Schema 1.0 (current)
+# Schema 1.0 (legacy)
 version: "1.0.0"
 guards:
   forbidden_path:
     patterns:
       - "**/.ssh/**"
+
+# Schema 1.1 (current)
+version: "1.1.0"
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+    exceptions: []
 
 # Schema 2.0 (future)
 version: "2.0.0"
@@ -882,7 +890,7 @@ versioning:
 {
   "clawdstrike": {
     "sdkVersion": "^1.0.0",
-    "policySchemaVersion": "1.0.0",
+    "policySchemaVersion": "1.1.0",
     "strictVersioning": true
   }
 }
@@ -892,7 +900,7 @@ versioning:
 # Cargo.toml (Rust project)
 [package.metadata.clawdstrike]
 sdk_version = "^1.0.0"
-policy_schema_version = "1.0.0"
+policy_schema_version = "1.1.0"
 strict_versioning = true
 ```
 

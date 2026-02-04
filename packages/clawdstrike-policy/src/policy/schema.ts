@@ -1,4 +1,4 @@
-export type PolicySchemaVersion = '1.0.0';
+export type PolicySchemaVersion = '1.1.0';
 
 export type TimeoutBehavior = 'allow' | 'deny' | 'warn' | 'defer';
 export type AsyncExecutionMode = 'parallel' | 'sequential' | 'background';
@@ -61,6 +61,12 @@ export interface PolicySettings {
   session_timeout_secs?: number;
 }
 
+export interface PolicyCustomGuardSpec {
+  id: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
 export interface Policy {
   version?: string;
   name?: string;
@@ -68,6 +74,6 @@ export interface Policy {
   extends?: string;
   merge_strategy?: MergeStrategy;
   guards?: GuardConfigs;
+  custom_guards?: PolicyCustomGuardSpec[];
   settings?: PolicySettings;
 }
-

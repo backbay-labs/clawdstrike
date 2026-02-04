@@ -965,7 +965,7 @@ export class SafeBrowsingGuard extends BaseAsyncGuard {
 
 ```yaml
 # policy.yaml
-version: "1.0.0"
+version: "1.1.0"
 
 guards:
   custom:

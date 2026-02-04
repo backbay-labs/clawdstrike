@@ -354,7 +354,7 @@ reason := msg if {
 
 ```yaml
 # policy.yaml - main policy file
-version: "1.0.0"
+version: "1.1.0"
 name: "Production Policy"
 
 # Traditional YAML guards (fast path)
@@ -799,7 +799,7 @@ tests:
 
 ```yaml
 # Keep existing YAML, add Rego alongside
-version: "1.0.0"
+version: "1.1.0"
 guards:
   # Existing YAML guards continue to work
   forbidden_path:
@@ -832,7 +832,7 @@ guards:
 
 ```yaml
 # Pure Rego policy
-version: "1.0.0"
+version: "1.1.0"
 name: "Production Policy"
 
 rego:

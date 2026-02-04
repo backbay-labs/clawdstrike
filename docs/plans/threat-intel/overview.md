@@ -126,7 +126,7 @@ export class UrlscanGuard implements Guard { /* ... */ }
 ### 4.2 Policy Configuration Extension
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: "threat-intel-enabled"
 extends: default
 

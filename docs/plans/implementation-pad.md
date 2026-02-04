@@ -49,7 +49,7 @@ Tier 3: Enterprise readiness (close deals)
 
 ### Known mismatches / gaps to resolve early
 - Policy schema mismatch:
-  - Rust policy schema is `version: "1.0.0"` and config lives under `guards.*`.
+  - Rust policy schema is `version: "1.1.0"` and config lives under `guards.*`.
   - TS OpenClaw policy schema is `version: "clawdstrike-v1.0"` and config lives under `egress/filesystem/execution/...`.
   - The new P0/P1 specs (custom guards, PaC, composition) assume a guard-centric schema.
 - Guard parity mismatch (built-ins differ between Rust and TS; prompt-injection exists in Rust, not in TS).
@@ -136,7 +136,7 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 - [x] Decide canonical docs/examples command naming; update docs accordingly (`hush` canonical, `clawdstrike` only when TS/OpenClaw-specific).
 
 ### Policy schema
-- [x] Decide canonical policy schema for v1 going forward: guard-centric `version: "1.0.0"`; legacy `clawdstrike-v1.0` supported via migration/translation. (See `decisions/0002-policy-schema-convergence.md`)
+- [x] Decide canonical policy schema for v1 going forward: guard-centric `version: "1.1.0"` (formerly `1.0.0`); legacy `clawdstrike-v1.0` supported via migration/translation. (See `decisions/0002-policy-schema-convergence.md` and `decisions/0005-custom-guards-plugin-model.md`)
 - [x] Confirm compatibility stance + migration plan. (See `decisions/0002-policy-schema-convergence.md`)
 - [x] Define a single canonical `PolicyEvent` schema across SDKs (TypeScript + Rust). (See `decisions/0003-policy-event-and-severity.md`)
 

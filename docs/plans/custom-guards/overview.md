@@ -124,7 +124,7 @@ Without a well-designed plugin system, we risk:
 
 ```yaml
 # policy.yaml
-version: "1.0.0"
+version: "1.1.0"
 guards:
   custom:
     - package: "@acme/clawdstrike-secrets"

@@ -1251,12 +1251,12 @@ mod tests {
 ```rust
 #[tokio::test]
 async fn test_honeypot_guard_in_engine() {
-    let policy = Policy::from_yaml(r#"
-        version: "1.0.0"
-        guards:
-          honeypot:
-            enabled: true
-            indicators:
+	    let policy = Policy::from_yaml(r#"
+	        version: "1.1.0"
+	        guards:
+	          honeypot:
+	            enabled: true
+	            indicators:
               - type: path
                 pattern: "**/test-honeypot/**"
                 description: "Test honeypot"

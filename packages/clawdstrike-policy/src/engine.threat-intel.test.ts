@@ -102,7 +102,7 @@ test('threat intel guards evaluate and cache', async () => {
   process.env.SNYK_BASE_URL_TEST = `${server.baseUrl}/api/v1`;
 
   const policyPath = writeTempPolicy(`
-version: "1.0.0"
+version: "1.1.0"
 name: "ti"
 guards:
   custom:
@@ -189,7 +189,7 @@ guards:
 
 test('policy load fails closed when env vars are missing', async () => {
   const policyPath = writeTempPolicy(`
-version: "1.0.0"
+version: "1.1.0"
 name: "ti"
 guards:
   custom:

@@ -518,7 +518,8 @@ fn build_custom_guards_from_policy(
             )));
         };
 
-        let guard = registry.build(&spec.id, spec.config.clone())?;
+        let config = crate::placeholders::resolve_placeholders_in_json(spec.config.clone())?;
+        let guard = registry.build(&spec.id, config)?;
         out.push(guard);
     }
 
@@ -891,6 +892,28 @@ mod tests {
         }
     }
 
+    struct ExpectTokenFactory;
+
+    impl crate::guards::CustomGuardFactory for ExpectTokenFactory {
+        fn id(&self) -> &str {
+            "acme.expect_token"
+        }
+
+        fn build(&self, config: serde_json::Value) -> Result<Box<dyn Guard>> {
+            let token = config
+                .get("token")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if token != "sekret" {
+                return Err(Error::ConfigError(format!(
+                    "expected token 'sekret' but got {:?}",
+                    token
+                )));
+            }
+            Ok(Box::new(AlwaysWarnGuard))
+        }
+    }
+
     #[tokio::test]
     async fn test_policy_custom_guards_run_after_builtins_when_registry_provided() {
         let yaml = r#"
@@ -923,6 +946,75 @@ custom_guards:
             report.per_guard.last().map(|r| r.guard.as_str()),
             Some("acme.always_warn")
         );
+    }
+
+    #[tokio::test]
+    async fn test_policy_custom_guards_resolve_placeholders_in_config_before_build() {
+        let key = "HC_TEST_CUSTOM_GUARD_TOKEN";
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, "sekret");
+
+        let yaml = format!(
+            r#"
+version: "1.1.0"
+name: Custom
+custom_guards:
+  - id: "acme.expect_token"
+    enabled: true
+    config:
+      token: "${{{}}}"
+"#,
+            key
+        );
+        let policy = Policy::from_yaml(&yaml).unwrap();
+
+        let mut registry = CustomGuardRegistry::new();
+        registry.register(ExpectTokenFactory);
+
+        let engine = HushEngine::builder(policy)
+            .with_custom_guard_registry(registry)
+            .build()
+            .unwrap();
+
+        let context = GuardContext::new();
+        let report = engine
+            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &context)
+            .await
+            .unwrap();
+        assert!(report.overall.allowed);
+
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[test]
+    fn test_policy_custom_guards_missing_env_placeholder_fails_closed() {
+        let key = "HC_TEST_MISSING_CUSTOM_GUARD_ENV";
+        let prev = std::env::var(key).ok();
+        std::env::remove_var(key);
+
+        let yaml = format!(
+            r#"
+version: "1.1.0"
+name: Custom
+custom_guards:
+  - id: "acme.expect_token"
+    enabled: true
+    config:
+      token: "${{{}}}"
+"#,
+            key
+        );
+
+        let err = Policy::from_yaml(&yaml).unwrap_err();
+        assert!(err.to_string().contains(key));
+
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
     }
 
     #[tokio::test]

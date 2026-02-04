@@ -1,4 +1,4 @@
-# ADR 0002: Policy schema convergence (Rust `1.0.0` vs OpenClaw `clawdstrike-v1.0`)
+# ADR 0002: Policy schema convergence (Rust `1.1.0` vs OpenClaw `clawdstrike-v1.0`)
 
 Status: **ACCEPTED**  
 Date: 2026-02-03
@@ -7,7 +7,7 @@ Date: 2026-02-03
 
 There are (at least) two incompatible policy schemas in active use:
 
-- **Rust policy schema** (`crates/clawdstrike`): `version: "1.0.0"` with a guard-centric shape under `guards.*` (plus `settings.*`). Parsing is strict (`deny_unknown_fields`) and should fail closed.
+- **Rust policy schema** (`crates/clawdstrike`): `version: "1.1.0"` with a guard-centric shape under `guards.*` (plus `settings.*`). Parsing is strict (`deny_unknown_fields`) and should fail closed.
 - **TS/OpenClaw policy schema** (`@clawdstrike/openclaw`): `version: "clawdstrike-v1.0"` with an action-category shape (`egress`, `filesystem`, `execution`, `tools`, `limits`, `on_violation`, …).
 
 Docs/plans assume the guard-centric schema for P0/P1 work (custom guards, compositions), but many integration docs/examples show the OpenClaw schema.
@@ -16,7 +16,7 @@ Docs/plans assume the guard-centric schema for P0/P1 work (custom guards, compos
 
 Define a clear canonical schema, plus an explicit compatibility story:
 
-1. **Canonical policy schema for “Hushclaw v1”:** the Rust guard-centric schema (`version: "1.0.0"`, top-level `guards`, `settings`, `extends`, `merge_strategy`, …).
+1. **Canonical policy schema for “Hushclaw v1”:** the Rust guard-centric schema (`version: "1.1.0"`, top-level `guards`, `settings`, `extends`, `merge_strategy`, …).
 2. **Compatibility stance (M0):**
    - **Portable policies MUST be written in the canonical schema.**
    - OpenClaw `clawdstrike-v1.0` is treated as **legacy/compat**, supported via a translation layer in the TS runtime (and eventually via `hush policy migrate` tooling).
@@ -35,7 +35,7 @@ Define a clear canonical schema, plus an explicit compatibility story:
 
 ## Confirmed by Connor (2026-02-03)
 
-- Canonical v1 schema: Rust guard-centric (`version: "1.0.0"`, `guards.*`)
+- Canonical v1 schema: Rust guard-centric (`version: "1.1.0"`, `guards.*`) *(ADR 0005 bumped the schema from `1.0.0` → `1.1.0` to add `custom_guards`.)*
 - OpenClaw schema: legacy input with explicit deprecation timeline
 
 ## Open item (still TBD)

@@ -38,11 +38,11 @@ export function translateLegacyOpenClawPolicyV1(
   legacy: LegacyOpenClawPolicyV1,
 ): { policy: Policy; warnings: string[] } {
   const warnings: string[] = [
-    'Loaded legacy OpenClaw policy schema (version: clawdstrike-v1.0); translated to canonical (1.0.0).',
+    'Loaded legacy OpenClaw policy schema (version: clawdstrike-v1.0); translated to canonical (1.1.0).',
   ];
 
   const out: Policy = {
-    version: '1.0.0',
+    version: '1.1.0',
     // Preserve extends so the canonical loader can resolve it.
     extends: typeof legacy.extends === 'string' ? legacy.extends : undefined,
     guards: {},
@@ -126,4 +126,3 @@ function isStrictSemver(version: string): boolean {
   const m = /^([0-9]|[1-9][0-9]*)\\.([0-9]|[1-9][0-9]*)\\.([0-9]|[1-9][0-9]*)$/.exec(version);
   return Boolean(m);
 }
-

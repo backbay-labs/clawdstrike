@@ -467,6 +467,12 @@ impl Policy {
                         "config must be a JSON object".to_string(),
                     ));
                 }
+
+                validate_placeholders_in_json(
+                    &mut errors,
+                    &format!("custom_guards[{}].config", idx),
+                    &cg.config,
+                );
             }
         }
 

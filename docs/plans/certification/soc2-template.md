@@ -117,9 +117,9 @@ OPTIONAL: Availability, Processing Integrity,
 ```yaml
 # soc2-policy.yaml
 # Clawdstrike SOC2 Compliance Policy Template
-# Version: 1.0.0
+# Version: 1.1.0
 
-version: "1.0.0"
+version: "1.1.0"
 name: "SOC2 Compliance Policy"
 description: "Policy template for SOC2-compliant AI agent deployments"
 extends: clawdstrike:strict

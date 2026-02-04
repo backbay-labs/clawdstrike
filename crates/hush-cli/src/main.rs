@@ -17,6 +17,7 @@
 //! - `hush policy lint <policyRef>` - Lint a policy (warnings)
 //! - `hush policy test <testYaml>` - Run policy tests from YAML
 //! - `hush policy impact <old> <new> <eventsJsonlPath|->` - Compare decisions across policies
+//! - `hush policy migrate <input> --to 1.1.0 [--output <path>|--in-place] [--from <ver>|--legacy-openclaw]` - Migrate a policy to a supported schema version
 //! - `hush policy version <policyRef>` - Show policy schema version compatibility
 //! - `hush run --policy <ref|file> -- <cmd> <args…>` - Best-effort process wrapper (proxy + audit log + receipt)
 //! - `hush daemon start|stop|status|reload` - Daemon management
@@ -40,6 +41,7 @@ mod policy_diff;
 mod policy_event;
 mod policy_impact;
 mod policy_lint;
+mod policy_migrate;
 mod policy_pac;
 mod policy_rego;
 mod policy_test;
@@ -393,6 +395,40 @@ enum PolicyCommands {
         /// Emit machine-readable JSON.
         #[arg(long)]
         json: bool,
+    },
+
+    /// Migrate a policy to a supported schema version
+    Migrate {
+        /// Input policy YAML path (use - for stdin)
+        input: String,
+
+        /// Target schema version (default: 1.1.0)
+        #[arg(long, default_value = "1.1.0")]
+        to: String,
+
+        /// Source schema version (e.g., 1.0.0). If omitted, uses best-effort detection.
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Treat input as legacy OpenClaw policy (clawdstrike-v1.0) and translate to canonical schema.
+        #[arg(long, conflicts_with = "from")]
+        legacy_openclaw: bool,
+
+        /// Output path for migrated YAML (default: stdout, unless --json is used).
+        #[arg(short, long, conflicts_with = "in_place")]
+        output: Option<String>,
+
+        /// Overwrite the input file in-place (refuses stdin)
+        #[arg(long, conflicts_with = "output")]
+        in_place: bool,
+
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+
+        /// Validate and report, but do not write files.
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Build/verify signed policy bundles
@@ -1632,6 +1668,30 @@ async fn cmd_policy(
             resolve,
             remote_extends,
             json,
+            stdout,
+            stderr,
+        )),
+
+        PolicyCommands::Migrate {
+            input,
+            to,
+            from,
+            legacy_openclaw,
+            output,
+            in_place,
+            json,
+            dry_run,
+        } => Ok(policy_migrate::cmd_policy_migrate(
+            policy_migrate::PolicyMigrateCommand {
+                input,
+                from,
+                to,
+                legacy_openclaw,
+                output,
+                in_place,
+                json,
+                dry_run,
+            },
             stdout,
             stderr,
         )),

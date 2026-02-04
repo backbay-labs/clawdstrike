@@ -33,7 +33,7 @@ Reference implementations and deployment kits added in-tree:
 
 | Capability | Status | Where |
 |---|---:|---|
-| Guard-centric policy schema (`version: "1.0.0"`) + merge/extends | ✅ | `crates/clawdstrike/src/policy.rs`, `rulesets/*.yaml` |
+| Guard-centric policy schema (`version: "1.1.0"`) + merge/extends | ✅ | `crates/clawdstrike/src/policy.rs`, `rulesets/*.yaml` |
 | Tool-boundary policy evaluation (`HushEngine`) | ✅ | `crates/clawdstrike/src/engine.rs` |
 | Built-in guards (path/egress/secrets/patch/mcp/prompt/jailbreak) | ✅ | `crates/clawdstrike/src/guards/`, `crates/clawdstrike/src/jailbreak.rs` |
 | Signed receipts + cryptographic primitives | ✅ | `crates/hush-core/src/receipt.rs`, `crates/hush-core/src/signing.rs` |

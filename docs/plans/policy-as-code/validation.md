@@ -361,7 +361,7 @@ STYLE003:
   level: hint
   description: "Policy lacks description field"
   example: |
-    version: "1.0.0"
+    version: "1.1.0"
     name: "Production"
     # Missing: description
   suggestion: "Add 'description' field documenting policy purpose"

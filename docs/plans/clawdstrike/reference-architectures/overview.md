@@ -154,10 +154,10 @@ Runtime interception layer for sandboxed execution:
 
 ## Policy Schema
 
-All architectures use the same policy schema (v1.0.0):
+All architectures use the same policy schema (v1.1.0):
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: "example-policy"
 description: "Example security policy"
 extends: "ai-agent"  # Optional base policy

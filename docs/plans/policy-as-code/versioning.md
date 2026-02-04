@@ -8,7 +8,7 @@ Policy versioning in Clawdstrike currently lacks formal semantics, leading to:
 
 1. **No Compatibility Guarantees**: Unknown if a policy works with a given SDK version
 2. **Silent Breaking Changes**: Policy schema changes may break existing policies
-3. **Version Confusion**: `version` field exists but has no enforced meaning
+3. **Version Confusion**: Today `version` is a strict schema boundary, but we have no separate “policy content version”
 4. **No Deprecation Path**: No way to sunset old policy features gracefully
 5. **Upgrade Anxiety**: Teams hesitate to upgrade SDK due to policy compatibility fears
 
@@ -22,6 +22,21 @@ Policy versioning in Clawdstrike currently lacks formal semantics, leading to:
 | Test failures after upgrade | Behavior changed | CI/CD blocked |
 
 ---
+
+## Repo Reality (Current Implementation)
+
+This document is partly aspirational (a more complete semantic versioning + compatibility system), but the *current* behavior in this repo is:
+
+- In **v1**, the top-level `version` field is the **policy schema version** (not a user-defined policy content version).
+- Runtimes currently support **exactly** `version: "1.1.0"` and **fail closed** on any other version.
+- Policies also fail closed on **unknown fields** (`serde(deny_unknown_fields)` in Rust).
+- Legacy inputs (`version: "1.0.0"` and OpenClaw-shaped “clawdstrike-v1.0” policies) are intended to be handled via migration/translation tooling (see `hush policy migrate` and the TS legacy translator).
+
+### Schema `1.1.0` highlights (implemented)
+
+- `custom_guards[]`: policy-driven custom guard instances (`id`, `enabled`, `config`).
+- `guards.forbidden_path.exceptions[]`: allowlisted path globs that bypass forbidden patterns.
+- `guards.forbidden_path.additional_patterns[]` / `guards.forbidden_path.remove_patterns[]`: extend-time pattern add/remove helpers.
 
 ## Proposed Solution: Semantic Policy Versioning
 
@@ -56,28 +71,23 @@ Policy versioning in Clawdstrike currently lacks formal semantics, leading to:
 ### Version Fields
 
 ```yaml
-# policy.yaml
-version: "1.2.0"              # Policy content version (user-defined)
-schema_version: "1.0.0"       # Policy schema version (Clawdstrike-defined)
+# v1 policy.yaml (as implemented today)
+version: "1.1.0"              # Policy schema version (Clawdstrike-defined, strict)
 
-metadata:
-  name: "Production Policy"
-  description: "Security policy for production AI agents"
-  author: "security-team@company.com"
-  created: "2024-01-15T10:00:00Z"
-  updated: "2024-01-20T14:30:00Z"
+name: "Production Policy"
+description: "Security policy for production AI agents"
 
-# Compatibility constraints
-compatibility:
-  sdk_min_version: "1.0.0"    # Minimum SDK version required
-  sdk_max_version: "2.x"      # Maximum SDK version supported (optional)
-  features_required:          # Features this policy requires
-    - rego_evaluation
-    - rate_limiting
+custom_guards:
+  - id: "acme-threat-intel"
+    enabled: true
+    config:
+      api_key: "${ACME_THREAT_INTEL_API_KEY}"
 
 guards:
   # ... guard configuration
 ```
+
+> Future direction: add an explicit policy content version and compatibility metadata; see the remainder of this document.
 
 ---
 
@@ -114,7 +124,12 @@ guards:
   forbidden_path:
     patterns: [string]
 
-# Schema 1.1.0 (Added exceptions - MINOR)
+# Schema 1.1.0 (Added exceptions + custom_guards - MINOR)
+custom_guards:
+  - id: string
+    enabled: boolean
+    config: object
+
 guards:
   forbidden_path:
     patterns: [string]
@@ -167,7 +182,7 @@ Policy Version Information
 ==========================
 
 Policy Version:     1.2.0
-Schema Version:     1.0.0
+Schema Version:     1.1.0
 Current SDK:        1.5.0
 
 Compatibility:      OK
@@ -193,7 +208,7 @@ Policy Version Information
 ==========================
 
 Policy Version:     1.2.0
-Schema Version:     1.0.0
+Schema Version:     1.1.0
 Target SDK:         0.9.0
 
 Compatibility:      INCOMPATIBLE
@@ -487,7 +502,7 @@ Legend:
   MIGRATE = Migration required (schema upgrade)
   -       = Not supported
 
-Current: SDK 1.5.0, Schema 1.0.0
+Current: SDK 1.5.0, Schema 1.1.0
 ```
 
 ---
