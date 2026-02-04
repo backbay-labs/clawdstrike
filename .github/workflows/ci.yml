@@ -354,18 +354,32 @@ jobs:
         include:
           - name: Adapter Core
             dir: packages/clawdstrike-adapter-core
+            bootstrap_adapter_core: false
+            bootstrap_sdk: false
           - name: Hush CLI Engine
             dir: packages/clawdstrike-hush-cli-engine
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
           - name: Codex
             dir: packages/clawdstrike-codex
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
           - name: OpenCode
             dir: packages/clawdstrike-opencode
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
           - name: Claude Code
             dir: packages/clawdstrike-claude-code
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
           - name: Vercel AI
             dir: packages/clawdstrike-vercel-ai
+            bootstrap_adapter_core: true
+            bootstrap_sdk: true
           - name: LangChain
             dir: packages/clawdstrike-langchain
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
     steps:
       - uses: actions/checkout@v6
 
@@ -375,6 +389,16 @@ jobs:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+
+      - name: Bootstrap file deps (adapter-core)
+        if: ${{ matrix.bootstrap_adapter_core }}
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm ci
+
+      - name: Bootstrap file deps (sdk)
+        if: ${{ matrix.bootstrap_sdk }}
+        working-directory: packages/hush-ts
+        run: npm ci
 
       - name: Install dependencies
         working-directory: ${{ matrix.dir }}
