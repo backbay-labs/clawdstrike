@@ -71,4 +71,3 @@ fn resolve_placeholders_in_json_inner(value: serde_json::Value) -> Result<serde_
 pub(crate) fn resolve_placeholders_in_json(value: serde_json::Value) -> Result<serde_json::Value> {
     resolve_placeholders_in_json_inner(value)
 }
-

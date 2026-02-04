@@ -126,7 +126,11 @@ pub fn cmd_policy_migrate(
         );
     }
 
-    let output_path = if in_place { Some(input.clone()) } else { output };
+    let output_path = if in_place {
+        Some(input.clone())
+    } else {
+        output
+    };
 
     let input_yaml = match read_input_yaml(&input) {
         Ok(v) => v,
@@ -279,7 +283,11 @@ pub fn cmd_policy_migrate(
             wrote,
             output_path,
             warnings: result.warnings,
-            migrated_yaml: if wrote { None } else { Some(result.migrated_yaml) },
+            migrated_yaml: if wrote {
+                None
+            } else {
+                Some(result.migrated_yaml)
+            },
             legacy_openclaw: result.legacy_openclaw,
             exit_code: ExitCode::Ok.as_i32(),
             error: None,
@@ -353,19 +361,20 @@ pub(crate) fn migrate_policy_yaml(
     input_yaml: &str,
     opts: &PolicyMigrateOptions,
 ) -> Result<PolicyMigrateResult, PolicyMigrateError> {
-    let mut input_value: serde_json::Value = serde_yaml::from_str(input_yaml).map_err(|e| {
-        PolicyMigrateError {
+    let mut input_value: serde_json::Value =
+        serde_yaml::from_str(input_yaml).map_err(|e| PolicyMigrateError {
             code: ExitCode::ConfigError,
             kind: "config_error",
             message: format!("Failed to parse YAML: {}", e),
-        }
-    })?;
+        })?;
 
-    let obj = input_value.as_object_mut().ok_or_else(|| PolicyMigrateError {
-        code: ExitCode::ConfigError,
-        kind: "config_error",
-        message: "Policy YAML must be a mapping/object".to_string(),
-    })?;
+    let obj = input_value
+        .as_object_mut()
+        .ok_or_else(|| PolicyMigrateError {
+            code: ExitCode::ConfigError,
+            kind: "config_error",
+            message: "Policy YAML must be a mapping/object".to_string(),
+        })?;
 
     let detected_version = obj
         .get("version")
@@ -438,10 +447,7 @@ pub(crate) fn migrate_policy_yaml(
     clawdstrike::Policy::from_yaml(&migrated_yaml).map_err(|e| PolicyMigrateError {
         code: ExitCode::ConfigError,
         kind: "config_error",
-        message: format!(
-            "Migrated policy failed validation under {}: {}",
-            opts.to, e
-        ),
+        message: format!("Migrated policy failed validation under {}: {}", opts.to, e),
     })?;
 
     Ok(PolicyMigrateResult {
@@ -466,7 +472,14 @@ fn looks_like_legacy_openclaw(
     }
 
     // Heuristic: OpenClaw-shaped keys that never exist in canonical v1 policy schema.
-    const LEGACY_KEYS: [&str; 6] = ["filesystem", "egress", "execution", "tools", "limits", "on_violation"];
+    const LEGACY_KEYS: [&str; 6] = [
+        "filesystem",
+        "egress",
+        "execution",
+        "tools",
+        "limits",
+        "on_violation",
+    ];
     LEGACY_KEYS.iter().any(|k| obj.contains_key(*k))
 }
 
@@ -506,7 +519,10 @@ fn translate_legacy_openclaw(
 
     // Preserve custom_guards if present (canonical feature).
     if let Some(v) = legacy_obj.get("custom_guards").and_then(|v| v.as_array()) {
-        out.insert("custom_guards".to_string(), serde_json::Value::Array(v.clone()));
+        out.insert(
+            "custom_guards".to_string(),
+            serde_json::Value::Array(v.clone()),
+        );
     }
 
     let mut guards: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
