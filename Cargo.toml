@@ -16,6 +16,7 @@ exclude = [
     "examples/rust/basic-verification",
     "examples/autonomous-sandbox",
     "examples/multi-agent-orchestration",
+    "apps/desktop/src-tauri",
 ]
 
 [workspace.package]
