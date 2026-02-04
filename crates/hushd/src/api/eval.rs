@@ -167,14 +167,23 @@ pub async fn eval_policy_event(
     // Record to audit ledger v2 (best-effort).
     {
         let policy_yaml = engine.policy().to_yaml().unwrap_or_default();
-        let policy_hash = format!("sha256:{}", hush_core::sha256(policy_yaml.as_bytes()).to_hex());
+        let policy_hash = format!(
+            "sha256:{}",
+            hush_core::sha256(policy_yaml.as_bytes()).to_hex()
+        );
 
         let organization_id = mapped
             .context
             .organization
             .as_ref()
             .map(|o| o.id.clone())
-            .or_else(|| mapped.context.identity.as_ref().and_then(|p| p.organization_id.clone()));
+            .or_else(|| {
+                mapped
+                    .context
+                    .identity
+                    .as_ref()
+                    .and_then(|p| p.organization_id.clone())
+            });
 
         let provenance = mapped.context.request.as_ref().map(|r| {
             serde_json::json!({
@@ -196,7 +205,9 @@ pub async fn eval_policy_event(
             correlation_id: None,
             action_type: mapped.action.action_type().to_string(),
             action_resource: mapped.action.target().unwrap_or_default(),
-            action_parameters: Some(serde_json::to_value(&event).unwrap_or(serde_json::Value::Null)),
+            action_parameters: Some(
+                serde_json::to_value(&event).unwrap_or(serde_json::Value::Null),
+            ),
             action_result: None,
             decision_allowed: report.overall.allowed,
             decision_guard: Some(report.overall.guard.clone()),

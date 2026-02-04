@@ -1,8 +1,8 @@
 # hipaa-policy.yaml
 # Clawdstrike HIPAA Compliance Policy Template
-# Version: 1.0.0
+# Version: 1.1.0
 
-version: "1.0.0"
+version: "1.1.0"
 name: "HIPAA Compliance Policy"
 description: "Policy template for HIPAA-covered AI agent deployments"
 extends: clawdstrike:strict
@@ -169,5 +169,3 @@ settings:
   fail_fast: true
   verbose_logging: true
   session_timeout_secs: 3600  # 1 hour max session
-
-on_violation: cancel

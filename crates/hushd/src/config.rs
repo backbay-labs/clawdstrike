@@ -1354,6 +1354,7 @@ impl Config {
                 id: uuid::Uuid::new_v4().to_string(),
                 key_hash: AuthStore::hash_key(&key),
                 name: key_config.name.clone(),
+                tier: None,
                 scopes,
                 created_at: chrono::Utc::now(),
                 expires_at: key_config.expires_at,

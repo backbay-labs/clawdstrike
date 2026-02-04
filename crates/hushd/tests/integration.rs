@@ -382,7 +382,10 @@ async fn test_v1_certification_lifecycle_basic() {
         .expect("Failed to get certification");
     assert!(resp.status().is_success());
     let got: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(got["data"]["certificationId"].as_str(), Some(cert_id.as_str()));
+    assert_eq!(
+        got["data"]["certificationId"].as_str(),
+        Some(cert_id.as_str())
+    );
 
     // Verify certification.
     let resp = client
@@ -415,6 +418,32 @@ async fn test_v1_certification_lifecycle_basic() {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     assert!(ctype.contains("image/svg+xml"));
+
+    // Badge (Accept negotiation): prefer SVG over PNG when both are accepted.
+    let resp = client
+        .get(format!("{}/v1/certifications/{}/badge", url, cert_id))
+        .header("accept", "image/svg+xml, image/png, */*")
+        .send()
+        .await
+        .expect("Failed to get badge (Accept negotiation)");
+    assert!(resp.status().is_success());
+    let ctype = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(ctype.contains("image/svg+xml"));
+
+    // Badge (explicit format): PNG is not implemented yet.
+    let resp = client
+        .get(format!(
+            "{}/v1/certifications/{}/badge?format=png",
+            url, cert_id
+        ))
+        .send()
+        .await
+        .expect("Failed to get badge (format=png)");
+    assert_eq!(resp.status(), reqwest::StatusCode::NOT_IMPLEMENTED);
 
     // Revoke certification.
     let resp = client

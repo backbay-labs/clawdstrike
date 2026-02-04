@@ -1,8 +1,8 @@
 # pci-dss-policy.yaml
 # Clawdstrike PCI-DSS Compliance Policy Template
-# Version: 1.0.0
+# Version: 1.1.0
 
-version: "1.0.0"
+version: "1.1.0"
 name: "PCI-DSS Compliance Policy"
 description: "Policy template for PCI-DSS compliant AI agent deployments"
 extends: clawdstrike:strict
@@ -209,5 +209,3 @@ settings:
   fail_fast: true
   verbose_logging: true
   session_timeout_secs: 1800  # 30 minutes
-
-on_violation: cancel

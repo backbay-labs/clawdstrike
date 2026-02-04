@@ -1,8 +1,8 @@
 //! HTTP API for hushd daemon
 
 pub mod audit;
-pub mod check;
 pub mod certification;
+pub mod check;
 pub mod eval;
 pub mod events;
 pub mod health;

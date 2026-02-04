@@ -190,7 +190,11 @@ pub struct BadgeSvgInput<'a> {
     pub verification_url: &'a str,
 }
 
-pub fn render_badge_svg(input: BadgeSvgInput<'_>, variant: BadgeVariant, theme: BadgeTheme) -> String {
+pub fn render_badge_svg(
+    input: BadgeSvgInput<'_>,
+    variant: BadgeVariant,
+    theme: BadgeTheme,
+) -> String {
     let (bg, fg) = tier_colors(input.tier, theme);
     let tier_text = match input.tier {
         CertificationTier::Certified => "CERTIFIED",
@@ -306,4 +310,3 @@ mod tests {
         assert!(verify_badge(&signed).unwrap());
     }
 }
-

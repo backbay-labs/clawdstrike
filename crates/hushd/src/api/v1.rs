@@ -1,11 +1,11 @@
 //! Shared types for the public `/v1/*` API surface.
 
+use axum::http::HeaderName;
 use axum::{
     http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use axum::http::HeaderName;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -79,7 +79,11 @@ pub fn v1_ok_with_links<T: Serialize>(data: T, links: V1Links) -> Json<V1Respons
     })
 }
 
-pub fn v1_ok_with_meta<T: Serialize>(data: T, meta: V1Meta, links: Option<V1Links>) -> Json<V1Response<T>> {
+pub fn v1_ok_with_meta<T: Serialize>(
+    data: T,
+    meta: V1Meta,
+    links: Option<V1Links>,
+) -> Json<V1Response<T>> {
     Json(V1Response { data, meta, links })
 }
 
@@ -147,7 +151,8 @@ impl IntoResponse for V1Error {
         let mut resp = (self.status, Json(envelope)).into_response();
         resp.headers_mut().insert(
             HeaderName::from_static("x-request-id"),
-            HeaderValue::from_str(&request_id).unwrap_or_else(|_| HeaderValue::from_static("req_invalid")),
+            HeaderValue::from_str(&request_id)
+                .unwrap_or_else(|_| HeaderValue::from_static("req_invalid")),
         );
         resp
     }

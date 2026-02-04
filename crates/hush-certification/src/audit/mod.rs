@@ -88,12 +88,15 @@ impl AuditEventV2 {
     pub fn as_spec_json(&self) -> Value {
         let mut root = serde_json::Map::new();
         root.insert("eventId".to_string(), Value::String(self.event_id.clone()));
-        root.insert("timestamp".to_string(), Value::String(self.timestamp.clone()));
         root.insert(
-            "sequence".to_string(),
-            Value::Number(self.sequence.into()),
+            "timestamp".to_string(),
+            Value::String(self.timestamp.clone()),
         );
-        root.insert("sessionId".to_string(), Value::String(self.session_id.clone()));
+        root.insert("sequence".to_string(), Value::Number(self.sequence.into()));
+        root.insert(
+            "sessionId".to_string(),
+            Value::String(self.session_id.clone()),
+        );
         if let Some(v) = self.agent_id.as_ref() {
             root.insert("agentId".to_string(), Value::String(v.clone()));
         }
@@ -226,7 +229,8 @@ impl AuditLedgerV2 {
         let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true);
         let sequence_u64 = u64::try_from(next_seq).unwrap_or(0);
 
-        let canonical_payload = canonical_event_payload(&event_id, &timestamp, sequence_u64, &input)?;
+        let canonical_payload =
+            canonical_event_payload(&event_id, &timestamp, sequence_u64, &input)?;
         let content_hash = compute_chain_hash_hex(&prev_hash, canonical_payload.as_bytes())?;
 
         let event = AuditEventV2 {
@@ -314,19 +318,16 @@ impl AuditLedgerV2 {
             "SELECT event_id, timestamp, sequence, session_id, agent_id, organization_id, correlation_id, action_type, action_resource, action_parameters, action_result, decision_allowed, decision_guard, decision_severity, decision_reason, decision_policy_hash, provenance, extensions, content_hash, previous_hash, signature FROM audit_events_v2 WHERE organization_id = ?",
         );
 
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(organization_id.to_string())];
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> =
+            vec![Box::new(organization_id.to_string())];
 
         if let Some(start) = start {
             sql.push_str(" AND timestamp >= ?");
-            params_vec.push(Box::new(
-                start.to_rfc3339_opts(SecondsFormat::Nanos, true),
-            ));
+            params_vec.push(Box::new(start.to_rfc3339_opts(SecondsFormat::Nanos, true)));
         }
         if let Some(end) = end {
             sql.push_str(" AND timestamp <= ?");
-            params_vec.push(Box::new(
-                end.to_rfc3339_opts(SecondsFormat::Nanos, true),
-            ));
+            params_vec.push(Box::new(end.to_rfc3339_opts(SecondsFormat::Nanos, true)));
         }
 
         sql.push_str(" ORDER BY timestamp ASC, sequence ASC");
@@ -338,7 +339,7 @@ impl AuditLedgerV2 {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_refs.as_slice(), |row| row_to_event(row))?;
+        let rows = stmt.query_map(params_refs.as_slice(), row_to_event)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -347,9 +348,7 @@ impl AuditLedgerV2 {
         let mut stmt = conn.prepare(
             "SELECT event_id, timestamp, sequence, session_id, agent_id, organization_id, correlation_id, action_type, action_resource, action_parameters, action_result, decision_allowed, decision_guard, decision_severity, decision_reason, decision_policy_hash, provenance, extensions, content_hash, previous_hash, signature FROM audit_events_v2 WHERE event_id = ?",
         )?;
-        let event = stmt
-            .query_row(params![event_id], |row| row_to_event(row))
-            .optional()?;
+        let event = stmt.query_row(params![event_id], row_to_event).optional()?;
         Ok(event)
     }
 
@@ -358,7 +357,7 @@ impl AuditLedgerV2 {
         let mut stmt = conn.prepare(
             "SELECT event_id, timestamp, sequence, session_id, agent_id, organization_id, correlation_id, action_type, action_resource, action_parameters, action_result, decision_allowed, decision_guard, decision_severity, decision_reason, decision_policy_hash, provenance, extensions, content_hash, previous_hash, signature FROM audit_events_v2 WHERE session_id = ? ORDER BY sequence ASC",
         )?;
-        let rows = stmt.query_map(params![session_id], |row| row_to_event(row))?;
+        let rows = stmt.query_map(params![session_id], row_to_event)?;
         let events: Vec<AuditEventV2> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
 
         let mut prev = hex::encode([0u8; 32]);
@@ -408,10 +407,7 @@ fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuditEventV2> {
     Ok(AuditEventV2 {
         event_id: row.get(0)?,
         timestamp: row.get(1)?,
-        sequence: row
-            .get::<_, i64>(2)?
-            .try_into()
-            .unwrap_or_default(),
+        sequence: row.get::<_, i64>(2)?.try_into().unwrap_or_default(),
         session_id: row.get(3)?,
         agent_id: row.get(4)?,
         organization_id: row.get(5)?,
@@ -441,9 +437,15 @@ fn canonical_event_payload(
 ) -> Result<String> {
     let mut root = serde_json::Map::new();
     root.insert("eventId".to_string(), Value::String(event_id.to_string()));
-    root.insert("timestamp".to_string(), Value::String(timestamp.to_string()));
+    root.insert(
+        "timestamp".to_string(),
+        Value::String(timestamp.to_string()),
+    );
     root.insert("sequence".to_string(), Value::Number(sequence.into()));
-    root.insert("sessionId".to_string(), Value::String(input.session_id.clone()));
+    root.insert(
+        "sessionId".to_string(),
+        Value::String(input.session_id.clone()),
+    );
     if let Some(v) = input.agent_id.as_ref() {
         root.insert("agentId".to_string(), Value::String(v.clone()));
     }
@@ -497,7 +499,9 @@ fn canonical_event_payload(
 }
 
 fn compute_chain_hash_hex(previous_hash_hex: &str, canonical_bytes: &[u8]) -> Result<String> {
-    let prev_hex = previous_hash_hex.strip_prefix("0x").unwrap_or(previous_hash_hex);
+    let prev_hex = previous_hash_hex
+        .strip_prefix("0x")
+        .unwrap_or(previous_hash_hex);
     let prev_bytes = hex::decode(prev_hex)
         .map_err(|e| Error::InvalidInput(format!("invalid previous hash hex: {e}")))?;
     let prev_bytes: [u8; 32] = prev_bytes
@@ -540,10 +544,12 @@ mod tests {
         };
 
         let e1 = ledger.record(base.clone()).unwrap();
-        let _e2 = ledger.record(NewAuditEventV2 {
-            action_resource: "/tmp/b".to_string(),
-            ..base
-        }).unwrap();
+        let _e2 = ledger
+            .record(NewAuditEventV2 {
+                action_resource: "/tmp/b".to_string(),
+                ..base
+            })
+            .unwrap();
 
         assert!(ledger.verify_session_chain("sess_1").unwrap());
 

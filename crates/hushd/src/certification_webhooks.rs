@@ -104,4 +104,3 @@ pub fn emit_webhook_event(state: AppState, event: &'static str, data: serde_json
         });
     }
 }
-

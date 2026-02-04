@@ -257,7 +257,8 @@ impl SqliteEvidenceExportStore {
     ) -> Result<()> {
         let conn = self.lock_conn();
         let completed_at = Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true);
-        let expires_at = (Utc::now() + Duration::days(7)).to_rfc3339_opts(SecondsFormat::Nanos, true);
+        let expires_at =
+            (Utc::now() + Duration::days(7)).to_rfc3339_opts(SecondsFormat::Nanos, true);
         conn.execute(
             "UPDATE evidence_exports SET status = ?, completed_at = ?, file_path = ?, sha256 = ?, size_bytes = ?, expires_at = ? WHERE export_id = ?",
             params![

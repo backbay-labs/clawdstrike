@@ -8,8 +8,8 @@
 pub mod audit;
 pub mod badge;
 pub mod certification;
-pub mod evidence;
 pub mod error;
+pub mod evidence;
 pub mod webhooks;
 
 pub use error::{Error, Result};

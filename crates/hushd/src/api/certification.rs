@@ -18,13 +18,16 @@ use hush_certification::badge::{
 };
 use hush_certification::certification::{
     build_badge_from_record, effective_status, parse_rfc3339, CertificationRecord,
-    CertificationStatus, CreateCertificationInput, CreateCertificationResult, ListCertificationsFilter,
-    RevokeInput,
+    CertificationStatus, CreateCertificationInput, CreateCertificationResult,
+    ListCertificationsFilter, RevokeInput,
 };
 use hush_certification::evidence::{EvidenceExportRequest, EvidenceExportStatus};
 use hush_certification::webhooks::{CreateWebhookInput, UpdateWebhookInput, WebhookRecord};
 
-use crate::api::v1::{new_request_id, now_rfc3339, v1_ok_with_links, v1_ok_with_meta, V1Error, V1Links, V1Meta, V1Response};
+use crate::api::v1::{
+    new_request_id, now_rfc3339, v1_ok_with_links, v1_ok_with_meta, V1Error, V1Links, V1Meta,
+    V1Response,
+};
 use crate::auth::{AuthenticatedActor, Scope};
 use crate::certification_webhooks::emit_webhook_event;
 use crate::state::AppState;
@@ -38,7 +41,9 @@ fn looks_like_jwt(token: &str) -> bool {
 }
 
 fn extract_bearer_token(headers: &HeaderMap) -> Option<&str> {
-    let auth_header = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok())?;
+    let auth_header = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())?;
     if auth_header.len() > 7 && auth_header[..7].eq_ignore_ascii_case("Bearer ") {
         Some(&auth_header[7..])
     } else {
@@ -74,17 +79,13 @@ pub async fn require_auth_v1(
         }
     }
 
-    let key = state
-        .auth_store
-        .validate_key(token)
-        .await
-        .map_err(|_| {
-            V1Error::new(
-                StatusCode::UNAUTHORIZED,
-                "AUTHENTICATION_REQUIRED",
-                "Invalid or expired API key",
-            )
-        })?;
+    let key = state.auth_store.validate_key(token).await.map_err(|_| {
+        V1Error::new(
+            StatusCode::UNAUTHORIZED,
+            "AUTHENTICATION_REQUIRED",
+            "Invalid or expired API key",
+        )
+    })?;
 
     req.extensions_mut().insert(AuthenticatedActor::ApiKey(key));
     Ok(next.run(req).await)
@@ -114,25 +115,20 @@ pub async fn optional_auth_v1(
         }
     }
 
-    let key = state
-        .auth_store
-        .validate_key(token)
-        .await
-        .map_err(|_| {
-            V1Error::new(
-                StatusCode::UNAUTHORIZED,
-                "AUTHENTICATION_REQUIRED",
-                "Invalid or expired API key",
-            )
-        })?;
+    let key = state.auth_store.validate_key(token).await.map_err(|_| {
+        V1Error::new(
+            StatusCode::UNAUTHORIZED,
+            "AUTHENTICATION_REQUIRED",
+            "Invalid or expired API key",
+        )
+    })?;
 
     req.extensions_mut().insert(AuthenticatedActor::ApiKey(key));
     Ok(next.run(req).await)
 }
 
-type ScopeLayerFuture = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<Response, V1Error>> + Send>,
->;
+type ScopeLayerFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, V1Error>> + Send>>;
 
 pub fn scope_layer_v1(
     scope: Scope,
@@ -143,7 +139,11 @@ pub fn scope_layer_v1(
     }
 }
 
-async fn require_scope_v1(scope: Scope, req: Request<Body>, next: Next) -> Result<Response, V1Error> {
+async fn require_scope_v1(
+    scope: Scope,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, V1Error> {
     let Some(actor) = req.extensions().get::<AuthenticatedActor>() else {
         // When auth is disabled, allow.
         return Ok(next.run(req).await);
@@ -327,21 +327,10 @@ pub async fn list_certifications(
     Query(query): Query<ListCertificationsQuery>,
     original_uri: axum::extract::OriginalUri,
 ) -> Result<Json<V1Response<Vec<CertificationListItem>>>, V1Error> {
-    let offset = query
-        .cursor
-        .as_deref()
-        .and_then(decode_cursor)
-        .unwrap_or(0);
+    let offset = query.cursor.as_deref().and_then(decode_cursor).unwrap_or(0);
 
-    let tier = query
-        .tier
-        .as_deref()
-        .and_then(parse_tier)
-        .or(None);
-    let status = query
-        .status
-        .as_deref()
-        .and_then(parse_status);
+    let tier = query.tier.as_deref().and_then(parse_tier).or(None);
+    let status = query.status.as_deref().and_then(parse_status);
 
     let limit = query.limit.unwrap_or(20).min(100);
     let filter = ListCertificationsFilter {
@@ -357,12 +346,24 @@ pub async fn list_certifications(
     let total = state
         .certification_store
         .count_certifications(&filter)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let records = state
         .certification_store
         .list_certifications(&filter)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let items: Vec<CertificationListItem> = records.into_iter().map(to_list_item).collect();
 
@@ -422,7 +423,13 @@ pub async fn get_certification(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
         .ok_or_else(|| {
             V1Error::new(
                 StatusCode::NOT_FOUND,
@@ -472,16 +479,25 @@ pub async fn create_certification(
     let event_input = input.clone();
     let keypair = {
         let engine = state.engine.read().await;
-        engine
-            .keypair()
-            .cloned()
-            .ok_or_else(|| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "issuer_keypair_missing"))?
+        engine.keypair().cloned().ok_or_else(|| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "issuer_keypair_missing",
+            )
+        })?
     };
 
     let res = state
         .certification_store
         .create_certification(input, &state.issuer, &keypair)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     emit_webhook_event(
         state.clone(),
@@ -567,7 +583,10 @@ fn tier_rank(tier: CertificationTier) -> u8 {
     }
 }
 
-fn verify_record(record: &CertificationRecord, ctx: Option<&VerificationContext>) -> VerifyCertificationData {
+fn verify_record(
+    record: &CertificationRecord,
+    ctx: Option<&VerificationContext>,
+) -> VerifyCertificationData {
     let ctx = ctx.cloned().unwrap_or(VerificationContext {
         required_tier: None,
         required_frameworks: None,
@@ -652,8 +671,12 @@ fn verify_record(record: &CertificationRecord, ctx: Option<&VerificationContext>
                 Some(format!("Tier requirement not met: required {required:?}"))
             },
             days_remaining: None,
-            actual: Some(serde_json::Value::String(format!("{:?}", record.tier).to_ascii_lowercase())),
-            required: Some(serde_json::Value::String(format!("{required:?}").to_ascii_lowercase())),
+            actual: Some(serde_json::Value::String(
+                format!("{:?}", record.tier).to_ascii_lowercase(),
+            )),
+            required: Some(serde_json::Value::String(
+                format!("{required:?}").to_ascii_lowercase(),
+            )),
         }
     } else {
         VerifyCheck {
@@ -678,7 +701,10 @@ fn verify_record(record: &CertificationRecord, ctx: Option<&VerificationContext>
             reason: if passed {
                 None
             } else {
-                Some(format!("Missing required framework(s): {}", missing.join(", ")))
+                Some(format!(
+                    "Missing required framework(s): {}",
+                    missing.join(", ")
+                ))
             },
             days_remaining: None,
             actual: Some(serde_json::to_value(actual).unwrap_or(serde_json::Value::Null)),
@@ -749,7 +775,13 @@ pub async fn verify_certification(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
         .ok_or_else(|| {
             V1Error::new(
                 StatusCode::NOT_FOUND,
@@ -820,7 +852,13 @@ pub async fn verify_batch(
             record = state
                 .certification_store
                 .get_certification(id)
-                .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+                .map_err(|e| {
+                    V1Error::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "INTERNAL_ERROR",
+                        e.to_string(),
+                    )
+                })?;
         } else if let Some(agent_id) = item.agent_id.as_deref() {
             let filter = ListCertificationsFilter {
                 subject_id: Some(agent_id.to_string()),
@@ -831,7 +869,13 @@ pub async fn verify_batch(
             let list = state
                 .certification_store
                 .list_certifications(&filter)
-                .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+                .map_err(|e| {
+                    V1Error::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "INTERNAL_ERROR",
+                        e.to_string(),
+                    )
+                })?;
             record = list.into_iter().next();
         }
 
@@ -888,6 +932,8 @@ pub struct BadgeQuery {
     pub theme: Option<String>,
     #[serde(default)]
     pub size: Option<String>,
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 fn parse_badge_variant(s: Option<&str>) -> BadgeVariant {
@@ -913,11 +959,25 @@ fn wants_json(headers: &HeaderMap) -> bool {
         .is_some_and(|v| v.contains("application/json"))
 }
 
+fn wants_svg(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("image/svg+xml"))
+}
+
 fn wants_png(headers: &HeaderMap) -> bool {
     headers
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("image/png"))
+}
+
+fn accepts_any(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("*/*"))
 }
 
 /// GET /v1/certifications/{id}/badge
@@ -930,10 +990,58 @@ pub async fn get_badge(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
-        .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "CERTIFICATION_NOT_FOUND", "not_found"))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            V1Error::new(
+                StatusCode::NOT_FOUND,
+                "CERTIFICATION_NOT_FOUND",
+                "not_found",
+            )
+        })?;
 
-    if wants_png(&headers) {
+    let verification_url = format!("/verify/{}", record.certification_id);
+
+    enum BadgeFormat {
+        Svg,
+        Json,
+        Png,
+    }
+
+    let format = if let Some(format) = query
+        .format
+        .as_deref()
+        .map(str::trim)
+        .filter(|format| !format.is_empty())
+    {
+        match format.to_ascii_lowercase().as_str() {
+            "svg" => BadgeFormat::Svg,
+            "json" => BadgeFormat::Json,
+            "png" => BadgeFormat::Png,
+            _ => {
+                return Err(V1Error::new(
+                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    "UNSUPPORTED_FORMAT",
+                    "Unsupported badge format (use svg|json|png).",
+                ));
+            }
+        }
+    } else if wants_svg(&headers) {
+        BadgeFormat::Svg
+    } else if wants_json(&headers) {
+        BadgeFormat::Json
+    } else if wants_png(&headers) && !accepts_any(&headers) {
+        BadgeFormat::Png
+    } else {
+        BadgeFormat::Svg
+    };
+
+    if matches!(format, BadgeFormat::Png) {
         return Err(V1Error::new(
             StatusCode::NOT_IMPLEMENTED,
             "NOT_IMPLEMENTED",
@@ -941,9 +1049,7 @@ pub async fn get_badge(
         ));
     }
 
-    let verification_url = format!("/verify/{}", record.certification_id);
-
-    if wants_json(&headers) {
+    if matches!(format, BadgeFormat::Json) {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct EmbedCode {
@@ -969,7 +1075,14 @@ pub async fn get_badge(
             verification_url: String,
         }
 
-        let svg_url = format!("/v1/certifications/{}/badge?variant=full", record.certification_id);
+        let svg_url = format!(
+            "/v1/certifications/{}/badge?format=svg&variant=full",
+            record.certification_id
+        );
+        let png_url = format!(
+            "/v1/certifications/{}/badge?format=png",
+            record.certification_id
+        );
         let data = BadgeJsonData {
             certification_id: record.certification_id.clone(),
             embed_code: EmbedCode {
@@ -986,8 +1099,8 @@ pub async fn get_badge(
             },
             direct_urls: DirectUrls {
                 svg: svg_url,
-                png: format!("/v1/certifications/{}/badge", record.certification_id),
-                png2x: format!("/v1/certifications/{}/badge?size=2x", record.certification_id),
+                png: png_url.clone(),
+                png2x: format!("{png_url}&size=2x"),
             },
             verification_url,
         };
@@ -1051,13 +1164,31 @@ pub async fn list_evidence(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
-        .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "CERTIFICATION_NOT_FOUND", "not_found"))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            V1Error::new(
+                StatusCode::NOT_FOUND,
+                "CERTIFICATION_NOT_FOUND",
+                "not_found",
+            )
+        })?;
 
     let exports = state
         .evidence_exports
         .list_for_certification(&record.certification_id, Some(50), Some(0))
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let items = exports
         .into_iter()
@@ -1141,7 +1272,7 @@ pub async fn export_evidence(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(body): Json<ExportEvidenceRequestBody>,
 ) -> Result<Json<V1Response<ExportEvidenceResponseData>>, V1Error> {
-    if matches!(body.format.as_deref(), Some("zip") | None) == false {
+    if !matches!(body.format.as_deref(), Some("zip") | None) {
         return Err(V1Error::new(
             StatusCode::BAD_REQUEST,
             "VALIDATION_ERROR",
@@ -1152,8 +1283,20 @@ pub async fn export_evidence(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
-        .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "CERTIFICATION_NOT_FOUND", "not_found"))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            V1Error::new(
+                StatusCode::NOT_FOUND,
+                "CERTIFICATION_NOT_FOUND",
+                "not_found",
+            )
+        })?;
 
     let request = EvidenceExportRequest {
         date_start: body.date_range.as_ref().map(|r| r.start.clone()),
@@ -1165,7 +1308,13 @@ pub async fn export_evidence(
     let job = state
         .evidence_exports
         .create_job(&record.certification_id, request.clone())
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     // Spawn background export task.
     let export_id = job.export_id.clone();
@@ -1173,8 +1322,14 @@ pub async fn export_evidence(
     let state_bg = state.clone();
     let actor_id = actor_id(actor.as_ref().map(|a| &a.0));
     tokio::spawn(async move {
-        if let Err(err) =
-            run_evidence_export_job(&state_bg, &record.certification_id, &export_id_for_task, &request, &actor_id).await
+        if let Err(err) = run_evidence_export_job(
+            &state_bg,
+            &record.certification_id,
+            &export_id_for_task,
+            &request,
+            &actor_id,
+        )
+        .await
         {
             tracing::warn!(export_id = %export_id_for_task, error = %err, "Evidence export failed");
             let _ = state_bg.evidence_exports.mark_failed(&export_id_for_task);
@@ -1273,14 +1428,28 @@ pub async fn get_evidence_export(
     let record = state
         .evidence_exports
         .get(&export_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
-        .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "EVIDENCE_EXPORT_NOT_FOUND", "not_found"))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            V1Error::new(
+                StatusCode::NOT_FOUND,
+                "EVIDENCE_EXPORT_NOT_FOUND",
+                "not_found",
+            )
+        })?;
 
     let data = EvidenceExportStatusData {
         export_id: record.export_id.clone(),
         status: record.status,
         download_url: match record.status {
-            EvidenceExportStatus::Completed => Some(format!("/v1/evidence-exports/{export_id}/download")),
+            EvidenceExportStatus::Completed => {
+                Some(format!("/v1/evidence-exports/{export_id}/download"))
+            }
             _ => None,
         },
         expires_at: record.expires_at.clone(),
@@ -1305,8 +1474,20 @@ pub async fn download_evidence_export(
     let record = state
         .evidence_exports
         .get(&export_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
-        .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "EVIDENCE_EXPORT_NOT_FOUND", "not_found"))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            V1Error::new(
+                StatusCode::NOT_FOUND,
+                "EVIDENCE_EXPORT_NOT_FOUND",
+                "not_found",
+            )
+        })?;
 
     if !matches!(record.status, EvidenceExportStatus::Completed) {
         return Err(V1Error::new(
@@ -1324,8 +1505,13 @@ pub async fn download_evidence_export(
         ));
     };
 
-    let bytes = std::fs::read(path)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+    let bytes = std::fs::read(path).map_err(|e| {
+        V1Error::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
 
     let mut resp = bytes.into_response();
     resp.headers_mut().insert(
@@ -1382,7 +1568,13 @@ pub async fn revoke_certification(
                 revoked_by: revoked_by.clone(),
             },
         )
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let response = RevokeResponseData {
         certification_id: rev.certification_id.clone(),
@@ -1432,7 +1624,13 @@ pub async fn get_revocation_status(
     let rev = state
         .certification_store
         .get_revocation(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let data = match rev {
         Some(r) => RevocationStatusData {
@@ -1464,12 +1662,24 @@ pub async fn get_policy_snapshot(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
-        .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "CERTIFICATION_NOT_FOUND", "not_found"))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            V1Error::new(
+                StatusCode::NOT_FOUND,
+                "CERTIFICATION_NOT_FOUND",
+                "not_found",
+            )
+        })?;
 
     let policy = { state.engine.read().await.policy().clone() };
-    let yaml = serde_yaml::to_string(&policy)
-        .unwrap_or_else(|_| "version: \"1.0.0\"\n".to_string());
+    let yaml =
+        serde_yaml::to_string(&policy).unwrap_or_else(|_| "version: \"1.0.0\"\n".to_string());
 
     let guards = serde_json::json!({
         "forbidden_path": { "enabled": policy.guards.forbidden_path.as_ref().map(|g| g.enabled).unwrap_or(true) },
@@ -1500,8 +1710,20 @@ pub async fn get_policy_history(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
-        .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "CERTIFICATION_NOT_FOUND", "not_found"))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            V1Error::new(
+                StatusCode::NOT_FOUND,
+                "CERTIFICATION_NOT_FOUND",
+                "not_found",
+            )
+        })?;
 
     let data = serde_json::json!({
         "items": [{
@@ -1539,7 +1761,9 @@ pub async fn openapi_json() -> Result<Json<serde_json::Value>, V1Error> {
 }
 
 /// GET /.well-known/ca.json
-pub async fn well_known_ca(State(state): State<AppState>) -> Result<Json<serde_json::Value>, V1Error> {
+pub async fn well_known_ca(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, V1Error> {
     let public_key = {
         let engine = state.engine.read().await;
         engine
@@ -1567,7 +1791,13 @@ pub async fn verify_page(
     let record = state
         .certification_store
         .get_certification(&certification_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let Some(record) = record else {
         let html = format!(
@@ -1583,7 +1813,10 @@ pub async fn verify_page(
 
     let verified = verify_record(&record, None);
     let status = effective_status(&record);
-    let badge_url = format!("/v1/certifications/{}/badge?variant=full", record.certification_id);
+    let badge_url = format!(
+        "/v1/certifications/{}/badge?variant=full",
+        record.certification_id
+    );
 
     fn escape_html(s: &str) -> String {
         let mut out = String::with_capacity(s.len());
@@ -1663,9 +1896,21 @@ pub async fn verify_page(
         frameworks = escape_html(&record.frameworks.join(", ")),
         issue_date = escape_html(&record.issue_date),
         expiry_date = escape_html(&record.expiry_date),
-        sig = if verified.checks.signature.passed { "passed" } else { "failed" },
-        expiry = if verified.checks.expiry.passed { "passed" } else { "failed" },
-        rev = if verified.checks.revocation.passed { "passed" } else { "failed" },
+        sig = if verified.checks.signature.passed {
+            "passed"
+        } else {
+            "failed"
+        },
+        expiry = if verified.checks.expiry.passed {
+            "passed"
+        } else {
+            "failed"
+        },
+        rev = if verified.checks.revocation.passed {
+            "passed"
+        } else {
+            "failed"
+        },
         failures = if let Some(reasons) = verified.failure_reasons {
             format!(
                 "<h3>Failure reasons</h3><ul>{}</ul>",
@@ -1696,17 +1941,19 @@ pub async fn list_webhooks(
     Query(query): Query<ListWebhooksQuery>,
     original_uri: axum::extract::OriginalUri,
 ) -> Result<Json<V1Response<Vec<WebhookRecord>>>, V1Error> {
-    let offset = query
-        .cursor
-        .as_deref()
-        .and_then(decode_cursor)
-        .unwrap_or(0);
+    let offset = query.cursor.as_deref().and_then(decode_cursor).unwrap_or(0);
     let limit = query.limit.unwrap_or(50).min(100);
 
     let items = state
         .webhook_store
         .list(Some(limit), Some(offset))
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let next = if items.len() == limit {
         Some(format!(
@@ -1732,10 +1979,13 @@ pub async fn create_webhook(
     State(state): State<AppState>,
     Json(input): Json<CreateWebhookInput>,
 ) -> Result<Json<V1Response<WebhookRecord>>, V1Error> {
-    let created = state
-        .webhook_store
-        .create(input)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+    let created = state.webhook_store.create(input).map_err(|e| {
+        V1Error::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
     Ok(crate::api::v1::v1_ok(created))
 }
 
@@ -1747,7 +1997,13 @@ pub async fn get_webhook(
     let webhook = state
         .webhook_store
         .get(&webhook_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
         .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "WEBHOOK_NOT_FOUND", "not_found"))?;
     Ok(crate::api::v1::v1_ok(webhook))
 }
@@ -1761,7 +2017,13 @@ pub async fn update_webhook(
     let updated = state
         .webhook_store
         .update(&webhook_id, input)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?
+        .map_err(|e| {
+            V1Error::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
         .ok_or_else(|| V1Error::new(StatusCode::NOT_FOUND, "WEBHOOK_NOT_FOUND", "not_found"))?;
     Ok(crate::api::v1::v1_ok(updated))
 }
@@ -1777,9 +2039,12 @@ pub async fn delete_webhook(
     State(state): State<AppState>,
     Path(webhook_id): Path<String>,
 ) -> Result<Json<V1Response<DeleteWebhookData>>, V1Error> {
-    let deleted = state
-        .webhook_store
-        .delete(&webhook_id)
-        .map_err(|e| V1Error::new(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.to_string()))?;
+    let deleted = state.webhook_store.delete(&webhook_id).map_err(|e| {
+        V1Error::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
     Ok(crate::api::v1::v1_ok(DeleteWebhookData { deleted }))
 }

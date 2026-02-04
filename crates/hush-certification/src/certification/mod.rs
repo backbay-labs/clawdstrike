@@ -348,12 +348,15 @@ impl SqliteCertificationStore {
             "SELECT certification_id, version, subject_type, subject_id, subject_name, subject_organization_id, subject_metadata, tier, issue_date, expiry_date, frameworks, status, policy_hash, policy_version, policy_ruleset, evidence_receipt_count, evidence_merkle_root, evidence_audit_log_ref, evidence_last_updated, issuer_id, issuer_name, issuer_public_key, issuer_signature, issuer_signed_at FROM certifications WHERE certification_id = ?",
         )?;
         let record = stmt
-            .query_row(params![certification_id], |row| row_to_cert(row))
+            .query_row(params![certification_id], row_to_cert)
             .optional()?;
         Ok(record)
     }
 
-    pub fn list_certifications(&self, filter: &ListCertificationsFilter) -> Result<Vec<CertificationRecord>> {
+    pub fn list_certifications(
+        &self,
+        filter: &ListCertificationsFilter,
+    ) -> Result<Vec<CertificationRecord>> {
         let conn = self.lock_conn();
 
         let mut sql = String::from(
@@ -392,7 +395,7 @@ impl SqliteCertificationStore {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_refs.as_slice(), |row| row_to_cert(row))?;
+        let rows = stmt.query_map(params_refs.as_slice(), row_to_cert)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -443,7 +446,10 @@ impl SqliteCertificationStore {
 
         tx.execute(
             "UPDATE certifications SET status = ? WHERE certification_id = ?",
-            params![status_to_str(CertificationStatus::Revoked), certification_id],
+            params![
+                status_to_str(CertificationStatus::Revoked),
+                certification_id
+            ],
         )?;
 
         tx.commit()?;

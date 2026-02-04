@@ -444,7 +444,11 @@ pub async fn check_action(
         let organization_id = session_for_audit
             .as_ref()
             .and_then(|s| s.identity.organization_id.clone())
-            .or_else(|| principal_for_audit.as_ref().and_then(|p| p.organization_id.clone()));
+            .or_else(|| {
+                principal_for_audit
+                    .as_ref()
+                    .and_then(|p| p.organization_id.clone())
+            });
 
         let provenance = serde_json::json!({
             "sourceIp": request_context.source_ip.clone(),

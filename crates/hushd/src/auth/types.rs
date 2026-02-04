@@ -184,7 +184,10 @@ mod tests {
         assert_eq!(Scope::Read.as_str(), "read");
         assert_eq!(Scope::Admin.as_str(), "admin");
         assert_eq!(Scope::CertificationsRead.as_str(), "certifications:read");
-        assert_eq!(Scope::CertificationsVerify.as_str(), "certifications:verify");
+        assert_eq!(
+            Scope::CertificationsVerify.as_str(),
+            "certifications:verify"
+        );
         assert_eq!(Scope::CertificationsWrite.as_str(), "certifications:write");
         assert_eq!(Scope::EvidenceRead.as_str(), "evidence:read");
         assert_eq!(Scope::EvidenceExport.as_str(), "evidence:export");

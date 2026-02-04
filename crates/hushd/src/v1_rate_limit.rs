@@ -26,8 +26,12 @@ use crate::api::v1::V1Error;
 use crate::auth::{ApiKeyTier, AuthenticatedActor};
 
 type Key = String;
-type KeyedRateLimiter =
-    RateLimiter<Key, dashmap::DashMap<Key, InMemoryState>, DefaultClock, StateInformationMiddleware>;
+type KeyedRateLimiter = RateLimiter<
+    Key,
+    dashmap::DashMap<Key, InMemoryState>,
+    DefaultClock,
+    StateInformationMiddleware,
+>;
 
 #[derive(Clone)]
 pub struct V1RateLimitState {
@@ -143,10 +147,8 @@ pub async fn v1_rate_limit_middleware(
             )
             .with_retry_after(1)
             .into_response();
-            resp.headers_mut().insert(
-                header::RETRY_AFTER,
-                HeaderValue::from_static("1"),
-            );
+            resp.headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
             return resp;
         }
     };
@@ -163,7 +165,8 @@ pub async fn v1_rate_limit_middleware(
             let reset_epoch = epoch_seconds_now().saturating_add(60);
             let _ = resp.headers_mut().insert(
                 HeaderName::from_static("x-ratelimit-limit"),
-                HeaderValue::from_str(&limit.to_string()).unwrap_or_else(|_| HeaderValue::from_static("0")),
+                HeaderValue::from_str(&limit.to_string())
+                    .unwrap_or_else(|_| HeaderValue::from_static("0")),
             );
             let _ = resp.headers_mut().insert(
                 HeaderName::from_static("x-ratelimit-remaining"),
@@ -183,7 +186,8 @@ pub async fn v1_rate_limit_middleware(
             // Emit burst information as well (useful for debugging).
             let _ = resp.headers_mut().insert(
                 HeaderName::from_static("x-ratelimit-burst"),
-                HeaderValue::from_str(&burst.to_string()).unwrap_or_else(|_| HeaderValue::from_static("0")),
+                HeaderValue::from_str(&burst.to_string())
+                    .unwrap_or_else(|_| HeaderValue::from_static("0")),
             );
             resp
         }
@@ -214,7 +218,8 @@ pub async fn v1_rate_limit_middleware(
             );
             resp.headers_mut().insert(
                 HeaderName::from_static("x-ratelimit-limit"),
-                HeaderValue::from_str(&limit.to_string()).unwrap_or_else(|_| HeaderValue::from_static("0")),
+                HeaderValue::from_str(&limit.to_string())
+                    .unwrap_or_else(|_| HeaderValue::from_static("0")),
             );
             resp.headers_mut().insert(
                 HeaderName::from_static("x-ratelimit-remaining"),
@@ -232,7 +237,8 @@ pub async fn v1_rate_limit_middleware(
             );
             resp.headers_mut().insert(
                 HeaderName::from_static("x-ratelimit-burst"),
-                HeaderValue::from_str(&burst.to_string()).unwrap_or_else(|_| HeaderValue::from_static("0")),
+                HeaderValue::from_str(&burst.to_string())
+                    .unwrap_or_else(|_| HeaderValue::from_static("0")),
             );
             resp
         }

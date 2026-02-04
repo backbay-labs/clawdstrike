@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{Result};
+use crate::Result;
 
 const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS webhooks (
@@ -74,60 +74,6 @@ pub struct UpdateWebhookInput {
 
 pub struct SqliteWebhookStore {
     conn: Mutex<Connection>,
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::expect_used, clippy::unwrap_used)]
-
-    use super::*;
-
-    #[test]
-    fn create_and_query_webhook() {
-        let store = SqliteWebhookStore::new(":memory:").unwrap();
-        let created = store
-            .create(CreateWebhookInput {
-                url: "https://example.com/hook".to_string(),
-                events: vec!["certification.issued".to_string(), "violation.detected".to_string()],
-                secret: "secret".to_string(),
-                enabled: Some(true),
-                metadata: None,
-            })
-            .unwrap();
-
-        let loaded = store.get(&created.webhook_id).unwrap().unwrap();
-        assert_eq!(loaded.url, "https://example.com/hook");
-        assert!(loaded.events.iter().any(|e| e == "certification.issued"));
-
-        let targets = store
-            .list_enabled_for_event("certification.issued")
-            .unwrap();
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].webhook_id, created.webhook_id);
-
-        let updated = store
-            .update(
-                &created.webhook_id,
-                UpdateWebhookInput {
-                    enabled: Some(false),
-                    url: None,
-                    events: None,
-                    secret: None,
-                    metadata: None,
-                },
-            )
-            .unwrap()
-            .unwrap();
-        assert_eq!(updated.enabled, false);
-
-        let targets = store
-            .list_enabled_for_event("certification.issued")
-            .unwrap();
-        assert!(targets.is_empty());
-
-        assert!(store.delete(&created.webhook_id).unwrap());
-        assert!(store.get(&created.webhook_id).unwrap().is_none());
-    }
 }
 
 impl SqliteWebhookStore {
@@ -221,7 +167,11 @@ impl SqliteWebhookStore {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    pub fn update(&self, webhook_id: &str, input: UpdateWebhookInput) -> Result<Option<WebhookRecord>> {
+    pub fn update(
+        &self,
+        webhook_id: &str,
+        input: UpdateWebhookInput,
+    ) -> Result<Option<WebhookRecord>> {
         let existing = self.get(webhook_id)?;
         let Some(existing) = existing else {
             return Ok(None);
@@ -271,7 +221,10 @@ impl SqliteWebhookStore {
 
     pub fn delete(&self, webhook_id: &str) -> Result<bool> {
         let conn = self.lock_conn();
-        let n = conn.execute("DELETE FROM webhooks WHERE webhook_id = ?", params![webhook_id])?;
+        let n = conn.execute(
+            "DELETE FROM webhooks WHERE webhook_id = ?",
+            params![webhook_id],
+        )?;
         Ok(n > 0)
     }
 
@@ -299,5 +252,62 @@ impl SqliteWebhookStore {
             }
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn create_and_query_webhook() {
+        let store = SqliteWebhookStore::new(":memory:").unwrap();
+        let created = store
+            .create(CreateWebhookInput {
+                url: "https://example.com/hook".to_string(),
+                events: vec![
+                    "certification.issued".to_string(),
+                    "violation.detected".to_string(),
+                ],
+                secret: "secret".to_string(),
+                enabled: Some(true),
+                metadata: None,
+            })
+            .unwrap();
+
+        let loaded = store.get(&created.webhook_id).unwrap().unwrap();
+        assert_eq!(loaded.url, "https://example.com/hook");
+        assert!(loaded.events.iter().any(|e| e == "certification.issued"));
+
+        let targets = store
+            .list_enabled_for_event("certification.issued")
+            .unwrap();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].webhook_id, created.webhook_id);
+
+        let updated = store
+            .update(
+                &created.webhook_id,
+                UpdateWebhookInput {
+                    enabled: Some(false),
+                    url: None,
+                    events: None,
+                    secret: None,
+                    metadata: None,
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert!(!updated.enabled);
+
+        let targets = store
+            .list_enabled_for_event("certification.issued")
+            .unwrap();
+        assert!(targets.is_empty());
+
+        assert!(store.delete(&created.webhook_id).unwrap());
+        assert!(store.get(&created.webhook_id).unwrap().is_none());
     }
 }
