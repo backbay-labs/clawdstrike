@@ -472,6 +472,7 @@ impl Policy {
                     &mut errors,
                     &format!("custom_guards[{}].config", idx),
                     &cg.config,
+                    cg.enabled,
                 );
             }
         }
@@ -483,6 +484,7 @@ impl Policy {
                     &mut errors,
                     "guards.forbidden_path.patterns",
                     patterns,
+                    cfg.enabled,
                 );
             }
             validate_globs(
@@ -494,6 +496,7 @@ impl Policy {
                 &mut errors,
                 "guards.forbidden_path.exceptions",
                 &cfg.exceptions,
+                cfg.enabled,
             );
             validate_globs(
                 &mut errors,
@@ -504,6 +507,7 @@ impl Policy {
                 &mut errors,
                 "guards.forbidden_path.additional_patterns",
                 &cfg.additional_patterns,
+                cfg.enabled,
             );
             validate_globs(
                 &mut errors,
@@ -514,6 +518,7 @@ impl Policy {
                 &mut errors,
                 "guards.forbidden_path.remove_patterns",
                 &cfg.remove_patterns,
+                cfg.enabled,
             );
         }
 
@@ -545,31 +550,37 @@ impl Policy {
                 &mut errors,
                 "guards.egress_allowlist.allow",
                 &cfg.allow,
+                cfg.enabled,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.block",
                 &cfg.block,
+                cfg.enabled,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.additional_allow",
                 &cfg.additional_allow,
+                cfg.enabled,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.additional_block",
                 &cfg.additional_block,
+                cfg.enabled,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.remove_allow",
                 &cfg.remove_allow,
+                cfg.enabled,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.remove_block",
                 &cfg.remove_block,
+                cfg.enabled,
             );
         }
 
@@ -579,11 +590,13 @@ impl Policy {
                     &mut errors,
                     &format!("guards.secret_leak.patterns[{}].name", idx),
                     &p.name,
+                    cfg.enabled,
                 );
                 validate_placeholders_in_string(
                     &mut errors,
                     &format!("guards.secret_leak.patterns[{}].pattern", idx),
                     &p.pattern,
+                    cfg.enabled,
                 );
 
                 if let Err(e) = Regex::new(&p.pattern) {
@@ -602,6 +615,7 @@ impl Policy {
                 &mut errors,
                 "guards.secret_leak.skip_paths",
                 &cfg.skip_paths,
+                cfg.enabled,
             );
         }
 
@@ -617,6 +631,7 @@ impl Policy {
                     &mut errors,
                     &format!("guards.patch_integrity.forbidden_patterns[{}]", idx),
                     pattern,
+                    cfg.enabled,
                 );
             }
         }
@@ -978,7 +993,12 @@ fn env_var_for_placeholder(raw: &str) -> std::result::Result<String, String> {
     Ok(raw.to_string())
 }
 
-fn validate_placeholders_in_string(errors: &mut Vec<PolicyFieldError>, field: &str, value: &str) {
+fn validate_placeholders_in_string(
+    errors: &mut Vec<PolicyFieldError>,
+    field: &str,
+    value: &str,
+    require_env: bool,
+) {
     let mut i = 0usize;
     while let Some(start_rel) = value[i..].find("${") {
         let start = i + start_rel;
@@ -999,7 +1019,7 @@ fn validate_placeholders_in_string(errors: &mut Vec<PolicyFieldError>, field: &s
             }
         };
 
-        if std::env::var(&env_name).is_err() {
+        if require_env && std::env::var(&env_name).is_err() {
             errors.push(PolicyFieldError::new(
                 field,
                 format!("missing environment variable {}", env_name),
@@ -1014,9 +1034,10 @@ fn validate_placeholders_in_strings(
     errors: &mut Vec<PolicyFieldError>,
     field: &str,
     values: &[String],
+    require_env: bool,
 ) {
     for (idx, v) in values.iter().enumerate() {
-        validate_placeholders_in_string(errors, &format!("{}[{}]", field, idx), v);
+        validate_placeholders_in_string(errors, &format!("{}[{}]", field, idx), v, require_env);
     }
 }
 
@@ -1024,17 +1045,25 @@ fn validate_placeholders_in_json(
     errors: &mut Vec<PolicyFieldError>,
     field: &str,
     value: &serde_json::Value,
+    require_env: bool,
 ) {
     match value {
-        serde_json::Value::String(s) => validate_placeholders_in_string(errors, field, s),
+        serde_json::Value::String(s) => {
+            validate_placeholders_in_string(errors, field, s, require_env);
+        }
         serde_json::Value::Array(items) => {
             for (idx, v) in items.iter().enumerate() {
-                validate_placeholders_in_json(errors, &format!("{}[{}]", field, idx), v);
+                validate_placeholders_in_json(
+                    errors,
+                    &format!("{}[{}]", field, idx),
+                    v,
+                    require_env,
+                );
             }
         }
         serde_json::Value::Object(map) => {
             for (k, v) in map {
-                validate_placeholders_in_json(errors, &format!("{}.{}", field, k), v);
+                validate_placeholders_in_json(errors, &format!("{}.{}", field, k), v, require_env);
             }
         }
         _ => {}
@@ -1045,15 +1074,25 @@ fn validate_custom_guards(errors: &mut Vec<PolicyFieldError>, guards: &[CustomGu
     for (idx, spec) in guards.iter().enumerate() {
         let base = format!("guards.custom[{}]", idx);
 
-        validate_placeholders_in_string(errors, &format!("{base}.package"), &spec.package);
+        validate_placeholders_in_string(
+            errors,
+            &format!("{base}.package"),
+            &spec.package,
+            spec.enabled,
+        );
         if let Some(v) = spec.version.as_ref() {
-            validate_placeholders_in_string(errors, &format!("{base}.version"), v);
+            validate_placeholders_in_string(errors, &format!("{base}.version"), v, spec.enabled);
         }
         if let Some(r) = spec.registry.as_ref() {
-            validate_placeholders_in_string(errors, &format!("{base}.registry"), r);
+            validate_placeholders_in_string(errors, &format!("{base}.registry"), r, spec.enabled);
         }
 
-        validate_placeholders_in_json(errors, &format!("{base}.config"), &spec.config);
+        validate_placeholders_in_json(
+            errors,
+            &format!("{base}.config"),
+            &spec.config,
+            spec.enabled,
+        );
 
         if let Some(async_cfg) = spec.async_config.as_ref() {
             validate_async_policy_config(errors, &format!("{base}.async"), async_cfg);
@@ -1332,6 +1371,9 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_default_policy() {
@@ -1415,6 +1457,118 @@ guards:
                     .errors
                     .iter()
                     .any(|fe| fe.path == "guards.secret_leak.patterns[0].pattern"));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_policy_validation_custom_guards_skips_missing_env_when_disabled() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let missing = "CLAWDSTRIKE_TEST_CUSTOM_GUARD_MISSING_ENV";
+        std::env::remove_var(missing);
+
+        let yaml = format!(
+            r#"
+version: "1.1.0"
+name: Test
+custom_guards:
+  - id: "acme.deny"
+    enabled: false
+    config:
+      api_key: "${{{}}}"
+"#,
+            missing
+        );
+
+        Policy::from_yaml(&yaml).unwrap();
+    }
+
+    #[test]
+    fn test_policy_validation_custom_guards_requires_env_when_enabled() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let missing = "CLAWDSTRIKE_TEST_CUSTOM_GUARD_MISSING_ENV";
+        std::env::remove_var(missing);
+
+        let yaml = format!(
+            r#"
+version: "1.1.0"
+name: Test
+custom_guards:
+  - id: "acme.deny"
+    enabled: true
+    config:
+      api_key: "${{{}}}"
+"#,
+            missing
+        );
+
+        let err = Policy::from_yaml(&yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(e
+                    .errors
+                    .iter()
+                    .any(|fe| fe.path == "custom_guards[0].config.api_key"));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_policy_validation_plugin_custom_guards_skips_missing_env_when_disabled() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let missing = "CLAWDSTRIKE_TEST_ASYNC_CUSTOM_GUARD_MISSING_ENV";
+        std::env::remove_var(missing);
+
+        let yaml = format!(
+            r#"
+version: "1.1.0"
+name: Test
+guards:
+  custom:
+    - package: "clawdstrike-virustotal"
+      enabled: false
+      config:
+        api_key: "${{{}}}"
+"#,
+            missing
+        );
+
+        Policy::from_yaml(&yaml).unwrap();
+    }
+
+    #[test]
+    fn test_policy_validation_plugin_custom_guards_requires_env_when_enabled() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+
+        let missing = "CLAWDSTRIKE_TEST_ASYNC_CUSTOM_GUARD_MISSING_ENV";
+        std::env::remove_var(missing);
+
+        let yaml = format!(
+            r#"
+version: "1.1.0"
+name: Test
+guards:
+  custom:
+    - package: "clawdstrike-virustotal"
+      enabled: true
+      config:
+        api_key: "${{{}}}"
+"#,
+            missing
+        );
+
+        let err = Policy::from_yaml(&yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(e
+                    .errors
+                    .iter()
+                    .any(|fe| fe.path == "guards.custom[0].config.api_key"));
             }
             other => panic!("expected policy validation error, got: {}", other),
         }
