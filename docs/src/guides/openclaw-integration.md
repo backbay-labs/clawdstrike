@@ -17,7 +17,7 @@ This is **not** an OS sandbox and does not intercept syscalls. If an agent/runti
 
 ```bash
 # Link the local package
-openclaw plugins install --link /path/to/hushclaw/packages/clawdstrike-openclaw
+openclaw plugins install --link /path/to/clawdstrike/packages/clawdstrike-openclaw
 
 # Enable the plugin
 openclaw plugins enable clawdstrike-security

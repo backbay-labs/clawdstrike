@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@1.92
+        uses: dtolnay/rust-toolchain@1.93
 
       - name: Build with MSRV
         run: cargo build --all-targets
@@ -373,35 +373,90 @@ jobs:
       - name: Test
         run: npm test
 
-  policy-parity:
-    name: Policy Parity (Rust vs TS)
+          cache-dependency-path: packages/clawdstrike-policy/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  agent-framework-integrations:
+    name: Agent Framework Integrations (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Adapter Core
+            dir: packages/clawdstrike-adapter-core
+            bootstrap_adapter_core: false
+            bootstrap_sdk: false
+          - name: Hush CLI Engine
+            dir: packages/clawdstrike-hush-cli-engine
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: Codex
+            dir: packages/clawdstrike-codex
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: OpenCode
+            dir: packages/clawdstrike-opencode
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: Claude Code
+            dir: packages/clawdstrike-claude-code
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: Vercel AI
+            dir: packages/clawdstrike-vercel-ai
+            bootstrap_adapter_core: true
+            bootstrap_sdk: true
+          - name: LangChain
+            dir: packages/clawdstrike-langchain
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: packages/clawdstrike-policy/package-lock.json
+          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
 
-      - name: Build hush
-        run: cargo build -p hush-cli --bin hush
-
-      - name: Install clawdstrike-policy deps
-        working-directory: packages/clawdstrike-policy
+      - name: Bootstrap file deps (adapter-core)
+        if: ${{ matrix.bootstrap_adapter_core }}
+        working-directory: packages/clawdstrike-adapter-core
         run: npm ci
 
-      - name: Build clawdstrike-policy
-        working-directory: packages/clawdstrike-policy
+      - name: Bootstrap file deps (sdk)
+        if: ${{ matrix.bootstrap_sdk }}
+        working-directory: packages/hush-ts
+        run: npm ci
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.dir }}
+        run: npm ci
+
+      - name: Type check
+        working-directory: ${{ matrix.dir }}
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: ${{ matrix.dir }}
         run: npm run build
 
-      - name: Run parity script
-        run: node tools/scripts/policy-parity.mjs
+      - name: Test
+        working-directory: ${{ matrix.dir }}
+        run: npm test
 
   python-sdk:
     name: Python SDK

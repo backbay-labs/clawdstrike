@@ -1717,6 +1717,77 @@ mod policy_pac_contract {
             Some(2)
         );
     }
+
+    #[tokio::test]
+    async fn policy_simulate_matches_expected_decisions_fixture_default_ruleset() {
+        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let expected_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/expected/default.decisions.json");
+
+        let expected_raw =
+            std::fs::read_to_string(&expected_path).expect("read default.decisions.json");
+        let expected_json: serde_json::Value =
+            serde_json::from_str(&expected_raw).expect("expected decisions json");
+        let expected_results = expected_json
+            .get("results")
+            .and_then(|v| v.as_array())
+            .expect("expected.results array");
+        let expected_by_id: std::collections::BTreeMap<String, serde_json::Value> =
+            expected_results
+                .iter()
+                .filter_map(|r| {
+                    let id = r.get("eventId")?.as_str()?.to_string();
+                    let decision = r.get("decision")?.clone();
+                    Some((id, decision))
+                })
+                .collect();
+
+        assert_eq!(expected_by_id.len(), 6, "expected one decision per fixture");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_policy_simulate(
+            "default".to_string(),
+            Some(fixtures_path.to_string_lossy().to_string()),
+            crate::policy_pac::PolicySimulateOptions {
+                resolve: false,
+                json: true,
+                jsonl: false,
+                summary: false,
+                fail_on_deny: false,
+                benchmark: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Ok);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        let results = v
+            .get("results")
+            .and_then(|v| v.as_array())
+            .expect("results array");
+        assert_eq!(results.len(), 6, "expected one result per fixture line");
+
+        for r in results {
+            let id = r
+                .get("eventId")
+                .and_then(|v| v.as_str())
+                .expect("result.eventId")
+                .to_string();
+            let decision = r.get("decision").expect("result.decision");
+
+            let expected = expected_by_id
+                .get(&id)
+                .unwrap_or_else(|| panic!("missing expected decision for {}", id));
+            assert_eq!(decision, expected, "decision mismatch for {}", id);
+        }
+    }
 }
 
 #[cfg(test)]

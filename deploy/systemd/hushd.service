@@ -1,6 +1,6 @@
 [Unit]
 Description=Clawdstrike Security Daemon
-Documentation=https://github.com/backbay-labs/hushclaw
+Documentation=https://github.com/backbay-labs/clawdstrike
 After=network.target
 Wants=network-online.target
 

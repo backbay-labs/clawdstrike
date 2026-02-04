@@ -1,3 +1,9 @@
+# 0.1.20 (2026-02-02)
+
+- Fix `proxy::Matcher` to properly match domains regardless of casing
+- Fix system proxy matcher dependency on macOS when used in sandboxed environements.
+- Increased MSRV to 1.64.
+
 # 0.1.19 (2025-12-03)
 
 - Add `client::pool` module for composable pools. Enable with the `client-pool` feature.

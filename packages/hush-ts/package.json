@@ -40,7 +40,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/backbay-labs/hushclaw.git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
     "directory": "packages/hush-ts"
   },
   "dependencies": {

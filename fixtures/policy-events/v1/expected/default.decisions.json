@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "policy": {
+    "kind": "ruleset",
+    "name": "default"
+  },
+  "events": {
+    "path": "fixtures/policy-events/v1/events.jsonl",
+    "count": 6
+  },
+  "summary": {
+    "total": 6,
+    "allowed": 4,
+    "warn": 0,
+    "blocked": 2
+  },
+  "results": [
+    {
+      "eventId": "evt-0001",
+      "outcome": "blocked",
+      "decision": {
+        "allowed": false,
+        "denied": true,
+        "warn": false,
+        "guard": "forbidden_path",
+        "severity": "critical",
+        "message": "Access to forbidden path: /home/alice/.ssh/id_rsa",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0002",
+      "outcome": "allowed",
+      "decision": {
+        "allowed": true,
+        "denied": false,
+        "warn": false,
+        "guard": null,
+        "severity": null,
+        "message": "Allowed",
+        "reason": "missing_content_bytes"
+      }
+    },
+    {
+      "eventId": "evt-0003",
+      "outcome": "allowed",
+      "decision": {
+        "allowed": true,
+        "denied": false,
+        "warn": false,
+        "guard": null,
+        "severity": null,
+        "message": "Allowed",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0004",
+      "outcome": "allowed",
+      "decision": {
+        "allowed": true,
+        "denied": false,
+        "warn": false,
+        "guard": null,
+        "severity": null,
+        "message": "Allowed",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0005",
+      "outcome": "allowed",
+      "decision": {
+        "allowed": true,
+        "denied": false,
+        "warn": false,
+        "guard": null,
+        "severity": null,
+        "message": "Allowed",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0006",
+      "outcome": "blocked",
+      "decision": {
+        "allowed": false,
+        "denied": true,
+        "warn": false,
+        "guard": "prompt_injection",
+        "severity": "critical",
+        "message": "Untrusted text contains prompt-injection signals (Critical)",
+        "reason": null
+      }
+    }
+  ]
+}

@@ -152,9 +152,8 @@ mod internal {
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::{Mutex, Weak};
-    use std::task::{self, Poll};
+    use std::task::{self, ready, Poll};
 
-    use futures_core::ready;
     use pin_project_lite::pin_project;
     use tokio::sync::oneshot;
     use tower_service::Service;
@@ -351,7 +350,7 @@ mod tests {
         let mut singleton = Singleton::new(mock_svc);
 
         handle.allow(1);
-        crate::common::future::poll_fn(|cx| singleton.poll_ready(cx))
+        std::future::poll_fn(|cx| singleton.poll_ready(cx))
             .await
             .unwrap();
         // First call: should go into Driving
@@ -374,7 +373,7 @@ mod tests {
         let mut singleton = Singleton::new(mock_svc);
 
         handle.allow(1);
-        crate::common::future::poll_fn(|cx| singleton.poll_ready(cx))
+        std::future::poll_fn(|cx| singleton.poll_ready(cx))
             .await
             .unwrap();
         // Drive first call to completion
@@ -396,7 +395,7 @@ mod tests {
 
         // Allow the singleton to be made
         outer_handle.allow(2);
-        crate::common::future::poll_fn(|cx| singleton.poll_ready(cx))
+        std::future::poll_fn(|cx| singleton.poll_ready(cx))
             .await
             .unwrap();
 
@@ -417,7 +416,7 @@ mod tests {
         ));
 
         // Drive poll_ready on cached service
-        let err = crate::common::future::poll_fn(|cx| cached.poll_ready(cx))
+        let err = std::future::poll_fn(|cx| cached.poll_ready(cx))
             .await
             .err()
             .expect("expected poll_ready error");
@@ -425,7 +424,7 @@ mod tests {
 
         // After error, the singleton should be cleared, so a new call drives outer again
         outer_handle.allow(1);
-        crate::common::future::poll_fn(|cx| singleton.poll_ready(cx))
+        std::future::poll_fn(|cx| singleton.poll_ready(cx))
             .await
             .unwrap();
         let fut2 = singleton.call(());
@@ -436,7 +435,7 @@ mod tests {
 
         // The new cached service should still work
         inner_handle2.allow(1);
-        crate::common::future::poll_fn(|cx| cached2.poll_ready(cx))
+        std::future::poll_fn(|cx| cached2.poll_ready(cx))
             .await
             .expect("expected poll_ready");
         let cfut2 = cached2.call(());
@@ -450,7 +449,7 @@ mod tests {
         let (mock_svc, mut handle) = tower_test::mock::pair::<(), &'static str>();
         let mut singleton = Singleton::new(mock_svc);
 
-        crate::common::future::poll_fn(|cx| singleton.poll_ready(cx))
+        std::future::poll_fn(|cx| singleton.poll_ready(cx))
             .await
             .unwrap();
         let fut1 = singleton.call(());
@@ -469,14 +468,14 @@ mod tests {
         let (mock_svc, mut handle) = tower_test::mock::pair::<(), &'static str>();
         let mut singleton = Singleton::new(mock_svc);
 
-        crate::common::future::poll_fn(|cx| singleton.poll_ready(cx))
+        std::future::poll_fn(|cx| singleton.poll_ready(cx))
             .await
             .unwrap();
         let mut fut1 = singleton.call(());
         let fut2 = singleton.call(());
 
         // poll driver just once, and then drop
-        crate::common::future::poll_fn(move |cx| {
+        std::future::poll_fn(move |cx| {
             let _ = Pin::new(&mut fut1).poll(cx);
             Poll::Ready(())
         })

@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/backbay-labs/hushclaw/actions"><img src="https://img.shields.io/github/actions/workflow/status/backbay-labs/hushclaw/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI Status"></a>
+  <a href="https://github.com/backbay-labs/clawdstrike/actions"><img src="https://img.shields.io/github/actions/workflow/status/backbay-labs/clawdstrike/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI Status"></a>
   <a href="https://crates.io/crates/clawdstrike"><img src="https://img.shields.io/crates/v/clawdstrike?style=flat-square&logo=rust" alt="crates.io"></a>
   <a href="https://docs.rs/clawdstrike"><img src="https://img.shields.io/docsrs/clawdstrike?style=flat-square&logo=docs.rs" alt="docs.rs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/MSRV-1.92-orange?style=flat-square&logo=rust" alt="MSRV: 1.92">
+  <img src="https://img.shields.io/badge/MSRV-1.93-orange?style=flat-square&logo=rust" alt="MSRV: 1.93">
 </p>
 
 <p align="center">
@@ -144,7 +144,7 @@ No external API calls required for core detection. [Full benchmarks →](docs/sr
 We take security seriously. If you discover a vulnerability:
 
 - **For sensitive issues**: Email [connor@backbay.io](mailto:connor@backbay.io) with details. We aim to respond within 48 hours.
-- **For non-sensitive issues**: Open a [GitHub issue](https://github.com/backbay-labs/hushclaw/issues) with the `security` label.
+- **For non-sensitive issues**: Open a [GitHub issue](https://github.com/backbay-labs/clawdstrike/issues) with the `security` label.
 
 ## Contributing
 
