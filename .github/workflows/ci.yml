@@ -330,6 +330,22 @@ jobs:
           cache: 'npm'
           cache-dependency-path: packages/clawdstrike-openclaw/package-lock.json
 
+      - name: Bootstrap file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm ci
+
+      - name: Build file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm run build
+
+      - name: Bootstrap file deps (policy)
+        working-directory: packages/clawdstrike-policy
+        run: npm ci
+
+      - name: Build file deps (policy)
+        working-directory: packages/clawdstrike-policy
+        run: npm run build
+
       - name: Install dependencies
         run: npm ci
 
@@ -360,6 +376,14 @@ jobs:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: packages/clawdstrike-policy/package-lock.json
+
+      - name: Bootstrap file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm ci
+
+      - name: Build file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm run build
 
       - name: Install dependencies
         run: npm ci
@@ -423,10 +447,20 @@ jobs:
         working-directory: packages/clawdstrike-adapter-core
         run: npm ci
 
+      - name: Build file deps (adapter-core)
+        if: ${{ matrix.bootstrap_adapter_core }}
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm run build
+
       - name: Bootstrap file deps (sdk)
         if: ${{ matrix.bootstrap_sdk }}
         working-directory: packages/hush-ts
         run: npm ci
+
+      - name: Build file deps (sdk)
+        if: ${{ matrix.bootstrap_sdk }}
+        working-directory: packages/hush-ts
+        run: npm run build
 
       - name: Install dependencies
         working-directory: ${{ matrix.dir }}
