@@ -465,7 +465,8 @@ async fn main() {
     };
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        // Logs go to stderr so machine-readable JSON on stdout stays parseable.
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
         .with(tracing_subscriber::filter::LevelFilter::from_level(
             log_level,
         ))
