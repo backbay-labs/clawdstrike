@@ -1,10 +1,21 @@
 //! Ed25519 signing and verification
 
-use ed25519_dalek::{Signature as DalekSignature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{
+    Signature as DalekSignature, Signer as DalekSigner, SigningKey, Verifier, VerifyingKey,
+};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+
+/// Signing interface used by hush-core (e.g., receipts).
+///
+/// This intentionally mirrors the minimal surface we need: public key export and message signing.
+/// Implementations may keep keys in-memory (`Keypair`) or unseal on demand (TPM-backed).
+pub trait Signer {
+    fn public_key(&self) -> PublicKey;
+    fn sign(&self, message: &[u8]) -> Result<Signature>;
+}
 
 /// Ed25519 keypair for signing
 #[derive(Clone)]
@@ -75,6 +86,16 @@ impl Keypair {
     /// Export seed as hex
     pub fn to_hex(&self) -> String {
         hex::encode(self.signing_key.to_bytes())
+    }
+}
+
+impl Signer for Keypair {
+    fn public_key(&self) -> PublicKey {
+        Keypair::public_key(self)
+    }
+
+    fn sign(&self, message: &[u8]) -> Result<Signature> {
+        Ok(Keypair::sign(self, message))
     }
 }
 

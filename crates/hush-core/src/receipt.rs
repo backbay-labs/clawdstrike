@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 
 use crate::error::{Error, Result};
 use crate::hashing::{keccak256, sha256, Hash};
-use crate::signing::{verify_signature, Keypair, PublicKey, Signature};
+use crate::signing::{verify_signature, Keypair, PublicKey, Signature, Signer};
 
 /// Current receipt schema version.
 ///
@@ -255,9 +255,14 @@ pub struct SignedReceipt {
 impl SignedReceipt {
     /// Sign a receipt
     pub fn sign(receipt: Receipt, keypair: &Keypair) -> Result<Self> {
+        Self::sign_with(receipt, keypair)
+    }
+
+    /// Sign a receipt with an abstract signer (e.g., a TPM-backed signer).
+    pub fn sign_with(receipt: Receipt, signer: &dyn Signer) -> Result<Self> {
         receipt.validate_version()?;
         let canonical = receipt.to_canonical_json()?;
-        let sig = keypair.sign(canonical.as_bytes());
+        let sig = signer.sign(canonical.as_bytes())?;
 
         Ok(Self {
             receipt,
@@ -270,9 +275,14 @@ impl SignedReceipt {
 
     /// Add co-signer signature
     pub fn add_cosigner(&mut self, keypair: &Keypair) -> Result<()> {
+        self.add_cosigner_with(keypair)
+    }
+
+    /// Add co-signer signature with an abstract signer.
+    pub fn add_cosigner_with(&mut self, signer: &dyn Signer) -> Result<()> {
         self.receipt.validate_version()?;
         let canonical = self.receipt.to_canonical_json()?;
-        self.signatures.cosigner = Some(keypair.sign(canonical.as_bytes()));
+        self.signatures.cosigner = Some(signer.sign(canonical.as_bytes())?);
         Ok(())
     }
 

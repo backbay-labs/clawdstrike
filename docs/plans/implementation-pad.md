@@ -168,7 +168,7 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 - [x] Policy-as-code CLI: lint + test (YAML test suite) + diff + simulate. (See `crates/hush-cli/src/policy_lint.rs`, `crates/hush-cli/src/policy_test.rs`, `crates/hush-cli/src/policy_pac.rs`, `crates/hush-cli/src/policy_diff.rs`.)
 
 ### M2: P1 Differentiation shipped (Prompt Security + Multi-Agent primitives)
-- [ ] Prompt security baseline: stronger injection/jailbreak detection + output sanitization.
+- [x] Prompt security baseline: stronger injection/jailbreak detection + output sanitization. (See `docs/src/reference/guards/README.md`, `crates/clawdstrike/src/jailbreak.rs`, `crates/clawdstrike/src/output_sanitizer.rs`.)
 - [ ] Multi-agent baseline: identities + delegation tokens + audit correlation.
 
 ### M3: P2 Enterprise readiness shipped

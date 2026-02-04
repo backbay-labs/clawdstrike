@@ -54,4 +54,18 @@ describe('validatePolicy', () => {
     expect(result.valid).toBe(true);
     expect(result.warnings[0]).toContain('empty');
   });
+
+  it('fails closed when a required env placeholder is missing (custom guards)', () => {
+    const policy = {
+      version: 'clawdstrike-v1.0',
+      guards: {
+        custom: [
+          { package: 'clawdstrike-virustotal', config: { api_key: '${VT_API_KEY}' } },
+        ],
+      },
+    };
+    const result = validatePolicy(policy as any);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/missing environment variable/i);
+  });
 });

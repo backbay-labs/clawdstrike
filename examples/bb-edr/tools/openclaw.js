@@ -15,6 +15,11 @@ function ensureBuilt() {
   const entry = distPath('index.js');
   if (fs.existsSync(entry)) return;
 
+  const nodeModules = path.join(packageDir(), 'node_modules');
+  if (!fs.existsSync(nodeModules)) {
+    execSync('npm ci', { cwd: packageDir(), stdio: 'inherit' });
+  }
+
   execSync('npm run build', { cwd: packageDir(), stdio: 'inherit' });
 
   if (!fs.existsSync(entry)) {

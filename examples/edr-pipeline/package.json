@@ -1,0 +1,12 @@
+{
+  "name": "edr-pipeline-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EDR-style detect/triage loop using hushd audit exports",
+  "scripts": {
+    "simulate": "node simulate.js",
+    "triage": "node triage.js"
+  },
+  "license": "MIT"
+}
+

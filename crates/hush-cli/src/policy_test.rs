@@ -7,6 +7,7 @@ use clawdstrike::{GuardReport, HushEngine, Severity};
 use serde::Deserialize;
 
 use crate::policy_event::{map_policy_event, PolicyEvent};
+use crate::remote_extends::RemoteExtendsConfig;
 use crate::{CliJsonError, ExitCode, CLI_JSON_VERSION};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -98,6 +99,7 @@ pub struct PolicyTestJsonOutput {
 pub async fn cmd_policy_test(
     test_file: String,
     resolve: bool,
+    remote_extends: &RemoteExtendsConfig,
     json: bool,
     coverage: bool,
     stdout: &mut dyn Write,
@@ -135,22 +137,36 @@ pub async fn cmd_policy_test(
     };
 
     let policy_ref = resolve_policy_ref(&path, &spec.policy);
-    let loaded = match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve) {
-        Ok(v) => v,
+    let loaded =
+        match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve, remote_extends) {
+            Ok(v) => v,
+            Err(e) => {
+                let code = crate::policy_error_exit_code(&e.source);
+                let error_kind = if code == ExitCode::RuntimeError {
+                    "runtime_error"
+                } else {
+                    "config_error"
+                };
+                return emit_error(
+                    json, &test_file, code, error_kind, &e.message, stdout, stderr,
+                );
+            }
+        };
+
+    let engine = match HushEngine::builder(loaded.policy).build() {
+        Ok(engine) => engine,
         Err(e) => {
-            let code = crate::policy_error_exit_code(&e.source);
-            let error_kind = if code == ExitCode::RuntimeError {
-                "runtime_error"
-            } else {
-                "config_error"
-            };
             return emit_error(
-                json, &test_file, code, error_kind, &e.message, stdout, stderr,
+                json,
+                &test_file,
+                ExitCode::ConfigError,
+                "config_error",
+                &format!("Failed to initialize engine: {}", e),
+                stdout,
+                stderr,
             );
         }
     };
-
-    let engine = HushEngine::with_policy(loaded.policy);
 
     let mut failures = Vec::new();
     let mut total = 0u64;

@@ -7,19 +7,19 @@ from hush.policy import Policy, PolicyEngine, PolicySettings, GuardConfigs
 class TestPolicy:
     def test_default_policy(self) -> None:
         policy = Policy()
-        assert policy.version == "1.0.0"
+        assert policy.version == "1.1.0"
         assert policy.name == ""
 
     def test_policy_from_yaml(self, sample_policy_yaml: str) -> None:
         policy = Policy.from_yaml(sample_policy_yaml)
-        assert policy.version == "1.0.0"
+        assert policy.version == "1.1.0"
         assert policy.name == "test-policy"
         assert policy.guards.forbidden_path is not None
         assert "**/.ssh/**" in policy.guards.forbidden_path.patterns
 
     def test_policy_to_yaml(self) -> None:
         policy = Policy(
-            version="1.0.0",
+            version="1.1.0",
             name="test",
             description="Test policy",
         )
@@ -29,7 +29,7 @@ class TestPolicy:
 
     def test_policy_roundtrip(self) -> None:
         original = Policy(
-            version="1.0.0",
+            version="1.1.0",
             name="roundtrip-test",
             description="Testing roundtrip",
         )
@@ -48,12 +48,12 @@ class TestPolicy:
 
     def test_policy_rejects_unknown_top_level_keys(self) -> None:
         with pytest.raises(ValueError):
-            Policy.from_yaml('version: "1.0.0"\nname: test\nunknown: 1\n')
+            Policy.from_yaml('version: "1.1.0"\nname: test\nunknown: 1\n')
 
     def test_policy_rejects_unknown_guard_names(self) -> None:
         with pytest.raises(ValueError):
             Policy.from_yaml(
-                'version: "1.0.0"\nname: test\nguards:\n  unknown_guard: {}\n'
+                'version: "1.1.0"\nname: test\nguards:\n  unknown_guard: {}\n'
             )
 
 

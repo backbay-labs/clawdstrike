@@ -1,5 +1,7 @@
 use clawdstrike::{Policy, RuleSet};
 
+use crate::remote_extends::{RemoteExtendsConfig, RemotePolicyResolver};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedPolicySource {
     Ruleset { id: String },
@@ -27,7 +29,17 @@ pub struct PolicyLoadError {
     pub source: clawdstrike::Error,
 }
 
-pub fn load_policy_from_arg(arg: &str, resolve: bool) -> Result<LoadedPolicy, PolicyLoadError> {
+pub fn load_policy_from_arg(
+    arg: &str,
+    resolve: bool,
+    remote_extends: &RemoteExtendsConfig,
+) -> Result<LoadedPolicy, PolicyLoadError> {
+    let resolver =
+        RemotePolicyResolver::new(remote_extends.clone()).map_err(|e| PolicyLoadError {
+            message: format!("Failed to initialize remote extends resolver: {}", e),
+            source: e,
+        })?;
+
     match RuleSet::by_name(arg) {
         Ok(Some(rs)) => {
             if !resolve {
@@ -44,9 +56,11 @@ pub fn load_policy_from_arg(arg: &str, resolve: bool) -> Result<LoadedPolicy, Po
             })?;
 
             let policy =
-                Policy::from_yaml_with_extends(&yaml, None).map_err(|e| PolicyLoadError {
-                    message: format!("Failed to resolve ruleset extends: {}", e),
-                    source: e,
+                Policy::from_yaml_with_extends_resolver(&yaml, None, &resolver).map_err(|e| {
+                    PolicyLoadError {
+                        message: format!("Failed to resolve ruleset extends: {}", e),
+                        source: e,
+                    }
                 })?;
 
             Ok(LoadedPolicy {
@@ -56,17 +70,33 @@ pub fn load_policy_from_arg(arg: &str, resolve: bool) -> Result<LoadedPolicy, Po
         }
         Ok(None) => {
             let policy = if resolve {
-                Policy::from_yaml_file_with_extends(arg)
+                let path = std::path::Path::new(arg);
+                let content = std::fs::read_to_string(path).map_err(|e| PolicyLoadError {
+                    message: format!(
+                        "{arg:?} is not a known ruleset; failed to read policy file: {}",
+                        e
+                    ),
+                    source: clawdstrike::Error::from(e),
+                })?;
+
+                Policy::from_yaml_with_extends_resolver(&content, Some(path), &resolver).map_err(
+                    |e| PolicyLoadError {
+                        message: format!(
+                            "{arg:?} is not a known ruleset; failed to load policy file: {}",
+                            e
+                        ),
+                        source: e,
+                    },
+                )?
             } else {
-                Policy::from_yaml_file(arg)
-            }
-            .map_err(|e| PolicyLoadError {
-                message: format!(
-                    "{arg:?} is not a known ruleset; failed to load policy file: {}",
-                    e
-                ),
-                source: e,
-            })?;
+                Policy::from_yaml_file(arg).map_err(|e| PolicyLoadError {
+                    message: format!(
+                        "{arg:?} is not a known ruleset; failed to load policy file: {}",
+                        e
+                    ),
+                    source: e,
+                })?
+            };
 
             Ok(LoadedPolicy {
                 policy,
@@ -227,7 +257,8 @@ mod tests {
 
     #[test]
     fn load_policy_prefers_ruleset() {
-        let loaded = load_policy_from_arg("default", false).expect("load default ruleset");
+        let loaded = load_policy_from_arg("default", false, &RemoteExtendsConfig::disabled())
+            .expect("load default ruleset");
         assert!(matches!(
             loaded.source,
             ResolvedPolicySource::Ruleset { ref id } if id == "default"
@@ -247,13 +278,18 @@ mod tests {
         std::fs::write(
             &path,
             r#"
-version: "1.0.0"
+version: "1.1.0"
 name: "test-policy"
 "#,
         )
         .expect("write policy");
 
-        let loaded = load_policy_from_arg(path.to_str().expect("path"), false).expect("load file");
+        let loaded = load_policy_from_arg(
+            path.to_str().expect("path"),
+            false,
+            &RemoteExtendsConfig::disabled(),
+        )
+        .expect("load file");
         assert!(matches!(loaded.source, ResolvedPolicySource::File { .. }));
         assert_eq!(loaded.policy.name, "test-policy");
     }

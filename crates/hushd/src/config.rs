@@ -525,6 +525,239 @@ pub struct SessionHardeningConfig {
     #[serde(default)]
     pub bind_country: bool,
 }
+
+fn default_remote_max_fetch_bytes() -> usize {
+    1_048_576 // 1 MiB
+}
+
+fn default_remote_max_cache_bytes() -> usize {
+    100_000_000 // 100 MB
+}
+
+/// Remote `extends` configuration (disabled unless allowlisted).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteExtendsConfig {
+    /// Allowed hosts for remote policy resolution.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+    /// Optional cache directory override.
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+    /// Maximum bytes to fetch for a single remote policy.
+    #[serde(default = "default_remote_max_fetch_bytes")]
+    pub max_fetch_bytes: usize,
+    /// Maximum total bytes for the cache directory.
+    #[serde(default = "default_remote_max_cache_bytes")]
+    pub max_cache_bytes: usize,
+}
+
+impl Default for RemoteExtendsConfig {
+    fn default() -> Self {
+        Self {
+            allowed_hosts: Vec::new(),
+            cache_dir: None,
+            max_fetch_bytes: default_remote_max_fetch_bytes(),
+            max_cache_bytes: default_remote_max_cache_bytes(),
+        }
+    }
+}
+
+/// Audit ledger encryption key source.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditEncryptionKeySource {
+    /// Load key bytes from a file containing a hex string (32 bytes / 64 hex chars).
+    #[default]
+    File,
+    /// Load key bytes from an environment variable containing a hex string (32 bytes / 64 hex chars).
+    Env,
+    /// Load key bytes from a TPM-sealed blob (JSON written by `hush keygen --tpm-seal`).
+    TpmSealedBlob,
+}
+
+/// Audit ledger encryption configuration.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AuditEncryptionConfig {
+    /// Enable encryption at rest for the audit metadata blob.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Key source for encryption.
+    #[serde(default)]
+    pub key_source: AuditEncryptionKeySource,
+
+    /// File containing the hex-encoded key (required for `file` key_source).
+    #[serde(default)]
+    pub key_path: Option<PathBuf>,
+
+    /// Environment variable name containing the hex-encoded key (required for `env` key_source).
+    #[serde(default)]
+    pub key_env: Option<String>,
+
+    /// Path to a TPM-sealed blob JSON file (required for `tpm_sealed_blob` key_source).
+    #[serde(default)]
+    pub tpm_sealed_blob_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AuditConfig {
+    #[serde(default)]
+    pub encryption: AuditEncryptionConfig,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AuditSinkConfig {
+    /// Print each audit event as JSONL to stdout.
+    StdoutJsonl,
+    /// Append each audit event as JSONL to a file.
+    FileJsonl { path: PathBuf },
+    /// POST each audit event to a webhook endpoint.
+    Webhook {
+        url: String,
+        #[serde(default)]
+        headers: Option<std::collections::HashMap<String, String>>,
+    },
+    /// Send audit events to Splunk HTTP Event Collector.
+    SplunkHec {
+        url: String,
+        token: String,
+        #[serde(default)]
+        index: Option<String>,
+        #[serde(default)]
+        sourcetype: Option<String>,
+        #[serde(default)]
+        source: Option<String>,
+    },
+    /// Index audit events into Elasticsearch.
+    Elastic {
+        url: String,
+        #[serde(default)]
+        api_key: Option<String>,
+        #[serde(default)]
+        index: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuditForwardConfig {
+    /// Whether forwarding is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// In-memory queue size for forwarding.
+    #[serde(default = "default_audit_forward_queue_size")]
+    pub queue_size: usize,
+    /// Per-sink send timeout (milliseconds).
+    #[serde(default = "default_audit_forward_timeout_ms")]
+    pub timeout_ms: u64,
+    /// Configured sinks.
+    #[serde(default)]
+    pub sinks: Vec<AuditSinkConfig>,
+}
+
+fn default_audit_forward_queue_size() -> usize {
+    8192
+}
+
+fn default_audit_forward_timeout_ms() -> u64 {
+    2_000
+}
+
+impl Default for AuditForwardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            queue_size: default_audit_forward_queue_size(),
+            timeout_ms: default_audit_forward_timeout_ms(),
+            sinks: Vec::new(),
+        }
+    }
+}
+
+impl AuditForwardConfig {
+    pub fn resolve_env_refs(&self) -> anyhow::Result<Self> {
+        let mut out = self.clone();
+
+        let mut sinks = Vec::with_capacity(out.sinks.len());
+        for (idx, sink) in out.sinks.into_iter().enumerate() {
+            let sink = match sink {
+                AuditSinkConfig::StdoutJsonl => AuditSinkConfig::StdoutJsonl,
+                AuditSinkConfig::FileJsonl { path } => AuditSinkConfig::FileJsonl { path },
+                AuditSinkConfig::Webhook { url, headers } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let headers = headers
+                        .map(|h| {
+                            h.into_iter()
+                                .map(|(k, v)| Ok((k, expand_env_refs(&v)?)))
+                                .collect::<anyhow::Result<std::collections::HashMap<_, _>>>()
+                        })
+                        .transpose()
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid audit_forward.sinks[{}].headers value: {}",
+                                idx,
+                                e
+                            )
+                        })?;
+                    AuditSinkConfig::Webhook { url, headers }
+                }
+                AuditSinkConfig::SplunkHec {
+                    url,
+                    token,
+                    index,
+                    sourcetype,
+                    source,
+                } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let token = expand_env_refs(&token).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].token value: {}", idx, e)
+                    })?;
+                    AuditSinkConfig::SplunkHec {
+                        url,
+                        token,
+                        index,
+                        sourcetype,
+                        source,
+                    }
+                }
+                AuditSinkConfig::Elastic {
+                    url,
+                    api_key,
+                    index,
+                } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let api_key =
+                        api_key
+                            .map(|k| expand_env_refs(&k))
+                            .transpose()
+                            .map_err(|e| {
+                                anyhow::anyhow!(
+                                    "Invalid audit_forward.sinks[{}].api_key value: {}",
+                                    idx,
+                                    e
+                                )
+                            })?;
+                    AuditSinkConfig::Elastic {
+                        url,
+                        api_key,
+                        index,
+                    }
+                }
+            };
+
+            sinks.push(sink);
+        }
+        out.sinks = sinks;
+
+        Ok(out)
+    }
+}
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -562,6 +795,12 @@ pub struct Config {
     #[serde(default)]
     pub signing_key: Option<PathBuf>,
 
+    /// Trusted public keys for verifying incoming signed policy bundles (hex, 32 bytes).
+    ///
+    /// Supports `${VAR}` environment variable references.
+    #[serde(default)]
+    pub policy_bundle_trusted_pubkeys: Vec<String>,
+
     /// Enable CORS for browser access
     #[serde(default = "default_cors")]
     pub cors_enabled: bool,
@@ -569,6 +808,14 @@ pub struct Config {
     /// Maximum audit log entries to keep (0 = unlimited)
     #[serde(default)]
     pub max_audit_entries: usize,
+
+    /// Audit ledger configuration.
+    #[serde(default)]
+    pub audit: AuditConfig,
+
+    /// Audit forwarding configuration (optional).
+    #[serde(default)]
+    pub audit_forward: AuditForwardConfig,
 
     /// API authentication configuration
     #[serde(default)]
@@ -593,6 +840,10 @@ pub struct Config {
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+
+    /// Remote `extends` configuration (disabled unless allowlisted).
+    #[serde(default)]
+    pub remote_extends: RemoteExtendsConfig,
 }
 
 fn default_listen() -> String {
@@ -629,14 +880,18 @@ impl Default for Config {
             log_level: default_log_level(),
             tls: None,
             signing_key: None,
+            policy_bundle_trusted_pubkeys: Vec::new(),
             cors_enabled: default_cors(),
             max_audit_entries: 0,
+            audit: AuditConfig::default(),
+            audit_forward: AuditForwardConfig::default(),
             auth: AuthConfig::default(),
             identity: IdentityConfig::default(),
             rbac: RbacConfig::default(),
             policy_scoping: PolicyScopingConfig::default(),
             session: SessionHardeningConfig::default(),
             rate_limit: RateLimitConfig::default(),
+            remote_extends: RemoteExtendsConfig::default(),
         }
     }
 }
@@ -671,7 +926,128 @@ impl Config {
                 )
             })?;
         }
+
+        if self.audit_forward.enabled {
+            if self.audit_forward.queue_size == 0 {
+                return Err(anyhow::anyhow!("audit_forward.queue_size must be > 0"));
+            }
+            if self.audit_forward.timeout_ms == 0 {
+                return Err(anyhow::anyhow!("audit_forward.timeout_ms must be > 0"));
+            }
+        }
+
+        if self.audit.encryption.enabled {
+            match self.audit.encryption.key_source {
+                AuditEncryptionKeySource::File => {
+                    if self.audit.encryption.key_path.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.key_path is required when audit.encryption.key_source = file"
+                        ));
+                    }
+                }
+                AuditEncryptionKeySource::Env => {
+                    if self.audit.encryption.key_env.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.key_env is required when audit.encryption.key_source = env"
+                        ));
+                    }
+                }
+                AuditEncryptionKeySource::TpmSealedBlob => {
+                    if self.audit.encryption.tpm_sealed_blob_path.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.tpm_sealed_blob_path is required when audit.encryption.key_source = tpm_sealed_blob"
+                        ));
+                    }
+                }
+            }
+        }
         Ok(())
+    }
+
+    pub fn audit_encryption_key(&self) -> anyhow::Result<Option<[u8; 32]>> {
+        if !self.audit.encryption.enabled {
+            return Ok(None);
+        }
+
+        let bytes = match self.audit.encryption.key_source {
+            AuditEncryptionKeySource::File => {
+                let path = self.audit.encryption.key_path.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("audit.encryption.key_path is required for file key_source")
+                })?;
+                std::fs::read_to_string(path)
+                    .map_err(|e| anyhow::anyhow!("Failed to read audit encryption key: {}", e))?
+            }
+            AuditEncryptionKeySource::Env => {
+                let name = self.audit.encryption.key_env.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("audit.encryption.key_env is required for env key_source")
+                })?;
+                expand_env_refs(&format!("${{{}}}", name))?
+            }
+            AuditEncryptionKeySource::TpmSealedBlob => {
+                let path = self
+                    .audit
+                    .encryption
+                    .tpm_sealed_blob_path
+                    .as_ref()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "audit.encryption.tpm_sealed_blob_path is required for tpm_sealed_blob key_source"
+                        )
+                    })?;
+                let raw = std::fs::read_to_string(path).map_err(|e| {
+                    anyhow::anyhow!("Failed to read TPM sealed audit key blob: {}", e)
+                })?;
+                let blob: hush_core::TpmSealedBlob = serde_json::from_str(raw.trim())
+                    .map_err(|e| anyhow::anyhow!("Invalid TPM sealed blob JSON: {}", e))?;
+                let unsealed = blob
+                    .unseal()
+                    .map_err(|e| anyhow::anyhow!("TPM unseal failed: {}", e))?;
+                if unsealed.len() != 32 {
+                    return Err(anyhow::anyhow!(
+                        "Audit encryption key must be 32 bytes, got {}",
+                        unsealed.len()
+                    ));
+                }
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&unsealed);
+                return Ok(Some(arr));
+            }
+        };
+
+        let hex_str = bytes.trim().strip_prefix("0x").unwrap_or(bytes.trim());
+        let decoded = hex::decode(hex_str)
+            .map_err(|e| anyhow::anyhow!("Invalid audit encryption key hex: {}", e))?;
+        if decoded.len() != 32 {
+            return Err(anyhow::anyhow!(
+                "Audit encryption key must be 32 bytes (64 hex chars), got {} bytes",
+                decoded.len()
+            ));
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&decoded);
+        Ok(Some(arr))
+    }
+
+    pub fn load_trusted_policy_bundle_keys(&self) -> anyhow::Result<Vec<hush_core::PublicKey>> {
+        let mut keys = Vec::new();
+        for (idx, key) in self.policy_bundle_trusted_pubkeys.iter().enumerate() {
+            let key = expand_env_refs(key).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid policy_bundle_trusted_pubkeys[{}] value: {}",
+                    idx,
+                    e
+                )
+            })?;
+            let pk = hush_core::PublicKey::from_hex(key.trim()).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid policy_bundle_trusted_pubkeys[{}] public key: {}",
+                    idx,
+                    e
+                )
+            })?;
+            keys.push(pk);
+        }
+        Ok(keys)
     }
 
     /// Load from default locations or create default
@@ -804,6 +1180,8 @@ mod tests {
         assert_eq!(config.listen, "127.0.0.1:9876");
         assert_eq!(config.ruleset, "default");
         assert!(config.cors_enabled);
+        assert!(!config.audit.encryption.enabled);
+        assert!(!config.audit_forward.enabled);
     }
 
     #[test]

@@ -1,0 +1,29 @@
+# hushd config: auth + signed policy bundle verification + audit persistence
+
+listen: "0.0.0.0:8080"
+ruleset: "default"
+
+audit_db: "/var/lib/hushd/audit.db"
+log_level: "info"
+
+auth:
+  enabled: true
+  api_keys:
+    - name: "default"
+      key: "${HUSHD_API_KEY}"
+      scopes: ["check", "read"]
+    - name: "admin"
+      key: "${HUSHD_ADMIN_KEY}"
+      scopes: ["*"]
+
+# Verify incoming signed policy bundles against this allowlist of public keys.
+policy_bundle_trusted_pubkeys:
+  - "${HUSHD_POLICY_BUNDLE_PUBKEY}"
+
+# Optional: also forward audit events to a JSONL file.
+audit_forward:
+  enabled: true
+  sinks:
+    - type: file_jsonl
+      path: /var/lib/hushd/audit.jsonl
+

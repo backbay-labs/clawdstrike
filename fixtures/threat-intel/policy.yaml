@@ -1,0 +1,59 @@
+version: "1.0.0"
+name: Threat Intel Parity
+description: Canonical policy fixture for cross-SDK threat-intel parity
+
+guards:
+  egress_allowlist:
+    allow:
+      - "evil.example"
+      - "good.example"
+    default_action: block
+
+  custom:
+    - package: "clawdstrike-virustotal"
+      enabled: true
+      config:
+        api_key: "${VT_API_KEY}"
+        base_url: "${TI_VT_BASE_URL}"
+        min_detections: 2
+      async:
+        timeout_ms: 2000
+        on_timeout: warn
+        execution_mode: parallel
+        cache:
+          enabled: true
+          ttl_seconds: 3600
+          max_size_mb: 8
+
+    - package: "clawdstrike-safe-browsing"
+      enabled: true
+      config:
+        api_key: "${GSB_API_KEY}"
+        client_id: "${GSB_CLIENT_ID}"
+        base_url: "${TI_GSB_BASE_URL}"
+      async:
+        timeout_ms: 2000
+        on_timeout: warn
+        execution_mode: parallel
+        cache:
+          enabled: true
+          ttl_seconds: 3600
+          max_size_mb: 8
+
+    - package: "clawdstrike-snyk"
+      enabled: true
+      config:
+        api_token: "${SNYK_API_TOKEN}"
+        org_id: "${SNYK_ORG_ID}"
+        base_url: "${TI_SNYK_BASE_URL}"
+        severity_threshold: high
+        fail_on_upgradable: true
+      async:
+        timeout_ms: 2000
+        on_timeout: warn
+        execution_mode: parallel
+        cache:
+          enabled: true
+          ttl_seconds: 3600
+          max_size_mb: 8
+

@@ -1,0 +1,27 @@
+version: "1.0.0"
+name: "secure-coding-assistant-example"
+description: "Example policy for a local coding assistant"
+extends: "clawdstrike:ai-agent"
+merge_strategy: deep_merge
+
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/secrets/**"
+      - "**/*.pem"
+      - "**/*.key"
+
+  egress_allowlist:
+    # Demonstrate a strict default posture (block unknown).
+    default_action: block
+    additional_allow:
+      - "api.github.com"
+      - "*.githubusercontent.com"
+      - "docs.rs"
+      - "crates.io"
+    block:
+      - "pastebin.com"
+
+settings:
+  fail_fast: false
+

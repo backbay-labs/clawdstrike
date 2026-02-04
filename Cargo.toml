@@ -7,16 +7,22 @@ members = [
     "crates/hush-cli",
     "crates/hushd",
     "crates/hush-wasm",
+    "crates/hush-multi-agent",
     "packages/hush-py/hush-native",
 ]
-exclude = ["fuzz", "examples/rust/basic-verification"]
+exclude = [
+    "fuzz",
+    "examples/rust/basic-verification",
+    "examples/autonomous-sandbox",
+    "examples/multi-agent-orchestration",
+]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/backbay-labs/hushclaw"
-rust-version = "1.92"
+repository = "https://github.com/backbay-labs/clawdstrike"
+rust-version = "1.93"
 
 [workspace.dependencies]
 # Crypto
@@ -68,6 +74,9 @@ clap = { version = "4.5", features = ["derive"] }
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+rustls = "0.23"
+rustls-pki-types = "1.14"
+tokio-rustls = "0.26"
 
 # Rate limiting
 governor = "0.10"

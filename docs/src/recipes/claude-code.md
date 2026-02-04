@@ -1,6 +1,6 @@
 # Claude Code Integration (conceptual)
 
-Clawdstrike does not currently ship a `hush run` process wrapper that can transparently sandbox Claude Code.
+Clawdstrike ships a best-effort `hush run` process wrapper (audit log + optional proxy/sandbox). For Claude Code, you still get the strongest guarantees by integrating at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model).
 
 To enforce Clawdstrike decisions, you need to integrate at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model).
 
@@ -16,7 +16,7 @@ hush policy show ai-agent
 2. Write a policy file that extends it (optional):
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: My Claude Policy
 extends: clawdstrike:ai-agent
 ```

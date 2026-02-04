@@ -17,7 +17,7 @@ from hush.guards.secret_leak import SecretLeakGuard, SecretLeakConfig
 from hush.guards.patch_integrity import PatchIntegrityGuard, PatchIntegrityConfig
 from hush.guards.mcp_tool import McpToolGuard, McpToolConfig
 
-POLICY_SCHEMA_VERSION = "1.0.0"
+POLICY_SCHEMA_VERSION = "1.1.0"
 
 
 def _parse_semver_strict(version: str) -> Optional[tuple[int, int, int]]:

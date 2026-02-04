@@ -2,9 +2,11 @@
 
 pub mod audit;
 pub mod check;
+pub mod eval;
 pub mod events;
 pub mod health;
 pub mod me;
+pub mod metrics;
 pub mod policy;
 pub mod policy_scoping;
 pub mod rbac;
@@ -29,6 +31,7 @@ pub use audit::{AuditQuery, AuditResponse, AuditStatsResponse};
 pub use check::{CheckRequest, CheckResponse};
 pub use health::HealthResponse;
 pub use me::MeResponse;
+pub use metrics as metrics_api;
 pub use policy::{PolicyResponse, UpdatePolicyRequest, UpdatePolicyResponse};
 pub use policy_scoping::{
     CreateAssignmentRequest, CreateScopedPolicyRequest, ListAssignmentsResponse,
@@ -45,6 +48,7 @@ pub use shutdown::ShutdownResponse;
 /// Create the API router
 pub fn create_router(state: AppState) -> Router {
     let cors_enabled = state.config.cors_enabled;
+    let metrics = state.metrics.clone();
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -59,6 +63,7 @@ pub fn create_router(state: AppState) -> Router {
     // Check routes - require auth + check scope (when auth is enabled).
     let check_routes = Router::new()
         .route("/api/v1/check", post(check::check_action))
+        .route("/api/v1/eval", post(eval::eval_policy_event))
         .route("/api/v1/me", get(me::me))
         .route("/api/v1/session", post(session::create_session))
         .route("/api/v1/auth/saml", post(saml::exchange_saml))
@@ -67,7 +72,9 @@ pub fn create_router(state: AppState) -> Router {
 
     // Read routes - require auth + read scope (when auth is enabled).
     let read_routes = Router::new()
+        .route("/metrics", get(metrics::metrics))
         .route("/api/v1/policy", get(policy::get_policy))
+        .route("/api/v1/policy/bundle", get(policy::get_policy_bundle))
         .route("/api/v1/rbac/roles", get(rbac::list_roles))
         .route("/api/v1/rbac/roles/{id}", get(rbac::get_role))
         .route("/api/v1/rbac/assignments", get(rbac::list_role_assignments))
@@ -92,6 +99,7 @@ pub fn create_router(state: AppState) -> Router {
     // Admin routes - require auth + admin scope
     let admin_routes = Router::new()
         .route("/api/v1/policy", put(policy::update_policy))
+        .route("/api/v1/policy/bundle", put(policy::update_policy_bundle))
         .route("/api/v1/policy/reload", post(policy::reload_policy))
         .route("/api/v1/rbac/roles", post(rbac::create_role))
         .route(
@@ -139,6 +147,10 @@ pub fn create_router(state: AppState) -> Router {
             rate_limit_middleware,
         ))
         .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn_with_state(
+            metrics,
+            metrics::metrics_middleware,
+        ))
         .with_state(state);
 
     if cors_enabled {

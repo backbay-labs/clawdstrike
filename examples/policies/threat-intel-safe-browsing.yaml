@@ -1,0 +1,24 @@
+# Example: Google Safe Browsing URL reputation checks (canonical policy)
+#
+# Required env:
+#   GSB_API_KEY
+#   GSB_CLIENT_ID
+version: "1.0.0"
+name: Threat Intel - Safe Browsing
+
+guards:
+  custom:
+    - package: "clawdstrike-safe-browsing"
+      enabled: true
+      config:
+        api_key: "${GSB_API_KEY}"
+        client_id: "${GSB_CLIENT_ID}"
+      async:
+        timeout_ms: 3000
+        on_timeout: warn
+        execution_mode: parallel
+        cache:
+          enabled: true
+          ttl_seconds: 3600
+          max_size_mb: 64
+
