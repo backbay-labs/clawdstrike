@@ -1,18 +1,24 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
 use crate::conversion::IntoPyObject;
 use crate::exceptions::PyValueError;
-use crate::instance::Bound;
-use crate::sync::GILOnceCell;
+#[cfg(feature = "experimental-inspect")]
+use crate::inspect::{type_hint_identifier, type_hint_union, PyStaticExpr};
+use crate::sync::PyOnceLock;
 use crate::types::any::PyAnyMethods;
 use crate::types::string::PyStringMethods;
 use crate::types::PyType;
-use crate::{intern, FromPyObject, Py, PyAny, PyErr, PyObject, PyResult, Python};
-#[allow(deprecated)]
-use crate::{IntoPy, ToPyObject};
+use crate::{intern, Borrowed, Bound, FromPyObject, Py, PyAny, PyErr, Python};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-impl FromPyObject<'_> for IpAddr {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for IpAddr {
+    type Error = PyErr;
+
+    #[cfg(feature = "experimental-inspect")]
+    const INPUT_TYPE: PyStaticExpr = type_hint_union!(
+        type_hint_identifier!("ipaddress", "IPv4Address"),
+        type_hint_identifier!("ipaddress", "IPv6Address")
+    );
+
+    fn extract(obj: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
         match obj.getattr(intern!(obj.py(), "packed")) {
             Ok(packed) => {
                 if let Ok(packed) = packed.extract::<[u8; 4]>() {
@@ -31,21 +37,16 @@ impl FromPyObject<'_> for IpAddr {
     }
 }
 
-#[allow(deprecated)]
-impl ToPyObject for Ipv4Addr {
-    #[inline]
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        self.into_pyobject(py).unwrap().unbind()
-    }
-}
-
 impl<'py> IntoPyObject<'py> for Ipv4Addr {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
+    #[cfg(feature = "experimental-inspect")]
+    const OUTPUT_TYPE: PyStaticExpr = type_hint_identifier!("ipaddress", "IPv4Address");
+
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        static IPV4_ADDRESS: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+        static IPV4_ADDRESS: PyOnceLock<Py<PyType>> = PyOnceLock::new();
         IPV4_ADDRESS
             .import(py, "ipaddress", "IPv4Address")?
             .call1((u32::from_be_bytes(self.octets()),))
@@ -57,17 +58,12 @@ impl<'py> IntoPyObject<'py> for &Ipv4Addr {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
+    #[cfg(feature = "experimental-inspect")]
+    const OUTPUT_TYPE: PyStaticExpr = Ipv4Addr::OUTPUT_TYPE;
+
     #[inline]
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         (*self).into_pyobject(py)
-    }
-}
-
-#[allow(deprecated)]
-impl ToPyObject for Ipv6Addr {
-    #[inline]
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        self.into_pyobject(py).unwrap().unbind()
     }
 }
 
@@ -76,8 +72,11 @@ impl<'py> IntoPyObject<'py> for Ipv6Addr {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
+    #[cfg(feature = "experimental-inspect")]
+    const OUTPUT_TYPE: PyStaticExpr = type_hint_identifier!("ipaddress", "IPv6Address");
+
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        static IPV6_ADDRESS: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+        static IPV6_ADDRESS: PyOnceLock<Py<PyType>> = PyOnceLock::new();
         IPV6_ADDRESS
             .import(py, "ipaddress", "IPv6Address")?
             .call1((u128::from_be_bytes(self.octets()),))
@@ -89,25 +88,12 @@ impl<'py> IntoPyObject<'py> for &Ipv6Addr {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
+    #[cfg(feature = "experimental-inspect")]
+    const OUTPUT_TYPE: PyStaticExpr = Ipv6Addr::OUTPUT_TYPE;
+
     #[inline]
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         (*self).into_pyobject(py)
-    }
-}
-
-#[allow(deprecated)]
-impl ToPyObject for IpAddr {
-    #[inline]
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        self.into_pyobject(py).unwrap().unbind()
-    }
-}
-
-#[allow(deprecated)]
-impl IntoPy<PyObject> for IpAddr {
-    #[inline]
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        self.into_pyobject(py).unwrap().unbind()
     }
 }
 
@@ -115,6 +101,10 @@ impl<'py> IntoPyObject<'py> for IpAddr {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+
+    #[cfg(feature = "experimental-inspect")]
+    const OUTPUT_TYPE: PyStaticExpr =
+        type_hint_union!(&Ipv4Addr::OUTPUT_TYPE, &Ipv6Addr::OUTPUT_TYPE);
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
@@ -128,6 +118,9 @@ impl<'py> IntoPyObject<'py> for &IpAddr {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+
+    #[cfg(feature = "experimental-inspect")]
+    const OUTPUT_TYPE: PyStaticExpr = IpAddr::OUTPUT_TYPE;
 
     #[inline]
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
@@ -145,7 +138,7 @@ mod test_ipaddr {
 
     #[test]
     fn test_roundtrip() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             fn roundtrip(py: Python<'_>, ip: &str) {
                 let ip = IpAddr::from_str(ip).unwrap();
                 let py_cls = if ip.is_ipv4() {
@@ -157,7 +150,7 @@ mod test_ipaddr {
                 let pyobj = ip.into_pyobject(py).unwrap();
                 let repr = pyobj.repr().unwrap();
                 let repr = repr.to_string_lossy();
-                assert_eq!(repr, format!("{}('{}')", py_cls, ip));
+                assert_eq!(repr, format!("{py_cls}('{ip}')"));
 
                 let ip2: IpAddr = pyobj.extract().unwrap();
                 assert_eq!(ip, ip2);
@@ -170,7 +163,7 @@ mod test_ipaddr {
 
     #[test]
     fn test_from_pystring() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_str = PyString::new(py, "0:0:0:0:0:0:0:1");
             let ip: IpAddr = py_str.extract().unwrap();
             assert_eq!(ip, IpAddr::from_str("::1").unwrap());

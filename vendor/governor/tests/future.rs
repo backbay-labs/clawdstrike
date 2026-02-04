@@ -1,7 +1,7 @@
 #![cfg(feature = "std")]
 
-use all_asserts::*;
-use futures::executor::block_on;
+use assertables::*;
+use futures_executor::block_on;
 use governor::{Quota, RateLimiter};
 use nonzero_ext::*;
 use std::sync::Arc;

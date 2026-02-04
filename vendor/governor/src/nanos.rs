@@ -2,11 +2,10 @@
 
 use crate::clock;
 
-use std::convert::TryInto;
-use std::fmt;
-use std::ops::{Add, Div, Mul};
-use std::prelude::v1::*;
-use std::time::Duration;
+use core::convert::TryInto;
+use core::fmt;
+use core::ops::{Add, Div, Mul};
+use core::time::Duration;
 
 /// A number of nanoseconds from a reference point.
 ///
@@ -43,7 +42,7 @@ impl From<Duration> for Nanos {
 impl fmt::Debug for Nanos {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let d = Duration::from_nanos(self.0);
-        write!(f, "Nanos({:?})", d)
+        write!(f, "Nanos({d:?})")
     }
 }
 
@@ -125,7 +124,7 @@ mod test {
     #[test]
     fn nanos_impls() {
         let n = Nanos::new(20);
-        assert_eq!("Nanos(20ns)", format!("{:?}", n));
+        assert_eq!("Nanos(20ns)", format!("{n:?}"));
     }
 
     #[test]

@@ -19,7 +19,7 @@ globset.workspace = true
 default = []
 
 [dev-dependencies]
-proptest = "1.4"
+proptest = "1.9"
 
 [lints]
 workspace = true

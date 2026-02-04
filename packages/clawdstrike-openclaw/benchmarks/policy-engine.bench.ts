@@ -1,7 +1,7 @@
 /**
  * PolicyEngine Performance Benchmarks
  *
- * Run with: npx tsx benchmarks/policy-engine.bench.ts
+ * Run with: npm run build && node benchmarks/policy-engine.bench.mjs
  *
  * Measures real-world latency of the PolicyEngine used in OpenClaw integration.
  */

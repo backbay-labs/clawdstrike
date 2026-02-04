@@ -32,7 +32,7 @@ hex.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-proptest = "1.4"
+proptest = "1.9"
 tokio-test = "0.4"
 tempfile = "3.24"
 

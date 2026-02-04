@@ -27,6 +27,7 @@
 //! ```
 //!
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
 // Clippy config: Deny warnings but allow unknown lint configuration (so I can use nightly)
 #![deny(warnings)]
@@ -34,12 +35,13 @@
 // Unfortunately necessary, otherwise features aren't supported in doctests:
 #![allow(clippy::needless_doctest_main)]
 
-extern crate no_std_compat as std;
+extern crate alloc;
 
 pub mod r#_guide;
 pub mod clock;
 mod errors;
 mod gcra;
+#[cfg(any(feature = "std", feature = "jitter"))]
 mod jitter;
 pub mod middleware;
 pub mod nanos;
@@ -48,7 +50,7 @@ pub mod state;
 
 pub use errors::*;
 pub use gcra::NotUntil;
-#[cfg(all(feature = "std", feature = "jitter"))]
+#[cfg(feature = "jitter")]
 pub use jitter::Jitter;
 #[cfg(all(feature = "std", not(feature = "jitter")))]
 pub(crate) use jitter::Jitter;
@@ -82,4 +84,5 @@ pub type DefaultDirectRateLimiter<
 pub type DefaultKeyedRateLimiter<
     K,
     MW = middleware::NoOpMiddleware<<clock::DefaultClock as clock::Clock>::Instant>,
-> = RateLimiter<K, state::keyed::DefaultKeyedStateStore<K>, clock::DefaultClock, MW>;
+    S = state::keyed::DefaultHasher,
+> = RateLimiter<K, state::keyed::DefaultKeyedStateStore<K, S>, clock::DefaultClock, MW>;

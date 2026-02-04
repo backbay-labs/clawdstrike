@@ -218,6 +218,13 @@ struct CompiledPattern {
     regex: Regex,
 }
 
+fn compile_hardcoded_regex(pattern: &'static str) -> Regex {
+    Regex::new(pattern).unwrap_or_else(|err| {
+        tracing::error!(error = %err, %pattern, "failed to compile hardcoded regex");
+        Regex::new("a^").unwrap_or_else(|_| Regex::new("a^").unwrap_or_else(|_| unreachable!()))
+    })
+}
+
 fn heuristic_patterns() -> &'static [CompiledPattern] {
     static P: OnceLock<Vec<CompiledPattern>> = OnceLock::new();
     P.get_or_init(|| {
@@ -226,40 +233,35 @@ fn heuristic_patterns() -> &'static [CompiledPattern] {
                 id: "jb_ignore_policy",
                 category: JailbreakCategory::AuthorityConfusion,
                 weight: 0.9,
-                regex: Regex::new(
+                regex: compile_hardcoded_regex(
                     r"(?is)\b(ignore|disregard|bypass|override|disable)\b.{0,64}\b(policy|policies|rules|safety|guardrails?)\b",
-                )
-                .expect("hardcoded regex"),
+                ),
             },
             CompiledPattern {
                 id: "jb_dan_unfiltered",
                 category: JailbreakCategory::RolePlay,
                 weight: 0.9,
-                regex: Regex::new(r"(?is)\b(dan|jailbreak|unfiltered|unrestricted)\b")
-                    .expect("hardcoded regex"),
+                regex: compile_hardcoded_regex(r"(?is)\b(dan|jailbreak|unfiltered|unrestricted)\b"),
             },
             CompiledPattern {
                 id: "jb_system_prompt_extraction",
                 category: JailbreakCategory::InstructionExtraction,
                 weight: 0.95,
-                regex: Regex::new(
+                regex: compile_hardcoded_regex(
                     r"(?is)\b(reveal|show|tell\s+me|repeat|print|output)\b.{0,64}\b(system prompt|developer (message|instructions|prompt)|hidden (instructions|prompt)|system instructions)\b",
-                )
-                .expect("hardcoded regex"),
+                ),
             },
             CompiledPattern {
                 id: "jb_role_change",
                 category: JailbreakCategory::RolePlay,
                 weight: 0.7,
-                regex: Regex::new(r"(?is)\b(you are now|act as|pretend to be|roleplay)\b")
-                    .expect("hardcoded regex"),
+                regex: compile_hardcoded_regex(r"(?is)\b(you are now|act as|pretend to be|roleplay)\b"),
             },
             CompiledPattern {
                 id: "jb_encoded_payload",
                 category: JailbreakCategory::EncodingAttack,
                 weight: 0.6,
-                regex: Regex::new(r"(?is)\b(base64|rot13|url[-_ ]?encode|decode)\b")
-                    .expect("hardcoded regex"),
+                regex: compile_hardcoded_regex(r"(?is)\b(base64|rot13|url[-_ ]?encode|decode)\b"),
             },
         ]
     })
@@ -301,8 +303,10 @@ fn truncate_to_char_boundary(text: &str, max_bytes: usize) -> (&str, bool) {
 }
 
 fn canonicalize_for_detection(text: &str) -> (String, JailbreakCanonicalizationStats) {
-    let mut stats = JailbreakCanonicalizationStats::default();
-    stats.scanned_bytes = text.len();
+    let mut stats = JailbreakCanonicalizationStats {
+        scanned_bytes: text.len(),
+        ..Default::default()
+    };
 
     let nfkc: String = text.nfkc().collect();
     stats.nfkc_changed = nfkc != text;
@@ -629,10 +633,7 @@ impl JailbreakDetector {
             return;
         }
 
-        let loaded = match store.load(session_id).await {
-            Ok(v) => v,
-            Err(_) => None,
-        };
+        let loaded = store.load(session_id).await.unwrap_or_default();
 
         let Some(state) = loaded else {
             return;
@@ -718,12 +719,10 @@ impl JailbreakDetector {
             }
         }
 
-        let entry = map
-            .entry(sid.to_string())
-            .or_insert_with(|| SessionAgg {
-                last_seen_ms: now,
-                ..SessionAgg::default()
-            });
+        let entry = map.entry(sid.to_string()).or_insert_with(|| SessionAgg {
+            last_seen_ms: now,
+            ..SessionAgg::default()
+        });
 
         let elapsed_ms = now.saturating_sub(entry.last_seen_ms);
         let factor = Self::decay_factor(elapsed_ms, self.config.session_half_life_seconds);
@@ -1041,8 +1040,10 @@ where
     }
 
     fn insert(&mut self, key: K, value: V) {
-        if self.values.contains_key(&key) {
-            self.values.insert(key, value);
+        use std::collections::hash_map::Entry;
+
+        if let Entry::Occupied(mut e) = self.values.entry(key) {
+            e.insert(value);
             if let Some(pos) = self.order.iter().position(|k| k == &key) {
                 self.order.remove(pos);
             }
@@ -1063,6 +1064,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
     use std::collections::HashMap as StdHashMap;
     use std::sync::{Arc, Mutex as StdMutex};
@@ -1171,9 +1174,11 @@ mod tests {
             },
         );
 
-        let mut cfg = JailbreakGuardConfig::default();
-        cfg.session_ttl_seconds = 60 * 60;
-        cfg.session_max_entries = 16;
+        let cfg = JailbreakGuardConfig {
+            session_ttl_seconds: 60 * 60,
+            session_max_entries: 16,
+            ..Default::default()
+        };
 
         let d = JailbreakDetector::with_config(cfg).with_session_store(store.clone());
 
@@ -1182,7 +1187,13 @@ mod tests {
         assert_eq!(snap.session_id, "s1");
         assert_eq!(snap.messages_seen, 6);
 
-        let persisted = store.state.lock().unwrap().get("s1").cloned().expect("persisted");
+        let persisted = store
+            .state
+            .lock()
+            .unwrap()
+            .get("s1")
+            .cloned()
+            .expect("persisted");
         assert_eq!(persisted.messages_seen, 6);
         assert!(persisted.cumulative_risk >= 123);
     }

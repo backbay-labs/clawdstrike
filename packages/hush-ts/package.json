@@ -19,13 +19,14 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts",
-    "clean": "rm -rf dist",
-    "bench": "npx tsx benchmarks/guards.bench.ts",
-    "bench:json": "OUTPUT_JSON=1 npx tsx benchmarks/guards.bench.ts"
+    "lint": "npm run typecheck",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "bench": "node benchmarks/guards.bench.mjs",
+    "bench:json": "OUTPUT_JSON=1 node benchmarks/guards.bench.mjs"
   },
   "keywords": [
     "clawdstrike",
@@ -39,20 +40,20 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "url": "https://github.com/backbay-labs/hushclaw.git",
     "directory": "packages/hush-ts"
   },
   "dependencies": {
-    "@noble/ed25519": "^2.0.0",
-    "@noble/hashes": "^1.3.0"
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.3.0",
-    "vitest": "^1.0.0"
+    "@types/node": "^25.2.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19.0"
   }
 }

@@ -1,7 +1,7 @@
 //! Ed25519 signing and verification
 
 use ed25519_dalek::{Signature as DalekSignature, Signer, SigningKey, Verifier, VerifyingKey};
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};

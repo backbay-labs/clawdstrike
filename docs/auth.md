@@ -35,7 +35,7 @@ curl -H "Authorization: Bearer hush_<key>" \
 |-------|-----------|-------------|
 | `check` | POST /api/v1/check | Check actions against policy |
 | `read` | GET /api/v1/policy, /api/v1/audit, /api/v1/events | Read-only access |
-| `admin` | PUT /api/v1/policy, POST /api/v1/policy/reload | Modify policy |
+| `admin` | PUT /api/v1/policy, POST /api/v1/policy/reload, POST /api/v1/shutdown | Modify policy and daemon control |
 | `*` | All | Wildcard - grants all scopes |
 
 ## Endpoints by Auth Level
@@ -47,6 +47,7 @@ curl -H "Authorization: Bearer hush_<key>" \
 | GET /api/v1/policy | Yes | `read` or `*` |
 | PUT /api/v1/policy | Yes | `admin` |
 | POST /api/v1/policy/reload | Yes | `admin` |
+| POST /api/v1/shutdown | Yes | `admin` |
 | GET /api/v1/audit | Yes | `read` or `*` |
 | GET /api/v1/audit/stats | Yes | `read` or `*` |
 | GET /api/v1/events | Yes | `read` or `*` |
@@ -87,8 +88,8 @@ Then set: `export HUSHD_API_KEY="hush_abc123..."`
 
 ## Security Notes
 
-1. **Keys are hashed**: Raw keys are never stored; only SHA-256 hashes are kept in memory
-2. **Use TLS**: Always use HTTPS in production to protect keys in transit
+1. **Keys are hashed**: Raw keys are never stored; only key digests are kept in memory (set `HUSHD_AUTH_PEPPER` to enable peppered HMAC hashing)
+2. **Use TLS**: Always use HTTPS in production to protect keys in transit (terminate TLS at a reverse proxy; hushd does not implement native TLS yet)
 3. **Rotate keys**: Generate new keys periodically and revoke old ones
 4. **Least privilege**: Grant only the scopes each client needs
 5. **Expiration**: Set expiration dates for temporary access
@@ -140,7 +141,7 @@ When rate limited, the response includes:
 
 ```http
 HTTP/1.1 429 Too Many Requests
-Retry-After: 1
+Retry-After: <seconds>
 Content-Type: text/plain
 
 Rate limit exceeded. Please slow down.
@@ -150,9 +151,10 @@ Rate limit exceeded. Please slow down.
 
 The client IP is determined in order of precedence:
 
-1. `X-Forwarded-For` header (first IP in chain)
-2. `X-Real-IP` header
-3. Direct connection IP
+1. Direct connection IP
+2. If the connection IP is a trusted proxy (or `trust_xff_from_any: true`):
+   - `X-Forwarded-For` header (first IP in chain)
+   - `X-Real-IP` header
 
 **Important:** If running behind a reverse proxy, ensure it sets the appropriate headers.
 

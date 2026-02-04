@@ -27,10 +27,19 @@ result = engine.is_allowed(
 
 ## Features
 
-- Pure Python implementation of all 5 security guards
+- Pure Python implementation of 5 guards:
+  - ForbiddenPathGuard
+  - EgressAllowlistGuard
+  - SecretLeakGuard
+  - PatchIntegrityGuard
+  - McpToolGuard
 - Policy engine with YAML configuration
 - Receipt signing and verification with Ed25519
-- Optional native bindings via PyO3
+- Experimental native bindings (not yet published)
+
+## Native bindings (experimental)
+
+This repo includes a Rust/PyO3 module at `packages/hush-py/hush-native`, but it is not packaged for PyPI yet.
 
 ## License
 

@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.83"
 name = "pyo3-build-config"
-version = "0.23.5"
+version = "0.28.0"
 authors = ["PyO3 Project and Contributors <https://github.com/PyO3>"]
 build = "build.rs"
 autolib = false
@@ -40,35 +40,35 @@ repository = "https://github.com/pyo3/pyo3"
 [package.metadata.docs.rs]
 features = ["resolve-config"]
 
+[features]
+abi3 = []
+abi3-py310 = ["abi3-py311"]
+abi3-py311 = ["abi3-py312"]
+abi3-py312 = ["abi3-py313"]
+abi3-py313 = ["abi3-py314"]
+abi3-py314 = ["abi3"]
+abi3-py37 = ["abi3-py38"]
+abi3-py38 = ["abi3-py39"]
+abi3-py39 = ["abi3-py310"]
+default = []
+extension-module = []
+generate-import-lib = ["dep:python3-dll-a"]
+resolve-config = []
+
 [lib]
 name = "pyo3_build_config"
 path = "src/lib.rs"
-
-[dependencies.once_cell]
-version = "1"
 
 [dependencies.python3-dll-a]
 version = "0.2.12"
 optional = true
 
 [dependencies.target-lexicon]
-version = "0.12.14"
+version = "0.13.3"
 
 [build-dependencies.python3-dll-a]
 version = "0.2.12"
 optional = true
 
 [build-dependencies.target-lexicon]
-version = "0.12.14"
-
-[features]
-abi3 = []
-abi3-py310 = ["abi3-py311"]
-abi3-py311 = ["abi3-py312"]
-abi3-py312 = ["abi3"]
-abi3-py37 = ["abi3-py38"]
-abi3-py38 = ["abi3-py39"]
-abi3-py39 = ["abi3-py310"]
-default = []
-extension-module = []
-resolve-config = []
+version = "0.13.3"

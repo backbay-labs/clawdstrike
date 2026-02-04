@@ -1,12 +1,10 @@
 use crate::extract::Request;
 use crate::extract::{rejection::*, FromRequest, RawForm};
-use async_trait::async_trait;
 use axum_core::response::{IntoResponse, Response};
 use axum_core::RequestExt;
 use http::header::CONTENT_TYPE;
 use http::StatusCode;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde_core::{de::DeserializeOwned, Serialize};
 
 /// URL encoded extractor and response.
 ///
@@ -72,7 +70,6 @@ use serde::Serialize;
 #[must_use]
 pub struct Form<T>(pub T);
 
-#[async_trait]
 impl<T, S> FromRequest<S> for Form<T>
 where
     T: DeserializeOwned,
@@ -86,14 +83,17 @@ where
 
         match req.extract().await {
             Ok(RawForm(bytes)) => {
-                let value =
-                    serde_urlencoded::from_bytes(&bytes).map_err(|err| -> FormRejection {
+                let deserializer =
+                    serde_urlencoded::Deserializer::new(form_urlencoded::parse(&bytes));
+                let value = serde_path_to_error::deserialize(deserializer).map_err(
+                    |err| -> FormRejection {
                         if is_get_or_head {
                             FailedToDeserializeForm::from_err(err).into()
                         } else {
                             FailedToDeserializeFormBody::from_err(err).into()
                         }
-                    })?;
+                    },
+                )?;
                 Ok(Form(value))
             }
             Err(RawFormRejection::BytesRejection(r)) => Err(FormRejection::BytesRejection(r)),
@@ -109,17 +109,21 @@ where
     T: Serialize,
 {
     fn into_response(self) -> Response {
-        match serde_urlencoded::to_string(&self.0) {
-            Ok(body) => (
-                [(CONTENT_TYPE, mime::APPLICATION_WWW_FORM_URLENCODED.as_ref())],
-                body,
-            )
-                .into_response(),
-            Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+        // Extracted into separate fn so it's only compiled once for all T.
+        fn make_response(ser_result: Result<String, serde_urlencoded::ser::Error>) -> Response {
+            match ser_result {
+                Ok(body) => (
+                    [(CONTENT_TYPE, mime::APPLICATION_WWW_FORM_URLENCODED.as_ref())],
+                    body,
+                )
+                    .into_response(),
+                Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+            }
         }
+
+        make_response(serde_urlencoded::to_string(&self.0))
     }
 }
-
 axum_core::__impl_deref!(Form);
 
 #[cfg(test)]
@@ -254,6 +258,10 @@ mod tests {
 
         let res = client.get("/?a=false").await;
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            res.text().await,
+            "Failed to deserialize form: a: invalid digit found in string"
+        );
 
         let res = client
             .post("/")
@@ -261,5 +269,9 @@ mod tests {
             .body("a=false")
             .await;
         assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            res.text().await,
+            "Failed to deserialize form body: a: invalid digit found in string"
+        );
     }
 }

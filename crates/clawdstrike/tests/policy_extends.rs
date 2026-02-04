@@ -21,11 +21,14 @@ guards:
     let policy = Policy::from_yaml_with_extends(yaml, None).unwrap();
 
     // Should have strict's settings
-    assert!(policy.settings.fail_fast);
+    assert!(policy.settings.effective_fail_fast());
 
     // Should have custom pattern added
     let fp = policy.guards.forbidden_path.as_ref().unwrap();
-    assert!(fp.patterns.iter().any(|p| p.contains("custom-secret")));
+    assert!(fp
+        .effective_patterns()
+        .iter()
+        .any(|p| p.contains("custom-secret")));
 }
 
 #[test]
@@ -63,10 +66,11 @@ guards:
     let policy = Policy::from_yaml_with_extends(&child_yaml, None).unwrap();
 
     assert_eq!(policy.name, "Child");
-    assert!(policy.settings.fail_fast); // from base
+    assert!(policy.settings.effective_fail_fast()); // from base
     let fp = policy.guards.forbidden_path.as_ref().unwrap();
-    assert!(fp.patterns.iter().any(|p| p.contains(".ssh")));
-    assert!(fp.patterns.iter().any(|p| p.contains("secrets")));
+    let patterns = fp.effective_patterns();
+    assert!(patterns.iter().any(|p| p.contains(".ssh")));
+    assert!(patterns.iter().any(|p| p.contains("secrets")));
 }
 
 #[test]
@@ -83,7 +87,7 @@ settings:
     let policy = Policy::from_yaml_with_extends(yaml, None).unwrap();
 
     // Replace strategy means child settings replace base entirely
-    assert!(!policy.settings.fail_fast);
+    assert!(!policy.settings.effective_fail_fast());
 }
 
 #[test]
@@ -100,8 +104,8 @@ settings:
     let policy = Policy::from_yaml_with_extends(yaml, None).unwrap();
 
     // Deep merge keeps base values not overridden
-    assert!(policy.settings.fail_fast); // from strict
-    assert!(policy.settings.verbose_logging); // from child
+    assert!(policy.settings.effective_fail_fast()); // from strict
+    assert!(policy.settings.effective_verbose_logging()); // from child
 }
 
 #[test]
@@ -138,12 +142,13 @@ guards:
 
     let policy = Policy::from_yaml_with_extends(&child_yaml, None).unwrap();
     let fp = policy.guards.forbidden_path.as_ref().unwrap();
+    let patterns = fp.effective_patterns();
 
     // .env patterns should be removed
-    assert!(!fp.patterns.iter().any(|p| p == "**/.env"));
+    assert!(!patterns.iter().any(|p| p == "**/.env"));
     // But other patterns should remain
-    assert!(fp.patterns.iter().any(|p| p.contains(".ssh")));
-    assert!(fp.patterns.iter().any(|p| p.contains(".aws")));
+    assert!(patterns.iter().any(|p| p.contains(".ssh")));
+    assert!(patterns.iter().any(|p| p.contains(".aws")));
 }
 
 #[test]
@@ -229,7 +234,7 @@ settings:
     let policy = Policy::from_yaml_with_extends(&child_yaml, None).unwrap();
 
     assert_eq!(policy.name, "Child");
-    assert_eq!(policy.settings.session_timeout_secs, 1800); // from grandparent
-    assert!(policy.settings.fail_fast); // from parent
-    assert!(policy.settings.verbose_logging); // from child
+    assert_eq!(policy.settings.effective_session_timeout_secs(), 1800); // from grandparent
+    assert!(policy.settings.effective_fail_fast()); // from parent
+    assert!(policy.settings.effective_verbose_logging()); // from child
 }

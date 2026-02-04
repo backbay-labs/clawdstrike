@@ -6,13 +6,13 @@ use crate::{
     state::{DirectStateStore, NotKeyed},
     Jitter, NotUntil, RateLimiter,
 };
-use futures::task::{Context, Poll};
-use futures::{Future, Sink, Stream};
 use futures_timer::Delay;
+use futures_util::task::{Context, Poll};
+use futures_util::{Future, Sink, Stream};
 use std::marker::PhantomData;
 use std::pin::Pin;
 
-/// Allows converting a [`futures::Sink`] combinator into a rate-limited sink.
+/// Allows converting a [`futures_util::Sink`] combinator into a rate-limited sink.
 pub trait SinkRateLimitExt<Item, S>: Sink<Item>
 where
     S: Sink<Item>,
@@ -53,7 +53,7 @@ impl<Item, S: Sink<Item>> SinkRateLimitExt<Item, S> for S {
     >(
         self,
         limiter: &RateLimiter<NotKeyed, D, C, MW>,
-    ) -> RatelimitedSink<Item, S, D, C, MW>
+    ) -> RatelimitedSink<'_, Item, S, D, C, MW>
     where
         Self: Sized,
     {
@@ -69,7 +69,7 @@ impl<Item, S: Sink<Item>> SinkRateLimitExt<Item, S> for S {
         self,
         limiter: &RateLimiter<NotKeyed, D, C, MW>,
         jitter: Jitter,
-    ) -> RatelimitedSink<Item, S, D, C, MW>
+    ) -> RatelimitedSink<'_, Item, S, D, C, MW>
     where
         Self: Sized,
     {
@@ -84,7 +84,7 @@ enum State {
     Ready,
 }
 
-/// A [`Sink`][futures::Sink] combinator that only allows sending elements when the rate-limiter
+/// A [`Sink`][futures_util::Sink] combinator that only allows sending elements when the rate-limiter
 /// allows it.
 pub struct RatelimitedSink<
     'a,
@@ -131,15 +131,15 @@ impl<
     /// Acquires a mutable reference to the underlying sink that this combinator is sending into.
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// # use futures::sink::{self, SinkExt};
+    /// # futures_executor::block_on(async {
+    /// # use futures_util::sink::{self, SinkExt};
     /// # use nonzero_ext::nonzero;
     /// use governor::{prelude::*, RateLimiter, Quota};
     /// let drain = sink::drain();
     /// let lim = RateLimiter::direct(Quota::per_second(nonzero!(10u32)));
     /// let mut limited = drain.ratelimit_sink(&lim);
     /// limited.get_mut().send(5).await?;
-    /// # Ok::<(), futures::never::Never>(()) }).unwrap();
+    /// # Ok::<(), futures_util::never::Never>(()) }).unwrap();
     /// ```
     pub fn get_mut(&mut self) -> &mut S {
         &mut self.inner
@@ -152,13 +152,12 @@ impl<
 }
 
 impl<
-        'a,
         Item,
         S: Sink<Item>,
         D: DirectStateStore,
         C: clock::ReasonablyRealtime,
         MW: RateLimitingMiddleware<C::Instant, NegativeOutcome = NotUntil<C::Instant>>,
-    > Sink<Item> for RatelimitedSink<'a, Item, S, D, C, MW>
+    > Sink<Item> for RatelimitedSink<'_, Item, S, D, C, MW>
 where
     S: Unpin,
     Item: Unpin,
@@ -228,15 +227,14 @@ where
     }
 }
 
-/// Pass-through implementation for [`futures::Stream`] if the Sink also implements it.
+/// Pass-through implementation for [`futures_util::Stream`] if the Sink also implements it.
 impl<
-        'a,
         Item,
         S: Stream + Sink<Item>,
         D: DirectStateStore,
         C: clock::ReasonablyRealtime,
         MW: RateLimitingMiddleware<C::Instant, NegativeOutcome = NotUntil<C::Instant>>,
-    > Stream for RatelimitedSink<'a, Item, S, D, C, MW>
+    > Stream for RatelimitedSink<'_, Item, S, D, C, MW>
 where
     S::Item: Unpin,
     S: Unpin,

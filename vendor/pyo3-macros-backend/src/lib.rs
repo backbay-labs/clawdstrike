@@ -1,7 +1,7 @@
 //! This crate contains the implementation of the proc macro attributes
 
 #![warn(elided_lifetimes_in_paths, unused_lifetimes)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![recursion_limit = "1024"]
 
 // Listed first so that macros in this module are available in the rest of the crate.
@@ -9,13 +9,18 @@
 mod utils;
 
 mod attributes;
-mod deprecations;
+mod combine_errors;
+mod derive_attributes;
 mod frompyobject;
 mod intopyobject;
+#[cfg(feature = "experimental-inspect")]
+mod introspection;
 mod konst;
 mod method;
 mod module;
 mod params;
+#[cfg(feature = "experimental-inspect")]
+mod py_expr;
 mod pyclass;
 mod pyfunction;
 mod pyimpl;

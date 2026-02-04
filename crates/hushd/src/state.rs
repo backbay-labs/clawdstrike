@@ -1,7 +1,7 @@
 //! Shared application state for the daemon
 
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Notify, RwLock};
 
 use clawdstrike::{HushEngine, Policy, RuleSet};
 use hush_core::Keypair;
@@ -37,6 +37,8 @@ pub struct AppState {
     pub started_at: chrono::DateTime<chrono::Utc>,
     /// Rate limiter state
     pub rate_limit: RateLimitState,
+    /// Shutdown notifier (used for API-triggered shutdown)
+    pub shutdown: Arc<Notify>,
 }
 
 impl AppState {
@@ -110,6 +112,7 @@ impl AppState {
             session_id,
             started_at: chrono::Utc::now(),
             rate_limit,
+            shutdown: Arc::new(Notify::new()),
         })
     }
 
@@ -117,6 +120,11 @@ impl AppState {
     pub fn broadcast(&self, event: DaemonEvent) {
         // Ignore send errors (no subscribers)
         let _ = self.event_tx.send(event);
+    }
+
+    /// Request graceful shutdown of the daemon.
+    pub fn request_shutdown(&self) {
+        self.shutdown.notify_one();
     }
 
     /// Reload policy from config
@@ -129,9 +137,20 @@ impl AppState {
                 .policy
         };
 
-        // Get the keypair from current engine
+        // Preserve the existing signing keypair to keep receipts verifiable across reloads.
         let mut engine = self.engine.write().await;
-        let new_engine = HushEngine::with_policy(policy).with_generated_keypair();
+        let keypair = if let Some(ref key_path) = self.config.signing_key {
+            let key_hex = std::fs::read_to_string(key_path)?.trim().to_string();
+            Some(Keypair::from_hex(&key_hex)?)
+        } else {
+            engine.keypair().cloned()
+        };
+
+        let mut new_engine = HushEngine::with_policy(policy);
+        new_engine = match keypair {
+            Some(keypair) => new_engine.with_keypair(keypair),
+            None => new_engine.with_generated_keypair(),
+        };
         *engine = new_engine;
 
         tracing::info!("Policy reloaded");

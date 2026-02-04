@@ -8,6 +8,8 @@
 //! - `SecretLeakGuard`: Detects potential secret exposure
 //! - `PatchIntegrityGuard`: Validates patch safety
 //! - `McpToolGuard`: Restricts MCP tool invocations
+//! - `PromptInjectionGuard`: Detects prompt-injection in untrusted text
+//! - `JailbreakGuard`: Detects jailbreak attempts in user input
 //!
 //! ## Quick Start
 //!
@@ -77,9 +79,10 @@ pub use jailbreak::{
     LinearModelConfig, LlmJudge, SessionAggPersisted, SessionRiskSnapshot, SessionStore,
 };
 pub use output_sanitizer::{
-    AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer, OutputSanitizer,
-    OutputSanitizerConfig, ProcessingStats, Redaction, RedactionStrategy, SanitizationResult,
-    SanitizationStream, SensitiveCategory, SensitiveDataFinding, Span, StreamingConfig,
+    AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer,
+    OutputSanitizer, OutputSanitizerConfig, ProcessingStats, Redaction, RedactionStrategy,
+    SanitizationResult, SanitizationStream, SensitiveCategory, SensitiveDataFinding, Span,
+    StreamingConfig,
 };
 pub use policy::{Policy, RuleSet};
 pub use watermarking::{

@@ -29,7 +29,7 @@ class TestPolicy:
 
     def test_policy_roundtrip(self) -> None:
         original = Policy(
-            version="2.0.0",
+            version="1.0.0",
             name="roundtrip-test",
             description="Testing roundtrip",
         )
@@ -37,6 +37,24 @@ class TestPolicy:
         restored = Policy.from_yaml(yaml_str)
         assert restored.version == original.version
         assert restored.name == original.name
+
+    def test_policy_rejects_invalid_semver_version(self) -> None:
+        with pytest.raises(ValueError):
+            Policy.from_yaml('version: "1.0"\nname: test\n')
+
+    def test_policy_rejects_unsupported_version(self) -> None:
+        with pytest.raises(ValueError):
+            Policy.from_yaml('version: "2.0.0"\nname: test\n')
+
+    def test_policy_rejects_unknown_top_level_keys(self) -> None:
+        with pytest.raises(ValueError):
+            Policy.from_yaml('version: "1.0.0"\nname: test\nunknown: 1\n')
+
+    def test_policy_rejects_unknown_guard_names(self) -> None:
+        with pytest.raises(ValueError):
+            Policy.from_yaml(
+                'version: "1.0.0"\nname: test\nguards:\n  unknown_guard: {}\n'
+            )
 
 
 class TestGuardConfigs:

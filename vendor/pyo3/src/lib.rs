@@ -1,9 +1,10 @@
 #![warn(missing_docs)]
 #![cfg_attr(
     feature = "nightly",
-    feature(auto_traits, negative_impls, try_trait_v2)
+    feature(auto_traits, negative_impls, try_trait_v2, iter_advance_by)
 )]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(unsafe_op_in_unsafe_fn)]
 // Deny some lints in doctests.
 // Use `#[allow(...)]` locally to override.
 #![doc(test(attr(
@@ -14,6 +15,7 @@
         warnings
     ),
     allow(
+        unused_imports,  // to make imports already in the prelude explicit
         unused_variables,
         unused_assignments,
         unused_extern_crates,
@@ -59,7 +61,7 @@
 //!
 //! The type parameter `T` in these smart pointers can be filled by:
 //!   - [`PyAny`], e.g. `Py<PyAny>` or `Bound<'py, PyAny>`, where the Python object type is not
-//!     known. `Py<PyAny>` is so common it has a type alias [`PyObject`].
+//!     known.
 //!   - Concrete Python types like [`PyList`](types::PyList) or [`PyTuple`](types::PyTuple).
 //!   - Rust types which are exposed to Python using the [`#[pyclass]`](macro@pyclass) macro.
 //!
@@ -89,11 +91,8 @@
 //!
 //! - `abi3`: Restricts PyO3's API to a subset of the full Python API which is guaranteed by
 //! [PEP 384] to be forward-compatible with future Python versions.
-//! - `auto-initialize`: Changes [`Python::with_gil`] to automatically initialize the Python
+//! - `auto-initialize`: Changes [`Python::attach`] to automatically initialize the Python
 //! interpreter if needed.
-//! - `extension-module`: This will tell the linker to keep the Python symbols unresolved, so that
-//! your module can also be used with statically linked Python interpreters. Use this feature when
-//! building an extension module.
 //! - `multiple-pymethods`: Enables the use of multiple [`#[pymethods]`](macro@crate::pymethods)
 //! blocks per [`#[pyclass]`](macro@crate::pyclass). This adds a dependency on the [inventory]
 //! crate, which is not supported on all platforms.
@@ -112,6 +111,7 @@
 //! - [`num-complex`]: Enables conversions between Python objects and [num-complex]'s [`Complex`]
 //!  type.
 //! - [`num-rational`]: Enables conversions between Python's fractions.Fraction and [num-rational]'s types
+//! - [`ordered-float`]: Enables conversions between Python's float and [ordered-float]'s types
 //! - [`rust_decimal`]: Enables conversions between Python's decimal.Decimal and [rust_decimal]'s
 //! [`Decimal`] type.
 //! - [`serde`]: Allows implementing [serde]'s [`Serialize`] and [`Deserialize`] traits for
@@ -149,7 +149,7 @@
 //!
 //! PyO3 supports the following Python distributions:
 //!   - CPython 3.7 or greater
-//!   - PyPy 7.3 (Python 3.9+)
+//!   - PyPy 7.3 (Python 3.11+)
 //!   - GraalPy 24.0 or greater (Python 3.10+)
 //!
 //! # Example: Building a native Python module
@@ -178,13 +178,12 @@
 //! # crate-type = ["cdylib", "rlib"]
 //! crate-type = ["cdylib"]
 //!
-//! [dependencies.pyo3]
-#![doc = concat!("version = \"", env!("CARGO_PKG_VERSION"),  "\"")]
-//! features = ["extension-module"]
+//! [dependencies]
+#![doc = concat!("pyo3 = \"", env!("CARGO_PKG_VERSION"),  "\"")]
 //! ```
 //!
 //! **`src/lib.rs`**
-//! ```rust
+//! ```rust,no_run
 //! use pyo3::prelude::*;
 //!
 //! /// Formats the sum of two numbers as string.
@@ -252,12 +251,12 @@
 //! use pyo3::ffi::c_str;
 //!
 //! fn main() -> PyResult<()> {
-//!     Python::with_gil(|py| {
+//!     Python::attach(|py| {
 //!         let sys = py.import("sys")?;
 //!         let version: String = sys.getattr("version")?.extract()?;
 //!
 //!         let locals = [("os", py.import("os")?)].into_py_dict(py)?;
-//!         let code = c_str!("os.getenv('USER') or os.getenv('USERNAME') or 'Unknown'");
+//!         let code = c"os.getenv('USER') or os.getenv('USERNAME') or 'Unknown'";
 //!         let user: String = py.eval(code, None, Some(&locals))?.extract()?;
 //!
 //!         println!("Hello {}, I'm Python {}", user, version);
@@ -286,6 +285,7 @@
 //! [`HashMap`]: https://docs.rs/hashbrown/latest/hashbrown/struct.HashMap.html
 //! [`HashSet`]: https://docs.rs/hashbrown/latest/hashbrown/struct.HashSet.html
 //! [`SmallVec`]: https://docs.rs/smallvec/latest/smallvec/struct.SmallVec.html
+//! [`Uuid`]: https://docs.rs/uuid/latest/uuid/struct.Uuid.html
 //! [`IndexMap`]: https://docs.rs/indexmap/latest/indexmap/map/struct.IndexMap.html
 //! [`BigInt`]: https://docs.rs/num-bigint/latest/num_bigint/struct.BigInt.html
 //! [`BigUint`]: https://docs.rs/num-bigint/latest/num_bigint/struct.BigUint.html
@@ -308,9 +308,10 @@
 //! [`num-bigint`]: ./num_bigint/index.html "Documentation about the `num-bigint` feature."
 //! [`num-complex`]: ./num_complex/index.html "Documentation about the `num-complex` feature."
 //! [`num-rational`]: ./num_rational/index.html "Documentation about the `num-rational` feature."
+//! [`ordered-float`]: ./ordered_float/index.html "Documentation about the `ordered-float` feature."
 //! [`pyo3-build-config`]: https://docs.rs/pyo3-build-config
 //! [rust_decimal]: https://docs.rs/rust_decimal
-//! [`rust_decimal`]: ./rust_decimal/index.html "Documenation about the `rust_decimal` feature."
+//! [`rust_decimal`]: ./rust_decimal/index.html "Documentation about the `rust_decimal` feature."
 //! [`Decimal`]: https://docs.rs/rust_decimal/latest/rust_decimal/struct.Decimal.html
 //! [`serde`]: <./serde/index.html> "Documentation about the `serde` feature."
 #![doc = concat!("[calling_rust]: https://pyo3.rs/v", env!("CARGO_PKG_VERSION"), "/python-from-rust.html \"Calling Python from Rust - PyO3 user guide\"")]
@@ -319,11 +320,13 @@
 //! [global interpreter lock]: https://docs.python.org/3/glossary.html#term-global-interpreter-lock
 //! [hashbrown]: https://docs.rs/hashbrown
 //! [smallvec]: https://docs.rs/smallvec
+//! [uuid]: https://docs.rs/uuid
 //! [indexmap]: https://docs.rs/indexmap
 #![doc = concat!("[manual_builds]: https://pyo3.rs/v", env!("CARGO_PKG_VERSION"), "/building-and-distribution.html#manual-builds \"Manual builds - Building and Distribution - PyO3 user guide\"")]
 //! [num-bigint]: https://docs.rs/num-bigint
 //! [num-complex]: https://docs.rs/num-complex
 //! [num-rational]: https://docs.rs/num-rational
+//! [ordered-float]: https://docs.rs/ordered-float
 //! [serde]: https://docs.rs/serde
 //! [setuptools-rust]: https://github.com/PyO3/setuptools-rust "Setuptools plugin for Rust extensions"
 //! [the guide]: https://pyo3.rs "PyO3 user guide"
@@ -334,16 +337,16 @@
 #![doc = concat!("[Features chapter of the guide]: https://pyo3.rs/v", env!("CARGO_PKG_VERSION"), "/features.html#features-reference \"Features Reference - PyO3 user guide\"")]
 //! [`Ungil`]: crate::marker::Ungil
 pub use crate::class::*;
-pub use crate::conversion::{AsPyPointer, FromPyObject, IntoPyObject, IntoPyObjectExt};
+pub use crate::conversion::{FromPyObject, IntoPyObject, IntoPyObjectExt};
+pub use crate::err::{CastError, CastIntoError, PyErr, PyErrArguments, PyResult, ToPyErr};
 #[allow(deprecated)]
-pub use crate::conversion::{IntoPy, ToPyObject};
-pub use crate::err::{DowncastError, DowncastIntoError, PyErr, PyErrArguments, PyResult, ToPyErr};
+pub use crate::err::{DowncastError, DowncastIntoError};
+pub use crate::instance::{Borrowed, Bound, BoundObject, Py};
 #[cfg(not(any(PyPy, GraalPy)))]
-pub use crate::gil::{prepare_freethreaded_python, with_embedded_python_interpreter};
-pub use crate::instance::{Borrowed, Bound, BoundObject, Py, PyObject};
+pub use crate::interpreter_lifecycle::with_embedded_python_interpreter;
 pub use crate::marker::Python;
 pub use crate::pycell::{PyRef, PyRefMut};
-pub use crate::pyclass::PyClass;
+pub use crate::pyclass::{PyClass, PyClassGuard, PyClassGuardMut};
 pub use crate::pyclass_init::PyClassInitializer;
 pub use crate::type_object::{PyTypeCheck, PyTypeInfo};
 pub use crate::types::PyAny;
@@ -362,26 +365,6 @@ pub(crate) mod sealed;
 /// once <https://github.com/rust-lang/rust/issues/30827> is resolved.
 pub mod class {
     pub use self::gc::{PyTraverseError, PyVisit};
-
-    pub use self::methods::*;
-
-    #[doc(hidden)]
-    pub mod methods {
-        #[deprecated(since = "0.23.0", note = "PyO3 implementation detail")]
-        pub type IPowModulo = crate::impl_::pymethods::IPowModulo;
-        #[deprecated(since = "0.23.0", note = "PyO3 implementation detail")]
-        pub type PyClassAttributeDef = crate::impl_::pymethods::PyClassAttributeDef;
-        #[deprecated(since = "0.23.0", note = "PyO3 implementation detail")]
-        pub type PyGetterDef = crate::impl_::pymethods::PyGetterDef;
-        #[deprecated(since = "0.23.0", note = "PyO3 implementation detail")]
-        pub type PyMethodDef = crate::impl_::pymethods::PyMethodDef;
-        #[deprecated(since = "0.23.0", note = "PyO3 implementation detail")]
-        pub type PyMethodDefType = crate::impl_::pymethods::PyMethodDefType;
-        #[deprecated(since = "0.23.0", note = "PyO3 implementation detail")]
-        pub type PyMethodType = crate::impl_::pymethods::PyMethodType;
-        #[deprecated(since = "0.23.0", note = "PyO3 implementation detail")]
-        pub type PySetterDef = crate::impl_::pymethods::PySetterDef;
-    }
 
     /// Old module which contained some implementation details of the `#[pyproto]` module.
     ///
@@ -406,13 +389,6 @@ pub mod class {
     }
 }
 
-#[cfg(feature = "macros")]
-#[doc(hidden)]
-pub use {
-    indoc,    // Re-exported for py_run
-    unindent, // Re-exported for py_run
-};
-
 #[cfg(all(feature = "macros", feature = "multiple-pymethods"))]
 #[doc(hidden)]
 pub use inventory; // Re-exported for `#[pyclass]` and `#[pymethods]` with `multiple-pymethods`.
@@ -420,14 +396,21 @@ pub use inventory; // Re-exported for `#[pyclass]` and `#[pymethods]` with `mult
 /// Tests and helpers which reside inside PyO3's main library. Declared first so that macros
 /// are available in unit tests.
 #[cfg(test)]
-#[macro_use]
+mod test_utils;
+#[cfg(test)]
 mod tests;
+
+// Macro dependencies, also contains macros exported for use across the codebase and
+// in expanded macros.
+#[doc(hidden)]
+pub mod impl_;
 
 #[macro_use]
 mod internal_tricks;
 mod internal;
 
 pub mod buffer;
+pub mod call;
 pub mod conversion;
 mod conversions;
 #[cfg(feature = "experimental-async")]
@@ -435,14 +418,14 @@ pub mod coroutine;
 mod err;
 pub mod exceptions;
 pub mod ffi;
-mod gil;
-#[doc(hidden)]
-pub mod impl_;
+pub(crate) mod fmt;
 mod instance;
+mod interpreter_lifecycle;
 pub mod marker;
 pub mod marshal;
 #[macro_use]
 pub mod sync;
+pub(crate) mod byteswriter;
 pub mod panic;
 pub mod pybacked;
 pub mod pycell;
@@ -453,7 +436,10 @@ pub mod type_object;
 pub mod types;
 mod version;
 
-#[allow(unused_imports)] // with no features enabled this module has no public exports
+#[allow(
+    unused_imports,
+    reason = "with no features enabled this module has no public exports"
+)]
 pub use crate::conversions::*;
 
 #[cfg(feature = "macros")]

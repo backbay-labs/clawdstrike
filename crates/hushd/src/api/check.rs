@@ -8,6 +8,51 @@ use clawdstrike::guards::{GuardContext, GuardResult};
 use crate::audit::AuditEvent;
 use crate::state::{AppState, DaemonEvent};
 
+fn parse_egress_target(target: &str) -> Result<(String, u16), String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("target is empty".to_string());
+    }
+
+    // RFC 3986-style IPv6 literal in brackets: "[::1]:443".
+    if let Some(rest) = target.strip_prefix('[') {
+        let end = rest
+            .find(']')
+            .ok_or_else(|| "invalid egress target: missing closing ']'".to_string())?;
+        let host = &rest[..end];
+        if host.is_empty() {
+            return Err("invalid egress target: empty IPv6 host".to_string());
+        }
+        let after = &rest[end + 1..];
+        let port = if after.is_empty() {
+            443
+        } else if let Some(port_str) = after.strip_prefix(':') {
+            port_str
+                .parse::<u16>()
+                .map_err(|_| format!("invalid egress target: invalid port {}", port_str))?
+        } else {
+            return Err(format!(
+                "invalid egress target: unexpected suffix after ']': {}",
+                after
+            ));
+        };
+        return Ok((host.to_string(), port));
+    }
+
+    // Split on the last ':'; if the suffix is numeric, treat as port.
+    if let Some((host, port_str)) = target.rsplit_once(':') {
+        if !host.is_empty() && !port_str.is_empty() && port_str.chars().all(|c| c.is_ascii_digit())
+        {
+            let port = port_str
+                .parse::<u16>()
+                .map_err(|_| format!("invalid egress target: invalid port {}", port_str))?;
+            return Ok((host.to_string(), port));
+        }
+    }
+
+    Ok((target.to_string(), 443))
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct CheckRequest {
     /// Action type: file_access, file_write, egress, shell, mcp_tool, patch
@@ -57,12 +102,15 @@ pub async fn check_action(
 ) -> Result<Json<CheckResponse>, (StatusCode, String)> {
     let engine = state.engine.read().await;
 
-    let context = GuardContext::new().with_session_id(
+    let mut context = GuardContext::new().with_session_id(
         request
             .session_id
             .clone()
             .unwrap_or_else(|| state.session_id.clone()),
     );
+    if let Some(agent_id) = request.agent_id.clone() {
+        context = context.with_agent_id(agent_id);
+    }
 
     let result = match request.action_type.as_str() {
         "file_access" => engine.check_file_access(&request.target, &context).await,
@@ -73,10 +121,9 @@ pub async fn check_action(
                 .await
         }
         "egress" => {
-            let parts: Vec<&str> = request.target.split(':').collect();
-            let host = parts[0];
-            let port: u16 = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(443);
-            engine.check_egress(host, port, &context).await
+            let (host, port) =
+                parse_egress_target(&request.target).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+            engine.check_egress(&host, port, &context).await
         }
         "shell" => engine.check_shell(&request.target, &context).await,
         "mcp_tool" => {

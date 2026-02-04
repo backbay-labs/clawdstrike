@@ -4,15 +4,15 @@
 #
 # SHA256 is automatically updated by the release workflow.
 # To calculate SHA256 manually:
-#   curl -sL https://github.com/backbay-labs/clawdstrike/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256
+#   curl -sL https://github.com/backbay-labs/hushclaw/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256
 
 class Hush < Formula
   desc "CLI for clawdstrike security verification and policy enforcement"
-  homepage "https://github.com/backbay-labs/clawdstrike"
-  url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/backbay-labs/hushclaw"
+  url "https://github.com/backbay-labs/hushclaw/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "PLACEHOLDER_SHA256_WILL_BE_UPDATED_ON_RELEASE"
   license "MIT"
-  head "https://github.com/backbay-labs/clawdstrike.git", branch: "main"
+  head "https://github.com/backbay-labs/hushclaw.git", branch: "main"
 
   depends_on "rust" => :build
 

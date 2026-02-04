@@ -1,12 +1,9 @@
 use crate::types::PyIterator;
-#[allow(deprecated)]
-use crate::ToPyObject;
 use crate::{
     err::{self, PyErr, PyResult},
     ffi_ptr_ext::FfiPtrExt,
     instance::Bound,
     py_result_ext::PyResultExt,
-    types::any::PyAnyMethods,
 };
 use crate::{ffi, Borrowed, BoundObject, IntoPyObject, IntoPyObjectExt, PyAny, Python};
 use std::ptr;
@@ -29,6 +26,8 @@ pyobject_native_type!(
     PySet,
     ffi::PySetObject,
     pyobject_native_static_type_object!(ffi::PySet_Type),
+    "builtins",
+    "set",
     #checkfunction=ffi::PySet_Check
 );
 
@@ -36,6 +35,8 @@ pyobject_native_type!(
 pyobject_native_type_core!(
     PySet,
     pyobject_native_static_type_object!(ffi::PySet_Type),
+    "builtins",
+    "set",
     #checkfunction=ffi::PySet_Check
 );
 
@@ -54,31 +55,13 @@ impl PySet {
         try_new_from_iter(py, elements)
     }
 
-    /// Deprecated name for [`PySet::new`].
-    #[deprecated(since = "0.23.0", note = "renamed to `PySet::new`")]
-    #[allow(deprecated)]
-    #[inline]
-    pub fn new_bound<'a, 'p, T: ToPyObject + 'a>(
-        py: Python<'p>,
-        elements: impl IntoIterator<Item = &'a T>,
-    ) -> PyResult<Bound<'p, PySet>> {
-        Self::new(py, elements.into_iter().map(|e| e.to_object(py)))
-    }
-
     /// Creates a new empty set.
     pub fn empty(py: Python<'_>) -> PyResult<Bound<'_, PySet>> {
         unsafe {
             ffi::PySet_New(ptr::null_mut())
                 .assume_owned_or_err(py)
-                .downcast_into_unchecked()
+                .cast_into_unchecked()
         }
-    }
-
-    /// Deprecated name for [`PySet::empty`].
-    #[deprecated(since = "0.23.0", note = "renamed to `PySet::empty`")]
-    #[inline]
-    pub fn empty_bound(py: Python<'_>) -> PyResult<Bound<'_, PySet>> {
-        Self::empty(py)
     }
 }
 
@@ -239,19 +222,11 @@ impl<'py> IntoIterator for &Bound<'py, PySet> {
 }
 
 /// PyO3 implementation of an iterator for a Python `set` object.
-pub struct BoundSetIterator<'p> {
-    it: Bound<'p, PyIterator>,
-    // Remaining elements in the set. This is fine to store because
-    // Python will error if the set changes size during iteration.
-    remaining: usize,
-}
+pub struct BoundSetIterator<'py>(Bound<'py, PyIterator>);
 
 impl<'py> BoundSetIterator<'py> {
     pub(super) fn new(set: Bound<'py, PySet>) -> Self {
-        Self {
-            it: PyIterator::from_object(&set).unwrap(),
-            remaining: set.len(),
-        }
+        Self(PyIterator::from_object(&set).expect("set should always be iterable"))
     }
 }
 
@@ -260,29 +235,29 @@ impl<'py> Iterator for BoundSetIterator<'py> {
 
     /// Advances the iterator and returns the next value.
     fn next(&mut self) -> Option<Self::Item> {
-        self.remaining = self.remaining.saturating_sub(1);
-        self.it.next().map(Result::unwrap)
+        self.0
+            .next()
+            .map(|result| result.expect("set iteration should be infallible"))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        let len = ExactSizeIterator::len(self);
+        (len, Some(len))
+    }
+
+    #[inline]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.len()
     }
 }
 
 impl ExactSizeIterator for BoundSetIterator<'_> {
     fn len(&self) -> usize {
-        self.remaining
+        self.0.size_hint().0
     }
-}
-
-#[allow(deprecated)]
-#[inline]
-pub(crate) fn new_from_iter<T: ToPyObject>(
-    py: Python<'_>,
-    elements: impl IntoIterator<Item = T>,
-) -> PyResult<Bound<'_, PySet>> {
-    let mut iter = elements.into_iter().map(|e| e.to_object(py));
-    try_new_from_iter(py, &mut iter)
 }
 
 #[inline]
@@ -298,7 +273,7 @@ where
         // user code errors or panics.
         ffi::PySet_New(std::ptr::null_mut())
             .assume_owned_or_err(py)?
-            .downcast_into_unchecked()
+            .cast_into_unchecked()
     };
     let ptr = set.as_ptr();
 
@@ -315,7 +290,6 @@ mod tests {
     use super::PySet;
     use crate::{
         conversion::IntoPyObject,
-        ffi,
         types::{PyAnyMethods, PySetMethods},
         Python,
     };
@@ -323,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_set_new() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
             assert_eq!(1, set.len());
 
@@ -334,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_set_empty() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::empty(py).unwrap();
             assert_eq!(0, set.len());
             assert!(set.is_empty());
@@ -343,21 +317,21 @@ mod tests {
 
     #[test]
     fn test_set_len() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let mut v = HashSet::<i32>::new();
             let ob = (&v).into_pyobject(py).unwrap();
-            let set = ob.downcast::<PySet>().unwrap();
+            let set = ob.cast::<PySet>().unwrap();
             assert_eq!(0, set.len());
             v.insert(7);
             let ob = v.into_pyobject(py).unwrap();
-            let set2 = ob.downcast::<PySet>().unwrap();
+            let set2 = ob.cast::<PySet>().unwrap();
             assert_eq!(1, set2.len());
         });
     }
 
     #[test]
     fn test_set_clear() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
             assert_eq!(1, set.len());
             set.clear();
@@ -367,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_set_contains() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
             assert!(set.contains(1).unwrap());
         });
@@ -375,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_set_discard() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
             assert!(!set.discard(2).unwrap());
             assert_eq!(1, set.len());
@@ -390,34 +364,30 @@ mod tests {
 
     #[test]
     fn test_set_add() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1, 2]).unwrap();
-            set.add(1).unwrap(); // Add a dupliated element
+            set.add(1).unwrap(); // Add a duplicated element
             assert!(set.contains(1).unwrap());
         });
     }
 
     #[test]
     fn test_set_pop() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
             let val = set.pop();
             assert!(val.is_some());
             let val2 = set.pop();
             assert!(val2.is_none());
             assert!(py
-                .eval(
-                    ffi::c_str!("print('Exception state should not be set.')"),
-                    None,
-                    None
-                )
+                .eval(c"print('Exception state should not be set.')", None, None)
                 .is_ok());
         });
     }
 
     #[test]
     fn test_set_iter() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
 
             for el in set {
@@ -430,7 +400,7 @@ mod tests {
     fn test_set_iter_bound() {
         use crate::types::any::PyAnyMethods;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
 
             for el in &set {
@@ -442,7 +412,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_set_iter_mutation() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1, 2, 3, 4, 5]).unwrap();
 
             for _ in &set {
@@ -454,7 +424,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_set_iter_mutation_same_len() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1, 2, 3, 4, 5]).unwrap();
 
             for item in &set {
@@ -467,7 +437,7 @@ mod tests {
 
     #[test]
     fn test_set_iter_size_hint() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let set = PySet::new(py, [1]).unwrap();
             let mut iter = set.iter();
 
@@ -478,5 +448,13 @@ mod tests {
             assert_eq!(iter.len(), 0);
             assert_eq!(iter.size_hint(), (0, Some(0)));
         });
+    }
+
+    #[test]
+    fn test_iter_count() {
+        Python::attach(|py| {
+            let set = PySet::new(py, vec![1, 2, 3]).unwrap();
+            assert_eq!(set.iter().count(), 3);
+        })
     }
 }

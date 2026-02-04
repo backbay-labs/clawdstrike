@@ -33,7 +33,6 @@
 //!     }
 //! }
 //!
-//! #[derive(Clone)]
 //! struct MyCounter(u64);
 //!
 //! impl Clock for MyCounter {
@@ -45,14 +44,14 @@
 //! }
 //! ```
 
-use std::prelude::v1::*;
+use core::prelude::v1::*;
 
-use std::convert::TryInto;
-use std::fmt::Debug;
-use std::ops::Add;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::Duration;
+use alloc::sync::Arc;
+use core::convert::TryInto;
+use core::fmt::Debug;
+use core::ops::Add;
+use core::sync::atomic::Ordering;
+use core::time::Duration;
 
 use portable_atomic::AtomicU64;
 
@@ -75,7 +74,7 @@ pub trait Reference:
 }
 
 /// A time source used by rate limiters.
-pub trait Clock: Clone {
+pub trait Clock {
     /// A measurement of a monotonically increasing clock.
     type Instant: Reference;
 
@@ -193,7 +192,7 @@ pub use default::*;
 mod test {
     use super::*;
     use crate::nanos::Nanos;
-    use std::iter::repeat;
+
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
@@ -201,8 +200,7 @@ mod test {
     #[test]
     fn fake_clock_parallel_advances() {
         let clock = Arc::new(FakeRelativeClock::default());
-        let threads = repeat(())
-            .take(10)
+        let threads = std::iter::repeat_n((), 10)
             .map(move |_| {
                 let clock = Arc::clone(&clock);
                 thread::spawn(move || {

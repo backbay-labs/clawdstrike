@@ -125,13 +125,27 @@ pub use self::service::HandlerService;
 ///     )));
 /// # let _: Router = app;
 /// ```
-#[rustversion::attr(
-    since(1.78),
-    diagnostic::on_unimplemented(
-        note = "Consider using `#[axum::debug_handler]` to improve the error message"
-    )
+///
+/// # About type parameter `T`
+///
+/// **Generally you shouldn't need to worry about `T`**; when calling methods such as
+/// [`post`](crate::routing::method_routing::post) it will be automatically inferred and this is
+/// the intended way for this parameter to be provided in application code.
+///
+/// If you are implementing your own methods that accept implementations of `Handler` as
+/// arguments, then the following may be useful:
+///
+/// The type parameter `T` is a workaround for trait coherence rules, allowing us to
+/// write blanket implementations of `Handler` over many types of handler functions
+/// with different numbers of arguments, without the compiler forbidding us from doing
+/// so because one type `F` can in theory implement both `Fn(A) -> X` and `Fn(A, B) -> Y`.
+/// `T` is a placeholder taking on a representation of the parameters of the handler function,
+/// as well as other similar 'coherence rule workaround' discriminators,
+/// allowing us to select one function signature to use as a `Handler`.
+#[diagnostic::on_unimplemented(
+    note = "Consider using `#[axum::debug_handler]` to improve the error message"
 )]
-pub trait Handler<T, S>: Clone + Send + Sized + 'static {
+pub trait Handler<T, S>: Clone + Send + Sync + Sized + 'static {
     /// The type of future calling this handler returns.
     type Future: Future<Output = Response> + Send + 'static;
 
@@ -192,7 +206,7 @@ pub trait Handler<T, S>: Clone + Send + Sized + 'static {
 
 impl<F, Fut, Res, S> Handler<((),), S> for F
 where
-    F: FnOnce() -> Fut + Clone + Send + 'static,
+    F: FnOnce() -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Res> + Send,
     Res: IntoResponse,
 {
@@ -210,7 +224,7 @@ macro_rules! impl_handler {
         #[allow(non_snake_case, unused_mut)]
         impl<F, Fut, S, Res, M, $($ty,)* $last> Handler<(M, $($ty,)* $last,), S> for F
         where
-            F: FnOnce($($ty,)* $last,) -> Fut + Clone + Send + 'static,
+            F: FnOnce($($ty,)* $last,) -> Fut + Clone + Send + Sync + 'static,
             Fut: Future<Output = Res> + Send,
             S: Send + Sync + 'static,
             Res: IntoResponse,
@@ -220,12 +234,10 @@ macro_rules! impl_handler {
             type Future = Pin<Box<dyn Future<Output = Response> + Send>>;
 
             fn call(self, req: Request, state: S) -> Self::Future {
+                let (mut parts, body) = req.into_parts();
                 Box::pin(async move {
-                    let (mut parts, body) = req.into_parts();
-                    let state = &state;
-
                     $(
-                        let $ty = match $ty::from_request_parts(&mut parts, state).await {
+                        let $ty = match $ty::from_request_parts(&mut parts, &state).await {
                             Ok(value) => value,
                             Err(rejection) => return rejection.into_response(),
                         };
@@ -233,14 +245,12 @@ macro_rules! impl_handler {
 
                     let req = Request::from_parts(parts, body);
 
-                    let $last = match $last::from_request(req, state).await {
+                    let $last = match $last::from_request(req, &state).await {
                         Ok(value) => value,
                         Err(rejection) => return rejection.into_response(),
                     };
 
-                    let res = self($($ty,)* $last,).await;
-
-                    res.into_response()
+                    self($($ty,)* $last,).await.into_response()
                 })
             }
         }
@@ -257,7 +267,7 @@ mod private {
 
 impl<T, S> Handler<private::IntoResponseHandler, S> for T
 where
-    T: IntoResponse + Clone + Send + 'static,
+    T: IntoResponse + Clone + Send + Sync + 'static,
 {
     type Future = std::future::Ready<Response>;
 
@@ -302,7 +312,7 @@ where
 
 impl<H, S, T, L> Handler<T, S> for Layered<L, H, T, S>
 where
-    L: Layer<HandlerService<H, T, S>> + Clone + Send + 'static,
+    L: Layer<HandlerService<H, T, S>> + Clone + Send + Sync + 'static,
     H: Handler<T, S>,
     L::Service: Service<Request, Error = Infallible> + Clone + Send + 'static,
     <L::Service as Service<Request>>::Response: IntoResponse,

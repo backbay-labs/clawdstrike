@@ -1,4 +1,4 @@
-//! Target triple support.
+//! LLVM target triple types.
 
 #![deny(missing_docs, trivial_numeric_casts, unused_extern_crates)]
 #![warn(unused_import_braces)]
@@ -33,9 +33,9 @@ pub use self::data_model::{CDataModel, Size};
 pub use self::host::HOST;
 pub use self::parse_error::ParseError;
 pub use self::targets::{
-    Aarch64Architecture, Architecture, ArmArchitecture, BinaryFormat, CustomVendor, Environment,
-    Mips32Architecture, Mips64Architecture, OperatingSystem, Riscv32Architecture,
-    Riscv64Architecture, Vendor, X86_32Architecture,
+    Aarch64Architecture, Architecture, ArmArchitecture, BinaryFormat, CleverArchitecture,
+    CustomVendor, DeploymentTarget, Environment, Mips32Architecture, Mips64Architecture,
+    OperatingSystem, Riscv32Architecture, Riscv64Architecture, Vendor, X86_32Architecture,
 };
 pub use self::triple::{CallingConvention, Endianness, PointerWidth, Triple};
 

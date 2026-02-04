@@ -39,7 +39,7 @@ jobs:
       - name: Setup mdBook
         uses: peaceiris/actions-mdbook@v2
         with:
-          mdbook-version: "0.4.40"
+          mdbook-version: "0.5.2"
 
       - name: Build documentation
         run: |
@@ -73,10 +73,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Setup mdBook
         uses: peaceiris/actions-mdbook@v2
         with:
-          mdbook-version: "0.4.40"
+          mdbook-version: "0.5.2"
 
       - name: Install link checker
         run: |

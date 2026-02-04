@@ -81,11 +81,13 @@ pub async fn require_scope(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Get the authenticated key from extensions
-    let auth_key = req
-        .extensions()
-        .get::<AuthenticatedKey>()
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    // Get the authenticated key from extensions.
+    //
+    // Note: when auth is disabled in config, `require_auth` will bypass validation and won't add
+    // `AuthenticatedKey`. In that case, scope checks are a no-op.
+    let Some(auth_key) = req.extensions().get::<AuthenticatedKey>() else {
+        return Ok(next.run(req).await);
+    };
 
     // Check if key has required scope
     if !auth_key.0.has_scope(scope) {

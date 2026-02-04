@@ -13,7 +13,6 @@ use crate::{
         tracing_helpers::{capture_tracing, TracingEvent},
         *,
     },
-    util::mutex_num_locked,
     BoxError, Extension, Json, Router, ServiceExt,
 };
 use axum_core::extract::Request;
@@ -86,9 +85,9 @@ async fn routing() {
             "/users",
             get(|_: Request| async { "users#index" }).post(|_: Request| async { "users#create" }),
         )
-        .route("/users/:id", get(|_: Request| async { "users#show" }))
+        .route("/users/{id}", get(|_: Request| async { "users#show" }))
         .route(
-            "/users/:id/action",
+            "/users/{id}/action",
             get(|_: Request| async { "users#action" }),
         );
 
@@ -292,7 +291,10 @@ async fn multiple_methods_for_one_handler() {
 
 #[crate::test]
 async fn wildcard_sees_whole_url() {
-    let app = Router::new().route("/api/*rest", get(|uri: Uri| async move { uri.to_string() }));
+    let app = Router::new().route(
+        "/api/{*rest}",
+        get(|uri: Uri| async move { uri.to_string() }),
+    );
 
     let client = TestClient::new(app);
 
@@ -360,7 +362,7 @@ async fn with_and_without_trailing_slash() {
 #[crate::test]
 async fn wildcard_doesnt_match_just_trailing_slash() {
     let app = Router::new().route(
-        "/x/*path",
+        "/x/{*path}",
         get(|Path(path): Path<String>| async move { path }),
     );
 
@@ -380,8 +382,8 @@ async fn wildcard_doesnt_match_just_trailing_slash() {
 #[crate::test]
 async fn what_matches_wildcard() {
     let app = Router::new()
-        .route("/*key", get(|| async { "root" }))
-        .route("/x/*key", get(|| async { "x" }))
+        .route("/{*key}", get(|| async { "root" }))
+        .route("/x/{*key}", get(|| async { "x" }))
         .fallback(|| async { "fallback" });
 
     let client = TestClient::new(app);
@@ -409,7 +411,7 @@ async fn what_matches_wildcard() {
 async fn static_and_dynamic_paths() {
     let app = Router::new()
         .route(
-            "/:key",
+            "/{key}",
             get(|Path(key): Path<String>| async move { format!("dynamic: {key}") }),
         )
         .route("/foo", get(|| async { "static" }));
@@ -598,7 +600,7 @@ async fn head_with_middleware_applied() {
 
     let app = Router::new()
         .nest(
-            "/",
+            "/foo",
             Router::new().route("/", get(|| async { "Hello, World!" })),
         )
         .layer(CompressionLayer::new().compress_when(SizeAbove::new(0)));
@@ -606,13 +608,13 @@ async fn head_with_middleware_applied() {
     let client = TestClient::new(app);
 
     // send GET request
-    let res = client.get("/").header("accept-encoding", "gzip").await;
+    let res = client.get("/foo").header("accept-encoding", "gzip").await;
     assert_eq!(res.headers()["transfer-encoding"], "chunked");
     // cannot have `transfer-encoding: chunked` and `content-length`
     assert!(!res.headers().contains_key("content-length"));
 
     // send HEAD request
-    let res = client.head("/").header("accept-encoding", "gzip").await;
+    let res = client.head("/foo").header("accept-encoding", "gzip").await;
     // no response body so no `transfer-encoding`
     assert!(!res.headers().contains_key("transfer-encoding"));
     // no content-length since we cannot know it since the response
@@ -954,7 +956,7 @@ async fn logging_rejections() {
         rejection_type: String,
     }
 
-    let events = capture_tracing::<RejectionEvent, _, _>(|| async {
+    let events = capture_tracing::<RejectionEvent, _>(|| async {
         let app = Router::new()
             .route("/extension", get(|_: Extension<Infallible>| async {}))
             .route("/string", post(|_: String| async {}));
@@ -975,10 +977,11 @@ async fn logging_rejections() {
             StatusCode::BAD_REQUEST,
         );
     })
+    .with_filter("axum::rejection=trace")
     .await;
 
     assert_eq!(
-        dbg!(events),
+        events,
         Vec::from([
             TracingEvent {
                 fields: RejectionEvent {
@@ -1057,35 +1060,19 @@ async fn impl_handler_for_into_response() {
 }
 
 #[crate::test]
-async fn locks_mutex_very_little() {
-    let (num, app) = mutex_num_locked(|| async {
-        Router::new()
-            .route("/a", get(|| async {}))
-            .route("/b", get(|| async {}))
-            .route("/c", get(|| async {}))
-            .with_state::<()>(())
-            .into_service::<Body>()
-    })
-    .await;
-    // once for `Router::new` for setting the default fallback and 3 times, once per route
-    assert_eq!(num, 4);
+#[should_panic(
+    expected = "Path segments must not start with `:`. For capture groups, use `{capture}`. If you meant to literally match a segment starting with a colon, call `without_v07_checks` on the router."
+)]
+async fn colon_in_route() {
+    _ = Router::<()>::new().route("/:foo", get(|| async move {}));
+}
 
-    for path in ["/a", "/b", "/c"] {
-        // calling the router should only lock the mutex once
-        let (num, _res) = mutex_num_locked(|| async {
-            // We cannot use `TestClient` because it uses `serve` which spawns a new task per
-            // connection and `mutex_num_locked` uses a task local to keep track of the number of
-            // locks. So spawning a new task would unset the task local set by `mutex_num_locked`
-            //
-            // So instead `call` the service directly without spawning new tasks.
-            app.clone()
-                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
-                .await
-                .unwrap()
-        })
-        .await;
-        assert_eq!(num, 1);
-    }
+#[crate::test]
+#[should_panic(
+    expected = "Path segments must not start with `*`. For wildcard capture, use `{*wildcard}`. If you meant to literally match a segment starting with an asterisk, call `without_v07_checks` on the router."
+)]
+async fn asterisk_in_route() {
+    _ = Router::<()>::new().route("/*foo", get(|| async move {}));
 }
 
 #[crate::test]
@@ -1094,8 +1081,8 @@ async fn middleware_adding_body() {
         .route("/", get(()))
         .layer(MapResponseLayer::new(|mut res: Response| -> Response {
             // If there is a content-length header, its value will be zero and axum will avoid
-            // overwriting it. But this means our content-length doesn't match the length of the
-            // body, which leads to panics in Hyper. Thus we have to ensure that axum doesn't add
+            // overwriting it. But this means our content-length doesn’t match the length of the
+            // body, which leads to panics in Hyper. Thus we have to ensure that axum doesn’t add
             // on content-length headers until after middleware has been run.
             assert!(!res.headers().contains_key("content-length"));
             *res.body_mut() = "…".into();
@@ -1104,5 +1091,11 @@ async fn middleware_adding_body() {
 
     let client = TestClient::new(app);
     let res = client.get("/").await;
+
+    let headers = res.headers();
+    let header = headers.get("content-length");
+    assert!(header.is_some());
+    assert_eq!(header.unwrap().to_str().unwrap(), "3");
+
     assert_eq!(res.text().await, "…");
 }

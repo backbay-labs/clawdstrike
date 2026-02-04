@@ -2,7 +2,7 @@
 # Copy to /etc/hushd/config.yaml and customize
 
 # Listen address
-listen: "0.0.0.0:9876"
+listen: "127.0.0.1:9876"
 
 # Policy configuration
 # Option 1: Use a named ruleset (default, strict, permissive)
@@ -27,7 +27,7 @@ cors_enabled: true
 # Maximum audit entries to keep (0 = unlimited)
 max_audit_entries: 100000
 
-# TLS configuration (optional)
+# TLS configuration (not implemented in hushd yet; terminate TLS at a reverse proxy)
 # tls:
 #   cert_path: /etc/hushd/cert.pem
 #   key_path: /etc/hushd/key.pem

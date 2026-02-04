@@ -11,7 +11,7 @@ rust-version.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-hush-core = { path = "../hush-core" }
+hush-core = { workspace = true }
 
 # WASM bindings
 wasm-bindgen = "0.2"
@@ -30,7 +30,7 @@ hex = { workspace = true }
 console_error_panic_hook = "0.1"
 
 # Cryptographic randomness in WASM
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

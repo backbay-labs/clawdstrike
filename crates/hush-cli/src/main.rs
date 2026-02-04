@@ -23,7 +23,6 @@
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::generate;
 use rand::Rng;
-use sha2::{Digest, Sha256};
 use std::io::{self, Read, Write};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -403,6 +402,10 @@ enum DaemonCommands {
         /// Daemon URL
         #[arg(default_value = "http://127.0.0.1:9876")]
         url: String,
+
+        /// Bearer token for authenticated daemons (if omitted, uses HUSHD_ADMIN_KEY or HUSHD_API_KEY when set)
+        #[arg(long)]
+        token: Option<String>,
     },
     /// Show daemon status
     Status {
@@ -415,6 +418,10 @@ enum DaemonCommands {
         /// Daemon URL
         #[arg(default_value = "http://127.0.0.1:9876")]
         url: String,
+
+        /// Bearer token for authenticated daemons (if omitted, uses HUSHD_ADMIN_KEY or HUSHD_API_KEY when set)
+        #[arg(long)]
+        token: Option<String>,
     },
     /// Generate a new API key for the daemon
     Keygen {
@@ -1376,20 +1383,55 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             }
         }
 
-        DaemonCommands::Stop { url } => {
-            let _ = writeln!(stdout, "Note: Daemon can be stopped with Ctrl+C or SIGTERM");
-            let _ = writeln!(stdout, "Checking status at {}...", url);
-
+        DaemonCommands::Stop { url, token } => {
             let client = reqwest::blocking::Client::new();
-            match client.get(format!("{}/health", url)).send() {
+            let token = token
+                .or_else(|| std::env::var("HUSHD_ADMIN_KEY").ok())
+                .or_else(|| std::env::var("HUSHD_API_KEY").ok());
+
+            let _ = writeln!(stdout, "Requesting shutdown at {}...", url);
+
+            let mut req = client.post(format!("{}/api/v1/shutdown", url));
+            if let Some(token) = token {
+                req = req.bearer_auth(token);
+            }
+
+            match req.send() {
                 Ok(resp) if resp.status().is_success() => {
-                    let _ = writeln!(stdout, "Daemon is running. Send SIGTERM to stop.");
+                    let _ = writeln!(stdout, "Shutdown requested");
+
+                    // Best-effort: wait briefly for the daemon to exit.
+                    for _ in 0..20 {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        match client.get(format!("{}/health", url)).send() {
+                            Ok(h) if h.status().is_success() => continue,
+                            _ => break,
+                        }
+                    }
+
+                    ExitCode::Ok
                 }
-                _ => {
-                    let _ = writeln!(stdout, "Daemon is not running.");
+                Ok(resp) if resp.status() == reqwest::StatusCode::NOT_FOUND => {
+                    let _ = writeln!(
+                        stderr,
+                        "Daemon does not support shutdown via API. Stop it with Ctrl+C or SIGTERM."
+                    );
+                    ExitCode::RuntimeError
+                }
+                Ok(resp) => {
+                    let _ = writeln!(
+                        stderr,
+                        "Error: {} {}",
+                        resp.status(),
+                        resp.text().unwrap_or_default()
+                    );
+                    ExitCode::RuntimeError
+                }
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error connecting to daemon: {}", e);
+                    ExitCode::RuntimeError
                 }
             }
-            ExitCode::Ok
         }
 
         DaemonCommands::Status { url } => {
@@ -1446,9 +1488,18 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             }
         }
 
-        DaemonCommands::Reload { url } => {
+        DaemonCommands::Reload { url, token } => {
             let client = reqwest::blocking::Client::new();
-            match client.post(format!("{}/api/v1/policy/reload", url)).send() {
+            let token = token
+                .or_else(|| std::env::var("HUSHD_ADMIN_KEY").ok())
+                .or_else(|| std::env::var("HUSHD_API_KEY").ok());
+
+            let mut req = client.post(format!("{}/api/v1/policy/reload", url));
+            if let Some(token) = token {
+                req = req.bearer_auth(token);
+            }
+
+            match req.send() {
                 Ok(resp) if resp.status().is_success() => {
                     let _ = writeln!(stdout, "Policy reloaded successfully");
                     ExitCode::Ok
@@ -1475,16 +1526,17 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             expires_days,
         } => {
             // Generate a secure random key
-            let mut rng = rand::thread_rng();
-            let key_bytes: [u8; 32] = rng.gen();
+            let mut rng = rand::rng();
+            let key_bytes: [u8; 32] = rng.random();
             let raw_key = format!("hush_{}", hex::encode(key_bytes));
 
-            // Compute hash for config
-            let hash = Sha256::digest(raw_key.as_bytes());
-            let key_hash = hex::encode(hash);
-
             // Parse scopes
-            let scope_list: Vec<&str> = scopes.split(',').map(|s| s.trim()).collect();
+            let scope_list: Vec<String> = scopes
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
 
             // Calculate expiration
             let expires_at = if expires_days > 0 {
@@ -1495,7 +1547,6 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
 
             let _ = writeln!(stdout, "Generated API key for '{}':\n", name);
             let _ = writeln!(stdout, "  Key:    {}", raw_key);
-            let _ = writeln!(stdout, "  Hash:   {}", key_hash);
             let _ = writeln!(stdout, "  Scopes: {:?}", scope_list);
             if let Some(exp) = expires_at {
                 let _ = writeln!(stdout, "  Expires: {}", exp.to_rfc3339());
@@ -1504,12 +1555,13 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             }
 
             let _ = writeln!(stdout, "\nAdd to config.yaml:\n");
-            let _ = writeln!(stdout, "[[auth.api_keys]]");
-            let _ = writeln!(stdout, "name = \"{}\"", name);
-            let _ = writeln!(stdout, "key = \"{}\"", raw_key);
-            let _ = writeln!(stdout, "scopes = {:?}", scope_list);
+            let _ = writeln!(stdout, "auth:");
+            let _ = writeln!(stdout, "  api_keys:");
+            let _ = writeln!(stdout, "    - name: \"{}\"", name);
+            let _ = writeln!(stdout, "      key: \"{}\"", raw_key);
+            let _ = writeln!(stdout, "      scopes: {:?}", scope_list);
             if let Some(exp) = expires_at {
-                let _ = writeln!(stdout, "expires_at = \"{}\"", exp.to_rfc3339());
+                let _ = writeln!(stdout, "      expires_at: \"{}\"", exp.to_rfc3339());
             }
 
             let _ = writeln!(stdout, "\nOr set environment variable:");

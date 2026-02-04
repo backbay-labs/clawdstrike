@@ -101,7 +101,10 @@ type CompiledPattern = {
 
 function compileMaybe(pattern: string | RegExp): RegExp | null {
   try {
-    if (pattern instanceof RegExp) return pattern;
+    if (pattern instanceof RegExp) {
+      const flags = pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g";
+      return new RegExp(pattern.source, flags);
+    }
     return new RegExp(pattern, "g");
   } catch {
     return null;

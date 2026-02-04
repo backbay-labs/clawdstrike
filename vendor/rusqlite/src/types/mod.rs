@@ -52,7 +52,7 @@ impl FromSql for DateTimeSql {
         i64::column_result(value).and_then(|as_i64| {
             time::OffsetDateTime::from_unix_timestamp(as_i64)
             .map(|odt| DateTimeSql(odt))
-            .map_err(|err| FromSqlError::Other(Box::new(err)))
+            .map_err(FromSqlError::other)
         })
     }
 }
@@ -78,18 +78,16 @@ pub use self::value_ref::ValueRef;
 use std::fmt;
 
 #[cfg(feature = "chrono")]
-#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 mod chrono;
 mod from_sql;
+#[cfg(feature = "jiff")]
+mod jiff;
 #[cfg(feature = "serde_json")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde_json")))]
 mod serde_json;
 #[cfg(feature = "time")]
-#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 mod time;
 mod to_sql;
 #[cfg(feature = "url")]
-#[cfg_attr(docsrs, doc(cfg(feature = "url")))]
 mod url;
 mod value;
 mod value_ref;
@@ -128,20 +126,23 @@ pub enum Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Type::Null => f.pad("Null"),
-            Type::Integer => f.pad("Integer"),
-            Type::Real => f.pad("Real"),
-            Type::Text => f.pad("Text"),
-            Type::Blob => f.pad("Blob"),
+            Self::Null => f.pad("Null"),
+            Self::Integer => f.pad("Integer"),
+            Self::Real => f.pad("Real"),
+            Self::Text => f.pad("Text"),
+            Self::Blob => f.pad("Blob"),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use super::Value;
     use crate::{params, Connection, Error, Result, Statement};
-    use std::os::raw::{c_double, c_int};
+    use std::ffi::{c_double, c_int};
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;
@@ -156,7 +157,7 @@ mod test {
         let v1234 = vec![1u8, 2, 3, 4];
         db.execute("INSERT INTO foo(b) VALUES (?1)", [&v1234])?;
 
-        let v: Vec<u8> = db.one_column("SELECT b FROM foo")?;
+        let v: Vec<u8> = db.one_column("SELECT b FROM foo", [])?;
         assert_eq!(v, v1234);
         Ok(())
     }
@@ -168,7 +169,7 @@ mod test {
         let empty = vec![];
         db.execute("INSERT INTO foo(b) VALUES (?1)", [&empty])?;
 
-        let v: Vec<u8> = db.one_column("SELECT b FROM foo")?;
+        let v: Vec<u8> = db.one_column("SELECT b FROM foo", [])?;
         assert_eq!(v, empty);
         Ok(())
     }
@@ -180,7 +181,7 @@ mod test {
         let s = "hello, world!";
         db.execute("INSERT INTO foo(t) VALUES (?1)", [&s])?;
 
-        let from: String = db.one_column("SELECT t FROM foo")?;
+        let from: String = db.one_column("SELECT t FROM foo", [])?;
         assert_eq!(from, s);
         Ok(())
     }
@@ -192,7 +193,7 @@ mod test {
         let s = "hello, world!";
         db.execute("INSERT INTO foo(t) VALUES (?1)", [s.to_owned()])?;
 
-        let from: String = db.one_column("SELECT t FROM foo")?;
+        let from: String = db.one_column("SELECT t FROM foo", [])?;
         assert_eq!(from, s);
         Ok(())
     }
@@ -203,7 +204,7 @@ mod test {
 
         db.execute("INSERT INTO foo(i) VALUES (?1)", [Value::Integer(10)])?;
 
-        assert_eq!(10i64, db.one_column::<i64>("SELECT i FROM foo")?);
+        assert_eq!(10, db.one_column::<i64, _>("SELECT i FROM foo", [])?);
         Ok(())
     }
 
@@ -239,7 +240,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
+    #[expect(clippy::cognitive_complexity)]
     fn test_mismatched_types() -> Result<()> {
         fn is_invalid_column_type(err: Error) -> bool {
             matches!(err, Error::InvalidColumnType(..))
@@ -385,9 +386,8 @@ mod test {
     }
 
     #[test]
+    #[expect(clippy::float_cmp)]
     fn test_numeric_conversions() -> Result<()> {
-        #![allow(clippy::float_cmp)]
-
         // Test what happens when we store an f32 and retrieve an i32 etc.
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo (x)")?;
@@ -415,12 +415,18 @@ mod test {
         test_conversion!(db_etc, 200u8, u8, expect 200u8);
         test_conversion!(db_etc, 100u16, i8, expect 100i8);
         test_conversion!(db_etc, 200u16, u8, expect 200u8);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, u32::MAX, u64, expect u32::MAX as u64);
+
         test_conversion!(db_etc, i64::MIN, i64, expect i64::MIN);
         test_conversion!(db_etc, i64::MAX, i64, expect i64::MAX);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, i64::MAX, u64, expect i64::MAX as u64);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, 100usize, usize, expect 100usize);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, 100u64, u64, expect 100u64);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, i64::MAX as u64, u64, expect i64::MAX as u64);
 
         // Out-of-range integral conversions.
@@ -428,9 +434,13 @@ mod test {
         test_conversion!(db_etc, 400u16, i8, expect_from_sql_error);
         test_conversion!(db_etc, 400u16, u8, expect_from_sql_error);
         test_conversion!(db_etc, -1i8, u8, expect_from_sql_error);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, i64::MIN, u64, expect_from_sql_error);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, u64::MAX, i64, expect_to_sql_error);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, u64::MAX, u64, expect_to_sql_error);
+        #[cfg(feature = "fallible_uint")]
         test_conversion!(db_etc, i64::MAX as u64 + 1, u64, expect_to_sql_error);
 
         // FromSql integer to float, always works.

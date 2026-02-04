@@ -38,7 +38,7 @@ macro_rules! __log_rejection {
 macro_rules! __define_rejection {
     (
         #[status = $status:ident]
-        #[body = $body:expr]
+        #[body = $body:literal]
         $(#[$m:meta])*
         pub struct $name:ident;
     ) => {
@@ -47,26 +47,28 @@ macro_rules! __define_rejection {
         #[non_exhaustive]
         pub struct $name;
 
-        impl $crate::response::IntoResponse for $name {
-            fn into_response(self) -> $crate::response::Response {
-                $crate::__log_rejection!(
-                    rejection_type = $name,
-                    body_text = $body,
-                    status = http::StatusCode::$status,
-                );
-                (self.status(), $body).into_response()
-            }
-        }
-
         impl $name {
             /// Get the response body text used for this rejection.
             pub fn body_text(&self) -> String {
-                $body.into()
+                self.to_string()
             }
 
             /// Get the status code used for this rejection.
             pub fn status(&self) -> http::StatusCode {
                 http::StatusCode::$status
+            }
+        }
+
+        impl $crate::response::IntoResponse for $name {
+            fn into_response(self) -> $crate::response::Response {
+                let status = self.status();
+
+                $crate::__log_rejection!(
+                    rejection_type = $name,
+                    body_text = $body,
+                    status = status,
+                );
+                (status, $body).into_response()
             }
         }
 
@@ -87,7 +89,7 @@ macro_rules! __define_rejection {
 
     (
         #[status = $status:ident]
-        #[body = $body:expr]
+        #[body = $body:literal]
         $(#[$m:meta])*
         pub struct $name:ident (Error);
     ) => {
@@ -102,34 +104,39 @@ macro_rules! __define_rejection {
             {
                 Self($crate::Error::new(err))
             }
-        }
 
-        impl $crate::response::IntoResponse for $name {
-            fn into_response(self) -> $crate::response::Response {
-                $crate::__log_rejection!(
-                    rejection_type = $name,
-                    body_text = self.body_text(),
-                    status = http::StatusCode::$status,
-                );
-                (self.status(), self.body_text()).into_response()
-            }
-        }
-
-        impl $name {
             /// Get the response body text used for this rejection.
+            #[must_use]
             pub fn body_text(&self) -> String {
-                format!(concat!($body, ": {}"), self.0).into()
+                self.to_string()
             }
 
             /// Get the status code used for this rejection.
+            #[must_use]
             pub fn status(&self) -> http::StatusCode {
                 http::StatusCode::$status
             }
         }
 
+        impl $crate::response::IntoResponse for $name {
+            fn into_response(self) -> $crate::response::Response {
+                let status = self.status();
+                let body_text = self.body_text();
+
+                $crate::__log_rejection!(
+                    rejection_type = $name,
+                    body_text = body_text,
+                    status = status,
+                );
+                (status, body_text).into_response()
+            }
+        }
+
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", $body)
+                f.write_str($body)?;
+                f.write_str(": ")?;
+                self.0.fmt(f)
             }
         }
 
@@ -174,6 +181,7 @@ macro_rules! __composite_rejection {
 
         impl $name {
             /// Get the response body text used for this rejection.
+            #[must_use]
             pub fn body_text(&self) -> String {
                 match self {
                     $(
@@ -183,6 +191,7 @@ macro_rules! __composite_rejection {
             }
 
             /// Get the status code used for this rejection.
+            #[must_use]
             pub fn status(&self) -> http::StatusCode {
                 match self {
                     $(

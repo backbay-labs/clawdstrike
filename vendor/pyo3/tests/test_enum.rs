@@ -4,10 +4,9 @@ use pyo3::prelude::*;
 use pyo3::py_run;
 use pyo3::types::PyString;
 
-#[path = "../src/tests/common.rs"]
-mod common;
+mod test_utils;
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum MyEnum {
     Variant,
@@ -16,10 +15,31 @@ pub enum MyEnum {
 
 #[test]
 fn test_enum_class_attr() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let my_enum = py.get_type::<MyEnum>();
         let var = Py::new(py, MyEnum::Variant).unwrap();
         py_assert!(py, my_enum var, "my_enum.Variant == var");
+    })
+}
+
+#[test]
+fn test_enum_eq_enum() {
+    Python::attach(|py| {
+        let var1 = Py::new(py, MyEnum::Variant).unwrap();
+        let var2 = Py::new(py, MyEnum::Variant).unwrap();
+        let other_var = Py::new(py, MyEnum::OtherVariant).unwrap();
+        py_assert!(py, var1 var2, "var1 == var2");
+        py_assert!(py, var1 other_var, "var1 != other_var");
+        py_assert!(py, var1 var2, "(var1 != var2) == False");
+    })
+}
+
+#[test]
+fn test_enum_eq_incomparable() {
+    Python::attach(|py| {
+        let var1 = Py::new(py, MyEnum::Variant).unwrap();
+        py_assert!(py, var1, "(var1 == 'foo') == False");
+        py_assert!(py, var1, "(var1 != 'foo') == True");
     })
 }
 
@@ -30,11 +50,12 @@ fn return_enum() -> MyEnum {
 
 #[test]
 fn test_return_enum() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let f = wrap_pyfunction!(return_enum)(py).unwrap();
         let mynum = py.get_type::<MyEnum>();
 
-        py_run!(py, f mynum, "assert f() == mynum.Variant")
+        py_run!(py, f mynum, "assert f() == mynum.Variant");
+        py_run!(py, f mynum, "assert f() is mynum.Variant");
     });
 }
 
@@ -45,7 +66,7 @@ fn enum_arg(e: MyEnum) {
 
 #[test]
 fn test_enum_arg() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let f = wrap_pyfunction!(enum_arg)(py).unwrap();
         let mynum = py.get_type::<MyEnum>();
 
@@ -53,7 +74,7 @@ fn test_enum_arg() {
     })
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, skip_from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum CustomDiscriminant {
     One = 1,
@@ -62,7 +83,7 @@ enum CustomDiscriminant {
 
 #[test]
 fn test_custom_discriminant() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         #[allow(non_snake_case)]
         let CustomDiscriminant = py.get_type::<CustomDiscriminant>();
         let one = Py::new(py, CustomDiscriminant::One).unwrap();
@@ -70,14 +91,18 @@ fn test_custom_discriminant() {
         py_run!(py, CustomDiscriminant one two, r#"
         assert CustomDiscriminant.One == one
         assert CustomDiscriminant.Two == two
+        assert CustomDiscriminant.One == 1
+        assert CustomDiscriminant.Two == 2
         assert one != two
+        assert CustomDiscriminant.One != 2
+        assert CustomDiscriminant.Two != 1
         "#);
     })
 }
 
 #[test]
 fn test_enum_to_int() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let one = Py::new(py, CustomDiscriminant::One).unwrap();
         py_assert!(py, one, "int(one) == 1");
         let v = Py::new(py, MyEnum::Variant).unwrap();
@@ -88,7 +113,7 @@ fn test_enum_to_int() {
 
 #[test]
 fn test_enum_compare_int() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let one = Py::new(py, CustomDiscriminant::One).unwrap();
         py_run!(
             py,
@@ -102,7 +127,7 @@ fn test_enum_compare_int() {
     })
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, skip_from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[repr(u8)]
 enum SmallEnum {
@@ -111,13 +136,13 @@ enum SmallEnum {
 
 #[test]
 fn test_enum_compare_int_no_throw_when_overflow() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let v = Py::new(py, SmallEnum::V).unwrap();
         py_assert!(py, v, "v != 1<<30")
     })
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, skip_from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[repr(usize)]
 #[allow(clippy::enum_clike_unportable_variant)]
@@ -127,7 +152,7 @@ enum BigEnum {
 
 #[test]
 fn test_big_enum_no_overflow() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let usize_max = usize::MAX;
         let v = Py::new(py, BigEnum::V).unwrap();
 
@@ -136,7 +161,7 @@ fn test_big_enum_no_overflow() {
     })
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, skip_from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[repr(u16, align(8))]
 enum TestReprParse {
@@ -148,7 +173,7 @@ fn test_repr_parse() {
     assert_eq!(std::mem::align_of::<TestReprParse>(), 8);
 }
 
-#[pyclass(eq, eq_int, name = "MyEnum")]
+#[pyclass(eq, eq_int, name = "MyEnum", skip_from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RenameEnum {
     Variant,
@@ -156,13 +181,13 @@ pub enum RenameEnum {
 
 #[test]
 fn test_rename_enum_repr_correct() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let var1 = Py::new(py, RenameEnum::Variant).unwrap();
         py_assert!(py, var1, "repr(var1) == 'MyEnum.Variant'");
     })
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, skip_from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RenameVariantEnum {
     #[pyo3(name = "VARIANT")]
@@ -171,15 +196,15 @@ pub enum RenameVariantEnum {
 
 #[test]
 fn test_rename_variant_repr_correct() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let var1 = Py::new(py, RenameVariantEnum::Variant).unwrap();
         py_assert!(py, var1, "repr(var1) == 'RenameVariantEnum.VARIANT'");
     })
 }
 
-#[pyclass(eq, eq_int, rename_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass(eq, eq_int, rename_all = "SCREAMING_SNAKE_CASE", skip_from_py_object)]
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 enum RenameAllVariantsEnum {
     VariantOne,
     VariantTwo,
@@ -189,7 +214,7 @@ enum RenameAllVariantsEnum {
 
 #[test]
 fn test_renaming_all_enum_variants() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let enum_obj = py.get_type::<RenameAllVariantsEnum>();
         py_assert!(py, enum_obj, "enum_obj.VARIANT_ONE == enum_obj.VARIANT_ONE");
         py_assert!(py, enum_obj, "enum_obj.VARIANT_TWO == enum_obj.VARIANT_TWO");
@@ -210,7 +235,7 @@ enum CustomModuleComplexEnum {
 
 #[test]
 fn test_custom_module() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let enum_obj = py.get_type::<CustomModuleComplexEnum>();
         py_assert!(
             py,
@@ -220,7 +245,7 @@ fn test_custom_module() {
     });
 }
 
-#[pyclass(eq)]
+#[pyclass(eq, skip_from_py_object)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum EqOnly {
     VariantA,
@@ -229,7 +254,7 @@ pub enum EqOnly {
 
 #[test]
 fn test_simple_enum_eq_only() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let var1 = Py::new(py, EqOnly::VariantA).unwrap();
         let var2 = Py::new(py, EqOnly::VariantA).unwrap();
         let var3 = Py::new(py, EqOnly::VariantB).unwrap();
@@ -247,7 +272,7 @@ enum SimpleEnumWithHash {
 
 #[test]
 fn test_simple_enum_with_hash() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         use pyo3::types::IntoPyDict;
         let class = SimpleEnumWithHash::A;
         let hash = {
@@ -277,7 +302,7 @@ enum ComplexEnumWithHash {
 
 #[test]
 fn test_complex_enum_with_hash() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         use pyo3::types::IntoPyDict;
         let class = ComplexEnumWithHash::B {
             msg: String::from("Hello"),
@@ -300,66 +325,6 @@ fn test_complex_enum_with_hash() {
     });
 }
 
-#[allow(deprecated)]
-mod deprecated {
-    use crate::py_assert;
-    use pyo3::prelude::*;
-    use pyo3::py_run;
-
-    #[pyclass]
-    #[derive(Debug, PartialEq, Eq, Clone)]
-    pub enum MyEnum {
-        Variant,
-        OtherVariant,
-    }
-
-    #[test]
-    fn test_enum_eq_enum() {
-        Python::with_gil(|py| {
-            let var1 = Py::new(py, MyEnum::Variant).unwrap();
-            let var2 = Py::new(py, MyEnum::Variant).unwrap();
-            let other_var = Py::new(py, MyEnum::OtherVariant).unwrap();
-            py_assert!(py, var1 var2, "var1 == var2");
-            py_assert!(py, var1 other_var, "var1 != other_var");
-            py_assert!(py, var1 var2, "(var1 != var2) == False");
-        })
-    }
-
-    #[test]
-    fn test_enum_eq_incomparable() {
-        Python::with_gil(|py| {
-            let var1 = Py::new(py, MyEnum::Variant).unwrap();
-            py_assert!(py, var1, "(var1 == 'foo') == False");
-            py_assert!(py, var1, "(var1 != 'foo') == True");
-        })
-    }
-
-    #[pyclass]
-    enum CustomDiscriminant {
-        One = 1,
-        Two = 2,
-    }
-
-    #[test]
-    fn test_custom_discriminant() {
-        Python::with_gil(|py| {
-            #[allow(non_snake_case)]
-            let CustomDiscriminant = py.get_type::<CustomDiscriminant>();
-            let one = Py::new(py, CustomDiscriminant::One).unwrap();
-            let two = Py::new(py, CustomDiscriminant::Two).unwrap();
-            py_run!(py, CustomDiscriminant one two, r#"
-            assert CustomDiscriminant.One == one
-            assert CustomDiscriminant.Two == two
-            assert CustomDiscriminant.One == 1
-            assert CustomDiscriminant.Two == 2
-            assert one != two
-            assert CustomDiscriminant.One != 2
-            assert CustomDiscriminant.Two != 1
-            "#);
-        })
-    }
-}
-
 #[test]
 fn custom_eq() {
     #[pyclass(frozen)]
@@ -372,9 +337,9 @@ fn custom_eq() {
     #[pymethods]
     impl CustomPyEq {
         fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
-            if let Ok(rhs) = other.downcast::<PyString>() {
-                rhs.to_cow().map_or(false, |rhs| self.__str__() == rhs)
-            } else if let Ok(rhs) = other.downcast::<Self>() {
+            if let Ok(rhs) = other.cast::<PyString>() {
+                rhs.to_cow().is_ok_and(|rhs| self.__str__() == rhs)
+            } else if let Ok(rhs) = other.cast::<Self>() {
                 self == rhs.get()
             } else {
                 false
@@ -389,7 +354,7 @@ fn custom_eq() {
         }
     }
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let a = Bound::new(py, CustomPyEq::A).unwrap();
         let b = Bound::new(py, CustomPyEq::B).unwrap();
 
@@ -403,4 +368,39 @@ fn custom_eq() {
         assert!(b.as_any().ne(&a).unwrap());
         assert!(b.as_any().ne("A").unwrap());
     })
+}
+
+#[pyclass(skip_from_py_object)]
+#[derive(Clone, Copy)]
+pub enum ComplexEnumWithRaw {
+    Raw { r#type: i32 },
+}
+
+// Cover simple field lookups with raw identifiers
+#[test]
+fn complex_enum_with_raw() {
+    Python::attach(|py| {
+        let complex = ComplexEnumWithRaw::Raw { r#type: 314159 };
+
+        py_assert!(py, complex, "complex.type == 314159");
+    });
+}
+
+// Cover pattern matching with raw identifiers
+#[test]
+#[cfg(Py_3_10)]
+fn complex_enum_with_raw_pattern_match() {
+    Python::attach(|py| {
+        let complex = ComplexEnumWithRaw::Raw { r#type: 314159 };
+        let cls = py.get_type::<ComplexEnumWithRaw>();
+
+        // Cover destructuring by pattern matching
+        py_run!(py, cls complex, r#"
+        match complex:
+            case cls.Raw(type=ty):
+                assert ty == 314159
+            case _:
+                assert False, "no matching variant found"
+        "#);
+    });
 }

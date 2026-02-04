@@ -15,15 +15,16 @@ exclude = ["fuzz", "examples/rust/basic-verification"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/backbay-labs/clawdstrike"
-rust-version = "1.75"
+repository = "https://github.com/backbay-labs/hushclaw"
+rust-version = "1.92"
 
 [workspace.dependencies]
 # Crypto
-ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+ed25519-dalek = { version = "2.2", features = ["rand_core"] }
 sha2 = "0.10"
 sha3 = "0.10"
-rand = "0.8"
+rand = "0.9"
+rand_core = { version = "0.6", features = ["getrandom"] }
 hex = "0.4"
 base64 = "0.22"
 
@@ -34,16 +35,16 @@ serde_yaml = "0.9"
 ryu = "1.0"
 
 # Async runtime
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 async-trait = "0.1"
 
 # Patterns
-regex = "1.10"
+regex = "1.12"
 glob = "0.3"
 globset = "0.4"
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # Logging
@@ -54,33 +55,33 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # UUID
-uuid = { version = "1.6", features = ["v4", "serde", "js"] }
+uuid = { version = "1.20", features = ["v4", "serde", "js"] }
 
 # CLI
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 
 # HTTP server
-axum = { version = "0.7", features = ["macros"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # Rate limiting
-governor = "0.6"
-dashmap = "5.5"
+governor = "0.10"
+dashmap = "6.1"
 
 # Database
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
 
 # Async utilities
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
 
 # Config
-toml = "0.8"
-dirs = "5.0"
+toml = "0.9"
+dirs = "6.0"
 
 # HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 # Internal crates
 hush-core = { path = "crates/hush-core", version = "0.1.0" }

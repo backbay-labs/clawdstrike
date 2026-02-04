@@ -165,7 +165,7 @@ impl MerkleTree {
                 break;
             }
 
-            if idx % 2 == 0 {
+            if idx.is_multiple_of(2) {
                 let sib = idx + 1;
                 if sib < level.len() {
                     audit_path.push(level[sib]);
@@ -214,7 +214,7 @@ impl MerkleProof {
         let mut it = self.audit_path.iter();
 
         while size > 1 {
-            if idx % 2 == 0 {
+            if idx.is_multiple_of(2) {
                 if idx + 1 < size {
                     let sibling = it.next().ok_or(Error::MerkleProofFailed)?;
                     h = node_hash(&h, sibling);

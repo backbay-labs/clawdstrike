@@ -1,6 +1,7 @@
 {
   "name": "@clawdstrike/hush-cli-engine",
   "version": "0.1.0",
+  "private": true,
   "description": "Policy engine adapter that shells out to hush policy eval",
   "type": "module",
   "main": "dist/index.js",
@@ -21,9 +22,9 @@
     "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "typescript": "^5.3.0",
-    "vitest": "^1.2.0"
+    "@types/node": "^25.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "files": [
     "dist"
@@ -33,4 +34,3 @@
     "node": ">=18"
   }
 }
-

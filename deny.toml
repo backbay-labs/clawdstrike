@@ -17,10 +17,13 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
+    "OpenSSL",
     "Zlib",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
     "CC0-1.0",
     "MPL-2.0",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
@@ -30,10 +33,12 @@ wildcards = "deny"
 highlight = "all"
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
+db-path = "target/cargo-deny/advisory-dbs"
+unmaintained = "all"
 yanked = "warn"
-notice = "warn"
+ignore = [
+    # (empty)
+]
 
 [sources]
 unknown-registry = "deny"

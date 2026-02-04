@@ -107,10 +107,10 @@ All deployment methods use the same configuration file format. See `config.yaml`
 
 ### Network
 
-By default, hushd listens on `0.0.0.0:9876`. For production:
+By default, hushd listens on `127.0.0.1:9876`. For production:
 
 1. Use a firewall to restrict access
-2. Enable TLS in the configuration
+2. Terminate TLS at a reverse proxy (native TLS is not implemented in hushd yet)
 3. Use API keys for authentication
 
 ### File permissions
@@ -133,11 +133,9 @@ chown hushd:hushd /var/lib/hushd
 curl http://localhost:9876/health
 ```
 
-### Prometheus metrics (if enabled)
+### Prometheus metrics
 
-```bash
-curl http://localhost:9876/metrics
-```
+Prometheus `/metrics` is not implemented in v0.1.0.
 
 ### Log analysis
 

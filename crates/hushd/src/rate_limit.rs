@@ -16,12 +16,15 @@ use std::sync::Arc;
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{header, HeaderValue, Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use governor::{
-    clock::DefaultClock, middleware::NoOpMiddleware, state::InMemoryState, Quota, RateLimiter,
+    clock::{Clock, DefaultClock},
+    middleware::NoOpMiddleware,
+    state::InMemoryState,
+    Quota, RateLimiter,
 };
 
 use crate::config::RateLimitConfig;
@@ -52,14 +55,8 @@ impl RateLimitState {
         // Create quota: burst_size requests, refilling at requests_per_second.
         //
         // If the config specifies 0 for either field, fall back to safe defaults.
-        let default_rps = unsafe {
-            // SAFETY: 100 is non-zero.
-            NonZeroU32::new_unchecked(100)
-        };
-        let default_burst = unsafe {
-            // SAFETY: 50 is non-zero.
-            NonZeroU32::new_unchecked(50)
-        };
+        let default_rps = NonZeroU32::new(100).unwrap_or(NonZeroU32::MIN);
+        let default_burst = NonZeroU32::new(50).unwrap_or(NonZeroU32::MIN);
 
         let rps = NonZeroU32::new(config.requests_per_second).unwrap_or(default_rps);
         let burst = NonZeroU32::new(config.burst_size).unwrap_or(default_burst);
@@ -72,7 +69,13 @@ impl RateLimitState {
         let trusted_proxies: HashSet<IpAddr> = config
             .trusted_proxies
             .iter()
-            .filter_map(|s| s.parse().ok())
+            .filter_map(|s| match s.parse() {
+                Ok(ip) => Some(ip),
+                Err(err) => {
+                    tracing::warn!(trusted_proxy = %s, error = %err, "Ignoring invalid trusted proxy IP");
+                    None
+                }
+            })
             .collect();
 
         if !trusted_proxies.is_empty() {
@@ -138,18 +141,33 @@ pub async fn rate_limit_middleware(
                 // Request allowed
                 next.run(req).await
             }
-            Err(_not_until) => {
+            Err(not_until) => {
                 // Rate limit exceeded
                 tracing::debug!(
                     client_ip = %client_ip,
                     "Rate limit exceeded"
                 );
-                (
+
+                let wait = not_until.wait_time_from(DefaultClock::default().now());
+                let mut retry_after_secs = wait.as_secs();
+                if wait.subsec_nanos() > 0 {
+                    retry_after_secs = retry_after_secs.saturating_add(1);
+                }
+                if retry_after_secs == 0 {
+                    retry_after_secs = 1;
+                }
+
+                let mut resp = (
                     StatusCode::TOO_MANY_REQUESTS,
-                    [("Retry-After", "1")],
                     "Rate limit exceeded. Please slow down.",
                 )
-                    .into_response()
+                    .into_response();
+
+                let retry_after = HeaderValue::from_str(&retry_after_secs.to_string())
+                    .unwrap_or_else(|_| HeaderValue::from_static("1"));
+                resp.headers_mut().insert(header::RETRY_AFTER, retry_after);
+
+                resp
             }
         }
     } else {
@@ -162,12 +180,20 @@ pub async fn rate_limit_middleware(
 /// Only trusts X-Forwarded-For and X-Real-IP headers if the connection
 /// comes from a trusted proxy IP. This prevents rate limit bypass attacks.
 fn extract_client_ip(req: &Request<Body>, rate_limit: &RateLimitState) -> IpAddr {
-    // Get the connection IP from request extensions (would come from ConnectInfo in production)
-    // TODO: In production, use axum::extract::ConnectInfo to get the actual socket address
+    // Get the connection IP from request extensions.
+    //
+    // When running behind a proxy, this is the proxy's IP. Use `trusted_proxies` to enable header
+    // based IP extraction.
     let connection_ip: Option<IpAddr> = req
         .extensions()
-        .get::<std::net::SocketAddr>()
-        .map(|addr| addr.ip());
+        .get::<axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        // Backward-compatible fallback (if the app inserts SocketAddr directly).
+        .or_else(|| {
+            req.extensions()
+                .get::<std::net::SocketAddr>()
+                .map(|addr| addr.ip())
+        });
 
     // Only trust headers if connection is from a trusted proxy
     if rate_limit.should_trust_headers(connection_ip) {

@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.66"
+rust-version = "1.76"
 name = "toml_datetime"
-version = "0.6.11"
+version = "0.7.5+spec-1.1.0"
 build = false
 include = [
     "build.rs",
@@ -34,6 +34,7 @@ readme = "README.md"
 keywords = [
     "encoding",
     "toml",
+    "no_std",
 ]
 categories = [
     "encoding",
@@ -46,54 +47,60 @@ repository = "https://github.com/toml-rs/toml"
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = [
-    "--cfg",
-    "docsrs",
-    "--generate-link-to-definition",
-]
+rustdoc-args = ["--generate-link-to-definition"]
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"
-min = 1
-replace = "{{version}}"
 search = "Unreleased"
-
-[[package.metadata.release.pre-release-replacements]]
-exactly = 1
-file = "CHANGELOG.md"
-replace = "...{{tag_name}}"
-search = '\.\.\.HEAD'
-
-[[package.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
+replace = "{{version}}"
 min = 1
-replace = "{{date}}"
-search = "ReleaseDate"
 
 [[package.metadata.release.pre-release-replacements]]
-exactly = 1
 file = "CHANGELOG.md"
+search = '\.\.\.HEAD'
+replace = "...{{tag_name}}"
+exactly = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "ReleaseDate"
+replace = "{{date}}"
+min = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "<!-- next-header -->"
 replace = """
 <!-- next-header -->
 ## [Unreleased] - ReleaseDate
 """
-search = "<!-- next-header -->"
+exactly = 1
 
 [[package.metadata.release.pre-release-replacements]]
-exactly = 1
 file = "CHANGELOG.md"
+search = "<!-- next-url -->"
 replace = """
 <!-- next-url -->
 [Unreleased]: https://github.com/toml-rs/toml/compare/{{tag_name}}...HEAD"""
-search = "<!-- next-url -->"
+exactly = 1
+
+[features]
+alloc = ["serde_core?/alloc"]
+default = ["std"]
+serde = ["dep:serde_core"]
+std = [
+    "alloc",
+    "serde_core?/std",
+]
 
 [lib]
 name = "toml_datetime"
 path = "src/lib.rs"
 
-[dependencies.serde]
-version = "1.0.145"
+[dependencies.serde_core]
+version = "1.0.225"
 optional = true
+default-features = false
 
 [dev-dependencies.snapbox]
 version = "0.6.21"
@@ -118,6 +125,7 @@ flat_map_option = "warn"
 float_cmp_const = "warn"
 fn_params_excessive_bools = "warn"
 from_iter_instead_of_collect = "warn"
+get_first = "allow"
 if_same_then_else = "allow"
 implicit_clone = "warn"
 imprecise_flops = "warn"
@@ -134,6 +142,7 @@ lossy_float_literal = "warn"
 macro_use_imports = "warn"
 mem_forget = "warn"
 mutex_integer = "warn"
+needless_bool = "allow"
 needless_continue = "allow"
 needless_for_each = "warn"
 negative_feature_names = "warn"
@@ -155,6 +164,7 @@ string_to_string = "warn"
 todo = "warn"
 trait_duplication_in_bounds = "warn"
 uninlined_format_args = "warn"
+use_self = "warn"
 verbose_file_reads = "warn"
 wildcard_imports = "warn"
 zero_sized_map_values = "warn"

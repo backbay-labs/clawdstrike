@@ -132,6 +132,21 @@ impl HushEngine {
         Ok(sha256(yaml.as_bytes()))
     }
 
+    /// Get the active policy.
+    pub fn policy(&self) -> &Policy {
+        &self.policy
+    }
+
+    /// Get the active policy YAML.
+    pub fn policy_yaml(&self) -> Result<String> {
+        self.policy.to_yaml()
+    }
+
+    /// Get the signing keypair, if configured.
+    pub fn keypair(&self) -> Option<&Keypair> {
+        self.keypair.as_ref()
+    }
+
     /// Check a file access action
     pub async fn check_file_access(
         &self,
@@ -236,7 +251,7 @@ impl HushEngine {
 
             let result = guard.check(action, context).await;
 
-            if self.policy.settings.verbose_logging {
+            if self.policy.settings.effective_verbose_logging() {
                 debug!(
                     guard = guard.name(),
                     allowed = result.allowed,
@@ -264,7 +279,9 @@ impl HushEngine {
 
             per_guard.push(result);
 
-            if self.policy.settings.fail_fast && per_guard.last().is_some_and(|r| !r.allowed) {
+            if self.policy.settings.effective_fail_fast()
+                && per_guard.last().is_some_and(|r| !r.allowed)
+            {
                 break;
             }
         }
@@ -389,6 +406,8 @@ fn aggregate_overall(results: &[GuardResult]) -> GuardResult {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -508,7 +527,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
 
         let mut policy = Policy::new();
-        policy.settings.fail_fast = true;
+        policy.settings.fail_fast = Some(true);
 
         let engine = HushEngine::with_policy(policy).with_extra_guard(TestExtraGuard {
             name: "extra_guard_order",

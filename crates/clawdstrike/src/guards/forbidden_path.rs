@@ -11,8 +11,8 @@ use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 #[serde(deny_unknown_fields)]
 pub struct ForbiddenPathConfig {
     /// Glob patterns for forbidden paths
-    #[serde(default = "default_forbidden_patterns")]
-    pub patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patterns: Option<Vec<String>>,
     /// Additional allowed paths (exceptions)
     #[serde(default)]
     pub exceptions: Vec<String>,
@@ -63,11 +63,27 @@ impl ForbiddenPathConfig {
     /// Create config with default forbidden patterns
     pub fn with_defaults() -> Self {
         Self {
-            patterns: default_forbidden_patterns(),
+            patterns: None,
             exceptions: vec![],
             additional_patterns: vec![],
             remove_patterns: vec![],
         }
+    }
+
+    pub fn effective_patterns(&self) -> Vec<String> {
+        let mut patterns = self
+            .patterns
+            .clone()
+            .unwrap_or_else(default_forbidden_patterns);
+
+        for p in &self.additional_patterns {
+            if !patterns.contains(p) {
+                patterns.push(p.clone());
+            }
+        }
+        patterns.retain(|p| !self.remove_patterns.contains(p));
+
+        patterns
     }
 
     /// Merge this config with a child config
@@ -76,7 +92,11 @@ impl ForbiddenPathConfig {
     /// - Add child's additional_patterns
     /// - Remove child's remove_patterns
     pub fn merge_with(&self, child: &Self) -> Self {
-        let mut patterns: Vec<String> = self.patterns.clone();
+        let default_patterns = default_forbidden_patterns();
+        let mut patterns: Vec<String> = match &child.patterns {
+            Some(v) => v.clone(),
+            None => self.effective_patterns(),
+        };
 
         // Add additional patterns
         for p in &child.additional_patterns {
@@ -95,6 +115,15 @@ impl ForbiddenPathConfig {
                 exceptions.push(e.clone());
             }
         }
+
+        let patterns = if child.patterns.is_some()
+            || self.patterns.is_some()
+            || patterns != default_patterns
+        {
+            Some(patterns)
+        } else {
+            None
+        };
 
         Self {
             patterns,
@@ -121,7 +150,7 @@ impl ForbiddenPathGuard {
     /// Create with custom configuration
     pub fn with_config(config: ForbiddenPathConfig) -> Self {
         let patterns = config
-            .patterns
+            .effective_patterns()
             .iter()
             .filter_map(|p| Pattern::new(p).ok())
             .collect();
@@ -207,6 +236,8 @@ impl Guard for ForbiddenPathGuard {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
 
     #[test]
@@ -232,7 +263,7 @@ mod tests {
     #[test]
     fn test_exceptions() {
         let config = ForbiddenPathConfig {
-            patterns: vec!["**/.env".to_string()],
+            patterns: Some(vec!["**/.env".to_string()]),
             exceptions: vec!["**/project/.env".to_string()],
             ..Default::default()
         };
@@ -260,14 +291,14 @@ remove_patterns:
     #[test]
     fn test_merge_patterns() {
         let base = ForbiddenPathConfig {
-            patterns: vec!["**/.ssh/**".to_string(), "**/.env".to_string()],
+            patterns: Some(vec!["**/.ssh/**".to_string(), "**/.env".to_string()]),
             exceptions: vec![],
             additional_patterns: vec![],
             remove_patterns: vec![],
         };
 
         let child = ForbiddenPathConfig {
-            patterns: vec![],
+            patterns: None,
             exceptions: vec![],
             additional_patterns: vec!["**/secrets/**".to_string()],
             remove_patterns: vec!["**/.env".to_string()],
@@ -275,9 +306,10 @@ remove_patterns:
 
         let merged = base.merge_with(&child);
 
-        assert!(merged.patterns.contains(&"**/.ssh/**".to_string()));
-        assert!(merged.patterns.contains(&"**/secrets/**".to_string()));
-        assert!(!merged.patterns.contains(&"**/.env".to_string()));
+        let patterns = merged.effective_patterns();
+        assert!(patterns.contains(&"**/.ssh/**".to_string()));
+        assert!(patterns.contains(&"**/secrets/**".to_string()));
+        assert!(!patterns.contains(&"**/.env".to_string()));
     }
 
     #[tokio::test]

@@ -145,7 +145,6 @@ use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::slice;
 
-use super::windows::Win32;
 use super::windows::Win32::UI::Shell;
 
 pub fn known_folder(folder_id: windows::core::GUID) -> Option<PathBuf> {
@@ -154,7 +153,7 @@ pub fn known_folder(folder_id: windows::core::GUID) -> Option<PathBuf> {
         let result = Shell::SHGetKnownFolderPath(
             &folder_id,
             0,
-            Win32::Foundation::HANDLE::default(),
+            std::ptr::null_mut(),
             &mut path_ptr
         );
         if result == 0 {

@@ -56,7 +56,7 @@ impl std::fmt::Display for Scope {
 pub struct ApiKey {
     /// Unique identifier
     pub id: String,
-    /// SHA-256 hash of the actual key (never store plaintext)
+    /// Hash of the actual key (never store plaintext)
     pub key_hash: String,
     /// Human-readable name for the key
     pub name: String,

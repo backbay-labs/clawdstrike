@@ -77,7 +77,7 @@ async fn extension(Extension(state): Extension<State>) {}
 struct State { /* ... */ }
 
 let app = Router::new()
-    .route("/path/:user_id", post(path))
+    .route("/path/{user_id}", post(path))
     .route("/query", post(query))
     .route("/string", post(string))
     .route("/bytes", post(bytes))
@@ -100,7 +100,7 @@ use axum::{
 use uuid::Uuid;
 use serde::Deserialize;
 
-let app = Router::new().route("/users/:id/things", get(get_user_things));
+let app = Router::new().route("/users/{id}/things", get(get_user_things));
 
 #[derive(Deserialize)]
 struct Pagination {
@@ -108,18 +108,10 @@ struct Pagination {
     per_page: usize,
 }
 
-impl Default for Pagination {
-    fn default() -> Self {
-        Self { page: 1, per_page: 30 }
-    }
-}
-
 async fn get_user_things(
     Path(user_id): Path<Uuid>,
-    pagination: Option<Query<Pagination>>,
+    Query(pagination): Query<Pagination>,
 ) {
-    let Query(pagination) = pagination.unwrap_or_default();
-
     // ...
 }
 # let _: Router = app;
@@ -200,33 +192,11 @@ async fn handler(
 axum enforces this by requiring the last extractor implements [`FromRequest`]
 and all others implement [`FromRequestParts`].
 
-# Optional extractors
+# Handling extractor rejections
 
-All extractors defined in axum will reject the request if it doesn't match.
-If you wish to make an extractor optional you can wrap it in `Option`:
-
-```rust,no_run
-use axum::{
-    extract::Json,
-    routing::post,
-    Router,
-};
-use serde_json::Value;
-
-async fn create_user(payload: Option<Json<Value>>) {
-    if let Some(payload) = payload {
-        // We got a valid JSON payload
-    } else {
-        // Payload wasn't valid JSON
-    }
-}
-
-let app = Router::new().route("/users", post(create_user));
-# let _: Router = app;
-```
-
-Wrapping extractors in `Result` makes them optional and gives you the reason
-the extraction failed:
+If you want to handle the case of an extractor failing within a specific
+handler, you can wrap it in `Result`, with the error being the rejection type
+of the extractor:
 
 ```rust,no_run
 use axum::{
@@ -265,10 +235,33 @@ let app = Router::new().route("/users", post(create_user));
 # let _: Router = app;
 ```
 
-Another option is to make use of the optional extractors in [axum-extra] that
-either returns `None` if there are no query parameters in the request URI,
-or returns `Some(T)` if deserialization was successful.
-If the deserialization was not successful, the request is rejected.
+# Optional extractors
+
+Some extractors implement [`OptionalFromRequestParts`] in addition to
+[`FromRequestParts`], or [`OptionalFromRequest`] in addition to [`FromRequest`].
+
+These extractors can be used inside of `Option`. It depends on the particular
+`OptionalFromRequestParts` or `OptionalFromRequest` implementation what this
+does: For example for `TypedHeader` from axum-extra, you get `None` if the
+header you're trying to extract is not part of the request, but if the header
+is present and fails to parse, the request is rejected.
+
+```rust,no_run
+use axum::{routing::post, Router};
+use axum_extra::{headers::UserAgent, TypedHeader};
+use serde_json::Value;
+
+async fn foo(user_agent: Option<TypedHeader<UserAgent>>) {
+    if let Some(TypedHeader(user_agent)) = user_agent {
+        // The client sent a user agent
+    } else {
+        // No user agent header
+    }
+}
+
+let app = Router::new().route("/foo", post(foo));
+# let _: Router = app;
+```
 
 # Customizing extractor responses
 
@@ -276,9 +269,9 @@ If an extractor fails it will return a response with the error and your
 handler will not be called. To customize the error response you have two 
 options:
 
-1. Use `Result<T, T::Rejection>` as your extractor like shown in ["Optional
-   extractors"](#optional-extractors). This works well if you're only using
-   the extractor in a single handler.
+1. Use `Result<T, T::Rejection>` as your extractor like shown in
+   ["Handling extractor rejections"](#handling-extractor-rejections).
+   This works well if you're only using the extractor in a single handler.
 2. Create your own extractor that in its [`FromRequest`] implementation calls
    one of axum's built in extractors but returns a different response for
    rejections. See the [customize-extractor-error] example for more details.
@@ -290,7 +283,7 @@ more flexibility and allows us to change internal implementations without
 breaking the public API.
 
 For example that means while [`Json`] is implemented using [`serde_json`] it
-doesn't directly expose the [`serde_json::Error`] thats contained in
+doesn't directly expose the [`serde_json::Error`] that's contained in
 [`JsonRejection::JsonDataError`]. However it is still possible to access via
 methods from [`std::error::Error`]:
 
@@ -409,7 +402,6 @@ request body:
 
 ```rust,no_run
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     routing::get,
     Router,
@@ -422,7 +414,6 @@ use axum::{
 
 struct ExtractUserAgent(HeaderValue);
 
-#[async_trait]
 impl<S> FromRequestParts<S> for ExtractUserAgent
 where
     S: Send + Sync,
@@ -452,7 +443,6 @@ If your extractor needs to consume the request body you must implement [`FromReq
 
 ```rust,no_run
 use axum::{
-    async_trait,
     extract::{Request, FromRequest},
     response::{Response, IntoResponse},
     body::{Bytes, Body},
@@ -466,7 +456,6 @@ use axum::{
 
 struct ValidatedBody(Bytes);
 
-#[async_trait]
 impl<S> FromRequest<S> for ValidatedBody
 where
     Bytes: FromRequest<S>,
@@ -506,7 +495,6 @@ use axum::{
     extract::{FromRequest, Request, FromRequestParts},
     http::request::Parts,
     body::Body,
-    async_trait,
 };
 use std::convert::Infallible;
 
@@ -514,7 +502,6 @@ use std::convert::Infallible;
 struct MyExtractor;
 
 // `MyExtractor` implements both `FromRequest`
-#[async_trait]
 impl<S> FromRequest<S> for MyExtractor
 where
     S: Send + Sync,
@@ -528,7 +515,6 @@ where
 }
 
 // and `FromRequestParts`
-#[async_trait]
 impl<S> FromRequestParts<S> for MyExtractor
 where
     S: Send + Sync,
@@ -562,7 +548,6 @@ in your implementation.
 
 ```rust
 use axum::{
-    async_trait,
     extract::{Extension, FromRequestParts},
     http::{StatusCode, HeaderMap, request::Parts},
     response::{IntoResponse, Response},
@@ -579,7 +564,6 @@ struct AuthenticatedUser {
     // ...
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for AuthenticatedUser
 where
     S: Send + Sync,
@@ -622,8 +606,8 @@ For more details, including how to disable this limit, see [`DefaultBodyLimit`].
 
 # Wrapping extractors
 
-If you want write an extractor that generically wraps another extractor (that
-may or may not consume the request body) you should implement both
+If you want to write an extractor that generically wraps another extractor
+(that may or may not consume the request body) you should implement both
 [`FromRequest`] and [`FromRequestParts`]:
 
 ```rust
@@ -633,7 +617,6 @@ use axum::{
     routing::get,
     extract::{Request, FromRequest, FromRequestParts},
     http::{HeaderMap, request::Parts},
-    async_trait,
 };
 use std::time::{Instant, Duration};
 
@@ -644,7 +627,6 @@ struct Timing<E> {
 }
 
 // we must implement both `FromRequestParts`
-#[async_trait]
 impl<S, T> FromRequestParts<S> for Timing<T>
 where
     S: Send + Sync,
@@ -664,7 +646,6 @@ where
 }
 
 // and `FromRequest`
-#[async_trait]
 impl<S, T> FromRequest<S> for Timing<T>
 where
     S: Send + Sync,
@@ -705,5 +686,4 @@ logs, enable the `tracing` feature for axum (enabled by default) and the
 [customize-extractor-error]: https://github.com/tokio-rs/axum/blob/main/examples/customize-extractor-error/src/main.rs
 [`HeaderMap`]: https://docs.rs/http/latest/http/header/struct.HeaderMap.html
 [`Request`]: https://docs.rs/http/latest/http/struct.Request.html
-[`RequestParts::body_mut`]: crate::extract::RequestParts::body_mut
 [`JsonRejection::JsonDataError`]: rejection::JsonRejection::JsonDataError

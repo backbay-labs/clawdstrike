@@ -171,19 +171,14 @@ pub struct HierarchyEnforcementResult {
 }
 
 /// Marker format.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MarkerFormat {
     Xml,
     Json,
+    #[default]
     Delimited,
     Custom,
-}
-
-impl Default for MarkerFormat {
-    fn default() -> Self {
-        Self::Delimited
-    }
 }
 
 /// Custom markers.
@@ -289,7 +284,7 @@ impl Default for ContextConfig {
 }
 
 /// Complete configuration.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct HierarchyEnforcerConfig {
     #[serde(default)]
     pub strict_mode: bool,
@@ -302,19 +297,6 @@ pub struct HierarchyEnforcerConfig {
     pub reminders: RemindersConfig,
     #[serde(default)]
     pub context: ContextConfig,
-}
-
-impl Default for HierarchyEnforcerConfig {
-    fn default() -> Self {
-        Self {
-            strict_mode: false,
-            marker_format: MarkerFormat::default(),
-            custom_markers: None,
-            rules: RulesConfig::default(),
-            reminders: RemindersConfig::default(),
-            context: ContextConfig::default(),
-        }
-    }
 }
 
 /// Hierarchy statistics.
@@ -352,27 +334,35 @@ struct Detectors {
     tool_commandy: Regex,
 }
 
+fn compile_hardcoded_regex(pattern: &'static str) -> Regex {
+    Regex::new(pattern).unwrap_or_else(|err| {
+        tracing::error!(error = %err, %pattern, "failed to compile hardcoded regex");
+        Regex::new("a^").unwrap_or_else(|_| {
+            // This should be infallible; if it isn't, return a regex that never matches.
+            Regex::new("a^").unwrap_or_else(|_| unreachable!())
+        })
+    })
+}
+
 fn detectors() -> &'static Detectors {
     static DETECTORS: OnceLock<Detectors> = OnceLock::new();
     DETECTORS.get_or_init(|| Detectors {
-        override_attempt: Regex::new(
+        override_attempt: compile_hardcoded_regex(
             r"(?is)\b(ignore|disregard|forget|override)\b.{0,64}\b(instructions?|rules?|policy|guardrails?|system)\b",
-        )
-        .expect("hardcoded regex"),
-        impersonation: Regex::new(
+        ),
+        impersonation: compile_hardcoded_regex(
             r"(?is)\b(i am|i'm|as)\b.{0,16}\b(system|developer|admin|root|maintainer)\b",
-        )
-        .expect("hardcoded regex"),
-        role_change: Regex::new(r"(?is)\b(you are now|act as|pretend to be|switch to)\b")
-            .expect("hardcoded regex"),
-        prompt_leak: Regex::new(
+        ),
+        role_change: compile_hardcoded_regex(r"(?is)\b(you are now|act as|pretend to be|switch to)\b"),
+        prompt_leak: compile_hardcoded_regex(
             r"(?is)\b(reveal|show|tell me|repeat|print|output)\b.{0,64}\b(system prompt|developer (message|instructions|prompt)|hidden (instructions|prompt)|system instructions)\b",
-        )
-        .expect("hardcoded regex"),
-        fake_delimiters: Regex::new(r"(?i)(\\[/?SYSTEM\\]|</?system>|<\\|im_start\\|>|<\\|im_end\\|>)")
-            .expect("hardcoded regex"),
-        tool_commandy: Regex::new(r"(?is)\\b(run|execute|invoke|call)\\b.{0,32}\\b(tool|command|bash|shell)\\b")
-            .expect("hardcoded regex"),
+        ),
+        fake_delimiters: compile_hardcoded_regex(
+            r"(?i)(\\[/?SYSTEM\\]|</?system>|<\\|im_start\\|>|<\\|im_end\\|>)",
+        ),
+        tool_commandy: compile_hardcoded_regex(
+            r"(?is)\\b(run|execute|invoke|call)\\b.{0,32}\\b(tool|command|bash|shell)\\b",
+        ),
     })
 }
 
@@ -709,7 +699,7 @@ impl InstructionHierarchyEnforcer {
             let reminder = reminder_text(&self.config);
             let mut i = 0usize;
             while i < messages.len() {
-                if i > 0 && i % self.config.reminders.frequency == 0 {
+                if i > 0 && i.is_multiple_of(self.config.reminders.frequency) {
                     let id = self.next_id("reminder");
                     messages.insert(
                         i,
@@ -882,6 +872,8 @@ impl Default for InstructionHierarchyEnforcer {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
 
     #[tokio::test]

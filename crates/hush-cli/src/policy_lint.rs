@@ -138,7 +138,8 @@ fn lint_policy(policy: &Policy) -> Vec<LintFinding> {
     }
 
     if let Some(ref forbidden) = policy.guards.forbidden_path {
-        if forbidden.patterns.iter().any(|p| p == "**" || p == "**/*") {
+        let patterns = forbidden.effective_patterns();
+        if patterns.iter().any(|p| p == "**" || p == "**/*") {
             warnings.push(LintFinding {
                 code: "SEC010",
                 message:

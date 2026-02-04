@@ -1,7 +1,7 @@
 //! Code related to `sqlite3_context` common to `functions` and `vtab` modules.
 
-use libsqlite3_sys::sqlite3_value;
-use std::os::raw::{c_int, c_void};
+use crate::ffi::sqlite3_value;
+use std::ffi::c_void;
 #[cfg(feature = "array")]
 use std::rc::Rc;
 
@@ -19,7 +19,7 @@ use crate::vtab::array::{free_array, ARRAY_TYPE};
 #[inline]
 pub(super) unsafe fn set_result(
     ctx: *mut sqlite3_context,
-    args: &[*mut sqlite3_value],
+    #[allow(unused_variables)] args: &[*mut sqlite3_value],
     result: &ToSqlOutput<'_>,
 ) {
     let value = match *result {
@@ -51,31 +51,18 @@ pub(super) unsafe fn set_result(
         ValueRef::Integer(i) => ffi::sqlite3_result_int64(ctx, i),
         ValueRef::Real(r) => ffi::sqlite3_result_double(ctx, r),
         ValueRef::Text(s) => {
-            let length = s.len();
-            if length > c_int::MAX as usize {
-                ffi::sqlite3_result_error_toobig(ctx);
-            } else {
-                let (c_str, len, destructor) = match str_for_sqlite(s) {
-                    Ok(c_str) => c_str,
-                    // TODO sqlite3_result_error
-                    Err(_) => return ffi::sqlite3_result_error_code(ctx, ffi::SQLITE_MISUSE),
-                };
-                // TODO sqlite3_result_text64 // 3.8.7
-                ffi::sqlite3_result_text(ctx, c_str, len, destructor);
-            }
+            let (c_str, len, destructor) = str_for_sqlite(s);
+            ffi::sqlite3_result_text64(ctx, c_str, len, destructor, ffi::SQLITE_UTF8 as _);
         }
         ValueRef::Blob(b) => {
             let length = b.len();
-            if length > c_int::MAX as usize {
-                ffi::sqlite3_result_error_toobig(ctx);
-            } else if length == 0 {
+            if length == 0 {
                 ffi::sqlite3_result_zeroblob(ctx, 0);
             } else {
-                // TODO sqlite3_result_blob64 // 3.8.7
-                ffi::sqlite3_result_blob(
+                ffi::sqlite3_result_blob64(
                     ctx,
                     b.as_ptr().cast::<c_void>(),
-                    length as c_int,
+                    length as ffi::sqlite3_uint64,
                     ffi::SQLITE_TRANSIENT(),
                 );
             }

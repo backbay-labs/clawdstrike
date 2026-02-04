@@ -91,7 +91,7 @@ impl Guard for MyCustomGuard {
         context: &GuardContext,
     ) -> GuardResult {
         // Your logic here
-        GuardResult::allow()
+        GuardResult::allow(self.name())
     }
 }
 

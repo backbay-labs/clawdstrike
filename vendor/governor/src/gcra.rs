@@ -2,9 +2,9 @@ use crate::state::StateStore;
 use crate::InsufficientCapacity;
 use crate::{clock, middleware::StateSnapshot, Quota};
 use crate::{middleware::RateLimitingMiddleware, nanos::Nanos};
-use std::num::NonZeroU32;
-use std::time::Duration;
-use std::{cmp, fmt};
+use core::num::NonZeroU32;
+use core::time::Duration;
+use core::{cmp, fmt};
 
 #[cfg(feature = "std")]
 use crate::Jitter;
@@ -79,22 +79,21 @@ pub(crate) struct Gcra {
     /// The "weight" of a single packet in units of time.
     t: Nanos,
 
-    /// The "burst capacity" of the bucket.
+    /// The "tolerance" of the bucket in units of time.
+    ///
+    /// The total "burst capacity" of the bucket is `t + tau`.
     tau: Nanos,
 }
 
 impl Gcra {
     pub(crate) fn new(quota: Quota) -> Self {
-        let tau: Nanos = (cmp::max(quota.replenish_1_per, Duration::from_nanos(1))
-            * quota.max_burst.get())
-        .into();
-        let t: Nanos = quota.replenish_1_per.into();
+        let t: Nanos = cmp::max(quota.replenish_1_per, Duration::from_nanos(1)).into();
+        let tau: Nanos = t * (quota.max_burst.get() - 1).into();
         Gcra { t, tau }
     }
 
-    /// Computes and returns a new ratelimiter state if none exists yet.
-    fn starting_state(&self, t0: Nanos) -> Nanos {
-        t0 + self.t
+    pub(crate) fn t(&self) -> Nanos {
+        self.t
     }
 
     /// Tests a single cell against the rate limiter state and updates it at the given key.
@@ -114,7 +113,7 @@ impl Gcra {
         let tau = self.tau;
         let t = self.t;
         state.measure_and_replace(key, |tat| {
-            let tat = tat.unwrap_or_else(|| self.starting_state(t0));
+            let tat = tat.unwrap_or(t0);
             let earliest_time = tat.saturating_sub(tau);
             if t0 < earliest_time {
                 Err(MW::disallow(
@@ -151,13 +150,15 @@ impl Gcra {
         let t = self.t;
         let additional_weight = t * (n.get() - 1) as u64;
 
-        // check that we can allow enough cells through. Note that `additional_weight` is the
-        // value of the cells *in addition* to the first cell - so add that first cell back.
-        if additional_weight + t > tau {
-            return Err(InsufficientCapacity((tau.as_u64() / t.as_u64()) as u32));
+        // Check that we can allow enough cells through. Note that both `additional_weight` and
+        // `tau` represent the value of the cells *in addition* to the first cell.
+        if additional_weight > tau {
+            return Err(InsufficientCapacity(
+                1 + (self.tau.as_u64() / t.as_u64()) as u32,
+            ));
         }
         Ok(state.measure_and_replace(key, |tat| {
-            let tat = tat.unwrap_or_else(|| self.starting_state(t0));
+            let tat = tat.unwrap_or(t0);
             let earliest_time = (tat + additional_weight).saturating_sub(tau);
             if t0 < earliest_time {
                 Err(MW::disallow(
@@ -180,7 +181,7 @@ impl Gcra {
 mod test {
     use super::*;
     use crate::Quota;
-    use std::num::NonZeroU32;
+    use core::num::NonZeroU32;
 
     use proptest::prelude::*;
 
@@ -188,14 +189,14 @@ mod test {
     #[cfg(feature = "std")]
     #[test]
     fn gcra_derives() {
-        use all_asserts::assert_gt;
+        use assertables::assert_gt;
         use nonzero_ext::nonzero;
 
         let g = Gcra::new(Quota::per_second(nonzero!(1u32)));
         let g2 = Gcra::new(Quota::per_second(nonzero!(2u32)));
         assert_eq!(g, g);
         assert_ne!(g, g2);
-        assert_gt!(format!("{:?}", g).len(), 0);
+        assert_gt!(format!("{g:?}").len(), 0);
     }
 
     /// Exercise derives and convenience impls on NotUntil to make coverage happy
@@ -203,20 +204,20 @@ mod test {
     #[test]
     fn notuntil_impls() {
         use crate::RateLimiter;
-        use all_asserts::assert_gt;
+        use assertables::assert_gt;
         use clock::FakeRelativeClock;
         use nonzero_ext::nonzero;
 
         let clock = FakeRelativeClock::default();
         let quota = Quota::per_second(nonzero!(1u32));
-        let lb = RateLimiter::direct_with_clock(quota, &clock);
+        let lb = RateLimiter::direct_with_clock(quota, clock);
         assert!(lb.check().is_ok());
         assert!(lb
             .check()
             .map_err(|nu| {
                 assert_eq!(nu, nu);
-                assert_gt!(format!("{:?}", nu).len(), 0);
-                assert_eq!(format!("{}", nu), "rate-limited until Nanos(1s)");
+                assert_gt!(format!("{nu:?}").len(), 0);
+                assert_eq!(format!("{nu}"), "rate-limited until Nanos(1s)");
                 assert_eq!(nu.quota(), quota);
             })
             .is_err());

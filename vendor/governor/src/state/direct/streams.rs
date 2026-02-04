@@ -1,5 +1,3 @@
-#![cfg(feature = "std")]
-
 use std::prelude::v1::*;
 
 use crate::{clock, Jitter, NotUntil, RateLimiter};
@@ -7,13 +5,13 @@ use crate::{
     middleware::RateLimitingMiddleware,
     state::{DirectStateStore, NotKeyed},
 };
-use futures::task::{Context, Poll};
-use futures::{Future, Sink, Stream};
 use futures_timer::Delay;
+use futures_util::task::{Context, Poll};
+use futures_util::{Future, Sink, Stream};
 use std::pin::Pin;
 use std::time::Duration;
 
-/// Allows converting a [`futures::Stream`] combinator into a rate-limited stream.
+/// Allows converting a [`futures_util::Stream`] combinator into a rate-limited stream.
 pub trait StreamRateLimitExt<'a>: Stream {
     /// Limits the rate at which the stream produces items.
     ///
@@ -24,15 +22,14 @@ pub trait StreamRateLimitExt<'a>: Stream {
     /// it will not `poll` the underlying stream.
     fn ratelimit_stream<
         D: DirectStateStore,
-        C: clock::Clock,
+        C: clock::ReasonablyRealtime,
         MW: RateLimitingMiddleware<C::Instant>,
     >(
         self,
         limiter: &'a RateLimiter<NotKeyed, D, C, MW>,
     ) -> RatelimitedStream<'a, Self, D, C, MW>
     where
-        Self: Sized,
-        C: clock::ReasonablyRealtime;
+        Self: Sized;
 
     /// Limits the rate at which the stream produces items, with a randomized wait period.
     ///
@@ -43,7 +40,7 @@ pub trait StreamRateLimitExt<'a>: Stream {
     /// it will not `poll` the underlying stream.
     fn ratelimit_stream_with_jitter<
         D: DirectStateStore,
-        C: clock::Clock,
+        C: clock::ReasonablyRealtime,
         MW: RateLimitingMiddleware<C::Instant>,
     >(
         self,
@@ -51,14 +48,13 @@ pub trait StreamRateLimitExt<'a>: Stream {
         jitter: Jitter,
     ) -> RatelimitedStream<'a, Self, D, C, MW>
     where
-        Self: Sized,
-        C: clock::ReasonablyRealtime;
+        Self: Sized;
 }
 
 impl<'a, S: Stream> StreamRateLimitExt<'a> for S {
     fn ratelimit_stream<
         D: DirectStateStore,
-        C: clock::Clock,
+        C: clock::ReasonablyRealtime,
         MW: RateLimitingMiddleware<C::Instant>,
     >(
         self,
@@ -66,14 +62,13 @@ impl<'a, S: Stream> StreamRateLimitExt<'a> for S {
     ) -> RatelimitedStream<'a, Self, D, C, MW>
     where
         Self: Sized,
-        C: clock::ReasonablyRealtime,
     {
         self.ratelimit_stream_with_jitter(limiter, Jitter::NONE)
     }
 
     fn ratelimit_stream_with_jitter<
         D: DirectStateStore,
-        C: clock::Clock,
+        C: clock::ReasonablyRealtime,
         MW: RateLimitingMiddleware<C::Instant>,
     >(
         self,
@@ -82,7 +77,6 @@ impl<'a, S: Stream> StreamRateLimitExt<'a> for S {
     ) -> RatelimitedStream<'a, Self, D, C, MW>
     where
         Self: Sized,
-        C: clock::ReasonablyRealtime,
     {
         RatelimitedStream {
             inner: self,
@@ -101,7 +95,7 @@ enum State {
     Wait,
 }
 
-/// A [`Stream`][futures::Stream] combinator which will limit the rate of items being received.
+/// A [`Stream`][futures_util::Stream] combinator which will limit the rate of items being received.
 ///
 /// This is produced by the [`StreamRateLimitExt::ratelimit_stream`] and
 /// [`StreamRateLimitExt::ratelimit_stream_with_jitter`] methods.
@@ -121,17 +115,12 @@ pub struct RatelimitedStream<
 }
 
 /// Conversion methods for the stream combinator.
-impl<
-        'a,
-        S: Stream,
-        D: DirectStateStore,
-        C: clock::Clock,
-        MW: RateLimitingMiddleware<C::Instant>,
-    > RatelimitedStream<'a, S, D, C, MW>
+impl<S: Stream, D: DirectStateStore, C: clock::Clock, MW: RateLimitingMiddleware<C::Instant>>
+    RatelimitedStream<'_, S, D, C, MW>
 {
     /// Acquires a reference to the underlying stream that this combinator is pulling from.
     /// ```rust
-    /// # use futures::{Stream, stream};
+    /// # use futures_util::{Stream, stream};
     /// # use governor::{prelude::*, Quota, RateLimiter};
     /// # use nonzero_ext::nonzero;
     /// let inner = stream::repeat(());
@@ -146,8 +135,8 @@ impl<
 
     /// Acquires a mutable reference to the underlying stream that this combinator is pulling from.
     /// ```rust
-    /// # use futures::{stream, StreamExt};
-    /// # use futures::executor::block_on;
+    /// # use futures_util::{stream, StreamExt};
+    /// # use futures_executor::block_on;
     /// # use governor::{prelude::*, Quota, RateLimiter};
     /// # use nonzero_ext::nonzero;
     /// let inner = stream::repeat(());
@@ -163,8 +152,8 @@ impl<
     /// which it has already produced but which is still being held back
     /// in order to abide by the limiter.
     /// ```rust
-    /// # use futures::{stream, StreamExt};
-    /// # use futures::executor::block_on;
+    /// # use futures_util::{stream, StreamExt};
+    /// # use futures_executor::block_on;
     /// # use governor::{prelude::*, Quota, RateLimiter};
     /// # use nonzero_ext::nonzero;
     /// let inner = stream::repeat(());
@@ -178,9 +167,9 @@ impl<
     }
 }
 
-/// Implements the [`futures::Stream`] combinator.
-impl<'a, S: Stream, D: DirectStateStore, C: clock::Clock, MW> Stream
-    for RatelimitedStream<'a, S, D, C, MW>
+/// Implements the [`futures_util::Stream`] combinator.
+impl<S: Stream, D: DirectStateStore, C: clock::Clock, MW> Stream
+    for RatelimitedStream<'_, S, D, C, MW>
 where
     S: Unpin,
     S::Item: Unpin,
@@ -245,15 +234,14 @@ where
     }
 }
 
-/// Pass-through implementation for [`futures::Sink`] if the Stream also implements it.
+/// Pass-through implementation for [`futures_util::Sink`] if the Stream also implements it.
 impl<
-        'a,
         Item,
         S: Stream + Sink<Item>,
         D: DirectStateStore,
         C: clock::Clock,
         MW: RateLimitingMiddleware<C::Instant>,
-    > Sink<Item> for RatelimitedStream<'a, S, D, C, MW>
+    > Sink<Item> for RatelimitedStream<'_, S, D, C, MW>
 where
     S: Unpin,
     S::Item: Unpin,

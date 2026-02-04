@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.83"
 name = "pyo3-ffi"
-version = "0.23.5"
+version = "0.28.0"
 authors = ["PyO3 Project and Contributors <https://github.com/PyO3>"]
 build = "build.rs"
 links = "python"
@@ -38,19 +38,13 @@ categories = [
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/pyo3/pyo3"
 
-[lib]
-name = "pyo3_ffi"
-path = "src/lib.rs"
+[package.metadata.cpython]
+min-version = "3.7"
+max-version = "3.15"
 
-[dependencies.libc]
-version = "0.2.62"
-
-[dev-dependencies.paste]
-version = "1"
-
-[build-dependencies.pyo3-build-config]
-version = "=0.23.5"
-features = ["resolve-config"]
+[package.metadata.pypy]
+min-version = "3.11"
+max-version = "3.11"
 
 [features]
 abi3 = ["pyo3-build-config/abi3"]
@@ -63,8 +57,16 @@ abi3-py311 = [
     "pyo3-build-config/abi3-py311",
 ]
 abi3-py312 = [
-    "abi3",
+    "abi3-py313",
     "pyo3-build-config/abi3-py312",
+]
+abi3-py313 = [
+    "abi3-py314",
+    "pyo3-build-config/abi3-py313",
+]
+abi3-py314 = [
+    "abi3",
+    "pyo3-build-config/abi3-py314",
 ]
 abi3-py37 = [
     "abi3-py38",
@@ -80,7 +82,21 @@ abi3-py39 = [
 ]
 default = []
 extension-module = ["pyo3-build-config/extension-module"]
-generate-import-lib = ["pyo3-build-config/python3-dll-a"]
+generate-import-lib = ["pyo3-build-config/generate-import-lib"]
+
+[lib]
+name = "pyo3_ffi"
+path = "src/lib.rs"
+
+[dependencies.libc]
+version = "0.2.62"
+
+[dev-dependencies.paste]
+version = "1"
+
+[build-dependencies.pyo3-build-config]
+version = "=0.28.0"
+features = ["resolve-config"]
 
 [lints.clippy]
 checked_conversions = "warn"
@@ -93,6 +109,7 @@ let_unit_value = "warn"
 manual_assert = "warn"
 manual_ok_or = "warn"
 todo = "warn"
+undocumented_unsafe_blocks = "allow"
 unnecessary_wraps = "warn"
 used_underscore_binding = "warn"
 useless_transmute = "warn"
@@ -101,6 +118,7 @@ useless_transmute = "warn"
 elided_lifetimes_in_paths = "warn"
 invalid_doc_attributes = "warn"
 rust_2021_prelude_collisions = "warn"
+unsafe_op_in_unsafe_fn = "warn"
 unused_lifetimes = "warn"
 
 [lints.rust.rust_2018_idioms]

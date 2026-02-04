@@ -78,8 +78,8 @@ pub enum CallingConvention {
     AppleAarch64,
 }
 
-/// A target "triple". Historically such things had three fields, though they've
-/// added additional fields over time.
+/// An LLVM target "triple". Historically such things had three fields, though
+/// they've added additional fields over time.
 ///
 /// Note that `Triple` doesn't implement `Default` itself. If you want a type
 /// which defaults to the host triple, or defaults to unknown-unknown-unknown,
@@ -121,11 +121,7 @@ impl Triple {
     /// Return the default calling convention for the given target triple.
     pub fn default_calling_convention(&self) -> Result<CallingConvention, ()> {
         Ok(match self.operating_system {
-            OperatingSystem::Darwin
-            | OperatingSystem::Ios
-            | OperatingSystem::Tvos
-            | OperatingSystem::MacOSX { .. }
-            | OperatingSystem::Watchos => match self.architecture {
+            os if os.is_like_darwin() => match self.architecture {
                 Architecture::Aarch64(_) => CallingConvention::AppleAarch64,
                 _ => CallingConvention::SystemV,
             },
@@ -295,6 +291,10 @@ fn show_binary_format_with_no_os(triple: &Triple) -> bool {
 impl FromStr for Triple {
     type Err = ParseError;
 
+    /// Parse a triple from an LLVM target triple.
+    ///
+    /// This may also be able to parse `rustc` target triples, though support
+    /// for that is secondary.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(triple) = Triple::special_case_from_str(s) {
             return Ok(triple);

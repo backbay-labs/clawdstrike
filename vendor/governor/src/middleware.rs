@@ -64,7 +64,7 @@
 //!
 //! You can define your own middleware by `impl`ing [`RateLimitingMiddleware`].
 use core::fmt;
-use std::{cmp, marker::PhantomData};
+use core::{cmp, marker::PhantomData};
 
 use crate::{clock, nanos::Nanos, NotUntil, Quota};
 
@@ -74,7 +74,9 @@ pub struct StateSnapshot {
     /// The "weight" of a single packet in units of time.
     t: Nanos,
 
-    /// The "burst capacity" of the bucket.
+    /// The "tolerance" of the bucket.
+    ///
+    /// The total "burst capacity" of the bucket is `t + tau`.
     tau: Nanos,
 
     /// The time at which the measurement was taken.
@@ -106,10 +108,10 @@ impl StateSnapshot {
     /// If this state snapshot is based on a negative rate limiting
     /// outcome, this method returns 0.
     pub fn remaining_burst_capacity(&self) -> u32 {
-        let t0 = self.time_of_measurement + self.t;
+        let t0 = self.time_of_measurement;
         (cmp::min(
-            (t0 + self.tau).saturating_sub(self.tat).as_u64(),
-            self.tau.as_u64(),
+            (t0 + self.tau + self.t).saturating_sub(self.tat).as_u64(),
+            (self.tau + self.t).as_u64(),
         ) / self.t.as_u64()) as u32
     }
 }
@@ -217,7 +219,7 @@ pub struct NoOpMiddleware<P: clock::Reference = <clock::DefaultClock as clock::C
     phantom: PhantomData<P>,
 }
 
-impl<P: clock::Reference> std::fmt::Debug for NoOpMiddleware<P> {
+impl<P: clock::Reference> core::fmt::Debug for NoOpMiddleware<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "NoOpMiddleware")
     }
@@ -278,7 +280,7 @@ mod test {
     #[test]
     fn middleware_impl_derives() {
         assert_eq!(
-            format!("{:?}", StateInformationMiddleware),
+            format!("{StateInformationMiddleware:?}"),
             "StateInformationMiddleware"
         );
         assert_eq!(

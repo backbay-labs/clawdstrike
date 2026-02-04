@@ -3,7 +3,8 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use clawdstrike::{HushEngine, Policy, RuleSet};
+use clawdstrike::{HushEngine, Policy};
+use hush_core::Keypair;
 
 use crate::state::AppState;
 
@@ -34,30 +35,27 @@ pub async fn get_policy(
 ) -> Result<Json<PolicyResponse>, (StatusCode, String)> {
     let engine = state.engine.read().await;
 
-    // We need to access the policy - let's get the hash first
+    let policy = engine.policy();
     let policy_hash = engine
         .policy_hash()
         .map(|h| h.to_hex())
-        .unwrap_or_else(|_| "unknown".to_string());
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let yaml = engine
+        .policy_yaml()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let Some(ruleset) = RuleSet::by_name(&state.config.ruleset)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    else {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Unknown ruleset: {}", state.config.ruleset),
-        ));
+    let name = if policy.name.is_empty() {
+        state.config.ruleset.clone()
+    } else {
+        policy.name.clone()
     };
 
-    let yaml = ruleset
-        .policy
-        .to_yaml()
-        .unwrap_or_else(|_| "# Unable to serialize policy".to_string());
+    let description = policy.description.clone();
 
     Ok(Json(PolicyResponse {
-        name: ruleset.name,
-        version: ruleset.policy.version,
-        description: ruleset.description,
+        name,
+        version: policy.version.clone(),
+        description,
         policy_hash,
         yaml,
     }))
@@ -69,16 +67,35 @@ pub async fn update_policy(
     Json(request): Json<UpdatePolicyRequest>,
 ) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
     // Parse the new policy
-    let policy = Policy::from_yaml(&request.yaml).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Invalid policy YAML: {}", e),
-        )
-    })?;
+    let policy = Policy::from_yaml_with_extends(&request.yaml, state.config.policy_path.as_deref())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid policy YAML: {}", e),
+            )
+        })?;
 
     // Update the engine
     let mut engine = state.engine.write().await;
-    *engine = HushEngine::with_policy(policy).with_generated_keypair();
+    let keypair = if let Some(ref key_path) = state.config.signing_key {
+        let key_hex = std::fs::read_to_string(key_path)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .trim()
+            .to_string();
+        Some(
+            Keypair::from_hex(&key_hex)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+        )
+    } else {
+        engine.keypair().cloned()
+    };
+
+    let mut new_engine = HushEngine::with_policy(policy);
+    new_engine = match keypair {
+        Some(keypair) => new_engine.with_keypair(keypair),
+        None => new_engine.with_generated_keypair(),
+    };
+    *engine = new_engine;
 
     tracing::info!("Policy updated via API");
 

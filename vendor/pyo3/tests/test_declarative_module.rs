@@ -1,14 +1,13 @@
 #![cfg(feature = "macros")]
 
-use std::sync::Once;
+use std::sync::OnceLock;
 
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use pyo3::sync::{GILOnceCell, OnceExt};
+use pyo3::sync::OnceLockExt;
 
-#[path = "../src/tests/common.rs"]
-mod common;
+mod test_utils;
 
 mod some_module {
     use pyo3::create_exception;
@@ -76,6 +75,20 @@ mod declarative_module {
     #[pymodule_export]
     use super::external_submodule;
 
+    #[pymodule_export]
+    const FOO: u32 = 42;
+
+    #[pymodule_export]
+    #[cfg(Py_LIMITED_API)]
+    const BAR: &str = "BAR";
+
+    #[pymodule_export]
+    #[expect(non_upper_case_globals)]
+    const r#type: char = '!';
+
+    #[expect(unused)]
+    const NOT_EXPORTED: &str = "not exported";
+
     #[pymodule]
     mod inner {
         use super::*;
@@ -137,7 +150,7 @@ fn double_value(v: &ValueClass) -> usize {
     v.value * 2
 }
 
-#[pymodule]
+#[pymodule(module = "declarative_module")]
 mod declarative_submodule {
     #[pymodule_export]
     use super::{double, double_value};
@@ -150,23 +163,16 @@ mod declarative_module2 {
 }
 
 fn declarative_module(py: Python<'_>) -> &Bound<'_, PyModule> {
-    static MODULE: GILOnceCell<Py<PyModule>> = GILOnceCell::new();
-    static ONCE: Once = Once::new();
+    static MODULE: OnceLock<Py<PyModule>> = OnceLock::new();
 
-    // Guarantee that the module is only ever initialized once; GILOnceCell can race.
-    // TODO: use OnceLock when MSRV >= 1.70
-    ONCE.call_once_py_attached(py, || {
-        MODULE
-            .set(py, pyo3::wrap_pymodule!(declarative_module)(py))
-            .expect("only ever set once");
-    });
-
-    MODULE.get(py).expect("once is completed").bind(py)
+    MODULE
+        .get_or_init_py_attached(py, || pyo3::wrap_pymodule!(declarative_module)(py))
+        .bind(py)
 }
 
 #[test]
 fn test_declarative_module() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let m = declarative_module(py);
         py_assert!(
             py,
@@ -190,7 +196,33 @@ fn test_declarative_module() {
         py_assert!(py, m, "hasattr(m, 'LocatedClass')");
         py_assert!(py, m, "isinstance(m.inner.Struct(), m.inner.Struct)");
         py_assert!(py, m, "isinstance(m.inner.Enum.A, m.inner.Enum)");
-        py_assert!(py, m, "hasattr(m, 'external_submodule')")
+        py_assert!(py, m, "hasattr(m, 'external_submodule')");
+        py_assert!(py, m, "m.FOO == 42");
+        #[cfg(Py_LIMITED_API)]
+        py_assert!(py, m, "m.BAR == 'BAR'");
+        #[cfg(not(Py_LIMITED_API))]
+        py_assert!(py, m, "not hasattr(m, 'BAR')");
+        py_assert!(py, m, "m.type == '!'");
+        py_assert!(py, m, "not hasattr(m, 'NOT_EXPORTED')");
+
+        // submodule dunder name and attribute name
+        // declarative_module.inner is declared inside
+        py_assert!(py, m, "m.inner.__name__ == 'declarative_module.inner'");
+        py_assert!(py, m, "'inner' in m.__dict__");
+        py_assert!(py, m, "'declarative_module.inner' not in m.__dict__");
+
+        // since declarative_submodule is declared outside, but the parent module name is passed
+        py_assert!(
+            py,
+            m,
+            "m.declarative_submodule.__name__ == 'declarative_module.declarative_submodule'"
+        );
+        py_assert!(py, m, "'declarative_submodule' in m.__dict__");
+        py_assert!(
+            py,
+            m,
+            "'declarative_module.declarative_submodule' not in m.__dict__"
+        );
     })
 }
 
@@ -202,7 +234,7 @@ mod r#type {
 
 #[test]
 fn test_raw_ident_module() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let m = pyo3::wrap_pymodule!(r#type)(py).into_bound(py);
         py_assert!(py, m, "m.double(2) == 4");
     })
@@ -210,7 +242,7 @@ fn test_raw_ident_module() {
 
 #[test]
 fn test_module_names() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let m = declarative_module(py);
         py_assert!(
             py,
@@ -234,7 +266,7 @@ fn test_module_names() {
 
 #[test]
 fn test_inner_module_full_path() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let m = declarative_module(py);
         py_assert!(py, m, "m.full_path_inner");
     })

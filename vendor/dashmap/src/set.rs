@@ -10,6 +10,8 @@ use core::borrow::Borrow;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::iter::FromIterator;
+#[cfg(feature = "raw-api")]
+use crossbeam_utils::CachePadded;
 use std::collections::hash_map::RandomState;
 
 /// DashSet is a thin wrapper around [`DashMap`] using `()` as the value type. It uses
@@ -136,7 +138,7 @@ impl<'a, K: 'a + Eq + Hash, S: BuildHasher + Clone> DashSet<K, S> {
             /// let set = DashSet::<()>::new();
             /// println!("Amount of shards: {}", set.shards().len());
             /// ```
-            pub fn shards(&self) -> &[RwLock<HashMap<K, (), S>>] {
+            pub fn shards(&self) -> &[CachePadded<RwLock<HashMap<K, ()>>>] {
                 self.inner.shards()
             }
         }
@@ -280,7 +282,7 @@ impl<'a, K: 'a + Eq + Hash, S: BuildHasher + Clone> DashSet<K, S> {
     /// youtubers.insert("Bosnian Bill");
     /// assert_eq!(*youtubers.get("Bosnian Bill").unwrap(), "Bosnian Bill");
     /// ```
-    pub fn get<Q>(&'a self, key: &Q) -> Option<Ref<'a, K, S>>
+    pub fn get<Q>(&'a self, key: &Q) -> Option<Ref<'a, K>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -410,6 +412,23 @@ impl<K: Eq + Hash, S: BuildHasher + Clone + Default> FromIterator<K> for DashSet
         set.extend(iter);
 
         set
+    }
+}
+
+#[cfg(feature = "typesize")]
+impl<K, S> typesize::TypeSize for DashSet<K, S>
+where
+    K: typesize::TypeSize + Eq + Hash,
+    S: typesize::TypeSize + Clone + BuildHasher,
+{
+    fn extra_size(&self) -> usize {
+        self.inner.extra_size()
+    }
+
+    typesize::if_typesize_details! {
+        fn get_collection_item_count(&self) -> Option<usize> {
+            Some(self.len())
+        }
     }
 }
 

@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.83"
 name = "pyo3"
-version = "0.23.5"
+version = "0.28.0"
 authors = ["PyO3 Project and Contributors <https://github.com/PyO3>"]
 build = "build.rs"
 exclude = [
@@ -50,12 +50,124 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/pyo3/pyo3"
 
 [package.metadata.docs.rs]
-features = ["full"]
 no-default-features = true
+features = ["full"]
 rustdoc-args = [
     "--cfg",
     "docsrs",
 ]
+
+[features]
+abi3 = [
+    "pyo3-build-config/abi3",
+    "pyo3-ffi/abi3",
+]
+abi3-py310 = [
+    "abi3-py311",
+    "pyo3-build-config/abi3-py310",
+    "pyo3-ffi/abi3-py310",
+]
+abi3-py311 = [
+    "abi3-py312",
+    "pyo3-build-config/abi3-py311",
+    "pyo3-ffi/abi3-py311",
+]
+abi3-py312 = [
+    "abi3-py313",
+    "pyo3-build-config/abi3-py312",
+    "pyo3-ffi/abi3-py312",
+]
+abi3-py313 = [
+    "abi3-py314",
+    "pyo3-build-config/abi3-py313",
+    "pyo3-ffi/abi3-py313",
+]
+abi3-py314 = [
+    "abi3",
+    "pyo3-build-config/abi3-py314",
+    "pyo3-ffi/abi3-py314",
+]
+abi3-py37 = [
+    "abi3-py38",
+    "pyo3-build-config/abi3-py37",
+    "pyo3-ffi/abi3-py37",
+]
+abi3-py38 = [
+    "abi3-py39",
+    "pyo3-build-config/abi3-py38",
+    "pyo3-ffi/abi3-py38",
+]
+abi3-py39 = [
+    "abi3-py310",
+    "pyo3-build-config/abi3-py39",
+    "pyo3-ffi/abi3-py39",
+]
+arc_lock = [
+    "lock_api",
+    "lock_api/arc_lock",
+    "parking_lot?/arc_lock",
+]
+auto-initialize = []
+bigdecimal = [
+    "dep:bigdecimal",
+    "num-bigint",
+]
+chrono-local = [
+    "chrono/clock",
+    "dep:iana-time-zone",
+]
+default = ["macros"]
+experimental-async = [
+    "macros",
+    "pyo3-macros/experimental-async",
+]
+experimental-inspect = ["pyo3-macros/experimental-inspect"]
+extension-module = ["pyo3-ffi/extension-module"]
+full = [
+    "macros",
+    "anyhow",
+    "arc_lock",
+    "bigdecimal",
+    "bytes",
+    "chrono",
+    "chrono-local",
+    "chrono-tz",
+    "either",
+    "experimental-async",
+    "experimental-inspect",
+    "eyre",
+    "hashbrown",
+    "indexmap",
+    "jiff-02",
+    "lock_api",
+    "num-bigint",
+    "num-complex",
+    "num-rational",
+    "ordered-float",
+    "parking_lot",
+    "py-clone",
+    "rust_decimal",
+    "serde",
+    "smallvec",
+    "time",
+    "uuid",
+]
+generate-import-lib = ["pyo3-ffi/generate-import-lib"]
+macros = ["pyo3-macros"]
+multiple-pymethods = [
+    "inventory",
+    "pyo3-macros/multiple-pymethods",
+]
+nightly = []
+num-bigint = [
+    "dep:num-bigint",
+    "dep:num-traits",
+]
+parking_lot = [
+    "dep:parking_lot",
+    "lock_api",
+]
+py-clone = []
 
 [lib]
 name = "pyo3"
@@ -104,6 +216,10 @@ path = "tests/test_class_conversion.rs"
 [[test]]
 name = "test_class_formatting"
 path = "tests/test_class_formatting.rs"
+
+[[test]]
+name = "test_class_init"
+path = "tests/test_class_init.rs"
 
 [[test]]
 name = "test_class_new"
@@ -194,6 +310,14 @@ name = "test_proto_methods"
 path = "tests/test_proto_methods.rs"
 
 [[test]]
+name = "test_pybuffer_drop_without_interpreter"
+path = "tests/test_pybuffer_drop_without_interpreter.rs"
+
+[[test]]
+name = "test_pyerr_debug_unformattable"
+path = "tests/test_pyerr_debug_unformattable.rs"
+
+[[test]]
 name = "test_pyfunction"
 path = "tests/test_pyfunction.rs"
 
@@ -237,8 +361,13 @@ path = "tests/test_various.rs"
 version = "1.0.1"
 optional = true
 
-[dependencies.cfg-if]
-version = "1.0"
+[dependencies.bigdecimal]
+version = "0.4.7"
+optional = true
+
+[dependencies.bytes]
+version = "1.10"
+optional = true
 
 [dependencies.chrono]
 version = "0.4.25"
@@ -259,29 +388,37 @@ version = ">= 0.6.8, < 0.7"
 optional = true
 
 [dependencies.hashbrown]
-version = ">= 0.14.5, < 0.16"
+version = ">= 0.15.0, < 0.17"
+optional = true
+default-features = false
+
+[dependencies.iana-time-zone]
+version = "0.1"
+features = ["fallback"]
 optional = true
 
 [dependencies.indexmap]
 version = ">= 2.5.0, < 3"
 optional = true
 
-[dependencies.indoc]
-version = "2.0.1"
+[dependencies.inventory]
+version = "0.3.5"
 optional = true
 
-[dependencies.inventory]
-version = "0.3.0"
+[dependencies.jiff-02]
+version = "0.2"
 optional = true
+package = "jiff"
 
 [dependencies.libc]
 version = "0.2.62"
 
-[dependencies.memoffset]
-version = "0.9"
+[dependencies.lock_api]
+version = "0.4"
+optional = true
 
 [dependencies.num-bigint]
-version = "0.4.2"
+version = "0.4.4"
 optional = true
 
 [dependencies.num-complex]
@@ -292,14 +429,27 @@ optional = true
 version = "0.4.1"
 optional = true
 
+[dependencies.num-traits]
+version = "0.2.16"
+optional = true
+
 [dependencies.once_cell]
-version = "1.13"
+version = "1.21"
+
+[dependencies.ordered-float]
+version = "5.0.0"
+optional = true
+default-features = false
+
+[dependencies.parking_lot]
+version = "0.12"
+optional = true
 
 [dependencies.pyo3-ffi]
-version = "=0.23.5"
+version = "=0.28.0"
 
 [dependencies.pyo3-macros]
-version = "=0.23.5"
+version = "=0.28.0"
 optional = true
 
 [dependencies.rust_decimal]
@@ -315,8 +465,13 @@ optional = true
 version = "1.0"
 optional = true
 
-[dependencies.unindent]
-version = "0.2.1"
+[dependencies.time]
+version = "0.3.38"
+optional = true
+default-features = false
+
+[dependencies.uuid]
+version = "1.12.0"
 optional = true
 
 [dev-dependencies.assert_approx_eq]
@@ -330,6 +485,10 @@ version = ">= 0.10, < 0.11"
 
 [dev-dependencies.futures]
 version = "0.3.28"
+
+[dev-dependencies.parking_lot]
+version = "0.12.3"
+features = ["arc_lock"]
 
 [dev-dependencies.proptest]
 version = "1.0"
@@ -356,90 +515,15 @@ version = "1.1.0"
 version = "3.12.0"
 
 [dev-dependencies.trybuild]
-version = ">=1.0.70"
+version = ">=1.0.115"
 
 [dev-dependencies.uuid]
 version = "1.10.0"
 features = ["v4"]
 
 [build-dependencies.pyo3-build-config]
-version = "=0.23.5"
+version = "=0.28.0"
 features = ["resolve-config"]
-
-[features]
-abi3 = [
-    "pyo3-build-config/abi3",
-    "pyo3-ffi/abi3",
-]
-abi3-py310 = [
-    "abi3-py311",
-    "pyo3-build-config/abi3-py310",
-    "pyo3-ffi/abi3-py310",
-]
-abi3-py311 = [
-    "abi3-py312",
-    "pyo3-build-config/abi3-py311",
-    "pyo3-ffi/abi3-py311",
-]
-abi3-py312 = [
-    "abi3",
-    "pyo3-build-config/abi3-py312",
-    "pyo3-ffi/abi3-py312",
-]
-abi3-py37 = [
-    "abi3-py38",
-    "pyo3-build-config/abi3-py37",
-    "pyo3-ffi/abi3-py37",
-]
-abi3-py38 = [
-    "abi3-py39",
-    "pyo3-build-config/abi3-py38",
-    "pyo3-ffi/abi3-py38",
-]
-abi3-py39 = [
-    "abi3-py310",
-    "pyo3-build-config/abi3-py39",
-    "pyo3-ffi/abi3-py39",
-]
-auto-initialize = []
-default = ["macros"]
-experimental-async = [
-    "macros",
-    "pyo3-macros/experimental-async",
-]
-experimental-inspect = []
-extension-module = ["pyo3-ffi/extension-module"]
-full = [
-    "macros",
-    "anyhow",
-    "chrono",
-    "chrono-tz",
-    "either",
-    "experimental-async",
-    "experimental-inspect",
-    "eyre",
-    "hashbrown",
-    "indexmap",
-    "num-bigint",
-    "num-complex",
-    "num-rational",
-    "py-clone",
-    "rust_decimal",
-    "serde",
-    "smallvec",
-]
-generate-import-lib = ["pyo3-ffi/generate-import-lib"]
-macros = [
-    "pyo3-macros",
-    "indoc",
-    "unindent",
-]
-multiple-pymethods = [
-    "inventory",
-    "pyo3-macros/multiple-pymethods",
-]
-nightly = []
-py-clone = []
 
 [target.'cfg(not(target_has_atomic = "64"))'.dependencies.portable-atomic]
 version = "1.0"
@@ -455,6 +539,7 @@ let_unit_value = "warn"
 manual_assert = "warn"
 manual_ok_or = "warn"
 todo = "warn"
+undocumented_unsafe_blocks = "allow"
 unnecessary_wraps = "warn"
 used_underscore_binding = "warn"
 useless_transmute = "warn"
@@ -463,6 +548,7 @@ useless_transmute = "warn"
 elided_lifetimes_in_paths = "warn"
 invalid_doc_attributes = "warn"
 rust_2021_prelude_collisions = "warn"
+unsafe_op_in_unsafe_fn = "warn"
 unused_lifetimes = "warn"
 
 [lints.rust.rust_2018_idioms]

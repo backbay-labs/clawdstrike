@@ -12,12 +12,13 @@
 [package]
 edition = "2021"
 name = "redox_users"
-version = "0.4.6"
+version = "0.5.2"
 authors = [
     "Jose Narvaez <goyox86@gmail.com>",
     "Wesley Hershberger <mggmugginsmc@gmail.com>",
 ]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -31,6 +32,13 @@ keywords = [
 ]
 license = "MIT"
 repository = "https://gitlab.redox-os.org/redox-os/users"
+
+[features]
+auth = [
+    "rust-argon2",
+    "zeroize",
+]
+default = ["auth"]
 
 [lib]
 name = "redox_users"
@@ -53,16 +61,9 @@ version = "0.8"
 optional = true
 
 [dependencies.thiserror]
-version = "1.0"
+version = "2.0"
 
 [dependencies.zeroize]
 version = "1.4"
 features = ["zeroize_derive"]
 optional = true
-
-[features]
-auth = [
-    "rust-argon2",
-    "zeroize",
-]
-default = ["auth"]

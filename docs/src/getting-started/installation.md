@@ -45,7 +45,7 @@ This repo contains experimental SDKs under `packages/` (TypeScript, Python, Open
 
 ## Requirements
 
-- Rust `1.75+` (workspace `rust-version`)
+- Rust `1.92+` (workspace `rust-version`)
 
 ## Next Steps
 

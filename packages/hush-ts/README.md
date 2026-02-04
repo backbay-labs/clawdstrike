@@ -14,7 +14,10 @@ npm install @clawdstrike/sdk
 - **RFC 8785 Canonical JSON**: Deterministic JSON for hashing/signing
 - **RFC 6962 Merkle Trees**: Certificate Transparency compatible
 - **Receipt verification**: Sign and verify execution receipts
-- **Security guards**: ForbiddenPath, EgressAllowlist, SecretLeak
+- **Security guards**: ForbiddenPath, EgressAllowlist, SecretLeak, PatchIntegrity, McpTool
+- **Prompt hygiene helpers**: Instruction hierarchy enforcement
+- **Prompt security utilities**: Output sanitization (streaming) and prompt watermarking
+- **Jailbreak detection**: Multi-signal jailbreak detection helpers
 
 ## Usage
 

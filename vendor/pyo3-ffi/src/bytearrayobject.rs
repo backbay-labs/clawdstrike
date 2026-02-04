@@ -1,6 +1,6 @@
 use crate::object::*;
 use crate::pyport::Py_ssize_t;
-use std::os::raw::{c_char, c_int};
+use std::ffi::{c_char, c_int};
 use std::ptr::addr_of_mut;
 
 #[cfg(not(any(PyPy, GraalPy, Py_LIMITED_API)))]
@@ -14,10 +14,12 @@ pub struct PyByteArrayObject {
     pub ob_exports: Py_ssize_t,
     #[cfg(not(Py_3_9))]
     pub ob_exports: c_int,
+    #[cfg(Py_3_15)]
+    pub ob_bytes_object: *mut PyObject,
 }
 
 #[cfg(any(PyPy, GraalPy, Py_LIMITED_API))]
-opaque_struct!(PyByteArrayObject);
+opaque_struct!(pub PyByteArrayObject);
 
 #[cfg_attr(windows, link(name = "pythonXY"))]
 extern "C" {

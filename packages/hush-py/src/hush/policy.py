@@ -17,6 +17,45 @@ from hush.guards.secret_leak import SecretLeakGuard, SecretLeakConfig
 from hush.guards.patch_integrity import PatchIntegrityGuard, PatchIntegrityConfig
 from hush.guards.mcp_tool import McpToolGuard, McpToolConfig
 
+POLICY_SCHEMA_VERSION = "1.0.0"
+
+
+def _parse_semver_strict(version: str) -> Optional[tuple[int, int, int]]:
+    parts = version.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        major, minor, patch = (int(p) for p in parts)
+    except ValueError:
+        return None
+    if major < 0 or minor < 0 or patch < 0:
+        return None
+    return major, minor, patch
+
+
+def _validate_policy_version(version: str) -> None:
+    if _parse_semver_strict(version) is None:
+        raise ValueError(f"Invalid policy version: {version!r} (expected X.Y.Z)")
+    if version != POLICY_SCHEMA_VERSION:
+        raise ValueError(
+            f"Unsupported policy version: {version!r} (supported: {POLICY_SCHEMA_VERSION})"
+        )
+
+
+def _require_mapping(value: Any, *, path: str) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected mapping for {path}, got {type(value).__name__}")
+    return value
+
+
+def _reject_unknown_keys(data: Dict[str, Any], allowed: set[str], *, path: str) -> None:
+    unknown = set(data.keys()) - allowed
+    if unknown:
+        unknown_str = ", ".join(sorted(unknown))
+        raise ValueError(f"Unknown {path} field(s): {unknown_str}")
+
 
 @dataclass
 class PolicySettings:
@@ -40,17 +79,55 @@ class GuardConfigs:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> GuardConfigs:
         """Create from dictionary."""
+        allowed = {
+            "forbidden_path",
+            "egress_allowlist",
+            "secret_leak",
+            "patch_integrity",
+            "mcp_tool",
+        }
+        _reject_unknown_keys(data, allowed, path="guards")
+
+        def parse_guard_config(
+            config_type: Any, value: Any, *, path: str
+        ) -> Optional[Any]:
+            if value is None:
+                return None
+            if not isinstance(value, dict):
+                raise ValueError(
+                    f"Expected mapping for {path}, got {type(value).__name__}"
+                )
+            try:
+                return config_type(**value)
+            except TypeError as e:
+                raise ValueError(f"Invalid {path} config: {e}") from e
+
         return cls(
-            forbidden_path=ForbiddenPathConfig(**data["forbidden_path"])
-                if "forbidden_path" in data else None,
-            egress_allowlist=EgressAllowlistConfig(**data["egress_allowlist"])
-                if "egress_allowlist" in data else None,
-            secret_leak=SecretLeakConfig(**data["secret_leak"])
-                if "secret_leak" in data else None,
-            patch_integrity=PatchIntegrityConfig(**data["patch_integrity"])
-                if "patch_integrity" in data else None,
-            mcp_tool=McpToolConfig(**data["mcp_tool"])
-                if "mcp_tool" in data else None,
+            forbidden_path=parse_guard_config(
+                ForbiddenPathConfig,
+                data.get("forbidden_path"),
+                path="guards.forbidden_path",
+            ),
+            egress_allowlist=parse_guard_config(
+                EgressAllowlistConfig,
+                data.get("egress_allowlist"),
+                path="guards.egress_allowlist",
+            ),
+            secret_leak=parse_guard_config(
+                SecretLeakConfig,
+                data.get("secret_leak"),
+                path="guards.secret_leak",
+            ),
+            patch_integrity=parse_guard_config(
+                PatchIntegrityConfig,
+                data.get("patch_integrity"),
+                path="guards.patch_integrity",
+            ),
+            mcp_tool=parse_guard_config(
+                McpToolConfig,
+                data.get("mcp_tool"),
+                path="guards.mcp_tool",
+            ),
         )
 
 
@@ -58,7 +135,7 @@ class GuardConfigs:
 class Policy:
     """Complete policy configuration."""
 
-    version: str = "1.0.0"
+    version: str = POLICY_SCHEMA_VERSION
     name: str = ""
     description: str = ""
     guards: GuardConfigs = field(default_factory=GuardConfigs)
@@ -68,14 +145,25 @@ class Policy:
     def from_yaml(cls, yaml_str: str) -> Policy:
         """Parse from YAML string."""
         data = yaml.safe_load(yaml_str) or {}
+        if not isinstance(data, dict):
+            raise ValueError("Policy YAML must be a mapping (YAML object)")
 
-        guards_data = data.get("guards", {})
-        settings_data = data.get("settings", {})
+        _reject_unknown_keys(
+            data, {"version", "name", "description", "guards", "settings"}, path="policy"
+        )
+
+        version = data.get("version", POLICY_SCHEMA_VERSION)
+        if not isinstance(version, str):
+            raise ValueError("policy.version must be a string")
+        _validate_policy_version(version)
+
+        guards_data = _require_mapping(data.get("guards"), path="policy.guards")
+        settings_data = _require_mapping(data.get("settings"), path="policy.settings")
 
         return cls(
-            version=data.get("version", "1.0.0"),
-            name=data.get("name", ""),
-            description=data.get("description", ""),
+            version=version,
+            name=str(data.get("name", "")),
+            description=str(data.get("description", "")),
             guards=GuardConfigs.from_dict(guards_data) if guards_data else GuardConfigs(),
             settings=PolicySettings(**settings_data) if settings_data else PolicySettings(),
         )

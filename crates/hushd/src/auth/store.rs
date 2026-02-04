@@ -32,10 +32,16 @@ impl AuthStore {
         }
     }
 
-    /// Compute SHA-256 hash of a key
+    /// Compute a stable hash of an API key token.
+    ///
+    /// If `HUSHD_AUTH_PEPPER` is set (recommended), uses HMAC-SHA256 to make offline guessing
+    /// attacks significantly harder if key hashes ever leak.
+    ///
+    /// If unset, falls back to raw SHA-256 for backward compatibility.
     pub fn hash_key(key: &str) -> String {
-        let hash = Sha256::digest(key.as_bytes());
-        hex::encode(hash)
+        let pepper = std::env::var("HUSHD_AUTH_PEPPER").ok();
+        let pepper = pepper.as_deref().filter(|s| !s.is_empty());
+        hash_key_with_pepper(key, pepper.map(|p| p.as_bytes()))
     }
 
     /// Add a key to the store
@@ -77,6 +83,44 @@ impl AuthStore {
     }
 }
 
+fn hash_key_with_pepper(key: &str, pepper: Option<&[u8]>) -> String {
+    let digest: [u8; 32] = match pepper {
+        Some(pepper) => hmac_sha256(pepper, key.as_bytes()),
+        None => Sha256::digest(key.as_bytes()).into(),
+    };
+    hex::encode(digest)
+}
+
+fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    // HMAC-SHA256 as defined in RFC 2104.
+    const BLOCK_SIZE: usize = 64;
+
+    let mut key_block = [0u8; BLOCK_SIZE];
+    if key.len() > BLOCK_SIZE {
+        let hashed = Sha256::digest(key);
+        key_block[..hashed.len()].copy_from_slice(&hashed);
+    } else {
+        key_block[..key.len()].copy_from_slice(key);
+    }
+
+    let mut ipad = [0u8; BLOCK_SIZE];
+    let mut opad = [0u8; BLOCK_SIZE];
+    for i in 0..BLOCK_SIZE {
+        ipad[i] = key_block[i] ^ 0x36;
+        opad[i] = key_block[i] ^ 0x5c;
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(ipad);
+    inner.update(message);
+    let inner = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(opad);
+    outer.update(inner);
+    outer.finalize().into()
+}
+
 impl Default for AuthStore {
     fn default() -> Self {
         Self::new()
@@ -96,7 +140,7 @@ mod tests {
         let hash1 = AuthStore::hash_key(key);
         let hash2 = AuthStore::hash_key(key);
         assert_eq!(hash1, hash2);
-        assert_eq!(hash1.len(), 64); // SHA-256 = 32 bytes = 64 hex chars
+        assert_eq!(hash1.len(), 64); // 32-byte digest = 64 hex chars
     }
 
     #[test]
@@ -104,6 +148,13 @@ mod tests {
         let hash1 = AuthStore::hash_key("key1");
         let hash2 = AuthStore::hash_key("key2");
         assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_hash_key_pepper_changes_digest() {
+        let a = hash_key_with_pepper("token", Some(b"pepper-a"));
+        let b = hash_key_with_pepper("token", Some(b"pepper-b"));
+        assert_ne!(a, b);
     }
 
     #[tokio::test]

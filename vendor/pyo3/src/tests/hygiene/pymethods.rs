@@ -404,6 +404,8 @@ impl Dummy {
     }
     #[setter]
     fn set(&mut self, _v: i32) {}
+    #[deleter]
+    fn delete(&mut self) {}
     #[classattr]
     fn class_attr() -> i32 {
         0
@@ -449,4 +451,118 @@ impl Dummy2 {
     fn __repr__() -> &'static str {
         "Dummy"
     }
+}
+
+#[crate::pyclass(crate = "crate")]
+struct WarningDummy {
+    value: i32,
+}
+
+#[cfg(any(not(Py_LIMITED_API), Py_3_12))]
+#[crate::pyclass(crate = "crate", extends=crate::exceptions::PyWarning)]
+pub struct UserDefinedWarning {}
+
+#[cfg(any(not(Py_LIMITED_API), Py_3_12))]
+#[crate::pymethods(crate = "crate")]
+impl UserDefinedWarning {
+    #[new]
+    #[pyo3(signature = (*_args, **_kwargs))]
+    fn new(
+        _args: crate::Bound<'_, crate::PyAny>,
+        _kwargs: ::std::option::Option<crate::Bound<'_, crate::PyAny>>,
+    ) -> Self {
+        Self {}
+    }
+}
+
+#[crate::pymethods(crate = "crate")]
+impl WarningDummy {
+    #[new]
+    #[pyo3(warn(message = "this __new__ method raises warning"))]
+    fn new() -> Self {
+        Self { value: 0 }
+    }
+
+    #[pyo3(warn(message = "this method raises warning"))]
+    fn method_with_warning(_slf: crate::PyRef<'_, Self>) {}
+
+    #[pyo3(warn(message = "this method raises warning", category = crate::exceptions::PyFutureWarning))]
+    fn method_with_warning_and_custom_category(_slf: crate::PyRef<'_, Self>) {}
+
+    #[cfg(any(not(Py_LIMITED_API), Py_3_12))]
+    #[pyo3(warn(message = "this method raises user-defined warning", category = UserDefinedWarning))]
+    fn method_with_warning_and_user_defined_category(&self) {}
+
+    #[staticmethod]
+    #[pyo3(warn(message = "this static method raises warning"))]
+    fn static_method() {}
+
+    #[staticmethod]
+    #[pyo3(warn(message = "this class method raises warning"))]
+    fn class_method() {}
+
+    #[getter]
+    #[pyo3(warn(message = "this getter raises warning"))]
+    fn get_value(&self) -> i32 {
+        self.value
+    }
+
+    #[setter]
+    #[pyo3(warn(message = "this setter raises warning"))]
+    fn set_value(&mut self, value: i32) {
+        self.value = value;
+    }
+
+    #[deleter]
+    #[pyo3(warn(message = "this deleter raises warning"))]
+    fn deleter_value(&mut self) {
+        self.value = 0;
+    }
+
+    #[pyo3(warn(message = "this subscript op method raises warning"))]
+    fn __getitem__(&self, _key: i32) -> i32 {
+        0
+    }
+
+    #[pyo3(warn(message = "the + op method raises warning"))]
+    fn __add__(&self, other: crate::PyRef<'_, Self>) -> Self {
+        Self {
+            value: self.value + other.value,
+        }
+    }
+
+    #[pyo3(warn(message = "this __call__ method raises warning"))]
+    fn __call__(&self) -> i32 {
+        self.value
+    }
+
+    #[pyo3(warn(message = "this method raises warning 1"))]
+    #[pyo3(warn(message = "this method raises warning 2", category = crate::exceptions::PyFutureWarning))]
+    fn multiple_warn_method(&self) {}
+}
+
+#[crate::pyclass(crate = "crate")]
+struct WarningDummy2;
+
+#[crate::pymethods(crate = "crate")]
+impl WarningDummy2 {
+    #[new]
+    #[classmethod]
+    #[pyo3(warn(message = "this class-method __new__ method raises warning"))]
+    fn new(_cls: crate::Bound<'_, crate::types::PyType>) -> Self {
+        Self {}
+    }
+
+    #[pyo3(warn(message = "this class-method raises warning 1"))]
+    #[pyo3(warn(message = "this class-method raises warning 2"))]
+    fn multiple_default_warnings_fn(&self) {}
+
+    #[pyo3(warn(message = "this class-method raises warning"))]
+    #[pyo3(warn(message = "this class-method raises future warning", category = crate::exceptions::PyFutureWarning))]
+    fn multiple_warnings_fn(&self) {}
+
+    #[cfg(any(not(Py_LIMITED_API), Py_3_12))]
+    #[pyo3(warn(message = "this class-method raises future warning", category = crate::exceptions::PyFutureWarning))]
+    #[pyo3(warn(message = "this class-method raises user-defined warning", category = UserDefinedWarning))]
+    fn multiple_warnings_fn_with_custom_category(&self) {}
 }

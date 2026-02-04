@@ -1,6 +1,6 @@
 [tools]
-rust = "1.75"
-node = "20"
+rust = "1.92"
+node = "24"
 python = "3.12"
 
 [tasks.check]

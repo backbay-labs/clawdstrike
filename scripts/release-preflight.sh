@@ -17,7 +17,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export REPO_ROOT
 
-python - "$VERSION" <<'PY'
+python3 - "$VERSION" <<'PY'
 from __future__ import annotations
 
 import json
@@ -81,7 +81,7 @@ for pkg in [
 
 formula = (repo_root / "HomebrewFormula/hush.rb").read_text(encoding="utf-8")
 match = re.search(
-    r'^\s*url\s+"https://github\.com/clawdstrike/clawdstrike/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
+    r'^\s*url\s+"https://github\.com/backbay-labs/hushclaw/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
     formula,
     flags=re.M,
 )

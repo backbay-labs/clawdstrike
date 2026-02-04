@@ -43,9 +43,9 @@ jobs:
       - run:
           name: Run all tests under sanitizers
           command: |
-            RUSTFLAGS="-Z sanitizer=address" cargo +nightly -Z build-std test --target x86_64-unknown-linux-gnu --all-features
-            RUSTFLAGS="-Z sanitizer=leak" cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all-features
-            RUSTFLAGS="-Z sanitizer=memory" cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all-features
+            RUSTDOCFLAGS=-Cunsafe-allow-abi-mismatch=sanitizer RUSTFLAGS="-Z sanitizer=address" cargo +nightly -Z build-std test --target x86_64-unknown-linux-gnu --all-features
+            RUSTDOCFLAGS=-Cunsafe-allow-abi-mismatch=sanitizer RUSTFLAGS="-Z sanitizer=leak" cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all-features
+            RUSTDOCFLAGS=-Cunsafe-allow-abi-mismatch=sanitizer RUSTFLAGS="-Z sanitizer=memory" cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all-features
       - save_cache:
           paths:
             - /usr/local/cargo/registry

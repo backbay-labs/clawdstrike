@@ -2,43 +2,6 @@
 //!
 //! [`axum`]: https://crates.io/crates/axum
 
-#![warn(
-    clippy::all,
-    clippy::dbg_macro,
-    clippy::todo,
-    clippy::empty_enum,
-    clippy::enum_glob_use,
-    clippy::mem_forget,
-    clippy::unused_self,
-    clippy::filter_map_next,
-    clippy::needless_continue,
-    clippy::needless_borrow,
-    clippy::match_wildcard_for_single_variants,
-    clippy::if_let_mutex,
-    clippy::await_holding_lock,
-    clippy::match_on_vec_items,
-    clippy::imprecise_flops,
-    clippy::suboptimal_flops,
-    clippy::lossy_float_literal,
-    clippy::rest_pat_in_fully_bound_structs,
-    clippy::fn_params_excessive_bools,
-    clippy::exit,
-    clippy::inefficient_to_string,
-    clippy::linkedlist,
-    clippy::macro_use_imports,
-    clippy::option_option,
-    clippy::verbose_file_reads,
-    clippy::unnested_or_patterns,
-    clippy::str_to_string,
-    rust_2018_idioms,
-    future_incompatible,
-    nonstandard_style,
-    missing_debug_implementations,
-    missing_docs
-)]
-#![deny(unreachable_pub)]
-#![allow(elided_lifetimes_in_paths, clippy::type_complexity)]
-#![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 #![cfg_attr(not(test), warn(clippy::print_stdout, clippy::dbg_macro))]
@@ -246,7 +209,6 @@ use from_request::Trait::{FromRequest, FromRequestParts};
 ///
 /// struct MyInnerType;
 ///
-/// #[axum::async_trait]
 /// impl FromRequestParts<CustomState> for MyInnerType {
 ///     // ...
 ///     # type Rejection = ();
@@ -407,9 +369,9 @@ use from_request::Trait::{FromRequest, FromRequestParts};
 /// }
 /// ```
 ///
-/// [`FromRequest`]: https://docs.rs/axum/0.7/axum/extract/trait.FromRequest.html
-/// [`axum::response::Response`]: https://docs.rs/axum/0.7/axum/response/type.Response.html
-/// [`axum::extract::rejection::ExtensionRejection`]: https://docs.rs/axum/0.7/axum/extract/rejection/enum.ExtensionRejection.html
+/// [`FromRequest`]: https://docs.rs/axum/0.8/axum/extract/trait.FromRequest.html
+/// [`axum::response::Response`]: https://docs.rs/axum/0.8/axum/response/type.Response.html
+/// [`axum::extract::rejection::ExtensionRejection`]: https://docs.rs/axum/0.8/axum/extract/rejection/enum.ExtensionRejection.html
 #[proc_macro_derive(FromRequest, attributes(from_request))]
 pub fn derive_from_request(item: TokenStream) -> TokenStream {
     expand_with(item, |item| from_request::expand(item, FromRequest))
@@ -458,7 +420,7 @@ pub fn derive_from_request(item: TokenStream) -> TokenStream {
 ///
 /// Use `#[derive(FromRequest)]` for that.
 ///
-/// [`FromRequestParts`]: https://docs.rs/axum/0.7/axum/extract/trait.FromRequestParts.html
+/// [`FromRequestParts`]: https://docs.rs/axum/0.8/axum/extract/trait.FromRequestParts.html
 #[proc_macro_derive(FromRequestParts, attributes(from_request))]
 pub fn derive_from_request_parts(item: TokenStream) -> TokenStream {
     expand_with(item, |item| from_request::expand(item, FromRequestParts))
@@ -606,9 +568,9 @@ pub fn derive_from_request_parts(item: TokenStream) -> TokenStream {
 ///
 /// This macro has no effect when compiled with the release profile. (eg. `cargo build --release`)
 ///
-/// [`axum`]: https://docs.rs/axum/0.7
-/// [`Handler`]: https://docs.rs/axum/0.7/axum/handler/trait.Handler.html
-/// [`axum::extract::State`]: https://docs.rs/axum/0.7/axum/extract/struct.State.html
+/// [`axum`]: https://docs.rs/axum/0.8
+/// [`Handler`]: https://docs.rs/axum/0.8/axum/handler/trait.Handler.html
+/// [`axum::extract::State`]: https://docs.rs/axum/0.8/axum/extract/struct.State.html
 /// [`debug_handler`]: macro@debug_handler
 #[proc_macro_attribute]
 pub fn debug_handler(_attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -664,7 +626,7 @@ pub fn debug_handler(_attr: TokenStream, input: TokenStream) -> TokenStream {
 /// This macro has no effect when compiled with the release profile. (eg. `cargo build --release`)
 ///
 /// [`axum`]: https://docs.rs/axum/latest
-/// [`axum::middleware::from_fn`]: https://docs.rs/axum/0.7/axum/middleware/fn.from_fn.html
+/// [`axum::middleware::from_fn`]: https://docs.rs/axum/0.8/axum/middleware/fn.from_fn.html
 /// [`debug_middleware`]: macro@debug_middleware
 #[proc_macro_attribute]
 pub fn debug_middleware(_attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -747,7 +709,7 @@ pub fn derive_typed_path(input: TokenStream) -> TokenStream {
 /// # let _: axum::Router = app;
 /// ```
 ///
-/// [`FromRef`]: https://docs.rs/axum/0.7/axum/extract/trait.FromRef.html
+/// [`FromRef`]: https://docs.rs/axum/0.8/axum/extract/trait.FromRef.html
 #[proc_macro_derive(FromRef, attributes(from_ref))]
 pub fn derive_from_ref(item: TokenStream) -> TokenStream {
     expand_with(item, from_ref::expand)

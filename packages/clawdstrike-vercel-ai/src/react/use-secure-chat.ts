@@ -1,5 +1,5 @@
-import { useChat } from 'ai/react';
-import type { UseChatOptions } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
+import type { ChatInit, UIMessage } from 'ai';
 import { useCallback, useMemo, useState } from 'react';
 
 import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
@@ -17,14 +17,21 @@ export interface SecurityStatus {
   violationCount: number;
 }
 
-export type UseSecureChatOptions = UseChatOptions & {
+type UseChatInitOptions<UI_MESSAGE extends UIMessage> = ChatInit<UI_MESSAGE> & {
+  experimental_throttle?: number;
+  resume?: boolean;
+};
+
+export type UseSecureChatOptions<UI_MESSAGE extends UIMessage = UIMessage> = UseChatInitOptions<UI_MESSAGE> & {
   engine: PolicyEngineLike;
   securityConfig?: VercelAiClawdstrikeConfig;
   context?: SecurityContext;
   createContext?: () => SecurityContext;
 };
 
-export function useSecureChat(options: UseSecureChatOptions) {
+export function useSecureChat<UI_MESSAGE extends UIMessage = UIMessage>(
+  options: UseSecureChatOptions<UI_MESSAGE>,
+) {
   const { engine, securityConfig, context: providedContext, createContext, onToolCall, ...chatOptions } = options;
 
   const interceptor = useMemo(
@@ -107,4 +114,3 @@ export function useSecureChat(options: UseSecureChatOptions) {
     preflightCheck,
   };
 }
-

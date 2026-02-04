@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.65"
 name = "dashmap"
-version = "5.5.3"
+version = "6.1.0"
 authors = ["Acrimon <joel.wejdenstal@gmail.com>"]
 description = "Blazing fast concurrent HashMap for Rust."
 homepage = "https://github.com/xacrimon/dashmap"
@@ -46,8 +46,12 @@ optional = true
 [dependencies.cfg-if]
 version = "1.0.0"
 
+[dependencies.crossbeam-utils]
+version = "0.8"
+
 [dependencies.hashbrown]
 version = "0.14.0"
+features = ["raw"]
 default-features = false
 
 [dependencies.lock_api]
@@ -68,6 +72,12 @@ version = "1.0.188"
 features = ["derive"]
 optional = true
 
+[dependencies.typesize]
+version = "0.1.8"
+optional = true
+default-features = false
+
 [features]
 inline = ["hashbrown/inline-more"]
 raw-api = []
+typesize = ["dep:typesize"]

@@ -9,13 +9,13 @@ pub(crate) mod complexobject;
 #[cfg(Py_3_13)]
 pub(crate) mod critical_section;
 pub(crate) mod descrobject;
-#[cfg(not(PyPy))]
 pub(crate) mod dictobject;
 // skipped fileobject.h
 // skipped fileutils.h
 pub(crate) mod frameobject;
 pub(crate) mod funcobject;
 pub(crate) mod genobject;
+#[cfg(any(not(PyPy), Py_3_14))]
 pub(crate) mod import;
 #[cfg(all(Py_3_8, not(PyPy)))]
 pub(crate) mod initconfig;
@@ -38,6 +38,7 @@ pub(crate) mod pythonrun;
 // skipped sysmodule.h
 pub(crate) mod floatobject;
 pub(crate) mod pyframe;
+pub(crate) mod pyhash;
 pub(crate) mod tupleobject;
 pub(crate) mod unicodeobject;
 pub(crate) mod weakrefobject;
@@ -52,12 +53,12 @@ pub use self::complexobject::*;
 #[cfg(Py_3_13)]
 pub use self::critical_section::*;
 pub use self::descrobject::*;
-#[cfg(not(PyPy))]
 pub use self::dictobject::*;
 pub use self::floatobject::*;
 pub use self::frameobject::*;
 pub use self::funcobject::*;
 pub use self::genobject::*;
+#[cfg(any(not(PyPy), Py_3_14))]
 pub use self::import::*;
 #[cfg(all(Py_3_8, not(PyPy)))]
 pub use self::initconfig::*;
@@ -71,8 +72,9 @@ pub use self::object::*;
 pub use self::objimpl::*;
 pub use self::pydebug::*;
 pub use self::pyerrors::*;
-#[cfg(all(Py_3_11, not(PyPy)))]
 pub use self::pyframe::*;
+#[cfg(any(not(PyPy), Py_3_13))]
+pub use self::pyhash::*;
 #[cfg(all(Py_3_8, not(PyPy)))]
 pub use self::pylifecycle::*;
 pub use self::pymem::*;

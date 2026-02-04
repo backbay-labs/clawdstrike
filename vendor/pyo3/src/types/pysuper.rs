@@ -1,7 +1,7 @@
 use crate::instance::Bound;
 use crate::types::any::PyAnyMethods;
 use crate::types::PyType;
-use crate::{ffi, PyTypeInfo};
+use crate::PyTypeInfo;
 use crate::{PyAny, PyResult};
 
 /// Represents a Python `super` object.
@@ -11,9 +11,26 @@ use crate::{PyAny, PyResult};
 #[repr(transparent)]
 pub struct PySuper(PyAny);
 
+#[cfg(not(any(Py_LIMITED_API, PyPy, GraalPy)))]
 pyobject_native_type_core!(
     PySuper,
-    pyobject_native_static_type_object!(ffi::PySuper_Type)
+    pyobject_native_static_type_object!(crate::ffi::PySuper_Type),
+    "builtins",
+    "super"
+);
+
+#[cfg(any(Py_LIMITED_API, PyPy, GraalPy))]
+pyobject_native_type_core!(
+    PySuper,
+    |py| {
+        use crate::sync::PyOnceLock;
+        use crate::types::{PyType, PyTypeMethods};
+        use crate::Py;
+        static TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+        TYPE.import(py, "builtins", "super").unwrap().as_type_ptr()
+    },
+    "builtins",
+    "super"
 );
 
 impl PySuper {
@@ -21,7 +38,7 @@ impl PySuper {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use pyo3::prelude::*;
     ///
     /// #[pyclass(subclass)]
@@ -63,17 +80,7 @@ impl PySuper {
     ) -> PyResult<Bound<'py, PySuper>> {
         PySuper::type_object(ty.py()).call1((ty, obj)).map(|any| {
             // Safety: super() always returns instance of super
-            unsafe { any.downcast_into_unchecked() }
+            unsafe { any.cast_into_unchecked() }
         })
-    }
-
-    /// Deprecated name for [`PySuper::new`].
-    #[deprecated(since = "0.23.0", note = "renamed to `PySuper::new`")]
-    #[inline]
-    pub fn new_bound<'py>(
-        ty: &Bound<'py, PyType>,
-        obj: &Bound<'py, PyAny>,
-    ) -> PyResult<Bound<'py, PySuper>> {
-        Self::new(ty, obj)
     }
 }

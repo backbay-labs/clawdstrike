@@ -1,11 +1,9 @@
 #![doc = include_str!("../docs/response.md")]
 
-use axum_core::body::Body;
 use http::{header, HeaderValue, StatusCode};
 
 mod redirect;
 
-#[cfg(feature = "tokio")]
 pub mod sse;
 
 #[doc(no_inline)]
@@ -28,7 +26,6 @@ pub use axum_core::response::{
 pub use self::redirect::Redirect;
 
 #[doc(inline)]
-#[cfg(feature = "tokio")]
 pub use sse::Sse;
 
 /// An HTML response.
@@ -40,7 +37,7 @@ pub struct Html<T>(pub T);
 
 impl<T> IntoResponse for Html<T>
 where
-    T: Into<Body>,
+    T: IntoResponse,
 {
     fn into_response(self) -> Response {
         (
@@ -48,7 +45,7 @@ where
                 header::CONTENT_TYPE,
                 HeaderValue::from_static(mime::TEXT_HTML_UTF_8.as_ref()),
             )],
-            self.0.into(),
+            self.0,
         )
             .into_response()
     }

@@ -40,7 +40,7 @@ Clawdstrike enforces policy at the **agent/tool boundary**. It is **not** an OS 
 
 ### Guards
 
-Six composable security guards provide runtime protection:
+Seven composable security guards provide runtime protection:
 
 1. **ForbiddenPathGuard** - Blocks access to sensitive filesystem paths (SSH keys, credentials, etc.)
 2. **EgressAllowlistGuard** - Controls network egress via domain allowlist/blocklist
@@ -48,6 +48,7 @@ Six composable security guards provide runtime protection:
 4. **PatchIntegrityGuard** - Validates patch safety (size limits, forbidden patterns)
 5. **McpToolGuard** - Restricts MCP tool invocations
 6. **PromptInjectionGuard** - Detects and deduplicates prompt-injection attempts in untrusted text
+7. **JailbreakGuard** - Detects jailbreak attempts in user input (multi-layer analysis)
 
 ### Attestation
 
@@ -71,7 +72,7 @@ Centralized policy enforcement (experimental):
 
 ### Security testing (ongoing)
 
-- CI enforces `fmt`/`clippy`/`test`, and validates docs code blocks.
+- CI enforces `fmt`/`clippy`/`test`, and validates docs shell code blocks.
 - Fuzzing for parser-critical surfaces (DNS/SNI parsing in `hush-proxy`) runs on a schedule via `.github/workflows/fuzz.yml`.
 
 ## Known Limitations (v0.1.0)

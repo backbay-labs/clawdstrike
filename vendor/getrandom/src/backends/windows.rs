@@ -26,9 +26,7 @@ use core::mem::MaybeUninit;
 pub use crate::util::{inner_u32, inner_u64};
 
 // Binding to the Windows.Win32.Security.Cryptography.ProcessPrng API. As
-// bcryptprimitives.dll lacks an import library, we use "raw-dylib". This
-// was added in Rust 1.65 for x86_64/aarch64 and in Rust 1.71 for x86.
-// We don't need MSRV 1.71, as we only use this backend on Rust 1.78 and later.
+// bcryptprimitives.dll lacks an import library, we use "raw-dylib".
 #[cfg_attr(
     target_arch = "x86",
     link(
@@ -41,21 +39,19 @@ pub use crate::util::{inner_u32, inner_u64};
     not(target_arch = "x86"),
     link(name = "bcryptprimitives", kind = "raw-dylib")
 )]
-extern "system" {
+unsafe extern "system" {
     fn ProcessPrng(pbdata: *mut u8, cbdata: usize) -> BOOL;
 }
-#[allow(clippy::upper_case_acronyms, clippy::incompatible_msrv)]
-type BOOL = core::ffi::c_int; // MSRV 1.64, similarly OK for this backend.
+#[expect(clippy::upper_case_acronyms)]
+type BOOL = core::ffi::c_int;
 const TRUE: BOOL = 1;
 
 #[inline]
 pub fn fill_inner(dest: &mut [MaybeUninit<u8>]) -> Result<(), Error> {
     let result = unsafe { ProcessPrng(dest.as_mut_ptr().cast::<u8>(), dest.len()) };
-    // Since Windows 10, calls to the user-mode RNG are guaranteed to never
-    // fail during runtime (rare windows W); `ProcessPrng` will only ever
-    // return 1 (which is how windows represents TRUE).
-    // See the bottom of page 6 of the aforementioned Windows RNG
-    // whitepaper for more information.
+    // `ProcessPrng` is documented to always return TRUE. All potential errors are handled
+    // during loading of `BCryptPrimitive.dll`. See the "Process base PRNG" section
+    // in the aforementioned Windows RNG whitepaper for more information.
     debug_assert!(result == TRUE);
     Ok(())
 }

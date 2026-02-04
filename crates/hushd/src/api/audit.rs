@@ -88,9 +88,12 @@ pub async fn query_audit(
         .query(&filter)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let mut count_filter = filter.clone();
+    count_filter.limit = None;
+    count_filter.offset = None;
     let total = state
         .ledger
-        .count()
+        .count_filtered(&count_filter)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(AuditResponse {
@@ -114,20 +117,18 @@ pub async fn audit_stats(
     // Count violations
     let violations = state
         .ledger
-        .query(&AuditFilter {
+        .count_filtered(&AuditFilter {
             decision: Some("blocked".to_string()),
             ..Default::default()
         })
-        .map(|v| v.len())
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let allowed = state
         .ledger
-        .query(&AuditFilter {
+        .count_filtered(&AuditFilter {
             decision: Some("allowed".to_string()),
             ..Default::default()
         })
-        .map(|v| v.len())
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(AuditStatsResponse {

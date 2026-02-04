@@ -35,14 +35,14 @@ fn test_config() -> ProptestConfig {
 fn cover_count_derives() {
     use nonzero_ext::nonzero;
     let count = Count(nonzero!(1u32));
-    assert_eq!(format!("{:?}", count), "Count(1)");
+    assert_eq!(format!("{count:?}"), "Count(1)");
 }
 
 #[test]
 fn accurate_not_until() {
     proptest!(test_config(), |(capacity: Count, additional: Count, wait_time_parts: Count)| {
         let clock = FakeRelativeClock::default();
-        let lb = RateLimiter::direct_with_clock(Quota::per_second(capacity.0), &clock);
+        let lb = RateLimiter::direct_with_clock(Quota::per_second(capacity.0), clock.clone());
         let step = Duration::from_secs(1) / capacity.0.get();
 
         // use up the burst capacity:

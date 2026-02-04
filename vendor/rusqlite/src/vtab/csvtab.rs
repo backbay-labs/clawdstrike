@@ -21,17 +21,17 @@
 //!     Ok(())
 //! }
 //! ```
+use std::ffi::c_int;
 use std::fs::File;
 use std::marker::PhantomData;
-use std::os::raw::c_int;
 use std::path::Path;
 use std::str;
 
 use crate::ffi;
 use crate::types::Null;
 use crate::vtab::{
-    escape_double_quote, parse_boolean, read_only_module, Context, CreateVTab, IndexInfo, VTab,
-    VTabConfig, VTabConnection, VTabCursor, VTabKind, Values,
+    escape_double_quote, parse_boolean, read_only_module, Context, CreateVTab, Filters, IndexInfo,
+    VTab, VTabConfig, VTabConnection, VTabCursor, VTabKind,
 };
 use crate::{Connection, Error, Result};
 
@@ -48,7 +48,7 @@ use crate::{Connection, Error, Result};
 /// ```
 pub fn load_module(conn: &Connection) -> Result<()> {
     let aux: Option<()> = None;
-    conn.create_module("csv", read_only_module::<CsvTab>(), aux)
+    conn.create_module(c"csv", read_only_module::<CsvTab>(), aux)
 }
 
 /// An instance of the CSV virtual table
@@ -91,14 +91,14 @@ unsafe impl<'vtab> VTab<'vtab> for CsvTab {
         db: &mut VTabConnection,
         _aux: Option<&()>,
         args: &[&[u8]],
-    ) -> Result<(String, CsvTab)> {
+    ) -> Result<(String, Self)> {
         if args.len() < 4 {
             return Err(Error::ModuleError("no CSV file specified".to_owned()));
         }
 
-        let mut vtab = CsvTab {
+        let mut vtab = Self {
             base: ffi::sqlite3_vtab::default(),
-            filename: "".to_owned(),
+            filename: String::new(),
             has_headers: false,
             delimiter: b',',
             quote: b'"',
@@ -115,7 +115,7 @@ unsafe impl<'vtab> VTab<'vtab> for CsvTab {
                     if !Path::new(value).exists() {
                         return Err(Error::ModuleError(format!("file '{value}' does not exist")));
                     }
-                    vtab.filename = value.to_owned();
+                    value.clone_into(&mut vtab.filename);
                 }
                 "schema" => {
                     schema = Some(value.to_owned());
@@ -148,7 +148,7 @@ unsafe impl<'vtab> VTab<'vtab> for CsvTab {
                     }
                 }
                 "delimiter" => {
-                    if let Some(b) = CsvTab::parse_byte(value) {
+                    if let Some(b) = Self::parse_byte(value) {
                         vtab.delimiter = b;
                     } else {
                         return Err(Error::ModuleError(format!(
@@ -157,7 +157,7 @@ unsafe impl<'vtab> VTab<'vtab> for CsvTab {
                     }
                 }
                 "quote" => {
-                    if let Some(b) = CsvTab::parse_byte(value) {
+                    if let Some(b) = Self::parse_byte(value) {
                         if b == b'0' {
                             vtab.quote = 0;
                         } else {
@@ -287,7 +287,7 @@ unsafe impl VTabCursor for CsvTabCursor<'_> {
         &mut self,
         _idx_num: c_int,
         _idx_str: Option<&str>,
-        _args: &Values<'_>,
+        _args: &Filters<'_>,
     ) -> Result<()> {
         {
             let offset_first_row = self.vtab().offset_first_row.clone();
@@ -335,22 +335,31 @@ unsafe impl VTabCursor for CsvTabCursor<'_> {
 
 impl From<csv::Error> for Error {
     #[cold]
-    fn from(err: csv::Error) -> Error {
-        Error::ModuleError(err.to_string())
+    fn from(err: csv::Error) -> Self {
+        Self::ModuleError(err.to_string())
     }
 }
 
 #[cfg(test)]
 mod test {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use crate::vtab::csvtab;
     use crate::{Connection, Result};
     use fallible_iterator::FallibleIterator;
 
+    #[cfg_attr(
+        all(target_family = "wasm", target_os = "unknown"),
+        ignore = "no filesystem on this platform"
+    )]
     #[test]
     fn test_csv_module() -> Result<()> {
         let db = Connection::open_in_memory()?;
         csvtab::load_module(&db)?;
-        db.execute_batch("CREATE VIRTUAL TABLE vtab USING csv(filename='test.csv', header=yes)")?;
+        db.execute_batch(
+            "CREATE VIRTUAL TABLE vtab USING csv(filename = 'test.csv', header = yes)",
+        )?;
 
         {
             let mut s = db.prepare("SELECT rowid, * FROM vtab")?;
@@ -366,6 +375,10 @@ mod test {
         db.execute_batch("DROP TABLE vtab")
     }
 
+    #[cfg_attr(
+        all(target_family = "wasm", target_os = "unknown"),
+        ignore = "no filesystem on this platform"
+    )]
     #[test]
     fn test_csv_cursor() -> Result<()> {
         let db = Connection::open_in_memory()?;

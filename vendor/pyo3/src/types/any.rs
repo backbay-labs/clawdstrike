@@ -1,20 +1,23 @@
+use crate::call::PyCallArgs;
 use crate::class::basic::CompareOp;
-use crate::conversion::{AsPyPointer, FromPyObjectBound, IntoPyObject};
-use crate::err::{DowncastError, DowncastIntoError, PyErr, PyResult};
+use crate::conversion::{FromPyObject, IntoPyObject};
+use crate::err::{PyErr, PyResult};
 use crate::exceptions::{PyAttributeError, PyTypeError};
 use crate::ffi_ptr_ext::FfiPtrExt;
+use crate::impl_::pycell::PyStaticClassObject;
 use crate::instance::Bound;
 use crate::internal::get_slot::TP_DESCR_GET;
-use crate::internal_tricks::ptr_from_ref;
 use crate::py_result_ext::PyResultExt;
 use crate::type_object::{PyTypeCheck, PyTypeInfo};
-#[cfg(not(any(PyPy, GraalPy)))]
 use crate::types::PySuper;
-use crate::types::{PyDict, PyIterator, PyList, PyString, PyTuple, PyType};
-use crate::{err, ffi, Borrowed, BoundObject, IntoPyObjectExt, Python};
+use crate::types::{PyDict, PyIterator, PyList, PyString, PyType};
+use crate::{err, ffi, Borrowed, BoundObject, IntoPyObjectExt, Py, Python};
+#[allow(deprecated)]
+use crate::{DowncastError, DowncastIntoError};
 use std::cell::UnsafeCell;
 use std::cmp::Ordering;
-use std::os::raw::c_int;
+use std::ffi::c_int;
+use std::ptr;
 
 /// Represents any Python object.
 ///
@@ -37,9 +40,12 @@ fn PyObject_Check(_: *mut ffi::PyObject) -> c_int {
     1
 }
 
+// We follow stub writing guidelines and use "object" instead of "typing.Any": https://typing.python.org/en/latest/guides/writing_stubs.html#using-any
 pyobject_native_type_info!(
     PyAny,
     pyobject_native_static_type_object!(ffi::PyBaseObject_Type),
+    "typing",
+    "Any",
     Some("builtins"),
     #checkfunction=PyObject_Check
 );
@@ -51,6 +57,7 @@ impl crate::impl_::pyclass::PyClassBaseType for PyAny {
     type BaseNativeType = PyAny;
     type Initializer = crate::impl_::pyclass_init::PyNativeTypeInitializer<Self>;
     type PyClassMutability = crate::pycell::impl_::ImmutableClass;
+    type Layout<T: crate::impl_::pyclass::PyClassImpl> = PyStaticClassObject<T>;
 }
 
 /// This trait represents the Python APIs which are usable on all Python objects.
@@ -63,7 +70,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// the equality of two objects (the `==` operator), use [`eq`](PyAnyMethods::eq).
     ///
     /// This is equivalent to the Python expression `self is other`.
-    fn is<T: AsPyPointer>(&self, other: &T) -> bool;
+    fn is<T: AsRef<Py<PyAny>>>(&self, other: T) -> bool;
 
     /// Determines whether this object has the given attribute.
     ///
@@ -82,7 +89,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///     sys.hasattr(intern!(sys.py(), "version"))
     /// }
     /// #
-    /// # Python::with_gil(|py| {
+    /// # Python::attach(|py| {
     /// #    let sys = py.import("sys").unwrap();
     /// #    has_version(&sys).unwrap();
     /// # });
@@ -108,12 +115,44 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///     sys.getattr(intern!(sys.py(), "version"))
     /// }
     /// #
-    /// # Python::with_gil(|py| {
+    /// # Python::attach(|py| {
     /// #    let sys = py.import("sys").unwrap();
     /// #    version(&sys).unwrap();
     /// # });
     /// ```
     fn getattr<N>(&self, attr_name: N) -> PyResult<Bound<'py, PyAny>>
+    where
+        N: IntoPyObject<'py, Target = PyString>;
+
+    /// Retrieves an attribute value optionally.
+    ///
+    /// This is equivalent to the Python expression `getattr(self, attr_name, None)`, which may
+    /// be more efficient in some cases by simply returning `None` if the attribute is not found
+    /// instead of raising `AttributeError`.
+    ///
+    /// To avoid repeated temporary allocations of Python strings, the [`intern!`] macro can be used
+    /// to intern `attr_name`.
+    ///
+    /// # Errors
+    /// Returns `Err` if an exception other than `AttributeError` is raised during attribute lookup,
+    /// such as a `ValueError` from a property or descriptor.
+    ///
+    /// # Example: Retrieving an optional attribute
+    /// ```
+    /// # use pyo3::{prelude::*, intern};
+    /// #
+    /// #[pyfunction]
+    /// fn get_version_if_exists<'py>(sys: &Bound<'py, PyModule>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    ///     sys.getattr_opt(intern!(sys.py(), "version"))
+    /// }
+    /// #
+    /// # Python::attach(|py| {
+    /// #    let sys = py.import("sys").unwrap();
+    /// #    let version = get_version_if_exists(&sys).unwrap();
+    /// #    assert!(version.is_some());
+    /// # });
+    /// ```
+    fn getattr_opt<N>(&self, attr_name: N) -> PyResult<Option<Bound<'py, PyAny>>>
     where
         N: IntoPyObject<'py, Target = PyString>;
 
@@ -134,7 +173,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///     ob.setattr(intern!(ob.py(), "answer"), 42)
     /// }
     /// #
-    /// # Python::with_gil(|py| {
+    /// # Python::attach(|py| {
     /// #    let ob = PyModule::new(py, "empty").unwrap();
     /// #    set_answer(&ob).unwrap();
     /// # });
@@ -176,7 +215,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use std::cmp::Ordering;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| -> PyResult<()> {
+    /// Python::attach(|py| -> PyResult<()> {
     ///     let a = PyFloat::new(py, 0_f64);
     ///     let b = PyFloat::new(py, 42_f64);
     ///     assert_eq!(a.compare(b)?, Ordering::Less);
@@ -192,7 +231,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3::types::{PyFloat, PyString};
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| -> PyResult<()> {
+    /// Python::attach(|py| -> PyResult<()> {
     ///     let a = PyFloat::new(py, 0_f64);
     ///     let b = PyString::new(py, "zero");
     ///     assert!(a.compare(b).is_err());
@@ -229,7 +268,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3::prelude::*;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| -> PyResult<()> {
+    /// Python::attach(|py| -> PyResult<()> {
     ///     let a = 0_u8.into_pyobject(py)?;
     ///     let b = 42_u8.into_pyobject(py)?;
     ///     assert!(a.rich_compare(b, CompareOp::Le)?.is_truthy()?);
@@ -383,7 +422,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3::prelude::*;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| -> PyResult<()> {
+    /// Python::attach(|py| -> PyResult<()> {
     ///     let builtins = PyModule::import(py, "builtins")?;
     ///     let print = builtins.getattr("print")?;
     ///     assert!(print.is_callable());
@@ -414,16 +453,16 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3_ffi::c_str;
     /// use std::ffi::CStr;
     ///
-    /// const CODE: &CStr = c_str!(r#"
+    /// const CODE: &CStr = cr#"
     /// def function(*args, **kwargs):
     ///     assert args == ("hello",)
     ///     assert kwargs == {"cruel": "world"}
     ///     return "called with args and kwargs"
-    /// "#);
+    /// "#;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| {
-    ///     let module = PyModule::from_code(py, CODE, c_str!(""), c_str!(""))?;
+    /// Python::attach(|py| {
+    ///     let module = PyModule::from_code(py, CODE, c"func.py", c"")?;
     ///     let fun = module.getattr("function")?;
     ///     let args = ("hello",);
     ///     let kwargs = PyDict::new(py);
@@ -436,7 +475,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// ```
     fn call<A>(&self, args: A, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>>
     where
-        A: IntoPyObject<'py, Target = PyTuple>;
+        A: PyCallArgs<'py>;
 
     /// Calls the object without arguments.
     ///
@@ -448,7 +487,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3::prelude::*;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| -> PyResult<()> {
+    /// Python::attach(|py| -> PyResult<()> {
     ///     let module = PyModule::import(py, "builtins")?;
     ///     let help = module.getattr("help")?;
     ///     help.call0()?;
@@ -471,16 +510,16 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3_ffi::c_str;
     /// use std::ffi::CStr;
     ///
-    /// const CODE: &CStr = c_str!(r#"
+    /// const CODE: &CStr = cr#"
     /// def function(*args, **kwargs):
     ///     assert args == ("hello",)
     ///     assert kwargs == {}
     ///     return "called with args"
-    /// "#);
+    /// "#;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| {
-    ///     let module = PyModule::from_code(py, CODE, c_str!(""), c_str!(""))?;
+    /// Python::attach(|py| {
+    ///     let module = PyModule::from_code(py, CODE, c"func.py", c"")?;
     ///     let fun = module.getattr("function")?;
     ///     let args = ("hello",);
     ///     let result = fun.call1(args)?;
@@ -491,7 +530,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// ```
     fn call1<A>(&self, args: A) -> PyResult<Bound<'py, PyAny>>
     where
-        A: IntoPyObject<'py, Target = PyTuple>;
+        A: PyCallArgs<'py>;
 
     /// Calls a method on the object.
     ///
@@ -508,18 +547,18 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3_ffi::c_str;
     /// use std::ffi::CStr;
     ///
-    /// const CODE: &CStr = c_str!(r#"
+    /// const CODE: &CStr = cr#"
     /// class A:
     ///     def method(self, *args, **kwargs):
     ///         assert args == ("hello",)
     ///         assert kwargs == {"cruel": "world"}
     ///         return "called with args and kwargs"
     /// a = A()
-    /// "#);
+    /// "#;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| {
-    ///     let module = PyModule::from_code(py, CODE, c_str!(""), c_str!(""))?;
+    /// Python::attach(|py| {
+    ///     let module = PyModule::from_code(py, CODE, c"a.py", c"")?;
     ///     let instance = module.getattr("a")?;
     ///     let args = ("hello",);
     ///     let kwargs = PyDict::new(py);
@@ -538,7 +577,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ) -> PyResult<Bound<'py, PyAny>>
     where
         N: IntoPyObject<'py, Target = PyString>,
-        A: IntoPyObject<'py, Target = PyTuple>;
+        A: PyCallArgs<'py>;
 
     /// Calls a method on the object without arguments.
     ///
@@ -554,18 +593,18 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3_ffi::c_str;
     /// use std::ffi::CStr;
     ///
-    /// const CODE: &CStr = c_str!(r#"
+    /// const CODE: &CStr = cr#"
     /// class A:
     ///     def method(self, *args, **kwargs):
     ///         assert args == ()
     ///         assert kwargs == {}
     ///         return "called with no arguments"
     /// a = A()
-    /// "#);
+    /// "#;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| {
-    ///     let module = PyModule::from_code(py, CODE, c_str!(""), c_str!(""))?;
+    /// Python::attach(|py| {
+    ///     let module = PyModule::from_code(py, CODE, c"a.py", c"")?;
     ///     let instance = module.getattr("a")?;
     ///     let result = instance.call_method0("method")?;
     ///     assert_eq!(result.extract::<String>()?, "called with no arguments");
@@ -591,18 +630,18 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// use pyo3_ffi::c_str;
     /// use std::ffi::CStr;
     ///
-    /// const CODE: &CStr = c_str!(r#"
+    /// const CODE: &CStr = cr#"
     /// class A:
     ///     def method(self, *args, **kwargs):
     ///         assert args == ("hello",)
     ///         assert kwargs == {}
     ///         return "called with args"
     /// a = A()
-    /// "#);
+    /// "#;
     ///
     /// # fn main() -> PyResult<()> {
-    /// Python::with_gil(|py| {
-    ///     let module = PyModule::from_code(py, CODE, c_str!(""), c_str!(""))?;
+    /// Python::attach(|py| {
+    ///     let module = PyModule::from_code(py, CODE, c"a.py", c"")?;
     ///     let instance = module.getattr("a")?;
     ///     let args = ("hello",);
     ///     let result = instance.call_method1("method", args)?;
@@ -614,7 +653,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     fn call_method1<N, A>(&self, name: N, args: A) -> PyResult<Bound<'py, PyAny>>
     where
         N: IntoPyObject<'py, Target = PyString>,
-        A: IntoPyObject<'py, Target = PyTuple>;
+        A: PyCallArgs<'py>;
 
     /// Returns whether the object is considered to be true.
     ///
@@ -625,12 +664,6 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///
     /// This is equivalent to the Python expression `self is None`.
     fn is_none(&self) -> bool;
-
-    /// Returns whether the object is Ellipsis, e.g. `...`.
-    ///
-    /// This is equivalent to the Python expression `self is ...`.
-    #[deprecated(since = "0.23.0", note = "use `.is(py.Ellipsis())` instead")]
-    fn is_ellipsis(&self) -> bool;
 
     /// Returns true if the sequence or mapping has a length of 0.
     ///
@@ -678,19 +711,12 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///     }
     /// }
     ///
-    /// Python::with_gil(|py| {
+    /// Python::attach(|py| {
     ///     assert!(is_iterable(&vec![1, 2, 3].into_pyobject(py).unwrap()));
     ///     assert!(!is_iterable(&PyNone::get(py)));
     /// });
     /// ```
     fn try_iter(&self) -> PyResult<Bound<'py, PyIterator>>;
-
-    /// Takes an object and returns an iterator for it.
-    ///
-    /// This is typically a new iterator but if the argument is an iterator,
-    /// this returns itself.
-    #[deprecated(since = "0.23.0", note = "use `try_iter` instead")]
-    fn iter(&self) -> PyResult<Bound<'py, PyIterator>>;
 
     /// Returns the Python type object for this object's type.
     fn get_type(&self) -> Bound<'py, PyType>;
@@ -709,10 +735,11 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// # Example: Downcasting to a specific Python object
     ///
     /// ```rust
+    /// # #![allow(deprecated)]
     /// use pyo3::prelude::*;
     /// use pyo3::types::{PyDict, PyList};
     ///
-    /// Python::with_gil(|py| {
+    /// Python::attach(|py| {
     ///     let dict = PyDict::new(py);
     ///     assert!(dict.is_instance_of::<PyAny>());
     ///     let any = dict.as_any();
@@ -728,6 +755,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// might actually be a pyclass.
     ///
     /// ```rust
+    /// # #![allow(deprecated)]
     /// # fn main() -> Result<(), pyo3::PyErr> {
     /// use pyo3::prelude::*;
     ///
@@ -736,7 +764,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///     i: i32,
     /// }
     ///
-    /// Python::with_gil(|py| {
+    /// Python::attach(|py| {
     ///     let class = Py::new(py, Class { i: 0 }).unwrap().into_bound(py).into_any();
     ///
     ///     let class_bound: &Bound<'_, Class> = class.downcast()?;
@@ -750,6 +778,8 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// })
     /// # }
     /// ```
+    #[deprecated(since = "0.27.0", note = "use `Bound::cast` instead")]
+    #[allow(deprecated)]
     fn downcast<T>(&self) -> Result<&Bound<'py, T>, DowncastError<'_, 'py>>
     where
         T: PyTypeCheck;
@@ -761,10 +791,11 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// # Example
     ///
     /// ```rust
+    /// # #![allow(deprecated)]
     /// use pyo3::prelude::*;
     /// use pyo3::types::{PyDict, PyList};
     ///
-    /// Python::with_gil(|py| {
+    /// Python::attach(|py| {
     ///     let obj: Bound<'_, PyAny> = PyDict::new(py).into_any();
     ///
     ///     let obj: Bound<'_, PyAny> = match obj.downcast_into::<PyList>() {
@@ -776,6 +807,8 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///     assert!(obj.downcast_into::<PyDict>().is_ok());
     /// })
     /// ```
+    #[deprecated(since = "0.27.0", note = "use `Bound::cast_into` instead")]
+    #[allow(deprecated)]
     fn downcast_into<T>(self) -> Result<Bound<'py, T>, DowncastIntoError<'py>>
     where
         T: PyTypeCheck;
@@ -794,10 +827,11 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// # Example: Downcasting to a specific Python object but not a subtype
     ///
     /// ```rust
+    /// # #![allow(deprecated)]
     /// use pyo3::prelude::*;
     /// use pyo3::types::{PyBool, PyInt};
     ///
-    /// Python::with_gil(|py| {
+    /// Python::attach(|py| {
     ///     let b = PyBool::new(py, true);
     ///     assert!(b.is_instance_of::<PyBool>());
     ///     let any: &Bound<'_, PyAny> = b.as_any();
@@ -810,11 +844,15 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///     assert!(any.downcast_exact::<PyBool>().is_ok());
     /// });
     /// ```
+    #[deprecated(since = "0.27.0", note = "use `Bound::cast_exact` instead")]
+    #[allow(deprecated)]
     fn downcast_exact<T>(&self) -> Result<&Bound<'py, T>, DowncastError<'_, 'py>>
     where
         T: PyTypeInfo;
 
     /// Like `downcast_exact` but takes ownership of `self`.
+    #[deprecated(since = "0.27.0", note = "use `Bound::cast_into_exact` instead")]
+    #[allow(deprecated)]
     fn downcast_into_exact<T>(self) -> Result<Bound<'py, T>, DowncastIntoError<'py>>
     where
         T: PyTypeInfo;
@@ -824,6 +862,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// # Safety
     ///
     /// Callers must ensure that the type is valid or risk type confusion.
+    #[deprecated(since = "0.27.0", note = "use `Bound::cast_unchecked` instead")]
     unsafe fn downcast_unchecked<T>(&self) -> &Bound<'py, T>;
 
     /// Like `downcast_unchecked` but takes ownership of `self`.
@@ -831,15 +870,15 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// # Safety
     ///
     /// Callers must ensure that the type is valid or risk type confusion.
+    #[deprecated(since = "0.27.0", note = "use `Bound::cast_into_unchecked` instead")]
     unsafe fn downcast_into_unchecked<T>(self) -> Bound<'py, T>;
 
     /// Extracts some type from the Python object.
     ///
-    /// This is a wrapper function around
-    /// [`FromPyObject::extract_bound()`](crate::FromPyObject::extract_bound).
-    fn extract<'a, T>(&'a self) -> PyResult<T>
+    /// This is a wrapper function around [`FromPyObject::extract()`](crate::FromPyObject::extract).
+    fn extract<'a, T>(&'a self) -> Result<T, T::Error>
     where
-        T: FromPyObjectBound<'a, 'py>;
+        T: FromPyObject<'a, 'py>;
 
     /// Returns the reference count for the Python object.
     fn get_refcnt(&self) -> isize;
@@ -883,7 +922,7 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     ///
     /// This is equivalent to the Python expression `isinstance(self, T)`,
     /// if the type `T` is known at compile time.
-    fn is_instance_of<T: PyTypeInfo>(&self) -> bool;
+    fn is_instance_of<T: PyTypeCheck>(&self) -> bool;
 
     /// Checks whether this object is an instance of exactly type `T`.
     ///
@@ -901,7 +940,6 @@ pub trait PyAnyMethods<'py>: crate::sealed::Sealed {
     /// Return a proxy object that delegates method calls to a parent or sibling class of type.
     ///
     /// This is equivalent to the Python expression `super()`
-    #[cfg(not(any(PyPy, GraalPy)))]
     fn py_super(&self) -> PyResult<Bound<'py, PySuper>>;
 }
 
@@ -930,8 +968,8 @@ macro_rules! implement_binop {
 
 impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
     #[inline]
-    fn is<T: AsPyPointer>(&self, other: &T) -> bool {
-        self.as_ptr() == other.as_ptr()
+    fn is<T: AsRef<Py<PyAny>>>(&self, other: T) -> bool {
+        ptr::eq(self.as_ptr(), other.as_ref().as_ptr())
     }
 
     fn hasattr<N>(&self, attr_name: N) -> PyResult<bool>
@@ -972,6 +1010,54 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
                 .map_err(Into::into)?
                 .as_borrowed(),
         )
+    }
+
+    fn getattr_opt<N>(&self, attr_name: N) -> PyResult<Option<Bound<'py, PyAny>>>
+    where
+        N: IntoPyObject<'py, Target = PyString>,
+    {
+        fn inner<'py>(
+            any: &Bound<'py, PyAny>,
+            attr_name: Borrowed<'_, 'py, PyString>,
+        ) -> PyResult<Option<Bound<'py, PyAny>>> {
+            #[cfg(Py_3_13)]
+            {
+                let mut resp_ptr: *mut ffi::PyObject = std::ptr::null_mut();
+                match unsafe {
+                    ffi::PyObject_GetOptionalAttr(any.as_ptr(), attr_name.as_ptr(), &mut resp_ptr)
+                } {
+                    // Attribute found, result is a new strong reference
+                    1 => {
+                        let bound = unsafe { Bound::from_owned_ptr(any.py(), resp_ptr) };
+                        Ok(Some(bound))
+                    }
+                    // Attribute not found, result is NULL
+                    0 => Ok(None),
+
+                    // An error occurred (other than AttributeError)
+                    _ => Err(PyErr::fetch(any.py())),
+                }
+            }
+
+            #[cfg(not(Py_3_13))]
+            {
+                match any.getattr(attr_name) {
+                    Ok(bound) => Ok(Some(bound)),
+                    Err(err) => {
+                        let err_type = err
+                            .get_type(any.py())
+                            .is(PyType::new::<PyAttributeError>(any.py()));
+                        match err_type {
+                            true => Ok(None),
+                            false => Err(err),
+                        }
+                    }
+                }
+            }
+        }
+
+        let py = self.py();
+        inner(self, attr_name.into_pyobject_or_pyerr(py)?.as_borrowed())
     }
 
     fn setattr<N, V>(&self, attr_name: N, value: V) -> PyResult<()>
@@ -1209,25 +1295,17 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
 
     fn call<A>(&self, args: A, kwargs: Option<&Bound<'py, PyDict>>) -> PyResult<Bound<'py, PyAny>>
     where
-        A: IntoPyObject<'py, Target = PyTuple>,
+        A: PyCallArgs<'py>,
     {
-        fn inner<'py>(
-            any: &Bound<'py, PyAny>,
-            args: Borrowed<'_, 'py, PyTuple>,
-            kwargs: Option<&Bound<'py, PyDict>>,
-        ) -> PyResult<Bound<'py, PyAny>> {
-            unsafe {
-                ffi::PyObject_Call(
-                    any.as_ptr(),
-                    args.as_ptr(),
-                    kwargs.map_or(std::ptr::null_mut(), |dict| dict.as_ptr()),
-                )
-                .assume_owned_or_err(any.py())
-            }
+        if let Some(kwargs) = kwargs {
+            args.call(
+                self.as_borrowed(),
+                kwargs.as_borrowed(),
+                crate::call::private::Token,
+            )
+        } else {
+            args.call_positional(self.as_borrowed(), crate::call::private::Token)
         }
-
-        let py = self.py();
-        inner(self, args.into_pyobject_or_pyerr(py)?.as_borrowed(), kwargs)
     }
 
     #[inline]
@@ -1237,9 +1315,9 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
 
     fn call1<A>(&self, args: A) -> PyResult<Bound<'py, PyAny>>
     where
-        A: IntoPyObject<'py, Target = PyTuple>,
+        A: PyCallArgs<'py>,
     {
-        self.call(args, None)
+        args.call_positional(self.as_borrowed(), crate::call::private::Token)
     }
 
     #[inline]
@@ -1251,10 +1329,14 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
     ) -> PyResult<Bound<'py, PyAny>>
     where
         N: IntoPyObject<'py, Target = PyString>,
-        A: IntoPyObject<'py, Target = PyTuple>,
+        A: PyCallArgs<'py>,
     {
-        self.getattr(name)
-            .and_then(|method| method.call(args, kwargs))
+        if kwargs.is_none() {
+            self.call_method1(name, args)
+        } else {
+            self.getattr(name)
+                .and_then(|method| method.call(args, kwargs))
+        }
     }
 
     #[inline]
@@ -1273,9 +1355,14 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
     fn call_method1<N, A>(&self, name: N, args: A) -> PyResult<Bound<'py, PyAny>>
     where
         N: IntoPyObject<'py, Target = PyString>,
-        A: IntoPyObject<'py, Target = PyTuple>,
+        A: PyCallArgs<'py>,
     {
-        self.call_method(name, args, None)
+        let name = name.into_pyobject_or_pyerr(self.py())?;
+        args.call_method_positional(
+            self.as_borrowed(),
+            name.as_borrowed(),
+            crate::call::private::Token,
+        )
     }
 
     fn is_truthy(&self) -> PyResult<bool> {
@@ -1286,11 +1373,7 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
 
     #[inline]
     fn is_none(&self) -> bool {
-        unsafe { ffi::Py_None() == self.as_ptr() }
-    }
-
-    fn is_ellipsis(&self) -> bool {
-        unsafe { ffi::Py_Ellipsis() == self.as_ptr() }
+        unsafe { ptr::eq(ffi::Py_None(), self.as_ptr()) }
     }
 
     fn is_empty(&self) -> PyResult<bool> {
@@ -1361,10 +1444,6 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
         PyIterator::from_object(self)
     }
 
-    fn iter(&self) -> PyResult<Bound<'py, PyIterator>> {
-        self.try_iter()
-    }
-
     fn get_type(&self) -> Bound<'py, PyType> {
         unsafe { PyType::from_borrowed_type_ptr(self.py(), ffi::Py_TYPE(self.as_ptr())) }
     }
@@ -1375,72 +1454,80 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
     }
 
     #[inline]
+    #[allow(deprecated)]
     fn downcast<T>(&self) -> Result<&Bound<'py, T>, DowncastError<'_, 'py>>
     where
         T: PyTypeCheck,
     {
         if T::type_check(self) {
             // Safety: type_check is responsible for ensuring that the type is correct
-            Ok(unsafe { self.downcast_unchecked() })
+            Ok(unsafe { self.cast_unchecked() })
         } else {
+            #[allow(deprecated)]
             Err(DowncastError::new(self, T::NAME))
         }
     }
 
     #[inline]
+    #[allow(deprecated)]
     fn downcast_into<T>(self) -> Result<Bound<'py, T>, DowncastIntoError<'py>>
     where
         T: PyTypeCheck,
     {
         if T::type_check(&self) {
             // Safety: type_check is responsible for ensuring that the type is correct
-            Ok(unsafe { self.downcast_into_unchecked() })
+            Ok(unsafe { self.cast_into_unchecked() })
         } else {
+            #[allow(deprecated)]
             Err(DowncastIntoError::new(self, T::NAME))
         }
     }
 
     #[inline]
+    #[allow(deprecated)]
     fn downcast_exact<T>(&self) -> Result<&Bound<'py, T>, DowncastError<'_, 'py>>
     where
         T: PyTypeInfo,
     {
-        if self.is_exact_instance_of::<T>() {
-            // Safety: is_exact_instance_of is responsible for ensuring that the type is correct
-            Ok(unsafe { self.downcast_unchecked() })
+        if T::is_exact_type_of(self) {
+            // Safety: is_exact_type_of is responsible for ensuring that the type is correct
+            Ok(unsafe { self.cast_unchecked() })
         } else {
+            #[allow(deprecated)]
             Err(DowncastError::new(self, T::NAME))
         }
     }
 
     #[inline]
+    #[allow(deprecated)]
     fn downcast_into_exact<T>(self) -> Result<Bound<'py, T>, DowncastIntoError<'py>>
     where
         T: PyTypeInfo,
     {
-        if self.is_exact_instance_of::<T>() {
-            // Safety: is_exact_instance_of is responsible for ensuring that the type is correct
-            Ok(unsafe { self.downcast_into_unchecked() })
+        if T::is_exact_type_of(&self) {
+            // Safety: is_exact_type_of is responsible for ensuring that the type is correct
+            Ok(unsafe { self.cast_into_unchecked() })
         } else {
+            #[allow(deprecated)]
             Err(DowncastIntoError::new(self, T::NAME))
         }
     }
 
     #[inline]
     unsafe fn downcast_unchecked<T>(&self) -> &Bound<'py, T> {
-        &*ptr_from_ref(self).cast()
+        unsafe { self.cast_unchecked() }
     }
 
     #[inline]
     unsafe fn downcast_into_unchecked<T>(self) -> Bound<'py, T> {
-        std::mem::transmute(self)
+        unsafe { self.cast_into_unchecked() }
     }
 
-    fn extract<'a, T>(&'a self) -> PyResult<T>
+    fn extract<'a, T>(&'a self) -> Result<T, T::Error>
     where
-        T: FromPyObjectBound<'a, 'py>,
+        T: FromPyObject<'a, 'py>,
     {
-        FromPyObjectBound::from_py_object_bound(self.as_borrowed())
+        FromPyObject::extract(self.as_borrowed())
     }
 
     fn get_refcnt(&self) -> isize {
@@ -1451,7 +1538,7 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
         unsafe {
             ffi::PyObject_Repr(self.as_ptr())
                 .assume_owned_or_err(self.py())
-                .downcast_into_unchecked()
+                .cast_into_unchecked()
         }
     }
 
@@ -1459,7 +1546,7 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
         unsafe {
             ffi::PyObject_Str(self.as_ptr())
                 .assume_owned_or_err(self.py())
-                .downcast_into_unchecked()
+                .cast_into_unchecked()
         }
     }
 
@@ -1479,7 +1566,7 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
         unsafe {
             ffi::PyObject_Dir(self.as_ptr())
                 .assume_owned_or_err(self.py())
-                .downcast_into_unchecked()
+                .cast_into_unchecked()
         }
     }
 
@@ -1496,8 +1583,8 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
     }
 
     #[inline]
-    fn is_instance_of<T: PyTypeInfo>(&self) -> bool {
-        T::is_type_of(self)
+    fn is_instance_of<T: PyTypeCheck>(&self) -> bool {
+        T::type_check(self)
     }
 
     #[inline]
@@ -1524,7 +1611,6 @@ impl<'py> PyAnyMethods<'py> for Bound<'py, PyAny> {
         )
     }
 
-    #[cfg(not(any(PyPy, GraalPy)))]
     fn py_super(&self) -> PyResult<Bound<'py, PySuper>> {
         PySuper::new(&self.get_type(), self)
     }
@@ -1541,7 +1627,7 @@ impl<'py> Bound<'py, PyAny> {
     ///
     /// To avoid repeated temporary allocations of Python strings, the [`intern!`] macro can be used
     /// to intern `attr_name`.
-    #[allow(dead_code)] // Currently only used with num-complex+abi3, so dead without that.
+    #[allow(dead_code, reason = "currently only used with num-complex + abi3")]
     pub(crate) fn lookup_special<N>(&self, attr_name: N) -> PyResult<Option<Bound<'py, PyAny>>>
     where
         N: IntoPyObject<'py, Target = PyString>,
@@ -1572,8 +1658,7 @@ impl<'py> Bound<'py, PyAny> {
 mod tests {
     use crate::{
         basic::CompareOp,
-        ffi,
-        tests::common::generate_unique_module_name,
+        test_utils::generate_unique_module_name,
         types::{IntoPyDict, PyAny, PyAnyMethods, PyBool, PyInt, PyList, PyModule, PyTypeMethods},
         Bound, BoundObject, IntoPyObject, PyTypeInfo, Python,
     };
@@ -1582,11 +1667,10 @@ mod tests {
 
     #[test]
     fn test_lookup_special() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let module = PyModule::from_code(
                 py,
-                c_str!(
-                    r#"
+                cr#"
 class CustomCallable:
     def __call__(self):
         return 1
@@ -1616,9 +1700,8 @@ class ErrorInDescriptorInt:
 class NonHeapNonDescriptorInt:
     # A static-typed callable that doesn't implement `__get__`.  These are pretty hard to come by.
     __int__ = int
-                "#
-                ),
-                c_str!("test.py"),
+                "#,
+                c"test.py",
                 &generate_unique_module_name("test"),
             )
             .unwrap();
@@ -1655,9 +1738,52 @@ class NonHeapNonDescriptorInt:
     }
 
     #[test]
+    fn test_getattr_opt() {
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                cr#"
+class Test:
+    class_str_attribute = "class_string"
+
+    @property
+    def error(self):
+        raise ValueError("This is an intentional error")
+                "#,
+                c"test.py",
+                &generate_unique_module_name("test"),
+            )
+            .unwrap();
+
+            // Get the class Test
+            let class_test = module.getattr_opt("Test").unwrap().unwrap();
+
+            // Test attribute that exist
+            let cls_attr_str = class_test
+                .getattr_opt("class_str_attribute")
+                .unwrap()
+                .unwrap();
+            assert_eq!(cls_attr_str.extract::<String>().unwrap(), "class_string");
+
+            // Test non-existent attribute
+            let do_not_exist = class_test.getattr_opt("doNotExist").unwrap();
+            assert!(do_not_exist.is_none());
+
+            // Test error attribute
+            let instance = class_test.call0().unwrap();
+            let error = instance.getattr_opt("error");
+            assert!(error.is_err());
+            assert!(error
+                .unwrap_err()
+                .to_string()
+                .contains("This is an intentional error"));
+        });
+    }
+
+    #[test]
     fn test_call_for_non_existing_method() {
-        Python::with_gil(|py| {
-            let a = py.eval(ffi::c_str!("42"), None, None).unwrap();
+        Python::attach(|py| {
+            let a = py.eval(c"42", None, None).unwrap();
             a.call_method0("__str__").unwrap(); // ok
             assert!(a.call_method("nonexistent_method", (1,), None).is_err());
             assert!(a.call_method0("nonexistent_method").is_err());
@@ -1667,7 +1793,7 @@ class NonHeapNonDescriptorInt:
 
     #[test]
     fn test_call_with_kwargs() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let list = vec![3, 6, 5, 4, 7].into_pyobject(py).unwrap();
             let dict = vec![("reverse", true)].into_py_dict(py).unwrap();
             list.call_method("sort", (), Some(&dict)).unwrap();
@@ -1677,16 +1803,14 @@ class NonHeapNonDescriptorInt:
 
     #[test]
     fn test_call_method0() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let module = PyModule::from_code(
                 py,
-                c_str!(
-                    r#"
+                cr#"
 class SimpleClass:
     def foo(self):
         return 42
-"#
-                ),
+"#,
                 c_str!(file!()),
                 &generate_unique_module_name("test_module"),
             )
@@ -1706,20 +1830,20 @@ class SimpleClass:
 
     #[test]
     fn test_type() {
-        Python::with_gil(|py| {
-            let obj = py.eval(ffi::c_str!("42"), None, None).unwrap();
+        Python::attach(|py| {
+            let obj = py.eval(c"42", None, None).unwrap();
             assert_eq!(obj.get_type().as_type_ptr(), obj.get_type_ptr());
         });
     }
 
     #[test]
     fn test_dir() {
-        Python::with_gil(|py| {
-            let obj = py.eval(ffi::c_str!("42"), None, None).unwrap();
+        Python::attach(|py| {
+            let obj = py.eval(c"42", None, None).unwrap();
             let dir = py
-                .eval(ffi::c_str!("dir(42)"), None, None)
+                .eval(c"dir(42)", None, None)
                 .unwrap()
-                .downcast_into::<PyList>()
+                .cast_into::<PyList>()
                 .unwrap();
             let a = obj
                 .dir()
@@ -1733,7 +1857,7 @@ class SimpleClass:
 
     #[test]
     fn test_hasattr() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let x = 5i32.into_pyobject(py).unwrap();
             assert!(x.is_instance_of::<PyInt>());
 
@@ -1754,14 +1878,14 @@ class SimpleClass:
 
         #[pymethods(crate = "crate")]
         impl GetattrFail {
-            fn __getattr__(&self, attr: PyObject) -> PyResult<PyObject> {
+            fn __getattr__(&self, attr: Py<PyAny>) -> PyResult<Py<PyAny>> {
                 Err(PyValueError::new_err(attr))
             }
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let obj = Py::new(py, GetattrFail).unwrap();
-            let obj = obj.bind(py).as_ref();
+            let obj = obj.bind(py).as_any();
 
             assert!(obj
                 .hasattr("foo")
@@ -1772,15 +1896,15 @@ class SimpleClass:
 
     #[test]
     fn test_nan_eq() {
-        Python::with_gil(|py| {
-            let nan = py.eval(ffi::c_str!("float('nan')"), None, None).unwrap();
+        Python::attach(|py| {
+            let nan = py.eval(c"float('nan')", None, None).unwrap();
             assert!(nan.compare(&nan).is_err());
         });
     }
 
     #[test]
     fn test_any_is_instance_of() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let x = 5i32.into_pyobject(py).unwrap();
             assert!(x.is_instance_of::<PyInt>());
 
@@ -1791,7 +1915,7 @@ class SimpleClass:
 
     #[test]
     fn test_any_is_instance() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let l = vec![1i8, 2].into_pyobject(py).unwrap();
             assert!(l.is_instance(&py.get_type::<PyList>()).unwrap());
         });
@@ -1799,7 +1923,7 @@ class SimpleClass:
 
     #[test]
     fn test_any_is_exact_instance_of() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let x = 5i32.into_pyobject(py).unwrap();
             assert!(x.is_exact_instance_of::<PyInt>());
 
@@ -1815,7 +1939,7 @@ class SimpleClass:
 
     #[test]
     fn test_any_is_exact_instance() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let t = PyBool::new(py, true);
             assert!(t.is_instance(&py.get_type::<PyInt>()).unwrap());
             assert!(!t.is_exact_instance(&py.get_type::<PyInt>()));
@@ -1825,7 +1949,7 @@ class SimpleClass:
 
     #[test]
     fn test_any_contains() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let v: Vec<i32> = vec![1, 1, 2, 3, 5, 8];
             let ob = v.into_pyobject(py).unwrap();
 
@@ -1852,7 +1976,7 @@ class SimpleClass:
         for<'py> &'a T: IntoPyObject<'py>,
         for<'py> <&'a T as IntoPyObject<'py>>::Error: Debug,
     {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for a in list {
                 for b in list {
                     let a_py = a.into_pyobject(py).unwrap().into_any().into_bound();
@@ -1946,7 +2070,7 @@ class SimpleClass:
 
     #[test]
     fn test_rich_compare_type_error() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_int = 1i32.into_pyobject(py).unwrap();
             let py_str = "1".into_pyobject(py).unwrap();
 
@@ -1960,24 +2084,8 @@ class SimpleClass:
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_is_ellipsis() {
-        Python::with_gil(|py| {
-            let v = py
-                .eval(ffi::c_str!("..."), None, None)
-                .map_err(|e| e.display(py))
-                .unwrap();
-
-            assert!(v.is_ellipsis());
-
-            let not_ellipsis = 5i32.into_pyobject(py).unwrap();
-            assert!(!not_ellipsis.is_ellipsis());
-        });
-    }
-
-    #[test]
     fn test_is_callable() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             assert!(PyList::type_object(py).is_callable());
 
             let not_callable = 5i32.into_pyobject(py).unwrap();
@@ -1987,7 +2095,7 @@ class SimpleClass:
 
     #[test]
     fn test_is_empty() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let empty_list = PyList::empty(py).into_any();
             assert!(empty_list.is_empty().unwrap());
 
@@ -2011,12 +2119,12 @@ class SimpleClass:
 
         #[pymethods(crate = "crate")]
         impl DirFail {
-            fn __dir__(&self) -> PyResult<PyObject> {
+            fn __dir__(&self) -> PyResult<Py<PyAny>> {
                 Err(PyValueError::new_err("uh-oh!"))
             }
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let obj = Bound::new(py, DirFail).unwrap();
             assert!(obj.dir().unwrap_err().is_instance_of::<PyValueError>(py));
         })

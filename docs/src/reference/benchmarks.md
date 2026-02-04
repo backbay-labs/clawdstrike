@@ -48,7 +48,7 @@ time (for i in {1..100}; do ./target/release/hush check --action-type file --rul
 
 Benchmarked on Apple M1 Pro, Node.js v20.x:
 
-```
+```text
 ======================================================================
 BENCHMARK RESULTS
 ======================================================================
@@ -71,7 +71,7 @@ Jailbreak Full Pipeline               0.0067       0.0000       0.0420      1492
 
 ### PolicyEngine Latency (OpenClaw Plugin)
 
-```
+```text
 ================================================================================
 POLICYENGINE BENCHMARK RESULTS
 ================================================================================

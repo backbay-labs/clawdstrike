@@ -12,26 +12,14 @@ pub fn map_in_place_2<T, U, F: FnOnce(U, T) -> T>((k, v): (U, &mut T), f: F) {
         // # Safety
         //
         // If the closure panics, we must abort otherwise we could double drop `T`
-        let _promote_panic_to_abort = AbortOnPanic;
+        let promote_panic_to_abort = AbortOnPanic;
 
         ptr::write(v, f(k, ptr::read(v)));
+
+        // If we made it here, the calling thread could have already have panicked, in which case
+        // We know that the closure did not panic, so don't bother checking.
+        std::mem::forget(promote_panic_to_abort);
     }
-}
-
-/// # Safety
-///
-/// Requires that you ensure the reference does not become invalid.
-/// The object has to outlive the reference.
-pub unsafe fn change_lifetime_const<'a, 'b, T>(x: &'a T) -> &'b T {
-    &*(x as *const T)
-}
-
-/// # Safety
-///
-/// Requires that you ensure the reference does not become invalid.
-/// The object has to outlive the reference.
-pub unsafe fn change_lifetime_mut<'a, 'b, T>(x: &'a mut T) -> &'b mut T {
-    &mut *(x as *mut T)
 }
 
 /// A simple wrapper around `T`

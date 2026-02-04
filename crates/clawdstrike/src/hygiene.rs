@@ -288,8 +288,10 @@ fn truncate_to_char_boundary(text: &str, max_bytes: usize) -> (&str, bool) {
 }
 
 fn canonicalize_for_detection(text: &str) -> (String, PromptInjectionCanonicalizationStats) {
-    let mut stats = PromptInjectionCanonicalizationStats::default();
-    stats.scanned_bytes = text.len();
+    let mut stats = PromptInjectionCanonicalizationStats {
+        scanned_bytes: text.len(),
+        ..Default::default()
+    };
 
     // NFKC normalization
     let nfkc: String = text.nfkc().collect();

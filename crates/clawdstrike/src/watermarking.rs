@@ -12,16 +12,11 @@ use serde::{Deserialize, Serialize};
 use hush_core::{canonical, sha256, Keypair, PublicKey, Signature};
 
 /// Watermark encoding strategies.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WatermarkEncoding {
+    #[default]
     Metadata,
-}
-
-impl Default for WatermarkEncoding {
-    fn default() -> Self {
-        Self::Metadata
-    }
 }
 
 /// Watermark payload.
@@ -59,12 +54,17 @@ impl WatermarkPayload {
         }
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn try_to_bytes(&self) -> Result<Vec<u8>, WatermarkError> {
         // Canonical JSON (RFC 8785 JCS) to make signatures and fingerprints portable across languages.
-        let value = serde_json::to_value(self).expect("payload json serialization");
-        let canonical =
-            canonical::canonicalize(&value).expect("payload canonical json serialization");
-        canonical.into_bytes()
+        let value =
+            serde_json::to_value(self).map_err(|e| WatermarkError::EncodingError(e.to_string()))?;
+        let canonical = canonical::canonicalize(&value)
+            .map_err(|e| WatermarkError::EncodingError(e.to_string()))?;
+        Ok(canonical.into_bytes())
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.try_to_bytes().unwrap_or_default()
     }
 }
 
@@ -224,7 +224,7 @@ impl PromptWatermarker {
         payload: Option<WatermarkPayload>,
     ) -> Result<WatermarkedPrompt, WatermarkError> {
         let payload = payload.unwrap_or_else(|| self.generate_payload("unknown", "unknown"));
-        let encoded_data = payload.to_bytes();
+        let encoded_data = payload.try_to_bytes()?;
         let signature = self.keypair.sign(&encoded_data).to_hex();
         let public_key = self.keypair.public_key().to_hex();
 
@@ -268,6 +268,15 @@ impl WatermarkExtractor {
                             .trusted_public_keys
                             .iter()
                             .any(|k| k.eq_ignore_ascii_case(&wm.public_key)));
+
+                if !verified && !self.config.allow_unverified {
+                    return WatermarkExtractionResult {
+                        found: true,
+                        watermark: None,
+                        verified: false,
+                        errors: vec!["watermark present but could not be verified".to_string()],
+                    };
+                }
                 WatermarkExtractionResult {
                     found: true,
                     watermark: Some(wm),
@@ -371,6 +380,8 @@ fn extract_metadata_comment(text: &str) -> Result<Option<EncodedWatermark>, Stri
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
 
     #[test]
@@ -409,5 +420,34 @@ mod tests {
         assert_eq!(wm.payload.application_id, "app");
         assert_eq!(wm.payload.session_id, "session");
         assert!(wm.verify());
+    }
+
+    #[test]
+    fn allow_unverified_controls_exposure_of_untrusted_watermarks() {
+        let w = PromptWatermarker::new(WatermarkConfig::default()).expect("watermarker");
+        let payload = w.generate_payload("app", "session");
+        let out = w.watermark("hello", Some(payload)).expect("watermark");
+
+        // Valid signature, but the public key is not in the trusted list.
+        let untrusted_key = "00".repeat(32);
+
+        let extractor = WatermarkExtractor::new(WatermarkVerifierConfig {
+            trusted_public_keys: vec![untrusted_key.clone()],
+            allow_unverified: false,
+        });
+        let r = extractor.extract(&out.watermarked);
+        assert!(r.found);
+        assert!(!r.verified);
+        assert!(r.watermark.is_none());
+        assert!(!r.errors.is_empty());
+
+        let extractor = WatermarkExtractor::new(WatermarkVerifierConfig {
+            trusted_public_keys: vec![untrusted_key],
+            allow_unverified: true,
+        });
+        let r = extractor.extract(&out.watermarked);
+        assert!(r.found);
+        assert!(!r.verified);
+        assert!(r.watermark.is_some());
     }
 }

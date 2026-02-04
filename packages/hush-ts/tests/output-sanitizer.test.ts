@@ -27,6 +27,13 @@ describe("output sanitizer", () => {
     expect(r.sanitized).toContain("[REDACTED:denylist]");
   });
 
+  it("does not hang on non-global denylist regexes", () => {
+    const s = new OutputSanitizer({ denylist: { patterns: [/SECRET_PHRASE_123/] } });
+    const r = s.sanitizeSync("ok SECRET_PHRASE_123 bye");
+    expect(r.redacted).toBe(true);
+    expect(r.sanitized).toContain("[REDACTED:denylist]");
+  });
+
   it("streaming redacts across chunk boundaries", () => {
     const s = new OutputSanitizer();
     const stream = s.createStream();

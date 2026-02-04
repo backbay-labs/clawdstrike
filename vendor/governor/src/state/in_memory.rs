@@ -1,12 +1,10 @@
-use std::prelude::v1::*;
-
 use crate::nanos::Nanos;
 use crate::state::{NotKeyed, StateStore};
-use std::fmt;
-use std::fmt::Debug;
-use std::num::NonZeroU64;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
+use core::fmt;
+use core::fmt::Debug;
+use core::num::NonZeroU64;
+use core::sync::atomic::Ordering;
+use core::time::Duration;
 
 use portable_atomic::AtomicU64;
 
@@ -65,7 +63,7 @@ impl StateStore for InMemoryState {
 impl Debug for InMemoryState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let d = Duration::from_nanos(self.0.load(Ordering::Relaxed));
-        write!(f, "InMemoryState({:?})", d)
+        write!(f, "InMemoryState({d:?})")
     }
 }
 
@@ -73,7 +71,7 @@ impl Debug for InMemoryState {
 #[allow(clippy::needless_collect)]
 mod test {
 
-    use all_asserts::assert_gt;
+    use assertables::assert_gt;
 
     use super::*;
 
@@ -115,7 +113,7 @@ mod test {
     /// Checks that many threads running simultaneously will collide,
     /// but result in the correct number being recorded in the state.
     fn stresstest_collisions() {
-        use all_asserts::assert_gt;
+        use assertables::assert_gt;
 
         const THREADS: u64 = 8;
         const MAX_TRIES: u64 = 20_000_000;
@@ -128,14 +126,15 @@ mod test {
             if hits > value {
                 break;
             }
-            println!("Didn't trigger a collision in {} iterations", tries);
+            println!("Didn't trigger a collision in {tries} iterations");
         }
         assert_gt!(hits, value);
     }
 
     #[test]
     fn in_memory_state_impls() {
+        use alloc::format;
         let state = InMemoryState(AtomicU64::new(0));
-        assert_gt!(format!("{:?}", state).len(), 0);
+        assert_gt!(format!("{state:?}").len(), 0);
     }
 }

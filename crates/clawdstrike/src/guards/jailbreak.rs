@@ -7,19 +7,11 @@ use crate::guards::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 use crate::jailbreak::{JailbreakDetector, JailbreakGuardConfig, JailbreakSeverity};
 
 /// Configuration for JailbreakGuard.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JailbreakConfig {
     #[serde(default)]
     pub detector: JailbreakGuardConfig,
-}
-
-impl Default for JailbreakConfig {
-    fn default() -> Self {
-        Self {
-            detector: JailbreakGuardConfig::default(),
-        }
-    }
 }
 
 /// Guard that evaluates jailbreak risk for user input.
@@ -136,6 +128,8 @@ impl Guard for JailbreakGuard {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
 
     #[tokio::test]

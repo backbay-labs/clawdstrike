@@ -1,5 +1,5 @@
-import { sha256 as nobleSha256 } from "@noble/hashes/sha256";
-import { keccak_256 } from "@noble/hashes/sha3";
+import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 
 /**
  * Compute SHA-256 hash.

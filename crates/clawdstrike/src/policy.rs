@@ -150,31 +150,35 @@ impl GuardConfigs {
 }
 
 /// Global policy settings
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PolicySettings {
     /// Whether to fail fast on first violation
-    #[serde(default)]
-    pub fail_fast: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fail_fast: Option<bool>,
     /// Whether to log all actions (not just violations)
-    #[serde(default)]
-    pub verbose_logging: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verbose_logging: Option<bool>,
     /// Session timeout in seconds
-    #[serde(default = "default_timeout")]
-    pub session_timeout_secs: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_timeout_secs: Option<u64>,
 }
 
 fn default_timeout() -> u64 {
     3600 // 1 hour
 }
 
-impl Default for PolicySettings {
-    fn default() -> Self {
-        Self {
-            fail_fast: false,
-            verbose_logging: false,
-            session_timeout_secs: default_timeout(),
-        }
+impl PolicySettings {
+    pub fn effective_fail_fast(&self) -> bool {
+        self.fail_fast.unwrap_or(false)
+    }
+
+    pub fn effective_verbose_logging(&self) -> bool {
+        self.verbose_logging.unwrap_or(false)
+    }
+
+    pub fn effective_session_timeout_secs(&self) -> u64 {
+        self.session_timeout_secs.unwrap_or(default_timeout())
     }
 }
 
@@ -211,7 +215,9 @@ impl Policy {
         let mut errors: Vec<PolicyFieldError> = Vec::new();
 
         if let Some(cfg) = &self.guards.forbidden_path {
-            validate_globs(&mut errors, "guards.forbidden_path.patterns", &cfg.patterns);
+            if let Some(patterns) = cfg.patterns.as_ref() {
+                validate_globs(&mut errors, "guards.forbidden_path.patterns", patterns);
+            }
             validate_globs(
                 &mut errors,
                 "guards.forbidden_path.exceptions",
@@ -380,25 +386,15 @@ impl Policy {
                 merge_strategy: MergeStrategy::default(),
                 guards: self.guards.merge_with(&child.guards),
                 settings: PolicySettings {
-                    fail_fast: if child.settings.fail_fast != PolicySettings::default().fail_fast {
-                        child.settings.fail_fast
-                    } else {
-                        self.settings.fail_fast
-                    },
-                    verbose_logging: if child.settings.verbose_logging
-                        != PolicySettings::default().verbose_logging
-                    {
-                        child.settings.verbose_logging
-                    } else {
-                        self.settings.verbose_logging
-                    },
-                    session_timeout_secs: if child.settings.session_timeout_secs
-                        != default_timeout()
-                    {
-                        child.settings.session_timeout_secs
-                    } else {
-                        self.settings.session_timeout_secs
-                    },
+                    fail_fast: child.settings.fail_fast.or(self.settings.fail_fast),
+                    verbose_logging: child
+                        .settings
+                        .verbose_logging
+                        .or(self.settings.verbose_logging),
+                    session_timeout_secs: child
+                        .settings
+                        .session_timeout_secs
+                        .or(self.settings.session_timeout_secs),
                 },
             },
         }
@@ -660,6 +656,8 @@ impl RuleSet {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
     use super::*;
 
     #[test]
@@ -801,14 +799,14 @@ name: Test
             Ok(None) => panic!("missing built-in ruleset: strict"),
             Err(e) => panic!("failed to load built-in ruleset: {}", e),
         };
-        assert!(strict.policy.settings.fail_fast);
+        assert!(strict.policy.settings.effective_fail_fast());
 
         let permissive = match RuleSet::by_name("permissive") {
             Ok(Some(rs)) => rs,
             Ok(None) => panic!("missing built-in ruleset: permissive"),
             Err(e) => panic!("failed to load built-in ruleset: {}", e),
         };
-        assert!(permissive.policy.settings.verbose_logging);
+        assert!(permissive.policy.settings.effective_verbose_logging());
     }
 
     #[test]
@@ -908,13 +906,13 @@ name: Test
     #[test]
     fn test_resolve_base_builtin_strict() {
         let base = Policy::resolve_base("strict").unwrap();
-        assert!(base.settings.fail_fast);
+        assert!(base.settings.effective_fail_fast());
     }
 
     #[test]
     fn test_resolve_base_builtin_default() {
         let base = Policy::resolve_base("default").unwrap();
-        assert!(!base.settings.fail_fast);
+        assert!(!base.settings.effective_fail_fast());
     }
 
     #[test]
@@ -927,7 +925,7 @@ name: Test
     fn test_guard_configs_merge() {
         let base = GuardConfigs {
             forbidden_path: Some(ForbiddenPathConfig {
-                patterns: vec!["**/.ssh/**".to_string()],
+                patterns: Some(vec!["**/.ssh/**".to_string()]),
                 ..Default::default()
             }),
             ..Default::default()
@@ -943,8 +941,9 @@ name: Test
 
         let merged = base.merge_with(&child);
         let fp = merged.forbidden_path.unwrap();
-        assert!(fp.patterns.contains(&"**/.ssh/**".to_string()));
-        assert!(fp.patterns.contains(&"**/secrets/**".to_string()));
+        let patterns = fp.patterns.unwrap();
+        assert!(patterns.contains(&"**/.ssh/**".to_string()));
+        assert!(patterns.contains(&"**/secrets/**".to_string()));
     }
 
     #[test]
@@ -952,7 +951,7 @@ name: Test
         let base = Policy {
             name: "Base".to_string(),
             settings: PolicySettings {
-                fail_fast: true,
+                fail_fast: Some(true),
                 ..Default::default()
             },
             ..Default::default()
@@ -962,7 +961,7 @@ name: Test
             name: "Child".to_string(),
             merge_strategy: MergeStrategy::DeepMerge,
             settings: PolicySettings {
-                verbose_logging: true,
+                verbose_logging: Some(true),
                 ..Default::default()
             },
             ..Default::default()
@@ -970,8 +969,8 @@ name: Test
 
         let merged = base.merge(&child);
         assert_eq!(merged.name, "Child");
-        assert!(merged.settings.fail_fast); // from base
-        assert!(merged.settings.verbose_logging); // from child
+        assert!(merged.settings.effective_fail_fast()); // from base
+        assert!(merged.settings.effective_verbose_logging()); // from child
     }
 
     #[test]
@@ -979,8 +978,8 @@ name: Test
         let base = Policy {
             name: "Base".to_string(),
             settings: PolicySettings {
-                fail_fast: true,
-                verbose_logging: true,
+                fail_fast: Some(true),
+                verbose_logging: Some(true),
                 ..Default::default()
             },
             ..Default::default()
@@ -995,8 +994,8 @@ name: Test
 
         let merged = base.merge(&child);
         assert_eq!(merged.name, "Child");
-        assert!(!merged.settings.fail_fast); // child replaces
-        assert!(!merged.settings.verbose_logging); // child replaces
+        assert!(!merged.settings.effective_fail_fast()); // child replaces
+        assert!(!merged.settings.effective_verbose_logging()); // child replaces
     }
 
     #[test]
@@ -1011,9 +1010,9 @@ settings:
         let policy = Policy::from_yaml_with_extends(yaml, None).unwrap();
 
         // Should have strict's fail_fast
-        assert!(policy.settings.fail_fast);
+        assert!(policy.settings.effective_fail_fast());
         // Should have child's verbose_logging
-        assert!(policy.settings.verbose_logging);
+        assert!(policy.settings.effective_verbose_logging());
         // Name should be from child
         assert_eq!(policy.name, "CustomStrict");
     }
@@ -1034,7 +1033,10 @@ guards:
 
         // Should have the additional pattern added
         let fp = policy.guards.forbidden_path.unwrap();
-        assert!(fp.patterns.iter().any(|p| p.contains("my-secrets")));
+        assert!(fp
+            .effective_patterns()
+            .iter()
+            .any(|p| p.contains("my-secrets")));
     }
 
     #[test]

@@ -128,19 +128,20 @@ For deeper integration scenarios, Clawdstrike provides Inline Reference Monitors
 IRMs integrate with the guard pipeline:
 
 ```rust,ignore
-use clawdstrike::irm::{IrmRouter, FilesystemIrm, NetworkIrm};
+use clawdstrike::irm::{HostCall, IrmRouter};
+use clawdstrike::RuleSet;
 
-let router = IrmRouter::new()
-    .with_irm(FilesystemIrm::new(engine.clone()))
-    .with_irm(NetworkIrm::new(engine.clone()));
+let policy = RuleSet::by_name("default")?.unwrap().policy;
+let router = IrmRouter::new(policy);
 
 // Intercept a sandboxed module's file read
-let decision = router.intercept(IrmEvent::FsRead {
-    path: "/etc/passwd".into(),
-    module_id: "untrusted-plugin".into(),
-}).await;
+let call = HostCall::new(
+    "path_open",
+    vec![serde_json::json!({ "path": "/etc/passwd" })],
+);
+let (decision, _monitors) = router.evaluate(&call).await;
 
-if !decision.allowed {
+if !decision.is_allowed() {
     // Block the operation
 }
 ```

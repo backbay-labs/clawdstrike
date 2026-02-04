@@ -10,7 +10,7 @@ export interface Keypair {
  * @returns Promise resolving to { privateKey, publicKey } (both 32 bytes)
  */
 export async function generateKeypair(): Promise<Keypair> {
-  const privateKey = ed25519.utils.randomPrivateKey();
+  const privateKey = ed25519.utils.randomSecretKey();
   const publicKey = await ed25519.getPublicKeyAsync(privateKey);
   return { privateKey, publicKey };
 }

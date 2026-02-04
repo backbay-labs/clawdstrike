@@ -12,6 +12,7 @@ fn main() {
     let mut session: Option<String> = None;
     let mut seed_hex: Option<String> = None;
     let mut trusted_keys: Vec<String> = Vec::new();
+    let mut allow_unverified = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -22,9 +23,10 @@ fn main() {
             "--session" => session = Some(args.next().unwrap_or_default()),
             "--seed" => seed_hex = Some(args.next().unwrap_or_default()),
             "--trusted-pubkey" => trusted_keys.push(args.next().unwrap_or_default()),
+            "--allow-unverified" => allow_unverified = true,
             "--help" | "-h" => {
                 eprintln!(
-                    "Usage: prompt_watermark --mode (embed|extract) [--file PATH] [--app APP] [--session SESSION] [--seed HEX] [--trusted-pubkey HEX]\n\nReads from stdin by default."
+                    "Usage: prompt_watermark --mode (embed|extract) [--file PATH] [--app APP] [--session SESSION] [--seed HEX] [--trusted-pubkey HEX] [--allow-unverified]\n\nReads from stdin by default."
                 );
                 std::process::exit(0);
             }
@@ -34,36 +36,69 @@ fn main() {
 
     let mut input = String::new();
     if let Some(path) = input_path {
-        input = std::fs::read_to_string(path).expect("failed to read file");
-    } else {
-        std::io::stdin()
-            .read_to_string(&mut input)
-            .expect("failed to read stdin");
+        match std::fs::read_to_string(path) {
+            Ok(s) => input = s,
+            Err(e) => {
+                eprintln!("Error: failed to read file: {e}");
+                std::process::exit(2);
+            }
+        }
+    } else if let Err(e) = std::io::stdin().read_to_string(&mut input) {
+        eprintln!("Error: failed to read stdin: {e}");
+        std::process::exit(2);
     }
 
     match mode.as_str() {
         "embed" => {
-            let app = app.expect("--app required in embed mode");
-            let session = session.expect("--session required in embed mode");
+            let app = match app {
+                Some(v) => v,
+                None => {
+                    eprintln!("Error: --app is required in embed mode");
+                    std::process::exit(2);
+                }
+            };
+            let session = match session {
+                Some(v) => v,
+                None => {
+                    eprintln!("Error: --session is required in embed mode");
+                    std::process::exit(2);
+                }
+            };
 
             let mut cfg = WatermarkConfig::default();
             cfg.private_key = seed_hex;
             cfg.generate_keypair = cfg.private_key.is_none();
 
-            let watermarker = PromptWatermarker::new(cfg).expect("watermarker");
+            let watermarker = match PromptWatermarker::new(cfg) {
+                Ok(w) => w,
+                Err(e) => {
+                    eprintln!("Error: failed to create watermarker: {e:?}");
+                    std::process::exit(2);
+                }
+            };
             let payload = WatermarkPayload::new(app, session);
-            let out = watermarker
-                .watermark(&input, Some(payload))
-                .expect("watermark");
+            let out = match watermarker.watermark(&input, Some(payload)) {
+                Ok(out) => out,
+                Err(e) => {
+                    eprintln!("Error: failed to watermark input: {e:?}");
+                    std::process::exit(2);
+                }
+            };
             println!("{}", out.watermarked);
         }
         "extract" => {
             let extractor = WatermarkExtractor::new(WatermarkVerifierConfig {
                 trusted_public_keys: trusted_keys,
-                allow_unverified: false,
+                allow_unverified,
             });
             let r = extractor.extract(&input);
-            println!("{}", serde_json::to_string_pretty(&r).expect("json"));
+            match serde_json::to_string_pretty(&r) {
+                Ok(s) => println!("{s}"),
+                Err(e) => {
+                    eprintln!("Error: failed to encode json: {e}");
+                    std::process::exit(2);
+                }
+            }
         }
         _ => {
             eprintln!("Unknown mode: {mode}");

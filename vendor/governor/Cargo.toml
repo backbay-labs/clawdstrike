@@ -12,8 +12,13 @@
 [package]
 edition = "2018"
 name = "governor"
-version = "0.6.3"
+version = "0.10.4"
 authors = ["Andreas Fuchs <asf@boinkor.net>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
 autobenches = false
 description = "A rate-limiting implementation in Rust"
 homepage = "https://github.com/boinkor-net/governor"
@@ -34,31 +39,121 @@ categories = [
 license = "MIT"
 repository = "https://github.com/boinkor-net/governor.git"
 
+[package.metadata.docs.rs]
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
+
+[badges.maintenance]
+status = "actively-developed"
+
+[features]
+default = [
+    "std",
+    "dashmap",
+    "jitter",
+    "quanta",
+]
+jitter = [
+    "dep:rand",
+    "dep:getrandom",
+]
+no_std = ["hashbrown/alloc"]
+quanta = ["dep:quanta"]
+std = [
+    "nonzero_ext/std",
+    "dep:futures-timer",
+    "dep:futures-util",
+    "dep:futures-sink",
+    "dep:parking_lot",
+]
+
 [lib]
+name = "governor"
+path = "src/lib.rs"
 bench = false
+
+[[test]]
+name = "custom_hashers"
+path = "tests/custom_hashers.rs"
+
+[[test]]
+name = "direct"
+path = "tests/direct.rs"
+
+[[test]]
+name = "future"
+path = "tests/future.rs"
+
+[[test]]
+name = "keyed"
+path = "tests/keyed.rs"
+
+[[test]]
+name = "keyed_dashmap"
+path = "tests/keyed_dashmap.rs"
+
+[[test]]
+name = "keyed_hashmap"
+path = "tests/keyed_hashmap.rs"
+
+[[test]]
+name = "memory_leaks"
+path = "tests/memory_leaks.rs"
+
+[[test]]
+name = "middleware"
+path = "tests/middleware.rs"
+
+[[test]]
+name = "proptests"
+path = "tests/proptests.rs"
+
+[[test]]
+name = "sinks"
+path = "tests/sinks.rs"
+
+[[test]]
+name = "streams"
+path = "tests/streams.rs"
 
 [[bench]]
 name = "governor_criterion_benches"
+path = "benches/governor_criterion_benches.rs"
 harness = false
 
 [dependencies.cfg-if]
 version = "1.0"
 
 [dependencies.dashmap]
-version = "5.1.0"
+version = "6.1.0"
 optional = true
 
-[dependencies.futures]
-version = "0.3.5"
+[dependencies.futures-sink]
+version = "0.3.31"
 optional = true
 
 [dependencies.futures-timer]
-version = "3.0.2"
+version = "3.0.3"
 optional = true
 
-[dependencies.no-std-compat]
-version = "0.4.1"
-features = ["alloc"]
+[dependencies.futures-util]
+version = "0.3.31"
+features = [
+    "std",
+    "sink",
+]
+optional = true
+default-features = false
+
+[dependencies.getrandom]
+version = "0.3"
+features = ["wasm_js"]
+optional = true
+
+[dependencies.hashbrown]
+version = "0.16.0"
 
 [dependencies.nonzero_ext]
 version = "0.3.0"
@@ -77,7 +172,7 @@ version = "0.12.0"
 optional = true
 
 [dependencies.rand]
-version = "0.8.0"
+version = "0.9.0"
 optional = true
 
 [dependencies.smallvec]
@@ -86,8 +181,11 @@ version = "1.6.1"
 [dependencies.spinning_top]
 version = "0.3"
 
-[dev-dependencies.all_asserts]
-version = "2.2.0"
+[dependencies.web-time]
+version = "1.1.0"
+
+[dev-dependencies.assertables]
+version = "9.5.0"
 
 [dev-dependencies.criterion]
 version = "0.5.1"
@@ -96,8 +194,8 @@ features = ["html_reports"]
 [dev-dependencies.crossbeam]
 version = "0.8.0"
 
-[dev-dependencies.futures]
-version = "0.3.5"
+[dev-dependencies.futures-executor]
+version = "0.3.31"
 
 [dev-dependencies.libc]
 version = "0.2.70"
@@ -106,25 +204,4 @@ version = "0.2.70"
 version = "1.0.0"
 
 [dev-dependencies.tynm]
-version = "0.1.4"
-
-[features]
-default = [
-    "std",
-    "dashmap",
-    "jitter",
-    "quanta",
-]
-jitter = ["rand"]
-no_std = ["no-std-compat/compat_hash"]
-quanta = ["dep:quanta"]
-std = [
-    "no-std-compat/std",
-    "nonzero_ext/std",
-    "futures-timer",
-    "futures",
-    "dep:parking_lot",
-]
-
-[badges.maintenance]
-status = "actively-developed"
+version = "0.2.0"

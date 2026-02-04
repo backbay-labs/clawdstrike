@@ -1,7 +1,6 @@
 [![crates.io](https://img.shields.io/crates/v/dirs-sys.svg?style=for-the-badge)](https://crates.io/crates/dirs-sys)
 [![API documentation](https://img.shields.io/docsrs/dirs-sys/latest?style=for-the-badge)](https://docs.rs/dirs-sys/)
-![actively developed](https://img.shields.io/badge/maintenance-as--is-yellow.svg?style=for-the-badge)
-![License: MIT/Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-orange.svg?style=for-the-badge)
+![as-is](https://img.shields.io/badge/maintenance-as--is-yellow.svg?style=for-the-badge)
 
 # `dirs-sys`
 
@@ -48,9 +47,3 @@ Licensed under either of
    ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
-
-## Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.

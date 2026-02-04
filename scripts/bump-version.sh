@@ -13,9 +13,9 @@ if [[ -z "$VERSION" ]]; then
     exit 1
 fi
 
-# Validate version format (semver)
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-    echo "Error: Version must be in semver format (e.g., 0.2.0 or 0.2.0-alpha.1)"
+# Validate version format (strict semver, matching scripts/release-preflight.sh)
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: Version must be strict semver (X.Y.Z)"
     exit 1
 fi
 
@@ -81,13 +81,18 @@ fi
 
 if [[ -f "HomebrewFormula/hush.rb" ]]; then
     echo "  Updating HomebrewFormula/hush.rb tag URL..."
-    $SED_INPLACE "s#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
+    $SED_INPLACE "s#https://github.com/backbay-labs/hushclaw/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/hushclaw/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
 fi
 
 # Update pyproject.toml if it exists
 if [[ -f "packages/hush-py/pyproject.toml" ]]; then
     echo "  Updating packages/hush-py/pyproject.toml..."
     $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" packages/hush-py/pyproject.toml
+fi
+
+if [[ -f "packages/hush-py/src/hush/__init__.py" ]]; then
+    echo "  Updating packages/hush-py/src/hush/__init__.py __version__..."
+    $SED_INPLACE "s/^__version__ = \"[^\"]*\"/__version__ = \"$VERSION\"/" packages/hush-py/src/hush/__init__.py
 fi
 
 echo ""

@@ -1,4 +1,5 @@
 use self::private::DefaultBodyLimitService;
+use http::Request;
 use tower_layer::Layer;
 
 /// Layer for configuring the default request body limit.
@@ -66,8 +67,8 @@ use tower_layer::Layer;
 ///
 /// [`Body::poll_frame`]: http_body::Body::poll_frame
 /// [`Bytes`]: bytes::Bytes
-/// [`Json`]: https://docs.rs/axum/0.7/axum/struct.Json.html
-/// [`Form`]: https://docs.rs/axum/0.7/axum/struct.Form.html
+/// [`Json`]: https://docs.rs/axum/0.8/axum/struct.Json.html
+/// [`Form`]: https://docs.rs/axum/0.8/axum/struct.Form.html
 /// [`FromRequest`]: crate::extract::FromRequest
 /// [`RequestBodyLimit`]: tower_http::limit::RequestBodyLimit
 /// [`RequestExt::with_limited_body`]: crate::RequestExt::with_limited_body
@@ -103,7 +104,6 @@ impl DefaultBodyLimit {
     ///     extract::DefaultBodyLimit,
     /// };
     /// use tower_http::limit::RequestBodyLimitLayer;
-    /// use http_body_util::Limited;
     ///
     /// let app: Router<()> = Router::new()
     ///     .route("/", get(|body: Bytes| async {}))
@@ -114,8 +114,8 @@ impl DefaultBodyLimit {
     /// ```
     ///
     /// [`Bytes`]: bytes::Bytes
-    /// [`Json`]: https://docs.rs/axum/0.7/axum/struct.Json.html
-    /// [`Form`]: https://docs.rs/axum/0.7/axum/struct.Form.html
+    /// [`Json`]: https://docs.rs/axum/0.8/axum/struct.Json.html
+    /// [`Form`]: https://docs.rs/axum/0.8/axum/struct.Form.html
     pub const fn disable() -> Self {
         Self {
             kind: DefaultBodyLimitKind::Disable,
@@ -137,8 +137,6 @@ impl DefaultBodyLimit {
     ///     body::{Bytes, Body},
     ///     extract::DefaultBodyLimit,
     /// };
-    /// use tower_http::limit::RequestBodyLimitLayer;
-    /// use http_body_util::Limited;
     ///
     /// let app: Router<()> = Router::new()
     ///     .route("/", get(|body: Bytes| async {}))
@@ -147,12 +145,42 @@ impl DefaultBodyLimit {
     /// ```
     ///
     /// [`Bytes::from_request`]: bytes::Bytes
-    /// [`Json`]: https://docs.rs/axum/0.7/axum/struct.Json.html
-    /// [`Form`]: https://docs.rs/axum/0.7/axum/struct.Form.html
+    /// [`Json`]: https://docs.rs/axum/0.8/axum/struct.Json.html
+    /// [`Form`]: https://docs.rs/axum/0.8/axum/struct.Form.html
     pub const fn max(limit: usize) -> Self {
         Self {
             kind: DefaultBodyLimitKind::Limit(limit),
         }
+    }
+
+    /// Apply a request body limit to the given request.
+    ///
+    /// This can be used, for example, to modify the default body limit inside a specific
+    /// extractor.
+    ///
+    /// # Example
+    ///
+    /// An extractor similar to [`Bytes`](bytes::Bytes), but limiting the body to 1 KB.
+    ///
+    /// ```
+    /// use axum::{
+    ///     extract::{DefaultBodyLimit, FromRequest, rejection::BytesRejection, Request},
+    ///     body::Bytes,
+    /// };
+    ///
+    /// struct Bytes1KB(Bytes);
+    ///
+    /// impl<S: Sync> FromRequest<S> for Bytes1KB {
+    ///     type Rejection = BytesRejection;
+    ///
+    ///     async fn from_request(mut req: Request, _: &S) -> Result<Self, Self::Rejection> {
+    ///         DefaultBodyLimit::max(1024).apply(&mut req);
+    ///         Ok(Self(Bytes::from_request(req, &()).await?))
+    ///     }
+    /// }
+    /// ```
+    pub fn apply<B>(self, req: &mut Request<B>) {
+        req.extensions_mut().insert(self.kind);
     }
 }
 

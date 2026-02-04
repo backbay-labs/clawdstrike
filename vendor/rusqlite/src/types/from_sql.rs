@@ -1,5 +1,5 @@
 use super::{Value, ValueRef};
-use std::convert::TryInto;
+use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
 
@@ -28,17 +28,29 @@ pub enum FromSqlError {
     Other(Box<dyn Error + Send + Sync + 'static>),
 }
 
+impl FromSqlError {
+    /// Converts an arbitrary error type to [`FromSqlError`].
+    ///
+    /// This is a convenience function that boxes and unsizes the error type. It's main purpose is
+    /// to be usable in the `map_err` method. So instead of
+    /// `result.map_err(|error| FromSqlError::Other(Box::new(error))` you can write
+    /// `result.map_err(FromSqlError::other)`.
+    pub fn other<E: Error + Send + Sync + 'static>(error: E) -> Self {
+        Self::Other(Box::new(error))
+    }
+}
+
 impl PartialEq for FromSqlError {
-    fn eq(&self, other: &FromSqlError) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (FromSqlError::InvalidType, FromSqlError::InvalidType) => true,
-            (FromSqlError::OutOfRange(n1), FromSqlError::OutOfRange(n2)) => n1 == n2,
+            (Self::InvalidType, Self::InvalidType) => true,
+            (Self::OutOfRange(n1), Self::OutOfRange(n2)) => n1 == n2,
             (
-                FromSqlError::InvalidBlobSize {
+                Self::InvalidBlobSize {
                     expected_size: es1,
                     blob_size: bs1,
                 },
-                FromSqlError::InvalidBlobSize {
+                Self::InvalidBlobSize {
                     expected_size: es2,
                     blob_size: bs2,
                 },
@@ -51,9 +63,9 @@ impl PartialEq for FromSqlError {
 impl fmt::Display for FromSqlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            FromSqlError::InvalidType => write!(f, "Invalid type"),
-            FromSqlError::OutOfRange(i) => write!(f, "Value {i} out of range"),
-            FromSqlError::InvalidBlobSize {
+            Self::InvalidType => write!(f, "Invalid type"),
+            Self::OutOfRange(i) => write!(f, "Value {i} out of range"),
+            Self::InvalidBlobSize {
                 expected_size,
                 blob_size,
             } => {
@@ -62,14 +74,14 @@ impl fmt::Display for FromSqlError {
                     "Cannot read {expected_size} byte value out of {blob_size} byte blob"
                 )
             }
-            FromSqlError::Other(ref err) => err.fmt(f),
+            Self::Other(ref err) => err.fmt(f),
         }
     }
 }
 
 impl Error for FromSqlError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        if let FromSqlError::Other(ref err) = self {
+        if let Self::Other(ref err) = self {
             Some(&**err)
         } else {
             None
@@ -115,7 +127,9 @@ from_sql_integral!(isize);
 from_sql_integral!(u8);
 from_sql_integral!(u16);
 from_sql_integral!(u32);
+#[cfg(feature = "fallible_uint")]
 from_sql_integral!(u64);
+#[cfg(feature = "fallible_uint")]
 from_sql_integral!(usize);
 
 from_sql_integral!(non_zero std::num::NonZeroIsize, isize);
@@ -124,13 +138,14 @@ from_sql_integral!(non_zero std::num::NonZeroI16, i16);
 from_sql_integral!(non_zero std::num::NonZeroI32, i32);
 from_sql_integral!(non_zero std::num::NonZeroI64, i64);
 #[cfg(feature = "i128_blob")]
-#[cfg_attr(docsrs, doc(cfg(feature = "i128_blob")))]
 from_sql_integral!(non_zero std::num::NonZeroI128, i128);
 
+#[cfg(feature = "fallible_uint")]
 from_sql_integral!(non_zero std::num::NonZeroUsize, usize);
 from_sql_integral!(non_zero std::num::NonZeroU8, u8);
 from_sql_integral!(non_zero std::num::NonZeroU16, u16);
 from_sql_integral!(non_zero std::num::NonZeroU32, u32);
+#[cfg(feature = "fallible_uint")]
 from_sql_integral!(non_zero std::num::NonZeroU64, u64);
 // std::num::NonZeroU128 is not supported since u128 isn't either
 
@@ -145,8 +160,8 @@ impl FromSql for f32 {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
-            ValueRef::Integer(i) => Ok(i as f32),
-            ValueRef::Real(f) => Ok(f as f32),
+            ValueRef::Integer(i) => Ok(i as Self),
+            ValueRef::Real(f) => Ok(f as Self),
             _ => Err(FromSqlError::InvalidType),
         }
     }
@@ -156,7 +171,7 @@ impl FromSql for f64 {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
-            ValueRef::Integer(i) => Ok(i as f64),
+            ValueRef::Integer(i) => Ok(i as Self),
             ValueRef::Real(f) => Ok(f),
             _ => Err(FromSqlError::InvalidType),
         }
@@ -205,6 +220,27 @@ impl FromSql for Vec<u8> {
     }
 }
 
+impl FromSql for Box<[u8]> {
+    #[inline]
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value.as_blob().map(Box::<[u8]>::from)
+    }
+}
+
+impl FromSql for std::rc::Rc<[u8]> {
+    #[inline]
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value.as_blob().map(std::rc::Rc::<[u8]>::from)
+    }
+}
+
+impl FromSql for std::sync::Arc<[u8]> {
+    #[inline]
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value.as_blob().map(std::sync::Arc::<[u8]>::from)
+    }
+}
+
 impl<const N: usize> FromSql for [u8; N] {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
@@ -217,22 +253,20 @@ impl<const N: usize> FromSql for [u8; N] {
 }
 
 #[cfg(feature = "i128_blob")]
-#[cfg_attr(docsrs, doc(cfg(feature = "i128_blob")))]
 impl FromSql for i128 {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let bytes = <[u8; 16]>::column_result(value)?;
-        Ok(i128::from_be_bytes(bytes) ^ (1_i128 << 127))
+        Ok(Self::from_be_bytes(bytes) ^ (1_i128 << 127))
     }
 }
 
 #[cfg(feature = "uuid")]
-#[cfg_attr(docsrs, doc(cfg(feature = "uuid")))]
 impl FromSql for uuid::Uuid {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let bytes = <[u8; 16]>::column_result(value)?;
-        Ok(uuid::Uuid::from_u128(u128::from_be_bytes(bytes)))
+        Ok(Self::from_u128(u128::from_be_bytes(bytes)))
     }
 }
 
@@ -246,6 +280,17 @@ impl<T: FromSql> FromSql for Option<T> {
     }
 }
 
+impl<T: ?Sized> FromSql for Cow<'_, T>
+where
+    T: ToOwned,
+    T::Owned: FromSql,
+{
+    #[inline]
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        <T::Owned>::column_result(value).map(Cow::Owned)
+    }
+}
+
 impl FromSql for Value {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
@@ -255,8 +300,14 @@ impl FromSql for Value {
 
 #[cfg(test)]
 mod test {
-    use super::FromSql;
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
+    use super::{FromSql, FromSqlError};
     use crate::{Connection, Error, Result};
+    use std::borrow::Cow;
+    use std::rc::Rc;
+    use std::sync::Arc;
 
     #[test]
     fn test_integral_ranges() -> Result<()> {
@@ -350,11 +401,13 @@ mod test {
             &[0, -2, -1, 4_294_967_296],
             &[1, 4_294_967_295]
         );
+        #[cfg(feature = "fallible_uint")]
         check_ranges!(
             std::num::NonZeroU64,
             &[0, -2, -1, -4_294_967_296],
             &[1, 4_294_967_295, i64::MAX as u64]
         );
+        #[cfg(feature = "fallible_uint")]
         check_ranges!(
             std::num::NonZeroUsize,
             &[0, -2, -1, -4_294_967_296],
@@ -362,5 +415,87 @@ mod test {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_cow() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        assert_eq!(
+            db.query_row("SELECT 'this is a string'", [], |r| r
+                .get::<_, Cow<'_, str>>(0)),
+            Ok(Cow::Borrowed("this is a string")),
+        );
+        assert_eq!(
+            db.query_row("SELECT x'09ab20fdee87'", [], |r| r
+                .get::<_, Cow<'_, [u8]>>(0)),
+            Ok(Cow::Owned(vec![0x09, 0xab, 0x20, 0xfd, 0xee, 0x87])),
+        );
+        assert_eq!(
+            db.query_row("SELECT 24.5", [], |r| r.get::<_, Cow<'_, f32>>(0),),
+            Ok(Cow::Borrowed(&24.5)),
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_heap_slice() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        assert_eq!(
+            db.query_row("SELECT 'text'", [], |r| r.get::<_, Box<str>>(0)),
+            Ok(Box::from("text")),
+        );
+        assert_eq!(
+            db.query_row("SELECT 'Some string slice!'", [], |r| r
+                .get::<_, Rc<str>>(0)),
+            Ok(Rc::from("Some string slice!")),
+        );
+        assert_eq!(
+            db.query_row("SELECT x'012366779988fedc'", [], |r| r
+                .get::<_, Rc<[u8]>>(0)),
+            Ok(Rc::from(b"\x01\x23\x66\x77\x99\x88\xfe\xdc".as_slice())),
+        );
+
+        assert_eq!(
+            db.query_row(
+                "SELECT x'6120737472696e672043414e206265206120626c6f62'",
+                [],
+                |r| r.get::<_, Box<[u8]>>(0)
+            ),
+            Ok(b"a string CAN be a blob".to_vec().into_boxed_slice()),
+        );
+        assert_eq!(
+            db.query_row("SELECT 'This is inside an Arc.'", [], |r| r
+                .get::<_, Arc<str>>(0)),
+            Ok(Arc::from("This is inside an Arc.")),
+        );
+        assert_eq!(
+            db.query_row("SELECT x'afd374'", [], |r| r.get::<_, Arc<[u8]>>(0),),
+            Ok(Arc::from(b"\xaf\xd3\x74".as_slice())),
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_sql_error() {
+        use std::error::Error as _;
+        assert_ne!(FromSqlError::InvalidType, FromSqlError::OutOfRange(0));
+        assert_ne!(FromSqlError::OutOfRange(0), FromSqlError::OutOfRange(1));
+        assert_ne!(
+            FromSqlError::InvalidBlobSize {
+                expected_size: 0,
+                blob_size: 0
+            },
+            FromSqlError::InvalidBlobSize {
+                expected_size: 0,
+                blob_size: 1
+            }
+        );
+        assert!(FromSqlError::InvalidType.source().is_none());
+        let err = std::io::Error::from(std::io::ErrorKind::UnexpectedEof);
+        assert!(FromSqlError::Other(Box::new(err)).source().is_some());
     }
 }

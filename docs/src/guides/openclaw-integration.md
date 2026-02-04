@@ -97,7 +97,7 @@ Add to `~/.openclaw/openclaw.json`:
 
 The plugin registers a `policy_check` tool that agents can use:
 
-```
+```text
 policy_check({ action: "file_read", resource: "~/.ssh/id_rsa" })
 → {
     "allowed": false,
@@ -105,7 +105,7 @@ policy_check({ action: "file_read", resource: "~/.ssh/id_rsa" })
     "guard": "forbidden_path",
     "message": "Denied by forbidden_path: Access to forbidden path...",
     "suggestion": "SSH keys are protected..."
-  }
+	  }
 ```
 
 **Actions:** `file_read`, `file_write`, `network`, `command`, `tool_call`

@@ -86,7 +86,8 @@ impl CDataModel {
 
         match self {
             LP32 => Size::U16,
-            ILP32 | LLP64 | LP64 | ILP64 => Size::U32,
+            ILP32 | LLP64 | LP64 => Size::U32,
+            ILP64 => Size::U64,
         }
     }
     /// The size of a C `long`. This is required to be at least 32 bits.
@@ -94,8 +95,8 @@ impl CDataModel {
         use CDataModel::*;
 
         match self {
-            LP32 | ILP32 | LLP64 | ILP64 => Size::U32,
-            LP64 => Size::U64,
+            LP32 | ILP32 | LLP64 => Size::U32,
+            LP64 | ILP64 => Size::U64,
         }
     }
     /// The size of a C `long long`. This is required (in C99+) to be at least 64 bits.

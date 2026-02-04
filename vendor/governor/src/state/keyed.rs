@@ -7,9 +7,9 @@
 //! Rate limiters based on these types are constructed with
 //! [the `RateLimiter` constructors](../struct.RateLimiter.html#keyed-rate-limiters---default-constructors)
 
-use std::hash::Hash;
-use std::num::NonZeroU32;
-use std::prelude::v1::*;
+use core::hash::Hash;
+use core::num::NonZeroU32;
+use core::prelude::v1::*;
 
 use crate::state::StateStore;
 use crate::{
@@ -19,6 +19,11 @@ use crate::{
     nanos::Nanos,
     Quota, RateLimiter,
 };
+
+#[cfg(feature = "std")]
+pub type DefaultHasher = std::hash::RandomState;
+#[cfg(not(feature = "std"))]
+pub type DefaultHasher = hashbrown::DefaultHashBuilder;
 
 /// A trait for state stores with one rate limiting state per key.
 ///
@@ -43,7 +48,7 @@ where
     pub fn keyed(quota: Quota) -> Self {
         let state = DefaultKeyedStateStore::default();
         let clock = clock::DefaultClock::default();
-        RateLimiter::new(quota, state, &clock)
+        RateLimiter::new(quota, state, clock)
     }
 
     #[cfg(all(feature = "std", feature = "dashmap"))]
@@ -51,7 +56,7 @@ where
     pub fn dashmap(quota: Quota) -> Self {
         let state = DashMapStateStore::default();
         let clock = clock::DefaultClock::default();
-        RateLimiter::new(quota, state, &clock)
+        RateLimiter::new(quota, state, clock)
     }
 
     #[cfg(any(all(feature = "std", not(feature = "dashmap")), not(feature = "std")))]
@@ -60,7 +65,39 @@ where
     pub fn hashmap(quota: Quota) -> Self {
         let state = HashMapStateStore::default();
         let clock = clock::DefaultClock::default();
-        RateLimiter::new(quota, state, &clock)
+        RateLimiter::new(quota, state, clock)
+    }
+}
+
+#[cfg(any(all(feature = "std", not(feature = "dashmap")), not(feature = "std")))]
+/// # Keyed rate limiters with custom hashers for std HashMap
+impl<K, S> RateLimiter<K, DefaultKeyedStateStore<K, S>, clock::DefaultClock>
+where
+    K: Clone + Hash + Eq,
+    S: core::hash::BuildHasher + Default,
+{
+    /// Constructs a new keyed rate limiter explicitly backed by a
+    /// [`HashMap`][hashmap::HashMap] with a custom hasher.
+    pub fn hashmap_with_hasher(quota: Quota, hasher: S) -> Self {
+        let state = HashMapStateStore::new(hashmap::HashMap::with_hasher(hasher));
+        let clock = clock::DefaultClock::default();
+        RateLimiter::new(quota, state, clock)
+    }
+}
+
+#[cfg(all(feature = "std", feature = "dashmap"))]
+/// # Keyed rate limiters with custom hashers
+impl<K, S> RateLimiter<K, DefaultKeyedStateStore<K, S>, clock::DefaultClock>
+where
+    K: Clone + Hash + Eq,
+    S: core::hash::BuildHasher + Clone + Default,
+{
+    /// Constructs a new keyed rate limiter explicitly backed by a
+    /// [`DashMap`][::dashmap::DashMap] with a custom hasher.
+    pub fn dashmap_with_hasher(quota: Quota, hasher: S) -> Self {
+        let state = DashMapStateStore::with_hasher(hasher);
+        let clock = clock::DefaultClock::default();
+        RateLimiter::new(quota, state, clock)
     }
 }
 
@@ -70,11 +107,26 @@ where
     K: Clone + Hash + Eq,
 {
     /// Constructs a new keyed rate limiter explicitly backed by a
-    /// [`HashMap`][std::collections::HashMap].
+    /// [`HashMap`][hashmap::HashMap].
     pub fn hashmap(quota: Quota) -> Self {
         let state = HashMapStateStore::default();
         let clock = clock::DefaultClock::default();
-        RateLimiter::new(quota, state, &clock)
+        RateLimiter::new(quota, state, clock)
+    }
+}
+
+#[cfg(all(feature = "std", feature = "dashmap"))]
+impl<K, S> RateLimiter<K, HashMapStateStore<K, S>, clock::DefaultClock>
+where
+    K: Clone + Hash + Eq,
+    S: core::hash::BuildHasher + Default + Clone,
+{
+    /// Constructs a new keyed rate limiter explicitly backed by a
+    /// [`HashMap`][hashmap::HashMap].
+    pub fn hashmap_with_hasher(quota: Quota, hasher: S) -> Self {
+        let state = HashMapStateStore::new(hashmap::HashMap::with_hasher(hasher));
+        let clock = clock::DefaultClock::default();
+        RateLimiter::new(quota, state, clock)
     }
 }
 
@@ -182,7 +234,7 @@ where
         // arrival time is larger than a starting state for the bucket gets to stay, everything
         // else (that's indistinguishable from a starting state) goes.
         let now = self.clock.now();
-        let drop_below = now.duration_since(self.start);
+        let drop_below = now.duration_since(self.start).saturating_sub(self.gcra.t());
 
         self.state.retain_recent(drop_below);
     }
@@ -224,16 +276,16 @@ pub use self::dashmap::DashMapStateStore;
 mod future;
 
 #[cfg(any(all(feature = "std", not(feature = "dashmap")), not(feature = "std")))]
-/// The default keyed rate limiter type: a mutex-wrapped [`HashMap`][std::collections::HashMap].
-pub type DefaultKeyedStateStore<K> = HashMapStateStore<K>;
+/// The default keyed rate limiter type: a mutex-wrapped [`HashMap`][hashmap::Hashmap].
+pub type DefaultKeyedStateStore<K, S = DefaultHasher> = HashMapStateStore<K, S>;
 
 #[cfg(all(feature = "std", feature = "dashmap"))]
 /// The default keyed rate limiter type: the concurrent [`DashMap`][::dashmap::DashMap].
-pub type DefaultKeyedStateStore<K> = DashMapStateStore<K>;
+pub type DefaultKeyedStateStore<K, S = DefaultHasher> = DashMapStateStore<K, S>;
 
 #[cfg(test)]
 mod test {
-    use std::marker::PhantomData;
+    use core::marker::PhantomData;
 
     use nonzero_ext::nonzero;
 
@@ -281,7 +333,7 @@ mod test {
         > = RateLimiter::new(
             Quota::per_second(nonzero!(1_u32)),
             NaiveKeyedStateStore::default(),
-            &FakeRelativeClock::default(),
+            FakeRelativeClock::default(),
         );
         assert_eq!(lim.check_key(&1u32), Ok(()));
         assert!(lim.is_empty());

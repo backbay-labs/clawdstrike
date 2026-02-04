@@ -10,7 +10,7 @@ use crate::{ffi, Bound, PyAny};
 #[repr(transparent)]
 pub struct PyMemoryView(PyAny);
 
-pyobject_native_type_core!(PyMemoryView, pyobject_native_static_type_object!(ffi::PyMemoryView_Type), #checkfunction=ffi::PyMemoryView_Check);
+pyobject_native_type_core!(PyMemoryView, pyobject_native_static_type_object!(ffi::PyMemoryView_Type), "builtins", "memoryview", #checkfunction=ffi::PyMemoryView_Check);
 
 impl PyMemoryView {
     /// Creates a new Python `memoryview` object from another Python object that
@@ -19,15 +19,8 @@ impl PyMemoryView {
         unsafe {
             ffi::PyMemoryView_FromObject(src.as_ptr())
                 .assume_owned_or_err(src.py())
-                .downcast_into_unchecked()
+                .cast_into_unchecked()
         }
-    }
-
-    /// Deprecated name for [`PyMemoryView::from`].
-    #[deprecated(since = "0.23.0", note = "renamed to `PyMemoryView::from`")]
-    #[inline]
-    pub fn from_bound<'py>(src: &Bound<'py, PyAny>) -> PyResult<Bound<'py, Self>> {
-        Self::from(src)
     }
 }
 

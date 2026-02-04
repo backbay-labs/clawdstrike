@@ -28,12 +28,12 @@ impl FilesystemIrm {
 
         // Use forbidden_path guard config if available
         if let Some(config) = &policy.guards.forbidden_path {
-            for pattern in &config.patterns {
+            for pattern in config.effective_patterns() {
                 // Simple prefix/contains check (full glob matching done by guard)
                 if normalized.contains(pattern.trim_start_matches("**/").trim_end_matches("/**"))
-                    || self.matches_simple_pattern(&normalized, pattern)
+                    || self.matches_simple_pattern(&normalized, &pattern)
                 {
-                    return Some(pattern.clone());
+                    return Some(pattern);
                 }
             }
         }

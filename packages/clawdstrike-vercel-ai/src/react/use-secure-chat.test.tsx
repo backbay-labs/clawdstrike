@@ -2,14 +2,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-import type { UseChatOptions } from 'ai/react';
+import type { UseChatOptions } from '@ai-sdk/react';
 import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
 
 import { useSecureChat } from './use-secure-chat.js';
 
 const useChatMock = vi.hoisted(() => vi.fn());
 
-vi.mock('ai/react', () => ({
+vi.mock('@ai-sdk/react', () => ({
   useChat: (options: UseChatOptions & { onToolCall?: any }) => useChatMock(options),
 }));
 
@@ -53,4 +53,3 @@ describe('useSecureChat', () => {
     expect(result.current.blockedTools).toContain('bash');
   });
 });
-

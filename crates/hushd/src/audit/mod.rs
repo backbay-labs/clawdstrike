@@ -163,6 +163,61 @@ pub enum ExportFormat {
     Jsonl,
 }
 
+fn append_filter_clauses(
+    filter: &AuditFilter,
+    sql: &mut String,
+    params_vec: &mut Vec<Box<dyn rusqlite::ToSql>>,
+) {
+    if let Some(ref event_type) = filter.event_type {
+        sql.push_str(" AND event_type = ?");
+        params_vec.push(Box::new(event_type.clone()));
+    }
+    if let Some(ref action_type) = filter.action_type {
+        sql.push_str(" AND action_type = ?");
+        params_vec.push(Box::new(action_type.clone()));
+    }
+    if let Some(ref decision) = filter.decision {
+        sql.push_str(" AND decision = ?");
+        params_vec.push(Box::new(decision.clone()));
+    }
+    if let Some(ref session_id) = filter.session_id {
+        sql.push_str(" AND session_id = ?");
+        params_vec.push(Box::new(session_id.clone()));
+    }
+    if let Some(ref agent_id) = filter.agent_id {
+        sql.push_str(" AND agent_id = ?");
+        params_vec.push(Box::new(agent_id.clone()));
+    }
+    if let Some(after) = filter.after {
+        sql.push_str(" AND timestamp > ?");
+        params_vec.push(Box::new(after.to_rfc3339()));
+    }
+    if let Some(before) = filter.before {
+        sql.push_str(" AND timestamp < ?");
+        params_vec.push(Box::new(before.to_rfc3339()));
+    }
+}
+
+fn csv_escape_field(field: &str) -> String {
+    // Prevent spreadsheet formula injection by prefixing a single quote.
+    let mut field = field.to_string();
+    if matches!(
+        field.chars().next(),
+        Some('=') | Some('+') | Some('-') | Some('@')
+    ) {
+        field.insert(0, '\'');
+    }
+
+    let needs_quotes =
+        field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r');
+    if !needs_quotes {
+        return field;
+    }
+
+    let escaped = field.replace('"', "\"\"");
+    format!("\"{escaped}\"")
+}
+
 /// SQLite-backed audit ledger
 pub struct AuditLedger {
     conn: Mutex<Connection>,
@@ -239,7 +294,10 @@ impl AuditLedger {
 
         // Prune old entries if max_entries is set
         if self.max_entries > 0 {
-            conn.execute(schema::DELETE_OLD_EVENTS, params![self.max_entries])?;
+            conn.execute(
+                schema::DELETE_OLD_EVENTS,
+                params![i64::try_from(self.max_entries).unwrap_or(i64::MAX)],
+            )?;
         }
 
         Ok(())
@@ -252,34 +310,7 @@ impl AuditLedger {
         let mut sql = schema::SELECT_EVENTS.to_string();
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
 
-        if let Some(ref event_type) = filter.event_type {
-            sql.push_str(" AND event_type = ?");
-            params_vec.push(Box::new(event_type.clone()));
-        }
-        if let Some(ref action_type) = filter.action_type {
-            sql.push_str(" AND action_type = ?");
-            params_vec.push(Box::new(action_type.clone()));
-        }
-        if let Some(ref decision) = filter.decision {
-            sql.push_str(" AND decision = ?");
-            params_vec.push(Box::new(decision.clone()));
-        }
-        if let Some(ref session_id) = filter.session_id {
-            sql.push_str(" AND session_id = ?");
-            params_vec.push(Box::new(session_id.clone()));
-        }
-        if let Some(ref agent_id) = filter.agent_id {
-            sql.push_str(" AND agent_id = ?");
-            params_vec.push(Box::new(agent_id.clone()));
-        }
-        if let Some(after) = filter.after {
-            sql.push_str(" AND timestamp > ?");
-            params_vec.push(Box::new(after.to_rfc3339()));
-        }
-        if let Some(before) = filter.before {
-            sql.push_str(" AND timestamp < ?");
-            params_vec.push(Box::new(before.to_rfc3339()));
-        }
+        append_filter_clauses(filter, &mut sql, &mut params_vec);
 
         sql.push_str(" ORDER BY timestamp DESC");
 
@@ -297,12 +328,18 @@ impl AuditLedger {
         let events = stmt.query_map(params_refs.as_slice(), |row| {
             let metadata_str: Option<String> = row.get(11)?;
             let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+            let timestamp_str: String = row.get(1)?;
+            let timestamp = DateTime::parse_from_rfc3339(&timestamp_str).map_err(|err| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Text,
+                    Box::new(err),
+                )
+            })?;
 
             Ok(AuditEvent {
                 id: row.get(0)?,
-                timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                timestamp: timestamp.with_timezone(&Utc),
                 event_type: row.get(2)?,
                 action_type: row.get(3)?,
                 target: row.get(4)?,
@@ -328,6 +365,21 @@ impl AuditLedger {
         Ok(count as usize)
     }
 
+    /// Get event count matching the given filter (ignores limit/offset).
+    pub fn count_filtered(&self, filter: &AuditFilter) -> Result<usize> {
+        let conn = self.lock_conn();
+
+        let mut sql = format!("{} WHERE 1=1", schema::COUNT_EVENTS);
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+        append_filter_clauses(filter, &mut sql, &mut params_vec);
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let count: i64 = conn.query_row(sql.as_str(), params_refs.as_slice(), |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
     /// Export audit data
     pub fn export(&self, filter: &AuditFilter, format: ExportFormat) -> Result<Vec<u8>> {
         let events = self.query(filter)?;
@@ -343,24 +395,31 @@ impl AuditLedger {
                 Ok(output)
             }
             ExportFormat::Csv => {
-                let mut output =
-                    "id,timestamp,event_type,action_type,target,decision,guard,severity,message,session_id,agent_id\n"
-                        .to_string();
+                let mut output = String::from(
+                    "id,timestamp,event_type,action_type,target,decision,guard,severity,message,session_id,agent_id\n",
+                );
                 for event in events {
-                    output.push_str(&format!(
-                        "{},{},{},{},{},{},{},{},{},{},{}\n",
-                        event.id,
-                        event.timestamp.to_rfc3339(),
-                        event.event_type,
-                        event.action_type,
-                        event.target.unwrap_or_default(),
-                        event.decision,
-                        event.guard.unwrap_or_default(),
-                        event.severity.unwrap_or_default(),
-                        event.message.unwrap_or_default().replace(',', ";"),
-                        event.session_id.unwrap_or_default(),
-                        event.agent_id.unwrap_or_default(),
-                    ));
+                    let fields = [
+                        csv_escape_field(&event.id),
+                        csv_escape_field(&event.timestamp.to_rfc3339()),
+                        csv_escape_field(&event.event_type),
+                        csv_escape_field(&event.action_type),
+                        csv_escape_field(event.target.as_deref().unwrap_or("")),
+                        csv_escape_field(&event.decision),
+                        csv_escape_field(event.guard.as_deref().unwrap_or("")),
+                        csv_escape_field(event.severity.as_deref().unwrap_or("")),
+                        csv_escape_field(event.message.as_deref().unwrap_or("")),
+                        csv_escape_field(event.session_id.as_deref().unwrap_or("")),
+                        csv_escape_field(event.agent_id.as_deref().unwrap_or("")),
+                    ];
+
+                    for (idx, f) in fields.into_iter().enumerate() {
+                        if idx > 0 {
+                            output.push(',');
+                        }
+                        output.push_str(&f);
+                    }
+                    output.push('\n');
                 }
                 Ok(output.into_bytes())
             }

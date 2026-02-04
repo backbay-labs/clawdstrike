@@ -1,19 +1,19 @@
 /// Represents the major, minor, and patch (if any) versions of this interpreter.
 ///
-/// This struct is usually created with [`Python::version`].
+/// This struct is usually created with [`Python::version_info`].
 ///
 /// # Examples
 ///
 /// ```rust
 /// # use pyo3::Python;
-/// Python::with_gil(|py| {
+/// Python::attach(|py| {
 ///     // PyO3 supports Python 3.7 and up.
 ///     assert!(py.version_info() >= (3, 7));
 ///     assert!(py.version_info() >= (3, 7, 0));
 /// });
 /// ```
 ///
-/// [`Python::version`]: crate::marker::Python::version
+/// [`Python::version_info`]: crate::marker::Python::version_info
 #[derive(Debug)]
 pub struct PythonVersionInfo<'a> {
     /// Python major version (e.g. `3`).
@@ -40,13 +40,10 @@ impl<'a> PythonVersionInfo<'a> {
             }
         }
 
-        let mut parts = version_number_str.split('.');
+        let mut parts = version_number_str.splitn(3, '.');
         let major_str = parts.next().ok_or("Python major version missing")?;
         let minor_str = parts.next().ok_or("Python minor version missing")?;
         let patch_str = parts.next();
-        if parts.next().is_some() {
-            return Err("Python version string has too many parts");
-        };
 
         let major = major_str
             .parse()
@@ -102,7 +99,7 @@ mod test {
     use crate::Python;
     #[test]
     fn test_python_version_info() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let version = py.version_info();
             #[cfg(Py_3_7)]
             assert!(version >= (3, 7));
@@ -131,13 +128,20 @@ mod test {
     fn test_python_version_info_parse() {
         assert!(PythonVersionInfo::from_str("3.5.0a1").unwrap() >= (3, 5, 0));
         assert!(PythonVersionInfo::from_str("3.5+").unwrap() >= (3, 5, 0));
-        assert!(PythonVersionInfo::from_str("3.5+").unwrap() == (3, 5, 0));
-        assert!(PythonVersionInfo::from_str("3.5+").unwrap() != (3, 5, 1));
+        assert_eq!(PythonVersionInfo::from_str("3.5+").unwrap(), (3, 5, 0));
+        assert_ne!(PythonVersionInfo::from_str("3.5+").unwrap(), (3, 5, 1));
         assert!(PythonVersionInfo::from_str("3.5.2a1+").unwrap() < (3, 5, 3));
-        assert!(PythonVersionInfo::from_str("3.5.2a1+").unwrap() == (3, 5, 2));
-        assert!(PythonVersionInfo::from_str("3.5.2a1+").unwrap() == (3, 5));
-        assert!(PythonVersionInfo::from_str("3.5+").unwrap() == (3, 5));
+        assert_eq!(PythonVersionInfo::from_str("3.5.2a1+").unwrap(), (3, 5, 2));
+        assert_eq!(PythonVersionInfo::from_str("3.5.2a1+").unwrap(), (3, 5));
+        assert_eq!(PythonVersionInfo::from_str("3.5+").unwrap(), (3, 5));
         assert!(PythonVersionInfo::from_str("3.5.2a1+").unwrap() < (3, 6));
         assert!(PythonVersionInfo::from_str("3.5.2a1+").unwrap() > (3, 4));
+        assert!(PythonVersionInfo::from_str("3.11.3+chromium.29").unwrap() >= (3, 11, 3));
+        assert_eq!(
+            PythonVersionInfo::from_str("3.11.3+chromium.29")
+                .unwrap()
+                .suffix,
+            Some("+chromium.29")
+        );
     }
 }

@@ -18,6 +18,54 @@ use hushd::api;
 use hushd::config::Config;
 use hushd::state::AppState;
 
+fn normalize_host_for_listen(host: &str) -> String {
+    host.trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string()
+}
+
+fn parse_listen_host_port(listen: &str) -> anyhow::Result<(String, u16)> {
+    let listen = listen.trim();
+
+    if let Ok(addr) = listen.parse::<SocketAddr>() {
+        return Ok((addr.ip().to_string(), addr.port()));
+    }
+
+    if let Some(rest) = listen.strip_prefix('[') {
+        let end = rest.find(']').ok_or_else(|| {
+            anyhow::anyhow!("Invalid listen address {listen:?}: missing closing ']'")
+        })?;
+        let host = &rest[..end];
+        let port_str = rest[end + 1..].strip_prefix(':').ok_or_else(|| {
+            anyhow::anyhow!("Invalid listen address {listen:?}: expected :PORT after ]")
+        })?;
+        let port: u16 = port_str
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid listen address {listen:?}: invalid port: {e}"))?;
+        return Ok((host.to_string(), port));
+    }
+
+    let idx = listen
+        .rfind(':')
+        .ok_or_else(|| anyhow::anyhow!("Invalid listen address {listen:?}: expected HOST:PORT"))?;
+    let host = &listen[..idx];
+    let port_str = &listen[idx + 1..];
+    let port: u16 = port_str
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid listen address {listen:?}: invalid port: {e}"))?;
+    Ok((host.to_string(), port))
+}
+
+fn format_listen(host: &str, port: u16) -> String {
+    let host = normalize_host_for_listen(host);
+    if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "hushd")]
 #[command(about = "Clawdstrike security daemon", long_about = None)]
@@ -71,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
     let mut config = if let Some(ref path) = cli.config {
         Config::from_file(path)?
     } else {
-        Config::load_default()
+        Config::load_default()?
     };
 
     // Override log level from CLI
@@ -99,21 +147,21 @@ async fn main() -> anyhow::Result<()> {
             }) = cli.command
             {
                 if let Some(bind) = bind {
-                    if let Some(port) = port {
-                        config.listen = format!("{}:{}", bind, port);
-                    } else {
-                        let current_port = config.listen.split(':').next_back().unwrap_or("9876");
-                        config.listen = format!("{}:{}", bind, current_port);
-                    }
+                    let port = match port {
+                        Some(p) => p,
+                        None => parse_listen_host_port(&config.listen)?.1,
+                    };
+                    config.listen = format_listen(&bind, port);
                 } else if let Some(port) = port {
-                    let current_host = config.listen.split(':').next().unwrap_or("127.0.0.1");
-                    config.listen = format!("{}:{}", current_host, port);
+                    let host = parse_listen_host_port(&config.listen)?.0;
+                    config.listen = format_listen(&host, port);
                 }
                 if let Some(ruleset) = ruleset {
                     config.ruleset = ruleset;
                 }
             }
 
+            config.validate()?;
             run_daemon(config).await
         }
 
@@ -135,6 +183,12 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
         "Starting hushd"
     );
 
+    if config.tls.is_some() {
+        return Err(anyhow::anyhow!(
+            "TLS is configured but not implemented yet. Remove the `tls` config to start hushd."
+        ));
+    }
+
     // Create application state
     let state = AppState::new(config.clone()).await?;
 
@@ -148,8 +202,30 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(address = %addr, "Listening");
 
+    // Handle SIGHUP for policy reload (systemd ExecReload).
+    #[cfg(unix)]
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) {
+                Ok(mut signal) => {
+                    while signal.recv().await.is_some() {
+                        tracing::info!("SIGHUP received: reloading policy");
+                        if let Err(err) = state.reload_policy().await {
+                            tracing::error!(error = %err, "Policy reload failed");
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::error!(error = %err, "Failed to install SIGHUP handler");
+                }
+            }
+        });
+    }
+
     // Setup signal handlers for graceful shutdown
-    let shutdown_signal = async {
+    let shutdown_notify = state.shutdown.clone();
+    let shutdown_signal = async move {
         let ctrl_c = async {
             if let Err(err) = tokio::signal::ctrl_c().await {
                 tracing::error!(error = %err, "Failed to install Ctrl+C handler");
@@ -173,18 +249,26 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
         #[cfg(not(unix))]
         let terminate = std::future::pending::<()>();
 
+        let shutdown_requested = async {
+            shutdown_notify.notified().await;
+        };
+
         tokio::select! {
             _ = ctrl_c => {},
             _ = terminate => {},
+            _ = shutdown_requested => {},
         }
 
         tracing::info!("Shutdown signal received");
     };
 
     // Run server
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal)
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal)
+    .await?;
 
     // Log final stats
     let engine = state.engine.read().await;
@@ -215,4 +299,29 @@ async fn check_status(url: &str) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_listen_host_port_handles_ipv6() {
+        let (host, port) = parse_listen_host_port("[::1]:9876").expect("parse");
+        assert_eq!(host, "::1");
+        assert_eq!(port, 9876);
+    }
+
+    #[test]
+    fn parse_listen_host_port_handles_hostname() {
+        let (host, port) = parse_listen_host_port("localhost:9876").expect("parse");
+        assert_eq!(host, "localhost");
+        assert_eq!(port, 9876);
+    }
+
+    #[test]
+    fn format_listen_brackets_ipv6_hosts() {
+        assert_eq!(format_listen("::1", 9876), "[::1]:9876");
+        assert_eq!(format_listen("[::1]", 9876), "[::1]:9876");
+    }
 }

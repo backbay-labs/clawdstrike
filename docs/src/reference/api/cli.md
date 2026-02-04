@@ -75,6 +75,7 @@ The CLI can start/inspect a `hushd` daemon, but `hushd` must be installed separa
 cargo install --path crates/hushd
 hush daemon start
 hush daemon status
+hush daemon stop
 hush daemon reload
 ```
 
@@ -96,6 +97,13 @@ hush daemon stop
 
 # Reload policy
 hush daemon reload
+```
+
+If auth is enabled, set `HUSHD_ADMIN_KEY` or pass `--token`:
+
+```bash
+hush daemon stop --token "$HUSHD_ADMIN_KEY"
+hush daemon reload --token "$HUSHD_ADMIN_KEY"
 ```
 
 ## Exit Codes

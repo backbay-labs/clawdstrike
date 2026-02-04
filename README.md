@@ -7,7 +7,7 @@
   <a href="https://crates.io/crates/clawdstrike"><img src="https://img.shields.io/crates/v/clawdstrike?style=flat-square&logo=rust" alt="crates.io"></a>
   <a href="https://docs.rs/clawdstrike"><img src="https://img.shields.io/docsrs/clawdstrike?style=flat-square&logo=docs.rs" alt="docs.rs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/MSRV-1.75-orange?style=flat-square&logo=rust" alt="MSRV: 1.75">
+  <img src="https://img.shields.io/badge/MSRV-1.92-orange?style=flat-square&logo=rust" alt="MSRV: 1.92">
 </p>
 
 <p align="center">
@@ -59,7 +59,7 @@
 
 ## Overview
 
-> **Alpha Software** — This project is under active development and not yet published. Packages are not available on npm or crates.io. A full beta launch is planned for the coming week. APIs and import paths WILL change. Star/watch the repo to follow progress.
+> **Alpha software** — APIs and import paths may change between releases. See GitHub Releases and the package registries (crates.io / npm / PyPI) for published versions.
 
 Clawdstrike provides runtime security enforcement for agents, designed for developers building EDR solutions and security infrastructure on top of OpenClaw.
 

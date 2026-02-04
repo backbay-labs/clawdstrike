@@ -1,21 +1,20 @@
 //! [Session Extension](https://sqlite.org/sessionintro.html)
-#![allow(non_camel_case_types)]
+#![expect(non_camel_case_types)]
 
-use std::ffi::CStr;
+use std::ffi::{c_char, c_int, c_uchar, c_void, CStr};
 use std::io::{Read, Write};
 use std::marker::PhantomData;
-use std::os::raw::{c_char, c_int, c_uchar, c_void};
-use std::panic::{catch_unwind, RefUnwindSafe};
+use std::panic::catch_unwind;
 use std::ptr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use fallible_streaming_iterator::FallibleStreamingIterator;
 
-use crate::error::{check, error_from_sqlite_code};
+use crate::error::{check, error_from_sqlite_code, Error};
 use crate::ffi;
 use crate::hooks::Action;
 use crate::types::ValueRef;
-use crate::{errmsg_to_string, str_to_cstring, Connection, DatabaseName, Result};
+use crate::{errmsg_to_string, Connection, Name, Result, MAIN_DB};
 
 // https://sqlite.org/session.html
 
@@ -33,16 +32,13 @@ impl Session<'_> {
     /// Create a new session object
     #[inline]
     pub fn new(db: &Connection) -> Result<Session<'_>> {
-        Session::new_with_name(db, DatabaseName::Main)
+        Session::new_with_name(db, MAIN_DB)
     }
 
     /// Create a new session object
     #[inline]
-    pub fn new_with_name<'conn>(
-        db: &'conn Connection,
-        name: DatabaseName<'_>,
-    ) -> Result<Session<'conn>> {
-        let name = name.as_cstring()?;
+    pub fn new_with_name<N: Name>(db: &Connection, name: N) -> Result<Session<'_>> {
+        let name = name.as_cstr()?;
 
         let db = db.db.borrow_mut().db;
 
@@ -59,25 +55,22 @@ impl Session<'_> {
     /// Set a table filter
     pub fn table_filter<F>(&mut self, filter: Option<F>)
     where
-        F: Fn(&str) -> bool + Send + RefUnwindSafe + 'static,
+        F: Fn(&str) -> bool + Send + 'static,
     {
         unsafe extern "C" fn call_boxed_closure<F>(
             p_arg: *mut c_void,
             tbl_str: *const c_char,
         ) -> c_int
         where
-            F: Fn(&str) -> bool + RefUnwindSafe,
+            F: Fn(&str) -> bool,
         {
-            use std::str;
-
-            let boxed_filter: *mut F = p_arg as *mut F;
-            let tbl_name = {
-                let c_slice = CStr::from_ptr(tbl_str).to_bytes();
-                str::from_utf8(c_slice)
-            };
+            let tbl_name = CStr::from_ptr(tbl_str).to_str();
             c_int::from(
-                catch_unwind(|| (*boxed_filter)(tbl_name.expect("non-utf8 table name")))
-                    .unwrap_or_default(),
+                catch_unwind(|| {
+                    let boxed_filter: *mut F = p_arg.cast::<F>();
+                    (*boxed_filter)(tbl_name.expect("non-utf8 table name"))
+                })
+                .unwrap_or_default(),
             )
         }
 
@@ -101,13 +94,9 @@ impl Session<'_> {
     }
 
     /// Attach a table. `None` means all tables.
-    pub fn attach(&mut self, table: Option<&str>) -> Result<()> {
-        let table = if let Some(table) = table {
-            Some(str_to_cstring(table)?)
-        } else {
-            None
-        };
-        let table = table.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null());
+    pub fn attach<N: Name>(&mut self, table: Option<N>) -> Result<()> {
+        let cs = table.as_ref().map(N::as_cstr).transpose()?;
+        let table = cs.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null());
         check(unsafe { ffi::sqlite3session_attach(self.s, table) })
     }
 
@@ -156,9 +145,9 @@ impl Session<'_> {
     }
 
     /// Load the difference between tables.
-    pub fn diff(&mut self, from: DatabaseName<'_>, table: &str) -> Result<()> {
-        let from = from.as_cstring()?;
-        let table = str_to_cstring(table)?;
+    pub fn diff<D: Name, N: Name>(&mut self, from: N, table: N) -> Result<()> {
+        let from = from.as_cstr()?;
+        let table = table.as_cstr()?;
         let table = table.as_ptr();
         unsafe {
             let mut errmsg = ptr::null_mut();
@@ -336,7 +325,7 @@ impl ChangesetIter<'_> {
 }
 
 impl FallibleStreamingIterator for ChangesetIter<'_> {
-    type Error = crate::error::Error;
+    type Error = Error;
     type Item = ChangesetItem;
 
     #[inline]
@@ -426,7 +415,11 @@ impl ChangesetItem {
                 col as i32,
                 &mut p_value,
             ))?;
-            Ok(ValueRef::from_value(p_value))
+            if p_value.is_null() {
+                Err(Error::InvalidColumnIndex(col))
+            } else {
+                Ok(ValueRef::from_value(p_value))
+            }
         }
     }
 
@@ -452,7 +445,11 @@ impl ChangesetItem {
         unsafe {
             let mut p_value: *mut ffi::sqlite3_value = ptr::null_mut();
             check(ffi::sqlite3changeset_new(self.it, col as i32, &mut p_value))?;
-            Ok(ValueRef::from_value(p_value))
+            if p_value.is_null() {
+                Err(Error::InvalidColumnIndex(col))
+            } else {
+                Ok(ValueRef::from_value(p_value))
+            }
         }
     }
 
@@ -465,7 +462,11 @@ impl ChangesetItem {
         unsafe {
             let mut p_value: *mut ffi::sqlite3_value = ptr::null_mut();
             check(ffi::sqlite3changeset_old(self.it, col as i32, &mut p_value))?;
-            Ok(ValueRef::from_value(p_value))
+            if p_value.is_null() {
+                Err(Error::InvalidColumnIndex(col))
+            } else {
+                Ok(ValueRef::from_value(p_value))
+            }
         }
     }
 
@@ -581,8 +582,8 @@ impl Connection {
     /// Apply a changeset to a database
     pub fn apply<F, C>(&self, cs: &Changeset, filter: Option<F>, conflict: C) -> Result<()>
     where
-        F: Fn(&str) -> bool + Send + RefUnwindSafe + 'static,
-        C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + RefUnwindSafe + 'static,
+        F: Fn(&str) -> bool + Send + 'static,
+        C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + 'static,
     {
         let db = self.db.borrow_mut().db;
 
@@ -619,8 +620,8 @@ impl Connection {
         conflict: C,
     ) -> Result<()>
     where
-        F: Fn(&str) -> bool + Send + RefUnwindSafe + 'static,
-        C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + RefUnwindSafe + 'static,
+        F: Fn(&str) -> bool + Send + 'static,
+        C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + 'static,
     {
         let input_ref = &input;
         let db = self.db.borrow_mut().db;
@@ -657,7 +658,6 @@ impl Connection {
 #[repr(i32)]
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
-#[allow(clippy::upper_case_acronyms)]
 pub enum ConflictType {
     UNKNOWN = -1,
     SQLITE_CHANGESET_DATA = ffi::SQLITE_CHANGESET_DATA,
@@ -685,7 +685,6 @@ impl From<i32> for ConflictType {
 #[repr(i32)]
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
-#[allow(clippy::upper_case_acronyms)]
 pub enum ConflictAction {
     SQLITE_CHANGESET_OMIT = ffi::SQLITE_CHANGESET_OMIT,
     SQLITE_CHANGESET_REPLACE = ffi::SQLITE_CHANGESET_REPLACE,
@@ -694,22 +693,21 @@ pub enum ConflictAction {
 
 unsafe extern "C" fn call_filter<F, C>(p_ctx: *mut c_void, tbl_str: *const c_char) -> c_int
 where
-    F: Fn(&str) -> bool + Send + RefUnwindSafe + 'static,
-    C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + RefUnwindSafe + 'static,
+    F: Fn(&str) -> bool + Send + 'static,
+    C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + 'static,
 {
-    use std::str;
-
-    let tuple: *mut (Option<F>, C) = p_ctx as *mut (Option<F>, C);
-    let tbl_name = {
-        let c_slice = CStr::from_ptr(tbl_str).to_bytes();
-        str::from_utf8(c_slice)
-    };
-    match *tuple {
-        (Some(ref filter), _) => c_int::from(
-            catch_unwind(|| filter(tbl_name.expect("illegal table name"))).unwrap_or_default(),
-        ),
-        _ => unimplemented!(),
-    }
+    let tbl_name = CStr::from_ptr(tbl_str).to_str();
+    c_int::from(
+        catch_unwind(|| {
+            let tuple: *mut (Option<F>, C) = p_ctx.cast::<(Option<F>, C)>();
+            if let Some(ref filter) = (*tuple).0 {
+                filter(tbl_name.expect("illegal table name"))
+            } else {
+                true
+            }
+        })
+        .unwrap_or_default(),
+    )
 }
 
 unsafe extern "C" fn call_conflict<F, C>(
@@ -718,13 +716,15 @@ unsafe extern "C" fn call_conflict<F, C>(
     p: *mut ffi::sqlite3_changeset_iter,
 ) -> c_int
 where
-    F: Fn(&str) -> bool + Send + RefUnwindSafe + 'static,
-    C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + RefUnwindSafe + 'static,
+    F: Fn(&str) -> bool + Send + 'static,
+    C: Fn(ConflictType, ChangesetItem) -> ConflictAction + Send + 'static,
 {
-    let tuple: *mut (Option<F>, C) = p_ctx as *mut (Option<F>, C);
     let conflict_type = ConflictType::from(e_conflict);
     let item = ChangesetItem { it: p };
-    if let Ok(action) = catch_unwind(|| (*tuple).1(conflict_type, item)) {
+    if let Ok(action) = catch_unwind(|| {
+        let tuple: *mut (Option<F>, C) = p_ctx.cast::<(Option<F>, C)>();
+        (*tuple).1(conflict_type, item)
+    }) {
         action as c_int
     } else {
         ffi::SQLITE_CHANGESET_ABORT
@@ -763,6 +763,9 @@ unsafe extern "C" fn x_output(p_out: *mut c_void, data: *const c_void, len: c_in
 
 #[cfg(test)]
 mod test {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use fallible_streaming_iterator::FallibleStreamingIterator;
     use std::io::Read;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -771,15 +774,29 @@ mod test {
     use crate::hooks::Action;
     use crate::{Connection, Result};
 
-    fn one_changeset() -> Result<Changeset> {
+    fn one_changeset_insert() -> Result<Changeset> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(t TEXT PRIMARY KEY NOT NULL);")?;
 
         let mut session = Session::new(&db)?;
         assert!(session.is_empty());
 
-        session.attach(None)?;
+        session.attach::<&str>(None)?;
         db.execute("INSERT INTO foo (t) VALUES (?1);", ["bar"])?;
+
+        session.changeset()
+    }
+
+    fn one_changeset_update() -> Result<Changeset> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE TABLE foo(t TEXT PRIMARY KEY NOT NULL, i INTEGER NOT NULL DEFAULT 0);",
+        )?;
+        db.execute_batch("INSERT INTO foo (t) VALUES ('bar');")?;
+
+        let mut session = Session::new(&db)?;
+        session.attach::<&str>(None)?;
+        db.execute("UPDATE foo SET i=100 WHERE t='bar';", [])?;
 
         session.changeset()
     }
@@ -791,7 +808,7 @@ mod test {
         let mut session = Session::new(&db)?;
         assert!(session.is_empty());
 
-        session.attach(None)?;
+        session.attach::<&str>(None)?;
         db.execute("INSERT INTO foo (t) VALUES (?1);", ["bar"])?;
 
         let mut output = Vec::new();
@@ -801,7 +818,7 @@ mod test {
 
     #[test]
     fn test_changeset() -> Result<()> {
-        let changeset = one_changeset()?;
+        let changeset = one_changeset_insert()?;
         let mut iter = changeset.iter()?;
         let item = iter.next()?;
         assert!(item.is_some());
@@ -835,8 +852,21 @@ mod test {
     }
 
     #[test]
+    fn test_changeset_values() -> Result<()> {
+        let changeset = one_changeset_update()?;
+        let mut iter = changeset.iter()?;
+        let item = iter.next()?.unwrap();
+
+        let new_value = item.new_value(0); // unchanged
+        assert_eq!(Err(crate::Error::InvalidColumnIndex(0)), new_value);
+        let new_value = item.new_value(1)?; // updated
+        assert_eq!(Ok(100), new_value.as_i64());
+        Ok(())
+    }
+
+    #[test]
     fn test_changeset_apply() -> Result<()> {
-        let changeset = one_changeset()?;
+        let changeset = one_changeset_insert()?;
 
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(t TEXT PRIMARY KEY NOT NULL);")?;
@@ -902,7 +932,7 @@ mod test {
         let mut session = Session::new(&db)?;
         assert!(session.is_empty());
 
-        session.attach(None)?;
+        session.attach::<&str>(None)?;
         db.execute("INSERT INTO foo (t) VALUES (?1);", ["bar"])?;
 
         assert!(!session.is_empty());

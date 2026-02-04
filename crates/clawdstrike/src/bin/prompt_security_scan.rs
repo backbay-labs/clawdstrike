@@ -28,11 +28,16 @@ fn main() {
 
     let mut input = String::new();
     if let Some(path) = input_path {
-        input = std::fs::read_to_string(path).expect("failed to read file");
-    } else {
-        std::io::stdin()
-            .read_to_string(&mut input)
-            .expect("failed to read stdin");
+        match std::fs::read_to_string(path) {
+            Ok(s) => input = s,
+            Err(e) => {
+                eprintln!("Error: failed to read file: {e}");
+                std::process::exit(2);
+            }
+        }
+    } else if let Err(e) = std::io::stdin().read_to_string(&mut input) {
+        eprintln!("Error: failed to read stdin: {e}");
+        std::process::exit(2);
     }
 
     let prompt_injection = detect_prompt_injection_with_limit(&input, max_scan_bytes);
@@ -45,5 +50,11 @@ fn main() {
         "sanitized": sanitized,
     });
 
-    println!("{}", serde_json::to_string_pretty(&out).expect("json"));
+    match serde_json::to_string_pretty(&out) {
+        Ok(s) => println!("{s}"),
+        Err(e) => {
+            eprintln!("Error: failed to encode json: {e}");
+            std::process::exit(2);
+        }
+    }
 }

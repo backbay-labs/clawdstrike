@@ -1,6 +1,7 @@
 //! Configuration for hushd daemon
 
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use crate::auth::{ApiKey, AuthStore, Scope};
@@ -218,8 +219,22 @@ impl Config {
         Ok(config)
     }
 
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for (idx, proxy) in self.rate_limit.trusted_proxies.iter().enumerate() {
+            proxy.parse::<IpAddr>().map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid rate_limit.trusted_proxies[{}] value {}: {}",
+                    idx,
+                    proxy,
+                    e
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     /// Load from default locations or create default
-    pub fn load_default() -> Self {
+    pub fn load_default() -> anyhow::Result<Self> {
         // Try standard config locations
         let paths = [
             PathBuf::from("/etc/hushd/config.yaml"),
@@ -234,16 +249,34 @@ impl Config {
             PathBuf::from("./hushd.toml"),
         ];
 
+        let mut errors: Vec<(PathBuf, anyhow::Error)> = Vec::new();
         for path in paths {
             if path.exists() {
-                if let Ok(config) = Self::from_file(&path) {
-                    tracing::info!(path = %path.display(), "Loaded config");
-                    return config;
+                match Self::from_file(&path) {
+                    Ok(config) => {
+                        if let Err(err) = config.validate() {
+                            errors.push((path, err));
+                        } else {
+                            tracing::info!(path = %path.display(), "Loaded config");
+                            return Ok(config);
+                        }
+                    }
+                    Err(err) => {
+                        errors.push((path, err));
+                    }
                 }
             }
         }
 
-        Self::default()
+        if !errors.is_empty() {
+            let mut msg = String::from("Failed to load hushd config from existing file(s):\n");
+            for (path, err) in errors {
+                msg.push_str(&format!("  - {}: {err}\n", path.display()));
+            }
+            return Err(anyhow::anyhow!(msg));
+        }
+
+        Ok(Self::default())
     }
 
     /// Get the tracing level filter
@@ -264,21 +297,36 @@ impl Config {
     pub async fn load_auth_store(&self) -> anyhow::Result<AuthStore> {
         let store = AuthStore::new();
 
+        let has_pepper = std::env::var("HUSHD_AUTH_PEPPER")
+            .ok()
+            .as_deref()
+            .is_some_and(|v| !v.is_empty());
+        if self.auth.enabled && !has_pepper {
+            tracing::warn!(
+                "Auth is enabled but HUSHD_AUTH_PEPPER is not set; API key hashing will use raw SHA-256"
+            );
+        }
+
         for (idx, key_config) in self.auth.api_keys.iter().enumerate() {
             // Parse scopes
-            let scopes: std::collections::HashSet<Scope> = key_config
-                .scopes
-                .iter()
-                .filter_map(|s| s.parse().ok())
-                .collect();
-
-            // Default to check+read if no scopes specified
-            let scopes = if scopes.is_empty() {
+            let scopes = if key_config.scopes.is_empty() {
+                // Default to check+read if no scopes specified.
                 let mut default_scopes = std::collections::HashSet::new();
                 default_scopes.insert(Scope::Check);
                 default_scopes.insert(Scope::Read);
                 default_scopes
             } else {
+                let mut scopes = std::collections::HashSet::new();
+                for scope_str in &key_config.scopes {
+                    let scope = scope_str.parse::<Scope>().map_err(|()| {
+                        anyhow::anyhow!(
+                            "Invalid auth.api_keys[{}].scopes entry: {}",
+                            idx,
+                            scope_str
+                        )
+                    })?;
+                    scopes.insert(scope);
+                }
                 scopes
             };
 

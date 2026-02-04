@@ -287,6 +287,13 @@ struct CompiledPattern {
     regex: Regex,
 }
 
+fn compile_hardcoded_regex(pattern: &'static str) -> Regex {
+    Regex::new(pattern).unwrap_or_else(|err| {
+        tracing::error!(error = %err, %pattern, "failed to compile hardcoded regex");
+        Regex::new("a^").unwrap_or_else(|_| Regex::new("a^").unwrap_or_else(|_| unreachable!()))
+    })
+}
+
 fn compile_patterns() -> &'static [CompiledPattern] {
     static PATTERNS: OnceLock<Vec<CompiledPattern>> = OnceLock::new();
 
@@ -299,7 +306,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "openai_api_key",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"sk-[A-Za-z0-9]{48}").unwrap(),
+                regex: compile_hardcoded_regex(r"sk-[A-Za-z0-9]{48}"),
             },
             CompiledPattern {
                 id: "secret_anthropic_api_key",
@@ -307,7 +314,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "anthropic_api_key",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"sk-ant-api03-[A-Za-z0-9_-]{93}").unwrap(),
+                regex: compile_hardcoded_regex(r"sk-ant-api03-[A-Za-z0-9_-]{93}"),
             },
             CompiledPattern {
                 id: "secret_github_token",
@@ -315,7 +322,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "github_token",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"gh[ps]_[A-Za-z0-9]{36}").unwrap(),
+                regex: compile_hardcoded_regex(r"gh[ps]_[A-Za-z0-9]{36}"),
             },
             CompiledPattern {
                 id: "secret_aws_access_key_id",
@@ -323,7 +330,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "aws_access_key_id",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"AKIA[0-9A-Z]{16}").unwrap(),
+                regex: compile_hardcoded_regex(r"AKIA[0-9A-Z]{16}"),
             },
             CompiledPattern {
                 id: "secret_private_key_block",
@@ -331,7 +338,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "private_key",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----").unwrap(),
+                regex: compile_hardcoded_regex(r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----"),
             },
             CompiledPattern {
                 id: "secret_jwt",
@@ -339,8 +346,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "jwt",
                 confidence: 0.8,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
-                    .unwrap(),
+                regex: compile_hardcoded_regex(
+                    r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}",
+                ),
             },
             CompiledPattern {
                 id: "secret_password_assignment",
@@ -348,7 +356,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "password",
                 confidence: 0.7,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"(?i)\b(password|passwd|pwd)\b\s*[:=]\s*\S{6,}").unwrap(),
+                regex: compile_hardcoded_regex(r"(?i)\b(password|passwd|pwd)\b\s*[:=]\s*\S{6,}"),
             },
             // PII
             CompiledPattern {
@@ -357,7 +365,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "email",
                 confidence: 0.95,
                 strategy: RedactionStrategy::Partial,
-                regex: Regex::new(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b").unwrap(),
+                regex: compile_hardcoded_regex(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"),
             },
             CompiledPattern {
                 id: "pii_phone",
@@ -366,10 +374,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 confidence: 0.8,
                 strategy: RedactionStrategy::Partial,
                 // Conservative: US-ish formats with separators.
-                regex: Regex::new(
+                regex: compile_hardcoded_regex(
                     r"\b(?:\+?1[\s.-]?)?\(?(?:[2-9][0-9]{2})\)?[\s.-]?[0-9]{3}[\s.-]?[0-9]{4}\b",
-                )
-                .unwrap(),
+                ),
             },
             CompiledPattern {
                 id: "pii_ssn",
@@ -377,7 +384,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "ssn",
                 confidence: 0.9,
                 strategy: RedactionStrategy::Full,
-                regex: Regex::new(r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b").unwrap(),
+                regex: compile_hardcoded_regex(r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b"),
             },
             CompiledPattern {
                 id: "pii_credit_card",
@@ -386,7 +393,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 confidence: 0.7,
                 strategy: RedactionStrategy::Full,
                 // Very approximate; downstream can add Luhn if needed.
-                regex: Regex::new(r"\b(?:[0-9][ -]*?){13,19}\b").unwrap(),
+                regex: compile_hardcoded_regex(r"\b(?:[0-9][ -]*?){13,19}\b"),
             },
             // Internal
             CompiledPattern {
@@ -395,8 +402,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "internal_url",
                 confidence: 0.8,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: Regex::new(r"(?i)\bhttps?://(?:localhost|127\.0\.0\.1)(?::[0-9]{2,5})?\b")
-                    .unwrap(),
+                regex: compile_hardcoded_regex(
+                    r"(?i)\bhttps?://(?:localhost|127\.0\.0\.1)(?::[0-9]{2,5})?\b",
+                ),
             },
             CompiledPattern {
                 id: "internal_private_ip",
@@ -404,10 +412,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "internal_ip",
                 confidence: 0.8,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: Regex::new(
+                regex: compile_hardcoded_regex(
                     r"\b(?:10|192\.168|172\.(?:1[6-9]|2[0-9]|3[0-1]))\.[0-9]{1,3}\.[0-9]{1,3}\b",
-                )
-                .unwrap(),
+                ),
             },
             CompiledPattern {
                 id: "internal_windows_path",
@@ -415,7 +422,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "windows_path",
                 confidence: 0.7,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: Regex::new(r"(?i)\b[A-Z]:\\(?:[^\\\s]+\\)*[^\\\s]+\b").unwrap(),
+                regex: compile_hardcoded_regex(r"(?i)\b[A-Z]:\\(?:[^\\\s]+\\)*[^\\\s]+\b"),
             },
             CompiledPattern {
                 id: "internal_file_path_sensitive",
@@ -423,7 +430,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "sensitive_path",
                 confidence: 0.7,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: Regex::new(r"(?i)\b(?:/etc/|/var/secrets/|/home/[^\s]+/\.ssh/)").unwrap(),
+                regex: compile_hardcoded_regex(
+                    r"(?i)\b(?:/etc/|/var/secrets/|/home/[^\s]+/\.ssh/)",
+                ),
             },
         ]
     })
@@ -472,10 +481,7 @@ fn replacement_for(
 }
 
 fn compile_regex_list(patterns: &[String]) -> Vec<Regex> {
-    patterns
-        .iter()
-        .filter_map(|p| Regex::new(p).ok())
-        .collect()
+    patterns.iter().filter_map(|p| Regex::new(p).ok()).collect()
 }
 
 fn is_obviously_test_credential(value: &str) -> bool {
@@ -489,7 +495,10 @@ fn is_obviously_test_credential(value: &str) -> bool {
     }
 
     // "All one character" bodies for known key prefixes.
-    let is_repeated = |s: &str| s.chars().all(|c| Some(c) == s.chars().next());
+    let is_repeated = |s: &str| match s.chars().next() {
+        Some(first) => s.chars().all(|c| c == first),
+        None => false,
+    };
 
     if let Some(rest) = lower.strip_prefix("sk-") {
         return rest.len() >= 16 && is_repeated(rest);
@@ -541,7 +550,7 @@ fn is_luhn_valid_card_number(text: &str) -> bool {
     let digits: Vec<u8> = text
         .bytes()
         .filter(|b| b.is_ascii_digit())
-        .map(|b| (b - b'0') as u8)
+        .map(|b| b - b'0')
         .collect();
     if !(13..=19).contains(&digits.len()) {
         return false;
@@ -563,7 +572,7 @@ fn is_luhn_valid_card_number(text: &str) -> bool {
         sum = sum.saturating_add(v);
         double = !double;
     }
-    sum % 10 == 0
+    sum.is_multiple_of(10)
 }
 
 fn truncate_to_char_boundary(text: &str, max_bytes: usize) -> (&str, bool) {
@@ -645,11 +654,7 @@ impl OutputSanitizer {
         if self.config.allowlist.exact.iter().any(|x| x == s) {
             return true;
         }
-        if self
-            .allowlist_patterns
-            .iter()
-            .any(|re| re.is_match(s))
-        {
+        if self.allowlist_patterns.iter().any(|re| re.is_match(s)) {
             return true;
         }
         self.config.allowlist.allow_test_credentials && is_obviously_test_credential(s)
@@ -658,8 +663,10 @@ impl OutputSanitizer {
     pub fn sanitize_sync(&self, output: &str) -> SanitizationResult {
         let start = std::time::Instant::now();
 
-        let mut stats = ProcessingStats::default();
-        stats.input_length = output.len();
+        let mut stats = ProcessingStats {
+            input_length: output.len(),
+            ..Default::default()
+        };
 
         let (limited, truncated) = truncate_to_char_boundary(output, self.config.max_input_bytes);
 
@@ -730,7 +737,8 @@ impl OutputSanitizer {
                     if span.start >= span.end || span.end > limited.len() {
                         continue;
                     }
-                    if !limited.is_char_boundary(span.start) || !limited.is_char_boundary(span.end) {
+                    if !limited.is_char_boundary(span.start) || !limited.is_char_boundary(span.end)
+                    {
                         continue;
                     }
                     let raw = &limited[span.start..span.end];
@@ -757,8 +765,8 @@ impl OutputSanitizer {
         if self.config.categories.secrets && self.config.entropy.enabled {
             // A simple scan that finds "word-like" tokens and evaluates entropy.
             static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
-            let token_re = TOKEN_RE
-                .get_or_init(|| Regex::new(r"[A-Za-z0-9+/=_-]{32,}").expect("hardcoded regex"));
+            let token_re =
+                TOKEN_RE.get_or_init(|| compile_hardcoded_regex(r"[A-Za-z0-9+/=_-]{32,}"));
             for m in token_re.find_iter(limited) {
                 let token = m.as_str();
                 if token.len() < self.config.entropy.min_token_len {
@@ -816,8 +824,36 @@ impl OutputSanitizer {
             ));
         }
 
+        let strategy_rank = |s: &RedactionStrategy| match s {
+            RedactionStrategy::None => 0u8,
+            RedactionStrategy::Partial => 1u8,
+            RedactionStrategy::Hash => 2u8,
+            RedactionStrategy::TypeLabel => 3u8,
+            RedactionStrategy::Full => 4u8,
+        };
+
+        // Merge overlaps so byte indices remain valid during replacement.
+        spans.sort_by_key(|x| (x.0.start, x.0.end));
+        let mut merged: Vec<(Span, RedactionStrategy, SensitiveCategory, String, String)> =
+            Vec::new();
+        for (span, strategy, category, data_type, finding_id) in spans {
+            if let Some(last) = merged.last_mut() {
+                if span.start < last.0.end {
+                    last.0.end = last.0.end.max(span.end);
+                    if strategy_rank(&strategy) > strategy_rank(&last.1) {
+                        last.1 = strategy;
+                        last.2 = category;
+                        last.3 = data_type;
+                        last.4 = finding_id;
+                    }
+                    continue;
+                }
+            }
+            merged.push((span, strategy, category, data_type, finding_id));
+        }
+
         // Sort by start desc so replacements don't affect earlier spans.
-        spans.sort_by(|a, b| {
+        merged.sort_by(|a, b| {
             b.0.start
                 .cmp(&a.0.start)
                 .then_with(|| b.0.end.cmp(&a.0.end))
@@ -826,7 +862,7 @@ impl OutputSanitizer {
         let mut sanitized = limited.to_string();
         let mut applied_any = false;
 
-        for (span, strategy, category, data_type, finding_id) in spans {
+        for (span, strategy, category, data_type, finding_id) in merged {
             if span.end > sanitized.len() || span.start >= span.end {
                 continue;
             }
@@ -1012,11 +1048,7 @@ impl SanitizationStream {
 
         // Find redaction spans in the current buffer so we don't cut inside a finding.
         let scan = self.sanitizer.sanitize_sync(&self.raw_buffer);
-        let mut spans: Vec<Span> = scan
-            .redactions
-            .iter()
-            .map(|r| r.original_span)
-            .collect();
+        let mut spans: Vec<Span> = scan.redactions.iter().map(|r| r.original_span).collect();
         spans.sort_by_key(|s| (s.start, s.end));
 
         // Merge overlaps.
@@ -1120,8 +1152,10 @@ mod tests {
 
     #[test]
     fn does_not_append_unscanned_suffix_by_default() {
-        let mut cfg = OutputSanitizerConfig::default();
-        cfg.max_input_bytes = 24;
+        let cfg = OutputSanitizerConfig {
+            max_input_bytes: 24,
+            ..Default::default()
+        };
         let s = OutputSanitizer::with_config(cfg);
 
         let input =
@@ -1157,6 +1191,22 @@ mod tests {
         assert!(r.was_redacted);
         assert!(!r.sanitized.contains("SECRET_PHRASE_123"));
         assert!(r.sanitized.contains("[REDACTED:denylist]"));
+    }
+
+    #[test]
+    fn overlapping_spans_are_merged_before_replacement() {
+        let mut cfg = OutputSanitizerConfig::default();
+        // This overlaps with the built-in OpenAI API key detector span but starts later.
+        cfg.denylist.patterns = vec![r"a{10,}".to_string()];
+        let s = OutputSanitizer::with_config(cfg);
+
+        let key = format!("sk-{}", "a".repeat(48));
+        let r = s.sanitize_sync(&key);
+
+        assert!(r.was_redacted);
+        assert!(!r.sanitized.contains(&key));
+        assert!(!r.sanitized.contains("sk-aaaaaaaa"));
+        assert!(r.sanitized.contains("[REDACTED:openai_api_key]"));
     }
 
     #[test]

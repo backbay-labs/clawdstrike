@@ -1,7 +1,7 @@
 /**
  * Clawdstrike Guard Performance Benchmarks
  *
- * Run with: npx tsx benchmarks/guards.bench.ts
+ * Run with: node benchmarks/guards.bench.mjs
  *
  * These benchmarks measure the latency overhead of security checks
  * at the tool boundary. For context, typical LLM API calls take 500-2000ms.

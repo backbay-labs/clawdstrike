@@ -15,6 +15,8 @@ pub struct PyTraceback(PyAny);
 pyobject_native_type_core!(
     PyTraceback,
     pyobject_native_static_type_object!(ffi::PyTraceBack_Type),
+    "builtins",
+    "traceback",
     #checkfunction=ffi::PyTraceBack_Check
 );
 
@@ -37,9 +39,9 @@ pub trait PyTracebackMethods<'py>: crate::sealed::Sealed {
     /// ```rust
     /// # use pyo3::{Python, PyResult, prelude::PyTracebackMethods, ffi::c_str};
     /// # let result: PyResult<()> =
-    /// Python::with_gil(|py| {
+    /// Python::attach(|py| {
     ///     let err = py
-    ///         .run(c_str!("raise Exception('banana')"), None, None)
+    ///         .run(c"raise Exception('banana')", None, None)
     ///         .expect_err("raise will create a Python error");
     ///
     ///     let traceback = err.traceback(py).expect("raised exception will have a traceback");
@@ -71,7 +73,7 @@ impl<'py> PyTracebackMethods<'py> for Bound<'py, PyTraceback> {
         let formatted = string_io
             .getattr(intern!(py, "getvalue"))?
             .call0()?
-            .downcast::<PyString>()?
+            .cast::<PyString>()?
             .to_cow()?
             .into_owned();
         Ok(formatted)
@@ -82,16 +84,15 @@ impl<'py> PyTracebackMethods<'py> for Bound<'py, PyTraceback> {
 mod tests {
     use crate::IntoPyObject;
     use crate::{
-        ffi,
         types::{any::PyAnyMethods, dict::PyDictMethods, traceback::PyTracebackMethods, PyDict},
         PyErr, Python,
     };
 
     #[test]
     fn format_traceback() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let err = py
-                .run(ffi::c_str!("raise Exception('banana')"), None, None)
+                .run(c"raise Exception('banana')", None, None)
                 .expect_err("raising should have given us an error");
 
             assert_eq!(
@@ -103,18 +104,16 @@ mod tests {
 
     #[test]
     fn test_err_from_value() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let locals = PyDict::new(py);
             // Produce an error from python so that it has a traceback
             py.run(
-                ffi::c_str!(
-                    r"
+                cr"
 try:
     raise ValueError('raised exception')
 except Exception as e:
     err = e
-"
-                ),
+",
                 None,
                 Some(&locals),
             )
@@ -127,16 +126,14 @@ except Exception as e:
 
     #[test]
     fn test_err_into_py() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let locals = PyDict::new(py);
             // Produce an error from python so that it has a traceback
             py.run(
-                ffi::c_str!(
-                    r"
+                cr"
 def f():
     raise ValueError('raised exception')
-"
-                ),
+",
                 None,
                 Some(&locals),
             )

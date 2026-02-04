@@ -23,22 +23,22 @@
     "e2e": "npm run build && node dist/e2e/openclaw-e2e.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src --ext .ts",
+    "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit",
-    "bench": "npm run build && npx tsx benchmarks/policy-engine.bench.ts",
-    "bench:json": "npm run build && OUTPUT_JSON=1 npx tsx benchmarks/policy-engine.bench.ts"
+    "bench": "npm run build && node benchmarks/policy-engine.bench.mjs",
+    "bench:json": "npm run build && OUTPUT_JSON=1 node benchmarks/policy-engine.bench.mjs"
   },
   "dependencies": {
-    "commander": "^12.0.0",
-    "js-yaml": "^4.1.0",
     "chalk": "^5.3.0",
-    "glob": "^10.3.0"
+    "commander": "^14.0.3",
+    "glob": "^13.0.1",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^20.11.0",
-    "typescript": "^5.3.0",
-    "vitest": "^1.2.0"
+    "@types/node": "^25.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "openclaw": ">=0.1.0"
@@ -59,6 +59,9 @@
     "ai-agent"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "openclaw": {
     "extensions": [
       "./dist/plugin.js"

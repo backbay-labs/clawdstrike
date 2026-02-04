@@ -444,8 +444,9 @@ mod cli_parsing {
 
         match cli.command {
             Commands::Daemon { command } => match command {
-                DaemonCommands::Reload { url } => {
+                DaemonCommands::Reload { url, token } => {
                     assert_eq!(url, "http://localhost:9999");
+                    assert!(token.is_none());
                 }
                 _ => panic!("Expected Reload subcommand"),
             },
