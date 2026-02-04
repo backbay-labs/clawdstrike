@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@1.92
+        uses: dtolnay/rust-toolchain@1.93
 
       - name: Build with MSRV
         run: cargo build --all-targets
@@ -330,6 +330,22 @@ jobs:
           cache: 'npm'
           cache-dependency-path: packages/clawdstrike-openclaw/package-lock.json
 
+      - name: Bootstrap file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm ci
+
+      - name: Build file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm run build
+
+      - name: Bootstrap file deps (policy)
+        working-directory: packages/clawdstrike-policy
+        run: npm ci
+
+      - name: Build file deps (policy)
+        working-directory: packages/clawdstrike-policy
+        run: npm run build
+
       - name: Install dependencies
         run: npm ci
 
@@ -344,6 +360,123 @@ jobs:
 
       - name: OpenClaw E2E (simulated runtime)
         run: npm run e2e
+
+  clawdstrike-policy:
+    name: Canonical Policy Engine (TS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/clawdstrike-policy
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: packages/clawdstrike-policy/package-lock.json
+
+      - name: Bootstrap file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm ci
+
+      - name: Build file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm run build
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  agent-framework-integrations:
+    name: Agent Framework Integrations (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Adapter Core
+            dir: packages/clawdstrike-adapter-core
+            bootstrap_adapter_core: false
+            bootstrap_sdk: false
+          - name: Hush CLI Engine
+            dir: packages/clawdstrike-hush-cli-engine
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: Codex
+            dir: packages/clawdstrike-codex
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: OpenCode
+            dir: packages/clawdstrike-opencode
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: Claude Code
+            dir: packages/clawdstrike-claude-code
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+          - name: Vercel AI
+            dir: packages/clawdstrike-vercel-ai
+            bootstrap_adapter_core: true
+            bootstrap_sdk: true
+          - name: LangChain
+            dir: packages/clawdstrike-langchain
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+
+      - name: Bootstrap file deps (adapter-core)
+        if: ${{ matrix.bootstrap_adapter_core }}
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm ci
+
+      - name: Build file deps (adapter-core)
+        if: ${{ matrix.bootstrap_adapter_core }}
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm run build
+
+      - name: Bootstrap file deps (sdk)
+        if: ${{ matrix.bootstrap_sdk }}
+        working-directory: packages/hush-ts
+        run: npm ci
+
+      - name: Build file deps (sdk)
+        if: ${{ matrix.bootstrap_sdk }}
+        working-directory: packages/hush-ts
+        run: npm run build
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.dir }}
+        run: npm ci
+
+      - name: Type check
+        working-directory: ${{ matrix.dir }}
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: ${{ matrix.dir }}
+        run: npm run build
+
+      - name: Test
+        working-directory: ${{ matrix.dir }}
+        run: npm test
 
   python-sdk:
     name: Python SDK

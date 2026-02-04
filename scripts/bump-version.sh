@@ -81,7 +81,7 @@ fi
 
 if [[ -f "HomebrewFormula/hush.rb" ]]; then
     echo "  Updating HomebrewFormula/hush.rb tag URL..."
-    $SED_INPLACE "s#https://github.com/backbay-labs/hushclaw/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/hushclaw/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
+    $SED_INPLACE "s#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
 fi
 
 # Update pyproject.toml if it exists

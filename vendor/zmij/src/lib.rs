@@ -41,7 +41,7 @@
 //! ![performance](https://raw.githubusercontent.com/dtolnay/zmij/master/dtoa-benchmark.png)
 
 #![no_std]
-#![doc(html_root_url = "https://docs.rs/zmij/1.0.18")]
+#![doc(html_root_url = "https://docs.rs/zmij/1.0.19")]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(non_camel_case_types, non_snake_case)]
 #![allow(
@@ -806,8 +806,7 @@ where
 
     // The idea of using a single shorter candidate is by Cassio Neri.
     // It is less or equal to the upper bound by construction.
-    let div10 = (upper >> BOUND_SHIFT) / UInt::from(10);
-    let shorter = div10 * UInt::from(10);
+    let shorter = (upper >> BOUND_SHIFT) / UInt::from(10) * UInt::from(10);
     if (shorter << BOUND_SHIFT) >= lower {
         return ToDecimalResult {
             sig: shorter.into() as i64,
@@ -929,30 +928,20 @@ where
 
         // Check for boundary case when rounding down to nearest 10 and
         // near-boundary case when rounding up to nearest 10.
-        if scaled_sig_mod10 == scaled_half_ulp
-            // Case where upper == ten is insufficient: 1.342178e+08f.
-            // upper == ten || upper == ten - 1
-            || ten.wrapping_sub(upper) <= 1
+        // Case where upper == ten is insufficient: 1.342178e+08f.
+        if ten.wrapping_sub(upper) <= 1 // upper == ten || upper == ten - 1
+            || scaled_sig_mod10 == scaled_half_ulp
         {
             break;
         }
 
         let round_up = upper >= ten;
-        let mut shorter = (integral.into() - digit) as i64;
+        let shorter = (integral.into() - digit) as i64;
         let longer = (integral.into() + u64::from(cmp >= 0)) as i64;
-        if cfg!(target_arch = "aarch64") {
-            // Faster version without ccmp.
-            let dec_sig =
-                hint::select_unpredictable(scaled_sig_mod10 < scaled_half_ulp, shorter, longer);
-            return ToDecimalResult {
-                sig: hint::select_unpredictable(round_up, shorter + 10, dec_sig),
-                exp: dec_exp,
-            };
-        }
-        shorter += i64::from(round_up) * 10;
-        let use_shorter = scaled_sig_mod10 <= scaled_half_ulp || round_up;
+        let dec_sig =
+            hint::select_unpredictable(scaled_sig_mod10 < scaled_half_ulp, shorter, longer);
         return ToDecimalResult {
-            sig: hint::select_unpredictable(use_shorter, shorter, longer),
+            sig: hint::select_unpredictable(round_up, shorter + 10, dec_sig),
             exp: dec_exp,
         };
     }

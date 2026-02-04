@@ -27,6 +27,7 @@
 - [Vercel AI Integration](guides/vercel-ai-integration.md)
 - [LangChain Integration](guides/langchain-integration.md)
 - [Custom Guards](guides/custom-guards.md)
+- [Threat Intel Guards](guides/threat-intel.md)
 - [Policy Inheritance](guides/policy-inheritance.md)
 - [Audit Logging](guides/audit-logging.md)
 

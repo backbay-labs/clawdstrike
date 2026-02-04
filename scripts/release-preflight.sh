@@ -81,7 +81,7 @@ for pkg in [
 
 formula = (repo_root / "HomebrewFormula/hush.rb").read_text(encoding="utf-8")
 match = re.search(
-    r'^\s*url\s+"https://github\.com/backbay-labs/hushclaw/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
+    r'^\s*url\s+"https://github\.com/backbay-labs/clawdstrike/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
     formula,
     flags=re.M,
 )

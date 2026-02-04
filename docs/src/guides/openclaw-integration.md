@@ -17,7 +17,7 @@ This is **not** an OS sandbox and does not intercept syscalls. If an agent/runti
 
 ```bash
 # Link the local package
-openclaw plugins install --link /path/to/hushclaw/packages/clawdstrike-openclaw
+openclaw plugins install --link /path/to/clawdstrike/packages/clawdstrike-openclaw
 
 # Enable the plugin
 openclaw plugins enable clawdstrike-security
@@ -55,6 +55,8 @@ openclaw agent --local --session-id test \
 The OpenClaw plugin uses its **own policy schema** (currently `version: "clawdstrike-v1.0"`). It is **not** the same as the Rust `clawdstrike::Policy` schema (`version: "1.1.0"`).
 
 If you paste a Rust policy into OpenClaw, it should fail closed (and it does): unknown fields are rejected.
+
+**Exception:** OpenClaw policies may include `guards.custom[]` entries (threat-intel guards) using the canonical config shape (`package`, `config`, `async`). This is intentionally plugin-shaped and is validated fail-closed.
 
 See [Schema Governance](../concepts/schema-governance.md) for the repo-wide versioning/compat rules.
 

@@ -436,7 +436,7 @@ dependencies = [
  "memchr",
  "serde",
  "serde_core",
- "zmij 1.0.17",
+ "zmij 1.0.18",
 ]
 
 [[package]]
@@ -565,13 +565,13 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.17"
+version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02aae0f83f69aafc94776e879363e9771d7ecbffe2c7fbb6c14c5e00dfe88439"
+checksum = "1966f8ac2c1f76987d69a74d0e0f929241c10e78136434e3be70ff7f58f64214"
 
 [[package]]
 name = "zmij"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "criterion",
  "no-panic",
