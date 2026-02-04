@@ -345,6 +345,64 @@ jobs:
       - name: OpenClaw E2E (simulated runtime)
         run: npm run e2e
 
+  clawdstrike-policy:
+    name: Canonical Policy Engine (TS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/clawdstrike-policy
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: packages/clawdstrike-policy/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  policy-parity:
+    name: Policy Parity (Rust vs TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: packages/clawdstrike-policy/package-lock.json
+
+      - name: Build hush
+        run: cargo build -p hush-cli --bin hush
+
+      - name: Install clawdstrike-policy deps
+        working-directory: packages/clawdstrike-policy
+        run: npm ci
+
+      - name: Build clawdstrike-policy
+        working-directory: packages/clawdstrike-policy
+        run: npm run build
+
+      - name: Run parity script
+        run: node tools/scripts/policy-parity.mjs
+
   python-sdk:
     name: Python SDK
     runs-on: ubuntu-latest

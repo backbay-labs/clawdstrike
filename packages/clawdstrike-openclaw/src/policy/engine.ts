@@ -1,6 +1,9 @@
 import { homedir } from 'node:os';
 import path from 'node:path';
 
+import type { PolicyEngineLike as CanonicalPolicyEngineLike, PolicyEvent as CanonicalPolicyEvent } from '@clawdstrike/adapter-core';
+import { createPolicyEngineFromPolicy, type Policy as CanonicalPolicy } from '@clawdstrike/policy';
+
 import { mergeConfig } from '../config.js';
 import { EgressGuard, ForbiddenPathGuard, PatchIntegrityGuard, SecretLeakGuard } from '../guards/index.js';
 import type { Decision, EvaluationMode, ClawdstrikeConfig, Policy, PolicyEvent } from '../types.js';
@@ -24,6 +27,7 @@ export class PolicyEngine {
   private readonly egressGuard: EgressGuard;
   private readonly secretLeakGuard: SecretLeakGuard;
   private readonly patchIntegrityGuard: PatchIntegrityGuard;
+  private readonly threatIntelEngine: CanonicalPolicyEngineLike | null;
 
   constructor(config: ClawdstrikeConfig = {}) {
     this.config = mergeConfig(config);
@@ -32,6 +36,7 @@ export class PolicyEngine {
     this.egressGuard = new EgressGuard();
     this.secretLeakGuard = new SecretLeakGuard();
     this.patchIntegrityGuard = new PatchIntegrityGuard();
+    this.threatIntelEngine = buildThreatIntelEngine(this.policy);
   }
 
   enabledGuards(): string[] {
@@ -71,6 +76,19 @@ export class PolicyEngine {
 
   async evaluate(event: PolicyEvent): Promise<Decision> {
     const base = this.evaluateDeterministic(event);
+
+    // Fail fast on deterministic violations to avoid unnecessary external calls.
+    if (base.denied || base.warn) {
+      return this.applyMode(base, this.config.mode);
+    }
+
+    if (this.threatIntelEngine) {
+      const ti = await this.threatIntelEngine.evaluate(toCanonicalEvent(event));
+      const tiApplied = this.applyOnViolation(ti as Decision);
+      const combined = combineDecisions(base, tiApplied);
+      return this.applyMode(combined, this.config.mode);
+    }
+
     return this.applyMode(base, this.config.mode);
   }
 
@@ -255,4 +273,29 @@ export class PolicyEngine {
     }
     return { allowed: false, denied: true, warn: false, reason: result.reason, guard: result.guard, severity: result.severity };
   }
+}
+
+function buildThreatIntelEngine(policy: Policy): CanonicalPolicyEngineLike | null {
+  const custom = (policy.guards as any)?.custom;
+  if (!Array.isArray(custom) || custom.length === 0) {
+    return null;
+  }
+
+  const canonicalPolicy: CanonicalPolicy = {
+    version: '1.0.0',
+    guards: { custom },
+  };
+
+  return createPolicyEngineFromPolicy(canonicalPolicy as any);
+}
+
+function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
+  // OpenClaw events are compatible with adapter-core's PolicyEvent shape. Keep the
+  // raw eventId/timestamp/metadata for audit trails.
+  return event as unknown as CanonicalPolicyEvent;
+}
+
+function combineDecisions(base: Decision, next: Decision): Decision {
+  if (next.denied || next.warn) return next;
+  return base;
 }

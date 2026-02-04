@@ -8,6 +8,7 @@ use hush_core::receipt::{Provenance, Verdict, ViolationRef};
 use hush_core::{sha256, Hash, Keypair, Receipt, SignedReceipt};
 use serde::{Deserialize, Serialize};
 
+use crate::async_guards::{AsyncGuard, AsyncGuardRuntime};
 use crate::error::{Error, Result};
 use crate::guards::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 use crate::policy::{Policy, PolicyGuards, RuleSet};
@@ -32,6 +33,12 @@ pub struct HushEngine {
     keypair: Option<Keypair>,
     /// Session state
     state: Arc<RwLock<EngineState>>,
+    /// Async guard runtime
+    async_runtime: Arc<AsyncGuardRuntime>,
+    /// Async guards instantiated from policy
+    async_guards: Vec<Arc<dyn AsyncGuard>>,
+    /// Async guard initialization error (fail closed)
+    async_guard_init_error: Option<String>,
 }
 
 /// Engine session state
@@ -54,12 +61,22 @@ impl HushEngine {
     /// Create with a specific policy
     pub fn with_policy(policy: Policy) -> Self {
         let guards = policy.create_guards();
+        let async_runtime = Arc::new(AsyncGuardRuntime::new());
+        let (async_guards, async_guard_init_error) =
+            match crate::async_guards::registry::build_async_guards(&policy) {
+                Ok(v) => (v, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            };
+
         Self {
             policy,
             guards,
             extra_guards: Vec::new(),
             keypair: None,
             state: Arc::new(RwLock::new(EngineState::default())),
+            async_runtime,
+            async_guards,
+            async_guard_init_error,
         }
     }
 
@@ -240,6 +257,10 @@ impl HushEngine {
         action: &GuardAction<'_>,
         context: &GuardContext,
     ) -> Result<GuardReport> {
+        if let Some(msg) = self.async_guard_init_error.as_ref() {
+            return Err(Error::ConfigError(msg.clone()));
+        }
+
         let builtins = self.guards.builtin_guards_in_order();
         let mut per_guard: Vec<GuardResult> =
             Vec::with_capacity(builtins.len() + self.extra_guards.len());
@@ -283,6 +304,55 @@ impl HushEngine {
                 && per_guard.last().is_some_and(|r| !r.allowed)
             {
                 break;
+            }
+        }
+
+        // If we've already denied locally, don't run async guards (avoids unnecessary network calls).
+        if per_guard.iter().all(|r| r.allowed) && !self.async_guards.is_empty() {
+            let async_results = self
+                .async_runtime
+                .evaluate_async_guards(
+                    &self.async_guards,
+                    action,
+                    context,
+                    self.policy.settings.effective_fail_fast(),
+                )
+                .await;
+
+            for result in async_results {
+                if self.policy.settings.effective_verbose_logging() {
+                    debug!(
+                        guard = result.guard,
+                        allowed = result.allowed,
+                        severity = ?result.severity,
+                        "Guard check completed"
+                    );
+                }
+
+                if !result.allowed {
+                    let mut state = self.state.write().await;
+                    state.violation_count += 1;
+                    state.violations.push(ViolationRef {
+                        guard: result.guard.clone(),
+                        severity: format!("{:?}", result.severity),
+                        message: result.message.clone(),
+                        action: None,
+                    });
+
+                    warn!(
+                        guard = result.guard,
+                        message = result.message,
+                        "Security violation detected"
+                    );
+                }
+
+                per_guard.push(result);
+
+                if self.policy.settings.effective_fail_fast()
+                    && per_guard.last().is_some_and(|r| !r.allowed)
+                {
+                    break;
+                }
             }
         }
 

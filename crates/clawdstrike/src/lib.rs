@@ -43,6 +43,7 @@
 //! assert_eq!(policy.version, "1.0.0");
 //! ```
 
+pub mod async_guards;
 pub mod engine;
 pub mod error;
 pub mod guards;

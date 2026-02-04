@@ -1,0 +1,26 @@
+# Example: Snyk scanning for package.json writes (canonical policy; MVP scope)
+#
+# Required env:
+#   SNYK_API_TOKEN
+#   SNYK_ORG_ID
+version: "1.0.0"
+name: Threat Intel - Snyk (background)
+
+guards:
+  custom:
+    - package: "clawdstrike-snyk"
+      enabled: true
+      config:
+        api_token: "${SNYK_API_TOKEN}"
+        org_id: "${SNYK_ORG_ID}"
+        severity_threshold: high
+        fail_on_upgradable: true
+      async:
+        timeout_ms: 8000
+        on_timeout: warn
+        execution_mode: background
+        cache:
+          enabled: true
+          ttl_seconds: 3600
+          max_size_mb: 64
+
