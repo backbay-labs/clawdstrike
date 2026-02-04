@@ -127,7 +127,11 @@ impl Metrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn render_prometheus(&self, uptime_secs: i64, audit_forward_dropped: Option<u64>) -> String {
+    pub fn render_prometheus(
+        &self,
+        uptime_secs: i64,
+        audit_forward_dropped: Option<u64>,
+    ) -> String {
         let mut out = String::new();
 
         // Uptime
