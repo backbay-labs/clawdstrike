@@ -120,4 +120,4 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - Release builds with LTO
 - Dependabot configured for automated security updates
 
-[Unreleased]: https://github.com/backbay-labs/hushclaw/compare/main...HEAD
+[Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/main...HEAD

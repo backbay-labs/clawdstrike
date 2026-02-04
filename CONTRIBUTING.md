@@ -24,12 +24,12 @@ Optional for specific packages:
 1. Fork the repository on GitHub
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/hushclaw.git
-   cd hushclaw
+   git clone https://github.com/YOUR_USERNAME/clawdstrike.git
+   cd clawdstrike
    ```
 3. Add upstream remote:
    ```bash
-   git remote add upstream https://github.com/backbay-labs/hushclaw.git
+   git remote add upstream https://github.com/backbay-labs/clawdstrike.git
    ```
 
 ### Development Setup
@@ -214,7 +214,7 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ## Questions?
 
-- Open a [GitHub Discussion](https://github.com/backbay-labs/hushclaw/discussions) for questions
+- Open a [GitHub Discussion](https://github.com/backbay-labs/clawdstrike/discussions) for questions
 - Join our community chat (coming soon)
 
 Thank you for contributing!
