@@ -132,3 +132,6 @@ export {
   type Span,
   type StreamingConfig,
 } from "./output-sanitizer";
+
+// SIEM/SOAR
+export * as siem from "./siem";

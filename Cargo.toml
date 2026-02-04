@@ -55,7 +55,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # UUID
-uuid = { version = "1.20", features = ["v4", "serde", "js"] }
+uuid = { version = "1.20", features = ["v4", "v7", "serde", "js"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
@@ -82,6 +82,12 @@ dirs = "6.0"
 
 # HTTP client
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+# Compression
+flate2 = "1.1"
+
+# URL parsing
+url = "2.5"
 
 # Internal crates
 hush-core = { path = "crates/hush-core", version = "0.1.0" }

@@ -1,0 +1,33 @@
+<dashboard version="1.1">
+  <label>Clawdstrike Security Posture</label>
+  <row>
+    <panel>
+      <single>
+        <title>Critical Violations (24h)</title>
+        <search>
+          <query>index=security sourcetype=clawdstrike:security severity=critical | stats count</query>
+          <earliest>-24h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="rangeValues">[0,5,20]</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>Violations by Guard</title>
+        <search>
+          <query>
+            index=security sourcetype=clawdstrike:security outcome=failure
+            | stats count by guard
+            | sort -count
+          </query>
+          <earliest>-24h</earliest>
+        </search>
+        <option name="charting.chart">pie</option>
+      </chart>
+    </panel>
+  </row>
+</dashboard>
+

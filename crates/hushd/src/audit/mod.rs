@@ -71,7 +71,7 @@ impl AuditEvent {
         agent_id: Option<&str>,
     ) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             timestamp: Utc::now(),
             event_type: if result.allowed { "check" } else { "violation" }.to_string(),
             action_type: action_type.to_string(),
@@ -89,7 +89,7 @@ impl AuditEvent {
     /// Create a session start event
     pub fn session_start(session_id: &str, agent_id: Option<&str>) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             timestamp: Utc::now(),
             event_type: "session_start".to_string(),
             action_type: "session".to_string(),
@@ -107,7 +107,7 @@ impl AuditEvent {
     /// Create a session end event
     pub fn session_end(session_id: &str, stats: &SessionStats) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             timestamp: Utc::now(),
             event_type: "session_end".to_string(),
             action_type: "session".to_string(),

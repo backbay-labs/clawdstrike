@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use clawdstrike::guards::{GuardContext, GuardResult};
 
 use crate::audit::AuditEvent;
+use crate::siem::types::SecurityEvent;
 use crate::state::{AppState, DaemonEvent};
 
 fn parse_egress_target(target: &str) -> Result<(String, u16), String> {
@@ -157,6 +158,17 @@ pub async fn check_action(
 
     if let Err(e) = state.ledger.record(&audit_event) {
         tracing::warn!(error = %e, "Failed to record audit event");
+    }
+
+    // Emit canonical SecurityEvent for exporters.
+    {
+        let ctx = state.security_ctx.read().await.clone();
+        let event = SecurityEvent::from_audit_event(&audit_event, &ctx);
+        if let Err(err) = event.validate() {
+            tracing::warn!(error = %err, "Generated invalid SecurityEvent");
+        } else {
+            state.emit_security_event(event);
+        }
     }
 
     // Broadcast event

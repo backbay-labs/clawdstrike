@@ -4,8 +4,10 @@ pub mod audit;
 pub mod check;
 pub mod events;
 pub mod health;
+pub mod metrics;
 pub mod policy;
 pub mod shutdown;
+pub mod siem;
 
 use axum::{
     middleware,
@@ -34,7 +36,9 @@ pub fn create_router(state: AppState) -> Router {
         .allow_headers(Any);
 
     // Public routes - no auth required
-    let public_routes = Router::new().route("/health", get(health::health));
+    let public_routes = Router::new()
+        .route("/health", get(health::health))
+        .route("/metrics", get(metrics::metrics));
 
     // Check routes - require auth + check scope (when auth is enabled).
     let check_routes = Router::new()
@@ -48,6 +52,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
         .route("/api/v1/events", get(events::stream_events))
+        .route("/api/v1/siem/exporters", get(siem::exporters))
         .layer(middleware::from_fn(scope_layer(Scope::Read)))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 

@@ -1,0 +1,30 @@
+{
+  "type": "SavedSearchWithScheduleSyncDefinition",
+  "name": "Clawdstrike Critical Violation",
+  "description": "Alert on critical policy violations",
+  "search": {
+    "queryText": "_sourceCategory=*/security/clawdstrike | json field=_raw \"decision.severity\" as severity | where severity = \"critical\" | count",
+    "defaultTimeRange": "-5m",
+    "byReceiptTime": false
+  },
+  "schedule": {
+    "cronExpression": "0 0/5 * * * ? *",
+    "muteErrorEmails": false,
+    "scheduleType": "Custom",
+    "timezone": "America/Los_Angeles",
+    "threshold": {
+      "thresholdType": "GreaterThan",
+      "count": 0
+    },
+    "notification": {
+      "taskType": "EmailSearchNotificationSyncDefinition",
+      "toList": [
+        "security@example.com"
+      ],
+      "subjectTemplate": "Critical Clawdstrike Violation Detected",
+      "includeQuery": true,
+      "includeResultSet": true
+    }
+  }
+}
+

@@ -1,0 +1,97 @@
+# Example hushd config enabling SIEM/SOAR exports.
+#
+# Note: hushd expands `${VAR}` references in SIEM/threat-intel credential fields at config load time.
+
+listen: "127.0.0.1:9876"
+ruleset: "default"
+log_level: "info"
+
+siem:
+  enabled: true
+  environment: "production"
+  tenant_id: "acme-corp"
+  labels:
+    team: "security"
+
+  exporters:
+    splunk:
+      enabled: true
+      # Exporter runtime
+      runtime:
+        batch_size: 250
+        flush_interval_ms: 2000
+        retry:
+          max_retries: 5
+          initial_backoff_ms: 500
+          max_backoff_ms: 60000
+          backoff_multiplier: 2.0
+        rate_limit:
+          requests_per_second: 50
+          burst_size: 100
+      filter:
+        min_severity: low
+      dlq:
+        path: "/tmp/hushd-dlq-splunk.jsonl"
+        max_bytes: 10485760
+
+      # Splunk HEC
+      hec_url: "https://splunk.example.com:8088"
+      hec_token: "${SPLUNK_HEC_TOKEN}"
+      index: "security"
+      sourcetype: "clawdstrike:security"
+      source: "clawdstrike-prod"
+      use_ack: true
+      compression: true
+      tls:
+        insecure_skip_verify: false
+
+    elastic:
+      enabled: true
+      runtime:
+        batch_size: 500
+        flush_interval_ms: 2000
+      dlq:
+        path: "/tmp/hushd-dlq-elastic.jsonl"
+      base_url: "https://es.example.com:9200"
+      index: "clawdstrike-security"
+      auth:
+        api_key: "${ELASTIC_API_KEY_B64}"
+
+    alerting:
+      enabled: true
+      runtime:
+        batch_size: 50
+        flush_interval_ms: 2000
+      filter:
+        min_severity: high
+      pagerduty:
+        routing_key: "${PAGERDUTY_ROUTING_KEY}"
+        custom_details: true
+
+    webhooks:
+      enabled: true
+      runtime:
+        batch_size: 50
+        flush_interval_ms: 2000
+      filter:
+        min_severity: medium
+      slack:
+        webhook_url: "${SLACK_WEBHOOK_URL}"
+
+threat_intel:
+  enabled: false
+  # servers:
+  #   - url: "https://taxii.example.com/taxii2"
+  #     api_root: "root"
+  #     collection_id: "collection-123"
+  #     auth:
+  #       type: "basic"
+  #       username: "${TAXII_USER}"
+  #       password: "${TAXII_PASS}"
+  # feed:
+  #   interval_minutes: 15
+  #   min_confidence: 70
+  #   cache_ttl_hours: 24
+  # cache:
+  #   persistent: true
+  #   path: "/tmp/hushd-threat-intel-cache.json"

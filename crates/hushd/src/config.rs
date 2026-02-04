@@ -5,6 +5,16 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use crate::auth::{ApiKey, AuthStore, Scope};
+use crate::siem::dlq::DeadLetterQueueConfig;
+use crate::siem::exporter::ExporterConfig as SiemExporterConfig;
+use crate::siem::exporters::alerting::AlertingConfig;
+use crate::siem::exporters::datadog::DatadogConfig;
+use crate::siem::exporters::elastic::ElasticConfig;
+use crate::siem::exporters::splunk::SplunkConfig;
+use crate::siem::exporters::sumo_logic::SumoLogicConfig;
+use crate::siem::exporters::webhooks::WebhookExporterConfig;
+use crate::siem::filter::EventFilter;
+use crate::siem::threat_intel::config::ThreatIntelConfig;
 
 fn expand_env_refs(value: &str) -> anyhow::Result<String> {
     let mut out = String::new();
@@ -31,6 +41,25 @@ fn expand_env_refs(value: &str) -> anyhow::Result<String> {
 
     out.push_str(rest);
     Ok(out)
+}
+
+fn expand_secret_ref(value: &str) -> anyhow::Result<String> {
+    let expanded = expand_env_refs(value)?;
+    let expanded = expanded.trim().to_string();
+
+    let path = if let Some(rest) = expanded.strip_prefix("file:") {
+        rest.trim()
+    } else if let Some(rest) = expanded.strip_prefix('@') {
+        rest.trim()
+    } else {
+        return Ok(expanded);
+    };
+
+    let bytes = std::fs::read(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read secret file {}: {e}", path))?;
+    let s = String::from_utf8(bytes)
+        .map_err(|e| anyhow::anyhow!("Secret file {} is not valid UTF-8: {e}", path))?;
+    Ok(s.trim().to_string())
 }
 
 /// TLS configuration
@@ -157,6 +186,14 @@ pub struct Config {
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+
+    /// Threat intelligence (STIX/TAXII) configuration
+    #[serde(default)]
+    pub threat_intel: ThreatIntelConfig,
+
+    /// SIEM/SOAR export configuration
+    #[serde(default)]
+    pub siem: SiemSoarConfig,
 }
 
 fn default_listen() -> String {
@@ -196,8 +233,82 @@ impl Default for Config {
             max_audit_entries: 0,
             auth: AuthConfig::default(),
             rate_limit: RateLimitConfig::default(),
+            threat_intel: ThreatIntelConfig::default(),
+            siem: SiemSoarConfig::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SiemSoarConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub environment: Option<String>,
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    #[serde(default)]
+    pub labels: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub privacy: SiemPrivacyConfig,
+    #[serde(default)]
+    pub exporters: SiemExportersConfig,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SiemPrivacyConfig {
+    #[serde(default)]
+    pub drop_metadata: bool,
+    #[serde(default)]
+    pub drop_labels: bool,
+    /// Field paths to remove (best-effort, limited to known fields).
+    #[serde(default)]
+    pub deny_fields: Vec<String>,
+    /// Field paths to redact to a static replacement (best-effort, limited to known fields).
+    #[serde(default)]
+    pub redact_fields: Vec<String>,
+    #[serde(default = "default_redaction_replacement")]
+    pub redaction_replacement: String,
+}
+
+fn default_redaction_replacement() -> String {
+    "[REDACTED]".to_string()
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SiemExportersConfig {
+    #[serde(default)]
+    pub splunk: Option<ExporterSettings<SplunkConfig>>,
+    #[serde(default)]
+    pub elastic: Option<ExporterSettings<ElasticConfig>>,
+    #[serde(default)]
+    pub datadog: Option<ExporterSettings<DatadogConfig>>,
+    #[serde(default)]
+    pub sumo_logic: Option<ExporterSettings<SumoLogicConfig>>,
+    #[serde(default)]
+    pub alerting: Option<ExporterSettings<AlertingConfig>>,
+    #[serde(default)]
+    pub webhooks: Option<ExporterSettings<WebhookExporterConfig>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExporterSettings<T> {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub runtime: SiemExporterConfig,
+    #[serde(default)]
+    pub filter: EventFilter,
+    #[serde(default)]
+    pub dlq: Option<DeadLetterQueueConfig>,
+    #[serde(default = "default_exporter_queue_capacity")]
+    pub queue_capacity: usize,
+    #[serde(flatten)]
+    pub config: T,
+}
+
+fn default_exporter_queue_capacity() -> usize {
+    10_000
 }
 
 impl Config {
@@ -206,7 +317,7 @@ impl Config {
         let content = std::fs::read_to_string(path.as_ref())?;
 
         // Support both YAML and TOML based on extension
-        let config = if path
+        let mut config: Config = if path
             .as_ref()
             .extension()
             .is_some_and(|e| e == "yaml" || e == "yml")
@@ -216,6 +327,7 @@ impl Config {
             toml::from_str(&content)?
         };
 
+        config.expand_env_refs()?;
         Ok(config)
     }
 
@@ -230,6 +342,94 @@ impl Config {
                 )
             })?;
         }
+        Ok(())
+    }
+
+    pub fn expand_env_refs(&mut self) -> anyhow::Result<()> {
+        // Threat intel auth.
+        for server in &mut self.threat_intel.servers {
+            if let Some(auth) = &mut server.auth {
+                if let Some(v) = &auth.username {
+                    auth.username = Some(expand_secret_ref(v)?);
+                }
+                if let Some(v) = &auth.password {
+                    auth.password = Some(expand_secret_ref(v)?);
+                }
+                if let Some(v) = &auth.api_key {
+                    auth.api_key = Some(expand_secret_ref(v)?);
+                }
+            }
+        }
+
+        // SIEM exporter credentials.
+        if let Some(splunk) = &mut self.siem.exporters.splunk {
+            splunk.config.hec_url = expand_env_refs(&splunk.config.hec_url)?;
+            splunk.config.hec_token = expand_secret_ref(&splunk.config.hec_token)?;
+        }
+        if let Some(elastic) = &mut self.siem.exporters.elastic {
+            elastic.config.base_url = expand_env_refs(&elastic.config.base_url)?;
+            if let Some(v) = &elastic.config.auth.api_key {
+                elastic.config.auth.api_key = Some(expand_secret_ref(v)?);
+            }
+            if let Some(v) = &elastic.config.auth.username {
+                elastic.config.auth.username = Some(expand_secret_ref(v)?);
+            }
+            if let Some(v) = &elastic.config.auth.password {
+                elastic.config.auth.password = Some(expand_secret_ref(v)?);
+            }
+        }
+        if let Some(datadog) = &mut self.siem.exporters.datadog {
+            datadog.config.api_key = expand_secret_ref(&datadog.config.api_key)?;
+            if let Some(v) = &datadog.config.app_key {
+                datadog.config.app_key = Some(expand_secret_ref(v)?);
+            }
+        }
+        if let Some(sumo) = &mut self.siem.exporters.sumo_logic {
+            sumo.config.http_source_url = expand_secret_ref(&sumo.config.http_source_url)?;
+        }
+        if let Some(alerting) = &mut self.siem.exporters.alerting {
+            if let Some(pd) = &mut alerting.config.pagerduty {
+                pd.routing_key = expand_secret_ref(&pd.routing_key)?;
+            }
+            if let Some(og) = &mut alerting.config.opsgenie {
+                og.api_key = expand_secret_ref(&og.api_key)?;
+            }
+        }
+        if let Some(webhooks) = &mut self.siem.exporters.webhooks {
+            if let Some(slack) = &mut webhooks.config.slack {
+                slack.webhook_url = expand_secret_ref(&slack.webhook_url)?;
+            }
+            if let Some(teams) = &mut webhooks.config.teams {
+                teams.webhook_url = expand_secret_ref(&teams.webhook_url)?;
+            }
+            for hook in &mut webhooks.config.webhooks {
+                hook.url = expand_env_refs(&hook.url)?;
+                for (_k, v) in hook.headers.iter_mut() {
+                    *v = expand_env_refs(v)?;
+                }
+                if let Some(v) = &hook.content_type {
+                    hook.content_type = Some(expand_env_refs(v)?);
+                }
+                if let Some(v) = &hook.body_template {
+                    hook.body_template = Some(expand_env_refs(v)?);
+                }
+                if let Some(auth) = &mut hook.auth {
+                    if let Some(v) = &auth.token {
+                        auth.token = Some(expand_secret_ref(v)?);
+                    }
+                    if let Some(v) = &auth.username {
+                        auth.username = Some(expand_secret_ref(v)?);
+                    }
+                    if let Some(v) = &auth.password {
+                        auth.password = Some(expand_secret_ref(v)?);
+                    }
+                    if let Some(v) = &auth.header_value {
+                        auth.header_value = Some(expand_secret_ref(v)?);
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

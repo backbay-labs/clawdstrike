@@ -25,6 +25,7 @@ hush-proxy.workspace = true
 clawdstrike.workspace = true
 clap.workspace = true
 tokio.workspace = true
+async-trait.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde.workspace = true
@@ -59,6 +60,8 @@ dirs.workspace = true
 
 # HTTP client (for status command)
 reqwest.workspace = true
+flate2.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

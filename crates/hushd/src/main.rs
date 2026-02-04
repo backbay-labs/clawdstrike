@@ -15,7 +15,9 @@ use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use hushd::api;
+use hushd::audit::{AuditEvent, SessionStats};
 use hushd::config::Config;
+use hushd::siem::types::SecurityEvent;
 use hushd::state::AppState;
 
 fn normalize_host_for_listen(host: &str) -> String {
@@ -273,6 +275,26 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     // Log final stats
     let engine = state.engine.read().await;
     let stats = engine.stats().await;
+
+    // Record session end to the audit ledger and SIEM stream.
+    let end_event = AuditEvent::session_end(
+        &state.session_id,
+        &SessionStats {
+            action_count: stats.action_count,
+            violation_count: stats.violation_count,
+            duration_secs: state.uptime_secs().max(0) as u64,
+        },
+    );
+    if let Err(err) = state.ledger.record(&end_event) {
+        tracing::warn!(error = %err, "Failed to record session_end audit event");
+    } else {
+        let ctx = state.security_ctx.read().await.clone();
+        let end_security_event = SecurityEvent::from_audit_event(&end_event, &ctx);
+        state.emit_security_event(end_security_event);
+    }
+
+    state.shutdown_background_tasks().await;
+
     tracing::info!(
         actions = stats.action_count,
         violations = stats.violation_count,

@@ -1,0 +1,162 @@
+{
+  "index_patterns": [
+    "clawdstrike-security-*"
+  ],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "index.lifecycle.name": "clawdstrike-security-ilm",
+      "index.lifecycle.rollover_alias": "clawdstrike-security"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "event": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "kind": {
+              "type": "keyword"
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "type": {
+              "type": "keyword"
+            },
+            "outcome": {
+              "type": "keyword"
+            },
+            "action": {
+              "type": "keyword"
+            },
+            "severity": {
+              "type": "long"
+            }
+          }
+        },
+        "agent": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "name": {
+              "type": "keyword"
+            },
+            "type": {
+              "type": "keyword"
+            },
+            "version": {
+              "type": "keyword"
+            }
+          }
+        },
+        "session": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "user": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "organization": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "rule": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "name": {
+              "type": "keyword"
+            },
+            "ruleset": {
+              "type": "keyword"
+            }
+          }
+        },
+        "labels": {
+          "type": "object",
+          "dynamic": true
+        },
+        "message": {
+          "type": "text"
+        },
+        "file": {
+          "properties": {
+            "path": {
+              "type": "keyword"
+            },
+            "name": {
+              "type": "keyword"
+            }
+          }
+        },
+        "destination": {
+          "properties": {
+            "domain": {
+              "type": "keyword"
+            },
+            "port": {
+              "type": "long"
+            }
+          }
+        },
+        "process": {
+          "properties": {
+            "name": {
+              "type": "keyword"
+            },
+            "command_line": {
+              "type": "text"
+            }
+          }
+        },
+        "threat": {
+          "type": "object",
+          "dynamic": true
+        },
+        "clawdstrike": {
+          "properties": {
+            "schema_version": {
+              "type": "keyword"
+            },
+            "session_id": {
+              "type": "keyword"
+            },
+            "environment": {
+              "type": "keyword"
+            },
+            "guard": {
+              "type": "keyword"
+            },
+            "policy_hash": {
+              "type": "keyword"
+            },
+            "ruleset": {
+              "type": "keyword"
+            },
+            "metadata": {
+              "type": "object",
+              "dynamic": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
