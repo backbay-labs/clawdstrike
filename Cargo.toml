@@ -15,7 +15,7 @@ exclude = ["fuzz", "examples/rust/basic-verification"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/backbay-labs/hushclaw"
+repository = "https://github.com/backbay-labs/clawdstrike"
 rust-version = "1.92"
 
 [workspace.dependencies]
