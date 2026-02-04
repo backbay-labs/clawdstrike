@@ -8,6 +8,7 @@ use hush_core::receipt::{Provenance, Verdict, ViolationRef};
 use hush_core::{sha256, Hash, Keypair, Receipt, SignedReceipt};
 use serde::{Deserialize, Serialize};
 
+use crate::async_guards::{AsyncGuard, AsyncGuardRuntime};
 use crate::error::{Error, Result};
 use crate::guards::{CustomGuardRegistry, Guard, GuardAction, GuardContext, GuardResult, Severity};
 use crate::policy::{Policy, PolicyGuards, RuleSet};
@@ -36,6 +37,12 @@ pub struct HushEngine {
     state: Arc<RwLock<EngineState>>,
     /// Sticky configuration error (fail-closed).
     config_error: Option<String>,
+    /// Async guard runtime
+    async_runtime: Arc<AsyncGuardRuntime>,
+    /// Async guards instantiated from policy
+    async_guards: Vec<Arc<dyn AsyncGuard>>,
+    /// Async guard initialization error (fail closed)
+    async_guard_init_error: Option<String>,
 }
 
 /// Engine session state
@@ -66,8 +73,14 @@ impl HushEngine {
     /// Create with a specific policy
     pub fn with_policy(policy: Policy) -> Self {
         let guards = policy.create_guards();
-        let (custom_guards, config_error) =
-            match build_custom_guards_from_policy(&policy, None) {
+        let (custom_guards, config_error) = match build_custom_guards_from_policy(&policy, None) {
+            Ok(v) => (v, None),
+            Err(e) => (Vec::new(), Some(e.to_string())),
+        };
+
+        let async_runtime = Arc::new(AsyncGuardRuntime::new());
+        let (async_guards, async_guard_init_error) =
+            match crate::async_guards::registry::build_async_guards(&policy) {
                 Ok(v) => (v, None),
                 Err(e) => (Vec::new(), Some(e.to_string())),
             };
@@ -80,6 +93,9 @@ impl HushEngine {
             keypair: None,
             state: Arc::new(RwLock::new(EngineState::default())),
             config_error,
+            async_runtime,
+            async_guards,
+            async_guard_init_error,
         }
     }
 
@@ -263,6 +279,9 @@ impl HushEngine {
         if let Some(msg) = self.config_error.as_ref() {
             return Err(Error::ConfigError(msg.clone()));
         }
+        if let Some(msg) = self.async_guard_init_error.as_ref() {
+            return Err(Error::ConfigError(msg.clone()));
+        }
 
         let builtins = self.guards.builtin_guards_in_order();
         let mut per_guard: Vec<GuardResult> =
@@ -310,6 +329,55 @@ impl HushEngine {
                 && per_guard.last().is_some_and(|r| !r.allowed)
             {
                 break;
+            }
+        }
+
+        // If we've already denied locally, don't run async guards (avoids unnecessary network calls).
+        if per_guard.iter().all(|r| r.allowed) && !self.async_guards.is_empty() {
+            let async_results = self
+                .async_runtime
+                .evaluate_async_guards(
+                    &self.async_guards,
+                    action,
+                    context,
+                    self.policy.settings.effective_fail_fast(),
+                )
+                .await;
+
+            for result in async_results {
+                if self.policy.settings.effective_verbose_logging() {
+                    debug!(
+                        guard = result.guard,
+                        allowed = result.allowed,
+                        severity = ?result.severity,
+                        "Guard check completed"
+                    );
+                }
+
+                if !result.allowed {
+                    let mut state = self.state.write().await;
+                    state.violation_count += 1;
+                    state.violations.push(ViolationRef {
+                        guard: result.guard.clone(),
+                        severity: format!("{:?}", result.severity),
+                        message: result.message.clone(),
+                        action: None,
+                    });
+
+                    warn!(
+                        guard = result.guard,
+                        message = result.message,
+                        "Security violation detected"
+                    );
+                }
+
+                per_guard.push(result);
+
+                if self.policy.settings.effective_fail_fast()
+                    && per_guard.last().is_some_and(|r| !r.allowed)
+                {
+                    break;
+                }
             }
         }
 
@@ -413,6 +481,13 @@ impl HushEngineBuilder {
             self.custom_guard_registry.as_ref(),
         )?;
 
+        let async_runtime = Arc::new(AsyncGuardRuntime::new());
+        let (async_guards, async_guard_init_error) =
+            match crate::async_guards::registry::build_async_guards(&self.policy) {
+                Ok(v) => (v, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            };
+
         Ok(HushEngine {
             policy: self.policy,
             guards,
@@ -421,6 +496,9 @@ impl HushEngineBuilder {
             keypair: self.keypair,
             state: Arc::new(RwLock::new(EngineState::default())),
             config_error: None,
+            async_runtime,
+            async_guards,
+            async_guard_init_error,
         })
     }
 }
