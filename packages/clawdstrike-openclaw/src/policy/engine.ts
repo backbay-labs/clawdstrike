@@ -78,7 +78,9 @@ export class PolicyEngine {
     const base = this.evaluateDeterministic(event);
 
     // Fail fast on deterministic violations to avoid unnecessary external calls.
-    if (base.denied || base.warn) {
+    const baseDenied = base.status === 'deny' || base.denied;
+    const baseWarn = base.status === 'warn' || base.warn;
+    if (baseDenied || baseWarn) {
       return this.applyMode(base, this.config.mode);
     }
 
@@ -94,11 +96,13 @@ export class PolicyEngine {
 
   private applyMode(result: Decision, mode: EvaluationMode): Decision {
     if (mode === 'audit') {
-      return { allowed: true, denied: false, warn: false };
+      return { status: 'allow', allowed: true, denied: false, warn: false };
     }
 
-    if (mode === 'advisory' && result.denied) {
+    const isDenied = result.status === 'deny' || result.denied;
+    if (mode === 'advisory' && isDenied) {
       return {
+        status: 'warn',
         allowed: true,
         denied: false,
         warn: true,
@@ -113,7 +117,7 @@ export class PolicyEngine {
   }
 
   private evaluateDeterministic(event: PolicyEvent): Decision {
-    const allowed: Decision = { allowed: true, denied: false, warn: false };
+    const allowed: Decision = { status: 'allow', allowed: true, denied: false, warn: false };
 
     switch (event.eventType) {
       case 'file_read':
@@ -134,13 +138,15 @@ export class PolicyEngine {
 
   private checkFilesystem(event: PolicyEvent): Decision {
     if (!this.config.guards.forbidden_path) {
-      return { allowed: true, denied: false, warn: false };
+      return { status: 'allow', allowed: true, denied: false, warn: false };
     }
 
     // First, enforce forbidden path patterns.
     const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
     const mapped = this.guardResultToDecision(forbidden);
-    if (mapped.denied || mapped.warn) {
+    const mappedDenied = mapped.status === 'deny' || mapped.denied;
+    const mappedWarn = mapped.status === 'warn' || mapped.warn;
+    if (mappedDenied || mappedWarn) {
       return this.applyOnViolation(mapped);
     }
 
@@ -155,6 +161,7 @@ export class PolicyEngine {
         });
         if (!ok) {
           return this.applyOnViolation({
+            status: 'deny',
             allowed: false,
             denied: true,
             warn: false,
@@ -166,12 +173,12 @@ export class PolicyEngine {
       }
     }
 
-    return { allowed: true, denied: false, warn: false };
+    return { status: 'allow', allowed: true, denied: false, warn: false };
   }
 
   private checkEgress(event: PolicyEvent): Decision {
     if (!this.config.guards.egress) {
-      return { allowed: true, denied: false, warn: false };
+      return { status: 'allow', allowed: true, denied: false, warn: false };
     }
 
     const res = this.egressGuard.checkSync(event, this.policy);
@@ -181,7 +188,7 @@ export class PolicyEngine {
 
   private checkExecution(event: PolicyEvent): Decision {
     if (!this.config.guards.patch_integrity) {
-      return { allowed: true, denied: false, warn: false };
+      return { status: 'allow', allowed: true, denied: false, warn: false };
     }
 
     const res = this.patchIntegrityGuard.checkSync(event, this.policy);
@@ -198,6 +205,7 @@ export class PolicyEngine {
       const denied = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
       if (denied.includes(toolName)) {
         return this.applyOnViolation({
+          status: 'deny',
           allowed: false,
           denied: true,
           warn: false,
@@ -210,6 +218,7 @@ export class PolicyEngine {
       const allowed = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
       if (allowed.length > 0 && !allowed.includes(toolName)) {
         return this.applyOnViolation({
+          status: 'deny',
           allowed: false,
           denied: true,
           warn: false,
@@ -221,7 +230,7 @@ export class PolicyEngine {
     }
 
     if (!this.config.guards.secret_leak) {
-      return { allowed: true, denied: false, warn: false };
+      return { status: 'allow', allowed: true, denied: false, warn: false };
     }
 
     const res = this.secretLeakGuard.checkSync(event, this.policy);
@@ -234,25 +243,31 @@ export class PolicyEngine {
       const r1 = this.patchIntegrityGuard.checkSync(event, this.policy);
       const mapped1 = this.guardResultToDecision(r1);
       const applied1 = this.applyOnViolation(mapped1);
-      if (applied1.denied || applied1.warn) return applied1;
+      const applied1Denied = applied1.status === 'deny' || applied1.denied;
+      const applied1Warn = applied1.status === 'warn' || applied1.warn;
+      if (applied1Denied || applied1Warn) return applied1;
     }
 
     if (this.config.guards.secret_leak) {
       const r2 = this.secretLeakGuard.checkSync(event, this.policy);
       const mapped2 = this.guardResultToDecision(r2);
       const applied2 = this.applyOnViolation(mapped2);
-      if (applied2.denied || applied2.warn) return applied2;
+      const applied2Denied = applied2.status === 'deny' || applied2.denied;
+      const applied2Warn = applied2.status === 'warn' || applied2.warn;
+      if (applied2Denied || applied2Warn) return applied2;
     }
 
-    return { allowed: true, denied: false, warn: false };
+    return { status: 'allow', allowed: true, denied: false, warn: false };
   }
 
   private applyOnViolation(decision: Decision): Decision {
     const action = this.policy.on_violation;
-    if (!decision.denied) return decision;
+    const isDenied = decision.status === 'deny' || decision.denied;
+    if (!isDenied) return decision;
 
     if (action === 'warn') {
       return {
+        status: 'warn',
         allowed: true,
         denied: false,
         warn: true,
@@ -267,11 +282,11 @@ export class PolicyEngine {
   }
 
   private guardResultToDecision(result: { status: 'allow' | 'deny' | 'warn'; reason?: string; severity?: any; guard: string }): Decision {
-    if (result.status === 'allow') return { allowed: true, denied: false, warn: false };
+    if (result.status === 'allow') return { status: 'allow', allowed: true, denied: false, warn: false };
     if (result.status === 'warn') {
-      return { allowed: true, denied: false, warn: true, reason: result.reason, guard: result.guard, message: result.reason };
+      return { status: 'warn', allowed: true, denied: false, warn: true, reason: result.reason, guard: result.guard, message: result.reason };
     }
-    return { allowed: false, denied: true, warn: false, reason: result.reason, guard: result.guard, severity: result.severity };
+    return { status: 'deny', allowed: false, denied: true, warn: false, reason: result.reason, guard: result.guard, severity: result.severity };
   }
 }
 
@@ -296,6 +311,8 @@ function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
 }
 
 function combineDecisions(base: Decision, next: Decision): Decision {
-  if (next.denied || next.warn) return next;
+  const nextDenied = next.status === 'deny' || next.denied;
+  const nextWarn = next.status === 'warn' || next.warn;
+  if (nextDenied || nextWarn) return next;
   return base;
 }

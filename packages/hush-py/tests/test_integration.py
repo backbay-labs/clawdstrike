@@ -1,7 +1,7 @@
 """Integration tests for hush SDK."""
 
 import pytest
-from hush import (
+from clawdstrike import (
     Policy,
     PolicyEngine,
     PublicKeySet,
@@ -104,5 +104,5 @@ class TestFullWorkflow:
 
 class TestVersionInfo:
     def test_version_available(self) -> None:
-        import hush
-        assert hush.__version__ == "0.1.0"
+        import clawdstrike
+        assert clawdstrike.__version__ == "0.1.0"

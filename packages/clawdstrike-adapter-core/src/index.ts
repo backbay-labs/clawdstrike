@@ -1,8 +1,15 @@
+/**
+ * @clawdstrike/adapter-core
+ *
+ * Core adapter infrastructure for Clawdstrike security integrations.
+ */
+
 export type { PolicyEngineLike } from './engine.js';
 
 export type {
   ClawdstrikeConfig,
   Decision,
+  DecisionStatus,
   EvaluationMode,
   EventData,
   EventType,
@@ -11,6 +18,13 @@ export type {
   Policy,
   PolicyEvent,
   Severity,
+} from './types.js';
+
+export {
+  allowDecision,
+  createDecision,
+  denyDecision,
+  warnDecision,
 } from './types.js';
 
 export type { ContextSummary, SecurityContext } from './context.js';

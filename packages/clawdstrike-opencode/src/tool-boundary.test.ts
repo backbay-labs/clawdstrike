@@ -9,9 +9,7 @@ describe('OpenCodeToolBoundary', () => {
   it('blocks denied tool runs', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         reason: 'blocked',
       }),
     };
@@ -28,9 +26,7 @@ describe('OpenCodeToolBoundary', () => {
   it('wrapOpenCodeToolDispatcher blocks before dispatch', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         reason: 'blocked',
       }),
     };

@@ -1,4 +1,4 @@
-import { createSecurityContext } from '@clawdstrike/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   Decision,
@@ -27,6 +27,71 @@ export interface WrapToolOptions {
   getContext?: (toolName: string, input: unknown) => SecurityContext;
 }
 
+/**
+ * Clawdstrike-like interface for simple API.
+ */
+export interface ClawdstrikeLike {
+  createInterceptor?: () => ToolInterceptor;
+}
+
+/**
+ * Secure a single LangChain tool using a Clawdstrike instance or PolicyEngineLike.
+ *
+ * @example Using with Clawdstrike (recommended)
+ * ```typescript
+ * import { Clawdstrike } from '@clawdstrike/sdk';
+ * import { secureTool } from '@clawdstrike/langchain';
+ *
+ * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
+ * const secureTool = secureTool(myTool, cs);
+ * ```
+ */
+export function secureTool<TTool extends LangChainToolLike>(
+  tool: TTool,
+  csOrEngine: ClawdstrikeLike | PolicyEngineLike,
+  options?: WrapToolOptions,
+): TTool {
+  const interceptor = resolveInterceptor(csOrEngine);
+  return wrapTool(tool, interceptor, options);
+}
+
+/**
+ * Secure multiple LangChain tools using a Clawdstrike instance or PolicyEngineLike.
+ *
+ * @example
+ * ```typescript
+ * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
+ * const securedTools = secureTools([toolA, toolB], cs);
+ * ```
+ */
+export function secureTools<TTool extends LangChainToolLike>(
+  tools: readonly TTool[],
+  csOrEngine: ClawdstrikeLike | PolicyEngineLike,
+  options?: WrapToolOptions,
+): TTool[] {
+  const interceptor = resolveInterceptor(csOrEngine);
+  return wrapTools(tools, interceptor, options);
+}
+
+function resolveInterceptor(csOrEngine: ClawdstrikeLike | PolicyEngineLike): ToolInterceptor {
+  if (isClawdstrikeLike(csOrEngine)) {
+    return csOrEngine.createInterceptor!();
+  }
+  // PolicyEngineLike
+  return createLangChainInterceptor(csOrEngine, { metadata: { framework: 'langchain' } });
+}
+
+function isClawdstrikeLike(value: unknown): value is ClawdstrikeLike {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ClawdstrikeLike).createInterceptor === 'function'
+  );
+}
+
+/**
+ * @deprecated Use secureTool(tool, clawdstrike) instead.
+ */
 export function wrapTool<TTool extends LangChainToolLike>(
   tool: TTool,
   interceptor: ToolInterceptor,
@@ -40,6 +105,9 @@ export function wrapTool<TTool extends LangChainToolLike>(
   return wrapToolWithContext(tool, interceptor, context, options?.getContext);
 }
 
+/**
+ * @deprecated Use secureTools(tools, clawdstrike) instead.
+ */
 export function wrapTools<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
   interceptor: ToolInterceptor,

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clawdstriked-config
+data:
+  config.yaml: |
+    listen: "0.0.0.0:9876"
+    ruleset: "default"
+    audit_db: "/var/lib/clawdstriked/audit.db"
+    log_level: "info"
+
+    auth:
+      enabled: true
+      api_keys:
+        - name: "default"
+          key: "${CLAWDSTRIKE_API_KEY}"
+          scopes: ["check", "read"]
+        - name: "admin"
+          key: "${CLAWDSTRIKE_ADMIN_KEY}"
+          scopes: ["*"]

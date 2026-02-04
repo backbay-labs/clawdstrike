@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clawdstriked
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clawdstriked
+  template:
+    metadata:
+      labels:
+        app: clawdstriked
+    spec:
+      containers:
+        - name: clawdstriked
+          image: clawdstrike/clawdstriked:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/clawdstriked/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 9876
+          envFrom:
+            - secretRef:
+                name: clawdstriked-secrets
+          volumeMounts:
+            - name: clawdstriked-config
+              mountPath: /etc/clawdstriked/config.yaml
+              subPath: config.yaml
+            - name: clawdstriked-data
+              mountPath: /var/lib/clawdstriked
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: clawdstriked-config
+          configMap:
+            name: clawdstriked-config
+        - name: clawdstriked-data
+          emptyDir: {}

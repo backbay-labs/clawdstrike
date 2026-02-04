@@ -20,7 +20,7 @@ describe('PolicyEngine', () => {
     };
 
     const decision = await engine.evaluate(event);
-    expect(decision.denied).toBe(true);
+    expect(decision.status).toBe('deny');
     expect(decision.guard).toBe('forbidden_path');
   });
 
@@ -39,8 +39,7 @@ describe('PolicyEngine', () => {
     };
 
     const decision = await engine.evaluate(event);
-    expect(decision.allowed).toBe(true);
-    expect(decision.warn).toBe(true);
+    expect(decision.status).toBe('warn');
   });
 
   it('blocks secret leaks in tool output', async () => {
@@ -58,7 +57,7 @@ describe('PolicyEngine', () => {
     };
 
     const decision = await engine.evaluate(event);
-    expect(decision.denied).toBe(true);
+    expect(decision.status).toBe('deny');
     expect(decision.guard).toBe('secret_leak');
   });
 });

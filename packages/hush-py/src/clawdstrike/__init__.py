@@ -1,7 +1,7 @@
-"""Hush - Python SDK for clawdstrike security verification."""
+"""Clawdstrike - Python SDK for clawdstrike security verification."""
 
-from hush.core import sha256, keccak256, verify_signature, sign_message, generate_keypair
-from hush.receipt import (
+from clawdstrike.core import sha256, keccak256, verify_signature, sign_message, generate_keypair
+from clawdstrike.receipt import (
     RECEIPT_SCHEMA_VERSION,
     PublicKeySet,
     Receipt,
@@ -13,8 +13,8 @@ from hush.receipt import (
     ViolationRef,
     validate_receipt_version,
 )
-from hush.policy import Policy, PolicyEngine, PolicySettings, GuardConfigs
-from hush.guards import (
+from clawdstrike.policy import Policy, PolicyEngine, PolicySettings, GuardConfigs
+from clawdstrike.guards import (
     Severity,
     GuardResult,
     GuardContext,
@@ -31,7 +31,7 @@ from hush.guards import (
     McpToolGuard,
     McpToolConfig,
 )
-from hush.merkle import (
+from clawdstrike.merkle import (
     hash_leaf,
     hash_node,
     compute_root,
@@ -39,9 +39,9 @@ from hush.merkle import (
     MerkleTree,
     MerkleProof,
 )
-from hush.canonical import canonicalize, canonical_hash
-from hush.native import NATIVE_AVAILABLE
-from hush.certification_badge import verify_certification_badge
+from clawdstrike.canonical import canonicalize, canonical_hash
+from clawdstrike.native import NATIVE_AVAILABLE
+from clawdstrike.certification_badge import verify_certification_badge
 
 __version__ = "0.1.0"
 

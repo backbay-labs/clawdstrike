@@ -168,7 +168,7 @@ enum Commands {
         #[arg(long)]
         hushd_url: Option<String>,
 
-        /// Bearer token for hushd (if omitted, uses HUSHD_ADMIN_KEY or HUSHD_API_KEY when set)
+        /// Bearer token for daemon (if omitted, uses CLAWDSTRIKE_ADMIN_KEY or CLAWDSTRIKE_API_KEY env vars)
         #[arg(long)]
         hushd_token: Option<String>,
 
@@ -562,7 +562,7 @@ enum DaemonCommands {
         #[arg(default_value = "http://127.0.0.1:9876")]
         url: String,
 
-        /// Bearer token for authenticated daemons (if omitted, uses HUSHD_ADMIN_KEY or HUSHD_API_KEY when set)
+        /// Bearer token for authenticated daemons (if omitted, uses CLAWDSTRIKE_ADMIN_KEY or CLAWDSTRIKE_API_KEY env vars)
         #[arg(long)]
         token: Option<String>,
     },
@@ -578,7 +578,7 @@ enum DaemonCommands {
         #[arg(default_value = "http://127.0.0.1:9876")]
         url: String,
 
-        /// Bearer token for authenticated daemons (if omitted, uses HUSHD_ADMIN_KEY or HUSHD_API_KEY when set)
+        /// Bearer token for authenticated daemons (if omitted, uses CLAWDSTRIKE_ADMIN_KEY or CLAWDSTRIKE_API_KEY env vars)
         #[arg(long)]
         token: Option<String>,
     },
@@ -1797,8 +1797,8 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
         DaemonCommands::Stop { url, token } => {
             let client = reqwest::blocking::Client::new();
             let token = token
-                .or_else(|| std::env::var("HUSHD_ADMIN_KEY").ok())
-                .or_else(|| std::env::var("HUSHD_API_KEY").ok());
+                .or_else(|| std::env::var("CLAWDSTRIKE_ADMIN_KEY").ok())
+                .or_else(|| std::env::var("CLAWDSTRIKE_API_KEY").ok());
 
             let _ = writeln!(stdout, "Requesting shutdown at {}...", url);
 
@@ -1902,8 +1902,8 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
         DaemonCommands::Reload { url, token } => {
             let client = reqwest::blocking::Client::new();
             let token = token
-                .or_else(|| std::env::var("HUSHD_ADMIN_KEY").ok())
-                .or_else(|| std::env::var("HUSHD_API_KEY").ok());
+                .or_else(|| std::env::var("CLAWDSTRIKE_ADMIN_KEY").ok())
+                .or_else(|| std::env::var("CLAWDSTRIKE_API_KEY").ok());
 
             let mut req = client.post(format!("{}/api/v1/policy/reload", url));
             if let Some(token) = token {
@@ -1976,7 +1976,7 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             }
 
             let _ = writeln!(stdout, "\nOr set environment variable:");
-            let _ = writeln!(stdout, "  export HUSHD_API_KEY=\"{}\"", raw_key);
+            let _ = writeln!(stdout, "  export CLAWDSTRIKE_API_KEY=\"{}\"", raw_key);
             ExitCode::Ok
         }
     }

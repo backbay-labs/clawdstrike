@@ -1,4 +1,4 @@
-//! Common test utilities for hushd integration tests
+//! Common test utilities for clawdstriked integration tests
 
 use std::net::TcpListener;
 use std::net::{SocketAddr, TcpStream};
@@ -12,7 +12,7 @@ static TEST_DAEMON: OnceLock<Mutex<TestDaemon>> = OnceLock::new();
 
 /// Get the daemon URL from environment or use default
 pub fn daemon_url() -> String {
-    if let Ok(url) = std::env::var("HUSHD_TEST_URL") {
+    if let Ok(url) = std::env::var("CLAWDSTRIKE_TEST_URL") {
         return url;
     }
 
@@ -58,23 +58,23 @@ impl TestDaemon {
         let port = find_available_port();
         let url = format!("http://127.0.0.1:{}", port);
 
-        let test_dir = std::env::temp_dir().join(format!("hushd-test-{}", port));
+        let test_dir = std::env::temp_dir().join(format!("clawdstriked-test-{}", port));
         std::fs::create_dir_all(&test_dir).expect("Failed to create test directory");
 
         // Always isolate storage to the temp dir, regardless of caller config.
         config.listen = format!("127.0.0.1:{}", port);
         config.audit_db = test_dir.join("audit.db");
 
-        let config_path = test_dir.join("hushd.yaml");
+        let config_path = test_dir.join("clawdstriked.yaml");
         let yaml = serde_yaml::to_string(&config).expect("Failed to serialize config");
         std::fs::write(&config_path, yaml).expect("Failed to write test config");
 
-        let daemon_path = std::env::var("HUSHD_BIN")
-            .or_else(|_| std::env::var("CARGO_BIN_EXE_hushd"))
+        let daemon_path = std::env::var("CLAWDSTRIKE_BIN")
+            .or_else(|_| std::env::var("CARGO_BIN_EXE_clawdstriked"))
             .unwrap_or_else(|_| {
-                option_env!("CARGO_BIN_EXE_hushd")
+                option_env!("CARGO_BIN_EXE_clawdstriked")
                     .map(ToString::to_string)
-                    .unwrap_or_else(|| "target/debug/hushd".to_string())
+                    .unwrap_or_else(|| "target/debug/clawdstriked".to_string())
             });
 
         let process = Command::new(&daemon_path)

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clawdstriked-system
+  labels:
+    app.kubernetes.io/name: clawdstriked
+    app.kubernetes.io/component: security

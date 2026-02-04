@@ -1,4 +1,4 @@
-import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
+import type { Decision, DecisionStatus, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
 
 import { AsyncGuardRuntime } from './async/runtime.js';
 import type { GuardResult, Severity } from './async/types.js';
@@ -159,7 +159,19 @@ function decisionFromOverall(overall: GuardResult): Decision {
   const denied = !overall.allowed;
   const warn = overall.allowed && overall.severity === 'medium';
 
+  // Determine the new status field
+  let status: DecisionStatus;
+  if (denied) {
+    status = 'deny';
+  } else if (warn) {
+    status = 'warn';
+  } else {
+    status = 'allow';
+  }
+
   const out: Decision = {
+    status,
+    // Legacy fields for backward compat
     allowed: overall.allowed,
     denied,
     warn,

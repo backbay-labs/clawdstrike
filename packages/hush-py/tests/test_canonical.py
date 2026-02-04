@@ -7,7 +7,7 @@ import pytest
 
 def test_canonicalize_matches_repo_golden_vectors():
     """Canonicalize output must match the repo's RFC 8785 golden vectors."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     repo_root = Path(__file__).resolve().parents[3]
     vectors_path = repo_root / "fixtures" / "canonical" / "jcs_vectors.json"
@@ -19,7 +19,7 @@ def test_canonicalize_matches_repo_golden_vectors():
 
 def test_canonicalize_sorted_keys():
     """Object keys should be sorted lexicographically."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     obj = {"z": 1, "a": 2, "m": 3}
     result = canonicalize(obj)
@@ -29,7 +29,7 @@ def test_canonicalize_sorted_keys():
 
 def test_canonicalize_no_whitespace():
     """Output should have no whitespace."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     obj = {"key": "value", "list": [1, 2, 3]}
     result = canonicalize(obj)
@@ -41,7 +41,7 @@ def test_canonicalize_no_whitespace():
 
 def test_canonicalize_nested_objects():
     """Nested objects should have sorted keys at all levels."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     obj = {"outer": {"z": 1, "a": 2}, "inner": [3, 2, 1]}
     result = canonicalize(obj)
@@ -51,7 +51,7 @@ def test_canonicalize_nested_objects():
 
 def test_canonicalize_numeric_string_keys():
     """String keys should be sorted lexicographically (not numerically)."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     obj = {"2": "b", "10": "a", "a": 0}
     result = canonicalize(obj)
@@ -62,8 +62,8 @@ def test_canonicalize_numeric_string_keys():
 
 def test_canonical_hash_sha256():
     """canonical_hash should hash canonicalized JSON with SHA-256."""
-    from hush.canonical import canonicalize, canonical_hash
-    from hush.core import sha256
+    from clawdstrike.canonical import canonicalize, canonical_hash
+    from clawdstrike.core import sha256
 
     obj = {"message": "hello"}
 
@@ -76,8 +76,8 @@ def test_canonical_hash_sha256():
 
 def test_canonical_hash_keccak256():
     """canonical_hash should support Keccak-256."""
-    from hush.canonical import canonicalize, canonical_hash
-    from hush.core import keccak256
+    from clawdstrike.canonical import canonicalize, canonical_hash
+    from clawdstrike.core import keccak256
 
     obj = {"message": "hello"}
 
@@ -89,7 +89,7 @@ def test_canonical_hash_keccak256():
 
 def test_canonical_hash_default_sha256():
     """canonical_hash should default to SHA-256."""
-    from hush.canonical import canonical_hash
+    from clawdstrike.canonical import canonical_hash
 
     obj = {"test": True}
 
@@ -101,15 +101,15 @@ def test_canonical_hash_default_sha256():
 
 def test_canonical_hash_unknown_algorithm():
     """canonical_hash should raise for unknown algorithm."""
-    from hush.canonical import canonical_hash
+    from clawdstrike.canonical import canonical_hash
 
     with pytest.raises(ValueError, match="Unknown algorithm"):
         canonical_hash({"x": 1}, algorithm="md5")
 
 
 def test_canonical_exports_from_package():
-    """Canonical functions should be importable from hush package."""
-    from hush import canonicalize, canonical_hash
+    """Canonical functions should be importable from clawdstrike package."""
+    from clawdstrike import canonicalize, canonical_hash
 
     assert callable(canonicalize)
     assert callable(canonical_hash)
@@ -117,7 +117,7 @@ def test_canonical_exports_from_package():
 
 def test_canonicalize_primitives():
     """Primitives should serialize correctly."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     assert canonicalize(True) == "true"
     assert canonicalize(False) == "false"
@@ -128,7 +128,7 @@ def test_canonicalize_primitives():
 
 def test_canonicalize_empty_structures():
     """Empty dict and list should serialize correctly."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     assert canonicalize({}) == "{}"
     assert canonicalize([]) == "[]"
@@ -136,7 +136,7 @@ def test_canonicalize_empty_structures():
 
 def test_canonicalize_unicode():
     """Unicode should be preserved (not escaped)."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     obj = {"emoji": "\U0001F680", "chinese": "\u4e2d\u6587"}
     result = canonicalize(obj)
@@ -147,7 +147,7 @@ def test_canonicalize_unicode():
 
 def test_canonicalize_escape_sequences():
     """Control characters should be escaped."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     obj = {"newline": "\n", "tab": "\t", "quote": '"'}
     result = canonicalize(obj)
@@ -159,7 +159,7 @@ def test_canonicalize_escape_sequences():
 
 def test_canonicalize_nan_raises():
     """NaN should raise ValueError."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     with pytest.raises(ValueError):
         canonicalize({"bad": float("nan")})
@@ -167,7 +167,7 @@ def test_canonicalize_nan_raises():
 
 def test_canonicalize_inf_raises():
     """Infinity should raise ValueError."""
-    from hush.canonical import canonicalize
+    from clawdstrike.canonical import canonicalize
 
     with pytest.raises(ValueError):
         canonicalize({"bad": float("inf")})

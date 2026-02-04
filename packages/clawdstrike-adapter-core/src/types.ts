@@ -99,12 +99,93 @@ export interface CustomEventData {
   [key: string]: unknown;
 }
 
+// ============================================================
+// Decision type with status enum
+// ============================================================
+
+/**
+ * Decision status for security checks.
+ * - 'allow': Operation is permitted
+ * - 'warn': Operation is permitted but flagged for review
+ * - 'deny': Operation is blocked
+ */
+export type DecisionStatus = 'allow' | 'warn' | 'deny';
+
+/**
+ * Decision returned from policy evaluation.
+ *
+ * Use the `status` field to determine the outcome:
+ * - `status === 'allow'`: Operation permitted
+ * - `status === 'warn'`: Operation permitted with warning
+ * - `status === 'deny'`: Operation blocked
+ */
 export interface Decision {
-  allowed: boolean;
-  denied: boolean;
-  warn: boolean;
+  /** The decision status: 'allow', 'warn', or 'deny' */
+  status: DecisionStatus;
+  /** Name of the guard that made this decision */
+  guard?: string;
+  /** Severity level of the violation */
+  severity?: Severity;
+  /** Human-readable message describing the decision */
+  message?: string;
+  /** Additional reason for the decision */
   reason?: string;
+  /** Additional structured details */
+  details?: unknown;
+}
+
+/**
+ * Create a Decision.
+ */
+export function createDecision(
+  status: DecisionStatus,
+  options: {
+    guard?: string;
+    severity?: Severity;
+    message?: string;
+    reason?: string;
+    details?: unknown;
+  } = {},
+): Decision {
+  return {
+    status,
+    guard: options.guard,
+    severity: options.severity,
+    message: options.message,
+    reason: options.reason,
+    details: options.details,
+  };
+}
+
+/**
+ * Helper to create an allow decision.
+ */
+export function allowDecision(options: { guard?: string; message?: string } = {}): Decision {
+  return createDecision('allow', { severity: 'low', ...options });
+}
+
+/**
+ * Helper to create a deny decision.
+ */
+export function denyDecision(options: {
   guard?: string;
   severity?: Severity;
   message?: string;
+  reason?: string;
+  details?: unknown;
+}): Decision {
+  return createDecision('deny', { severity: 'high', ...options });
+}
+
+/**
+ * Helper to create a warn decision.
+ */
+export function warnDecision(options: {
+  guard?: string;
+  severity?: Severity;
+  message?: string;
+  reason?: string;
+  details?: unknown;
+}): Decision {
+  return createDecision('warn', { severity: 'medium', ...options });
 }

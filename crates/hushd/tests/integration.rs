@@ -1,8 +1,8 @@
-//! Integration tests for hushd HTTP API
+//! Integration tests for clawdstriked HTTP API
 //!
 //! These tests require either:
-//! 1. A running daemon at HUSHD_TEST_URL (for local development)
-//! 2. The daemon binary at HUSHD_BIN (for CI, will spawn automatically)
+//! 1. A running daemon at CLAWDSTRIKE_TEST_URL (for local development)
+//! 2. The daemon binary at CLAWDSTRIKE_BIN (for CI, will spawn automatically)
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -639,7 +639,7 @@ fn test_config_tracing_level() {
 }
 
 // Auth tests - these require auth to be enabled on the daemon
-// Run with: HUSHD_TEST_AUTH_ENABLED=1 cargo test -p hushd --test integration
+// Run with: CLAWDSTRIKE_TEST_AUTH_ENABLED=1 cargo test -p hushd --test integration
 
 #[tokio::test]
 #[ignore = "requires running daemon with auth enabled"]
@@ -662,7 +662,7 @@ async fn test_auth_required_without_token() {
 #[ignore = "requires running daemon with auth enabled"]
 async fn test_auth_with_valid_token() {
     let (client, url) = test_setup();
-    let api_key = std::env::var("HUSHD_API_KEY").expect("HUSHD_API_KEY not set");
+    let api_key = std::env::var("CLAWDSTRIKE_API_KEY").expect("CLAWDSTRIKE_API_KEY not set");
 
     let resp = client
         .post(format!("{}/api/v1/check", url))
@@ -701,7 +701,7 @@ async fn test_auth_with_invalid_token() {
 #[ignore = "requires running daemon with auth enabled"]
 async fn test_admin_endpoint_requires_admin_scope() {
     let (client, url) = test_setup();
-    let api_key = std::env::var("HUSHD_API_KEY").expect("HUSHD_API_KEY not set");
+    let api_key = std::env::var("CLAWDSTRIKE_API_KEY").expect("CLAWDSTRIKE_API_KEY not set");
 
     let resp = client
         .post(format!("{}/api/v1/policy/reload", url))

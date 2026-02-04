@@ -44,6 +44,7 @@
     "directory": "packages/hush-ts"
   },
   "dependencies": {
+    "@clawdstrike/adapter-core": "workspace:*",
     "@noble/ed25519": "^3.0.0",
     "@noble/hashes": "^2.0.1"
   },

@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from hush.canonical import canonicalize
-from hush.core import keccak256, sha256, sign_message, verify_signature
+from clawdstrike.canonical import canonicalize
+from clawdstrike.core import keccak256, sha256, sign_message, verify_signature
 
 RECEIPT_SCHEMA_VERSION = "1.0.0"
 

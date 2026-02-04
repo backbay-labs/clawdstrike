@@ -6,7 +6,7 @@ import type { InterceptResult, ProcessedOutput, ToolInterceptor } from './interc
 import type { OutputSanitizer, RedactionInfo } from './sanitizer.js';
 import { DefaultOutputSanitizer } from './default-output-sanitizer.js';
 import { PolicyEventFactory } from './policy-event-factory.js';
-import type { Decision } from './types.js';
+import { allowDecision, type Decision } from './types.js';
 
 export class BaseToolInterceptor implements ToolInterceptor {
   protected readonly engine: PolicyEngineLike;
@@ -31,7 +31,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
     if (this.config.excludedTools?.includes(toolName)) {
       return {
         proceed: true,
-        decision: { allowed: true, denied: false, warn: false },
+        decision: allowDecision({ guard: 'excluded' }),
         duration: Date.now() - startTime,
       };
     }
@@ -55,7 +55,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
 
     this.config.handlers?.onAfterEvaluate?.(toolCall, decision);
 
-    if (decision.denied) {
+    if (decision.status === 'deny') {
       context.violationCount++;
       context.recordBlocked(normalizedName, decision);
       this.config.handlers?.onBlocked?.(toolCall, decision);
@@ -82,7 +82,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
       }
     }
 
-    if (decision.warn) {
+    if (decision.status === 'warn') {
       this.config.handlers?.onWarning?.(toolCall, decision);
 
       await this.emitAuditEvent(context, {
@@ -112,7 +112,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
     return {
       proceed: true,
       decision,
-      warning: decision.warn ? decision.message : undefined,
+      warning: decision.status === 'warn' ? decision.message : undefined,
       duration: Date.now() - startTime,
     };
   }

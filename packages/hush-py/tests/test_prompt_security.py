@@ -4,7 +4,7 @@ import pytest
 pytest.importorskip("hush_native")
 
 
-from hush.prompt_security import (
+from clawdstrike.prompt_security import (
     JailbreakDetector,
     OutputSanitizer,
     PromptWatermarker,

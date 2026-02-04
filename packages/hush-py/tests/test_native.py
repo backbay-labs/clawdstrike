@@ -1,7 +1,7 @@
 """Tests for native Rust backend (when available)."""
 import pytest
 
-from hush.native import NATIVE_AVAILABLE
+from clawdstrike.native import NATIVE_AVAILABLE
 
 
 @pytest.mark.skipif(not NATIVE_AVAILABLE, reason="Native backend not available")
@@ -10,14 +10,14 @@ class TestNativeBackend:
 
     def test_is_native_available(self):
         """is_native_available should return True."""
-        from hush.native import is_native_available
+        from clawdstrike.native import is_native_available
         assert is_native_available is not None
         assert is_native_available() is True
 
     def test_sha256_native(self):
         """sha256_native should match pure Python."""
-        from hush.native import sha256_native
-        from hush.core import sha256
+        from clawdstrike.native import sha256_native
+        from clawdstrike.core import sha256
 
         assert sha256_native is not None
 
@@ -29,8 +29,8 @@ class TestNativeBackend:
 
     def test_keccak256_native(self):
         """keccak256_native should match pure Python."""
-        from hush.native import keccak256_native
-        from hush.core import keccak256
+        from clawdstrike.native import keccak256_native
+        from clawdstrike.core import keccak256
 
         if keccak256_native is None:
             pytest.skip("keccak256_native not available")
@@ -43,8 +43,8 @@ class TestNativeBackend:
 
     def test_merkle_root_native(self):
         """merkle_root_native should match pure Python."""
-        from hush.native import merkle_root_native
-        from hush.merkle import hash_leaf, compute_root
+        from clawdstrike.native import merkle_root_native
+        from clawdstrike.merkle import hash_leaf, compute_root
 
         assert merkle_root_native is not None
 
@@ -57,8 +57,8 @@ class TestNativeBackend:
 
     def test_canonicalize_native(self):
         """canonicalize_native should match pure Python."""
-        from hush.native import canonicalize_native
-        from hush.canonical import canonicalize
+        from clawdstrike.native import canonicalize_native
+        from clawdstrike.canonical import canonicalize
         import json
 
         if canonicalize_native is None:
@@ -82,7 +82,7 @@ class TestNativeAvailabilityFlag:
 
     def test_package_works_without_native(self):
         """Package should work even without native backend."""
-        from hush import sha256, compute_root, canonicalize, hash_leaf
+        from clawdstrike import sha256, compute_root, canonicalize, hash_leaf
 
         # These should work regardless of native availability
         assert len(sha256(b"test")) == 32
@@ -94,6 +94,6 @@ class TestNativeAvailabilityFlag:
         assert len(root) == 32
 
     def test_native_available_exported(self):
-        """NATIVE_AVAILABLE should be importable from hush package."""
-        from hush import NATIVE_AVAILABLE as imported_flag
+        """NATIVE_AVAILABLE should be importable from clawdstrike package."""
+        from clawdstrike import NATIVE_AVAILABLE as imported_flag
         assert isinstance(imported_flag, bool)

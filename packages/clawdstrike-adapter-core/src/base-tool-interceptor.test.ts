@@ -7,9 +7,7 @@ describe('BaseToolInterceptor', () => {
   it('blocks denied tools and records audit events', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         message: 'blocked',
       }),
     };
@@ -31,7 +29,7 @@ describe('BaseToolInterceptor', () => {
 
   it('sanitizes outputs using engine redaction when enabled', async () => {
     const engine: PolicyEngineLike = {
-      evaluate: () => ({ allowed: true, denied: false, warn: false }),
+      evaluate: () => ({ status: 'allow' }),
       redactSecrets: value => value.replaceAll('SECRET', '[REDACTED]'),
     };
 
@@ -52,7 +50,7 @@ describe('BaseToolInterceptor', () => {
 
   it('does not mark output as modified when no redactor is available', async () => {
     const engine: PolicyEngineLike = {
-      evaluate: () => ({ allowed: true, denied: false, warn: false }),
+      evaluate: () => ({ status: 'allow' }),
     };
 
     const interceptor = new BaseToolInterceptor(engine, {});

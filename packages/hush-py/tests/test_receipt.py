@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from hush.core import generate_keypair
-from hush.receipt import (
+from clawdstrike.core import generate_keypair
+from clawdstrike.receipt import (
     RECEIPT_SCHEMA_VERSION,
     PublicKeySet,
     Receipt,

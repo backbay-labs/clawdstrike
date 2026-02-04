@@ -4,7 +4,7 @@ import pytest
 
 def test_hash_leaf_produces_32_bytes():
     """Leaf hash should be 32 bytes with 0x00 prefix."""
-    from hush.merkle import hash_leaf
+    from clawdstrike.merkle import hash_leaf
 
     result = hash_leaf(b"hello")
     assert isinstance(result, bytes)
@@ -13,7 +13,7 @@ def test_hash_leaf_produces_32_bytes():
 
 def test_hash_node_produces_32_bytes():
     """Node hash combines two 32-byte hashes with 0x01 prefix."""
-    from hush.merkle import hash_leaf, hash_node
+    from clawdstrike.merkle import hash_leaf, hash_node
 
     left = hash_leaf(b"left")
     right = hash_leaf(b"right")
@@ -25,7 +25,7 @@ def test_hash_node_produces_32_bytes():
 
 def test_hash_node_order_matters():
     """hash_node(a, b) != hash_node(b, a)."""
-    from hush.merkle import hash_leaf, hash_node
+    from clawdstrike.merkle import hash_leaf, hash_node
 
     a = hash_leaf(b"a")
     b = hash_leaf(b"b")
@@ -35,7 +35,7 @@ def test_hash_node_order_matters():
 
 def test_compute_root_single_leaf():
     """Single leaf tree: root equals the leaf hash."""
-    from hush.merkle import hash_leaf, compute_root
+    from clawdstrike.merkle import hash_leaf, compute_root
 
     leaf = hash_leaf(b"single")
     leaves = [leaf]
@@ -46,7 +46,7 @@ def test_compute_root_single_leaf():
 
 def test_compute_root_two_leaves():
     """Two leaf tree: root is hash_node of both leaves."""
-    from hush.merkle import hash_leaf, hash_node, compute_root
+    from clawdstrike.merkle import hash_leaf, hash_node, compute_root
 
     left = hash_leaf(b"left")
     right = hash_leaf(b"right")
@@ -59,7 +59,7 @@ def test_compute_root_two_leaves():
 
 def test_compute_root_empty_raises():
     """Empty tree should raise ValueError."""
-    from hush.merkle import compute_root
+    from clawdstrike.merkle import compute_root
 
     with pytest.raises(ValueError, match="empty"):
         compute_root([])
@@ -67,7 +67,7 @@ def test_compute_root_empty_raises():
 
 def test_compute_root_odd_count():
     """Odd leaf count: last leaf carried upward (not duplicated)."""
-    from hush.merkle import hash_leaf, hash_node, compute_root
+    from clawdstrike.merkle import hash_leaf, hash_node, compute_root
 
     # Three leaves: [a, b, c]
     # Level 0: [a, b, c]
@@ -85,7 +85,7 @@ def test_compute_root_odd_count():
 
 def test_merkle_proof_verify_valid():
     """Valid proof should verify against correct root."""
-    from hush.merkle import hash_leaf, hash_node, MerkleProof
+    from clawdstrike.merkle import hash_leaf, hash_node, MerkleProof
 
     # Manual two-leaf tree
     left = hash_leaf(b"left")
@@ -104,7 +104,7 @@ def test_merkle_proof_verify_valid():
 
 def test_merkle_proof_verify_invalid_root():
     """Proof should fail against wrong root."""
-    from hush.merkle import hash_leaf, hash_node, MerkleProof
+    from clawdstrike.merkle import hash_leaf, hash_node, MerkleProof
 
     left = hash_leaf(b"left")
     right = hash_leaf(b"right")
@@ -122,7 +122,7 @@ def test_merkle_proof_verify_invalid_root():
 
 def test_merkle_proof_verify_right_leaf():
     """Proof for right leaf (index 1) should also verify."""
-    from hush.merkle import hash_leaf, hash_node, MerkleProof
+    from clawdstrike.merkle import hash_leaf, hash_node, MerkleProof
 
     left = hash_leaf(b"left")
     right = hash_leaf(b"right")
@@ -140,7 +140,7 @@ def test_merkle_proof_verify_right_leaf():
 
 def test_generate_proof_two_leaves():
     """Generate and verify proof for 2-leaf tree."""
-    from hush.merkle import hash_leaf, compute_root, generate_proof
+    from clawdstrike.merkle import hash_leaf, compute_root, generate_proof
 
     leaves = [hash_leaf(b"a"), hash_leaf(b"b")]
     root = compute_root(leaves)
@@ -154,7 +154,7 @@ def test_generate_proof_two_leaves():
 
 def test_generate_proof_many_leaves():
     """Generate and verify proofs for 8-leaf tree."""
-    from hush.merkle import hash_leaf, compute_root, generate_proof
+    from clawdstrike.merkle import hash_leaf, compute_root, generate_proof
 
     leaves = [hash_leaf(f"leaf{i}".encode()) for i in range(8)]
     root = compute_root(leaves)
@@ -166,7 +166,7 @@ def test_generate_proof_many_leaves():
 
 def test_generate_proof_odd_leaves():
     """Generate and verify proofs for odd-count tree (7 leaves)."""
-    from hush.merkle import hash_leaf, compute_root, generate_proof
+    from clawdstrike.merkle import hash_leaf, compute_root, generate_proof
 
     leaves = [hash_leaf(f"leaf{i}".encode()) for i in range(7)]
     root = compute_root(leaves)
@@ -178,7 +178,7 @@ def test_generate_proof_odd_leaves():
 
 def test_generate_proof_invalid_index():
     """generate_proof should raise for out-of-range index."""
-    from hush.merkle import hash_leaf, generate_proof
+    from clawdstrike.merkle import hash_leaf, generate_proof
 
     leaves = [hash_leaf(b"a"), hash_leaf(b"b")]
 
@@ -191,7 +191,7 @@ def test_generate_proof_invalid_index():
 
 def test_merkle_tree_from_data():
     """MerkleTree.from_data should hash leaves automatically."""
-    from hush.merkle import MerkleTree, hash_leaf
+    from clawdstrike.merkle import MerkleTree, hash_leaf
 
     tree = MerkleTree.from_data([b"a", b"b", b"c"])
 
@@ -201,7 +201,7 @@ def test_merkle_tree_from_data():
 
 def test_merkle_tree_from_hashes():
     """MerkleTree.from_hashes should use pre-hashed leaves."""
-    from hush.merkle import MerkleTree, hash_leaf, compute_root
+    from clawdstrike.merkle import MerkleTree, hash_leaf, compute_root
 
     leaves = [hash_leaf(b"a"), hash_leaf(b"b")]
     tree = MerkleTree.from_hashes(leaves)
@@ -212,7 +212,7 @@ def test_merkle_tree_from_hashes():
 
 def test_merkle_tree_inclusion_proof():
     """MerkleTree.inclusion_proof should generate valid proofs."""
-    from hush.merkle import MerkleTree, hash_leaf
+    from clawdstrike.merkle import MerkleTree, hash_leaf
 
     leaves = [hash_leaf(f"leaf{i}".encode()) for i in range(10)]
     tree = MerkleTree.from_hashes(leaves)
@@ -224,7 +224,7 @@ def test_merkle_tree_inclusion_proof():
 
 def test_merkle_tree_single_leaf():
     """Single leaf tree should work correctly."""
-    from hush.merkle import MerkleTree, hash_leaf
+    from clawdstrike.merkle import MerkleTree, hash_leaf
 
     leaf = hash_leaf(b"single")
     tree = MerkleTree.from_hashes([leaf])
@@ -238,8 +238,8 @@ def test_merkle_tree_single_leaf():
 
 
 def test_merkle_exports_from_package():
-    """Merkle functions should be importable from hush package."""
-    from hush import (
+    """Merkle functions should be importable from clawdstrike package."""
+    from clawdstrike import (
         hash_leaf,
         hash_node,
         compute_root,

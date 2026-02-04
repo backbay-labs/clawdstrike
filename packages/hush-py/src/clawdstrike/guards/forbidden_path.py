@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from wcmatch import glob as wcglob
 
-from hush.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
+from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
 
 
 def default_forbidden_patterns() -> List[str]:

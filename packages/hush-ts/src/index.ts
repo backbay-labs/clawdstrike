@@ -6,6 +6,20 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 export const VERSION: string = require("../package.json").version;
 
+// Main entry point
+export {
+  Clawdstrike,
+  ClawdstrikeSession,
+  type ClawdstrikeConfig,
+  type Decision,
+  type DecisionStatus,
+  type PolicySpec,
+  type Ruleset,
+  type SessionOptions,
+  type SessionSummary,
+  type ToolSet,
+} from "./clawdstrike";
+
 // Crypto
 export {
   sha256,
@@ -158,3 +172,41 @@ export {
 
 // SIEM/SOAR
 export * as siem from "./siem";
+
+// Adapters (merged from @clawdstrike/adapter-core)
+// For advanced use cases, these provide direct access to interceptors and adapters
+export * as adapters from "./adapters";
+
+// Re-export key adapter types at the top level for convenience
+export type {
+  AdapterConfig,
+  AuditConfig,
+  AuditEvent,
+  AuditEventType,
+  AuditLogger,
+  ContextSummary,
+  EventHandlers,
+  FrameworkAdapter,
+  FrameworkHooks,
+  GenericToolCall,
+  InterceptResult,
+  PolicyEngineLike,
+  PolicyEvent,
+  ProcessedOutput,
+  SecurityContext,
+  SessionSummary as AdapterSessionSummary,
+  ToolInterceptor,
+} from "@clawdstrike/adapter-core";
+
+export {
+  allowDecision,
+  BaseToolInterceptor,
+  createDecision,
+  createSecurityContext,
+  DefaultOutputSanitizer,
+  DefaultSecurityContext,
+  denyDecision,
+  InMemoryAuditLogger,
+  PolicyEventFactory,
+  warnDecision,
+} from "@clawdstrike/adapter-core";

@@ -3,8 +3,8 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from hush.canonical import canonicalize
-from hush.core import verify_signature
+from clawdstrike.canonical import canonicalize
+from clawdstrike.core import verify_signature
 
 
 def _b64url_decode(s: str) -> bytes:

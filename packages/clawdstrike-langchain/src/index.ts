@@ -1,4 +1,5 @@
-export { wrapTool, wrapTools, wrapToolWithConfig, wrapToolsWithConfig } from './wrap.js';
+export { secureTool, secureTools, wrapTool, wrapTools, wrapToolWithConfig, wrapToolsWithConfig } from './wrap.js';
+export type { ClawdstrikeLike } from './wrap.js';
 
 export { ClawdstrikeViolationError } from './errors.js';
 

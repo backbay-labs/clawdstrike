@@ -178,14 +178,24 @@ export interface SecretEventData {
 }
 
 /**
+ * Decision status for security checks.
+ * - 'allow': Operation is permitted
+ * - 'warn': Operation is permitted but flagged for review
+ * - 'deny': Operation is blocked
+ */
+export type DecisionStatus = 'allow' | 'warn' | 'deny';
+
+/**
  * Result of policy evaluation
  */
 export interface Decision {
-  /** Whether the event is allowed */
+  /** The decision status: 'allow', 'warn', or 'deny' */
+  status?: DecisionStatus;
+  /** Whether the event is allowed @deprecated Use status === 'allow' || status === 'warn' */
   allowed: boolean;
-  /** Whether the event is explicitly denied */
+  /** Whether the event is explicitly denied @deprecated Use status === 'deny' */
   denied: boolean;
-  /** Whether to show a warning */
+  /** Whether to show a warning @deprecated Use status === 'warn' */
   warn: boolean;
   /** Reason for denial (if denied) */
   reason?: string;

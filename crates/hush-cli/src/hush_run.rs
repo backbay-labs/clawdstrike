@@ -188,8 +188,8 @@ pub async fn cmd_run(
 
     let forwarder = hushd_url.map(|url| {
         let token = hushd_token
-            .or_else(|| std::env::var("HUSHD_ADMIN_KEY").ok())
-            .or_else(|| std::env::var("HUSHD_API_KEY").ok());
+            .or_else(|| std::env::var("CLAWDSTRIKE_ADMIN_KEY").ok())
+            .or_else(|| std::env::var("CLAWDSTRIKE_API_KEY").ok());
         HushdForwarder::new(url, token)
     });
 

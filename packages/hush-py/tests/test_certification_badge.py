@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import base64
 
-from hush.canonical import canonicalize
-from hush.core import generate_keypair, sign_message
-from hush.certification_badge import verify_certification_badge
+from clawdstrike.canonical import canonicalize
+from clawdstrike.core import generate_keypair, sign_message
+from clawdstrike.certification_badge import verify_certification_badge
 
 
 def _b64url_encode(raw: bytes) -> str:

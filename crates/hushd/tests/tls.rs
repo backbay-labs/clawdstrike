@@ -61,12 +61,12 @@ PgOEzGSV8wm/fPgrYyiEqrM=
 "#;
 
 fn daemon_path() -> String {
-    std::env::var("HUSHD_BIN")
-        .or_else(|_| std::env::var("CARGO_BIN_EXE_hushd"))
+    std::env::var("CLAWDSTRIKE_BIN")
+        .or_else(|_| std::env::var("CARGO_BIN_EXE_clawdstriked"))
         .unwrap_or_else(|_| {
-            option_env!("CARGO_BIN_EXE_hushd")
+            option_env!("CARGO_BIN_EXE_clawdstriked")
                 .map(ToString::to_string)
-                .unwrap_or_else(|| "target/debug/hushd".to_string())
+                .unwrap_or_else(|| "target/debug/clawdstriked".to_string())
         })
 }
 

@@ -26,9 +26,7 @@ describe('useSecureChat', () => {
 
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         reason: 'blocked',
       }),
     };

@@ -83,7 +83,7 @@ custom_guards:
   };
 
   const decision = await engine.evaluate(event);
-  expect(decision.denied).toBe(true);
+  expect(decision.status).toBe('deny');
   expect(decision.guard).toBe('acme.deny');
 });
 

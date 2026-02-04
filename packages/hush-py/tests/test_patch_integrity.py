@@ -1,8 +1,8 @@
 """Tests for PatchIntegrityGuard."""
 
 import pytest
-from hush.guards.patch_integrity import PatchIntegrityGuard, PatchIntegrityConfig
-from hush.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.patch_integrity import PatchIntegrityGuard, PatchIntegrityConfig
+from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 
 
 class TestPatchIntegrityConfig:

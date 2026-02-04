@@ -8,9 +8,7 @@ describe('createSecurityCheckpoint', () => {
   it('returns block when any pending tool call is denied', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         reason: event.eventType === 'command_exec' ? 'blocked' : undefined,
       }),
     };
@@ -21,7 +19,7 @@ describe('createSecurityCheckpoint', () => {
       toolCalls: [{ name: 'bash', args: { cmd: 'rm -rf /' } }],
     });
 
-    expect(decision.denied).toBe(true);
+    expect(decision.status).toBe('deny');
     await expect(checkpoint.route({ toolCalls: [{ name: 'bash', args: {} }] })).resolves.toBe('block');
   });
 });
@@ -29,7 +27,7 @@ describe('createSecurityCheckpoint', () => {
 describe('sanitizeState', () => {
   it('recursively redacts strings when engine provides redactSecrets', () => {
     const engine: PolicyEngineLike = {
-      evaluate: () => ({ allowed: true, denied: false, warn: false }),
+      evaluate: () => ({ status: 'allow' }),
       redactSecrets: value => value.replaceAll('SECRET', '[REDACTED]'),
     };
 
@@ -47,7 +45,7 @@ describe('addSecurityRouting', () => {
     const checkpoint = {
       name: 'clawdstrike_checkpoint',
       async check() {
-        return { allowed: true, denied: false, warn: false };
+        return { status: 'allow' as const };
       },
       async route() {
         return 'allow' as const;
@@ -70,7 +68,7 @@ describe('addSecurityRouting', () => {
 describe('wrapToolNode', () => {
   it('sanitizes state output when engine provides redactSecrets', async () => {
     const engine: PolicyEngineLike = {
-      evaluate: () => ({ allowed: true, denied: false, warn: false }),
+      evaluate: () => ({ status: 'allow' }),
       redactSecrets: value => value.replaceAll('SECRET', '[REDACTED]'),
     };
 

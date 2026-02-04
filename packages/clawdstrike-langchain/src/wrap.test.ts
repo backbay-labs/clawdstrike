@@ -26,9 +26,7 @@ describe('wrapTool', () => {
   it('wraps _call() and blocks when policy denies', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         message: 'blocked',
       }),
     };
@@ -91,9 +89,7 @@ describe('wrapToolWithConfig', () => {
   it('supports withConfig override when created from engine+config', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
       }),
     };
 

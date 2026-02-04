@@ -1,8 +1,8 @@
 """Tests for SecretLeakGuard."""
 
 import pytest
-from hush.guards.secret_leak import SecretLeakGuard, SecretLeakConfig
-from hush.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.secret_leak import SecretLeakGuard, SecretLeakConfig
+from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 
 
 class TestSecretLeakConfig:

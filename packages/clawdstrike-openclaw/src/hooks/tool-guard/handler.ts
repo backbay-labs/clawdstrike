@@ -61,7 +61,10 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   // Evaluate policy
   const decision = await policyEngine.evaluate(policyEvent);
 
-  if (decision.denied) {
+  const isDenied = decision.status === 'deny' || decision.denied;
+  const isWarn = decision.status === 'warn' || decision.warn;
+
+  if (isDenied) {
     // Block the tool result
     toolEvent.context.toolResult.error = decision.reason ?? 'Policy violation';
     toolEvent.messages.push(
@@ -70,7 +73,7 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     return;
   }
 
-  if (decision.warn) {
+  if (isWarn) {
     // Add warning message
     toolEvent.messages.push(
       `[clawdstrike] Warning: ${decision.message ?? decision.reason}`,

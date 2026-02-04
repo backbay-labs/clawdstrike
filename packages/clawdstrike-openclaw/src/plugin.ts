@@ -64,14 +64,16 @@ export default function clawdstrikePlugin(api: any) {
         const event = buildEvent(action, resource);
         const decision = await engine.evaluate(event as any);
 
+        const isDenied = decision.status === 'deny' || decision.denied;
+        const isWarn = decision.status === 'warn' || decision.warn;
         const result = {
-          allowed: !decision.denied,
-          denied: decision.denied,
-          warn: decision.warn,
+          allowed: !isDenied,
+          denied: isDenied,
+          warn: isWarn,
           guard: decision.guard,
           reason: decision.reason,
           message: formatDecision(decision),
-          suggestion: decision.denied ? getSuggestion(action, resource) : undefined,
+          suggestion: isDenied ? getSuggestion(action, resource) : undefined,
         };
 
         return {
@@ -128,7 +130,7 @@ export default function clawdstrikePlugin(api: any) {
           const event = buildEvent(action as PolicyCheckAction, resource);
           const decision = await engine.evaluate(event as any);
           console.log(formatDecision(decision));
-          if (decision.denied) {
+          if (decision.status === 'deny' || decision.denied) {
             console.log(`Suggestion: ${getSuggestion(action, resource)}`);
             process.exitCode = 1;
           }
@@ -168,6 +170,7 @@ interface LocalPolicyEvent {
 }
 
 interface Decision {
+  status?: 'allow' | 'warn' | 'deny';
   denied?: boolean;
   warn?: boolean;
   guard?: string;
@@ -251,12 +254,14 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
 }
 
 function formatDecision(decision: Decision): string {
-  if (decision.denied) {
+  const isDenied = decision.status === 'deny' || decision.denied;
+  const isWarn = decision.status === 'warn' || decision.warn;
+  if (isDenied) {
     const guard = decision.guard ? ` by ${decision.guard}` : "";
     const reason = decision.reason ? `: ${decision.reason}` : "";
     return `Denied${guard}${reason}`;
   }
-  if (decision.warn) {
+  if (isWarn) {
     const msg = decision.message ?? decision.reason ?? "Policy warning";
     return `Warning: ${msg}`;
   }

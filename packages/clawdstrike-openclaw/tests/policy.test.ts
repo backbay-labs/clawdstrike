@@ -42,8 +42,7 @@ describe('PolicyEngine', () => {
     };
 
     const decision = await engine.evaluate(event);
-    expect(decision.allowed).toBe(true);
-    expect(decision.denied).toBe(false);
+    expect(decision.status).toBe('allow');
   });
 
   it('should deny access to SSH keys', async () => {
@@ -59,7 +58,7 @@ describe('PolicyEngine', () => {
     };
 
     const decision = await engine.evaluate(event);
-    expect(decision.denied).toBe(true);
+    expect(decision.status).toBe('deny');
     expect(decision.guard).toBe('forbidden_path');
   });
 
@@ -81,9 +80,7 @@ describe('PolicyEngine', () => {
     };
 
     const decision = await advisoryEngine.evaluate(event);
-    expect(decision.allowed).toBe(true);
-    expect(decision.warn).toBe(true);
-    expect(decision.denied).toBe(false);
+    expect(decision.status).toBe('warn');
   });
 
   it('should respect mode=audit (always allow)', async () => {
@@ -104,8 +101,7 @@ describe('PolicyEngine', () => {
     };
 
     const decision = await auditEngine.evaluate(event);
-    expect(decision.allowed).toBe(true);
-    expect(decision.denied).toBe(false);
+    expect(decision.status).toBe('allow');
   });
 
   it('should redact secrets from content', () => {

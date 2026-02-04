@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clawdstriked
+spec:
+  selector:
+    app: clawdstriked
+  ports:
+    - name: http
+      port: 9876
+      targetPort: http

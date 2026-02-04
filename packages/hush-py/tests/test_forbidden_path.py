@@ -1,8 +1,8 @@
 """Tests for ForbiddenPathGuard."""
 
 import pytest
-from hush.guards.forbidden_path import ForbiddenPathGuard, ForbiddenPathConfig
-from hush.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.forbidden_path import ForbiddenPathGuard, ForbiddenPathConfig
+from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 
 
 class TestForbiddenPathConfig:

@@ -1,7 +1,7 @@
 """Tests for hush.guards base types."""
 
 import pytest
-from hush.guards.base import (
+from clawdstrike.guards.base import (
     Guard,
     GuardResult,
     GuardContext,

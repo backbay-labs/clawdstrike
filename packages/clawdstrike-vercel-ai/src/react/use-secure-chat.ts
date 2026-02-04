@@ -64,11 +64,12 @@ export function useSecureChat<UI_MESSAGE extends UIMessage = UIMessage>(
       const decision = result.decision;
 
       setLastDecision(decision);
+      const isWarn = decision.status === 'warn' || decision.warn;
       setSecurityStatus(prev => ({
         ...prev,
         checkCount: prev.checkCount + 1,
         blocked: !result.proceed,
-        warning: decision.warn ? decision.message ?? decision.reason : undefined,
+        warning: isWarn ? decision.message ?? decision.reason : undefined,
         lastDecision: decision,
         violationCount: prev.violationCount + (!result.proceed ? 1 : 0),
         blockedTools: !result.proceed

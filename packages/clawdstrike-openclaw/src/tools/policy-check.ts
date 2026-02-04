@@ -89,12 +89,14 @@ function buildEvent(action: PolicyCheckAction, resource: string): PolicyEvent {
 }
 
 function formatDecision(decision: Decision): string {
-  if (decision.denied) {
+  const isDenied = decision.status === 'deny' || decision.denied;
+  const isWarn = decision.status === 'warn' || decision.warn;
+  if (isDenied) {
     const guard = decision.guard ? ` by ${decision.guard}` : '';
     const reason = decision.reason ? `: ${decision.reason}` : '';
     return `Denied${guard}${reason}`;
   }
-  if (decision.warn) {
+  if (isWarn) {
     const msg = decision.message ?? decision.reason ?? 'Policy warning';
     return `Warning: ${msg}`;
   }
@@ -109,7 +111,8 @@ export async function checkPolicy(
   const engine = new PolicyEngine(config);
   const event = buildEvent(action, resource);
   const decision = await engine.evaluate(event);
-  return { ...decision, message: formatDecision(decision), suggestion: decision.denied ? getSuggestion(action, resource) : undefined };
+  const isDenied = decision.status === 'deny' || decision.denied;
+  return { ...decision, message: formatDecision(decision), suggestion: isDenied ? getSuggestion(action, resource) : undefined };
 }
 
 export function policyCheckTool(engine: PolicyEngine): ToolDefinition {
@@ -139,7 +142,7 @@ export function policyCheckTool(engine: PolicyEngine): ToolDefinition {
       return {
         ...decision,
         message: formatDecision(decision),
-        suggestion: decision.denied ? getSuggestion(action, resource) : undefined,
+        suggestion: (decision.status === 'deny' || decision.denied) ? getSuggestion(action, resource) : undefined,
       };
     },
   };

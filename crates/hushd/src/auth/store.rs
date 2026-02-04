@@ -34,12 +34,12 @@ impl AuthStore {
 
     /// Compute a stable hash of an API key token.
     ///
-    /// If `HUSHD_AUTH_PEPPER` is set (recommended), uses HMAC-SHA256 to make offline guessing
-    /// attacks significantly harder if key hashes ever leak.
+    /// If `CLAWDSTRIKE_AUTH_PEPPER` is set (recommended), uses HMAC-SHA256 to make
+    /// offline guessing attacks significantly harder if key hashes ever leak.
     ///
-    /// If unset, falls back to raw SHA-256 for backward compatibility.
+    /// If unset, falls back to raw SHA-256.
     pub fn hash_key(key: &str) -> String {
-        let pepper = std::env::var("HUSHD_AUTH_PEPPER").ok();
+        let pepper = std::env::var("CLAWDSTRIKE_AUTH_PEPPER").ok();
         let pepper = pepper.as_deref().filter(|s| !s.is_empty());
         hash_key_with_pepper(key, pepper.map(|p| p.as_bytes()))
     }

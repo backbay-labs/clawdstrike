@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from hush.native import (
+from clawdstrike.native import (
     NATIVE_AVAILABLE,
     detect_jailbreak_native,
     sanitize_output_native,

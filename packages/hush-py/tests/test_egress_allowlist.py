@@ -1,8 +1,8 @@
 """Tests for EgressAllowlistGuard."""
 
 import pytest
-from hush.guards.egress_allowlist import EgressAllowlistGuard, EgressAllowlistConfig
-from hush.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.egress_allowlist import EgressAllowlistGuard, EgressAllowlistConfig
+from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 
 
 class TestEgressAllowlistConfig:

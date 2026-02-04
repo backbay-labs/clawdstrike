@@ -1,7 +1,7 @@
 """Tests for hush.policy module."""
 
 import pytest
-from hush.policy import Policy, PolicyEngine, PolicySettings, GuardConfigs
+from clawdstrike.policy import Policy, PolicyEngine, PolicySettings, GuardConfigs
 
 
 class TestPolicy:
@@ -91,7 +91,7 @@ class TestPolicyEngine:
         assert len(engine.guards) == 5  # All 5 guards
 
     def test_check_allowed_action(self, sample_policy_yaml: str) -> None:
-        from hush.guards.base import GuardAction, GuardContext
+        from clawdstrike.guards.base import GuardAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         engine = PolicyEngine(policy)
@@ -106,7 +106,7 @@ class TestPolicyEngine:
         assert all(r.allowed for r in results)
 
     def test_check_forbidden_action(self, sample_policy_yaml: str) -> None:
-        from hush.guards.base import GuardAction, GuardContext
+        from clawdstrike.guards.base import GuardAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         engine = PolicyEngine(policy)
@@ -121,7 +121,7 @@ class TestPolicyEngine:
         assert any(not r.allowed for r in results)
 
     def test_fail_fast_mode(self, sample_policy_yaml: str) -> None:
-        from hush.guards.base import GuardAction, GuardContext
+        from clawdstrike.guards.base import GuardAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         policy.settings.fail_fast = True

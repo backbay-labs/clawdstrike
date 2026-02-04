@@ -41,9 +41,7 @@ describe('secureTools', () => {
   it('throws when interceptor blocks', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         message: 'blocked',
       }),
     };

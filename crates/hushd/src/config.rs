@@ -1,4 +1,4 @@
-//! Configuration for hushd daemon
+//! Configuration for clawdstriked daemon
 
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -892,10 +892,8 @@ fn default_ruleset() -> String {
 }
 
 fn default_audit_db() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("hushd")
-        .join("audit.db")
+    let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    base.join("clawdstriked").join("audit.db")
 }
 
 fn default_log_level() -> String {
@@ -1252,18 +1250,17 @@ impl Config {
 
     /// Load from default locations or create default
     pub fn load_default() -> anyhow::Result<Self> {
-        // Try standard config locations
         let paths = [
-            PathBuf::from("/etc/hushd/config.yaml"),
-            PathBuf::from("/etc/hushd/config.toml"),
+            PathBuf::from("/etc/clawdstriked/config.yaml"),
+            PathBuf::from("/etc/clawdstriked/config.toml"),
             dirs::config_dir()
-                .map(|d| d.join("hushd/config.yaml"))
+                .map(|d| d.join("clawdstriked/config.yaml"))
                 .unwrap_or_default(),
             dirs::config_dir()
-                .map(|d| d.join("hushd/config.toml"))
+                .map(|d| d.join("clawdstriked/config.toml"))
                 .unwrap_or_default(),
-            PathBuf::from("./hushd.yaml"),
-            PathBuf::from("./hushd.toml"),
+            PathBuf::from("./clawdstriked.yaml"),
+            PathBuf::from("./clawdstriked.toml"),
         ];
 
         let mut errors: Vec<(PathBuf, anyhow::Error)> = Vec::new();
@@ -1286,7 +1283,7 @@ impl Config {
         }
 
         if !errors.is_empty() {
-            let mut msg = String::from("Failed to load hushd config from existing file(s):\n");
+            let mut msg = String::from("Failed to load clawdstriked config from existing file(s):\n");
             for (path, err) in errors {
                 msg.push_str(&format!("  - {}: {err}\n", path.display()));
             }
@@ -1314,13 +1311,12 @@ impl Config {
     pub async fn load_auth_store(&self) -> anyhow::Result<AuthStore> {
         let store = AuthStore::new();
 
-        let has_pepper = std::env::var("HUSHD_AUTH_PEPPER")
-            .ok()
-            .as_deref()
-            .is_some_and(|v| !v.is_empty());
+        let has_pepper = std::env::var("CLAWDSTRIKE_AUTH_PEPPER")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
         if self.auth.enabled && !has_pepper {
             tracing::warn!(
-                "Auth is enabled but HUSHD_AUTH_PEPPER is not set; API key hashing will use raw SHA-256"
+                "Auth is enabled but CLAWDSTRIKE_AUTH_PEPPER is not set; API key hashing will use raw SHA-256"
             );
         }
 
@@ -1504,7 +1500,7 @@ scopes = []
 
     #[tokio::test]
     async fn test_load_auth_store_expands_env_refs() -> anyhow::Result<()> {
-        std::env::set_var("HUSHD_TEST_API_KEY", "secret-from-env");
+        std::env::set_var("CLAWDSTRIKE_TEST_API_KEY", "secret-from-env");
 
         let yaml = r#"
 listen: "127.0.0.1:9876"
@@ -1512,7 +1508,7 @@ auth:
   enabled: true
   api_keys:
     - name: "env"
-      key: "${HUSHD_TEST_API_KEY}"
+      key: "${CLAWDSTRIKE_TEST_API_KEY}"
       scopes: ["check"]
 "#;
 

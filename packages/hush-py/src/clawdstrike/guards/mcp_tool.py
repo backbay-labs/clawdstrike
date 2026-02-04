@@ -6,7 +6,7 @@ import fnmatch
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from hush.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
+from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
 
 
 @dataclass

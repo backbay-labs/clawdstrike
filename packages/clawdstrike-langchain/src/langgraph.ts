@@ -64,25 +64,25 @@ export function createSecurityCheckpoint(
       for (const call of toolCalls) {
         const result = await interceptor.beforeExecute(call.name, call.args, context);
 
-        if (result.decision.denied) {
+        if (result.decision.status === 'deny') {
           return result.decision;
         }
 
-        if (result.decision.warn && !warningDecision) {
+        if (result.decision.status === 'warn' && !warningDecision) {
           warningDecision = result.decision;
         }
       }
 
       return (
         warningDecision
-        ?? { allowed: true, denied: false, warn: false }
+        ?? { status: 'allow', allowed: true, denied: false, warn: false }
       );
     },
 
     async route(state: Record<string, unknown>): Promise<'allow' | 'block' | 'warn'> {
       const decision = await this.check(state);
-      if (decision.denied) return 'block';
-      if (decision.warn) return 'warn';
+      if (decision.status === 'deny') return 'block';
+      if (decision.status === 'warn') return 'warn';
       return 'allow';
     },
   };
@@ -104,7 +104,7 @@ export function wrapToolNode<S extends Record<string, unknown>>(
 
   graph.addNode(nodeName, async (state: S) => {
     const decision = await checkpoint.check(state as Record<string, unknown>);
-    if (decision.denied) {
+    if (decision.status === 'deny') {
       return {
         ...state,
         __clawdstrike_blocked: true,

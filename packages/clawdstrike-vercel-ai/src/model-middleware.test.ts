@@ -9,9 +9,7 @@ describe('wrapLanguageModel', () => {
   it('wraps doGenerate and annotates blocked tool calls', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         reason: event.eventType === 'command_exec' ? 'blocked' : undefined,
       }),
     };
@@ -51,9 +49,7 @@ describe('wrapLanguageModel', () => {
   it('wraps doStream and uses StreamingToolGuard when enabled', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
-        allowed: event.eventType !== 'command_exec',
-        denied: event.eventType === 'command_exec',
-        warn: false,
+        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
         reason: 'blocked',
       }),
     };

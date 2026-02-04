@@ -19,6 +19,10 @@ path = "src/lib.rs"
 name = "hushd"
 path = "src/main.rs"
 
+[[bin]]
+name = "clawdstriked"
+path = "src/main.rs"
+
 [dependencies]
 hush-core.workspace = true
 hush-proxy.workspace = true
