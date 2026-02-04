@@ -84,7 +84,7 @@ export class InMemoryAuditLogger implements AuditLogger {
           e.contextId,
           e.sessionId,
           e.toolName ?? '',
-          e.decision?.denied ? 'denied' : e.decision?.warn ? 'warn' : 'allowed',
+          e.decision?.status ?? 'allow',
         ]);
         return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
       }

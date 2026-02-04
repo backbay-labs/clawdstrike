@@ -144,11 +144,11 @@ guards:
   };
 
   const d1 = await engine.evaluate(fileEvent);
-  expect(d1.denied).toBe(true);
+  expect(d1.status).toBe('deny');
   expect(d1.guard).toBe('clawdstrike-virustotal');
 
   const d2 = await engine.evaluate(fileEvent);
-  expect(d2.denied).toBe(true);
+  expect(d2.status).toBe('deny');
   expect(server.counts.vtFiles).toBe(1);
 
   const netEvent: PolicyEvent = {
@@ -165,7 +165,7 @@ guards:
   };
 
   const d3 = await engine.evaluate(netEvent);
-  expect(d3.denied).toBe(true);
+  expect(d3.status).toBe('deny');
   expect(d3.guard).toBe('clawdstrike-safe-browsing');
 
   const snykEvent: PolicyEvent = {
@@ -181,7 +181,7 @@ guards:
   };
 
   const d4 = await engine.evaluate(snykEvent);
-  expect(d4.denied).toBe(true);
+  expect(d4.status).toBe('deny');
   expect(d4.guard).toBe('clawdstrike-snyk');
 
   await server.close();

@@ -64,7 +64,7 @@ export function useSecureChat<UI_MESSAGE extends UIMessage = UIMessage>(
       const decision = result.decision;
 
       setLastDecision(decision);
-      const isWarn = decision.status === 'warn' || decision.warn;
+      const isWarn = decision.status === 'warn';
       setSecurityStatus(prev => ({
         ...prev,
         checkCount: prev.checkCount + 1,

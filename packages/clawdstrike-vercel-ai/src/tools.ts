@@ -62,7 +62,7 @@ export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
     interceptor = csOrInterceptor.createInterceptor!();
   } else {
     // PolicyEngineLike - create a new interceptor
-    const config: AdapterConfig = { metadata: { framework: 'vercel-ai' } };
+    const config: AdapterConfig = {};
     interceptor = new BaseToolInterceptor(csOrInterceptor, config);
   }
 

@@ -9,4 +9,5 @@ export default defineConfig({
   splitting: false,
   treeshake: true,
   minify: false,
+  noExternal: ["@clawdstrike/adapter-core"],
 });

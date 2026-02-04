@@ -156,29 +156,16 @@ function customGuardError(guardName: string, err: unknown): GuardResult {
 }
 
 function decisionFromOverall(overall: GuardResult): Decision {
-  const denied = !overall.allowed;
-  const warn = overall.allowed && overall.severity === 'medium';
+  const status: DecisionStatus = overall.allowed
+    ? overall.severity === 'medium'
+      ? 'warn'
+      : 'allow'
+    : 'deny';
 
-  // Determine the new status field
-  let status: DecisionStatus;
-  if (denied) {
-    status = 'deny';
-  } else if (warn) {
-    status = 'warn';
-  } else {
-    status = 'allow';
-  }
-
-  const out: Decision = {
-    status,
-    // Legacy fields for backward compat
-    allowed: overall.allowed,
-    denied,
-    warn,
-  };
+  const out: Decision = { status };
 
   // Align with hush JSON: omit guard/severity for plain allow.
-  if (denied || warn) {
+  if (status !== 'allow') {
     out.guard = overall.guard;
     out.severity = overall.severity as any;
   }

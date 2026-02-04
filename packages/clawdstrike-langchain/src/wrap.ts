@@ -78,7 +78,7 @@ function resolveInterceptor(csOrEngine: ClawdstrikeLike | PolicyEngineLike): Too
     return csOrEngine.createInterceptor!();
   }
   // PolicyEngineLike
-  return createLangChainInterceptor(csOrEngine, { metadata: { framework: 'langchain' } });
+  return createLangChainInterceptor(csOrEngine);
 }
 
 function isClawdstrikeLike(value: unknown): value is ClawdstrikeLike {

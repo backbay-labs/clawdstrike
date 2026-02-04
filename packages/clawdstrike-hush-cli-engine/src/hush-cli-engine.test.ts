@@ -51,7 +51,7 @@ describe('createHushCliEngine', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { allowed: true, denied: false, warn: false },
+        decision: { status: 'allow' },
       }),
     );
     child.emit('close', 0, null);
@@ -76,12 +76,12 @@ describe('createHushCliEngine', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { allowed: true, denied: false, warn: false },
+        decision: { status: 'allow' },
       }),
     );
     child.emit('close', 0, null);
 
-    await expect(pending).resolves.toEqual({ allowed: true, denied: false, warn: false });
+    await expect(pending).resolves.toEqual({ status: 'allow' });
   });
 
   it('returns denied decision when policy blocks', async () => {
@@ -95,12 +95,12 @@ describe('createHushCliEngine', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { allowed: false, denied: true, warn: false, reason: 'blocked' },
+        decision: { status: 'deny', reason: 'blocked' },
       }),
     );
     child.emit('close', 0, null);
 
-    await expect(pending).resolves.toMatchObject({ denied: true, reason: 'blocked' });
+    await expect(pending).resolves.toMatchObject({ status: 'deny', reason: 'blocked' });
   });
 
   it('returns warn decision when policy warns', async () => {
@@ -114,12 +114,12 @@ describe('createHushCliEngine', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { allowed: true, denied: false, warn: true, message: 'heads up' },
+        decision: { status: 'warn', message: 'heads up' },
       }),
     );
     child.emit('close', 0, null);
 
-    await expect(pending).resolves.toMatchObject({ warn: true, message: 'heads up' });
+    await expect(pending).resolves.toMatchObject({ status: 'warn', message: 'heads up' });
   });
 
   it('parses decision even when hush exits with warn (code 1)', async () => {
@@ -133,12 +133,12 @@ describe('createHushCliEngine', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { allowed: true, denied: false, warn: true, reason: 'warned' },
+        decision: { status: 'warn', reason: 'warned' },
       }),
     );
     child.emit('close', 1, null);
 
-    await expect(pending).resolves.toMatchObject({ warn: true, reason: 'warned' });
+    await expect(pending).resolves.toMatchObject({ status: 'warn', reason: 'warned' });
   });
 
   it('parses decision even when hush exits with blocked (code 2)', async () => {
@@ -152,12 +152,12 @@ describe('createHushCliEngine', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { allowed: false, denied: true, warn: false, reason: 'blocked' },
+        decision: { status: 'deny', reason: 'blocked' },
       }),
     );
     child.emit('close', 2, null);
 
-    await expect(pending).resolves.toMatchObject({ denied: true, reason: 'blocked' });
+    await expect(pending).resolves.toMatchObject({ status: 'deny', reason: 'blocked' });
   });
 
   it('fails closed on malformed JSON', async () => {
@@ -172,9 +172,7 @@ describe('createHushCliEngine', () => {
     child.emit('close', 0, null);
 
     await expect(pending).resolves.toMatchObject({
-      allowed: false,
-      denied: true,
-      warn: false,
+      status: 'deny',
       reason: 'engine_error',
     });
   });

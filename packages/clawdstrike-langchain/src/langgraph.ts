@@ -75,7 +75,7 @@ export function createSecurityCheckpoint(
 
       return (
         warningDecision
-        ?? { status: 'allow', allowed: true, denied: false, warn: false }
+        ?? { status: 'allow' }
       );
     },
 
