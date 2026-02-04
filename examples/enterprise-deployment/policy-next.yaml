@@ -1,0 +1,16 @@
+version: "1.0.0"
+name: "enterprise-policy-next"
+description: "Example policy pushed as a signed bundle"
+extends: "clawdstrike:ai-agent"
+merge_strategy: deep_merge
+
+guards:
+  egress_allowlist:
+    # Demonstrate a more restrictive stance
+    block:
+      - "pastebin.com"
+      - "gist.github.com"
+
+settings:
+  fail_fast: true
+

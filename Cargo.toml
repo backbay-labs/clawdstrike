@@ -7,9 +7,15 @@ members = [
     "crates/hush-cli",
     "crates/hushd",
     "crates/hush-wasm",
+    "crates/hush-multi-agent",
     "packages/hush-py/hush-native",
 ]
-exclude = ["fuzz", "examples/rust/basic-verification"]
+exclude = [
+    "fuzz",
+    "examples/rust/basic-verification",
+    "examples/autonomous-sandbox",
+    "examples/multi-agent-orchestration",
+]
 
 [workspace.package]
 version = "0.1.0"

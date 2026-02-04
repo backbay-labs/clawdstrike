@@ -146,6 +146,8 @@ pub async fn check_action(
 
     let result = result.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    state.metrics.inc_check(result.allowed);
+
     // Record to audit ledger
     let audit_event = AuditEvent::from_guard_result(
         &request.action_type,
@@ -154,10 +156,7 @@ pub async fn check_action(
         request.session_id.as_deref(),
         request.agent_id.as_deref(),
     );
-
-    if let Err(e) = state.ledger.record(&audit_event) {
-        tracing::warn!(error = %e, "Failed to record audit event");
-    }
+    state.record_audit_event(audit_event);
 
     // Broadcast event
     state.broadcast(DaemonEvent {

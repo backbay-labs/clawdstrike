@@ -4,6 +4,7 @@ pub mod audit;
 pub mod check;
 pub mod events;
 pub mod health;
+pub mod metrics;
 pub mod policy;
 pub mod shutdown;
 
@@ -34,7 +35,9 @@ pub fn create_router(state: AppState) -> Router {
         .allow_headers(Any);
 
     // Public routes - no auth required
-    let public_routes = Router::new().route("/health", get(health::health));
+    let public_routes = Router::new()
+        .route("/health", get(health::health))
+        .route("/metrics", get(metrics::metrics));
 
     // Check routes - require auth + check scope (when auth is enabled).
     let check_routes = Router::new()
@@ -45,6 +48,7 @@ pub fn create_router(state: AppState) -> Router {
     // Read routes - require auth + read scope (when auth is enabled).
     let read_routes = Router::new()
         .route("/api/v1/policy", get(policy::get_policy))
+        .route("/api/v1/policy/bundle", get(policy::get_policy_bundle))
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
         .route("/api/v1/events", get(events::stream_events))
@@ -54,6 +58,7 @@ pub fn create_router(state: AppState) -> Router {
     // Admin routes - require auth + admin scope
     let admin_routes = Router::new()
         .route("/api/v1/policy", put(policy::update_policy))
+        .route("/api/v1/policy/bundle", put(policy::update_policy_bundle))
         .route("/api/v1/policy/reload", post(policy::reload_policy))
         .route("/api/v1/shutdown", post(shutdown::shutdown))
         .layer(middleware::from_fn(scope_layer(Scope::Admin)))

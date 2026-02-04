@@ -32,6 +32,7 @@ use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, Signe
 
 mod canonical_commandline;
 mod guard_report_json;
+mod policy_bundle;
 mod policy_diff;
 mod policy_event;
 mod policy_impact;
@@ -317,6 +318,12 @@ enum PolicyCommands {
         json: bool,
     },
 
+    /// Build/verify signed policy bundles
+    Bundle {
+        #[command(subcommand)]
+        command: PolicyBundleCommands,
+    },
+
     /// Rego/OPA policy tooling (not yet implemented)
     Rego {
         #[command(subcommand)]
@@ -380,6 +387,45 @@ enum RegoCommands {
         file: String,
         /// Input JSON path (use - for stdin)
         input: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum PolicyBundleCommands {
+    /// Build a signed policy bundle (JSON) from a policy reference
+    Build {
+        /// Policy reference (ruleset name or file path)
+        policy_ref: String,
+        /// Resolve extends before bundling
+        #[arg(long)]
+        resolve: bool,
+        /// Signing private key file (hex seed, 32 bytes)
+        #[arg(long)]
+        key: String,
+        /// Output path for the bundle JSON
+        #[arg(short, long, default_value = "policy.bundle.json")]
+        output: String,
+        /// Include the signing public key in the bundle
+        #[arg(long)]
+        embed_pubkey: bool,
+        /// Additional source strings to include (repeatable)
+        #[arg(long)]
+        source: Vec<String>,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Verify a signed policy bundle (JSON)
+    Verify {
+        /// Bundle JSON path
+        bundle: String,
+        /// Public key file (hex). If omitted, uses embedded public_key.
+        #[arg(long)]
+        pubkey: Option<String>,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1298,6 +1344,10 @@ async fn cmd_policy(
         } => Ok(policy_version::cmd_policy_version(
             policy_ref, resolve, json, stdout, stderr,
         )),
+
+        PolicyCommands::Bundle { command } => {
+            Ok(policy_bundle::cmd_policy_bundle(command, stdout, stderr))
+        }
 
         PolicyCommands::Rego { command } => {
             Ok(policy_rego::cmd_policy_rego(command, stdout, stderr))

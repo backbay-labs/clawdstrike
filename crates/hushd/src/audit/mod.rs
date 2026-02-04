@@ -1,5 +1,6 @@
 //! SQLite-backed audit ledger for security events
 
+pub mod forward;
 mod schema;
 
 use std::path::Path;

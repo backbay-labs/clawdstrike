@@ -21,11 +21,39 @@ log_level: info
 # If not set, an ephemeral key is generated at startup
 # signing_key: /etc/hushd/signing.key
 
+# Optional: trusted public keys for verifying incoming signed policy bundles (enterprise distribution).
+# If empty, hushd will only accept bundle updates when the bundle embeds a public_key.
+# policy_bundle_trusted_pubkeys:
+#   - "${HUSHD_POLICY_BUNDLE_PUBKEY}"
+
 # Enable CORS for browser access
 cors_enabled: true
 
 # Maximum audit entries to keep (0 = unlimited)
 max_audit_entries: 100000
+
+# Optional: forward audit events to external sinks (in addition to the SQLite ledger)
+audit_forward:
+  enabled: false
+  queue_size: 8192
+  timeout_ms: 2000
+  sinks:
+    # - type: stdout_jsonl
+    # - type: file_jsonl
+    #   path: /var/log/hushd/audit.jsonl
+    # - type: webhook
+    #   url: "${HUSHD_AUDIT_WEBHOOK_URL}"
+    #   headers:
+    #     Authorization: "Bearer ${HUSHD_AUDIT_WEBHOOK_TOKEN}"
+    # - type: splunk_hec
+    #   url: "https://splunk.example:8088"
+    #   token: "${SPLUNK_HEC_TOKEN}"
+    #   index: "main"
+    #   sourcetype: "clawdstrike:audit"
+    # - type: elastic
+    #   url: "https://elasticsearch.example:9200"
+    #   api_key: "${ELASTIC_API_KEY}"
+    #   index: "clawdstrike-audit"
 
 # TLS configuration (not implemented in hushd yet; terminate TLS at a reverse proxy)
 # tls:

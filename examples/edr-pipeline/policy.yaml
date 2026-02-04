@@ -1,0 +1,18 @@
+version: "1.0.0"
+name: "edr-pipeline-example"
+description: "Example policy used by hushd in the EDR pipeline demo"
+extends: "clawdstrike:ai-agent"
+merge_strategy: deep_merge
+
+guards:
+  egress_allowlist:
+    default_action: block
+    additional_allow:
+      - "api.github.com"
+      - "docs.rs"
+    block:
+      - "evil-site.com"
+
+settings:
+  fail_fast: false
+
