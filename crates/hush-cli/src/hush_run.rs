@@ -509,6 +509,7 @@ fn load_or_create_signer(path: &Path, stderr: &mut dyn Write) -> anyhow::Result<
 #[derive(Clone, Debug)]
 enum SandboxWrapper {
     None,
+    #[cfg(target_os = "macos")]
     SandboxExec {
         profile_path: PathBuf,
     },
@@ -559,7 +560,7 @@ fn maybe_prepare_sandbox(
 
             let cwd = std::env::current_dir().context("get current directory")?;
             let args = generate_bwrap_args(&cwd);
-            return Ok((SandboxWrapper::Bwrap { args }, "bwrap".to_string()));
+            Ok((SandboxWrapper::Bwrap { args }, "bwrap".to_string()))
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -628,6 +629,7 @@ async fn spawn_and_wait_child(
             c.args(&command[1..]);
             c
         }
+        #[cfg(target_os = "macos")]
         SandboxWrapper::SandboxExec { profile_path } => {
             let mut c = Command::new("/usr/bin/sandbox-exec");
             c.arg("-f").arg(profile_path);
