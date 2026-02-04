@@ -373,20 +373,6 @@ jobs:
       - name: Test
         run: npm test
 
-          cache-dependency-path: packages/clawdstrike-policy/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm test
-
   agent-framework-integrations:
     name: Agent Framework Integrations (${{ matrix.name }})
     runs-on: ubuntu-latest
