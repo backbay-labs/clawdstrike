@@ -10,7 +10,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ### Prerequisites
 
-- **Rust 1.92+** (check with `rustc --version`)
+- **Rust 1.93+** (check with `rustc --version`)
 - **Cargo** (comes with Rust)
 - **Git**
 
