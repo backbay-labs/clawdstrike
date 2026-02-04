@@ -3,13 +3,14 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use clawdstrike::Policy;
+use clawdstrike::policy::{PolicyLocation, PolicyResolver, ResolvedPolicySource};
 use std::fs;
 use tempfile::TempDir;
 
 #[test]
 fn test_policy_extends_builtin_strict() {
     let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: CustomPolicy
 extends: strict
 guards:
@@ -37,7 +38,7 @@ fn test_policy_extends_file() {
 
     // Create base policy
     let base_yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Base
 guards:
   forbidden_path:
@@ -52,7 +53,7 @@ settings:
     // Create child policy
     let child_yaml = format!(
         r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Child
 extends: {}
 guards:
@@ -76,7 +77,7 @@ guards:
 #[test]
 fn test_policy_merge_strategy_replace() {
     let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: CustomPolicy
 extends: strict
 merge_strategy: replace
@@ -93,7 +94,7 @@ settings:
 #[test]
 fn test_policy_merge_strategy_deep_merge() {
     let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: CustomPolicy
 extends: strict
 merge_strategy: deep_merge
@@ -114,7 +115,7 @@ fn test_policy_remove_patterns() {
 
     // Create base policy with patterns
     let base_yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Base
 guards:
   forbidden_path:
@@ -129,7 +130,7 @@ guards:
     // Create child policy that removes .env
     let child_yaml = format!(
         r#"
-version: "1.0.0"
+version: "1.1.0"
 name: DevPolicy
 extends: {}
 guards:
@@ -163,7 +164,7 @@ fn test_policy_circular_extends_detected() {
         &policy_a,
         format!(
             r#"
-version: "1.0.0"
+version: "1.1.0"
 name: A
 extends: {}
 "#,
@@ -176,7 +177,7 @@ extends: {}
         &policy_b,
         format!(
             r#"
-version: "1.0.0"
+version: "1.1.0"
 name: B
 extends: {}
 "#,
@@ -197,7 +198,7 @@ fn test_policy_multi_level_extends() {
 
     // Create grandparent policy
     let grandparent_yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Grandparent
 settings:
   session_timeout_secs: 1800
@@ -208,7 +209,7 @@ settings:
     // Create parent policy
     let parent_yaml = format!(
         r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Parent
 extends: {}
 settings:
@@ -222,7 +223,7 @@ settings:
     // Create child policy
     let child_yaml = format!(
         r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Child
 extends: {}
 settings:
@@ -237,4 +238,46 @@ settings:
     assert_eq!(policy.settings.effective_session_timeout_secs(), 1800); // from grandparent
     assert!(policy.settings.effective_fail_fast()); // from parent
     assert!(policy.settings.effective_verbose_logging()); // from child
+}
+
+#[test]
+fn test_policy_extends_resolver_detects_cycles_across_non_file_keys() {
+    use std::collections::HashMap;
+
+    #[derive(Clone, Default)]
+    struct MapResolver {
+        policies: HashMap<String, String>,
+    }
+
+    impl PolicyResolver for MapResolver {
+        fn resolve(&self, reference: &str, _from: &PolicyLocation) -> clawdstrike::Result<ResolvedPolicySource> {
+            let yaml = self.policies.get(reference).cloned().ok_or_else(|| {
+                clawdstrike::Error::ConfigError(format!("Unknown policy ref: {}", reference))
+            })?;
+
+            Ok(ResolvedPolicySource {
+                key: format!("url:{}", reference),
+                yaml,
+                location: PolicyLocation::Url(reference.to_string()),
+            })
+        }
+    }
+
+    let a = r#"
+version: "1.1.0"
+name: A
+extends: b
+"#;
+    let b = r#"
+version: "1.1.0"
+name: B
+extends: a
+"#;
+
+    let mut resolver = MapResolver::default();
+    resolver.policies.insert("a".to_string(), a.to_string());
+    resolver.policies.insert("b".to_string(), b.to_string());
+
+    let err = Policy::from_yaml_with_extends_resolver(a, None, &resolver).unwrap_err();
+    assert!(err.to_string().contains("Circular"));
 }

@@ -110,7 +110,7 @@ All deployment methods use the same configuration file format. See `config.yaml`
 By default, hushd listens on `127.0.0.1:9876`. For production:
 
 1. Use a firewall to restrict access
-2. Terminate TLS at a reverse proxy (native TLS is not implemented in hushd yet)
+2. Enable native TLS in hushd **or** terminate TLS at a reverse proxy
 3. Use API keys for authentication
 
 ### File permissions
@@ -125,6 +125,20 @@ chmod 750 /var/lib/hushd
 chown hushd:hushd /var/lib/hushd
 ```
 
+### Audit encryption
+
+If your guard details/metadata may contain sensitive data, enable encryption at rest for the audit ledger:
+
+- Set `audit.encryption.enabled: true`
+- Provide a 32-byte hex key via `audit.encryption.key_source` (`file` or `env`).
+
+Example:
+
+```bash
+openssl rand -hex 32 > /etc/hushd/audit.key
+chmod 600 /etc/hushd/audit.key
+```
+
 ## Monitoring
 
 ### Health endpoint
@@ -135,7 +149,9 @@ curl http://localhost:9876/health
 
 ### Prometheus metrics
 
-Prometheus `/metrics` is not implemented in v0.1.0.
+Prometheus metrics are available at `/metrics` (text exposition format).
+
+- If auth is enabled, `/metrics` requires a key with `read` scope.
 
 ### Log analysis
 

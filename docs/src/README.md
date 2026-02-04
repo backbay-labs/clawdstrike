@@ -4,7 +4,7 @@ Clawdstrike is a Rust library + CLI for **policy-driven security checks** in age
 It evaluates actions (filesystem, network egress, patches, and MCP tool calls) against a YAML policy and returns an allow / warn / block result.
 
 This book is a **contract for what is implemented in this repository** (Clawdstrike `0.1.0`).
-If you are looking for a full process wrapper / sandbox (`hush run`), that is not shipped in the current Rust codebase—see `docs/plans/` for roadmap work.
+Clawdstrike ships a best-effort process wrapper (`hush run`) for audit logging + proxy-based egress enforcement. It is not a complete OS sandbox; see `docs/plans/` for security notes and roadmap items.
 
 ## Quick Start (CLI)
 
@@ -28,7 +28,7 @@ Policies are YAML files that configure the built-in guards under `guards.*`.
 They can inherit from a built-in ruleset or another file via `extends`.
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: My Policy
 extends: clawdstrike:default
 
@@ -46,6 +46,12 @@ Receipts are created via the Rust API (`HushEngine::create_signed_receipt`) and 
 ```bash
 hush keygen --output hush.key
 hush verify receipt.json --pubkey hush.key.pub
+```
+
+To keep the Ed25519 seed off disk, you can seal it into TPM2 (best-effort, requires `tpm2-tools`):
+
+```bash
+hush keygen --tpm-seal --out hush.keyblob
 ```
 
 ## Next Steps

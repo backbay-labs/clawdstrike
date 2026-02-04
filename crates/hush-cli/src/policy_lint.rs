@@ -4,6 +4,7 @@ use std::io::Write;
 use clawdstrike::Policy;
 
 use crate::policy_diff::{ResolvedPolicySource, ResolvedPolicySource as Rps};
+use crate::remote_extends::RemoteExtendsConfig;
 use crate::{CliJsonError, ExitCode, PolicySource, CLI_JSON_VERSION};
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -27,12 +28,14 @@ pub struct PolicyLintJsonOutput {
 pub fn cmd_policy_lint(
     policy_ref: String,
     resolve: bool,
+    remote_extends: &RemoteExtendsConfig,
     json: bool,
     strict: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
-    let loaded = match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve) {
+    let loaded =
+        match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve, remote_extends) {
         Ok(v) => v,
         Err(e) => {
             let code = crate::policy_error_exit_code(&e.source);

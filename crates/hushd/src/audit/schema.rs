@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
     session_id TEXT,
     agent_id TEXT,
     metadata TEXT,
+    metadata_enc BLOB,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -30,13 +31,13 @@ CREATE TABLE IF NOT EXISTS audit_metadata (
 );
 
 -- Insert schema version
-INSERT OR REPLACE INTO audit_metadata (key, value) VALUES ('schema_version', '1');
+INSERT OR REPLACE INTO audit_metadata (key, value) VALUES ('schema_version', '2');
 "#;
 
 /// SQL to query events
 pub const SELECT_EVENTS: &str = r#"
 SELECT id, timestamp, event_type, action_type, target, decision, guard,
-       severity, message, session_id, agent_id, metadata
+       severity, message, session_id, agent_id, metadata, metadata_enc
 FROM audit_events
 WHERE 1=1
 "#;
@@ -45,8 +46,8 @@ WHERE 1=1
 pub const INSERT_EVENT: &str = r#"
 INSERT INTO audit_events
     (id, timestamp, event_type, action_type, target, decision, guard,
-     severity, message, session_id, agent_id, metadata)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+     severity, message, session_id, agent_id, metadata, metadata_enc)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
 "#;
 
 /// SQL to count events

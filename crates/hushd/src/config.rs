@@ -111,6 +111,85 @@ impl Default for RateLimitConfig {
         }
     }
 }
+
+fn default_remote_max_fetch_bytes() -> usize {
+    1_048_576 // 1 MiB
+}
+
+fn default_remote_max_cache_bytes() -> usize {
+    100_000_000 // 100 MB
+}
+
+/// Remote `extends` configuration (disabled unless allowlisted).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteExtendsConfig {
+    /// Allowed hosts for remote policy resolution.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+    /// Optional cache directory override.
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+    /// Maximum bytes to fetch for a single remote policy.
+    #[serde(default = "default_remote_max_fetch_bytes")]
+    pub max_fetch_bytes: usize,
+    /// Maximum total bytes for the cache directory.
+    #[serde(default = "default_remote_max_cache_bytes")]
+    pub max_cache_bytes: usize,
+}
+
+impl Default for RemoteExtendsConfig {
+    fn default() -> Self {
+        Self {
+            allowed_hosts: Vec::new(),
+            cache_dir: None,
+            max_fetch_bytes: default_remote_max_fetch_bytes(),
+            max_cache_bytes: default_remote_max_cache_bytes(),
+        }
+    }
+}
+
+/// Audit ledger encryption key source.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditEncryptionKeySource {
+    /// Load key bytes from a file containing a hex string (32 bytes / 64 hex chars).
+    #[default]
+    File,
+    /// Load key bytes from an environment variable containing a hex string (32 bytes / 64 hex chars).
+    Env,
+    /// Load key bytes from a TPM-sealed blob (JSON written by `hush keygen --tpm-seal`).
+    TpmSealedBlob,
+}
+
+/// Audit ledger encryption configuration.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AuditEncryptionConfig {
+    /// Enable encryption at rest for the audit metadata blob.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Key source for encryption.
+    #[serde(default)]
+    pub key_source: AuditEncryptionKeySource,
+
+    /// File containing the hex-encoded key (required for `file` key_source).
+    #[serde(default)]
+    pub key_path: Option<PathBuf>,
+
+    /// Environment variable name containing the hex-encoded key (required for `env` key_source).
+    #[serde(default)]
+    pub key_env: Option<String>,
+
+    /// Path to a TPM-sealed blob JSON file (required for `tpm_sealed_blob` key_source).
+    #[serde(default)]
+    pub tpm_sealed_blob_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AuditConfig {
+    #[serde(default)]
+    pub encryption: AuditEncryptionConfig,
+}
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -150,6 +229,10 @@ pub struct Config {
     #[serde(default)]
     pub max_audit_entries: usize,
 
+    /// Audit ledger configuration.
+    #[serde(default)]
+    pub audit: AuditConfig,
+
     /// API authentication configuration
     #[serde(default)]
     pub auth: AuthConfig,
@@ -157,6 +240,10 @@ pub struct Config {
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+
+    /// Remote `extends` configuration (disabled unless allowlisted).
+    #[serde(default)]
+    pub remote_extends: RemoteExtendsConfig,
 }
 
 fn default_listen() -> String {
@@ -194,8 +281,10 @@ impl Default for Config {
             signing_key: None,
             cors_enabled: default_cors(),
             max_audit_entries: 0,
+            audit: AuditConfig::default(),
             auth: AuthConfig::default(),
             rate_limit: RateLimitConfig::default(),
+            remote_extends: RemoteExtendsConfig::default(),
         }
     }
 }
@@ -230,7 +319,97 @@ impl Config {
                 )
             })?;
         }
+
+        if self.audit.encryption.enabled {
+            match self.audit.encryption.key_source {
+                AuditEncryptionKeySource::File => {
+                    if self.audit.encryption.key_path.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.key_path is required when audit.encryption.key_source = file"
+                        ));
+                    }
+                }
+                AuditEncryptionKeySource::Env => {
+                    if self.audit.encryption.key_env.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.key_env is required when audit.encryption.key_source = env"
+                        ));
+                    }
+                }
+                AuditEncryptionKeySource::TpmSealedBlob => {
+                    if self.audit.encryption.tpm_sealed_blob_path.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "audit.encryption.tpm_sealed_blob_path is required when audit.encryption.key_source = tpm_sealed_blob"
+                        ));
+                    }
+                }
+            }
+        }
         Ok(())
+    }
+
+    pub fn audit_encryption_key(&self) -> anyhow::Result<Option<[u8; 32]>> {
+        if !self.audit.encryption.enabled {
+            return Ok(None);
+        }
+
+        let bytes = match self.audit.encryption.key_source {
+            AuditEncryptionKeySource::File => {
+                let path = self.audit.encryption.key_path.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("audit.encryption.key_path is required for file key_source")
+                })?;
+                std::fs::read_to_string(path)
+                    .map_err(|e| anyhow::anyhow!("Failed to read audit encryption key: {}", e))?
+            }
+            AuditEncryptionKeySource::Env => {
+                let name = self.audit.encryption.key_env.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("audit.encryption.key_env is required for env key_source")
+                })?;
+                expand_env_refs(&format!("${{{}}}", name))?
+            }
+            AuditEncryptionKeySource::TpmSealedBlob => {
+                let path = self
+                    .audit
+                    .encryption
+                    .tpm_sealed_blob_path
+                    .as_ref()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "audit.encryption.tpm_sealed_blob_path is required for tpm_sealed_blob key_source"
+                        )
+                    })?;
+                let raw = std::fs::read_to_string(path).map_err(|e| {
+                    anyhow::anyhow!("Failed to read TPM sealed audit key blob: {}", e)
+                })?;
+                let blob: hush_core::TpmSealedBlob = serde_json::from_str(raw.trim())
+                    .map_err(|e| anyhow::anyhow!("Invalid TPM sealed blob JSON: {}", e))?;
+                let unsealed = blob
+                    .unseal()
+                    .map_err(|e| anyhow::anyhow!("TPM unseal failed: {}", e))?;
+                if unsealed.len() != 32 {
+                    return Err(anyhow::anyhow!(
+                        "Audit encryption key must be 32 bytes, got {}",
+                        unsealed.len()
+                    ));
+                }
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&unsealed);
+                return Ok(Some(arr));
+            }
+        };
+
+        let hex_str = bytes.trim().strip_prefix("0x").unwrap_or(bytes.trim());
+        let decoded = hex::decode(hex_str)
+            .map_err(|e| anyhow::anyhow!("Invalid audit encryption key hex: {}", e))?;
+        if decoded.len() != 32 {
+            return Err(anyhow::anyhow!(
+                "Audit encryption key must be 32 bytes (64 hex chars), got {} bytes",
+                decoded.len()
+            ));
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&decoded);
+        Ok(Some(arr))
     }
 
     /// Load from default locations or create default

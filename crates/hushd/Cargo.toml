@@ -32,15 +32,21 @@ serde_json.workspace = true
 serde_yaml.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
+rand.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
 hex.workspace = true
+base64.workspace = true
+ring = "0.17"
 
 # HTTP server
 axum.workspace = true
 tower.workspace = true
 tower-http.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+tokio-rustls.workspace = true
 
 # Rate limiting
 governor.workspace = true
@@ -57,8 +63,8 @@ futures.workspace = true
 toml.workspace = true
 dirs.workspace = true
 
-# HTTP client (for status command)
-reqwest.workspace = true
+# HTTP client (for status command + remote policy extends)
+reqwest = { workspace = true, features = ["blocking"] }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

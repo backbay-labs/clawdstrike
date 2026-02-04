@@ -64,6 +64,9 @@ clap = { version = "4.5", features = ["derive"] }
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+rustls = "0.23"
+rustls-pki-types = "1.14"
+tokio-rustls = "0.26"
 
 # Rate limiting
 governor = "0.10"

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use clawdstrike::{HushEngine, Policy};
 use hush_core::Keypair;
 
+use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
 use crate::state::AppState;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -66,14 +67,14 @@ pub async fn update_policy(
     State(state): State<AppState>,
     Json(request): Json<UpdatePolicyRequest>,
 ) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
-    // Parse the new policy
-    let policy = Policy::from_yaml_with_extends(&request.yaml, state.config.policy_path.as_deref())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid policy YAML: {}", e),
-            )
-        })?;
+    let resolver = RemotePolicyResolver::new(RemoteExtendsResolverConfig::from_config(
+        &state.config.remote_extends,
+    ))
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let base_path = state.config.policy_path.as_deref();
+    let policy = Policy::from_yaml_with_extends_resolver(&request.yaml, base_path, &resolver)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy YAML: {}", e)))?;
 
     // Update the engine
     let mut engine = state.engine.write().await;
@@ -90,7 +91,10 @@ pub async fn update_policy(
         engine.keypair().cloned()
     };
 
-    let mut new_engine = HushEngine::with_policy(policy);
+    // Fail closed if custom guards are requested but unavailable.
+    let mut new_engine = HushEngine::builder(policy)
+        .build()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     new_engine = match keypair {
         Some(keypair) => new_engine.with_keypair(keypair),
         None => new_engine.with_generated_keypair(),

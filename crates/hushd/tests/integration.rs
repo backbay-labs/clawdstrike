@@ -9,6 +9,7 @@
 mod common;
 
 use common::daemon_url;
+use hushd::config::{AuditConfig, AuditEncryptionConfig, AuditEncryptionKeySource, Config, RateLimitConfig};
 
 /// Helper to get client and URL
 fn test_setup() -> (reqwest::Client, String) {
@@ -112,7 +113,7 @@ async fn test_audit_query() {
 
     // First, make some actions to audit
     client
-        .post(format!("{}/api/v1/check", url))
+        .post(format!("{}/api/v1/check", &url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/test/file.txt"
@@ -123,7 +124,7 @@ async fn test_audit_query() {
 
     // Query audit log
     let resp = client
-        .get(format!("{}/api/v1/audit?limit=10", url))
+        .get(format!("{}/api/v1/audit?limit=10", &url))
         .send()
         .await
         .expect("Failed to query audit");
@@ -133,6 +134,76 @@ async fn test_audit_query() {
     let audit: serde_json::Value = resp.json().await.unwrap();
     assert!(audit["events"].is_array());
     assert!(audit["total"].is_number());
+}
+
+#[tokio::test]
+async fn test_audit_encryption_stores_ciphertext_and_decrypts_on_query() {
+    let key_path = std::env::temp_dir().join(format!(
+        "hushd-audit-key-{}.hex",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(&key_path, hex::encode([9u8; 32])).unwrap();
+
+    let daemon = common::TestDaemon::spawn_with_config(Config {
+        cors_enabled: false,
+        rate_limit: RateLimitConfig {
+            enabled: false,
+            ..Default::default()
+        },
+        audit: AuditConfig {
+            encryption: AuditEncryptionConfig {
+                enabled: true,
+                key_source: AuditEncryptionKeySource::File,
+                key_path: Some(key_path),
+                ..Default::default()
+            },
+        },
+        ..Default::default()
+    });
+
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
+
+    // Trigger an event with metadata (SecretLeakGuard emits details).
+    client
+        .post(format!("{}/api/v1/check", url))
+        .json(&serde_json::json!({
+            "action_type": "file_write",
+            "target": "/tmp/out.txt",
+            "content": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }))
+        .send()
+        .await
+        .expect("Failed to check action");
+
+    // Query audit log: should return decrypted metadata.
+    let resp = client
+        .get(format!("{}/api/v1/audit?limit=10", url))
+        .send()
+        .await
+        .expect("Failed to query audit");
+    assert!(resp.status().is_success());
+
+    let audit: serde_json::Value = resp.json().await.unwrap();
+    let events = audit["events"].as_array().unwrap();
+    let violation = events
+        .iter()
+        .find(|e| e["decision"] == "blocked")
+        .expect("expected at least one blocked event");
+    assert!(violation.get("metadata").is_some());
+
+    // Verify ciphertext is stored in SQLite (metadata_enc present, metadata NULL).
+    let db_path = daemon.test_dir.join("audit.db");
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let (plain, enc): (Option<String>, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT metadata, metadata_enc FROM audit_events WHERE decision = 'blocked' LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(plain.is_none());
+    assert!(enc.is_some());
 }
 
 #[tokio::test]
@@ -170,6 +241,54 @@ async fn test_sse_events() {
             .map(|v| v.to_str().unwrap_or("")),
         Some("text/event-stream")
     );
+}
+
+#[tokio::test]
+async fn test_metrics_endpoint() {
+    let (client, url) = test_setup();
+    let resp = client
+        .get(format!("{}/metrics", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("hushd_http_requests_total"));
+}
+
+#[tokio::test]
+async fn test_eval_policy_event() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-1",
+                "eventType": "tool_call",
+                "timestamp": "2026-02-03T00:00:20Z",
+                "sessionId": "sess-eval-1",
+                "data": {
+                    "type": "tool",
+                    "toolName": "mcp__blender__execute_blender_code",
+                    "parameters": { "code": "print('hello from mcp')" }
+                },
+                "metadata": { "toolKind": "mcp" }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["command"], "policy_eval");
+    assert_eq!(json["decision"]["allowed"], true);
+    assert_eq!(json["decision"]["denied"], false);
+    assert_eq!(json["decision"]["warn"], false);
+    assert_eq!(json["report"]["overall"]["allowed"], true);
 }
 
 // Unit tests that don't require daemon

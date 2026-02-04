@@ -18,12 +18,14 @@
 //! - `hush policy test <testYaml>` - Run policy tests from YAML
 //! - `hush policy impact <old> <new> <eventsJsonlPath|->` - Compare decisions across policies
 //! - `hush policy version <policyRef>` - Show policy schema version compatibility
+//! - `hush run --policy <ref|file> -- <cmd> <args…>` - Best-effort process wrapper (proxy + audit log + receipt)
 //! - `hush daemon start|stop|status|reload` - Daemon management
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::generate;
 use rand::Rng;
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -32,6 +34,8 @@ use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, Signe
 
 mod canonical_commandline;
 mod guard_report_json;
+mod hush_run;
+mod remote_extends;
 mod policy_diff;
 mod policy_event;
 mod policy_impact;
@@ -67,6 +71,14 @@ impl ExitCode {
     }
 }
 
+struct CheckArgs {
+    action_type: String,
+    target: String,
+    json: bool,
+    policy: Option<String>,
+    ruleset: Option<String>,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "hush")]
 #[command(version, about = "Clawdstrike security guard CLI", long_about = None)]
@@ -74,6 +86,22 @@ struct Cli {
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Allow remote policy extends from this host (repeatable). Remote extends require `#sha256=<HEX>` pins.
+    #[arg(long = "remote-extends-allow-host")]
+    remote_extends_allow_host: Vec<String>,
+
+    /// Cache directory for remote policy extends.
+    #[arg(long = "remote-extends-cache-dir")]
+    remote_extends_cache_dir: Option<PathBuf>,
+
+    /// Maximum bytes to fetch for a single remote policy (default: 1 MiB).
+    #[arg(long = "remote-extends-max-fetch-bytes", default_value_t = 1_048_576)]
+    remote_extends_max_fetch_bytes: usize,
+
+    /// Maximum total bytes for the remote policy cache (default: 100 MB).
+    #[arg(long = "remote-extends-max-cache-bytes", default_value_t = 100_000_000)]
+    remote_extends_max_cache_bytes: usize,
 
     #[command(subcommand)]
     command: Commands,
@@ -103,6 +131,49 @@ enum Commands {
         ruleset: Option<String>,
     },
 
+    /// Best-effort process wrapper (audit log + optional proxy/sandbox + receipt)
+    Run {
+        /// Policy reference (ruleset id like `default`/`clawdstrike:default`, or a YAML file path)
+        #[arg(long)]
+        policy: String,
+
+        /// Output path for PolicyEvent JSONL (default: hush.events.jsonl)
+        #[arg(long, default_value = "hush.events.jsonl")]
+        events_out: String,
+
+        /// Output path for the signed receipt (default: hush.run.receipt.json)
+        #[arg(long, default_value = "hush.run.receipt.json")]
+        receipt_out: String,
+
+        /// Signing key path (hex-encoded Ed25519 seed). If missing, a new keypair is generated.
+        #[arg(long, default_value = "hush.key")]
+        signing_key: String,
+
+        /// Disable the local CONNECT proxy (egress enforcement becomes audit-only/best-effort).
+        #[arg(long)]
+        no_proxy: bool,
+
+        /// Proxy listen port (0 = random free port)
+        #[arg(long, default_value_t = 0)]
+        proxy_port: u16,
+
+        /// Enable best-effort OS sandbox wrapper (macOS: sandbox-exec; Linux: bwrap when available)
+        #[arg(long)]
+        sandbox: bool,
+
+        /// Optional hushd URL to forward events for centralized audit (best-effort)
+        #[arg(long)]
+        hushd_url: Option<String>,
+
+        /// Bearer token for hushd (if omitted, uses HUSHD_ADMIN_KEY or HUSHD_API_KEY when set)
+        #[arg(long)]
+        hushd_token: Option<String>,
+
+        /// Command to run (use `--` before the command if it contains flags)
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
+
     /// Verify a signed receipt
     Verify {
         /// Path to receipt JSON file
@@ -120,8 +191,14 @@ enum Commands {
     /// Generate a signing keypair
     Keygen {
         /// Output path for private key
-        #[arg(short, long, default_value = "hush.key")]
+        #[arg(short, long, alias = "out", default_value = "hush.key")]
         output: String,
+
+        /// Store the Ed25519 seed sealed in TPM2 (writes a `.keyblob` JSON file).
+        ///
+        /// This requires `tpm2-tools` (`tpm2_createprimary`, `tpm2_create`, `tpm2_load`, `tpm2_unseal`).
+        #[arg(long)]
+        tpm_seal: bool,
     },
 
     /// Policy commands
@@ -474,7 +551,7 @@ async fn main() {
     let mut stdout = io::stdout();
     let mut stderr = io::stderr();
     let code = run(cli, &mut stdout, &mut stderr).await;
-    std::process::exit(code.as_i32());
+    std::process::exit(code);
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -531,50 +608,108 @@ struct VerifyJsonOutput {
     error: Option<CliJsonError>,
 }
 
-async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCode {
-    match cli.command {
+async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let Cli {
+        remote_extends_allow_host,
+        remote_extends_cache_dir,
+        remote_extends_max_fetch_bytes,
+        remote_extends_max_cache_bytes,
+        command,
+        ..
+    } = cli;
+
+    let mut remote_extends = remote_extends::RemoteExtendsConfig::new(remote_extends_allow_host)
+        .with_limits(remote_extends_max_fetch_bytes, remote_extends_max_cache_bytes);
+    if let Some(dir) = remote_extends_cache_dir {
+        remote_extends = remote_extends.with_cache_dir(dir);
+    }
+
+    match command {
         Commands::Check {
             action_type,
             target,
             json,
             policy,
             ruleset,
-        } => cmd_check(action_type, target, json, policy, ruleset, stdout, stderr).await,
+        } => cmd_check(
+            CheckArgs {
+                action_type,
+                target,
+                json,
+                policy,
+                ruleset,
+            },
+            &remote_extends,
+            stdout,
+            stderr,
+        )
+        .await
+        .as_i32(),
+
+        Commands::Run {
+            policy,
+            events_out,
+            receipt_out,
+            signing_key,
+            no_proxy,
+            proxy_port,
+            sandbox,
+            hushd_url,
+            hushd_token,
+            command,
+        } => hush_run::cmd_run(
+            hush_run::RunArgs {
+                policy,
+                events_out,
+                receipt_out,
+                signing_key,
+                no_proxy,
+                proxy_port,
+                sandbox,
+                hushd_url,
+                hushd_token,
+                command,
+            },
+            &remote_extends,
+            stdout,
+            stderr,
+        )
+        .await,
 
         Commands::Verify {
             receipt,
             json,
             pubkey,
-        } => cmd_verify(receipt, pubkey, json, stdout, stderr),
+        } => cmd_verify(receipt, pubkey, json, stdout, stderr).as_i32(),
 
-        Commands::Keygen { output } => match cmd_keygen(&output) {
-            Ok((private_path, public_path, public_hex)) => {
+        Commands::Keygen { output, tpm_seal } => match cmd_keygen(&output, tpm_seal) {
+            Ok(out) => {
                 let _ = writeln!(stdout, "Generated keypair:");
-                let _ = writeln!(stdout, "  Private key: {}", private_path);
-                let _ = writeln!(stdout, "  Public key:  {}", public_path);
-                let _ = writeln!(stdout, "  Public key (hex): {}", public_hex);
-                ExitCode::Ok
+                let _ = writeln!(stdout, "  {}: {}", out.private_label, out.private_path);
+                let _ = writeln!(stdout, "  Public key:  {}", out.public_path);
+                let _ = writeln!(stdout, "  Public key (hex): {}", out.public_hex);
+                ExitCode::Ok.as_i32()
             }
             Err(e) => {
                 let _ = writeln!(stderr, "Error: {}", e);
-                ExitCode::RuntimeError
+                ExitCode::RuntimeError.as_i32()
             }
         },
 
-        Commands::Policy { command } => match cmd_policy(command, stdout, stderr).await {
-            Ok(code) => code,
+        Commands::Policy { command } => match cmd_policy(command, &remote_extends, stdout, stderr).await {
+            Ok(code) => code.as_i32(),
             Err(e) => {
                 let _ = writeln!(stderr, "Error: {}", e);
-                ExitCode::RuntimeError
+                ExitCode::RuntimeError.as_i32()
             }
         },
 
-        Commands::Daemon { command } => cmd_daemon(command, stdout, stderr),
+        Commands::Daemon { command } => cmd_daemon(command, stdout, stderr).as_i32(),
 
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
             generate(shell, &mut cmd, "hush", &mut std::io::stdout());
-            ExitCode::Ok
+            ExitCode::Ok.as_i32()
         }
 
         Commands::Hash {
@@ -584,11 +719,11 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCo
         } => match cmd_hash(&file, &algorithm, &format) {
             Ok(output) => {
                 let _ = writeln!(stdout, "{}", output);
-                ExitCode::Ok
+                ExitCode::Ok.as_i32()
             }
             Err(e) => {
                 let _ = writeln!(stderr, "Error: {}", e);
-                ExitCode::InvalidArgs
+                ExitCode::InvalidArgs.as_i32()
             }
         },
 
@@ -597,13 +732,13 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCo
             file,
             verify,
             output,
-        } => cmd_sign(&key, &file, verify, output.as_deref(), stdout, stderr),
+        } => cmd_sign(&key, &file, verify, output.as_deref(), stdout, stderr).as_i32(),
 
         Commands::Merkle { command } => match cmd_merkle(command, stdout, stderr) {
-            Ok(code) => code,
+            Ok(code) => code.as_i32(),
             Err(e) => {
                 let _ = writeln!(stderr, "Error: {}", e);
-                ExitCode::RuntimeError
+                ExitCode::RuntimeError.as_i32()
             }
         },
     }
@@ -621,20 +756,94 @@ fn guard_result_exit_code(result: &GuardResult) -> ExitCode {
 }
 
 async fn cmd_check(
-    action_type: String,
-    target: String,
-    json: bool,
-    policy: Option<String>,
-    ruleset: Option<String>,
+    args: CheckArgs,
+    remote_extends: &remote_extends::RemoteExtendsConfig,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
+    let CheckArgs {
+        action_type,
+        target,
+        json,
+        policy,
+        ruleset,
+    } = args;
+
+    let resolver = match remote_extends::RemotePolicyResolver::new(remote_extends.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            return emit_check_error(
+                CheckErrorOutput {
+                    json,
+                    action_type: &action_type,
+                    target: &target,
+                    stdout,
+                    stderr,
+                },
+                PolicySource::Ruleset {
+                    name: ruleset.unwrap_or_else(|| "default".to_string()),
+                },
+                ExitCode::ConfigError,
+                "config_error",
+                &format!("Failed to initialize remote extends resolver: {}", e),
+            );
+        }
+    };
+
     let (engine, policy_source) = if let Some(policy_path) = policy {
-        match Policy::from_yaml_file_with_extends(&policy_path) {
-            Ok(policy) => (
-                HushEngine::with_policy(policy),
-                PolicySource::PolicyFile { path: policy_path },
-            ),
+        let content = match std::fs::read_to_string(&policy_path) {
+            Ok(c) => c,
+            Err(e) => {
+                return emit_check_error(
+                    CheckErrorOutput {
+                        json,
+                        action_type: &action_type,
+                        target: &target,
+                        stdout,
+                        stderr,
+                    },
+                    PolicySource::PolicyFile {
+                        path: policy_path.clone(),
+                    },
+                    ExitCode::RuntimeError,
+                    "runtime_error",
+                    &format!("Failed to read policy file: {}", e),
+                );
+            }
+        };
+
+        match Policy::from_yaml_with_extends_resolver(
+            &content,
+            Some(std::path::Path::new(&policy_path)),
+            &resolver,
+        ) {
+            Ok(policy) => {
+                let engine = match HushEngine::builder(policy).build() {
+                    Ok(engine) => engine,
+                    Err(e) => {
+                        return emit_check_error(
+                            CheckErrorOutput {
+                                json,
+                                action_type: &action_type,
+                                target: &target,
+                                stdout,
+                                stderr,
+                            },
+                            PolicySource::PolicyFile {
+                                path: policy_path.clone(),
+                            },
+                            ExitCode::ConfigError,
+                            "config_error",
+                            &format!("Failed to initialize engine: {}", e),
+                        );
+                    }
+                };
+
+                (
+                    engine,
+                    PolicySource::PolicyFile { path: policy_path },
+                )
+            }
             Err(e) => {
                 return emit_check_error(
                     CheckErrorOutput {
@@ -1044,30 +1253,81 @@ struct VerifyErrorOutput<'a> {
     stderr: &'a mut dyn Write,
 }
 
-fn cmd_keygen(output: &str) -> anyhow::Result<(String, String, String)> {
+struct KeygenOutput {
+    private_label: &'static str,
+    private_path: String,
+    public_path: String,
+    public_hex: String,
+}
+
+fn cmd_keygen(output: &str, tpm_seal: bool) -> anyhow::Result<KeygenOutput> {
+    let public_path = format!("{}.pub", output);
+
+    if tpm_seal {
+        let keypair = Keypair::generate();
+        let private_hex = keypair.to_hex();
+        let seed_bytes = hex::decode(private_hex.trim())
+            .map_err(|e| anyhow::anyhow!("failed to decode generated seed hex: {}", e))?;
+        let seed_len = seed_bytes.len();
+        let mut seed: [u8; 32] = seed_bytes.try_into().map_err(|_| {
+            anyhow::anyhow!(
+                "unexpected generated seed length (expected 32 bytes, got {})",
+                seed_len
+            )
+        })?;
+        let public_hex = keypair.public_key().to_hex();
+
+        let blob = hush_core::TpmSealedBlob::seal(&seed)?;
+        seed.fill(0);
+
+        let json = serde_json::to_string_pretty(&blob)?;
+        std::fs::write(output, json)?;
+        std::fs::write(&public_path, &public_hex)?;
+
+        return Ok(KeygenOutput {
+            private_label: "Sealed key blob",
+            private_path: output.to_string(),
+            public_path,
+            public_hex,
+        });
+    }
+
     let keypair = Keypair::generate();
     let private_hex = keypair.to_hex();
     let public_hex = keypair.public_key().to_hex();
 
     std::fs::write(output, &private_hex)?;
-    let public_path = format!("{}.pub", output);
     std::fs::write(&public_path, &public_hex)?;
 
-    Ok((output.to_string(), public_path, public_hex))
+    Ok(KeygenOutput {
+        private_label: "Private key",
+        private_path: output.to_string(),
+        public_path,
+        public_hex,
+    })
 }
 
 async fn cmd_policy(
     command: PolicyCommands,
+    remote_extends: &remote_extends::RemoteExtendsConfig,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> anyhow::Result<ExitCode> {
+    let resolver = remote_extends::RemotePolicyResolver::new(remote_extends.clone())
+        .map_err(|e| anyhow::anyhow!("Failed to initialize remote extends resolver: {}", e))?;
+
     match command {
         PolicyCommands::Show { ruleset, merged } => {
             let is_file = std::path::Path::new(&ruleset).exists();
 
             if is_file {
                 let policy = if merged {
-                    Policy::from_yaml_file_with_extends(&ruleset)?
+                    let content = std::fs::read_to_string(&ruleset)?;
+                    Policy::from_yaml_with_extends_resolver(
+                        &content,
+                        Some(std::path::Path::new(&ruleset)),
+                        &resolver,
+                    )?
                 } else {
                     Policy::from_yaml_file(&ruleset)?
                 };
@@ -1091,7 +1351,12 @@ async fn cmd_policy(
 
         PolicyCommands::Validate { file, resolve } => {
             let policy = if resolve {
-                Policy::from_yaml_file_with_extends(&file)?
+                let content = std::fs::read_to_string(&file)?;
+                Policy::from_yaml_with_extends_resolver(
+                    &content,
+                    Some(std::path::Path::new(&file)),
+                    &resolver,
+                )?
             } else {
                 Policy::from_yaml_file(&file)?
             };
@@ -1115,7 +1380,8 @@ async fn cmd_policy(
             resolve,
             json,
         } => {
-            let left_loaded = match policy_diff::load_policy_from_arg(&left, resolve) {
+            let left_loaded = match policy_diff::load_policy_from_arg(&left, resolve, remote_extends)
+            {
                 Ok(v) => v,
                 Err(e) => {
                     let code = policy_error_exit_code(&e.source);
@@ -1123,7 +1389,8 @@ async fn cmd_policy(
                     return Ok(code);
                 }
             };
-            let right_loaded = match policy_diff::load_policy_from_arg(&right, resolve) {
+            let right_loaded =
+                match policy_diff::load_policy_from_arg(&right, resolve, remote_extends) {
                 Ok(v) => v,
                 Err(e) => {
                     let code = policy_error_exit_code(&e.source);
@@ -1257,7 +1524,13 @@ async fn cmd_policy(
             strict,
             json,
         } => Ok(policy_lint::cmd_policy_lint(
-            policy_ref, resolve, json, strict, stdout, stderr,
+            policy_ref,
+            resolve,
+            remote_extends,
+            json,
+            strict,
+            stdout,
+            stderr,
         )),
 
         PolicyCommands::Test {
@@ -1266,7 +1539,16 @@ async fn cmd_policy(
             json,
             coverage,
         } => Ok(
-            policy_test::cmd_policy_test(test_file, resolve, json, coverage, stdout, stderr).await,
+            policy_test::cmd_policy_test(
+                test_file,
+                resolve,
+                remote_extends,
+                json,
+                coverage,
+                stdout,
+                stderr,
+            )
+            .await,
         ),
 
         PolicyCommands::Impact {
@@ -1282,6 +1564,7 @@ async fn cmd_policy(
             events,
             policy_impact::PolicyImpactOptions {
                 resolve,
+                remote_extends,
                 json,
                 fail_on_breaking,
             },
@@ -1295,7 +1578,12 @@ async fn cmd_policy(
             resolve,
             json,
         } => Ok(policy_version::cmd_policy_version(
-            policy_ref, resolve, json, stdout, stderr,
+            policy_ref,
+            resolve,
+            remote_extends,
+            json,
+            stdout,
+            stderr,
         )),
 
         PolicyCommands::Rego { command } => {
@@ -1308,7 +1596,18 @@ async fn cmd_policy(
             resolve,
             json,
         } => {
-            Ok(policy_pac::cmd_policy_eval(policy_ref, event, resolve, json, stdout, stderr).await)
+            Ok(
+                policy_pac::cmd_policy_eval(
+                    policy_ref,
+                    event,
+                    resolve,
+                    remote_extends,
+                    json,
+                    stdout,
+                    stderr,
+                )
+                .await,
+            )
         }
 
         PolicyCommands::Simulate {
@@ -1326,6 +1625,7 @@ async fn cmd_policy(
             events,
             policy_pac::PolicySimulateOptions {
                 resolve,
+                remote_extends,
                 json,
                 jsonl,
                 summary,

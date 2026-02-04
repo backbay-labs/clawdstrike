@@ -27,7 +27,16 @@ cors_enabled: true
 # Maximum audit entries to keep (0 = unlimited)
 max_audit_entries: 100000
 
-# TLS configuration (not implemented in hushd yet; terminate TLS at a reverse proxy)
+# Audit encryption (optional)
+# Stores the `metadata` blob encrypted at rest (searchable columns remain plaintext).
+# Generate a key with: `openssl rand -hex 32 > /etc/hushd/audit.key`
+# audit:
+#   encryption:
+#     enabled: true
+#     key_source: file
+#     key_path: /etc/hushd/audit.key
+
+# TLS configuration (optional; enable native TLS in hushd)
 # tls:
 #   cert_path: /etc/hushd/cert.pem
 #   key_path: /etc/hushd/key.pem

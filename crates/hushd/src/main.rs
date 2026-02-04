@@ -17,6 +17,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use hushd::api;
 use hushd::config::Config;
 use hushd::state::AppState;
+use hushd::tls::{TlsConnectInfo, TlsListener};
 
 fn normalize_host_for_listen(host: &str) -> String {
     host.trim()
@@ -180,14 +181,9 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
         listen = %config.listen,
         ruleset = %config.ruleset,
         audit_db = %config.audit_db.display(),
+        tls = %config.tls.is_some(),
         "Starting hushd"
     );
-
-    if config.tls.is_some() {
-        return Err(anyhow::anyhow!(
-            "TLS is configured but not implemented yet. Remove the `tls` config to start hushd."
-        ));
-    }
 
     // Create application state
     let state = AppState::new(config.clone()).await?;
@@ -263,12 +259,22 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     };
 
     // Run server
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal)
-    .await?;
+    if let Some(ref tls) = config.tls {
+        let tls_listener = TlsListener::new(listener, tls)?;
+        axum::serve(
+            tls_listener,
+            app.into_make_service_with_connect_info::<TlsConnectInfo>(),
+        )
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+    } else {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+    }
 
     // Log final stats
     let engine = state.engine.read().await;

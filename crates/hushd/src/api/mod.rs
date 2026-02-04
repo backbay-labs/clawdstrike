@@ -2,8 +2,10 @@
 
 pub mod audit;
 pub mod check;
+pub mod eval;
 pub mod events;
 pub mod health;
+pub mod metrics;
 pub mod policy;
 pub mod shutdown;
 
@@ -22,12 +24,14 @@ use crate::state::AppState;
 pub use audit::{AuditQuery, AuditResponse, AuditStatsResponse};
 pub use check::{CheckRequest, CheckResponse};
 pub use health::HealthResponse;
+pub use metrics as metrics_api;
 pub use policy::{PolicyResponse, UpdatePolicyRequest, UpdatePolicyResponse};
 pub use shutdown::ShutdownResponse;
 
 /// Create the API router
 pub fn create_router(state: AppState) -> Router {
     let cors_enabled = state.config.cors_enabled;
+    let metrics = state.metrics.clone();
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -39,11 +43,13 @@ pub fn create_router(state: AppState) -> Router {
     // Check routes - require auth + check scope (when auth is enabled).
     let check_routes = Router::new()
         .route("/api/v1/check", post(check::check_action))
+        .route("/api/v1/eval", post(eval::eval_policy_event))
         .layer(middleware::from_fn(scope_layer(Scope::Check)))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     // Read routes - require auth + read scope (when auth is enabled).
     let read_routes = Router::new()
+        .route("/metrics", get(metrics::metrics))
         .route("/api/v1/policy", get(policy::get_policy))
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
@@ -71,6 +77,10 @@ pub fn create_router(state: AppState) -> Router {
             rate_limit_middleware,
         ))
         .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn_with_state(
+            metrics,
+            metrics::metrics_middleware,
+        ))
         .with_state(state);
 
     if cors_enabled {

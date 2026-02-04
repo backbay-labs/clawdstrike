@@ -959,6 +959,7 @@ dependencies = [
  "clawdstrike",
  "hex",
  "hush-core",
+ "hush-proxy",
  "rand",
  "reqwest",
  "serde",
@@ -968,6 +969,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -985,6 +987,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sha3",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
@@ -992,6 +995,9 @@ dependencies = [
 name = "hush-native"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "clawdstrike",
+ "futures",
  "hex",
  "hush-core",
  "pyo3",
@@ -1032,6 +1038,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "chrono",
  "clap",
  "clawdstrike",
@@ -1042,14 +1049,19 @@ dependencies = [
  "hex",
  "hush-core",
  "hush-proxy",
+ "rand",
  "reqwest",
+ "ring",
  "rusqlite",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_yaml",
  "sha2",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "toml",
  "tower",
@@ -2012,6 +2024,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c665f33d38cea657d9614f766881e4d510e0eda4239891eea56b4cadcf01801b"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "rustls-pki-types",
  "rustls-webpki",

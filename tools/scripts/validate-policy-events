@@ -27,6 +27,7 @@ KNOWN_EVENT_TYPES = {
     "command_exec",
     "patch_apply",
     "tool_call",
+    "secret_access",
     "custom",
 }
 
@@ -140,6 +141,14 @@ def validate_event(path: pathlib.Path, line_no: int, event: Any, strict: bool) -
         parameters = data.get("parameters")
         if not is_object(parameters):
             errors.append(ValidationError(path, line_no, "tool_call events require data.parameters (object)"))
+
+    elif event_type == "secret_access":
+        if data_type != "secret":
+            errors.append(ValidationError(path, line_no, "secret_access events must use data.type == 'secret'"))
+        if not isinstance(data.get("secretName"), str) or not data.get("secretName"):
+            errors.append(ValidationError(path, line_no, "secret_access events require data.secretName (string)"))
+        if not isinstance(data.get("scope"), str) or not data.get("scope"):
+            errors.append(ValidationError(path, line_no, "secret_access events require data.scope (string)"))
 
     elif event_type == "custom":
         if data_type != "custom":

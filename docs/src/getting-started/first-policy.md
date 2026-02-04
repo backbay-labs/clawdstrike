@@ -5,7 +5,7 @@ Policies are YAML files parsed into `clawdstrike::Policy`. They configure the bu
 ## Minimal policy (inherit a ruleset)
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: My Policy
 extends: clawdstrike:default
 ```

@@ -1,6 +1,6 @@
 # Strict Ruleset
 # Maximum security with minimal permissions
-version: "1.0.0"
+version: "1.1.0"
 name: Strict
 description: Strict security rules with minimal permissions
 

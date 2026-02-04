@@ -61,7 +61,9 @@ hush policy diff default strict --json
 
 ## Receipts and crypto
 
-- `hush keygen --output <path>` — generate Ed25519 keypair (hex files).
+- `hush keygen --output <path> [--tpm-seal]` — generate an Ed25519 keypair.
+  - Default: writes a hex-encoded seed to `<path>` and a hex-encoded public key to `<path>.pub`.
+  - With `--tpm-seal`: writes a TPM-sealed blob JSON to `<path>` and a hex-encoded public key to `<path>.pub` (requires `tpm2-tools`).
 - `hush verify [--json] <receipt.json> --pubkey <pubkey>` — verify a `SignedReceipt` (signature + verdict).
 - `hush hash <file|- >` — compute `sha256` or `keccak256`.
 - `hush sign --key <private_key> <file>` — sign a file (raw Ed25519 signature).

@@ -3,7 +3,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use clawdstrike::guards::{GuardContext, GuardResult};
+use clawdstrike::guards::{GuardContext, GuardResult, Severity};
 
 use crate::audit::AuditEvent;
 use crate::state::{AppState, DaemonEvent};
@@ -88,10 +88,19 @@ impl From<GuardResult> for CheckResponse {
         Self {
             allowed: result.allowed,
             guard: result.guard,
-            severity: format!("{:?}", result.severity),
+            severity: canonical_guard_severity(&result.severity).to_string(),
             message: result.message,
             details: result.details,
         }
+    }
+}
+
+fn canonical_guard_severity(severity: &Severity) -> &'static str {
+    match severity {
+        Severity::Info => "info",
+        Severity::Warning => "warning",
+        Severity::Error => "error",
+        Severity::Critical => "critical",
     }
 }
 
@@ -146,6 +155,9 @@ pub async fn check_action(
 
     let result = result.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let warn = result.allowed && result.severity == Severity::Warning;
+    state.metrics.observe_check_outcome(result.allowed, warn);
+
     // Record to audit ledger
     let audit_event = AuditEvent::from_guard_result(
         &request.action_type,
@@ -156,6 +168,7 @@ pub async fn check_action(
     );
 
     if let Err(e) = state.ledger.record(&audit_event) {
+        state.metrics.inc_audit_write_failure();
         tracing::warn!(error = %e, "Failed to record audit event");
     }
 
