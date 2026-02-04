@@ -11,9 +11,16 @@ use crate::audit::forward::AuditForwarder;
 use crate::audit::{AuditEvent, AuditLedger};
 use crate::auth::AuthStore;
 use crate::config::Config;
+use crate::control_db::ControlDb;
+use crate::identity::oidc::OidcValidator;
+use crate::identity_rate_limit::IdentityRateLimiter;
 use crate::metrics::Metrics;
+use crate::policy_engine_cache::PolicyEngineCache;
+use crate::policy_scoping::{PolicyResolver, SqlitePolicyScopingStore};
 use crate::rate_limit::RateLimitState;
+use crate::rbac::{RbacManager, SqliteRbacStore};
 use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
+use crate::session::{SessionManager, SqliteSessionStore};
 
 /// Event broadcast for SSE streaming
 #[derive(Clone, Debug)]
@@ -37,8 +44,20 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<DaemonEvent>,
     /// Configuration
     pub config: Arc<Config>,
+    /// Control-plane DB (sessions/RBAC/scoped policies, rate limits, ...).
+    pub control_db: Arc<ControlDb>,
     /// API key authentication store
     pub auth_store: Arc<AuthStore>,
+    /// Optional OIDC validator (JWT authentication)
+    pub oidc: Option<Arc<OidcValidator>>,
+    /// Session manager (identity-aware sessions)
+    pub sessions: Arc<SessionManager>,
+    /// RBAC manager (authorization for user principals)
+    pub rbac: Arc<RbacManager>,
+    /// Policy resolver (identity-based policy scoping)
+    pub policy_resolver: Arc<PolicyResolver>,
+    /// Cache of compiled engines for resolved policies
+    pub policy_engine_cache: Arc<PolicyEngineCache>,
     /// Trusted keys for verifying signed policy bundles
     pub policy_bundle_trusted_keys: Arc<Vec<PublicKey>>,
     /// Session ID
@@ -47,6 +66,8 @@ pub struct AppState {
     pub started_at: chrono::DateTime<chrono::Utc>,
     /// Rate limiter state
     pub rate_limit: RateLimitState,
+    /// Identity-based rate limiter (sliding window, SQLite baseline)
+    pub identity_rate_limiter: Arc<IdentityRateLimiter>,
     /// Shutdown notifier (used for API-triggered shutdown)
     pub shutdown: Arc<Notify>,
 }
@@ -106,6 +127,46 @@ impl AppState {
         let audit_forward_config = config.audit_forward.resolve_env_refs()?;
         let audit_forwarder = AuditForwarder::from_config(&audit_forward_config)?;
 
+        // Create control-plane DB (sessions/RBAC/scoped policies).
+        let control_path = config
+            .control_db
+            .clone()
+            .unwrap_or_else(|| config.audit_db.clone());
+        let control_db = Arc::new(ControlDb::new(control_path)?);
+        let identity_rate_limiter = Arc::new(IdentityRateLimiter::new(
+            control_db.clone(),
+            config.rate_limit.identity.clone(),
+        ));
+
+        // Create policy resolver (scoped policies).
+        let policy_store = Arc::new(SqlitePolicyScopingStore::new(control_db.clone()));
+        let policy_resolver = Arc::new(PolicyResolver::new(
+            policy_store,
+            Arc::new(config.policy_scoping.clone()),
+            None,
+        ));
+
+        // Cache of compiled policy engines (resolved policy hash -> HushEngine).
+        let policy_engine_cache =
+            Arc::new(PolicyEngineCache::from_config(&config.policy_scoping.cache));
+
+        // Create RBAC manager and seed builtin roles.
+        let rbac_store = Arc::new(SqliteRbacStore::new(control_db.clone()));
+        let rbac_config = Arc::new(config.rbac.clone());
+        let rbac = Arc::new(RbacManager::new(rbac_store, rbac_config)?);
+        rbac.seed_builtin_roles()?;
+
+        // Create session manager (SQLite baseline; in-memory is used in unit tests).
+        let session_store = Arc::new(SqliteSessionStore::new(control_db.clone()));
+        let default_ttl_seconds = engine.policy().settings.effective_session_timeout_secs();
+        let sessions = Arc::new(SessionManager::new(
+            session_store,
+            default_ttl_seconds,
+            86_400,
+            Some(rbac.clone()),
+            config.session.clone(),
+        ));
+
         // Create event channel
         let (event_tx, _) = broadcast::channel(1024);
 
@@ -116,6 +177,17 @@ impl AppState {
         if config.auth.enabled {
             tracing::info!(key_count = auth_store.key_count().await, "Auth enabled");
         }
+
+        // Build OIDC validator (optional).
+        let oidc = match (&config.auth.enabled, config.identity.oidc.clone()) {
+            (true, Some(oidc_cfg)) => {
+                let validator =
+                    OidcValidator::from_config(oidc_cfg, Some(control_db.clone())).await?;
+                tracing::info!(issuer = %validator.issuer(), "OIDC enabled");
+                Some(Arc::new(validator))
+            }
+            _ => None,
+        };
 
         // Load trusted policy bundle keys
         let policy_bundle_trusted_keys = Arc::new(config.load_trusted_policy_bundle_keys()?);
@@ -146,11 +218,18 @@ impl AppState {
             metrics,
             event_tx,
             config: Arc::new(config),
+            control_db: control_db.clone(),
             auth_store,
+            oidc,
+            sessions,
+            rbac,
+            policy_resolver,
+            policy_engine_cache,
             policy_bundle_trusted_keys,
             session_id,
             started_at: chrono::Utc::now(),
             rate_limit,
+            identity_rate_limiter,
             shutdown: Arc::new(Notify::new()),
         };
 
@@ -202,6 +281,7 @@ impl AppState {
             None => new_engine.with_generated_keypair(),
         };
         *engine = new_engine;
+        self.policy_engine_cache.clear();
 
         tracing::info!("Policy reloaded");
 
