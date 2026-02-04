@@ -229,7 +229,7 @@ impl PolicyScopingStore for SqlitePolicyScopingStore {
         let conn = self.db.lock_conn();
         let mut stmt = conn.prepare(
             r#"
-SELECT name, scope_json, priority, merge_strategy, policy_yaml, enabled, metadata_json, created_at, updated_at
+SELECT id, name, scope_json, priority, merge_strategy, policy_yaml, enabled, metadata_json, created_at, updated_at
 FROM scoped_policies
 WHERE id = ?1
             "#,
@@ -240,28 +240,7 @@ WHERE id = ?1
             return Ok(None);
         };
 
-        let name: String = row.get(0)?;
-        let scope_json: String = row.get(1)?;
-        let priority: i32 = row.get(2)?;
-        let merge_strategy: String = row.get(3)?;
-        let policy_yaml: String = row.get(4)?;
-        let enabled: i64 = row.get(5)?;
-        let metadata_json: Option<String> = row.get(6)?;
-        let created_at: String = row.get(7)?;
-        let updated_at: String = row.get(8)?;
-
-        Ok(Some(scoped_policy_from_row(
-            id.to_string(),
-            name,
-            scope_json,
-            priority,
-            merge_strategy,
-            policy_yaml,
-            enabled != 0,
-            metadata_json,
-            created_at,
-            updated_at,
-        )?))
+        Ok(Some(scoped_policy_from_row(row)?))
     }
 
     fn list_scoped_policies(&self) -> Result<Vec<ScopedPolicy>> {
@@ -277,29 +256,7 @@ ORDER BY id ASC
         let mut rows = stmt.query([])?;
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
-            let id: String = row.get(0)?;
-            let name: String = row.get(1)?;
-            let scope_json: String = row.get(2)?;
-            let priority: i32 = row.get(3)?;
-            let merge_strategy: String = row.get(4)?;
-            let policy_yaml: String = row.get(5)?;
-            let enabled: i64 = row.get(6)?;
-            let metadata_json: Option<String> = row.get(7)?;
-            let created_at: String = row.get(8)?;
-            let updated_at: String = row.get(9)?;
-
-            out.push(scoped_policy_from_row(
-                id,
-                name,
-                scope_json,
-                priority,
-                merge_strategy,
-                policy_yaml,
-                enabled != 0,
-                metadata_json,
-                created_at,
-                updated_at,
-            )?);
+            out.push(scoped_policy_from_row(row)?);
         }
 
         Ok(out)
@@ -527,18 +484,18 @@ ORDER BY assigned_at DESC
     }
 }
 
-fn scoped_policy_from_row(
-    id: String,
-    name: String,
-    scope_json: String,
-    priority: i32,
-    merge_strategy: String,
-    policy_yaml: String,
-    enabled: bool,
-    metadata_json: Option<String>,
-    created_at: String,
-    updated_at: String,
-) -> Result<ScopedPolicy> {
+fn scoped_policy_from_row(row: &rusqlite::Row<'_>) -> Result<ScopedPolicy> {
+    let id: String = row.get(0)?;
+    let name: String = row.get(1)?;
+    let scope_json: String = row.get(2)?;
+    let priority: i32 = row.get(3)?;
+    let merge_strategy: String = row.get(4)?;
+    let policy_yaml: String = row.get(5)?;
+    let enabled: i64 = row.get(6)?;
+    let metadata_json: Option<String> = row.get(7)?;
+    let created_at: String = row.get(8)?;
+    let updated_at: String = row.get(9)?;
+
     let scope: PolicyScope = serde_json::from_str(&scope_json)?;
     let merge_strategy = merge_strategy_from_str(&merge_strategy);
     let stored_meta: Option<StoredPolicyMetadata> = metadata_json
@@ -561,7 +518,7 @@ fn scoped_policy_from_row(
         priority,
         merge_strategy,
         policy_yaml,
-        enabled,
+        enabled: enabled != 0,
         metadata,
     })
 }

@@ -92,7 +92,7 @@ pub struct OktaConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OktaWebhookConfig {
-    /// Shared secret token for verifying Okta event hooks (Authorization: Bearer <token>).
+    /// Shared secret token for verifying Okta event hooks (`Authorization: Bearer <token>`).
     pub verification_key: String,
 }
 
@@ -104,7 +104,7 @@ pub struct Auth0Config {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Auth0LogStreamConfig {
-    /// Shared bearer token for verifying Auth0 log stream webhooks (Authorization: Bearer <token>).
+    /// Shared bearer token for verifying Auth0 log stream webhooks (`Authorization: Bearer <token>`).
     pub authorization: String,
 }
 

@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use globset::{Glob, GlobMatcher};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1601,6 +1601,16 @@ fn builtin_roles(now: String) -> Vec<Role> {
     ]
 }
 
+fn dedupe_strings(input: Vec<String>) -> Vec<String> {
+    sort_strings(input.into_iter().collect())
+}
+
+fn sort_strings(input: HashSet<String>) -> Vec<String> {
+    let mut out: Vec<String> = input.into_iter().collect();
+    out.sort();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1814,16 +1824,3 @@ mod tests {
         assert!(!bad.allowed);
     }
 }
-
-fn dedupe_strings(input: Vec<String>) -> Vec<String> {
-    sort_strings(input.into_iter().collect())
-}
-
-fn sort_strings(input: HashSet<String>) -> Vec<String> {
-    let mut out: Vec<String> = input.into_iter().collect();
-    out.sort();
-    out
-}
-
-// chrono `Datelike/Timelike` helpers
-use chrono::{Datelike, Timelike};

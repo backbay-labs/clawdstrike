@@ -37,7 +37,9 @@ db-path = "target/cargo-deny/advisory-dbs"
 unmaintained = "all"
 yanked = "warn"
 ignore = [
-    # (empty)
+    # `atty` is pulled in transitively via `rust-xmlsec` (used for SAML).
+    # It's only used for terminal detection, and has no maintained upgrade path.
+    "RUSTSEC-2024-0375",
 ]
 
 [sources]

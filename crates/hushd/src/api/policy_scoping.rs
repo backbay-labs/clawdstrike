@@ -146,8 +146,21 @@ pub async fn create_scoped_policy(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<CreateScopedPolicyRequest>,
 ) -> Result<Json<ScopedPolicy>, (StatusCode, String)> {
+    // RBAC does not currently have a first-class "role" scope type.
+    // Fail closed: only super-admin users may mutate role-scoped policies.
+    let actor_ref = actor.as_ref().map(|e| &e.0);
+    if request.scope.scope_type == PolicyScopeType::Role
+        && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
+        && !actor_is_super_admin(&state, actor_ref)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "role_scoped_policy_requires_super_admin".to_string(),
+        ));
+    }
+
     require_api_key_scope_or_user_permission_with_context(
-        actor.as_ref().map(|e| &e.0),
+        actor_ref,
         &state.rbac,
         Scope::Admin,
         ResourceRef {
@@ -244,7 +257,7 @@ pub async fn create_scoped_policy(
         "actor": actor_id,
         "policy": policy.clone(),
     }));
-    let _ = state.ledger.record(&audit);
+    state.record_audit_event(audit);
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "scoped_policy_created".to_string(),
@@ -304,6 +317,7 @@ pub async fn update_scoped_policy(
     Path(id): Path<String>,
     Json(request): Json<UpdateScopedPolicyRequest>,
 ) -> Result<Json<ScopedPolicy>, (StatusCode, String)> {
+    let actor_ref = actor.as_ref().map(|e| &e.0);
     let Some(mut existing) = state
         .policy_resolver
         .store()
@@ -362,8 +376,18 @@ pub async fn update_scoped_policy(
     }
 
     // RBAC: apply scope constraints using the updated policy scope.
+    if existing.scope.scope_type == PolicyScopeType::Role
+        && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
+        && !actor_is_super_admin(&state, actor_ref)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "role_scoped_policy_requires_super_admin".to_string(),
+        ));
+    }
+
     require_api_key_scope_or_user_permission_with_context(
-        actor.as_ref().map(|e| &e.0),
+        actor_ref,
         &state.rbac,
         Scope::Admin,
         ResourceRef {
@@ -415,7 +439,7 @@ pub async fn update_scoped_policy(
         "before": before,
         "after": after,
     }));
-    let _ = state.ledger.record(&audit);
+    state.record_audit_event(audit);
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "scoped_policy_updated".to_string(),
@@ -431,6 +455,7 @@ pub async fn delete_scoped_policy(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let actor_ref = actor.as_ref().map(|e| &e.0);
     let existing = state
         .policy_resolver
         .store()
@@ -438,8 +463,18 @@ pub async fn delete_scoped_policy(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()))?;
 
+    if existing.scope.scope_type == PolicyScopeType::Role
+        && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
+        && !actor_is_super_admin(&state, actor_ref)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "role_scoped_policy_requires_super_admin".to_string(),
+        ));
+    }
+
     require_api_key_scope_or_user_permission_with_context(
-        actor.as_ref().map(|e| &e.0),
+        actor_ref,
         &state.rbac,
         Scope::Admin,
         ResourceRef {
@@ -491,7 +526,7 @@ pub async fn delete_scoped_policy(
         "actor": actor_string(actor.as_ref().map(|e| &e.0)),
         "policy": existing,
     }));
-    let _ = state.ledger.record(&audit);
+    state.record_audit_event(audit);
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "scoped_policy_deleted".to_string(),
@@ -962,4 +997,84 @@ pub async fn resolve_policy(
         policy_yaml,
         policy_hash,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use axum::extract::State;
+    use axum::Json;
+
+    fn test_policy_admin(org_id: &str) -> AuthenticatedActor {
+        AuthenticatedActor::User(clawdstrike::IdentityPrincipal {
+            id: "user-1".to_string(),
+            provider: clawdstrike::IdentityProvider::Oidc,
+            issuer: "https://issuer.example".to_string(),
+            display_name: None,
+            email: None,
+            email_verified: None,
+            organization_id: Some(org_id.to_string()),
+            teams: Vec::new(),
+            roles: vec!["policy-admin".to_string()],
+            attributes: std::collections::HashMap::new(),
+            authenticated_at: chrono::Utc::now().to_rfc3339(),
+            auth_method: None,
+            expires_at: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn role_scoped_policy_mutation_requires_super_admin() {
+        let test_dir =
+            std::env::temp_dir().join(format!("hushd-role-scope-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&test_dir).expect("create temp dir");
+
+        let config = crate::config::Config {
+            cors_enabled: false,
+            audit_db: test_dir.join("audit.db"),
+            control_db: Some(test_dir.join("control.db")),
+            ..Default::default()
+        };
+        let state = AppState::new(config).await.expect("state");
+
+        let role_scope = PolicyScope {
+            scope_type: PolicyScopeType::Role,
+            id: Some("role-1".to_string()),
+            name: Some("Role 1".to_string()),
+            parent: Some(Box::new(PolicyScope {
+                scope_type: PolicyScopeType::Organization,
+                id: Some("org-1".to_string()),
+                name: None,
+                parent: None,
+                conditions: Vec::new(),
+            })),
+            conditions: Vec::new(),
+        };
+
+        let request = CreateScopedPolicyRequest {
+            id: None,
+            name: "role-scoped".to_string(),
+            scope: role_scope,
+            priority: 0,
+            merge_strategy: MergeStrategy::Merge,
+            policy_yaml: Policy::new().to_yaml().expect("serialize default policy"),
+            enabled: true,
+            description: None,
+            tags: None,
+        };
+
+        let res = create_scoped_policy(
+            State(state),
+            Some(axum::extract::Extension(test_policy_admin("org-1"))),
+            Json(request),
+        )
+        .await;
+
+        let (status, msg) = res.expect_err("expected forbidden");
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(msg, "role_scoped_policy_requires_super_admin");
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
 }
