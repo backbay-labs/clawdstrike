@@ -94,9 +94,9 @@ GOAL: Keep AI agents OUT OF SCOPE via strict segmentation
 ```yaml
 # pci-dss-policy.yaml
 # Clawdstrike PCI-DSS Compliance Policy Template
-# Version: 1.0.0
+# Version: 1.1.0
 
-version: "1.0.0"
+version: "1.1.0"
 name: "PCI-DSS Compliance Policy"
 description: "Policy template for PCI-DSS compliant AI agent deployments"
 extends: clawdstrike:strict

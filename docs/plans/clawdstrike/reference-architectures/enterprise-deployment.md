@@ -153,7 +153,7 @@ override_rules:
 
 ```yaml
 # policies/global/baseline.yaml
-version: "1.0.0"
+version: "1.1.0"
 name: "Global Security Baseline"
 description: "Mandatory security controls for all AI agents"
 
@@ -227,7 +227,7 @@ settings:
 
 ```yaml
 # policies/compliance/hipaa.yaml
-version: "1.0.0"
+version: "1.1.0"
 name: "HIPAA Compliance Overlay"
 extends: "global/baseline"
 description: "Additional controls for HIPAA compliance"

@@ -23,11 +23,11 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
   }
 
   const p = policy as Policy;
-  const version = p.version ?? '1.0.0';
+  const version = p.version ?? '1.1.0';
   if (typeof version !== 'string' || !isStrictSemver(version)) {
     errors.push(`version must be a strict semver string (got: ${String(version)})`);
-  } else if (version !== '1.0.0') {
-    errors.push(`unsupported policy version: ${version} (supported: 1.0.0)`);
+  } else if (version !== '1.1.0') {
+    errors.push(`unsupported policy version: ${version} (supported: 1.1.0)`);
   }
 
   if (p.guards && isPlainObject(p.guards)) {
@@ -38,6 +38,44 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
       } else {
         for (let i = 0; i < custom.length; i++) {
           validateCustomGuardSpec(custom[i], `guards.custom[${i}]`, errors);
+        }
+      }
+    }
+  }
+
+  const policyCustomGuards = (p as any).custom_guards;
+  if (policyCustomGuards !== undefined) {
+    if (!Array.isArray(policyCustomGuards)) {
+      errors.push('custom_guards must be an array');
+    } else {
+      const seen = new Set<string>();
+      for (let i = 0; i < policyCustomGuards.length; i++) {
+        const value = policyCustomGuards[i];
+        const base = `custom_guards[${i}]`;
+        if (!isPlainObject(value)) {
+          errors.push(`${base} must be an object`);
+          continue;
+        }
+
+        const id = (value as any).id;
+        if (typeof id !== 'string' || id.trim() === '') {
+          errors.push(`${base}.id must be a non-empty string`);
+          continue;
+        }
+        if (seen.has(id)) {
+          errors.push(`${base}.id duplicate custom guard id: ${id}`);
+        } else {
+          seen.add(id);
+        }
+
+        const enabled = (value as any).enabled;
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+          errors.push(`${base}.enabled must be a boolean`);
+        }
+
+        const config = (value as any).config;
+        if (config !== undefined && !isPlainObject(config)) {
+          errors.push(`${base}.config must be an object`);
         }
       }
     }

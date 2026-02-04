@@ -116,17 +116,20 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
 
   if (strategy === 'merge') {
     const out: Policy = { ...base };
-    if (child.version && child.version !== '1.0.0') out.version = child.version;
+    if (child.version && child.version !== '1.1.0') out.version = child.version;
     if (child.name) out.name = child.name;
     if (child.description) out.description = child.description;
     if (child.guards) out.guards = child.guards;
+    if (Array.isArray((child as any).custom_guards) && (child as any).custom_guards.length > 0) {
+      (out as any).custom_guards = (child as any).custom_guards;
+    }
     if (child.settings) out.settings = child.settings;
     return out;
   }
 
   // deep_merge
   const out: Policy = { ...base };
-  if (child.version && child.version !== '1.0.0') out.version = child.version;
+  if (child.version && child.version !== '1.1.0') out.version = child.version;
   if (child.name) out.name = child.name;
   if (child.description) out.description = child.description;
 
@@ -136,6 +139,10 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
   };
 
   out.guards = mergeGuards(base.guards, child.guards);
+  (out as any).custom_guards = mergePolicyCustomGuards(
+    (base as any).custom_guards,
+    (child as any).custom_guards,
+  );
 
   return out;
 }
@@ -156,6 +163,39 @@ function mergeGuards(base: unknown, child: unknown): GuardConfigs | undefined {
     out.custom = childCustom;
   } else if (baseCustom) {
     out.custom = baseCustom;
+  }
+
+  return out;
+}
+
+function mergePolicyCustomGuards(base: unknown, child: unknown): unknown {
+  const baseArr = Array.isArray(base) ? base : [];
+  const childArr = Array.isArray(child) ? child : [];
+
+  if (childArr.length === 0) return base;
+  if (baseArr.length === 0) return child;
+
+  const out = [...baseArr];
+  const index = new Map<string, number>();
+
+  for (let i = 0; i < out.length; i++) {
+    const cg = out[i];
+    const id = isPlainObject(cg) ? (cg as any).id : undefined;
+    if (typeof id === 'string') {
+      index.set(id, i);
+    }
+  }
+
+  for (const cg of childArr) {
+    const id = isPlainObject(cg) ? (cg as any).id : undefined;
+    if (typeof id === 'string' && index.has(id)) {
+      out[index.get(id)!] = cg;
+    } else {
+      if (typeof id === 'string') {
+        index.set(id, out.length);
+      }
+      out.push(cg);
+    }
   }
 
   return out;

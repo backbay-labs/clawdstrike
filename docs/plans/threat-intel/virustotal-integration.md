@@ -1624,7 +1624,7 @@ export interface ExternalIntelConfig {
 ## 4. Policy Configuration
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 guards:
   virustotal:
     enabled: true

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
@@ -33,5 +34,62 @@ describeE2E('hush-cli-engine (e2e)', () => {
     expect(typeof decision.denied).toBe('boolean');
     expect(typeof decision.warn).toBe('boolean');
   });
+
+  it('matches fixture decisions (default ruleset)', async () => {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const repoRoot = path.resolve(__dirname, '../../..');
+
+    const engine = createHushCliEngine({
+      hushPath: process.env.HUSH_PATH ?? 'hush',
+      policyRef: 'default',
+      timeoutMs: 10_000,
+    });
+
+    const eventsPath = path.join(repoRoot, 'fixtures/policy-events/v1/events.jsonl');
+    const expectedPath = path.join(
+      repoRoot,
+      'fixtures/policy-events/v1/expected/default.decisions.json',
+    );
+
+    const expectedJson = JSON.parse(fs.readFileSync(expectedPath, 'utf8')) as any;
+    const expectedById = new Map<string, any>();
+    for (const r of expectedJson?.results ?? []) {
+      if (r && typeof r.eventId === 'string') {
+        expectedById.set(r.eventId, r.decision);
+      }
+    }
+
+    const lines = fs
+      .readFileSync(eventsPath, 'utf8')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    for (const line of lines) {
+      const event = JSON.parse(line) as PolicyEvent;
+      const expected = expectedById.get(event.eventId);
+      if (!expected) {
+        throw new Error(`missing expected decision for eventId=${event.eventId}`);
+      }
+
+      const actual = await engine.evaluate(event);
+      expect(normalizeDecision(actual)).toEqual(normalizeDecision(expected));
+    }
+  });
 });
 
+function normalizeDecision(value: any): any {
+  const out: any = {
+    allowed: Boolean(value?.allowed),
+    denied: Boolean(value?.denied),
+    warn: Boolean(value?.warn),
+  };
+
+  for (const k of ['reason', 'guard', 'severity', 'message'] as const) {
+    const v = value?.[k];
+    if (v === null || v === undefined) continue;
+    out[k] = v;
+  }
+
+  return out;
+}

@@ -67,7 +67,7 @@ AI agents are becoming autonomous actors in enterprise environments, accessing s
 
 #### Clawdstrike Certified (Base Tier)
 - All six core guards enabled and passing
-- Policy schema version 1.0.0+ enforced
+- Policy schema version 1.1.0 enforced (older versions must be migrated)
 - Signed receipts for all sessions
 - 30-day audit log retention
 - No critical/error severity violations in last 7 days

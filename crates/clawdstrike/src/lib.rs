@@ -56,6 +56,7 @@ pub mod output_sanitizer;
 pub mod policy;
 pub mod policy_bundle;
 pub mod watermarking;
+mod placeholders;
 
 pub use engine::{GuardReport, HushEngine};
 pub use error::{Error, Result};

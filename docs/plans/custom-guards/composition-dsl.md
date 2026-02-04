@@ -806,7 +806,7 @@ export class ContextExpressionParser implements Parser {
 ### 6.1 Full Policy Example
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: "Complex Security Policy"
 
 guards:

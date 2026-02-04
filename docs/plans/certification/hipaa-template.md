@@ -74,9 +74,9 @@ This document specifies the Clawdstrike HIPAA Compliance Template, enabling cove
 ```yaml
 # hipaa-policy.yaml
 # Clawdstrike HIPAA Compliance Policy Template
-# Version: 1.0.0
+# Version: 1.1.0
 
-version: "1.0.0"
+version: "1.1.0"
 name: "HIPAA Compliance Policy"
 description: "Policy template for HIPAA-covered AI agent deployments"
 extends: clawdstrike:strict

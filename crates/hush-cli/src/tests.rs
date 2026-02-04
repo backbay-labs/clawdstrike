@@ -842,6 +842,50 @@ mod cli_parsing {
     }
 
     #[test]
+    fn test_policy_migrate_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "migrate",
+            "policy.yaml",
+            "--to",
+            "1.1.0",
+            "--from",
+            "1.0.0",
+            "--output",
+            "policy.migrated.yaml",
+            "--json",
+            "--dry-run",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Migrate {
+                    input,
+                    to,
+                    from,
+                    legacy_openclaw,
+                    output,
+                    in_place,
+                    json,
+                    dry_run,
+                } => {
+                    assert_eq!(input, "policy.yaml");
+                    assert_eq!(to, "1.1.0");
+                    assert_eq!(from, Some("1.0.0".to_string()));
+                    assert!(!legacy_openclaw);
+                    assert_eq!(output, Some("policy.migrated.yaml".to_string()));
+                    assert!(!in_place);
+                    assert!(json);
+                    assert!(dry_run);
+                }
+                _ => panic!("Expected Migrate subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
     fn test_policy_simulate_jsonl_parses() {
         let cli = Cli::parse_from([
             "hush",
@@ -2264,6 +2308,101 @@ settings:
             "base setting preserved"
         );
         assert_eq!(policy.settings.effective_session_timeout_secs(), 120);
+    }
+}
+
+#[cfg(test)]
+mod policy_migrate_contract {
+    use crate::policy_migrate::{migrate_policy_yaml, PolicyMigrateMode, PolicyMigrateOptions};
+
+    #[test]
+    fn migrates_policy_version_1_0_0_to_1_1_0_and_validates() {
+        let input = r#"
+version: "1.0.0"
+name: "Example policy"
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+"#;
+
+        let res = migrate_policy_yaml(
+            input,
+            &PolicyMigrateOptions {
+                from: Some("1.0.0".to_string()),
+                to: "1.1.0".to_string(),
+                legacy_openclaw: false,
+            },
+        )
+        .expect("migration succeeds");
+
+        assert_eq!(res.mode, PolicyMigrateMode::VersionBump);
+
+        let policy = clawdstrike::Policy::from_yaml(&res.migrated_yaml).expect("output loads");
+        assert_eq!(policy.version, "1.1.0");
+        assert_eq!(policy.name, "Example policy");
+    }
+
+    #[test]
+    fn migrates_legacy_openclaw_policy_to_canonical_and_validates() {
+        let input = r#"
+version: clawdstrike-v1.0
+name: "Legacy"
+extends: "default"
+
+filesystem:
+  forbidden_paths:
+    - "**/.ssh/**"
+
+egress:
+  mode: allowlist
+  allowed_domains:
+    - "*.example.com"
+  denied_domains:
+    - "bad.example.com"
+
+tools:
+  allowed:
+    - "filesystem_read"
+"#;
+
+        let res = migrate_policy_yaml(
+            input,
+            &PolicyMigrateOptions {
+                from: None,
+                to: "1.1.0".to_string(),
+                legacy_openclaw: true,
+            },
+        )
+        .expect("migration succeeds");
+
+        assert_eq!(res.mode, PolicyMigrateMode::LegacyOpenclaw);
+
+        let policy = clawdstrike::Policy::from_yaml(&res.migrated_yaml).expect("output loads");
+        assert_eq!(policy.version, "1.1.0");
+        assert_eq!(policy.name, "Legacy");
+        assert_eq!(policy.extends, Some("default".to_string()));
+
+        let fp = policy
+            .guards
+            .forbidden_path
+            .as_ref()
+            .expect("forbidden_path mapped");
+        assert_eq!(
+            fp.patterns.as_ref().expect("patterns set"),
+            &vec!["**/.ssh/**".to_string()]
+        );
+
+        let egress = policy
+            .guards
+            .egress_allowlist
+            .as_ref()
+            .expect("egress_allowlist mapped");
+        assert_eq!(egress.allow, vec!["*.example.com".to_string()]);
+        assert_eq!(egress.block, vec!["bad.example.com".to_string()]);
+
+        let mcp = policy.guards.mcp_tool.as_ref().expect("mcp_tool mapped");
+        assert_eq!(mcp.allow, vec!["filesystem_read".to_string()]);
     }
 }
 
