@@ -1,0 +1,10 @@
+[package]
+name = "autonomous-sandbox-example"
+version = "0.1.0"
+edition = "2021"
+description = "Example: clawdstrike IRM sandbox wrapper"
+
+[dependencies]
+clawdstrike = { path = "../../crates/clawdstrike" }
+tokio = { version = "1.49", features = ["full"] }
+anyhow = "1.0"

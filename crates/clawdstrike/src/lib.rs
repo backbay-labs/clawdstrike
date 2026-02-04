@@ -53,6 +53,7 @@ pub mod irm;
 pub mod jailbreak;
 pub mod output_sanitizer;
 pub mod policy;
+pub mod policy_bundle;
 pub mod watermarking;
 
 pub use engine::{GuardReport, HushEngine};
@@ -86,6 +87,7 @@ pub use output_sanitizer::{
     StreamingConfig,
 };
 pub use policy::{Policy, RuleSet};
+pub use policy_bundle::{PolicyBundle, SignedPolicyBundle, POLICY_BUNDLE_SCHEMA_VERSION};
 pub use watermarking::{
     EncodedWatermark, PromptWatermarker, WatermarkConfig, WatermarkEncoding, WatermarkError,
     WatermarkExtractionResult, WatermarkExtractor, WatermarkPayload, WatermarkVerifierConfig,

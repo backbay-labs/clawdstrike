@@ -1,0 +1,12 @@
+[package]
+name = "multi-agent-orchestration-example"
+version = "0.1.0"
+edition = "2021"
+description = "Example: hush-multi-agent primitives"
+
+[dependencies]
+hush-multi-agent = { path = "../../crates/hush-multi-agent" }
+hush-core = { path = "../../crates/hush-core" }
+serde_json = "1.0"
+anyhow = "1.0"
+chrono = "0.4"
