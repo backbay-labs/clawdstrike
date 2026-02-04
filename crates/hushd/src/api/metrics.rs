@@ -15,7 +15,8 @@ use crate::state::AppState;
 
 /// GET /metrics
 pub async fn metrics(State(state): State<AppState>) -> Response {
-    let body = state.metrics.render_prometheus();
+    let dropped = state.audit_forwarder.as_ref().map(|f| f.dropped_total());
+    let body = state.metrics.render_prometheus(state.uptime_secs(), dropped);
     (
         [(
             header::CONTENT_TYPE,

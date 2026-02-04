@@ -66,6 +66,7 @@ pub struct Metrics {
     eval_warn_total: AtomicU64,
     eval_blocked_total: AtomicU64,
 
+    audit_events_total: AtomicU64,
     audit_write_failures_total: AtomicU64,
     rate_limit_dropped_total: AtomicU64,
 }
@@ -117,13 +118,22 @@ impl Metrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn inc_audit_event(&self) {
+        self.audit_events_total.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn inc_rate_limit_dropped(&self) {
         self.rate_limit_dropped_total
             .fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn render_prometheus(&self) -> String {
+    pub fn render_prometheus(&self, uptime_secs: i64, audit_forward_dropped: Option<u64>) -> String {
         let mut out = String::new();
+
+        // Uptime
+        out.push_str("# HELP hushd_uptime_seconds Daemon uptime in seconds.\n");
+        out.push_str("# TYPE hushd_uptime_seconds gauge\n");
+        out.push_str(&format!("hushd_uptime_seconds {}\n", uptime_secs.max(0)));
 
         // HTTP requests
         out.push_str("# HELP hushd_http_requests_total Total HTTP requests handled.\n");
@@ -218,6 +228,19 @@ impl Metrics {
         ));
 
         // Operational counters
+        out.push_str("# HELP hushd_audit_events_total Total audit events recorded.\n");
+        out.push_str("# TYPE hushd_audit_events_total counter\n");
+        out.push_str(&format!(
+            "hushd_audit_events_total {}\n",
+            self.audit_events_total.load(Ordering::Relaxed)
+        ));
+
+        if let Some(dropped) = audit_forward_dropped {
+            out.push_str("# HELP hushd_audit_forward_dropped_total Total audit events dropped from the forward queue.\n");
+            out.push_str("# TYPE hushd_audit_forward_dropped_total counter\n");
+            out.push_str(&format!("hushd_audit_forward_dropped_total {}\n", dropped));
+        }
+
         out.push_str("# HELP hushd_audit_write_failures_total Failed audit writes.\n");
         out.push_str("# TYPE hushd_audit_write_failures_total counter\n");
         out.push_str(&format!(
@@ -256,16 +279,20 @@ mod tests {
         metrics.observe_http_request("GET", "/health", 200, Duration::from_millis(5));
         metrics.observe_check_outcome(true, false);
         metrics.observe_eval_outcome(false, false);
+        metrics.inc_audit_event();
         metrics.inc_audit_write_failure();
         metrics.inc_rate_limit_dropped();
 
-        let rendered = metrics.render_prometheus();
+        let rendered = metrics.render_prometheus(123, Some(0));
         for name in [
+            "hushd_uptime_seconds",
             "hushd_http_requests_total",
             "hushd_http_requests_by_route_status_total",
             "hushd_http_request_duration_seconds_bucket",
             "hushd_check_decisions_total",
             "hushd_eval_decisions_total",
+            "hushd_audit_events_total",
+            "hushd_audit_forward_dropped_total",
             "hushd_audit_write_failures_total",
             "hushd_rate_limit_dropped_total",
         ] {

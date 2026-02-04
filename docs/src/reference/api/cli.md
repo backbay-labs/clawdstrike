@@ -46,6 +46,8 @@ hush check --json --action-type egress --ruleset default api.github.com:443 | jq
 - `hush policy test <SUITE.yaml>` — run a policy test suite.
 - `hush policy eval <POLICY_REF> <EVENT.json|-> [--resolve] [--json]` — evaluate a canonical `PolicyEvent`.
 - `hush policy simulate <POLICY_REF> [EVENTS.jsonl|-] [--json|--jsonl|--summary]` — run a stream of events.
+- `hush policy bundle build <POLICY_REF> --key <private_key> [--resolve] [--embed-pubkey]` — build a signed policy bundle (JSON) for distribution.
+- `hush policy bundle verify <BUNDLE.json> [--pubkey <pubkey>]` — verify a signed policy bundle.
 
 Examples:
 
@@ -57,6 +59,8 @@ hush policy show --merged ./policy.yaml
 hush policy validate ./policy.yaml
 hush policy validate --resolve ./policy.yaml
 hush policy diff default strict --json
+hush policy bundle build ai-agent --resolve --key ./bundle-signing.key --embed-pubkey --output ./policy.bundle.json
+hush policy bundle verify ./policy.bundle.json
 ```
 
 ## Receipts and crypto

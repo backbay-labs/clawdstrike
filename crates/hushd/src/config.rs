@@ -190,6 +190,160 @@ pub struct AuditConfig {
     #[serde(default)]
     pub encryption: AuditEncryptionConfig,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AuditSinkConfig {
+    /// Print each audit event as JSONL to stdout.
+    StdoutJsonl,
+    /// Append each audit event as JSONL to a file.
+    FileJsonl { path: PathBuf },
+    /// POST each audit event to a webhook endpoint.
+    Webhook {
+        url: String,
+        #[serde(default)]
+        headers: Option<std::collections::HashMap<String, String>>,
+    },
+    /// Send audit events to Splunk HTTP Event Collector.
+    SplunkHec {
+        url: String,
+        token: String,
+        #[serde(default)]
+        index: Option<String>,
+        #[serde(default)]
+        sourcetype: Option<String>,
+        #[serde(default)]
+        source: Option<String>,
+    },
+    /// Index audit events into Elasticsearch.
+    Elastic {
+        url: String,
+        #[serde(default)]
+        api_key: Option<String>,
+        #[serde(default)]
+        index: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuditForwardConfig {
+    /// Whether forwarding is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// In-memory queue size for forwarding.
+    #[serde(default = "default_audit_forward_queue_size")]
+    pub queue_size: usize,
+    /// Per-sink send timeout (milliseconds).
+    #[serde(default = "default_audit_forward_timeout_ms")]
+    pub timeout_ms: u64,
+    /// Configured sinks.
+    #[serde(default)]
+    pub sinks: Vec<AuditSinkConfig>,
+}
+
+fn default_audit_forward_queue_size() -> usize {
+    8192
+}
+
+fn default_audit_forward_timeout_ms() -> u64 {
+    2_000
+}
+
+impl Default for AuditForwardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            queue_size: default_audit_forward_queue_size(),
+            timeout_ms: default_audit_forward_timeout_ms(),
+            sinks: Vec::new(),
+        }
+    }
+}
+
+impl AuditForwardConfig {
+    pub fn resolve_env_refs(&self) -> anyhow::Result<Self> {
+        let mut out = self.clone();
+
+        let mut sinks = Vec::with_capacity(out.sinks.len());
+        for (idx, sink) in out.sinks.into_iter().enumerate() {
+            let sink = match sink {
+                AuditSinkConfig::StdoutJsonl => AuditSinkConfig::StdoutJsonl,
+                AuditSinkConfig::FileJsonl { path } => AuditSinkConfig::FileJsonl { path },
+                AuditSinkConfig::Webhook { url, headers } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let headers = headers
+                        .map(|h| {
+                            h.into_iter()
+                                .map(|(k, v)| Ok((k, expand_env_refs(&v)?)))
+                                .collect::<anyhow::Result<std::collections::HashMap<_, _>>>()
+                        })
+                        .transpose()
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid audit_forward.sinks[{}].headers value: {}",
+                                idx,
+                                e
+                            )
+                        })?;
+                    AuditSinkConfig::Webhook { url, headers }
+                }
+                AuditSinkConfig::SplunkHec {
+                    url,
+                    token,
+                    index,
+                    sourcetype,
+                    source,
+                } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let token = expand_env_refs(&token).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].token value: {}", idx, e)
+                    })?;
+                    AuditSinkConfig::SplunkHec {
+                        url,
+                        token,
+                        index,
+                        sourcetype,
+                        source,
+                    }
+                }
+                AuditSinkConfig::Elastic {
+                    url,
+                    api_key,
+                    index,
+                } => {
+                    let url = expand_env_refs(&url).map_err(|e| {
+                        anyhow::anyhow!("Invalid audit_forward.sinks[{}].url value: {}", idx, e)
+                    })?;
+                    let api_key =
+                        api_key
+                            .map(|k| expand_env_refs(&k))
+                            .transpose()
+                            .map_err(|e| {
+                                anyhow::anyhow!(
+                                    "Invalid audit_forward.sinks[{}].api_key value: {}",
+                                    idx,
+                                    e
+                                )
+                            })?;
+                    AuditSinkConfig::Elastic {
+                        url,
+                        api_key,
+                        index,
+                    }
+                }
+            };
+
+            sinks.push(sink);
+        }
+        out.sinks = sinks;
+
+        Ok(out)
+    }
+}
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -221,6 +375,12 @@ pub struct Config {
     #[serde(default)]
     pub signing_key: Option<PathBuf>,
 
+    /// Trusted public keys for verifying incoming signed policy bundles (hex, 32 bytes).
+    ///
+    /// Supports `${VAR}` environment variable references.
+    #[serde(default)]
+    pub policy_bundle_trusted_pubkeys: Vec<String>,
+
     /// Enable CORS for browser access
     #[serde(default = "default_cors")]
     pub cors_enabled: bool,
@@ -232,6 +392,10 @@ pub struct Config {
     /// Audit ledger configuration.
     #[serde(default)]
     pub audit: AuditConfig,
+
+    /// Audit forwarding configuration (optional).
+    #[serde(default)]
+    pub audit_forward: AuditForwardConfig,
 
     /// API authentication configuration
     #[serde(default)]
@@ -279,9 +443,11 @@ impl Default for Config {
             log_level: default_log_level(),
             tls: None,
             signing_key: None,
+            policy_bundle_trusted_pubkeys: Vec::new(),
             cors_enabled: default_cors(),
             max_audit_entries: 0,
             audit: AuditConfig::default(),
+            audit_forward: AuditForwardConfig::default(),
             auth: AuthConfig::default(),
             rate_limit: RateLimitConfig::default(),
             remote_extends: RemoteExtendsConfig::default(),
@@ -318,6 +484,15 @@ impl Config {
                     e
                 )
             })?;
+        }
+
+        if self.audit_forward.enabled {
+            if self.audit_forward.queue_size == 0 {
+                return Err(anyhow::anyhow!("audit_forward.queue_size must be > 0"));
+            }
+            if self.audit_forward.timeout_ms == 0 {
+                return Err(anyhow::anyhow!("audit_forward.timeout_ms must be > 0"));
+            }
         }
 
         if self.audit.encryption.enabled {
@@ -410,6 +585,28 @@ impl Config {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&decoded);
         Ok(Some(arr))
+    }
+
+    pub fn load_trusted_policy_bundle_keys(&self) -> anyhow::Result<Vec<hush_core::PublicKey>> {
+        let mut keys = Vec::new();
+        for (idx, key) in self.policy_bundle_trusted_pubkeys.iter().enumerate() {
+            let key = expand_env_refs(key).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid policy_bundle_trusted_pubkeys[{}] value: {}",
+                    idx,
+                    e
+                )
+            })?;
+            let pk = hush_core::PublicKey::from_hex(key.trim()).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid policy_bundle_trusted_pubkeys[{}] public key: {}",
+                    idx,
+                    e
+                )
+            })?;
+            keys.push(pk);
+        }
+        Ok(keys)
     }
 
     /// Load from default locations or create default
@@ -542,6 +739,8 @@ mod tests {
         assert_eq!(config.listen, "127.0.0.1:9876");
         assert_eq!(config.ruleset, "default");
         assert!(config.cors_enabled);
+        assert!(!config.audit.encryption.enabled);
+        assert!(!config.audit_forward.enabled);
     }
 
     #[test]

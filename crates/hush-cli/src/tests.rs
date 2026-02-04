@@ -11,7 +11,9 @@
 mod cli_parsing {
     use clap::Parser;
 
-    use crate::{Cli, Commands, DaemonCommands, MerkleCommands, PolicyCommands};
+    use crate::{
+        Cli, Commands, DaemonCommands, MerkleCommands, PolicyBundleCommands, PolicyCommands,
+    };
 
     #[test]
     fn test_check_command_parses_with_required_args() {
@@ -875,6 +877,81 @@ mod cli_parsing {
                     assert!(benchmark);
                 }
                 _ => panic!("Expected Simulate subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_bundle_build_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "bundle",
+            "build",
+            "ai-agent",
+            "--resolve",
+            "--key",
+            "bundle.key",
+            "--embed-pubkey",
+            "--output",
+            "policy.bundle.json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Bundle { command } => match command {
+                    PolicyBundleCommands::Build {
+                        policy_ref,
+                        resolve,
+                        key,
+                        output,
+                        embed_pubkey,
+                        json,
+                        ..
+                    } => {
+                        assert_eq!(policy_ref, "ai-agent");
+                        assert!(resolve);
+                        assert_eq!(key, "bundle.key");
+                        assert_eq!(output, "policy.bundle.json");
+                        assert!(embed_pubkey);
+                        assert!(!json);
+                    }
+                    _ => panic!("Expected Bundle Build subcommand"),
+                },
+                _ => panic!("Expected Bundle subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_bundle_verify_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "bundle",
+            "verify",
+            "./policy.bundle.json",
+            "--pubkey",
+            "./bundle.key.pub",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Bundle { command } => match command {
+                    PolicyBundleCommands::Verify {
+                        bundle,
+                        pubkey,
+                        json,
+                    } => {
+                        assert_eq!(bundle, "./policy.bundle.json");
+                        assert_eq!(pubkey, Some("./bundle.key.pub".to_string()));
+                        assert!(!json);
+                    }
+                    _ => panic!("Expected Bundle Verify subcommand"),
+                },
+                _ => panic!("Expected Bundle subcommand"),
             },
             _ => panic!("Expected Policy command"),
         }

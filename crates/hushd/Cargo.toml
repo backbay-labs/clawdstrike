@@ -65,6 +65,7 @@ dirs.workspace = true
 
 # HTTP client (for status command + remote policy extends)
 reqwest = { workspace = true, features = ["blocking"] }
+async-trait.workspace = true
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

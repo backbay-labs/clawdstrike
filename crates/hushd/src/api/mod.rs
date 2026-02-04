@@ -51,6 +51,7 @@ pub fn create_router(state: AppState) -> Router {
     let read_routes = Router::new()
         .route("/metrics", get(metrics::metrics))
         .route("/api/v1/policy", get(policy::get_policy))
+        .route("/api/v1/policy/bundle", get(policy::get_policy_bundle))
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
         .route("/api/v1/events", get(events::stream_events))
@@ -60,6 +61,7 @@ pub fn create_router(state: AppState) -> Router {
     // Admin routes - require auth + admin scope
     let admin_routes = Router::new()
         .route("/api/v1/policy", put(policy::update_policy))
+        .route("/api/v1/policy/bundle", put(policy::update_policy_bundle))
         .route("/api/v1/policy/reload", post(policy::reload_policy))
         .route("/api/v1/shutdown", post(shutdown::shutdown))
         .layer(middleware::from_fn(scope_layer(Scope::Admin)))

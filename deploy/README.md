@@ -9,6 +9,7 @@ This directory contains deployment configurations for running the hushd security
 | Linux | systemd | `systemd/` | [README](systemd/README.md) |
 | macOS | launchd | `launchd/` | [README](launchd/README.md) |
 | Container | Docker/Podman | `../Dockerfile.hushd` | See below |
+| Kubernetes | Kustomize | `kubernetes/hushd/` | [README](kubernetes/hushd/README.md) |
 
 ## Quick Start
 
@@ -150,6 +151,10 @@ curl http://localhost:9876/health
 ### Prometheus metrics
 
 Prometheus metrics are available at `/metrics` (text exposition format).
+
+```bash
+curl http://localhost:9876/metrics
+```
 
 - If auth is enabled, `/metrics` requires a key with `read` scope.
 

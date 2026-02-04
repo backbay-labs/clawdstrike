@@ -166,11 +166,7 @@ pub async fn check_action(
         request.session_id.as_deref(),
         request.agent_id.as_deref(),
     );
-
-    if let Err(e) = state.ledger.record(&audit_event) {
-        state.metrics.inc_audit_write_failure();
-        tracing::warn!(error = %e, "Failed to record audit event");
-    }
+    state.record_audit_event(audit_event);
 
     // Broadcast event
     state.broadcast(DaemonEvent {

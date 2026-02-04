@@ -995,6 +995,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hush-multi-agent"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hush-core",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "hush-native"
 version = "0.1.0"
 dependencies = [
@@ -1040,6 +1053,7 @@ name = "hushd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "base64",
  "chrono",

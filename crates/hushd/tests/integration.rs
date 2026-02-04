@@ -110,6 +110,42 @@ async fn test_get_policy() {
 }
 
 #[tokio::test]
+async fn test_update_policy_bundle_rejects_policy_hash_mismatch() {
+    let (client, url) = test_setup();
+
+    let signer = hush_core::Keypair::generate();
+    let policy = clawdstrike::Policy::new();
+    let correct_hash = clawdstrike::PolicyBundle::new(policy.clone())
+        .unwrap()
+        .policy_hash;
+    let bad_hash = {
+        let mut bytes = *correct_hash.as_bytes();
+        bytes[0] ^= 0x01;
+        hush_core::Hash::from_bytes(bytes)
+    };
+
+    let bundle = clawdstrike::PolicyBundle {
+        version: clawdstrike::POLICY_BUNDLE_SCHEMA_VERSION.to_string(),
+        bundle_id: "test-bundle".to_string(),
+        compiled_at: chrono::Utc::now().to_rfc3339(),
+        policy,
+        policy_hash: bad_hash,
+        sources: Vec::new(),
+        metadata: None,
+    };
+    let signed = clawdstrike::SignedPolicyBundle::sign_with_public_key(bundle, &signer).unwrap();
+
+    let resp = client
+        .put(format!("{}/api/v1/policy/bundle", url))
+        .json(&signed)
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert_eq!(resp.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
 async fn test_audit_query() {
     let (client, url) = test_setup();
 

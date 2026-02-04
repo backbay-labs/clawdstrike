@@ -285,6 +285,19 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
         uptime_secs = state.uptime_secs(),
         "Daemon stopped"
     );
+    drop(engine);
+
+    // Record session end.
+    let duration_secs = u64::try_from(state.uptime_secs()).unwrap_or(0);
+    let session_stats = hushd::audit::SessionStats {
+        action_count: stats.action_count,
+        violation_count: stats.violation_count,
+        duration_secs,
+    };
+    state.record_audit_event(hushd::audit::AuditEvent::session_end(
+        &state.session_id,
+        &session_stats,
+    ));
 
     Ok(())
 }
