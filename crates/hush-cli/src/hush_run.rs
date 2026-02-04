@@ -960,6 +960,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn macos_profile_denies_sensitive_home_subpaths() {
         let home = Path::new("/Users/alice");
         let workspace = Path::new("/Users/alice/work/project");
@@ -970,6 +971,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn macos_profile_denies_entire_home_when_safe() {
         let home = Path::new("/Users/alice");
         let workspace = Path::new("/tmp/project");
