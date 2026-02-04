@@ -33,6 +33,7 @@ serde_yaml.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 rand.workspace = true
+chrono-tz.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
@@ -50,6 +51,9 @@ tokio-rustls.workspace = true
 # Rate limiting
 governor.workspace = true
 dashmap.workspace = true
+regex.workspace = true
+globset.workspace = true
+roxmltree.workspace = true
 
 # Database
 rusqlite.workspace = true
@@ -64,6 +68,9 @@ dirs.workspace = true
 
 # HTTP client (for status command + remote policy extends)
 reqwest = { workspace = true, features = ["blocking"] }
+
+# JWT (OIDC)
+jsonwebtoken.workspace = true
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

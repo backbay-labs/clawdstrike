@@ -2,7 +2,7 @@ use anyhow::Context as _;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 use clawdstrike::guards::GuardAction;
-use clawdstrike::GuardContext;
+use clawdstrike::{GuardContext, IdentityPrincipal, OrganizationContext, RequestContext, SessionContext};
 use serde::{Deserialize, Serialize};
 
 use crate::canonical_commandline::canonical_shell_commandline;
@@ -152,7 +152,61 @@ impl PolicyEvent {
         ctx.session_id = self.session_id.clone();
         ctx.agent_id = extract_metadata_string(self.metadata.as_ref(), &["agentId", "agent_id"]);
         ctx.metadata = merge_context_into_metadata(self.metadata.as_ref(), self.context.as_ref());
+
+        // Optional identity/session enrichment (best-effort; never fails closed here).
+        if let Some(serde_json::Value::Object(obj)) = ctx.metadata.as_ref() {
+            if let Some(value) = obj.get("identity") {
+                if let Ok(principal) = serde_json::from_value::<IdentityPrincipal>(value.clone()) {
+                    ctx.identity = Some(principal);
+                }
+            }
+
+            if let Some(value) = obj.get("organization") {
+                if let Ok(org) = serde_json::from_value::<OrganizationContext>(value.clone()) {
+                    ctx.organization = Some(org);
+                }
+            }
+
+            if let Some(value) = obj.get("request") {
+                if let Ok(req) = serde_json::from_value::<RequestContext>(value.clone()) {
+                    ctx.request = Some(req);
+                }
+            }
+
+            if let Some(value) = obj.get("session") {
+                if let Ok(session) = serde_json::from_value::<SessionContext>(value.clone()) {
+                    ctx.session = Some(session);
+                }
+            }
+
+            if let Some(value) = obj.get("roles") {
+                if let Some(roles) = parse_string_array(value) {
+                    ctx.roles = Some(roles);
+                }
+            }
+
+            if let Some(value) = obj.get("permissions") {
+                if let Some(permissions) = parse_string_array(value) {
+                    ctx.permissions = Some(permissions);
+                }
+            }
+        }
+
         ctx
+    }
+}
+
+fn parse_string_array(value: &serde_json::Value) -> Option<Vec<String>> {
+    match value {
+        serde_json::Value::String(s) => Some(vec![s.clone()]),
+        serde_json::Value::Array(items) => {
+            let out: Vec<String> = items
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            (!out.is_empty()).then_some(out)
+        }
+        _ => None,
     }
 }
 

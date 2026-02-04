@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use clawdstrike::{HushEngine, Policy};
 use hush_core::Keypair;
 
+use crate::auth::{AuthenticatedActor, Scope};
+use crate::authz::require_api_key_scope_or_user_permission;
+use crate::rbac::{Action, ResourceType};
 use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
 use crate::state::AppState;
 
@@ -33,7 +36,16 @@ pub struct UpdatePolicyResponse {
 /// GET /api/v1/policy
 pub async fn get_policy(
     State(state): State<AppState>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
 ) -> Result<Json<PolicyResponse>, (StatusCode, String)> {
+    require_api_key_scope_or_user_permission(
+        actor.as_ref().map(|e| &e.0),
+        &state.rbac,
+        Scope::Read,
+        ResourceType::Policy,
+        Action::Read,
+    )?;
+
     let engine = state.engine.read().await;
 
     let policy = engine.policy();
@@ -65,8 +77,17 @@ pub async fn get_policy(
 /// PUT /api/v1/policy
 pub async fn update_policy(
     State(state): State<AppState>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<UpdatePolicyRequest>,
 ) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
+    require_api_key_scope_or_user_permission(
+        actor.as_ref().map(|e| &e.0),
+        &state.rbac,
+        Scope::Admin,
+        ResourceType::Policy,
+        Action::Update,
+    )?;
+
     let resolver = RemotePolicyResolver::new(RemoteExtendsResolverConfig::from_config(
         &state.config.remote_extends,
     ))
@@ -100,6 +121,7 @@ pub async fn update_policy(
         None => new_engine.with_generated_keypair(),
     };
     *engine = new_engine;
+    state.policy_engine_cache.clear();
 
     tracing::info!("Policy updated via API");
 
@@ -112,7 +134,16 @@ pub async fn update_policy(
 /// POST /api/v1/policy/reload
 pub async fn reload_policy(
     State(state): State<AppState>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
 ) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
+    require_api_key_scope_or_user_permission(
+        actor.as_ref().map(|e| &e.0),
+        &state.rbac,
+        Scope::Admin,
+        ResourceType::Policy,
+        Action::Update,
+    )?;
+
     state
         .reload_policy()
         .await

@@ -16,9 +16,11 @@ use super::{ApiKey, Scope};
 type ScopeLayerFuture =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, StatusCode>> + Send>>;
 
-/// Extension type to pass validated API key through request
 #[derive(Clone, Debug)]
-pub struct AuthenticatedKey(pub ApiKey);
+pub enum AuthenticatedActor {
+    ApiKey(ApiKey),
+    User(clawdstrike::IdentityPrincipal),
+}
 
 /// Extract bearer token from Authorization header
 fn extract_bearer_token(req: &Request<Body>) -> Option<&str> {
@@ -58,14 +60,30 @@ pub async fn require_auth(
     // Extract bearer token
     let token = extract_bearer_token(&req).ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Validate token against store
+    // Try OIDC validation first when the token looks like a JWT and OIDC is configured.
+    if looks_like_jwt(token) {
+        if let Some(oidc) = state.oidc.as_ref() {
+            match oidc.validate_token(token).await {
+                Ok(principal) => {
+                    req.extensions_mut()
+                        .insert(AuthenticatedActor::User(principal));
+                    return Ok(next.run(req).await);
+                }
+                Err(err) => {
+                    tracing::debug!(error = %err, "OIDC validation failed; falling back to API key");
+                }
+            }
+        }
+    }
+
+    // Validate token against API key store
     let key = state.auth_store.validate_key(token).await.map_err(|e| {
-        tracing::debug!(error = %e, "Auth validation failed");
+        tracing::debug!(error = %e, "API key validation failed");
         StatusCode::UNAUTHORIZED
     })?;
 
-    // Store validated key in request extensions for downstream handlers
-    req.extensions_mut().insert(AuthenticatedKey(key));
+    // Store validated actor in request extensions for downstream handlers
+    req.extensions_mut().insert(AuthenticatedActor::ApiKey(key));
 
     Ok(next.run(req).await)
 }
@@ -81,22 +99,49 @@ pub async fn require_scope(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Get the authenticated key from extensions.
+    // Get the authenticated actor from extensions.
     //
     // Note: when auth is disabled in config, `require_auth` will bypass validation and won't add
-    // `AuthenticatedKey`. In that case, scope checks are a no-op.
-    let Some(auth_key) = req.extensions().get::<AuthenticatedKey>() else {
+    // `AuthenticatedActor`. In that case, scope checks are a no-op.
+    let Some(actor) = req.extensions().get::<AuthenticatedActor>() else {
         return Ok(next.run(req).await);
     };
 
-    // Check if key has required scope
-    if !auth_key.0.has_scope(scope) {
-        tracing::debug!(
-            key_name = %auth_key.0.name,
-            required_scope = %scope,
-            "Insufficient scope"
-        );
-        return Err(StatusCode::FORBIDDEN);
+    match actor {
+        AuthenticatedActor::ApiKey(key) => {
+            if !key.has_scope(scope) {
+                tracing::debug!(
+                    key_name = %key.name,
+                    required_scope = %scope,
+                    "Insufficient scope"
+                );
+                return Err(StatusCode::FORBIDDEN);
+            }
+        }
+        AuthenticatedActor::User(principal) => {
+            // Temporary scope mapping (replaced by RBAC in Phase 4).
+            match scope {
+                Scope::Check => {}
+                Scope::Read => {
+                    let ok = principal.roles.iter().any(|r| {
+                        r == "policy-viewer"
+                            || r == "audit-viewer"
+                            || r == "policy-admin"
+                            || r == "super-admin"
+                    });
+                    if !ok {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                }
+                Scope::Admin => {
+                    let ok = principal.roles.iter().any(|r| r == "policy-admin" || r == "super-admin");
+                    if !ok {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                }
+                Scope::All => {}
+            }
+        }
     }
 
     Ok(next.run(req).await)
@@ -110,6 +155,14 @@ pub fn scope_layer(
         let scope = scope;
         Box::pin(async move { require_scope(scope, req, next).await })
     }
+}
+
+fn looks_like_jwt(token: &str) -> bool {
+    let mut parts = token.split('.');
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(_), Some(_), Some(_), None)
+    )
 }
 
 #[cfg(test)]
