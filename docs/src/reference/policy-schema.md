@@ -4,22 +4,24 @@ Reference for the Rust policy type `clawdstrike::Policy`.
 
 ## Top-level fields
 
-- `version` (string): policy version (defaults to `1.0.0`)
+- `version` (string): policy version (defaults to `1.1.0`)
 - `name` (string)
 - `description` (string)
-- `extends` (string, optional): a built-in ruleset id (e.g. `clawdstrike:default`) or a file path
+- `extends` (string, optional): a built-in ruleset id (e.g. `clawdstrike:default`), a file path, or a pinned remote reference (e.g. `https://…/policy.yaml#sha256=…`)
 - `merge_strategy` (`replace` | `merge` | `deep_merge`)
+- `custom_guards` (list, optional): policy-driven custom guards (resolved via a `CustomGuardRegistry`; fail-closed if required but unavailable)
 - `guards` (object): guard configurations (see below)
 - `settings` (object): engine settings (see below)
 
 ## Full schema (example)
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: Example
 description: Example policy showing all fields
 extends: clawdstrike:default
 merge_strategy: deep_merge
+custom_guards: []
 
 guards:
   forbidden_path:

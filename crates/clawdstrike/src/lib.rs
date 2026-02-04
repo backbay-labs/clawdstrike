@@ -33,14 +33,14 @@
 //! use clawdstrike::Policy;
 //!
 //! let yaml = r#"
-//! version: "1.0.0"
+//! version: "1.1.0"
 //! name: "example"
 //! settings:
 //!   fail_fast: true
 //! "#;
 //!
 //! let policy = Policy::from_yaml(yaml).unwrap();
-//! assert_eq!(policy.version, "1.0.0");
+//! assert_eq!(policy.version, "1.1.0");
 //! ```
 
 pub mod engine;
@@ -57,9 +57,9 @@ pub mod watermarking;
 pub use engine::{GuardReport, HushEngine};
 pub use error::{Error, Result};
 pub use guards::{
-    EgressAllowlistGuard, ForbiddenPathGuard, Guard, GuardContext, GuardResult, JailbreakConfig,
-    JailbreakGuard, McpToolGuard, PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard,
-    Severity,
+    CustomGuardFactory, CustomGuardRegistry, EgressAllowlistGuard, ForbiddenPathGuard, Guard,
+    GuardContext, GuardResult, JailbreakConfig, JailbreakGuard, McpToolGuard,
+    PatchIntegrityGuard, PromptInjectionGuard, SecretLeakGuard, Severity,
 };
 pub use hygiene::{
     detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,

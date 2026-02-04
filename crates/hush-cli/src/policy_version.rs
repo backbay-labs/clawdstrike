@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use crate::policy_diff::ResolvedPolicySource;
+use crate::remote_extends::RemoteExtendsConfig;
 use crate::{CliJsonError, ExitCode, PolicySource, CLI_JSON_VERSION};
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -19,13 +20,15 @@ pub struct PolicyVersionJsonOutput {
 pub fn cmd_policy_version(
     policy_ref: String,
     resolve: bool,
+    remote_extends: &RemoteExtendsConfig,
     json: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
     let supported = clawdstrike::policy::POLICY_SCHEMA_VERSION.to_string();
 
-    let loaded = match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve) {
+    let loaded =
+        match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve, remote_extends) {
         Ok(v) => v,
         Err(e) => {
             let code = crate::policy_error_exit_code(&e.source);

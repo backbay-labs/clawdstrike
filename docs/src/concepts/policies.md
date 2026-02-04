@@ -7,7 +7,7 @@ Policies are YAML files parsed into `clawdstrike::Policy`. They configure the bu
 At a high level:
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: Example
 description: Optional
 

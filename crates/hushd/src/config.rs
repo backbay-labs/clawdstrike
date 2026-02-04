@@ -111,6 +111,42 @@ impl Default for RateLimitConfig {
         }
     }
 }
+
+fn default_remote_max_fetch_bytes() -> usize {
+    1_048_576 // 1 MiB
+}
+
+fn default_remote_max_cache_bytes() -> usize {
+    100_000_000 // 100 MB
+}
+
+/// Remote `extends` configuration (disabled unless allowlisted).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteExtendsConfig {
+    /// Allowed hosts for remote policy resolution.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+    /// Optional cache directory override.
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+    /// Maximum bytes to fetch for a single remote policy.
+    #[serde(default = "default_remote_max_fetch_bytes")]
+    pub max_fetch_bytes: usize,
+    /// Maximum total bytes for the cache directory.
+    #[serde(default = "default_remote_max_cache_bytes")]
+    pub max_cache_bytes: usize,
+}
+
+impl Default for RemoteExtendsConfig {
+    fn default() -> Self {
+        Self {
+            allowed_hosts: Vec::new(),
+            cache_dir: None,
+            max_fetch_bytes: default_remote_max_fetch_bytes(),
+            max_cache_bytes: default_remote_max_cache_bytes(),
+        }
+    }
+}
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -157,6 +193,10 @@ pub struct Config {
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+
+    /// Remote `extends` configuration (disabled unless allowlisted).
+    #[serde(default)]
+    pub remote_extends: RemoteExtendsConfig,
 }
 
 fn default_listen() -> String {
@@ -196,6 +236,7 @@ impl Default for Config {
             max_audit_entries: 0,
             auth: AuthConfig::default(),
             rate_limit: RateLimitConfig::default(),
+            remote_extends: RemoteExtendsConfig::default(),
         }
     }
 }

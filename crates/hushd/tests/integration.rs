@@ -172,6 +172,54 @@ async fn test_sse_events() {
     );
 }
 
+#[tokio::test]
+async fn test_metrics_endpoint() {
+    let (client, url) = test_setup();
+    let resp = client
+        .get(format!("{}/metrics", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("hushd_http_requests_total"));
+}
+
+#[tokio::test]
+async fn test_eval_policy_event() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-1",
+                "eventType": "tool_call",
+                "timestamp": "2026-02-03T00:00:20Z",
+                "sessionId": "sess-eval-1",
+                "data": {
+                    "type": "tool",
+                    "toolName": "mcp__blender__execute_blender_code",
+                    "parameters": { "code": "print('hello from mcp')" }
+                },
+                "metadata": { "toolKind": "mcp" }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["command"], "policy_eval");
+    assert_eq!(json["decision"]["allowed"], true);
+    assert_eq!(json["decision"]["denied"], false);
+    assert_eq!(json["decision"]["warn"], false);
+    assert_eq!(json["report"]["overall"]["allowed"], true);
+}
+
 // Unit tests that don't require daemon
 #[test]
 fn test_config_default() {

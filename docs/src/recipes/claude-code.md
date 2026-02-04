@@ -16,7 +16,7 @@ hush policy show ai-agent
 2. Write a policy file that extends it (optional):
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: My Claude Policy
 extends: clawdstrike:ai-agent
 ```

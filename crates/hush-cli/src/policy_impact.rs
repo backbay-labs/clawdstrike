@@ -4,6 +4,7 @@ use clawdstrike::HushEngine;
 
 use crate::policy_diff::ResolvedPolicySource;
 use crate::policy_event::map_policy_event;
+use crate::remote_extends::RemoteExtendsConfig;
 use crate::{CliJsonError, ExitCode, PolicySource, CLI_JSON_VERSION};
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -37,9 +38,10 @@ pub struct PolicyImpactJsonOutput {
     pub error: Option<CliJsonError>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct PolicyImpactOptions {
+#[derive(Clone, Debug)]
+pub struct PolicyImpactOptions<'a> {
     pub resolve: bool,
+    pub remote_extends: &'a RemoteExtendsConfig,
     pub json: bool,
     pub fail_on_breaking: bool,
 }
@@ -48,11 +50,15 @@ pub async fn cmd_policy_impact(
     old_policy_ref: String,
     new_policy_ref: String,
     events_path: String,
-    opts: PolicyImpactOptions,
+    opts: PolicyImpactOptions<'_>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
-    let old_loaded = match crate::policy_diff::load_policy_from_arg(&old_policy_ref, opts.resolve) {
+    let old_loaded = match crate::policy_diff::load_policy_from_arg(
+        &old_policy_ref,
+        opts.resolve,
+        opts.remote_extends,
+    ) {
         Ok(v) => v,
         Err(e) => {
             let code = crate::policy_error_exit_code(&e.source);
@@ -75,7 +81,11 @@ pub async fn cmd_policy_impact(
         }
     };
 
-    let new_loaded = match crate::policy_diff::load_policy_from_arg(&new_policy_ref, opts.resolve) {
+    let new_loaded = match crate::policy_diff::load_policy_from_arg(
+        &new_policy_ref,
+        opts.resolve,
+        opts.remote_extends,
+    ) {
         Ok(v) => v,
         Err(e) => {
             let code = crate::policy_error_exit_code(&e.source);
@@ -100,8 +110,40 @@ pub async fn cmd_policy_impact(
 
     let old_policy_source = policy_source_for_loaded(&old_loaded.source);
     let new_policy_source = policy_source_for_loaded(&new_loaded.source);
-    let old_engine = HushEngine::with_policy(old_loaded.policy);
-    let new_engine = HushEngine::with_policy(new_loaded.policy);
+    let old_engine = match HushEngine::builder(old_loaded.policy).build() {
+        Ok(engine) => engine,
+        Err(e) => {
+            return emit_error(
+                opts.json,
+                old_policy_source,
+                new_policy_source,
+                &events_path,
+                ImpactSummary::default(),
+                ExitCode::ConfigError,
+                "config_error",
+                &format!("Failed to initialize engine: {}", e),
+                stdout,
+                stderr,
+            );
+        }
+    };
+    let new_engine = match HushEngine::builder(new_loaded.policy).build() {
+        Ok(engine) => engine,
+        Err(e) => {
+            return emit_error(
+                opts.json,
+                old_policy_source,
+                new_policy_source,
+                &events_path,
+                ImpactSummary::default(),
+                ExitCode::ConfigError,
+                "config_error",
+                &format!("Failed to initialize engine: {}", e),
+                stdout,
+                stderr,
+            );
+        }
+    };
 
     let input = match crate::policy_pac::open_events_reader(&events_path) {
         Ok(v) => v,

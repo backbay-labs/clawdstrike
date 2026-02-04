@@ -1,6 +1,6 @@
 # AI Agent Ruleset
 # Optimized for AI coding assistants (Claude, GPT, etc.)
-version: "1.0.0"
+version: "1.1.0"
 name: AI Agent
 description: Security rules optimized for AI coding assistants
 

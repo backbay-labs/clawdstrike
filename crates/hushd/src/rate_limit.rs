@@ -28,6 +28,7 @@ use governor::{
 };
 
 use crate::config::RateLimitConfig;
+use crate::metrics::Metrics;
 
 /// Type alias for our keyed rate limiter
 pub type KeyedRateLimiter =
@@ -39,16 +40,18 @@ pub struct RateLimitState {
     limiter: Option<Arc<KeyedRateLimiter>>,
     config: RateLimitConfig,
     trusted_proxies: HashSet<IpAddr>,
+    metrics: Arc<Metrics>,
 }
 
 impl RateLimitState {
     /// Create a new rate limit state from config
-    pub fn new(config: &RateLimitConfig) -> Self {
+    pub fn new(config: &RateLimitConfig, metrics: Arc<Metrics>) -> Self {
         if !config.enabled {
             return Self {
                 limiter: None,
                 config: config.clone(),
                 trusted_proxies: HashSet::new(),
+                metrics,
             };
         }
 
@@ -89,6 +92,7 @@ impl RateLimitState {
             limiter: Some(Arc::new(limiter)),
             config: config.clone(),
             trusted_proxies,
+            metrics,
         }
     }
 
@@ -147,6 +151,7 @@ pub async fn rate_limit_middleware(
                     client_ip = %client_ip,
                     "Rate limit exceeded"
                 );
+                rate_limit.metrics.inc_rate_limit_dropped();
 
                 let wait = not_until.wait_time_from(DefaultClock::default().now());
                 let mut retry_after_secs = wait.as_secs();
@@ -188,6 +193,11 @@ fn extract_client_ip(req: &Request<Body>, rate_limit: &RateLimitState) -> IpAddr
         .extensions()
         .get::<axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>>()
         .map(|ci| ci.0.ip())
+        .or_else(|| {
+            req.extensions()
+                .get::<axum::extract::connect_info::ConnectInfo<crate::tls::TlsConnectInfo>>()
+                .map(|ci| (ci.0).0.ip())
+        })
         // Backward-compatible fallback (if the app inserts SocketAddr directly).
         .or_else(|| {
             req.extensions()
@@ -226,6 +236,7 @@ fn extract_client_ip(req: &Request<Body>, rate_limit: &RateLimitState) -> IpAddr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metrics::Metrics;
 
     #[test]
     fn test_rate_limit_state_disabled() {
@@ -236,7 +247,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: false,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         assert!(!state.is_enabled());
         assert!(state.limiter.is_none());
     }
@@ -250,7 +261,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: false,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         assert!(state.is_enabled());
         assert!(state.limiter.is_some());
     }
@@ -264,7 +275,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: false,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         let ip: IpAddr = "192.168.1.1".parse().unwrap();
 
         // Should allow burst_size requests immediately
@@ -282,7 +293,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: false,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         let ip: IpAddr = "192.168.1.1".parse().unwrap();
 
         // Exhaust the burst
@@ -303,7 +314,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: false,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
         let ip1: IpAddr = "192.168.1.1".parse().unwrap();
         let ip2: IpAddr = "192.168.1.2".parse().unwrap();
 
@@ -328,7 +339,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: true, // Trust headers (for testing)
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
         let req = Request::builder()
             .header(
@@ -351,7 +362,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: false, // Don't trust headers
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
         let req = Request::builder()
             .header("X-Forwarded-For", "203.0.113.195")
@@ -372,7 +383,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: true,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
         let req = Request::builder()
             .header("X-Real-IP", "203.0.113.195")
@@ -392,7 +403,7 @@ mod tests {
             trusted_proxies: vec![],
             trust_xff_from_any: false,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
         let req = Request::builder().body(Body::empty()).unwrap();
 
@@ -409,7 +420,7 @@ mod tests {
             trusted_proxies: vec!["10.0.0.1".to_string(), "10.0.0.2".to_string()],
             trust_xff_from_any: false,
         };
-        let state = RateLimitState::new(&config);
+        let state = RateLimitState::new(&config, Arc::new(Metrics::default()));
 
         // Should trust headers from configured proxy IPs
         assert!(state.should_trust_headers(Some("10.0.0.1".parse().unwrap())));

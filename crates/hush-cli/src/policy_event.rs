@@ -14,6 +14,7 @@ pub enum PolicyEventType {
     CommandExec,
     PatchApply,
     ToolCall,
+    SecretAccess,
     Custom,
     Other(String),
 }
@@ -27,6 +28,7 @@ impl PolicyEventType {
             Self::CommandExec => "command_exec",
             Self::PatchApply => "patch_apply",
             Self::ToolCall => "tool_call",
+            Self::SecretAccess => "secret_access",
             Self::Custom => "custom",
             Self::Other(s) => s.as_str(),
         }
@@ -64,6 +66,7 @@ impl Clone for PolicyEventType {
             Self::CommandExec => Self::CommandExec,
             Self::PatchApply => Self::PatchApply,
             Self::ToolCall => Self::ToolCall,
+            Self::SecretAccess => Self::SecretAccess,
             Self::Custom => Self::Custom,
             Self::Other(s) => Self::Other(s.clone()),
         }
@@ -83,6 +86,7 @@ impl<'de> Deserialize<'de> for PolicyEventType {
             "command_exec" => Self::CommandExec,
             "patch_apply" => Self::PatchApply,
             "tool_call" => Self::ToolCall,
+            "secret_access" => Self::SecretAccess,
             "custom" => Self::Custom,
             other => Self::Other(other.to_string()),
         })
@@ -128,6 +132,7 @@ impl PolicyEvent {
             (PolicyEventType::CommandExec, PolicyEventData::Command(_)) => {}
             (PolicyEventType::PatchApply, PolicyEventData::Patch(_)) => {}
             (PolicyEventType::ToolCall, PolicyEventData::Tool(_)) => {}
+            (PolicyEventType::SecretAccess, PolicyEventData::Secret(_)) => {}
             (PolicyEventType::Custom, PolicyEventData::Custom(_)) => {}
             (PolicyEventType::Other(_), _) => {}
             (event_type, data) => {
@@ -158,6 +163,7 @@ pub enum PolicyEventData {
     Command(CommandEventData),
     Patch(PatchEventData),
     Tool(ToolEventData),
+    Secret(SecretEventData),
     Custom(CustomEventData),
     Other {
         type_name: String,
@@ -173,6 +179,7 @@ impl PolicyEventData {
             Self::Command(_) => "command",
             Self::Patch(_) => "patch",
             Self::Tool(_) => "tool",
+            Self::Secret(_) => "secret",
             Self::Custom(_) => "custom",
             Self::Other { type_name, .. } => type_name.as_str(),
         }
@@ -199,6 +206,9 @@ impl Serialize for PolicyEventData {
             }
             Self::Tool(inner) => {
                 serialize_typed_data("tool", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Secret(inner) => {
+                serialize_typed_data("secret", inner).map_err(serde::ser::Error::custom)?
             }
             Self::Custom(inner) => {
                 serialize_typed_data("custom", inner).map_err(serde::ser::Error::custom)?
@@ -239,6 +249,9 @@ impl<'de> Deserialize<'de> for PolicyEventData {
                 .map_err(serde::de::Error::custom),
             "tool" => serde_json::from_value::<ToolEventData>(value)
                 .map(Self::Tool)
+                .map_err(serde::de::Error::custom),
+            "secret" => serde_json::from_value::<SecretEventData>(value)
+                .map(Self::Secret)
                 .map_err(serde::de::Error::custom),
             "custom" => serde_json::from_value::<CustomEventData>(value)
                 .map(Self::Custom)
@@ -327,6 +340,14 @@ pub struct ToolEventData {
     pub tool_name: String,
     #[serde(default = "default_empty_object")]
     pub parameters: serde_json::Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretEventData {
+    #[serde(alias = "secret_name")]
+    pub secret_name: String,
+    pub scope: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -518,6 +539,13 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
                 )
             }
         }
+        (PolicyEventType::SecretAccess, PolicyEventData::Secret(_secret)) => (
+            MappedGuardAction::Custom {
+                custom_type: "secret_access".to_string(),
+                data: data_json,
+            },
+            None,
+        ),
         (PolicyEventType::Custom, PolicyEventData::Custom(custom)) => (
             MappedGuardAction::Custom {
                 custom_type: custom.custom_type.clone(),
@@ -542,4 +570,29 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
         action,
         decision_reason,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixtures_policy_events_v1_parse_and_validate() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let text = std::fs::read_to_string(&path).expect("read fixtures/policy-events/v1/events.jsonl");
+
+        for (line_no, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let event: PolicyEvent =
+                serde_json::from_str(line).unwrap_or_else(|_| panic!("invalid JSON at line {}", line_no + 1));
+            event
+                .validate()
+                .unwrap_or_else(|e| panic!("invalid PolicyEvent at line {}: {}", line_no + 1, e));
+        }
+    }
 }

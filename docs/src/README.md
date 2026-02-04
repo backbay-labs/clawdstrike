@@ -28,7 +28,7 @@ Policies are YAML files that configure the built-in guards under `guards.*`.
 They can inherit from a built-in ruleset or another file via `extends`.
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: My Policy
 extends: clawdstrike:default
 

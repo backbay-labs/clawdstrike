@@ -41,7 +41,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 #### Policy Engine
 
-- YAML-based policy configuration (`version: "1.0.0"` for Rust)
+- YAML-based policy configuration (`version: "1.1.0"` for Rust)
 - Pre-configured rulesets: `default`, `strict`, `ai-agent`, `cicd`, `permissive`
 - Policy inheritance and merging
 - Runtime policy validation with fail-closed semantics

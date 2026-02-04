@@ -21,6 +21,7 @@
 //! # })
 //! ```
 
+mod custom;
 mod egress_allowlist;
 mod forbidden_path;
 mod jailbreak;
@@ -29,6 +30,7 @@ mod patch_integrity;
 mod prompt_injection;
 mod secret_leak;
 
+pub use custom::{CustomGuardFactory, CustomGuardRegistry};
 pub use egress_allowlist::{EgressAllowlistConfig, EgressAllowlistGuard};
 pub use forbidden_path::{ForbiddenPathConfig, ForbiddenPathGuard};
 pub use jailbreak::{JailbreakConfig, JailbreakGuard};

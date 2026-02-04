@@ -18,12 +18,14 @@
 //! - `hush policy test <testYaml>` - Run policy tests from YAML
 //! - `hush policy impact <old> <new> <eventsJsonlPath|->` - Compare decisions across policies
 //! - `hush policy version <policyRef>` - Show policy schema version compatibility
+//! - `hush run --policy <ref|file> -- <cmd> <args…>` - Best-effort process wrapper (proxy + audit log + receipt)
 //! - `hush daemon start|stop|status|reload` - Daemon management
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::generate;
 use rand::Rng;
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -32,6 +34,8 @@ use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, Signe
 
 mod canonical_commandline;
 mod guard_report_json;
+mod hush_run;
+mod remote_extends;
 mod policy_diff;
 mod policy_event;
 mod policy_impact;
@@ -74,6 +78,22 @@ struct Cli {
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Allow remote policy extends from this host (repeatable). Remote extends require `#sha256=<HEX>` pins.
+    #[arg(long = "remote-extends-allow-host")]
+    remote_extends_allow_host: Vec<String>,
+
+    /// Cache directory for remote policy extends.
+    #[arg(long = "remote-extends-cache-dir")]
+    remote_extends_cache_dir: Option<PathBuf>,
+
+    /// Maximum bytes to fetch for a single remote policy (default: 1 MiB).
+    #[arg(long = "remote-extends-max-fetch-bytes", default_value_t = 1_048_576)]
+    remote_extends_max_fetch_bytes: usize,
+
+    /// Maximum total bytes for the remote policy cache (default: 100 MB).
+    #[arg(long = "remote-extends-max-cache-bytes", default_value_t = 100_000_000)]
+    remote_extends_max_cache_bytes: usize,
 
     #[command(subcommand)]
     command: Commands,
@@ -533,14 +553,39 @@ struct VerifyJsonOutput {
 }
 
 async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCode {
-    match cli.command {
+    let Cli {
+        remote_extends_allow_host,
+        remote_extends_cache_dir,
+        remote_extends_max_fetch_bytes,
+        remote_extends_max_cache_bytes,
+        command,
+        ..
+    } = cli;
+
+    let mut remote_extends = remote_extends::RemoteExtendsConfig::new(remote_extends_allow_host)
+        .with_limits(remote_extends_max_fetch_bytes, remote_extends_max_cache_bytes);
+    if let Some(dir) = remote_extends_cache_dir {
+        remote_extends = remote_extends.with_cache_dir(dir);
+    }
+
+    match command {
         Commands::Check {
             action_type,
             target,
             json,
             policy,
             ruleset,
-        } => cmd_check(action_type, target, json, policy, ruleset, stdout, stderr).await,
+        } => cmd_check(
+            action_type,
+            target,
+            json,
+            policy,
+            ruleset,
+            &remote_extends,
+            stdout,
+            stderr,
+        )
+        .await,
 
         Commands::Verify {
             receipt,
@@ -562,7 +607,7 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCo
             }
         },
 
-        Commands::Policy { command } => match cmd_policy(command, stdout, stderr).await {
+        Commands::Policy { command } => match cmd_policy(command, &remote_extends, stdout, stderr).await {
             Ok(code) => code,
             Err(e) => {
                 let _ = writeln!(stderr, "Error: {}", e);
@@ -627,15 +672,85 @@ async fn cmd_check(
     json: bool,
     policy: Option<String>,
     ruleset: Option<String>,
+    remote_extends: &remote_extends::RemoteExtendsConfig,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
+    let resolver = match remote_extends::RemotePolicyResolver::new(remote_extends.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            return emit_check_error(
+                CheckErrorOutput {
+                    json,
+                    action_type: &action_type,
+                    target: &target,
+                    stdout,
+                    stderr,
+                },
+                PolicySource::Ruleset {
+                    name: ruleset.unwrap_or_else(|| "default".to_string()),
+                },
+                ExitCode::ConfigError,
+                "config_error",
+                &format!("Failed to initialize remote extends resolver: {}", e),
+            );
+        }
+    };
+
     let (engine, policy_source) = if let Some(policy_path) = policy {
-        match Policy::from_yaml_file_with_extends(&policy_path) {
-            Ok(policy) => (
-                HushEngine::with_policy(policy),
-                PolicySource::PolicyFile { path: policy_path },
-            ),
+        let content = match std::fs::read_to_string(&policy_path) {
+            Ok(c) => c,
+            Err(e) => {
+                return emit_check_error(
+                    CheckErrorOutput {
+                        json,
+                        action_type: &action_type,
+                        target: &target,
+                        stdout,
+                        stderr,
+                    },
+                    PolicySource::PolicyFile {
+                        path: policy_path.clone(),
+                    },
+                    ExitCode::RuntimeError,
+                    "runtime_error",
+                    &format!("Failed to read policy file: {}", e),
+                );
+            }
+        };
+
+        match Policy::from_yaml_with_extends_resolver(
+            &content,
+            Some(std::path::Path::new(&policy_path)),
+            &resolver,
+        ) {
+            Ok(policy) => {
+                let engine = match HushEngine::builder(policy).build() {
+                    Ok(engine) => engine,
+                    Err(e) => {
+                        return emit_check_error(
+                            CheckErrorOutput {
+                                json,
+                                action_type: &action_type,
+                                target: &target,
+                                stdout,
+                                stderr,
+                            },
+                            PolicySource::PolicyFile {
+                                path: policy_path.clone(),
+                            },
+                            ExitCode::ConfigError,
+                            "config_error",
+                            &format!("Failed to initialize engine: {}", e),
+                        );
+                    }
+                };
+
+                (
+                    engine,
+                    PolicySource::PolicyFile { path: policy_path },
+                )
+            }
             Err(e) => {
                 return emit_check_error(
                     CheckErrorOutput {
@@ -1059,16 +1174,25 @@ fn cmd_keygen(output: &str) -> anyhow::Result<(String, String, String)> {
 
 async fn cmd_policy(
     command: PolicyCommands,
+    remote_extends: &remote_extends::RemoteExtendsConfig,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> anyhow::Result<ExitCode> {
+    let resolver = remote_extends::RemotePolicyResolver::new(remote_extends.clone())
+        .map_err(|e| anyhow::anyhow!("Failed to initialize remote extends resolver: {}", e))?;
+
     match command {
         PolicyCommands::Show { ruleset, merged } => {
             let is_file = std::path::Path::new(&ruleset).exists();
 
             if is_file {
                 let policy = if merged {
-                    Policy::from_yaml_file_with_extends(&ruleset)?
+                    let content = std::fs::read_to_string(&ruleset)?;
+                    Policy::from_yaml_with_extends_resolver(
+                        &content,
+                        Some(std::path::Path::new(&ruleset)),
+                        &resolver,
+                    )?
                 } else {
                     Policy::from_yaml_file(&ruleset)?
                 };
@@ -1092,7 +1216,12 @@ async fn cmd_policy(
 
         PolicyCommands::Validate { file, resolve } => {
             let policy = if resolve {
-                Policy::from_yaml_file_with_extends(&file)?
+                let content = std::fs::read_to_string(&file)?;
+                Policy::from_yaml_with_extends_resolver(
+                    &content,
+                    Some(std::path::Path::new(&file)),
+                    &resolver,
+                )?
             } else {
                 Policy::from_yaml_file(&file)?
             };
@@ -1116,7 +1245,8 @@ async fn cmd_policy(
             resolve,
             json,
         } => {
-            let left_loaded = match policy_diff::load_policy_from_arg(&left, resolve) {
+            let left_loaded = match policy_diff::load_policy_from_arg(&left, resolve, remote_extends)
+            {
                 Ok(v) => v,
                 Err(e) => {
                     let code = policy_error_exit_code(&e.source);
@@ -1124,7 +1254,8 @@ async fn cmd_policy(
                     return Ok(code);
                 }
             };
-            let right_loaded = match policy_diff::load_policy_from_arg(&right, resolve) {
+            let right_loaded =
+                match policy_diff::load_policy_from_arg(&right, resolve, remote_extends) {
                 Ok(v) => v,
                 Err(e) => {
                     let code = policy_error_exit_code(&e.source);
@@ -1258,7 +1389,13 @@ async fn cmd_policy(
             strict,
             json,
         } => Ok(policy_lint::cmd_policy_lint(
-            policy_ref, resolve, json, strict, stdout, stderr,
+            policy_ref,
+            resolve,
+            remote_extends,
+            json,
+            strict,
+            stdout,
+            stderr,
         )),
 
         PolicyCommands::Test {
@@ -1267,7 +1404,16 @@ async fn cmd_policy(
             json,
             coverage,
         } => Ok(
-            policy_test::cmd_policy_test(test_file, resolve, json, coverage, stdout, stderr).await,
+            policy_test::cmd_policy_test(
+                test_file,
+                resolve,
+                remote_extends,
+                json,
+                coverage,
+                stdout,
+                stderr,
+            )
+            .await,
         ),
 
         PolicyCommands::Impact {
@@ -1283,6 +1429,7 @@ async fn cmd_policy(
             events,
             policy_impact::PolicyImpactOptions {
                 resolve,
+                remote_extends,
                 json,
                 fail_on_breaking,
             },
@@ -1296,7 +1443,12 @@ async fn cmd_policy(
             resolve,
             json,
         } => Ok(policy_version::cmd_policy_version(
-            policy_ref, resolve, json, stdout, stderr,
+            policy_ref,
+            resolve,
+            remote_extends,
+            json,
+            stdout,
+            stderr,
         )),
 
         PolicyCommands::Rego { command } => {
@@ -1309,7 +1461,18 @@ async fn cmd_policy(
             resolve,
             json,
         } => {
-            Ok(policy_pac::cmd_policy_eval(policy_ref, event, resolve, json, stdout, stderr).await)
+            Ok(
+                policy_pac::cmd_policy_eval(
+                    policy_ref,
+                    event,
+                    resolve,
+                    remote_extends,
+                    json,
+                    stdout,
+                    stderr,
+                )
+                .await,
+            )
         }
 
         PolicyCommands::Simulate {
@@ -1327,6 +1490,7 @@ async fn cmd_policy(
             events,
             policy_pac::PolicySimulateOptions {
                 resolve,
+                remote_extends,
                 json,
                 jsonl,
                 summary,

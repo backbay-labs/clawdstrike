@@ -34,7 +34,7 @@ jobs:
 Start from the built-in `cicd` ruleset:
 
 ```yaml
-version: "1.0.0"
+version: "1.1.0"
 name: CI Policy
 extends: clawdstrike:cicd
 ```

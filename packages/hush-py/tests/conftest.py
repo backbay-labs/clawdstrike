@@ -7,7 +7,7 @@ import pytest
 def sample_policy_yaml() -> str:
     """Sample policy YAML for testing."""
     return """
-version: "1.0.0"
+version: "1.1.0"
 name: test-policy
 guards:
   forbidden_path:

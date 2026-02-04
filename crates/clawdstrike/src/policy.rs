@@ -2,7 +2,7 @@
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use globset::GlobBuilder;
 
@@ -18,7 +18,117 @@ use crate::guards::{
 ///
 /// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
 /// unsupported versions to prevent silent drift.
-pub const POLICY_SCHEMA_VERSION: &str = "1.0.0";
+pub const POLICY_SCHEMA_VERSION: &str = "1.1.0";
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_json_object() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
+/// Policy-driven custom guard configuration.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomGuardSpec {
+    /// Installed guard id (resolved via `CustomGuardRegistry`).
+    pub id: String,
+    /// Enable/disable this custom guard.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Factory configuration (JSON object).
+    #[serde(default = "default_json_object")]
+    pub config: serde_json::Value,
+}
+
+/// Location context for resolving policy `extends`.
+///
+/// This is used by `PolicyResolver` implementations to resolve relative references and enforce
+/// security rules around remote resolution.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PolicyLocation {
+    /// No location context (inline YAML).
+    None,
+    /// A local file path.
+    File(PathBuf),
+    /// A remote URL (without fragment).
+    Url(String),
+    /// A file path within a git repository.
+    Git {
+        repo: String,
+        commit: String,
+        path: String,
+    },
+    /// A built-in ruleset identifier.
+    Ruleset { id: String },
+}
+
+/// A resolved policy source returned by a `PolicyResolver`.
+#[derive(Clone, Debug)]
+pub struct ResolvedPolicySource {
+    /// Canonical key for cycle detection (stable across equivalent references).
+    pub key: String,
+    /// YAML content.
+    pub yaml: String,
+    /// Location context for resolving nested `extends`.
+    pub location: PolicyLocation,
+}
+
+/// Extends resolver interface.
+///
+/// Implementations may resolve local files, built-in rulesets, and/or remote sources.
+pub trait PolicyResolver {
+    fn resolve(&self, reference: &str, from: &PolicyLocation) -> Result<ResolvedPolicySource>;
+}
+
+/// Default resolver that supports only built-in rulesets and local filesystem paths.
+#[derive(Clone, Debug, Default)]
+pub struct LocalPolicyResolver;
+
+impl LocalPolicyResolver {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl PolicyResolver for LocalPolicyResolver {
+    fn resolve(&self, reference: &str, from: &PolicyLocation) -> Result<ResolvedPolicySource> {
+        if let Some((yaml, id)) = RuleSet::yaml_by_name(reference) {
+            return Ok(ResolvedPolicySource {
+                key: format!("ruleset:{}", id),
+                yaml: yaml.to_string(),
+                location: PolicyLocation::Ruleset { id },
+            });
+        }
+
+        let extends_path = match from {
+            PolicyLocation::File(base_path) => base_path
+                .parent()
+                .unwrap_or(base_path.as_path())
+                .join(reference),
+            _ => PathBuf::from(reference),
+        };
+
+        if !extends_path.exists() {
+            return Err(Error::ConfigError(format!(
+                "Unknown ruleset or file not found: {}",
+                reference
+            )));
+        }
+
+        let yaml = std::fs::read_to_string(&extends_path)?;
+        let key = std::fs::canonicalize(&extends_path)
+            .map(|p| format!("file:{}", p.display()))
+            .unwrap_or_else(|_| format!("file:{}", extends_path.display()));
+
+        Ok(ResolvedPolicySource {
+            key,
+            yaml,
+            location: PolicyLocation::File(extends_path),
+        })
+    }
+}
 
 /// Strategy for merging policies when using extends
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +165,9 @@ pub struct Policy {
     /// Guard configurations
     #[serde(default)]
     pub guards: GuardConfigs,
+    /// Policy-driven custom guards (resolved by runtimes via a registry).
+    #[serde(default)]
+    pub custom_guards: Vec<CustomGuardSpec>,
     /// Global settings
     #[serde(default)]
     pub settings: PolicySettings,
@@ -73,6 +186,7 @@ impl Default for Policy {
             extends: None,
             merge_strategy: MergeStrategy::default(),
             guards: GuardConfigs::default(),
+            custom_guards: Vec::new(),
             settings: PolicySettings::default(),
         }
     }
@@ -213,6 +327,30 @@ impl Policy {
         validate_policy_version(&self.version)?;
 
         let mut errors: Vec<PolicyFieldError> = Vec::new();
+
+        if !self.custom_guards.is_empty() {
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for (idx, cg) in self.custom_guards.iter().enumerate() {
+                if cg.id.trim().is_empty() {
+                    errors.push(PolicyFieldError::new(
+                        format!("custom_guards[{}].id", idx),
+                        "id must be non-empty".to_string(),
+                    ));
+                }
+                if !seen.insert(cg.id.as_str()) {
+                    errors.push(PolicyFieldError::new(
+                        format!("custom_guards[{}].id", idx),
+                        format!("duplicate custom guard id: {}", cg.id),
+                    ));
+                }
+                if !cg.config.is_object() {
+                    errors.push(PolicyFieldError::new(
+                        format!("custom_guards[{}].config", idx),
+                        "config must be a JSON object".to_string(),
+                    ));
+                }
+            }
+        }
 
         if let Some(cfg) = &self.guards.forbidden_path {
             if let Some(patterns) = cfg.patterns.as_ref() {
@@ -360,6 +498,11 @@ impl Policy {
                 } else {
                     self.guards.clone()
                 },
+                custom_guards: if !child.custom_guards.is_empty() {
+                    child.custom_guards.clone()
+                } else {
+                    self.custom_guards.clone()
+                },
                 settings: if child.settings != PolicySettings::default() {
                     child.settings.clone()
                 } else {
@@ -385,6 +528,7 @@ impl Policy {
                 extends: None,
                 merge_strategy: MergeStrategy::default(),
                 guards: self.guards.merge_with(&child.guards),
+                custom_guards: merge_custom_guards(&self.custom_guards, &child.custom_guards),
                 settings: PolicySettings {
                     fail_fast: child.settings.fail_fast.or(self.settings.fail_fast),
                     verbose_logging: child
@@ -405,51 +549,57 @@ impl Policy {
     /// If the policy has an `extends` field, loads the base and merges.
     /// Detects circular dependencies.
     pub fn from_yaml_with_extends(yaml: &str, base_path: Option<&Path>) -> Result<Self> {
-        Self::from_yaml_with_extends_internal(
+        let resolver = LocalPolicyResolver::new();
+        Self::from_yaml_with_extends_resolver(yaml, base_path, &resolver)
+    }
+
+    /// Load from YAML string with extends resolution using a custom resolver.
+    ///
+    /// This allows callers to support remote `extends` while keeping the default path
+    /// filesystem-only.
+    pub fn from_yaml_with_extends_resolver(
+        yaml: &str,
+        base_path: Option<&Path>,
+        resolver: &impl PolicyResolver,
+    ) -> Result<Self> {
+        let location = base_path
+            .map(|p| PolicyLocation::File(p.to_path_buf()))
+            .unwrap_or(PolicyLocation::None);
+
+        Self::from_yaml_with_extends_internal_resolver(
             yaml,
-            base_path,
+            location,
+            resolver,
             &mut std::collections::HashSet::new(),
         )
     }
 
-    fn from_yaml_with_extends_internal(
+    fn from_yaml_with_extends_internal_resolver(
         yaml: &str,
-        base_path: Option<&Path>,
+        location: PolicyLocation,
+        resolver: &impl PolicyResolver,
         visited: &mut std::collections::HashSet<String>,
     ) -> Result<Self> {
         let child = Policy::from_yaml(yaml)?;
 
         if let Some(ref extends) = child.extends {
+            let resolved = resolver.resolve(extends, &location)?;
+
             // Check for circular dependency
-            if visited.contains(extends) {
+            if visited.contains(&resolved.key) {
                 return Err(Error::ConfigError(format!(
                     "Circular policy extension detected: {}",
                     extends
                 )));
             }
-            visited.insert(extends.clone());
+            visited.insert(resolved.key);
 
-            // Resolve base policy
-            let base = if let Some(ruleset) = RuleSet::by_name(extends)? {
-                ruleset.policy
-            } else {
-                // Try as file path, relative to base_path if provided
-                let extends_path = if let Some(bp) = base_path {
-                    bp.parent().unwrap_or(bp).join(extends)
-                } else {
-                    std::path::PathBuf::from(extends)
-                };
-
-                if !extends_path.exists() {
-                    return Err(Error::ConfigError(format!(
-                        "Unknown ruleset or file not found: {}",
-                        extends
-                    )));
-                }
-
-                let base_yaml = std::fs::read_to_string(&extends_path)?;
-                Self::from_yaml_with_extends_internal(&base_yaml, Some(&extends_path), visited)?
-            };
+            let base = Self::from_yaml_with_extends_internal_resolver(
+                &resolved.yaml,
+                resolved.location,
+                resolver,
+                visited,
+            )?;
 
             let merged = base.merge(&child);
             merged.validate()?;
@@ -513,6 +663,32 @@ impl Policy {
                 .unwrap_or_default(),
         }
     }
+}
+
+fn merge_custom_guards(base: &[CustomGuardSpec], child: &[CustomGuardSpec]) -> Vec<CustomGuardSpec> {
+    if child.is_empty() {
+        return base.to_vec();
+    }
+    if base.is_empty() {
+        return child.to_vec();
+    }
+
+    let mut out: Vec<CustomGuardSpec> = base.to_vec();
+    let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, cg) in out.iter().enumerate() {
+        index.insert(cg.id.clone(), i);
+    }
+
+    for cg in child {
+        if let Some(i) = index.get(&cg.id).copied() {
+            out[i] = cg.clone();
+        } else {
+            index.insert(cg.id.clone(), out.len());
+            out.push(cg.clone());
+        }
+    }
+
+    out
 }
 
 fn validate_policy_version(version: &str) -> Result<()> {
@@ -624,7 +800,7 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    pub fn by_name(name: &str) -> Result<Option<Self>> {
+    pub fn yaml_by_name(name: &str) -> Option<(&'static str, String)> {
         let id = name.strip_prefix("clawdstrike:").unwrap_or(name);
 
         let yaml = match id {
@@ -634,15 +810,19 @@ impl RuleSet {
             "cicd" => Some(include_str!("../../../rulesets/cicd.yaml")),
             "permissive" => Some(include_str!("../../../rulesets/permissive.yaml")),
             _ => None,
-        };
+        }?;
 
-        let Some(yaml) = yaml else {
+        Some((yaml, id.to_string()))
+    }
+
+    pub fn by_name(name: &str) -> Result<Option<Self>> {
+        let Some((yaml, id)) = Self::yaml_by_name(name) else {
             return Ok(None);
         };
 
         let policy = Policy::from_yaml_with_extends(yaml, None)?;
         Ok(Some(Self {
-            id: id.to_string(),
+            id,
             name: policy.name.clone(),
             description: policy.description.clone(),
             policy,
@@ -663,7 +843,7 @@ mod tests {
     #[test]
     fn test_default_policy() {
         let policy = Policy::new();
-        assert_eq!(policy.version, "1.0.0");
+        assert_eq!(policy.version, "1.1.0");
     }
 
     #[test]
@@ -677,7 +857,7 @@ mod tests {
     #[test]
     fn test_policy_validation_rejects_invalid_glob() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 guards:
   forbidden_path:
@@ -701,7 +881,7 @@ guards:
     #[test]
     fn test_policy_validation_rejects_invalid_domain_glob() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 guards:
   egress_allowlist:
@@ -725,7 +905,7 @@ guards:
     #[test]
     fn test_policy_validation_rejects_invalid_regex() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 guards:
   secret_leak:
@@ -864,7 +1044,7 @@ name: Test
     #[test]
     fn test_merge_strategy_default() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 "#;
         let policy = Policy::from_yaml(yaml).unwrap();
@@ -874,7 +1054,7 @@ name: Test
     #[test]
     fn test_merge_strategy_parse() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 merge_strategy: replace
 "#;
@@ -885,7 +1065,7 @@ merge_strategy: replace
     #[test]
     fn test_extends_field_parse() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 extends: strict
 "#;
@@ -896,7 +1076,7 @@ extends: strict
     #[test]
     fn test_extends_field_none_by_default() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: Test
 "#;
         let policy = Policy::from_yaml(yaml).unwrap();
@@ -1001,7 +1181,7 @@ name: Test
     #[test]
     fn test_policy_extends_builtin() {
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: CustomStrict
 extends: strict
 settings:
@@ -1021,7 +1201,7 @@ settings:
     fn test_policy_extends_with_additional_patterns() {
         // Test adding patterns via additional_patterns
         let yaml = r#"
-version: "1.0.0"
+version: "1.1.0"
 name: CustomDefault
 extends: default
 guards:
