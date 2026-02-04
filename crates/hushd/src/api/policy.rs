@@ -4,7 +4,8 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::{HushEngine, Policy, PolicyBundle, SignedPolicyBundle};
-use hush_core::Keypair;
+use hush_core::canonical::canonicalize;
+use hush_core::{sha256, Keypair};
 
 use crate::audit::AuditEvent;
 use crate::state::AppState;
@@ -109,6 +110,28 @@ pub async fn update_policy_bundle(
         .policy
         .validate()
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy: {}", e)))?;
+
+    // Ensure policy_hash is correctly derived from the policy itself.
+    //
+    // The bundle is signed, but we still treat policy_hash as a derived field (it must not be
+    // allowed to lie).
+    let computed_policy_hash = {
+        let value = serde_json::to_value(&signed.bundle.policy)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy: {}", e)))?;
+        let canonical = canonicalize(&value)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy: {}", e)))?;
+        sha256(canonical.as_bytes())
+    };
+    if computed_policy_hash != signed.bundle.policy_hash {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!(
+                "Policy bundle policy_hash mismatch (expected {}, got {})",
+                computed_policy_hash.to_hex_prefixed(),
+                signed.bundle.policy_hash.to_hex_prefixed(),
+            ),
+        ));
+    }
 
     // Update the engine (preserve signing keypair so receipts remain verifiable).
     let mut engine = state.engine.write().await;

@@ -143,7 +143,8 @@ impl SignedMessage {
 
         // Replay protection: per (iss, sub).
         let scope = format!("msg:{}:{}", self.claims.iss, self.claims.sub);
-        revocations.check_and_mark_nonce(&scope, &self.claims.nonce, now_unix, 300)?;
+        let ttl_secs = (self.claims.exp - now_unix).max(1);
+        revocations.check_and_mark_nonce(&scope, &self.claims.nonce, now_unix, ttl_secs)?;
 
         // Optional delegation token.
         if let Some(token) = &self.claims.delegation {
