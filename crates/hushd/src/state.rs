@@ -11,6 +11,16 @@ use crate::audit::forward::AuditForwarder;
 use crate::audit::{AuditEvent, AuditLedger};
 use crate::auth::AuthStore;
 use crate::config::{Config, SiemPrivacyConfig};
+use crate::control_db::ControlDb;
+use crate::identity::oidc::OidcValidator;
+use crate::identity_rate_limit::IdentityRateLimiter;
+use crate::metrics::Metrics;
+use crate::policy_engine_cache::PolicyEngineCache;
+use crate::policy_scoping::{PolicyResolver, SqlitePolicyScopingStore};
+use crate::rate_limit::RateLimitState;
+use crate::rbac::{RbacManager, SqliteRbacStore};
+use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
+use crate::session::{SessionManager, SqliteSessionStore};
 use crate::siem::dlq::DeadLetterQueue;
 use crate::siem::exporters::alerting::AlertingExporter;
 use crate::siem::exporters::datadog::DatadogExporter;
@@ -24,16 +34,6 @@ use crate::siem::manager::{
 use crate::siem::threat_intel::guard::ThreatIntelGuard;
 use crate::siem::threat_intel::service::{ThreatIntelService, ThreatIntelState};
 use crate::siem::types::{SecurityEvent, SecurityEventContext};
-use crate::control_db::ControlDb;
-use crate::identity::oidc::OidcValidator;
-use crate::identity_rate_limit::IdentityRateLimiter;
-use crate::metrics::Metrics;
-use crate::policy_engine_cache::PolicyEngineCache;
-use crate::policy_scoping::{PolicyResolver, SqlitePolicyScopingStore};
-use crate::rate_limit::RateLimitState;
-use crate::rbac::{RbacManager, SqliteRbacStore};
-use crate::remote_extends::{RemoteExtendsResolverConfig, RemotePolicyResolver};
-use crate::session::{SessionManager, SqliteSessionStore};
 
 /// Event broadcast for SSE streaming
 #[derive(Clone, Debug)]

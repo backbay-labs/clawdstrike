@@ -72,7 +72,6 @@ dirs.workspace = true
 
 # HTTP client (for status command + remote policy extends + SIEM exporters)
 reqwest = { workspace = true, features = ["blocking"] }
-async-trait.workspace = true
 jsonwebtoken.workspace = true
 flate2.workspace = true
 url.workspace = true

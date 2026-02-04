@@ -14,7 +14,7 @@ use crate::siem::types::SecurityEvent;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ElasticConfig {
-    /// Base Elasticsearch URL, e.g. https://es.example.com:9200
+    /// Base Elasticsearch URL, e.g. <https://es.example.com:9200>
     pub base_url: String,
 
     /// Index alias/base name.

@@ -73,7 +73,10 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
     }
 
     (
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
         body,
     )
         .into_response()
@@ -101,4 +104,3 @@ fn escape_label_value(value: &str) -> String {
         .replace('\n', "\\n")
         .replace('"', "\\\"")
 }
-

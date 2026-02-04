@@ -36,21 +36,6 @@ async fn test_health_endpoint() {
 }
 
 #[tokio::test]
-async fn test_metrics_endpoint() {
-    let (client, url) = test_setup();
-    let resp = client
-        .get(format!("{}/metrics", url))
-        .send()
-        .await
-        .expect("Failed to connect to daemon");
-
-    assert!(resp.status().is_success());
-    let text = resp.text().await.unwrap_or_default();
-    assert!(text.contains("hushd_uptime_seconds"));
-    assert!(text.contains("hushd_audit_count"));
-}
-
-#[tokio::test]
 async fn test_siem_exporters_endpoint() {
     let (client, url) = test_setup();
     let resp = client
@@ -320,7 +305,9 @@ async fn test_metrics_endpoint() {
 
     assert!(resp.status().is_success());
     let body = resp.text().await.unwrap();
+    assert!(body.contains("hushd_uptime_seconds"));
     assert!(body.contains("hushd_http_requests_total"));
+    assert!(body.contains("hushd_siem_enabled"));
 }
 
 #[tokio::test]
