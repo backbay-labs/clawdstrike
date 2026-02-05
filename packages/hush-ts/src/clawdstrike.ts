@@ -226,6 +226,7 @@ export class ClawdstrikeSession {
 
     const guardAction = this.createGuardAction(action, params);
     const guardContext = this.createGuardContext();
+    let warningDecision: Decision | undefined;
 
     for (const guard of this.guards) {
       if (!guard.handles(guardAction)) {
@@ -243,10 +244,15 @@ export class ClawdstrikeSession {
 
       if (decision.status === 'warn') {
         this.warnCount++;
+        warningDecision ??= decision;
         if (this.failFast) {
           return decision;
         }
       }
+    }
+
+    if (warningDecision) {
+      return warningDecision;
     }
 
     this.allowCount++;
@@ -469,6 +475,7 @@ export class Clawdstrike {
    */
   async check(action: string, params: Record<string, unknown> = {}): Promise<Decision> {
     const guardAction = this.createGuardAction(action, params);
+    let warningDecision: Decision | undefined;
 
     for (const guard of this.guards) {
       if (!guard.handles(guardAction)) {
@@ -482,12 +489,15 @@ export class Clawdstrike {
         return decision;
       }
 
-      if (decision.status === 'warn' && this.config.failFast) {
-        return decision;
+      if (decision.status === 'warn') {
+        warningDecision ??= decision;
+        if (this.config.failFast) {
+          return decision;
+        }
       }
     }
 
-    return allowDecision();
+    return warningDecision ?? allowDecision();
   }
 
   /**
