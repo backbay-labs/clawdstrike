@@ -281,34 +281,34 @@ jobs:
           cd fuzz
           cargo +nightly build
 
-	  typescript-sdk:
-	    name: TypeScript SDK
-	    runs-on: ubuntu-latest
-	    defaults:
-	      run:
-	        working-directory: packages/hush-ts
-	    steps:
-	      - uses: actions/checkout@v6
+  typescript-sdk:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/hush-ts
+    steps:
+      - uses: actions/checkout@v6
 
-	      - name: Setup Node.js
-	        uses: actions/setup-node@v6
-	        with:
-	          node-version: '24'
-	          cache: 'npm'
-	          cache-dependency-path: |
-	            packages/hush-ts/package-lock.json
-	            packages/clawdstrike-adapter-core/package-lock.json
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            packages/hush-ts/package-lock.json
+            packages/clawdstrike-adapter-core/package-lock.json
 
-	      - name: Bootstrap file deps (adapter-core)
-	        working-directory: packages/clawdstrike-adapter-core
-	        run: npm ci
+      - name: Bootstrap file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm ci
 
-	      - name: Build file deps (adapter-core)
-	        working-directory: packages/clawdstrike-adapter-core
-	        run: npm run build
+      - name: Build file deps (adapter-core)
+        working-directory: packages/clawdstrike-adapter-core
+        run: npm run build
 
-	      - name: Install dependencies
-	        run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
       - name: Type check
         run: npm run typecheck
