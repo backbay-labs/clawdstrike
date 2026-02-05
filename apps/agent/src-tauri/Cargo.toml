@@ -1,0 +1,65 @@
+[package]
+name = "clawdstrike-agent"
+version = "0.1.0"
+description = "Clawdstrike Agent - Security enforcement runtime for AI coding tools"
+edition = "2021"
+rust-version = "1.80"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Async runtime
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "time", "net", "macros", "process", "io-util"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# HTTP client + server
+reqwest = { version = "0.12", features = ["json"] }
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+
+# SSE client
+reqwest-eventsource = "0.6"
+futures = "0.3"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Directories
+dirs = "5"
+
+# Process utilities
+which = "6"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

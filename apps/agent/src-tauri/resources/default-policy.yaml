@@ -1,0 +1,99 @@
+# Clawdstrike Agent - Default Policy for AI Coding Tools
+# This policy provides sensible defaults for AI agents like Claude Code, Cursor, Cline
+version: "1.0.0"
+name: "ai-agent-default"
+description: "Default security policy for AI coding agents"
+extends: clawdstrike:strict
+merge_strategy: deep_merge
+
+guards:
+  # Network egress allowlist - AI model APIs and package registries
+  egress_allowlist:
+    allow:
+      # AI Model APIs
+      - "api.anthropic.com"
+      - "api.openai.com"
+      - "api.cohere.ai"
+      - "generativelanguage.googleapis.com"
+
+      # Code hosting
+      - "*.github.com"
+      - "*.githubusercontent.com"
+      - "*.gitlab.com"
+      - "*.bitbucket.org"
+
+      # Package registries
+      - "registry.npmjs.org"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "crates.io"
+      - "static.crates.io"
+      - "rubygems.org"
+      - "repo.maven.apache.org"
+      - "plugins.gradle.org"
+      - "pkg.go.dev"
+      - "proxy.golang.org"
+
+      # Documentation
+      - "docs.rs"
+      - "doc.rust-lang.org"
+      - "nodejs.org"
+      - "python.org"
+
+    default_action: block
+
+  # File system access restrictions
+  fs_blocklist:
+    block:
+      # Sensitive system files
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/etc/sudoers"
+      - "/etc/ssh/*"
+
+      # Credentials and secrets
+      - "**/.env"
+      - "**/.env.*"
+      - "**/credentials*"
+      - "**/secrets*"
+      - "**/*.pem"
+      - "**/*.key"
+      - "**/.aws/*"
+      - "**/.ssh/*"
+      - "**/.gnupg/*"
+
+      # Browser data
+      - "**/Library/Application Support/Google/Chrome/**"
+      - "**/Library/Application Support/Firefox/**"
+      - "**/.mozilla/**"
+      - "**/.config/google-chrome/**"
+
+    default_action: allow
+
+  # Command execution restrictions
+  exec_blocklist:
+    block:
+      # Dangerous system commands
+      - "rm -rf /"
+      - "rm -rf /*"
+      - ":(){ :|:& };:"
+      - "mkfs.*"
+      - "dd if=/dev/zero"
+      - "chmod -R 777 /"
+
+      # Network exfiltration patterns
+      - "curl * | bash"
+      - "wget * | bash"
+      - "curl * | sh"
+      - "wget * | sh"
+
+      # Reverse shells
+      - "nc -e"
+      - "bash -i >& /dev/tcp"
+      - "python*-c*import socket"
+
+    default_action: allow
+
+settings:
+  fail_fast: true
+  audit_all: true
