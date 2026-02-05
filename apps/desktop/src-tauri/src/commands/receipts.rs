@@ -22,33 +22,22 @@ const MAX_FUTURE_SKEW_SECS: i64 = 5 * 60;
 enum ReceiptPayload {
     HushSignedReceipt(hush_core::SignedReceipt),
     Detached {
-        payload: serde_json::Value,
+        receipt: hush_core::Receipt,
         signature: hush_core::Signature,
     },
 }
 
-fn payload_timestamp(payload: &ReceiptPayload, raw: &serde_json::Value) -> Option<String> {
+fn payload_timestamp(payload: &ReceiptPayload) -> Option<String> {
     match payload {
         ReceiptPayload::HushSignedReceipt(signed) => Some(signed.receipt.timestamp.clone()),
-        ReceiptPayload::Detached { payload, .. } => payload
-            .get("timestamp")
-            .and_then(|v| v.as_str())
-            .or_else(|| raw.get("timestamp").and_then(|v| v.as_str()))
-            .map(str::to_string),
+        ReceiptPayload::Detached { receipt, .. } => Some(receipt.timestamp.clone()),
     }
 }
 
-fn payload_content_hash(
-    payload: &ReceiptPayload,
-    raw: &serde_json::Value,
-) -> Option<hush_core::Hash> {
+fn payload_content_hash(payload: &ReceiptPayload) -> Option<hush_core::Hash> {
     match payload {
         ReceiptPayload::HushSignedReceipt(signed) => Some(signed.receipt.content_hash),
-        ReceiptPayload::Detached { payload, .. } => payload
-            .get("content_hash")
-            .and_then(|v| v.as_str())
-            .or_else(|| raw.get("content_hash").and_then(|v| v.as_str()))
-            .and_then(|s| hush_core::Hash::from_hex(s).ok()),
+        ReceiptPayload::Detached { receipt, .. } => Some(receipt.content_hash),
     }
 }
 
@@ -115,7 +104,10 @@ fn parse_detached_payload(raw: &serde_json::Value) -> Result<ReceiptPayload, Str
         }
     }
 
-    Ok(ReceiptPayload::Detached { payload, signature })
+    let receipt: hush_core::Receipt = serde_json::from_value(payload)
+        .map_err(|e| format!("Invalid detached receipt payload (Receipt required): {e}"))?;
+
+    Ok(ReceiptPayload::Detached { receipt, signature })
 }
 
 fn parse_receipt_payload(raw: &serde_json::Value) -> Result<ReceiptPayload, String> {
@@ -176,11 +168,11 @@ fn verify_signature(
             }
             result.valid
         }
-        ReceiptPayload::Detached { payload, signature } => {
-            let canonical = match hush_core::canonicalize_json(payload) {
+        ReceiptPayload::Detached { receipt, signature } => {
+            let canonical = match receipt.to_canonical_json() {
                 Ok(v) => v,
                 Err(e) => {
-                    errors.push(format!("Failed to canonicalize payload: {e}"));
+                    errors.push(e.to_string());
                     return false;
                 }
             };
@@ -229,7 +221,7 @@ fn verify_merkle(
         }
     };
 
-    let leaf_hash = match payload_content_hash(payload, raw) {
+    let leaf_hash = match payload_content_hash(payload) {
         Some(v) => v,
         None => {
             errors.push("Missing content_hash required for merkle proof verification".to_string());
@@ -266,7 +258,7 @@ fn verify_receipt_value(
 
     let public_key = resolve_public_key(&raw, daemon_public_key, &mut errors);
     let signature_valid = verify_signature(&payload, public_key.as_ref(), &mut errors);
-    let timestamp = payload_timestamp(&payload, &raw);
+    let timestamp = payload_timestamp(&payload);
     let timestamp_valid = validate_timestamp(timestamp.as_deref(), &mut errors);
     let merkle_valid = verify_merkle(&raw, &payload, &mut errors);
 
@@ -323,8 +315,9 @@ async fn try_fetch_daemon_public_key(
         }
     };
 
-    let pk = hush_core::PublicKey::from_hex(pk)
-        .map_err(|e| format!("Failed to fetch daemon public key: invalid daemon public_key: {e}"))?;
+    let pk = hush_core::PublicKey::from_hex(pk).map_err(|e| {
+        format!("Failed to fetch daemon public key: invalid daemon public_key: {e}")
+    })?;
     Ok(Some(pk))
 }
 
@@ -430,7 +423,8 @@ mod tests {
             "verdict": { "passed": true },
         });
 
-        let canonical = hush_core::canonicalize_json(&payload).unwrap();
+        let receipt: hush_core::Receipt = serde_json::from_value(payload.clone()).unwrap();
+        let canonical = receipt.to_canonical_json().unwrap();
         let sig = keypair.sign(canonical.as_bytes());
 
         let raw = serde_json::json!({
@@ -443,6 +437,84 @@ mod tests {
         assert!(out.signature_valid);
         assert!(out.timestamp_valid);
         assert!(out.valid);
+    }
+
+    #[test]
+    fn detached_receipt_requires_timestamp_in_signed_payload() {
+        let keypair = hush_core::Keypair::generate();
+        let payload = serde_json::json!({
+            "version": hush_core::receipt::RECEIPT_SCHEMA_VERSION,
+            "receipt_id": "r-1",
+            "content_hash": hush_core::sha256(b"payload"),
+            "verdict": { "passed": true },
+        });
+
+        let sig = keypair.sign(b"not used");
+        let raw = serde_json::json!({
+            "signature": sig.to_hex(),
+            "public_key": keypair.public_key().to_hex(),
+            "timestamp": "2026-01-01T00:00:00Z",
+            "receipt": payload,
+        });
+
+        let out = verify_receipt_value(raw, None);
+        assert!(!out.signature_valid);
+        assert!(!out.valid);
+        assert!(!out.timestamp_valid);
+        assert!(out.errors.iter().any(|e| e.contains("timestamp")));
+    }
+
+    #[test]
+    fn detached_receipt_requires_content_hash_in_signed_payload() {
+        let keypair = hush_core::Keypair::generate();
+        let payload = serde_json::json!({
+            "version": hush_core::receipt::RECEIPT_SCHEMA_VERSION,
+            "receipt_id": "r-1",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "verdict": { "passed": true },
+        });
+
+        let sig = keypair.sign(b"not used");
+        let raw = serde_json::json!({
+            "signature": sig.to_hex(),
+            "public_key": keypair.public_key().to_hex(),
+            "content_hash": hush_core::sha256(b"tampered"),
+            "receipt": payload,
+        });
+
+        let out = verify_receipt_value(raw, None);
+        assert!(!out.signature_valid);
+        assert!(!out.valid);
+        assert!(!out.timestamp_valid);
+        assert!(out.errors.iter().any(|e| e.contains("content_hash")));
+    }
+
+    #[test]
+    fn detached_receipt_rejects_unsupported_schema_version() {
+        let keypair = hush_core::Keypair::generate();
+        let payload = serde_json::json!({
+            "version": "9.9.9",
+            "receipt_id": "r-1",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "content_hash": hush_core::sha256(b"payload"),
+            "verdict": { "passed": true },
+        });
+
+        let sig = keypair.sign(b"not used");
+        let raw = serde_json::json!({
+            "signature": sig.to_hex(),
+            "public_key": keypair.public_key().to_hex(),
+            "receipt": payload,
+        });
+
+        let out = verify_receipt_value(raw, None);
+        assert!(!out.signature_valid);
+        assert!(!out.valid);
+        assert!(out.timestamp_valid);
+        assert!(out
+            .errors
+            .iter()
+            .any(|e| e.to_lowercase().contains("unsupported")));
     }
 
     #[test]

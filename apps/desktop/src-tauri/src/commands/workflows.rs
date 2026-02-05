@@ -510,7 +510,8 @@ fn simulate_actions(
                 }
                 let (rendered_body, diag) = render_template(body, context);
                 for k in diag.missing_keys {
-                    action_warnings.push(format!("actions[{idx}].body references missing key {k:?}"));
+                    action_warnings
+                        .push(format!("actions[{idx}].body references missing key {k:?}"));
                 }
                 for e in diag.errors {
                     action_errors.push(format!("actions[{idx}].body: {e}"));

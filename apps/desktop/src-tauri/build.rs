@@ -20,7 +20,8 @@ fn main() {
         panic!("Stub index.html is not a file: {}", index_html.display());
     }
     if !index_html.exists() {
-        let html = "<!doctype html><html><head><meta charset=\"utf-8\" /></head><body></body></html>";
+        let html =
+            "<!doctype html><html><head><meta charset=\"utf-8\" /></head><body></body></html>";
         std::fs::write(&index_html, html)
             .unwrap_or_else(|e| panic!("Failed to write {}: {e}", index_html.display()));
     }
