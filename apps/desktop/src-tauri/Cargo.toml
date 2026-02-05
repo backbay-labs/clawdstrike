@@ -46,6 +46,9 @@ libp2p = { version = "0.56", features = ["tokio", "tcp", "dns", "noise", "yamux"
 hush-core = { path = "../../../crates/hush-core" }
 clawdstrike = { path = "../../../crates/clawdstrike" }
 
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # macOS-specific dependencies if needed
 

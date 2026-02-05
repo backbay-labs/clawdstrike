@@ -17,7 +17,7 @@ use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{Multiaddr, PeerId, Transport};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::{mpsc, oneshot, RwLock};
 
 pub const MARKETPLACE_DISCOVERY_EVENT: &str = "marketplace_discovery";
@@ -135,14 +135,19 @@ impl MarketplaceDiscoveryManager {
         }
     }
 
-    pub async fn start(
+    pub async fn start<R: Runtime>(
         &self,
-        app: AppHandle,
+        app: AppHandle<R>,
         config: MarketplaceDiscoveryConfig,
     ) -> Result<MarketplaceDiscoveryStatus, String> {
         let mut inner = self.inner.write().await;
-        if inner.handle.is_some() {
-            return Ok(inner.status().await);
+        if let Some(handle) = inner.handle.as_ref() {
+            // If the task has exited (e.g. failed to bind/listen), clear the stale handle so
+            // callers can restart discovery without needing to explicitly call `stop`.
+            if !handle.join.inner().is_finished() {
+                return Ok(inner.status().await);
+            }
+            inner.handle = None;
         }
 
         let status = inner.status.clone();
@@ -163,12 +168,7 @@ impl MarketplaceDiscoveryManager {
         }
 
         let (cmd_tx, cmd_rx) = mpsc::channel::<DiscoveryCommand>(32);
-        let join = tauri::async_runtime::spawn(run_discovery(
-            app,
-            config,
-            cmd_rx,
-            status.clone(),
-        ));
+        let join = tauri::async_runtime::spawn(run_discovery(app, config, cmd_rx, status.clone()));
 
         inner.handle = Some(DiscoveryHandle { cmd_tx, join });
         Ok(inner.status().await)
@@ -205,7 +205,10 @@ impl MarketplaceDiscoveryManager {
         inner.status().await
     }
 
-    pub async fn announce(&self, announcement: MarketplaceDiscoveryAnnouncement) -> Result<(), String> {
+    pub async fn announce(
+        &self,
+        announcement: MarketplaceDiscoveryAnnouncement,
+    ) -> Result<(), String> {
         let cmd_tx = {
             let inner = self.inner.read().await;
             inner
@@ -266,8 +269,8 @@ impl From<mdns::Event> for DiscoveryBehaviourEvent {
     }
 }
 
-async fn run_discovery(
-    app: AppHandle,
+async fn run_discovery<R: Runtime>(
+    app: AppHandle<R>,
     config: MarketplaceDiscoveryConfig,
     mut cmd_rx: mpsc::Receiver<DiscoveryCommand>,
     status: std::sync::Arc<RwLock<MarketplaceDiscoveryStatus>>,
@@ -291,7 +294,7 @@ async fn run_discovery(
         .authenticate(match noise::Config::new(&local_key) {
             Ok(v) => v,
             Err(e) => {
-                set_error(&status, format!("Failed to configure Noise: {e}")).await;
+                set_fatal_error(&status, format!("Failed to configure Noise: {e}")).await;
                 return;
             }
         })
@@ -305,7 +308,7 @@ async fn run_discovery(
     {
         Ok(v) => v,
         Err(e) => {
-            set_error(&status, format!("Failed to configure gossipsub: {e}")).await;
+            set_fatal_error(&status, format!("Failed to configure gossipsub: {e}")).await;
             return;
         }
     };
@@ -316,20 +319,24 @@ async fn run_discovery(
     ) {
         Ok(v) => v,
         Err(e) => {
-            set_error(&status, format!("Failed to create gossipsub: {e}")).await;
+            set_fatal_error(&status, format!("Failed to create gossipsub: {e}")).await;
             return;
         }
     };
 
     if let Err(e) = gossipsub.subscribe(&topic) {
-        set_error(&status, format!("Failed to subscribe to discovery topic: {e}")).await;
+        set_fatal_error(
+            &status,
+            format!("Failed to subscribe to discovery topic: {e}"),
+        )
+        .await;
         return;
     }
 
     let mdns = match mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id) {
         Ok(v) => v,
         Err(e) => {
-            set_error(&status, format!("Failed to start mDNS: {e}")).await;
+            set_fatal_error(&status, format!("Failed to start mDNS: {e}")).await;
             return;
         }
     };
@@ -347,12 +354,12 @@ async fn run_discovery(
     let listen_addr: Multiaddr = match format!("/ip4/0.0.0.0/tcp/{port}").parse() {
         Ok(v) => v,
         Err(e) => {
-            set_error(&status, format!("Failed to parse listen addr: {e}")).await;
+            set_fatal_error(&status, format!("Failed to parse listen addr: {e}")).await;
             return;
         }
     };
     if let Err(e) = swarm.listen_on(listen_addr) {
-        set_error(&status, format!("Failed to listen: {e}")).await;
+        set_fatal_error(&status, format!("Failed to listen: {e}")).await;
         return;
     }
 
@@ -433,6 +440,10 @@ async fn run_discovery(
             }
         }
     }
+
+    // If we exit without an explicit Stop command (e.g. task dropped or init failed in a later
+    // stage), ensure status reflects the stopped state.
+    status.write().await.running = false;
 }
 
 async fn publish_announcement(
@@ -461,8 +472,8 @@ async fn publish_announcement(
     Ok(())
 }
 
-async fn handle_gossipsub_message(
-    app: &AppHandle,
+async fn handle_gossipsub_message<R: Runtime>(
+    app: &AppHandle<R>,
     status: &std::sync::Arc<RwLock<MarketplaceDiscoveryStatus>>,
     from: PeerId,
     data: &[u8],
@@ -516,4 +527,100 @@ fn validate_feed_uri(feed_uri: &str) -> Result<(), String> {
 async fn set_error(status: &std::sync::Arc<RwLock<MarketplaceDiscoveryStatus>>, err: String) {
     let mut s = status.write().await;
     s.last_error = Some(err);
+}
+
+async fn set_fatal_error(status: &std::sync::Arc<RwLock<MarketplaceDiscoveryStatus>>, err: String) {
+    let mut s = status.write().await;
+    s.last_error = Some(err);
+    s.running = false;
+    s.connected_peers = 0;
+    s.listen_addrs.clear();
+}
+
+#[cfg(test)]
+mod discovery_manager_tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    #[tokio::test]
+    async fn start_can_restart_after_failed_launch() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+
+        let manager = MarketplaceDiscoveryManager::new();
+
+        // Reserve a port so discovery fails to listen.
+        let listener = TcpListener::bind("0.0.0.0:0").expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+
+        manager
+            .start(
+                handle.clone(),
+                MarketplaceDiscoveryConfig {
+                    listen_port: Some(port),
+                    bootstrap: Vec::new(),
+                    topic: None,
+                },
+            )
+            .await
+            .expect("start");
+
+        let first_peer = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let st = manager.status().await;
+                if let Some(peer) = st.peer_id.clone() {
+                    return peer;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("peer_id should be set");
+
+        // Let the discovery task fail and stop.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let st = manager.status().await;
+                if !st.running {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("discovery should stop after failed listen");
+
+        drop(listener);
+
+        manager
+            .start(
+                handle,
+                MarketplaceDiscoveryConfig {
+                    listen_port: None,
+                    bootstrap: Vec::new(),
+                    topic: None,
+                },
+            )
+            .await
+            .expect("restart start");
+
+        let second_peer = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let st = manager.status().await;
+                if let Some(peer) = st.peer_id.clone() {
+                    return peer;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("peer_id should be set after restart");
+
+        assert_ne!(
+            first_peer, second_peer,
+            "restart should spawn a new discovery task"
+        );
+
+        let _ = manager.stop().await;
+    }
 }
