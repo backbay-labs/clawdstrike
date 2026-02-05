@@ -42,8 +42,8 @@ await session.check("file_read", { path: "/app/src/main.ts" });
 await session.check("network_egress", { host: "api.github.com", port: 443 });
 
 // Get session summary
-const summary = session.summary();
-console.log(`Checks: ${summary.checkCount}, Violations: ${summary.violationCount}`);
+const summary = session.getSummary();
+console.log(`Checks: ${summary.checkCount}, Denies: ${summary.denyCount}`);
 ```
 
 ## Tool Boundary Enforcement
@@ -51,14 +51,14 @@ console.log(`Checks: ${summary.checkCount}, Violations: ${summary.violationCount
 For framework integrations, use the interceptor pattern:
 
 ```typescript
-import { Clawdstrike, createSecurityContext } from "@clawdstrike/sdk";
+import { Clawdstrike } from "@clawdstrike/sdk";
 
 const cs = Clawdstrike.withDefaults("strict");
 const interceptor = cs.createInterceptor();
-const ctx = createSecurityContext({ sessionId: "session-123" });
+const session = cs.session({ sessionId: "session-123" });
 
 // Preflight check (before executing a tool)
-const preflight = await interceptor.beforeExecute("bash", { cmd: "echo hello" }, ctx);
+const preflight = await interceptor.beforeExecute("bash", { cmd: "echo hello" }, session);
 if (!preflight.proceed) {
   console.log("Blocked:", preflight.decision);
 }

@@ -99,7 +99,7 @@ if (decision.status === "deny") {
 // Or use sessions for stateful tracking
 const session = cs.session({ agentId: "my-agent" });
 const result = await session.check("file_read", { path: "~/.ssh/id_rsa" });
-console.log(session.summary()); // { checkCount, violationCount, ... }
+console.log(session.getSummary()); // { checkCount, denyCount, ... }
 ```
 
 ### TypeScript (tool boundary with interceptor)
@@ -107,13 +107,13 @@ console.log(session.summary()); // { checkCount, violationCount, ... }
 For framework integrations, use the interceptor pattern:
 
 ```typescript
-import { Clawdstrike, BaseToolInterceptor, createSecurityContext } from "@clawdstrike/sdk";
+import { Clawdstrike } from "@clawdstrike/sdk";
 
 const cs = Clawdstrike.withDefaults("strict");
 const interceptor = cs.createInterceptor();
-const ctx = createSecurityContext({ sessionId: "session-123" });
+const session = cs.session({ sessionId: "session-123" });
 
-const preflight = await interceptor.beforeExecute("bash", { cmd: "echo hello" }, ctx);
+const preflight = await interceptor.beforeExecute("bash", { cmd: "echo hello" }, session);
 if (!preflight.proceed) throw new Error("Blocked by policy");
 ```
 
