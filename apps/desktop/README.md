@@ -12,12 +12,12 @@ SDR Desktop provides a visual interface for security engineers and developers to
 
 | View | Description |
 |------|-------------|
-| **Event Stream** | Real-time policy decisions with SSE streaming, filtering, and receipt details |
-| **Policy Viewer** | Browse and validate policies with YAML display |
+| **Event Stream** | Real-time daemon SSE events with filtering and receipt details |
+| **Policy Viewer** | Browse active policy YAML and run policy checks |
 | **Policy Tester** | Simulate policy checks against the active policy |
-| **Swarm Map** | 3D visualization of agent identities and delegation chains |
+| **Swarm Map** | 3D visualization shell for agent topology (daemon agent/delegation APIs are not yet exposed) |
 | **Marketplace** | Discover and install community policies |
-| **Workflows** | Automated response chains (trigger → action) |
+| **Workflows** | Workflow management UI (execution/verification remains backend-dependent) |
 | **Settings** | Daemon connection and preferences |
 
 ### Keyboard Shortcuts
@@ -120,6 +120,12 @@ The desktop app communicates with the hushd daemon via REST API:
 - `POST /api/v1/check` - Check action against policy
 - `GET /api/v1/audit` - Query audit log
 - `GET /api/v1/events` - SSE event stream
+
+Current daemon API does **not** expose:
+
+- `POST /api/v1/policy/validate`
+- `GET /api/v1/agents`
+- `GET /api/v1/delegations`
 
 ## License
 

@@ -2,7 +2,7 @@
  * SwarmContext - Agent swarm state management
  */
 import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from "react";
-import type { AgentNode, DelegationEdge, SwarmState } from "@/types/agents";
+import type { AgentNode, DelegationEdge } from "@/types/agents";
 import { useConnection } from "./ConnectionContext";
 
 interface SwarmContextState {
@@ -23,21 +23,8 @@ interface SwarmContextValue extends SwarmContextState {
 
 const SwarmContext = createContext<SwarmContextValue | null>(null);
 
-// Generate 3D positions for agents in a sphere layout
-function generatePosition(index: number, total: number): [number, number, number] {
-  const phi = Math.acos(-1 + (2 * index) / total);
-  const theta = Math.sqrt(total * Math.PI) * phi;
-  const radius = 5 + Math.random() * 2;
-
-  return [
-    radius * Math.cos(theta) * Math.sin(phi),
-    radius * Math.sin(theta) * Math.sin(phi),
-    radius * Math.cos(phi),
-  ];
-}
-
 export function SwarmProvider({ children }: { children: ReactNode }) {
-  const { status, daemonUrl } = useConnection();
+  const { status } = useConnection();
 
   const [state, setState] = useState<SwarmContextState>({
     agents: [],
@@ -50,33 +37,10 @@ export function SwarmProvider({ children }: { children: ReactNode }) {
 
     setState((s) => ({ ...s, isLoading: true, error: undefined }));
     try {
-      // Fetch agents
-      const agentsResponse = await fetch(`${daemonUrl}/api/v1/agents`);
-      let agents: AgentNode[] = [];
-
-      if (agentsResponse.ok) {
-        const agentsData = await agentsResponse.json();
-        const rawAgents = agentsData.data?.agents ?? agentsData.agents ?? [];
-        agents = rawAgents.map((agent: Partial<AgentNode>, index: number) => ({
-          ...agent,
-          position: agent.position ?? generatePosition(index, rawAgents.length),
-          threat_score: agent.threat_score ?? 0,
-        }));
-      }
-
-      // Fetch delegations
-      const delegationsResponse = await fetch(`${daemonUrl}/api/v1/delegations`);
-      let delegations: DelegationEdge[] = [];
-
-      if (delegationsResponse.ok) {
-        const delegationsData = await delegationsResponse.json();
-        delegations = delegationsData.data?.delegations ?? delegationsData.delegations ?? [];
-      }
-
       setState((s) => ({
         ...s,
-        agents,
-        delegations,
+        agents: [],
+        delegations: [],
         isLoading: false,
         lastFetched: Date.now(),
       }));
@@ -84,7 +48,7 @@ export function SwarmProvider({ children }: { children: ReactNode }) {
       const message = e instanceof Error ? e.message : "Failed to fetch swarm data";
       setState((s) => ({ ...s, isLoading: false, error: message }));
     }
-  }, [status, daemonUrl]);
+  }, [status]);
 
   const selectAgent = useCallback((agentId: string | undefined) => {
     setState((s) => ({ ...s, selectedAgentId: agentId }));

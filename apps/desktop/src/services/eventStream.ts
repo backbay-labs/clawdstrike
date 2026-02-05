@@ -1,7 +1,7 @@
 /**
  * EventStream - SSE subscription for real-time daemon events
  */
-import type { DaemonEvent, AuditEvent } from "@/types/events";
+import type { DaemonEvent } from "@/types/events";
 
 export type EventCallback = (event: DaemonEvent) => void;
 export type ErrorCallback = (error: Error) => void;
@@ -46,46 +46,55 @@ export class EventStream {
       };
 
       this.eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as DaemonEvent;
-          this.options.onEvent(data);
-        } catch (e) {
-          console.error("[EventStream] Failed to parse event:", e);
-        }
+        this.emitIncomingEvent("message", event.data);
       };
 
       this.eventSource.onerror = () => {
         this.handleError();
       };
 
-      // Listen for specific event types
-      this.eventSource.addEventListener("policy_check", (event) => {
-        try {
-          const data = JSON.parse((event as MessageEvent).data);
-          this.options.onEvent({
-            type: "policy_check",
-            timestamp: new Date().toISOString(),
-            data: data as AuditEvent,
-          });
-        } catch (e) {
-          console.error("[EventStream] Failed to parse policy_check:", e);
-        }
-      });
+      // hushd emits named events such as `check`, `violation`, and `eval`.
+      const namedEventTypes = [
+        "check",
+        "violation",
+        "eval",
+        "policy_reload",
+        "policy_updated",
+        "error",
+      ];
 
-      this.eventSource.addEventListener("policy_reload", (event) => {
-        try {
-          const data = JSON.parse((event as MessageEvent).data);
-          this.options.onEvent({
-            type: "policy_reload",
-            timestamp: new Date().toISOString(),
-            data,
-          });
-        } catch (e) {
-          console.error("[EventStream] Failed to parse policy_reload:", e);
-        }
+      namedEventTypes.forEach((eventType) => {
+        this.eventSource?.addEventListener(eventType, (event) => {
+          const messageEvent = event as MessageEvent;
+          this.emitIncomingEvent(eventType, messageEvent.data);
+        });
+      });
+    } catch {
+      this.handleError();
+    }
+  }
+
+  private emitIncomingEvent(eventType: string, payload: string): void {
+    try {
+      const parsed = JSON.parse(payload) as unknown;
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        "type" in parsed &&
+        "timestamp" in parsed &&
+        "data" in parsed
+      ) {
+        this.options.onEvent(parsed as DaemonEvent);
+        return;
+      }
+
+      this.options.onEvent({
+        type: eventType,
+        timestamp: new Date().toISOString(),
+        data: (parsed ?? {}) as DaemonEvent["data"],
       });
     } catch (e) {
-      this.handleError();
+      console.error(`[EventStream] Failed to parse ${eventType}:`, e);
     }
   }
 

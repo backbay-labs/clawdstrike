@@ -87,7 +87,7 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 ```typescript
 import { Clawdstrike } from "@clawdstrike/sdk";
 
-// Simple: use built-in defaults
+// Simple: use built-in strict rules (fail-closed)
 const cs = Clawdstrike.withDefaults("strict");
 
 // Check an action
@@ -98,7 +98,7 @@ if (decision.status === "deny") {
 
 // Or use sessions for stateful tracking
 const session = cs.session({ agentId: "my-agent" });
-const result = await session.check("file_read", { path: "~/.ssh/id_rsa" });
+const result = await session.check("file_access", { path: "~/.ssh/id_rsa" });
 console.log(session.getSummary()); // { checkCount, denyCount, ... }
 ```
 

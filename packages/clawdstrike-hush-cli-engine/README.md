@@ -12,17 +12,20 @@ This is useful when you want TypeScript tool-boundary enforcement but prefer the
 
 ```ts
 import { createHushCliEngine } from "@clawdstrike/hush-cli-engine";
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
 
 const engine = createHushCliEngine({
   policyRef: "default",
   // hushPath: "/path/to/hush",
 });
 
-const result = await engine.check({
-  actionType: "command_exec",
-  target: "bash",
-  args: { cmd: "echo hello" },
-});
+const event: PolicyEvent = {
+  eventId: "evt-1",
+  eventType: "tool_call",
+  timestamp: new Date().toISOString(),
+  data: { type: "tool", toolName: "bash", parameters: { cmd: "echo hello" } },
+};
 
-if (!result.allowed) throw new Error(result.message);
+const decision = await engine.evaluate(event);
+if (decision.status === "deny") throw new Error(decision.message ?? "Blocked by policy");
 ```

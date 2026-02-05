@@ -30,9 +30,7 @@ describeE2E('hush-cli-engine (e2e)', () => {
 
     const decision = await engine.evaluate(event);
     expect(decision.reason).not.toBe('engine_error');
-    expect(typeof decision.allowed).toBe('boolean');
-    expect(typeof decision.denied).toBe('boolean');
-    expect(typeof decision.warn).toBe('boolean');
+    expect(['allow', 'warn', 'deny']).toContain(decision.status);
   });
 
   it('matches fixture decisions (default ruleset)', async () => {
@@ -79,11 +77,7 @@ describeE2E('hush-cli-engine (e2e)', () => {
 });
 
 function normalizeDecision(value: any): any {
-  const out: any = {
-    allowed: Boolean(value?.allowed),
-    denied: Boolean(value?.denied),
-    warn: Boolean(value?.warn),
-  };
+  const out: any = { status: toStatus(value) };
 
   for (const k of ['reason', 'guard', 'severity', 'message'] as const) {
     const v = value?.[k];
@@ -92,4 +86,20 @@ function normalizeDecision(value: any): any {
   }
 
   return out;
+}
+
+function toStatus(value: any): 'allow' | 'warn' | 'deny' {
+  if (value?.status === 'allow' || value?.status === 'warn' || value?.status === 'deny') {
+    return value.status;
+  }
+
+  if (value?.denied === true) {
+    return 'deny';
+  }
+
+  if (value?.warn === true) {
+    return 'warn';
+  }
+
+  return 'allow';
 }

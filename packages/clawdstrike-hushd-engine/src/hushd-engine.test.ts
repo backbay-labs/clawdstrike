@@ -84,9 +84,8 @@ describe('createHushdEngine', () => {
 
     const engine = createHushdEngine({ baseUrl: 'http://127.0.0.1:9876' });
     await expect(engine.evaluate(exampleEvent)).resolves.toMatchObject({
-      denied: true,
+      status: 'deny',
       reason: 'engine_error',
     });
   });
 });
-

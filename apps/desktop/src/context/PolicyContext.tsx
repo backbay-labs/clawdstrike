@@ -13,6 +13,14 @@ interface PolicyState {
   lastFetched?: number;
 }
 
+interface DaemonPolicyResponse {
+  name: string;
+  version: string;
+  description?: string;
+  policy_hash: string;
+  yaml?: string;
+}
+
 interface PolicyContextValue extends PolicyState {
   fetchPolicy: () => Promise<void>;
   validatePolicy: (yaml: string) => Promise<ValidationResult>;
@@ -37,11 +45,20 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
       if (!response.ok) {
         throw new Error(`Failed to fetch policy: ${response.status}`);
       }
-      const data = await response.json();
+      const data = (await response.json()) as DaemonPolicyResponse;
+      const normalizedPolicy: Policy = {
+        version: data.version,
+        name: data.name,
+        description: data.description,
+        guards: {},
+      };
       setState((s) => ({
         ...s,
-        currentPolicy: data.data?.policy ?? data.policy,
-        policyBundle: data.data,
+        currentPolicy: normalizedPolicy,
+        policyBundle: {
+          policy: normalizedPolicy,
+          policy_hash: data.policy_hash,
+        },
         isLoading: false,
         lastFetched: Date.now(),
       }));
@@ -53,15 +70,20 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
 
   const validatePolicy = useCallback(
     async (yaml: string): Promise<ValidationResult> => {
-      const response = await fetch(`${daemonUrl}/api/v1/policy/validate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-yaml" },
-        body: yaml,
-      });
-      const data = await response.json();
-      return data.data ?? data;
+      void yaml;
+      return {
+        valid: false,
+        errors: [
+          {
+            path: "policy",
+            code: "unsupported_endpoint",
+            message: "Daemon does not expose /api/v1/policy/validate",
+          },
+        ],
+        warnings: [],
+      };
     },
-    [daemonUrl]
+    []
   );
 
   const reloadPolicy = useCallback(async () => {

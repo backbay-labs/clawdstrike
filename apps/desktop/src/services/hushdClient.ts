@@ -2,13 +2,12 @@
  * HushdClient - HTTP client for hushd daemon API
  */
 import type {
-  AuditEvent,
   AuditFilter,
   AuditResponse,
   AuditStats,
   ActionType,
 } from "@/types/events";
-import type { Policy, PolicyBundle, ValidationResult } from "@/types/policies";
+import type { PolicyBundle, ValidationResult } from "@/types/policies";
 
 export interface CheckRequest {
   action_type: ActionType;
@@ -28,21 +27,29 @@ export interface CheckResponse {
 }
 
 export interface PolicyEvalResponse {
-  allowed: boolean;
-  denied: boolean;
-  warn: boolean;
-  guards: GuardEvalResult[];
+  version: number;
+  command: "policy_eval";
+  decision: {
+    allowed: boolean;
+    denied: boolean;
+    warn: boolean;
+    guard?: string;
+    severity?: string;
+    message?: string;
+    reason?: string;
+  };
+  report?: {
+    overall: GuardEvalResult;
+    per_guard: GuardEvalResult[];
+  };
 }
 
 export interface GuardEvalResult {
-  guard_id: string;
-  guard_name: string;
+  guard: string;
   allowed: boolean;
-  denied: boolean;
-  warn: boolean;
-  severity?: string;
-  message?: string;
-  duration_ms?: number;
+  severity: string;
+  message: string;
+  details?: Record<string, unknown>;
 }
 
 export interface ApiResponse<T> {
@@ -64,9 +71,21 @@ export class HushdClient {
     private token?: string
   ) {}
 
+  private unwrapData<T>(payload: T | ApiResponse<T>): T {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "data" in payload &&
+      (payload as { data?: unknown }).data !== undefined
+    ) {
+      return (payload as ApiResponse<T>).data;
+    }
+    return payload as T;
+  }
+
   private async fetch<T>(
     path: string,
-    options: RequestInit = {}
+    options: Parameters<typeof fetch>[1] = {}
   ): Promise<T> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -99,21 +118,23 @@ export class HushdClient {
   // === Policy ===
 
   async getPolicy(): Promise<PolicyBundle> {
-    const response = await this.fetch<ApiResponse<PolicyBundle>>("/api/v1/policy");
-    return response.data;
+    const response = await this.fetch<PolicyBundle | ApiResponse<PolicyBundle>>("/api/v1/policy");
+    return this.unwrapData(response);
   }
 
   async validatePolicy(yaml: string): Promise<ValidationResult> {
-    const response = await fetch(`${this.baseUrl}/api/v1/policy/validate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-yaml",
-        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: yaml,
-    });
-    const data = await response.json();
-    return data.data ?? data;
+    void yaml;
+    return {
+      valid: false,
+      errors: [
+        {
+          path: "policy",
+          code: "unsupported_endpoint",
+          message: "Daemon does not expose /api/v1/policy/validate",
+        },
+      ],
+      warnings: [],
+    };
   }
 
   async reloadPolicy(): Promise<void> {
@@ -123,19 +144,19 @@ export class HushdClient {
   // === Check/Eval ===
 
   async check(request: CheckRequest): Promise<CheckResponse> {
-    const response = await this.fetch<ApiResponse<CheckResponse>>("/api/v1/check", {
+    const response = await this.fetch<CheckResponse | ApiResponse<CheckResponse>>("/api/v1/check", {
       method: "POST",
       body: JSON.stringify(request),
     });
-    return response.data;
+    return this.unwrapData(response);
   }
 
   async eval(event: Record<string, unknown>): Promise<PolicyEvalResponse> {
-    const response = await this.fetch<ApiResponse<PolicyEvalResponse>>("/api/v1/eval", {
+    const response = await this.fetch<PolicyEvalResponse | ApiResponse<PolicyEvalResponse>>("/api/v1/eval", {
       method: "POST",
       body: JSON.stringify(event),
     });
-    return response.data;
+    return this.unwrapData(response);
   }
 
   // === Audit ===
@@ -151,30 +172,30 @@ export class HushdClient {
     }
     const query = params.toString();
     const path = query ? `/api/v1/audit?${query}` : "/api/v1/audit";
-    const response = await this.fetch<ApiResponse<AuditResponse>>(path);
-    return response.data;
+    const response = await this.fetch<AuditResponse | ApiResponse<AuditResponse>>(path);
+    return this.unwrapData(response);
   }
 
   async getAuditStats(): Promise<AuditStats> {
-    const response = await this.fetch<ApiResponse<AuditStats>>("/api/v1/audit/stats");
-    return response.data;
+    const response = await this.fetch<AuditStats | ApiResponse<AuditStats>>("/api/v1/audit/stats");
+    return this.unwrapData(response);
   }
 
   // === Sessions ===
 
   async createSession(agentId?: string): Promise<{ session_id: string }> {
-    const response = await this.fetch<ApiResponse<{ session_id: string }>>("/api/v1/session", {
+    const response = await this.fetch<{ session_id: string } | ApiResponse<{ session_id: string }>>("/api/v1/session", {
       method: "POST",
       body: JSON.stringify({ agent_id: agentId }),
     });
-    return response.data;
+    return this.unwrapData(response);
   }
 
   async getSession(sessionId: string): Promise<Record<string, unknown>> {
-    const response = await this.fetch<ApiResponse<Record<string, unknown>>>(
+    const response = await this.fetch<Record<string, unknown> | ApiResponse<Record<string, unknown>>>(
       `/api/v1/session/${sessionId}`
     );
-    return response.data;
+    return this.unwrapData(response);
   }
 
   async terminateSession(sessionId: string): Promise<void> {
@@ -184,15 +205,11 @@ export class HushdClient {
   // === Agents ===
 
   async getAgents(): Promise<{ agents: unknown[] }> {
-    const response = await this.fetch<ApiResponse<{ agents: unknown[] }>>("/api/v1/agents");
-    return response.data;
+    return { agents: [] };
   }
 
   async getDelegations(): Promise<{ delegations: unknown[] }> {
-    const response = await this.fetch<ApiResponse<{ delegations: unknown[] }>>(
-      "/api/v1/delegations"
-    );
-    return response.data;
+    return { delegations: [] };
   }
 }
 

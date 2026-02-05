@@ -2,6 +2,7 @@
  * ReceiptPanel - Detailed view of an audit event with receipt
  */
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import type { AuditEvent } from "@/types/events";
 
@@ -140,8 +141,10 @@ function DetailsTab({ event }: { event: AuditEvent }) {
       {/* Verification placeholder */}
       <Section title="Verification">
         <div className="flex items-center gap-2 text-sm">
-          <VerifiedIcon className="w-4 h-4 text-sdr-accent-green" />
-          <span className="text-sdr-text-secondary">Signature valid</span>
+          <VerifiedIcon className="w-4 h-4 text-sdr-accent-amber" />
+          <span className="text-sdr-text-secondary">
+            Signature verification unavailable in streamed event payloads
+          </span>
         </div>
       </Section>
     </div>
@@ -158,7 +161,7 @@ function JsonTab({ event }: { event: AuditEvent }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
       <h3 className="text-xs font-medium text-sdr-text-muted uppercase tracking-wide mb-2">

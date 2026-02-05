@@ -31,8 +31,8 @@ export function EventStreamView() {
   // Extract audit events from daemon events
   const auditEvents = useMemo(() => {
     return events
-      .filter((e): e is DaemonEvent & { data: AuditEvent } => e.type === "policy_check")
-      .map((e) => e.data);
+      .map((event, index) => toAuditEvent(event, index))
+      .filter((event): event is AuditEvent => event !== null);
   }, [events]);
 
   // Apply filters
@@ -190,4 +190,52 @@ function DisconnectedIcon() {
       <path d="M2 2l20 20" />
     </svg>
   );
+}
+
+function toAuditEvent(event: DaemonEvent, index: number): AuditEvent | null {
+  if (event.type !== "check" && event.type !== "violation" && event.type !== "eval") {
+    return null;
+  }
+
+  const payload = event.data;
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const data = payload as Record<string, unknown>;
+  const allowed = typeof data.allowed === "boolean" ? data.allowed : event.type !== "violation";
+  const severity = normalizeSeverity(data.severity, allowed);
+
+  return {
+    id:
+      (typeof data.event_id === "string" && data.event_id) ||
+      `${event.type}-${event.timestamp}-${index}`,
+    timestamp: event.timestamp,
+    event_type: event.type,
+    action_type: normalizeActionType(data.action_type ?? data.event_type),
+    target: typeof data.target === "string" ? data.target : undefined,
+    decision: allowed ? "allowed" : "blocked",
+    guard: typeof data.guard === "string" ? data.guard : undefined,
+    severity,
+    message: typeof data.message === "string" ? data.message : undefined,
+    metadata: data,
+  };
+}
+
+function normalizeActionType(value: unknown): ActionType {
+  if (value === "file_access") return "file_access";
+  if (value === "file_write") return "file_write";
+  if (value === "egress" || value === "network_egress") return "egress";
+  if (value === "shell" || value === "shell_command") return "shell";
+  if (value === "mcp_tool" || value === "tool_call") return "mcp_tool";
+  if (value === "patch") return "patch";
+  if (value === "secret_access") return "secret_access";
+  return "custom";
+}
+
+function normalizeSeverity(value: unknown, allowed: boolean): Severity {
+  if (value === "info" || value === "warning" || value === "error" || value === "critical") {
+    return value;
+  }
+  return allowed ? "info" : "error";
 }

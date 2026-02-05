@@ -13,7 +13,7 @@ npm install @clawdstrike/sdk
 ```typescript
 import { Clawdstrike } from "@clawdstrike/sdk";
 
-// Create with built-in defaults
+// Create with built-in strict rules (fail-closed)
 const cs = Clawdstrike.withDefaults("strict");
 
 // Simple check
@@ -35,10 +35,10 @@ For stateful security tracking across multiple checks:
 import { Clawdstrike } from "@clawdstrike/sdk";
 
 const cs = Clawdstrike.withDefaults("strict");
-const session = cs.session({ agentId: "my-agent", contextId: "ctx-123" });
+const session = cs.session({ agentId: "my-agent" });
 
 // Multiple checks in a session
-await session.check("file_read", { path: "/app/src/main.ts" });
+await session.check("file_access", { path: "/app/src/main.ts" });
 await session.check("network_egress", { host: "api.github.com", port: 443 });
 
 // Get session summary

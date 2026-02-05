@@ -102,18 +102,23 @@ function parseDecision(value: unknown): Decision | null {
     return null;
   }
 
-  if (
-    typeof value.allowed !== 'boolean' ||
-    typeof value.denied !== 'boolean' ||
-    typeof value.warn !== 'boolean'
-  ) {
+  const status =
+    value.status === 'allow' || value.status === 'warn' || value.status === 'deny'
+      ? value.status
+      : typeof value.allowed === 'boolean' && typeof value.denied === 'boolean' && typeof value.warn === 'boolean'
+        ? value.denied
+          ? 'deny'
+          : value.warn
+            ? 'warn'
+            : 'allow'
+        : null;
+
+  if (!status) {
     return null;
   }
 
   const decision: Decision = {
-    allowed: value.allowed,
-    denied: value.denied,
-    warn: value.warn,
+    status,
   };
 
   if (typeof value.reason === 'string') {
@@ -143,9 +148,7 @@ function parseDecision(value: unknown): Decision | null {
 function failClosed(error: unknown): Decision {
   const message = error instanceof Error ? error.message : String(error);
   return {
-    allowed: false,
-    denied: true,
-    warn: false,
+    status: 'deny',
     reason: 'engine_error',
     message,
   };
@@ -154,4 +157,3 @@ function failClosed(error: unknown): Decision {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
-

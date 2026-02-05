@@ -2,6 +2,7 @@
  * PolicyTesterView - Simulate policy checks
  */
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { clsx } from "clsx";
 import { useConnection } from "@/context/ConnectionContext";
 import { HushdClient, type CheckResponse } from "@/services/hushdClient";
@@ -28,7 +29,7 @@ export function PolicyTesterView() {
   const [result, setResult] = useState<CheckResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.target.trim()) return;
 

@@ -2,6 +2,7 @@
  * SettingsView - Daemon connection and preferences
  */
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { useConnection, type ConnectionMode } from "@/context/ConnectionContext";
 
@@ -231,7 +232,7 @@ const CONNECTION_MODES: { id: ConnectionMode; label: string; description: string
   },
 ];
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
       <h2 className="text-sm font-medium text-sdr-text-muted uppercase tracking-wide mb-3">

@@ -2,6 +2,7 @@
  * NavRail - Left sidebar navigation for SDR views
  */
 import { clsx } from "clsx";
+import type { ReactNode } from "react";
 import type { AppId, PluginIcon } from "../plugins/types";
 import { getPlugins } from "../plugins";
 
@@ -64,7 +65,7 @@ function NavButton({ icon, label, active, onClick }: NavButtonProps) {
 }
 
 function NavIcon({ icon }: { icon: PluginIcon }) {
-  const paths: Record<PluginIcon, React.ReactNode> = {
+  const paths: Record<PluginIcon, ReactNode> = {
     activity: (
       <path
         d="M22 12h-4l-3 9L9 3l-3 9H2"

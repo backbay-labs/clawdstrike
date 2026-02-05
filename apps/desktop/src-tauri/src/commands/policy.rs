@@ -23,11 +23,6 @@ pub struct CheckResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct ApiResponse<T> {
-    data: T,
-}
-
-#[derive(Debug, Deserialize)]
 struct ApiCheckResponse {
     allowed: bool,
     guard: Option<String>,
@@ -72,12 +67,10 @@ pub async fn policy_check(
         return Err(format!("Check failed with status {}: {}", status, text));
     }
 
-    let api_response: ApiResponse<ApiCheckResponse> = response
+    let check: ApiCheckResponse = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-    let check = api_response.data;
 
     Ok(CheckResponse {
         allowed: check.allowed,

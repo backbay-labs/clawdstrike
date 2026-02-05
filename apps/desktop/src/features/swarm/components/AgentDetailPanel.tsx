@@ -2,8 +2,9 @@
  * AgentDetailPanel - Detailed view of selected agent
  */
 import { clsx } from "clsx";
+import type { ReactNode } from "react";
 import type { AgentNode } from "@/types/agents";
-import { TRUST_COLORS, ROLE_ICONS } from "@/types/agents";
+import { TRUST_COLORS } from "@/types/agents";
 import { useSwarm } from "@/context/SwarmContext";
 
 interface AgentDetailPanelProps {
@@ -133,7 +134,7 @@ export function AgentDetailPanel({ agent, onClose }: AgentDetailPanelProps) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
       <h3 className="text-xs font-medium text-sdr-text-muted uppercase tracking-wide mb-2">
@@ -153,7 +154,7 @@ function Row({
   label: string;
   value?: string;
   mono?: boolean;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div className="flex items-start gap-2 text-sm mb-1">
