@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::io::Read as _;
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -585,7 +585,7 @@ fn build_pinned_blocking_http_client(
 fn is_public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_public_ipv4(v4.octets()),
-        IpAddr::V6(v6) => is_public_ipv6(v6.segments()),
+        IpAddr::V6(v6) => is_public_ipv6(v6),
     }
 }
 
@@ -654,7 +654,12 @@ fn is_public_ipv4(octets: [u8; 4]) -> bool {
     true
 }
 
-fn is_public_ipv6(segments: [u16; 8]) -> bool {
+fn is_public_ipv6(addr: Ipv6Addr) -> bool {
+    if let Some(v4) = addr.to_ipv4() {
+        return is_public_ipv4(v4.octets());
+    }
+
+    let segments = addr.segments();
     let [s0, s1, s2, s3, _s4, _s5, _s6, _s7] = segments;
 
     // ::/128 (unspecified)
@@ -861,6 +866,24 @@ mod tests {
         F: Fn(&mut std::net::TcpStream) + Send + Sync + 'static,
     {
         spawn_server_on("127.0.0.1:0", handler)
+    }
+
+    #[test]
+    fn ipv4_mapped_ipv6_addresses_inherit_v4_publicness() {
+        let loopback: IpAddr = "::ffff:127.0.0.1"
+            .parse::<Ipv6Addr>()
+            .expect("parse")
+            .into();
+        assert!(
+            !is_public_ip(loopback),
+            "IPv4-mapped loopback should not be treated as public"
+        );
+
+        let public: IpAddr = "::ffff:8.8.8.8".parse::<Ipv6Addr>().expect("parse").into();
+        assert!(
+            is_public_ip(public),
+            "IPv4-mapped public IPv4 should be treated as public"
+        );
     }
 
     #[test]
