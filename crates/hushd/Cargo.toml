@@ -17,11 +17,11 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "hushd"
-path = "src/main.rs"
+path = "src/bin/hushd.rs"
 
 [[bin]]
 name = "clawdstriked"
-path = "src/main.rs"
+path = "src/bin/clawdstriked.rs"
 
 [dependencies]
 hush-core.workspace = true

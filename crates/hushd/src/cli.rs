@@ -1,25 +1,17 @@
-#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
-
-//! Hushd - Clawdstrike security daemon
-//!
-//! This daemon provides:
-//! - HTTP API for action checking
-//! - Policy management and hot-reload
-//! - SQLite audit ledger
-//! - SSE event streaming
+//! Hushd CLI entrypoint.
 
 use std::net::SocketAddr;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use hushd::api;
-use hushd::audit::{AuditEvent, SessionStats};
-use hushd::config::Config;
-use hushd::siem::types::SecurityEvent;
-use hushd::state::AppState;
-use hushd::tls::{TlsConnectInfo, TlsListener};
+use crate::api;
+use crate::audit::{AuditEvent, SessionStats};
+use crate::config::Config;
+use crate::siem::types::SecurityEvent;
+use crate::state::AppState;
+use crate::tls::{TlsConnectInfo, TlsListener};
 
 fn normalize_host_for_listen(host: &str) -> String {
     host.trim()
@@ -70,7 +62,6 @@ fn format_listen(host: &str, port: u16) -> String {
 }
 
 #[derive(Parser)]
-#[command(name = "hushd")]
 #[command(about = "Clawdstrike security daemon", long_about = None)]
 #[command(version)]
 struct Cli {
@@ -114,10 +105,22 @@ enum Commands {
     ShowConfig,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+fn parse_cli(bin_name: &'static str) -> Cli {
+    let matches = Cli::command()
+        .name(bin_name)
+        .bin_name(bin_name)
+        .get_matches();
+    match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(err) => err.exit(),
+    }
+}
 
+pub async fn run_bin(bin_name: &'static str) -> anyhow::Result<()> {
+    run(parse_cli(bin_name)).await
+}
+
+async fn run(cli: Cli) -> anyhow::Result<()> {
     // Load configuration
     let mut config = if let Some(ref path) = cli.config {
         Config::from_file(path)?
@@ -247,7 +250,7 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
         #[cfg(not(unix))]
         let terminate = std::future::pending::<()>();
 
-        let shutdown_requested = async {
+        let shutdown_requested = async move {
             shutdown_notify.notified().await;
         };
 
@@ -310,13 +313,13 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     drop(engine);
 
     // Record session end.
-    let duration_secs = u64::try_from(state.uptime_secs()).unwrap_or(0);
-    let session_stats = hushd::audit::SessionStats {
+    let duration_secs = u64::try_from(state.uptime_secs()).unwrap_or_default();
+    let session_stats = crate::audit::SessionStats {
         action_count: stats.action_count,
         violation_count: stats.violation_count,
         duration_secs,
     };
-    state.record_audit_event(hushd::audit::AuditEvent::session_end(
+    state.record_audit_event(crate::audit::AuditEvent::session_end(
         &state.session_id,
         &session_stats,
     ));
