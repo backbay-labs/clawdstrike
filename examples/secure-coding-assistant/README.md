@@ -3,7 +3,7 @@
 This example demonstrates a **secure coding assistant preflight** flow:
 
 - Convert simulated tool calls into canonical `PolicyEvent` objects
-- Evaluate them via the Rust `hush` CLI (`hush policy eval …`)
+- Evaluate them via the Rust `hush` CLI (`clawdstrike policy eval …`)
 - Print allow/deny decisions suitable for IDE hooks, pre-commit hooks, or tool dispatchers
 
 It is intentionally framework-agnostic (no OpenClaw required).

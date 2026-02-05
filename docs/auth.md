@@ -1,13 +1,13 @@
 # API Authentication
 
-Hushd supports API key authentication to protect endpoints from unauthorized access.
+Clawdstriked supports API key authentication to protect endpoints from unauthorized access.
 
 ## Quick Start
 
 1. Generate an API key:
 
 ```bash
-hush daemon keygen --name my-app --scopes "check,read"
+clawdstrike daemon keygen --name my-app --scopes "check,read"
 ```
 
 2. Add to config:
@@ -17,14 +17,14 @@ auth:
   enabled: true
   api_keys:
     - name: "my-app"
-      key: "hush_<generated-key>"
+      key: "cs_<generated-key>"
       scopes: ["check", "read"]
 ```
 
 3. Use in requests:
 
 ```bash
-curl -H "Authorization: Bearer hush_<key>" \
+curl -H "Authorization: Bearer cs_<key>" \
      http://localhost:9876/api/v1/check \
      -d '{"action_type": "file_access", "target": "/test"}'
 ```
@@ -61,13 +61,13 @@ auth:
   enabled: true
   api_keys:
     - name: "service-a"
-      key: "hush_abc123..."
+      key: "cs_abc123..."
       scopes: ["check", "read"]
     - name: "admin"
-      key: "hush_xyz789..."
+      key: "cs_xyz789..."
       scopes: ["*"]
     - name: "temporary"
-      key: "hush_temp..."
+      key: "cs_temp..."
       scopes: ["check"]
       expires_at: "2024-12-31T23:59:59Z"
 ```
@@ -80,16 +80,16 @@ Keys can reference environment variables:
 auth:
   api_keys:
     - name: "from-env"
-      key: "${HUSHD_API_KEY}"
+      key: "${CLAWDSTRIKE_API_KEY}"
       scopes: ["check", "read"]
 ```
 
-Then set: `export HUSHD_API_KEY="hush_abc123..."`
+Then set: `export CLAWDSTRIKE_API_KEY="cs_abc123..."`
 
 ## Security Notes
 
-1. **Keys are hashed**: Raw keys are never stored; only key digests are kept in memory (set `HUSHD_AUTH_PEPPER` to enable peppered HMAC hashing)
-2. **Use TLS**: Always use HTTPS in production to protect keys in transit (terminate TLS at a reverse proxy; hushd does not implement native TLS yet)
+1. **Keys are hashed**: Raw keys are never stored; only key digests are kept in memory (set `CLAWDSTRIKE_AUTH_PEPPER` to enable peppered HMAC hashing)
+2. **Use TLS**: Always use HTTPS in production to protect keys in transit (terminate TLS at a reverse proxy; clawdstriked does not implement native TLS yet)
 3. **Rotate keys**: Generate new keys periodically and revoke old ones
 4. **Least privilege**: Grant only the scopes each client needs
 5. **Expiration**: Set expiration dates for temporary access
@@ -107,7 +107,7 @@ auth:
 
 ## Rate Limiting
 
-Hushd includes built-in rate limiting to protect against abuse and ensure fair usage.
+Clawdstriked includes built-in rate limiting to protect against abuse and ensure fair usage.
 
 ### Configuration
 

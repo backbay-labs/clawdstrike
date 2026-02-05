@@ -11,7 +11,7 @@ This example demonstrates an **EDR-style loop** using `hushd` as the collector:
 ```bash
 cd examples/edr-pipeline
 
-export HUSHD_API_KEY="$(openssl rand -hex 32)"
+export CLAWDSTRIKE_API_KEY="$(openssl rand -hex 32)"
 docker compose up -d --build
 
 node simulate.js

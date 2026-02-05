@@ -8,6 +8,6 @@ auth:
   enabled: true
   api_keys:
     - name: "default"
-      key: "${HUSHD_API_KEY}"
+      key: "${CLAWDSTRIKE_API_KEY}"
       scopes: ["check", "read"]
 

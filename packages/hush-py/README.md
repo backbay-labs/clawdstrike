@@ -1,17 +1,17 @@
-# hush-py
+# @clawdstrike/python
 
-Python SDK for clawdstrike security verification.
+Python SDK for Clawdstrike security verification.
 
 ## Installation
 
 ```bash
-pip install hush
+pip install clawdstrike
 ```
 
 ## Usage
 
 ```python
-from hush import Policy, PolicyEngine, GuardAction, GuardContext
+from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
 
 # Load policy from YAML
 policy = Policy.from_yaml_file("policy.yaml")

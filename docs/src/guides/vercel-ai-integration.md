@@ -25,7 +25,7 @@ npm install @ai-sdk/openai
 
 ## 1) Create an engine (policy evaluation)
 
-The simplest engine is `@clawdstrike/hush-cli-engine`, which calls `hush policy eval` under the hood.
+The simplest engine is `@clawdstrike/hush-cli-engine`, which calls `clawdstrike policy eval` under the hood.
 
 ```ts
 import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';

@@ -17,5 +17,5 @@ Policy tuned for AI coding assistants (expanded egress allowlist + slightly high
 ## View the exact policy
 
 ```bash
-hush policy show ai-agent
+clawdstrike policy show ai-agent
 ```

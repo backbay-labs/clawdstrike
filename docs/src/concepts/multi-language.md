@@ -6,9 +6,9 @@ Rust is the reference implementation for Clawdstrike policy evaluation. Other la
 
 | Language | Package(s) | What it covers today |
 |----------|------------|----------------------|
-| **Rust** | `clawdstrike`, `hush-core`, `hush-cli`, `hushd` | Full policy engine + guards + prompt-security |
+| **Rust** | `clawdstrike`, `hush-core`, `hush-cli`, `clawdstriked` | Full policy engine + guards + prompt-security |
 | **TypeScript** | `@clawdstrike/sdk` | Crypto + receipts + guards + prompt-security utilities (no policy engine) |
-| **Python** | `hush` | Policy engine + 5 guards + receipts/crypto (no prompt-security utilities yet) |
+| **Python** | `clawdstrike` | Policy engine + 5 guards + receipts/crypto (no prompt-security utilities yet) |
 | **WebAssembly** | `@clawdstrike/wasm` | Crypto + receipt verification |
 
 ## TypeScript
@@ -17,7 +17,7 @@ If you need policy evaluation from Node, use a bridge to Rust:
 
 ```ts
 import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
-import { PolicyEventFactory } from '@clawdstrike/adapter-core';
+import { PolicyEventFactory } from '@clawdstrike/sdk';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const event = new PolicyEventFactory().create('bash', { cmd: 'echo hello' }, 'session-123');
@@ -40,7 +40,7 @@ console.log(r.riskScore, r.signals.map(s => s.id));
 Python includes a small local policy engine and a subset of guards:
 
 ```python
-from hush import Policy, PolicyEngine, GuardAction, GuardContext
+from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
 
 policy = Policy.from_yaml_file("policy.yaml")
 engine = PolicyEngine(policy)
@@ -70,4 +70,4 @@ This repo also ships integration packages:
 ## Compatibility notes
 
 - **Receipts + crypto** are designed to be compatible across Rust/TS/Python/WASM.
-- **Policy evaluation** is authoritative in Rust (`hush` / `hushd`). The non-Rust SDKs do not currently guarantee full policy-schema parity.
+- **Policy evaluation** is authoritative in Rust (`clawdstrike` / `clawdstriked`). The non-Rust SDKs do not currently guarantee full policy-schema parity.

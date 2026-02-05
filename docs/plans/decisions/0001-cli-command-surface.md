@@ -7,7 +7,7 @@ Date: 2026-02-03
 
 The repo currently exposes two user-visible CLIs:
 
-- Rust: `hush` (in `crates/hush-cli`) with subcommands like `hush check` and `hush policy ...`.
+- Rust: `hush` (in `crates/hush-cli`) with subcommands like `clawdstrike check` and `clawdstrike policy ...`.
 - TypeScript/OpenClaw: `clawdstrike` (in `packages/clawdstrike-openclaw`) with `clawdstrike policy ...` and `clawdstrike audit ...`.
 
 The docs/plans currently mix these names, which blocks parallel work (people can’t tell which commands are canonical vs implementation-specific).

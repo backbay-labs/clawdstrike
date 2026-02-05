@@ -1,8 +1,8 @@
 # Installation
 
-Clawdstrike currently ships as a Rust workspace with a CLI (`hush`) and libraries (`clawdstrike`, `hush-core`, `hush-proxy`).
+Clawdstrike ships as a Rust workspace with a CLI (`clawdstrike`) and libraries (`clawdstrike`, `hush-core`, `hush-proxy`).
 
-## Rust CLI (`hush`)
+## Rust CLI (`clawdstrike`)
 
 ### From source (recommended)
 
@@ -22,12 +22,12 @@ cargo install hush-cli
 ### Verify installation
 
 ```bash
-hush --version
+clawdstrike --version
 ```
 
-## Daemon (`hushd`) (optional)
+## Daemon (`clawdstriked`) (optional)
 
-`hushd` is an HTTP daemon that can evaluate checks server-side. It is still evolving, so treat it as optional/WIP.
+`clawdstriked` is an HTTP daemon that can evaluate checks server-side. It is still evolving, so treat it as optional/WIP.
 
 ```bash
 cargo install --path crates/hushd
@@ -36,12 +36,34 @@ cargo install --path crates/hushd
 You can start it via the CLI:
 
 ```bash
-hush daemon start
+clawdstrike daemon start
 ```
 
-## TypeScript / Python (experimental)
+## TypeScript SDK
 
-This repo contains experimental SDKs under `packages/` (TypeScript, Python, OpenClaw plugin). Their APIs and schemas are not yet guaranteed to match the Rust policy schema.
+```bash
+npm install @clawdstrike/sdk
+```
+
+```typescript
+import { Clawdstrike } from "@clawdstrike/sdk";
+
+const cs = Clawdstrike.withDefaults("strict");
+const decision = await cs.checkFile("~/.ssh/id_rsa", "read");
+```
+
+## Python SDK
+
+```bash
+pip install clawdstrike
+```
+
+```python
+from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
+
+policy = Policy.from_yaml_file("policy.yaml")
+engine = PolicyEngine(policy)
+```
 
 ## Requirements
 

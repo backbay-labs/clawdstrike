@@ -23,7 +23,7 @@ Currently, policy changes in Clawdstrike are deployed without systematic testing
 
 ---
 
-## Proposed Solution: `hush policy test`
+## Proposed Solution: `clawdstrike policy test`
 
 A comprehensive testing framework that treats policies as testable software:
 
@@ -466,57 +466,57 @@ expect:
 
 ```bash
 # Run all tests
-hush policy test
+clawdstrike policy test
 
 # Run specific test file
-hush policy test tests/policy.test.yaml
+clawdstrike policy test tests/policy.test.yaml
 
 # Run specific suite
-hush policy test --suite "Forbidden Path Guard"
+clawdstrike policy test --suite "Forbidden Path Guard"
 
 # Run specific test
-hush policy test --test "should block SSH key access"
+clawdstrike policy test --test "should block SSH key access"
 
 # Run with pattern matching
-hush policy test --filter "egress*"
+clawdstrike policy test --filter "egress*"
 
 # Watch mode for development
-hush policy test --watch
+clawdstrike policy test --watch
 
 # Verbose output
-hush policy test --verbose
+clawdstrike policy test --verbose
 
 # JSON output for CI
-hush policy test --format json --output results.json
+clawdstrike policy test --format json --output results.json
 ```
 
 ### Coverage Reports
 
 ```bash
 # Generate coverage report
-hush policy test --coverage
+clawdstrike policy test --coverage
 
 # Require minimum coverage
-hush policy test --coverage --min-coverage 80
+clawdstrike policy test --coverage --min-coverage 80
 
 # Coverage by guard
-hush policy test --coverage --by-guard
+clawdstrike policy test --coverage --by-guard
 
 # HTML coverage report
-hush policy test --coverage --format html --output coverage.html
+clawdstrike policy test --coverage --format html --output coverage.html
 ```
 
 ### Test Generation
 
 ```bash
 # Generate test skeleton from policy
-hush policy test generate policy.yaml --output tests/
+clawdstrike policy test generate policy.yaml --output tests/
 
 # Generate tests from audit log
-hush policy test generate --from-audit audit.json --output tests/
+clawdstrike policy test generate --from-audit audit.json --output tests/
 
 # Generate negative tests
-hush policy test generate policy.yaml --negative --output tests/
+clawdstrike policy test generate policy.yaml --negative --output tests/
 ```
 
 ---
@@ -678,10 +678,10 @@ proptest! {
 
 ```bash
 # Create snapshot of policy decisions
-hush policy test --update-snapshots
+clawdstrike policy test --update-snapshots
 
 # Compare against snapshots
-hush policy test --snapshots
+clawdstrike policy test --snapshots
 ```
 
 ### Snapshot Format
@@ -721,10 +721,10 @@ Mutation testing introduces small changes to the policy and verifies tests catch
 
 ```bash
 # Run mutation tests
-hush policy test --mutation
+clawdstrike policy test --mutation
 
 # Mutation report
-hush policy test --mutation --report
+clawdstrike policy test --mutation --report
 ```
 
 ### Mutation Operators
@@ -798,7 +798,7 @@ jobs:
         uses: clawdstrike/setup-action@v1
 
       - name: Run Policy Tests
-        run: hush policy test --coverage --min-coverage 80
+        run: clawdstrike policy test --coverage --min-coverage 80
 
       - name: Upload Coverage
         uses: codecov/codecov-action@v3
@@ -812,7 +812,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Mutation Tests
-        run: hush policy test --mutation --min-killed 90
+        run: clawdstrike policy test --mutation --min-killed 90
 ```
 
 ### GitLab CI
@@ -823,7 +823,7 @@ policy-test:
   stage: test
   image: clawdstrike/cli:latest
   script:
-    - hush policy test --coverage --format junit --output results.xml
+    - clawdstrike policy test --coverage --format junit --output results.xml
   artifacts:
     reports:
       junit: results.xml
@@ -843,7 +843,7 @@ repos:
     hooks:
       - id: policy-test
         name: Policy Tests
-        entry: hush policy test --fail-fast
+        entry: clawdstrike policy test --fail-fast
         language: system
         files: '\.(yaml|rego)$'
         pass_filenames: false
@@ -961,13 +961,13 @@ suites:
 
 ```bash
 # Run load test
-hush policy test --load \
+clawdstrike policy test --load \
   --rps 1000 \
   --duration 60s \
   --events events.json
 
 # Load test report
-hush policy test --load --report
+clawdstrike policy test --load --report
 ```
 
 ---

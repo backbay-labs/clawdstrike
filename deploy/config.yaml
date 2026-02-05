@@ -24,7 +24,7 @@ log_level: info
 # Optional: trusted public keys for verifying incoming signed policy bundles (enterprise distribution).
 # If empty, hushd will only accept bundle updates when the bundle embeds a public_key.
 # policy_bundle_trusted_pubkeys:
-#   - "${HUSHD_POLICY_BUNDLE_PUBKEY}"
+#   - "${CLAWDSTRIKE_POLICY_BUNDLE_PUBKEY}"
 
 # Enable CORS for browser access
 cors_enabled: true
@@ -76,11 +76,11 @@ auth:
   api_keys:
     # Default key with check/read permissions
     - name: "default"
-      key: "${HUSHD_API_KEY}"  # Set via environment variable
+      key: "${CLAWDSTRIKE_API_KEY}"  # Set via environment variable
       scopes: ["check", "read"]
     # Admin key with full permissions
     - name: "admin"
-      key: "${HUSHD_ADMIN_KEY}"
+      key: "${CLAWDSTRIKE_ADMIN_KEY}"
       scopes: ["*"]
     # Example with expiration
     # - name: "temporary"

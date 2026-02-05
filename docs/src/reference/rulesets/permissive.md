@@ -17,5 +17,5 @@ Note: guards that are not explicitly configured by the ruleset still use their d
 ## View the exact policy
 
 ```bash
-hush policy show permissive
+clawdstrike policy show permissive
 ```

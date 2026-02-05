@@ -1,6 +1,6 @@
 # Python API Reference
 
-The Python SDK lives under `packages/hush-py` and is published as `hush` on PyPI.
+The Python SDK lives under `packages/hush-py` and is published as `clawdstrike` on PyPI.
 
 It provides:
 
@@ -14,13 +14,13 @@ Prompt-security utilities (jailbreak detection, output sanitization, watermarkin
 ## Installation
 
 ```bash
-pip install hush
+pip install clawdstrike
 ```
 
 ## Policy + engine
 
 ```python
-from hush import Policy, PolicyEngine, GuardAction, GuardContext
+from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
 
 policy = Policy.from_yaml_file("policy.yaml")
 engine = PolicyEngine(policy)
@@ -36,7 +36,7 @@ print("allowed:", engine.is_allowed(GuardAction.network_egress("api.github.com",
 ## Receipts
 
 ```python
-from hush import Receipt, SignedReceipt, Verdict, PublicKeySet, generate_keypair
+from clawdstrike import Receipt, SignedReceipt, Verdict, PublicKeySet, generate_keypair
 
 private_key, public_key = generate_keypair()
 receipt = Receipt.new(content_hash="0x" + "00" * 32, verdict=Verdict(passed=True))

@@ -13,9 +13,9 @@ data:
       enabled: true
       api_keys:
         - name: "default"
-          key: "${HUSHD_API_KEY}"
+          key: "${CLAWDSTRIKE_API_KEY}"
           scopes: ["check", "read"]
         - name: "admin"
-          key: "${HUSHD_ADMIN_KEY}"
+          key: "${CLAWDSTRIKE_ADMIN_KEY}"
           scopes: ["*"]
 

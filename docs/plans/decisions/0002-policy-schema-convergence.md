@@ -19,11 +19,11 @@ Define a clear canonical schema, plus an explicit compatibility story:
 1. **Canonical policy schema for “Hushclaw v1”:** the Rust guard-centric schema (`version: "1.1.0"`, top-level `guards`, `settings`, `extends`, `merge_strategy`, …).
 2. **Compatibility stance (M0):**
    - **Portable policies MUST be written in the canonical schema.**
-   - OpenClaw `clawdstrike-v1.0` is treated as **legacy/compat**, supported via a translation layer in the TS runtime (and eventually via `hush policy migrate` tooling).
+   - OpenClaw `clawdstrike-v1.0` is treated as **legacy/compat**, supported via a translation layer in the TS runtime (and eventually via `clawdstrike policy migrate` tooling).
    - Rust continues to **fail closed** on unknown/legacy schema versions (no silent acceptance).
 3. **Deprecation timeline for legacy OpenClaw schema (`clawdstrike-v1.0`):**
    - **M0 (now):** docs/plans + fixtures standardize on canonical schema; legacy remains supported only where it already exists.
-   - **M1:** ship migration tooling (`hush policy migrate`) and a TS translation layer; emit warnings when legacy is loaded.
+   - **M1:** ship migration tooling (`clawdstrike policy migrate`) and a TS translation layer; emit warnings when legacy is loaded.
    - **M2:** legacy schema requires explicit opt-in (e.g., `--accept-legacy` or a `compat:` block); default behavior is fail-closed.
    - **Next major:** remove legacy-by-default; keep only as a migration input if still needed.
 

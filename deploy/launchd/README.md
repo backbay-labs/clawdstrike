@@ -105,8 +105,8 @@ To set API keys or other secrets, create an environment file and source it in th
 
 ```bash
 # Set via launchctl
-launchctl setenv HUSHD_API_KEY "your-api-key"
-launchctl setenv HUSHD_ADMIN_KEY "your-admin-key"
+launchctl setenv CLAWDSTRIKE_API_KEY "your-api-key"
+launchctl setenv CLAWDSTRIKE_ADMIN_KEY "your-admin-key"
 
 # Then restart
 launchctl stop dev.clawdstrike.hushd

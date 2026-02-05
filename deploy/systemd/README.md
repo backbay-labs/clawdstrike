@@ -48,8 +48,8 @@ sudo chown root:hushd /etc/hushd/config.yaml
 ```bash
 # Create environment file for secrets
 sudo tee /etc/hushd/environment << 'EOF'
-HUSHD_API_KEY=your-api-key-here
-HUSHD_ADMIN_KEY=your-admin-key-here
+CLAWDSTRIKE_API_KEY=your-api-key-here
+CLAWDSTRIKE_ADMIN_KEY=your-admin-key-here
 EOF
 sudo chmod 600 /etc/hushd/environment
 sudo chown hushd:hushd /etc/hushd/environment

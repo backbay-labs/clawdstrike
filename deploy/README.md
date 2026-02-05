@@ -72,7 +72,7 @@ services:
       - hushd-data:/var/lib/hushd
     environment:
       - RUST_LOG=info
-      - HUSHD_API_KEY=${HUSHD_API_KEY}
+      - CLAWDSTRIKE_API_KEY=${CLAWDSTRIKE_API_KEY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9876/health"]
@@ -101,8 +101,8 @@ All deployment methods use the same configuration file format. See `config.yaml`
 | Variable | Description |
 |----------|-------------|
 | `RUST_LOG` | Log level (trace, debug, info, warn, error) |
-| `HUSHD_API_KEY` | Default API key for authenticated endpoints |
-| `HUSHD_ADMIN_KEY` | Admin API key with full permissions |
+| `CLAWDSTRIKE_API_KEY` | Default API key for authenticated endpoints |
+| `CLAWDSTRIKE_ADMIN_KEY` | Admin API key with full permissions |
 
 ## Security
 

@@ -144,4 +144,4 @@ Clawdstrike prefers explicit, auditable configuration:
 
 - **Unknown fields are rejected** (fail-closed) where parsing is security-critical.
 - **Invalid patterns fail at load time** (glob/regex validation), not at check time.
-- **Policy linting** (`hush policy lint`) catches risky defaults and common mistakes early.
+- **Policy linting** (`clawdstrike policy lint`) catches risky defaults and common mistakes early.

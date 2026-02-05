@@ -11,9 +11,9 @@ services:
       - ./config.yaml:/etc/hushd/config.yaml:ro
       - hushd-data:/var/lib/hushd
     environment:
-      - HUSHD_API_KEY=${HUSHD_API_KEY:-changeme}
-      - HUSHD_ADMIN_KEY=${HUSHD_ADMIN_KEY:-admin}
-      - HUSHD_POLICY_BUNDLE_PUBKEY=${HUSHD_POLICY_BUNDLE_PUBKEY:-}
+      - CLAWDSTRIKE_API_KEY=${CLAWDSTRIKE_API_KEY:-changeme}
+      - CLAWDSTRIKE_ADMIN_KEY=${CLAWDSTRIKE_ADMIN_KEY:-admin}
+      - CLAWDSTRIKE_POLICY_BUNDLE_PUBKEY=${CLAWDSTRIKE_POLICY_BUNDLE_PUBKEY:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

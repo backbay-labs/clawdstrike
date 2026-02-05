@@ -39,7 +39,7 @@ Tier 3: Enterprise readiness (close deals)
 ### Rust (workspace)
 - `crates/clawdstrike`: guard suite + `HushEngine` policy enforcement at the tool boundary.
 - `crates/hush-core`: cryptographic primitives + receipts (Ed25519, Merkle, canonicalization).
-- `crates/hush-cli`: `hush` CLI (`hush check`, `hush policy show|validate|list`, receipts, merkle).
+- `crates/hush-cli`: `hush` CLI (`clawdstrike check`, `clawdstrike policy show|validate|list`, receipts, merkle).
 - `crates/hushd`: WIP HTTP daemon for centralized checks.
 - `crates/hush-wasm`: WASM bindings (verification-oriented today).
 
@@ -70,7 +70,7 @@ Tier 3: Enterprise readiness (close deals)
 - Rust engine extensibility:
   - `HushEngine` supports runtime `extra_guards` (built-ins first, extras last) and records extras in receipt metadata.
 - Rust CLI (PaC baseline):
-  - Added policy-as-code commands: `hush policy lint|test|eval|simulate|diff|impact|version` (see `docs/src/reference/api/cli.md`).
+  - Added policy-as-code commands: `clawdstrike policy lint|test|eval|simulate|diff|impact|version` (see `docs/src/reference/api/cli.md`).
 - TypeScript adapter foundation:
   - Added `packages/clawdstrike-adapter-core/` (`@clawdstrike/adapter-core`) with `BaseToolInterceptor`, `DefaultOutputSanitizer`, `PolicyEventFactory`, and `InMemoryAuditLogger` + unit tests.
 - Agent framework integrations (P0):
@@ -284,7 +284,7 @@ Primary specs: `docs/plans/policy-as-code/*`
 
 ### C0. CLI surface (Rust + TS)
 - [ ] Decide what’s “source of truth”:
-  - Rust: extend `hush` CLI (`hush policy lint|test|diff|simulate|migrate|version`).
+  - Rust: extend `hush` CLI (`clawdstrike policy lint|test|diff|simulate|migrate|version`).
   - TS: keep `clawdstrike policy ...` for OpenClaw users, but ensure semantics match.
 - [ ] Ensure machine-readable output formats (JSON + optional SARIF for CI).
 
@@ -296,17 +296,17 @@ Primary specs: `docs/plans/policy-as-code/*`
 
 ### C2. Testing framework (YAML test suites)
 - [x] Implement `policy.test.yaml` runner with fixtures, contexts, parameterization. (See `crates/hush-cli/src/policy_test.rs`.)
-- [x] Add coverage model (which guards/rules were exercised). (See `hush policy test --coverage`.)
+- [x] Add coverage model (which guards/rules were exercised). (See `clawdstrike policy test --coverage`.)
 - [ ] Add snapshot testing for decisions + mutation testing (later, likely P1).
 
 ### C3. Diff + migration tooling
-- [x] M0 baseline: `hush policy diff <left> <right> [--resolve] [--json]` (rulesets or files; optional extends resolution).
-- [x] Breaking-change detector (configurable rules; CI `--fail-on-breaking`). (See `hush policy impact --fail-on-breaking`.)
+- [x] M0 baseline: `clawdstrike policy diff <left> <right> [--resolve] [--json]` (rulesets or files; optional extends resolution).
+- [x] Breaking-change detector (configurable rules; CI `--fail-on-breaking`). (See `clawdstrike policy impact --fail-on-breaking`.)
 - [ ] Migration transforms for schema upgrades (and a “dry-run” mode).
 
 ### C4. Simulation / replay
-- [x] Batch simulation mode (`events.jsonl` / audit replay) producing a report (counts, top denials). (See `hush policy simulate`.)
-- [x] Policy A vs Policy B comparison mode. (See `hush policy impact`.)
+- [x] Batch simulation mode (`events.jsonl` / audit replay) producing a report (counts, top denials). (See `clawdstrike policy simulate`.)
+- [x] Policy A vs Policy B comparison mode. (See `clawdstrike policy impact`.)
 - [ ] “Shadow mode” concept captured (likely P1/P2 with `hushd`).
 
 ### C5. OPA/Rego integration (likely P1 unless enterprise asks)

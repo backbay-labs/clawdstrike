@@ -1,6 +1,6 @@
 # Quick Start (Python)
 
-The Python SDK (`hush`) is a **pure-Python** implementation of:
+The Python SDK (`clawdstrike`) is a **pure-Python** implementation of:
 
 - policy loading (YAML)
 - a local policy engine (`PolicyEngine`)
@@ -12,13 +12,13 @@ Prompt-security utilities (jailbreak detection, output sanitization, watermarkin
 ## Installation
 
 ```bash
-pip install hush
+pip install clawdstrike
 ```
 
 ## Basic usage
 
 ```python
-from hush import Policy, PolicyEngine, GuardAction, GuardContext
+from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
 
 policy = Policy.from_yaml_file("policy.yaml")
 engine = PolicyEngine(policy)

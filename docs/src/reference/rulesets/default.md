@@ -23,5 +23,5 @@ Balanced baseline suitable for general development and agent runtimes.
 ## View the exact policy
 
 ```bash
-hush policy show default
+clawdstrike policy show default
 ```

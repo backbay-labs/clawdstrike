@@ -1,6 +1,6 @@
 # Claude Code Integration (conceptual)
 
-Clawdstrike ships a best-effort `hush run` process wrapper (audit log + optional proxy/sandbox). For Claude Code, you still get the strongest guarantees by integrating at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model).
+Clawdstrike ships a best-effort `clawdstrike run` process wrapper (audit log + optional proxy/sandbox). For Claude Code, you still get the strongest guarantees by integrating at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model).
 
 To enforce Clawdstrike decisions, you need to integrate at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model).
 
@@ -9,8 +9,8 @@ To enforce Clawdstrike decisions, you need to integrate at the **tool boundary**
 1. Pick a ruleset baseline:
 
 ```bash
-hush policy list
-hush policy show ai-agent
+clawdstrike policy list
+clawdstrike policy show ai-agent
 ```
 
 2. Write a policy file that extends it (optional):
@@ -24,15 +24,15 @@ extends: clawdstrike:ai-agent
 3. Validate and resolve:
 
 ```bash
-hush policy validate ./policy.yaml
-hush policy validate --resolve ./policy.yaml
+clawdstrike policy validate ./policy.yaml
+clawdstrike policy validate --resolve ./policy.yaml
 ```
 
-4. Use `hush check` to test the policy against representative actions:
+4. Use `clawdstrike check` to test the policy against representative actions:
 
 ```bash
-hush check --action-type file --policy ./policy.yaml ~/.ssh/id_rsa
-hush check --action-type egress --policy ./policy.yaml api.github.com:443
+clawdstrike check --action-type file --policy ./policy.yaml ~/.ssh/id_rsa
+clawdstrike check --action-type egress --policy ./policy.yaml api.github.com:443
 ```
 
 ## Next

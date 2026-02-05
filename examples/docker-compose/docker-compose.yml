@@ -13,8 +13,8 @@ services:
       - ./config.yaml:/etc/hushd/config.yaml:ro
       - hushd-data:/var/lib/hushd
     environment:
-      - HUSH_LOG_LEVEL=info
-      - HUSHD_API_KEY=${HUSHD_API_KEY:-changeme}
+      - CLAWDSTRIKE_LOG_LEVEL=info
+      - CLAWDSTRIKE_API_KEY=${CLAWDSTRIKE_API_KEY:-changeme}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s

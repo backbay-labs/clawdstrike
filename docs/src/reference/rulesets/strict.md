@@ -17,5 +17,5 @@ Deny-by-default policy intended for sensitive environments.
 ## View the exact policy
 
 ```bash
-hush policy show strict
+clawdstrike policy show strict
 ```

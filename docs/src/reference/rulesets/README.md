@@ -19,7 +19,7 @@ In this repository, rulesets are defined as YAML files in `rulesets/` and embedd
 ### CLI
 
 ```bash
-hush check --action-type egress --ruleset default api.github.com:443
+clawdstrike check --action-type egress --ruleset default api.github.com:443
 ```
 
 ### As a base policy
@@ -33,7 +33,7 @@ extends: clawdstrike:default
 ### Inspect
 
 ```bash
-hush policy show strict
+clawdstrike policy show strict
 ```
 
 ## Customize a ruleset

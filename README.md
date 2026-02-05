@@ -78,30 +78,42 @@ Clawdstrike provides runtime security enforcement for agents, designed for devel
 ```bash
 cargo install --path crates/hush-cli
 
-hush policy list
-hush check --action-type file --ruleset strict ~/.ssh/id_rsa
+clawdstrike policy list
+clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 ```
 
-### TypeScript (tool boundary)
-
-TypeScript does not ship a full policy engine; use the Rust CLI/daemon for evaluation. `@clawdstrike/hush-cli-engine` requires `hush` on your PATH (or pass `hushPath`).
+### TypeScript (unified SDK)
 
 ```typescript
-import { createHushCliEngine } from "@clawdstrike/hush-cli-engine";
-import {
-  BaseToolInterceptor,
-  createSecurityContext,
-} from "@clawdstrike/adapter-core";
+import { Clawdstrike } from "@clawdstrike/sdk";
 
-const engine = createHushCliEngine({ policyRef: "default" });
-const interceptor = new BaseToolInterceptor(engine, { blockOnViolation: true });
+// Simple: use built-in defaults
+const cs = Clawdstrike.withDefaults("strict");
+
+// Check an action
+const decision = await cs.checkFile("~/.ssh/id_rsa", "read");
+if (decision.status === "deny") {
+  throw new Error(`Blocked: ${decision.message}`);
+}
+
+// Or use sessions for stateful tracking
+const session = cs.session({ agentId: "my-agent" });
+const result = await session.check("file_read", { path: "~/.ssh/id_rsa" });
+console.log(session.summary()); // { checkCount, violationCount, ... }
+```
+
+### TypeScript (tool boundary with interceptor)
+
+For framework integrations, use the interceptor pattern:
+
+```typescript
+import { Clawdstrike, BaseToolInterceptor, createSecurityContext } from "@clawdstrike/sdk";
+
+const cs = Clawdstrike.withDefaults("strict");
+const interceptor = cs.createInterceptor();
 const ctx = createSecurityContext({ sessionId: "session-123" });
 
-const preflight = await interceptor.beforeExecute(
-  "bash",
-  { cmd: "echo hello" },
-  ctx
-);
+const preflight = await interceptor.beforeExecute("bash", { cmd: "echo hello" }, ctx);
 if (!preflight.proceed) throw new Error("Blocked by policy");
 ```
 

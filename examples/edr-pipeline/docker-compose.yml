@@ -12,7 +12,7 @@ services:
       - ./policy.yaml:/etc/hushd/policy.yaml:ro
       - hushd-data:/var/lib/hushd
     environment:
-      - HUSHD_API_KEY=${HUSHD_API_KEY:-changeme}
+      - CLAWDSTRIKE_API_KEY=${CLAWDSTRIKE_API_KEY:-changeme}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

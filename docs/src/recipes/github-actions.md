@@ -26,7 +26,7 @@ jobs:
         run: cargo install --path crates/hush-cli
 
       - name: Validate policy
-        run: hush policy validate --resolve .hush/policy.yaml
+        run: clawdstrike policy validate --resolve .hush/policy.yaml
 ```
 
 ## Recommended CI baseline

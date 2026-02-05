@@ -17,5 +17,5 @@ Policy tuned for CI pipelines (registries allowed; extra protection for CI secre
 ## View the exact policy
 
 ```bash
-hush policy show cicd
+clawdstrike policy show cicd
 ```

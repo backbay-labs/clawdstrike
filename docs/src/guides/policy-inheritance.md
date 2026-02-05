@@ -13,7 +13,7 @@ Policies can inherit from a base policy using `extends`. The base can be a built
 List them via:
 
 ```bash
-hush policy list
+clawdstrike policy list
 ```
 
 ## Extend a ruleset
@@ -75,6 +75,6 @@ guards:
 ## Inspect the merged result
 
 ```bash
-hush policy validate --resolve ./policy.yaml
-hush policy show --merged ./policy.yaml
+clawdstrike policy validate --resolve ./policy.yaml
+clawdstrike policy show --merged ./policy.yaml
 ```

@@ -9,8 +9,8 @@ auth:
   api_keys:
     - name: "default"
       # Use a strong random key in your shell:
-      #   export HUSHD_API_KEY=$(openssl rand -hex 32)
+      #   export CLAWDSTRIKE_API_KEY=$(openssl rand -hex 32)
       #
       # hushd expands "${VAR}" at startup.
-      key: "${HUSHD_API_KEY}"
+      key: "${CLAWDSTRIKE_API_KEY}"
       scopes: ["check", "read"]

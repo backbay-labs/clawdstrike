@@ -13,13 +13,13 @@ cargo install --path crates/hush-cli
 List the built-ins:
 
 ```bash
-hush policy list
+clawdstrike policy list
 ```
 
 Inspect one:
 
 ```bash
-hush policy show ai-agent
+clawdstrike policy show ai-agent
 ```
 
 ## Step 3: Run checks
@@ -28,20 +28,20 @@ hush policy show ai-agent
 
 ```bash
 # Allowed example (depends on your local paths)
-hush check --action-type file --ruleset default ./README.md
+clawdstrike check --action-type file --ruleset default ./README.md
 
 # Blocked example
-hush check --action-type file --ruleset strict ~/.ssh/id_rsa
+clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 ```
 
 ### Network egress
 
 ```bash
 # Allowed in default ruleset
-hush check --action-type egress --ruleset default api.github.com:443
+clawdstrike check --action-type egress --ruleset default api.github.com:443
 
 # Blocked in strict ruleset (strict defaults to deny)
-hush check --action-type egress --ruleset strict api.github.com:443
+clawdstrike check --action-type egress --ruleset strict api.github.com:443
 ```
 
 ## Step 4: Create a policy file
@@ -64,19 +64,19 @@ guards:
 Validate (and optionally resolve `extends`):
 
 ```bash
-hush policy validate policy.yaml
-hush policy validate --resolve policy.yaml
+clawdstrike policy validate policy.yaml
+clawdstrike policy validate --resolve policy.yaml
 ```
 
 Run checks using the file:
 
 ```bash
-hush check --action-type egress --policy policy.yaml api.stripe.com:443
+clawdstrike check --action-type egress --policy policy.yaml api.stripe.com:443
 ```
 
 ## Notes
 
-- `hush check` evaluates a single action; it does not sandbox or wrap a process.
+- `clawdstrike check` evaluates a single action; it does not sandbox or wrap a process.
 - For integration into an agent runtime, call the Rust API (`clawdstrike::HushEngine`) before performing actions.
 
 ## Next Steps

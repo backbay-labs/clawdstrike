@@ -13,7 +13,7 @@ extends: clawdstrike:default
 To see what you’re inheriting:
 
 ```bash
-hush policy show default
+clawdstrike policy show default
 ```
 
 ## Add an allowed domain (egress)
@@ -115,12 +115,12 @@ Values:
 Validate a policy file:
 
 ```bash
-hush policy validate policy.yaml
+clawdstrike policy validate policy.yaml
 ```
 
 Resolve `extends` and show the merged result:
 
 ```bash
-hush policy validate --resolve policy.yaml
-hush policy show --merged policy.yaml
+clawdstrike policy validate --resolve policy.yaml
+clawdstrike policy show --merged policy.yaml
 ```

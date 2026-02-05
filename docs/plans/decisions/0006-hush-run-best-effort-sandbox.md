@@ -1,4 +1,4 @@
-# 0006 — `hush run`: best-effort process wrapper
+# 0006 — `clawdstrike run`: best-effort process wrapper
 
 ## Status
 Accepted
@@ -8,7 +8,7 @@ Users want a “single command” hardening story. Clawdstrike is not an OS sand
 best-effort and explicit about which enforcement layers are active.
 
 ## Decision
-`hush run --policy <ref|file> -- <cmd> <args…>`:
+`clawdstrike run --policy <ref|file> -- <cmd> <args…>`:
 
 - Generates a `sessionId`
 - Writes a PolicyEvent JSONL log (`hush.events.jsonl` by default)

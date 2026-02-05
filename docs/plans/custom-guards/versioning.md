@@ -456,7 +456,7 @@ hush guard migrate
 # Migration complete. Please review changes and run tests.
 
 # Migrate policy file
-hush policy migrate policy.yaml --target-version 2.0.0
+clawdstrike policy migrate policy.yaml --target-version 2.0.0
 
 # Output:
 # Migrating policy.yaml to schema 2.0.0...

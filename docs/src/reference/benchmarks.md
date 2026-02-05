@@ -39,7 +39,7 @@ npm run bench:json
 
 ```bash
 # After building in release mode
-time (for i in {1..100}; do ./target/release/hush check --action-type file --ruleset strict /tmp/test.txt; done)
+time (for i in {1..100}; do ./target/release/clawdstrike check --action-type file --ruleset strict /tmp/test.txt; done)
 ```
 
 ## Detailed Results

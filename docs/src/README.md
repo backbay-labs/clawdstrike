@@ -4,7 +4,7 @@ Clawdstrike is a Rust library + CLI for **policy-driven security checks** in age
 It evaluates actions (filesystem, network egress, patches, and MCP tool calls) against a YAML policy and returns an allow / warn / block result.
 
 This book is a **contract for what is implemented in this repository** (Clawdstrike `0.1.0`).
-Clawdstrike ships a best-effort process wrapper (`hush run`) for audit logging + proxy-based egress enforcement. It is not a complete OS sandbox; see `docs/plans/` for security notes and roadmap items.
+Clawdstrike ships a best-effort process wrapper (`clawdstrike run`) for audit logging + proxy-based egress enforcement. It is not a complete OS sandbox; see `docs/plans/` for security notes and roadmap items.
 
 ## Quick Start (CLI)
 
@@ -13,13 +13,13 @@ Clawdstrike ships a best-effort process wrapper (`hush run`) for audit logging +
 cargo install --path crates/hush-cli
 
 # List built-in rulesets
-hush policy list
+clawdstrike policy list
 
 # Check a file access
-hush check --action-type file --ruleset strict ~/.ssh/id_rsa
+clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 
 # Check network egress
-hush check --action-type egress --ruleset default api.github.com:443
+clawdstrike check --action-type egress --ruleset default api.github.com:443
 ```
 
 ## Policies
@@ -44,14 +44,14 @@ guards:
 Receipts are created via the Rust API (`HushEngine::create_signed_receipt`) and verified with the CLI:
 
 ```bash
-hush keygen --output hush.key
-hush verify receipt.json --pubkey hush.key.pub
+clawdstrike keygen --output hush.key
+clawdstrike verify receipt.json --pubkey hush.key.pub
 ```
 
 To keep the Ed25519 seed off disk, you can seal it into TPM2 (best-effort, requires `tpm2-tools`):
 
 ```bash
-hush keygen --tpm-seal --out hush.keyblob
+clawdstrike keygen --tpm-seal --out hush.keyblob
 ```
 
 ## Next Steps

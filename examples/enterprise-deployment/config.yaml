@@ -10,15 +10,15 @@ auth:
   enabled: true
   api_keys:
     - name: "default"
-      key: "${HUSHD_API_KEY}"
+      key: "${CLAWDSTRIKE_API_KEY}"
       scopes: ["check", "read"]
     - name: "admin"
-      key: "${HUSHD_ADMIN_KEY}"
+      key: "${CLAWDSTRIKE_ADMIN_KEY}"
       scopes: ["*"]
 
 # Verify incoming signed policy bundles against this allowlist of public keys.
 policy_bundle_trusted_pubkeys:
-  - "${HUSHD_POLICY_BUNDLE_PUBKEY}"
+  - "${CLAWDSTRIKE_POLICY_BUNDLE_PUBKEY}"
 
 # Optional: also forward audit events to a JSONL file.
 audit_forward:
