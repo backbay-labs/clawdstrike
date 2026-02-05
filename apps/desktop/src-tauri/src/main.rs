@@ -5,8 +5,13 @@
 mod commands;
 mod state;
 
+#[cfg(not(test))]
 use state::AppState;
 
+#[cfg(test)]
+fn main() {}
+
+#[cfg(not(test))]
 fn main() {
     let app_state = AppState::new();
 

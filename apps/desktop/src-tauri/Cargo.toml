@@ -39,9 +39,8 @@ dirs = "5"
 # Logging
 tracing = "0.1"
 
-# Local crate integration (optional - uncomment when ready)
-# hush-core = { path = "../../crates/hush-core" }
-# clawdstrike = { path = "../../crates/clawdstrike" }
+# Local crate integration
+hush-core = { path = "../../../crates/hush-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # macOS-specific dependencies if needed
