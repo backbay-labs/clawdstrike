@@ -12,6 +12,8 @@ pub struct ReceiptVerification {
     pub merkle_valid: Option<bool>,
     pub timestamp_valid: bool,
     pub errors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 const MAX_FUTURE_SKEW_SECS: i64 = 5 * 60;
@@ -257,6 +259,7 @@ fn verify_receipt_value(
                 merkle_valid: None,
                 timestamp_valid: false,
                 errors: vec![e],
+                warnings: Vec::new(),
             };
         }
     };
@@ -278,6 +281,7 @@ fn verify_receipt_value(
         merkle_valid,
         timestamp_valid,
         errors,
+        warnings: Vec::new(),
     }
 }
 
@@ -297,9 +301,12 @@ async fn try_fetch_daemon_public_key(
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch daemon policy bundle: {e}"))?;
+        .map_err(|e| format!("Failed to fetch daemon public key: {e}"))?;
     if !resp.status().is_success() {
-        return Ok(None);
+        return Err(format!(
+            "Failed to fetch daemon public key: policy bundle request failed with {}",
+            resp.status()
+        ));
     }
 
     let value: serde_json::Value = resp
@@ -309,11 +316,15 @@ async fn try_fetch_daemon_public_key(
 
     let pk = match value.get("public_key").and_then(|v| v.as_str()) {
         Some(v) => v,
-        None => return Ok(None),
+        None => {
+            return Err(
+                "Failed to fetch daemon public key: policy bundle missing public_key".to_string(),
+            );
+        }
     };
 
     let pk = hush_core::PublicKey::from_hex(pk)
-        .map_err(|e| format!("Invalid daemon public_key: {e}"))?;
+        .map_err(|e| format!("Failed to fetch daemon public key: invalid daemon public_key: {e}"))?;
     Ok(Some(pk))
 }
 
@@ -323,12 +334,22 @@ pub async fn verify_receipt(
     receipt: serde_json::Value,
     state: State<'_, AppState>,
 ) -> Result<ReceiptVerification, String> {
-    let daemon_key = match try_fetch_daemon_public_key(state.inner()).await {
-        Ok(v) => v,
-        Err(_) => None,
+    let (daemon_key, daemon_key_err) = match try_fetch_daemon_public_key(state.inner()).await {
+        Ok(v) => (v, None),
+        Err(e) => (None, Some(e)),
     };
 
-    Ok(verify_receipt_value(receipt, daemon_key))
+    let mut out = verify_receipt_value(receipt, daemon_key);
+    if let Some(e) = daemon_key_err {
+        if out.valid {
+            out.warnings
+                .push(format!("{e}; falling back to embedded public_key"));
+        } else {
+            out.errors.push(e);
+        }
+    }
+
+    Ok(out)
 }
 
 #[cfg(test)]
