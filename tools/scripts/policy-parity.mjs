@@ -182,10 +182,14 @@ function spawnCapture(command, args, opts) {
 }
 
 function pickComparableDecision(d) {
+  const status = typeof d?.status === 'string' ? d.status.toLowerCase() : null;
+  const allowedFromStatus = status && ['allow', 'allowed', 'pass', 'ok'].includes(status);
+  const deniedFromStatus = status && ['deny', 'denied', 'block', 'blocked', 'fail', 'error'].includes(status);
+  const warnFromStatus = status && ['warn', 'warning'].includes(status);
   return {
-    allowed: Boolean(d.allowed),
-    denied: Boolean(d.denied),
-    warn: Boolean(d.warn),
+    allowed: typeof d?.allowed === 'boolean' ? d.allowed : Boolean(allowedFromStatus),
+    denied: typeof d?.denied === 'boolean' ? d.denied : Boolean(deniedFromStatus),
+    warn: typeof d?.warn === 'boolean' ? d.warn : Boolean(warnFromStatus),
     guard: d.guard ?? null,
     severity: d.severity ?? null,
   };
