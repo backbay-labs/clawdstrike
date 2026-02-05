@@ -90,6 +90,8 @@ pub struct WorkflowDryRunReport {
     pub context: serde_json::Value,
     pub actions: Vec<WorkflowDryRunAction>,
     pub errors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +101,8 @@ pub struct WorkflowDryRunAction {
     pub ok: bool,
     pub preview: serde_json::Value,
     pub errors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 // In-memory workflow storage (persisted to file)
@@ -141,8 +145,15 @@ fn save_workflows_to_file(workflows: &HashMap<String, Workflow>) -> Result<(), S
     std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {}", e))
 }
 
-fn render_template(template: &str, data: &serde_json::Value) -> String {
+#[derive(Debug, Default)]
+struct TemplateDiagnostics {
+    missing_keys: Vec<String>,
+    errors: Vec<String>,
+}
+
+fn render_template(template: &str, data: &serde_json::Value) -> (String, TemplateDiagnostics) {
     // Minimal handlebars-ish replacement: {{a.b.c}}
+    let mut diag = TemplateDiagnostics::default();
     let mut out = String::with_capacity(template.len());
     let chars: Vec<char> = template.chars().collect();
     let mut i = 0usize;
@@ -154,6 +165,7 @@ fn render_template(template: &str, data: &serde_json::Value) -> String {
             }
             if j + 1 >= chars.len() {
                 // Unclosed, append remainder.
+                diag.errors.push("unclosed {{...}} placeholder".to_string());
                 out.extend(chars[i..].iter());
                 break;
             }
@@ -163,8 +175,12 @@ fn render_template(template: &str, data: &serde_json::Value) -> String {
                 .collect::<String>()
                 .trim()
                 .to_string();
-            if let Some(val) = get_by_path(data, &key) {
+            if key.is_empty() {
+                diag.errors.push("empty {{...}} placeholder".to_string());
+            } else if let Some(val) = get_by_path(data, &key) {
                 out.push_str(&val);
+            } else {
+                diag.missing_keys.push(key);
             }
             i = j + 2;
             continue;
@@ -173,7 +189,13 @@ fn render_template(template: &str, data: &serde_json::Value) -> String {
         out.push(chars[i]);
         i += 1;
     }
-    out
+
+    diag.missing_keys.sort();
+    diag.missing_keys.dedup();
+    diag.errors.sort();
+    diag.errors.dedup();
+
+    (out, diag)
 }
 
 fn get_by_path(root: &serde_json::Value, path: &str) -> Option<String> {
@@ -375,12 +397,14 @@ fn validate_http_method(method: &str) -> bool {
 fn simulate_actions(
     actions: &[WorkflowAction],
     context: &serde_json::Value,
-) -> (Vec<WorkflowDryRunAction>, Vec<String>) {
+) -> (Vec<WorkflowDryRunAction>, Vec<String>, Vec<String>) {
     let mut out = Vec::new();
     let mut errors = Vec::new();
+    let mut warnings = Vec::new();
 
     for (idx, action) in actions.iter().enumerate() {
         let mut action_errors: Vec<String> = Vec::new();
+        let mut action_warnings: Vec<String> = Vec::new();
         let preview = match action {
             WorkflowAction::SlackWebhook {
                 url,
@@ -393,7 +417,15 @@ fn simulate_actions(
                 if channel.trim().is_empty() {
                     action_errors.push(format!("actions[{idx}].channel is empty"));
                 }
-                let text = render_template(template, context);
+                let (text, diag) = render_template(template, context);
+                for k in diag.missing_keys {
+                    action_warnings.push(format!(
+                        "actions[{idx}].template references missing key {k:?}"
+                    ));
+                }
+                for e in diag.errors {
+                    action_errors.push(format!("actions[{idx}].template: {e}"));
+                }
                 serde_json::json!({
                     "kind": "slack_webhook",
                     "url": url,
@@ -435,7 +467,15 @@ fn simulate_actions(
                 if subject.trim().is_empty() {
                     action_errors.push(format!("actions[{idx}].subject is empty"));
                 }
-                let body = render_template(template, context);
+                let (body, diag) = render_template(template, context);
+                for k in diag.missing_keys {
+                    action_warnings.push(format!(
+                        "actions[{idx}].template references missing key {k:?}"
+                    ));
+                }
+                for e in diag.errors {
+                    action_errors.push(format!("actions[{idx}].template: {e}"));
+                }
                 serde_json::json!({
                     "kind": "email",
                     "to": to,
@@ -468,7 +508,13 @@ fn simulate_actions(
                         break;
                     }
                 }
-                let rendered_body = render_template(body, context);
+                let (rendered_body, diag) = render_template(body, context);
+                for k in diag.missing_keys {
+                    action_warnings.push(format!("actions[{idx}].body references missing key {k:?}"));
+                }
+                for e in diag.errors {
+                    action_errors.push(format!("actions[{idx}].body: {e}"));
+                }
                 serde_json::json!({
                     "kind": "webhook",
                     "url": url,
@@ -481,7 +527,15 @@ fn simulate_actions(
                 if path.trim().is_empty() {
                     action_errors.push(format!("actions[{idx}].path is empty"));
                 }
-                let line = render_template(format, context);
+                let (line, diag) = render_template(format, context);
+                for k in diag.missing_keys {
+                    action_warnings.push(format!(
+                        "actions[{idx}].format references missing key {k:?}"
+                    ));
+                }
+                for e in diag.errors {
+                    action_errors.push(format!("actions[{idx}].format: {e}"));
+                }
                 serde_json::json!({
                     "kind": "log",
                     "path": path,
@@ -493,6 +547,9 @@ fn simulate_actions(
         let ok = action_errors.is_empty();
         if !ok {
             errors.extend(action_errors.clone());
+        }
+        if !action_warnings.is_empty() {
+            warnings.extend(action_warnings.clone());
         }
 
         out.push(WorkflowDryRunAction {
@@ -508,10 +565,11 @@ fn simulate_actions(
             ok,
             preview,
             errors: action_errors,
+            warnings: action_warnings,
         });
     }
 
-    (out, errors)
+    (out, errors, warnings)
 }
 
 /// List all workflows
@@ -553,22 +611,36 @@ pub async fn test_workflow(
     let context = build_context(event);
 
     let mut errors = Vec::new();
+    let mut warnings = Vec::new();
     errors.extend(validate_trigger(&workflow.trigger));
 
     if workflow.actions.is_empty() {
         errors.push("Workflow has no actions configured".to_string());
     }
 
-    let (action_reports, action_errors) = simulate_actions(&workflow.actions, &context);
+    let (action_reports, action_errors, action_warnings) =
+        simulate_actions(&workflow.actions, &context);
     errors.extend(action_errors);
+    warnings.extend(action_warnings);
 
     let success = errors.is_empty();
     let message = if success {
-        Some(format!(
-            "Dry run OK: workflow '{}' with {} action(s)",
-            workflow.name,
-            workflow.actions.len()
-        ))
+        if warnings.is_empty() {
+            Some(format!(
+                "Dry run OK: workflow '{}' with {} action(s)",
+                workflow.name,
+                workflow.actions.len()
+            ))
+        } else {
+            let max = 5usize;
+            let summary: Vec<String> = warnings.iter().take(max).cloned().collect();
+            Some(format!(
+                "Dry run OK with {} warning(s): {}{}",
+                warnings.len(),
+                summary.join("; "),
+                if warnings.len() > max { "; ..." } else { "" }
+            ))
+        }
     } else {
         let max = 5usize;
         let summary: Vec<String> = errors.iter().take(max).cloned().collect();
@@ -589,6 +661,7 @@ pub async fn test_workflow(
             context,
             actions: action_reports,
             errors,
+            warnings,
         }),
     })
 }
@@ -600,8 +673,10 @@ mod tests {
     #[test]
     fn render_template_replaces_nested_paths() {
         let data = serde_json::json!({ "a": { "b": "c" }, "n": 1 });
-        let out = render_template("x={{a.b}} n={{n}} missing={{nope}}", &data);
+        let (out, diag) = render_template("x={{a.b}} n={{n}} missing={{nope}}", &data);
         assert_eq!(out, "x=c n=1 missing=");
+        assert_eq!(diag.missing_keys, vec!["nope"]);
+        assert!(diag.errors.is_empty());
     }
 
     #[test]
@@ -630,8 +705,9 @@ mod tests {
             },
         ];
 
-        let (_reports, errors) = simulate_actions(&actions, &ctx);
+        let (_reports, errors, warnings) = simulate_actions(&actions, &ctx);
         assert!(!errors.is_empty());
+        assert!(warnings.is_empty());
         assert!(errors.iter().any(|e| e.contains("url")));
         assert!(errors.iter().any(|e| e.contains("method")));
     }
