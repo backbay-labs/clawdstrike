@@ -28,6 +28,26 @@ fn default_json_object() -> serde_json::Value {
     serde_json::Value::Object(serde_json::Map::new())
 }
 
+/// Options controlling how strictly a policy is validated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PolicyValidationOptions {
+    /// Whether placeholders like `${VAR}` must reference an existing environment variable.
+    ///
+    /// When `false`, placeholder syntax is still validated, but missing env vars are allowed.
+    pub require_env: bool,
+}
+
+impl PolicyValidationOptions {
+    pub const STRICT: Self = Self { require_env: true };
+    pub const LAX: Self = Self { require_env: false };
+}
+
+impl Default for PolicyValidationOptions {
+    fn default() -> Self {
+        Self::STRICT
+    }
+}
+
 /// Policy-driven custom guard configuration (`policy.custom_guards[]`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -442,9 +462,14 @@ impl Policy {
     ///
     /// This is a security boundary: invalid regex/glob patterns are treated as errors, not silently ignored.
     pub fn validate(&self) -> Result<()> {
+        self.validate_with_options(PolicyValidationOptions::default())
+    }
+
+    pub fn validate_with_options(&self, options: PolicyValidationOptions) -> Result<()> {
         validate_policy_version(&self.version)?;
 
         let mut errors: Vec<PolicyFieldError> = Vec::new();
+        let require_env = options.require_env;
 
         if !self.custom_guards.is_empty() {
             let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -472,7 +497,7 @@ impl Policy {
                     &mut errors,
                     &format!("custom_guards[{}].config", idx),
                     &cg.config,
-                    cg.enabled,
+                    cg.enabled && require_env,
                 );
             }
         }
@@ -484,7 +509,7 @@ impl Policy {
                     &mut errors,
                     "guards.forbidden_path.patterns",
                     patterns,
-                    cfg.enabled,
+                    cfg.enabled && require_env,
                 );
             }
             validate_globs(
@@ -496,7 +521,7 @@ impl Policy {
                 &mut errors,
                 "guards.forbidden_path.exceptions",
                 &cfg.exceptions,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
             validate_globs(
                 &mut errors,
@@ -507,7 +532,7 @@ impl Policy {
                 &mut errors,
                 "guards.forbidden_path.additional_patterns",
                 &cfg.additional_patterns,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
             validate_globs(
                 &mut errors,
@@ -518,7 +543,7 @@ impl Policy {
                 &mut errors,
                 "guards.forbidden_path.remove_patterns",
                 &cfg.remove_patterns,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
         }
 
@@ -550,37 +575,37 @@ impl Policy {
                 &mut errors,
                 "guards.egress_allowlist.allow",
                 &cfg.allow,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.block",
                 &cfg.block,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.additional_allow",
                 &cfg.additional_allow,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.additional_block",
                 &cfg.additional_block,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.remove_allow",
                 &cfg.remove_allow,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
             validate_placeholders_in_strings(
                 &mut errors,
                 "guards.egress_allowlist.remove_block",
                 &cfg.remove_block,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
         }
 
@@ -590,13 +615,13 @@ impl Policy {
                     &mut errors,
                     &format!("guards.secret_leak.patterns[{}].name", idx),
                     &p.name,
-                    cfg.enabled,
+                    cfg.enabled && require_env,
                 );
                 validate_placeholders_in_string(
                     &mut errors,
                     &format!("guards.secret_leak.patterns[{}].pattern", idx),
                     &p.pattern,
-                    cfg.enabled,
+                    cfg.enabled && require_env,
                 );
 
                 if let Err(e) = Regex::new(&p.pattern) {
@@ -615,7 +640,7 @@ impl Policy {
                 &mut errors,
                 "guards.secret_leak.skip_paths",
                 &cfg.skip_paths,
-                cfg.enabled,
+                cfg.enabled && require_env,
             );
         }
 
@@ -631,7 +656,7 @@ impl Policy {
                     &mut errors,
                     &format!("guards.patch_integrity.forbidden_patterns[{}]", idx),
                     pattern,
-                    cfg.enabled,
+                    cfg.enabled && require_env,
                 );
             }
         }
@@ -652,7 +677,7 @@ impl Policy {
         }
 
         if !self.guards.custom.is_empty() {
-            validate_custom_guards(&mut errors, &self.guards.custom);
+            validate_custom_guards(&mut errors, &self.guards.custom, require_env);
         }
 
         if errors.is_empty() {
@@ -786,6 +811,7 @@ impl Policy {
             location,
             resolver,
             &mut std::collections::HashSet::new(),
+            PolicyValidationOptions::default(),
         )
     }
 
@@ -794,6 +820,7 @@ impl Policy {
         location: PolicyLocation,
         resolver: &impl PolicyResolver,
         visited: &mut std::collections::HashSet<String>,
+        validation: PolicyValidationOptions,
     ) -> Result<Self> {
         let child = Policy::from_yaml_unvalidated(yaml)?;
 
@@ -814,15 +841,36 @@ impl Policy {
                 resolved.location,
                 resolver,
                 visited,
+                validation,
             )?;
 
             let merged = base.merge(&child);
-            merged.validate()?;
+            merged.validate_with_options(validation)?;
             Ok(merged)
         } else {
-            child.validate()?;
+            child.validate_with_options(validation)?;
             Ok(child)
         }
+    }
+
+    /// Load from YAML string with extends resolution using a custom resolver and validation options.
+    pub fn from_yaml_with_extends_resolver_with_validation_options(
+        yaml: &str,
+        base_path: Option<&Path>,
+        resolver: &impl PolicyResolver,
+        validation: PolicyValidationOptions,
+    ) -> Result<Self> {
+        let location = base_path
+            .map(|p| PolicyLocation::File(p.to_path_buf()))
+            .unwrap_or(PolicyLocation::None);
+
+        Self::from_yaml_with_extends_internal_resolver(
+            yaml,
+            location,
+            resolver,
+            &mut std::collections::HashSet::new(),
+            validation,
+        )
     }
 
     /// Load from YAML file with extends resolution
@@ -1070,7 +1118,11 @@ fn validate_placeholders_in_json(
     }
 }
 
-fn validate_custom_guards(errors: &mut Vec<PolicyFieldError>, guards: &[CustomGuardSpec]) {
+fn validate_custom_guards(
+    errors: &mut Vec<PolicyFieldError>,
+    guards: &[CustomGuardSpec],
+    require_env: bool,
+) {
     for (idx, spec) in guards.iter().enumerate() {
         let base = format!("guards.custom[{}]", idx);
 
@@ -1078,20 +1130,30 @@ fn validate_custom_guards(errors: &mut Vec<PolicyFieldError>, guards: &[CustomGu
             errors,
             &format!("{base}.package"),
             &spec.package,
-            spec.enabled,
+            spec.enabled && require_env,
         );
         if let Some(v) = spec.version.as_ref() {
-            validate_placeholders_in_string(errors, &format!("{base}.version"), v, spec.enabled);
+            validate_placeholders_in_string(
+                errors,
+                &format!("{base}.version"),
+                v,
+                spec.enabled && require_env,
+            );
         }
         if let Some(r) = spec.registry.as_ref() {
-            validate_placeholders_in_string(errors, &format!("{base}.registry"), r, spec.enabled);
+            validate_placeholders_in_string(
+                errors,
+                &format!("{base}.registry"),
+                r,
+                spec.enabled && require_env,
+            );
         }
 
         validate_placeholders_in_json(
             errors,
             &format!("{base}.config"),
             &spec.config,
-            spec.enabled,
+            spec.enabled && require_env,
         );
 
         if let Some(async_cfg) = spec.async_config.as_ref() {
