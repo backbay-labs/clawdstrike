@@ -39,7 +39,7 @@ Tier 3: Enterprise readiness (close deals)
 ### Rust (workspace)
 - `crates/clawdstrike`: guard suite + `HushEngine` policy enforcement at the tool boundary.
 - `crates/hush-core`: cryptographic primitives + receipts (Ed25519, Merkle, canonicalization).
-- `crates/hush-cli`: `hush` CLI (`clawdstrike check`, `clawdstrike policy show|validate|list`, receipts, merkle).
+- `crates/hush-cli`: `clawdstrike` CLI (`clawdstrike check`, `clawdstrike policy show|validate|list`, receipts, merkle).
 - `crates/hushd`: WIP HTTP daemon for centralized checks.
 - `crates/hush-wasm`: WASM bindings (verification-oriented today).
 
@@ -284,7 +284,7 @@ Primary specs: `docs/plans/policy-as-code/*`
 
 ### C0. CLI surface (Rust + TS)
 - [ ] Decide what’s “source of truth”:
-  - Rust: extend `hush` CLI (`clawdstrike policy lint|test|diff|simulate|migrate|version`).
+  - Rust: extend `clawdstrike` CLI (`clawdstrike policy lint|test|diff|simulate|migrate|version`).
   - TS: keep `clawdstrike policy ...` for OpenClaw users, but ensure semantics match.
 - [ ] Ensure machine-readable output formats (JSON + optional SARIF for CI).
 

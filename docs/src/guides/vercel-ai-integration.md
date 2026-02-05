@@ -8,7 +8,7 @@
 
 This package does **not** ship a policy engine. You provide one:
 
-- `@clawdstrike/hush-cli-engine` (shells out to the `hush` CLI), or
+- `@clawdstrike/hush-cli-engine` (shells out to the `clawdstrike` CLI), or
 - your own implementation of `PolicyEngineLike`.
 
 ## Installation
@@ -112,7 +112,7 @@ Notes:
 
 Guard tool calls for `ai/react` streaming chats.
 
-Note: `@clawdstrike/hush-cli-engine` shells out to the `hush` binary, so it is **server-only**. In the browser, use an engine that calls a server endpoint (or a `hushd` instance).
+Note: `@clawdstrike/hush-cli-engine` shells out to the `clawdstrike` binary, so it is **server-only**. In the browser, use an engine that calls a server endpoint (or a `clawdstriked` instance).
 
 ```tsx
 'use client';

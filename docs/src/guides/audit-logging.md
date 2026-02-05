@@ -4,7 +4,7 @@ Clawdstrike emits logs via `tracing`.
 
 ## CLI logging
 
-The `hush` CLI sets log level via `-v`:
+The `clawdstrike` CLI sets log level via `-v`:
 
 - no `-v`: warnings only
 - `-v`: info
@@ -14,7 +14,7 @@ The `hush` CLI sets log level via `-v`:
 Example:
 
 ```bash
-hush -vv check --action-type file --ruleset default ./README.md
+clawdstrike -vv check --action-type file --ruleset default ./README.md
 ```
 
 ## Policy-controlled verbosity
@@ -28,9 +28,9 @@ settings:
 
 ## Persistent audit trails (daemon)
 
-For a persistent audit ledger, use `hushd` (optional/WIP). It stores audit events in an SQLite database.
+For a persistent audit ledger, use `clawdstriked` (optional/WIP). It stores audit events in an SQLite database.
 
 ```bash
 cargo install --path crates/hushd
-hushd start
+clawdstriked start
 ```

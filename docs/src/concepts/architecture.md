@@ -48,9 +48,9 @@ The intended integration is at the **tool boundary** (your agent runtime calls C
 | `clawdstrike` | Policy type, built-in guards, `HushEngine`, jailbreak detection, output sanitization |
 | `hush-core` | Hashing/signing, Merkle trees, `SignedReceipt`, canonical JSON |
 | `hush-proxy` | DNS/SNI parsing utilities and domain matching |
-| `hush-cli` | `hush` CLI for ad-hoc checks and verification |
+| `hush-cli` | `clawdstrike` CLI for ad-hoc checks and verification |
 | `hush-wasm` | WebAssembly bindings for browser/Node.js |
-| `hushd` | HTTP daemon for centralized checks (WIP) |
+| `hushd` | `clawdstriked` HTTP daemon for centralized checks (WIP) |
 
 ### TypeScript Packages
 
@@ -67,7 +67,7 @@ The intended integration is at the **tool boundary** (your agent runtime calls C
 
 | Package | Description |
 |---------|-------------|
-| `hush` | Pure Python SDK (repo: `packages/hush-py`) |
+| `clawdstrike` | Pure Python SDK (repo: `packages/hush-py`) |
 
 ## Data flow (typical integration)
 

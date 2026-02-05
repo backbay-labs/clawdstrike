@@ -1,36 +1,32 @@
 # ADR 0001: CLI command surface (`hush` vs `clawdstrike`)
 
-Status: **ACCEPTED**  
+Status: **SUPERSEDED**
 Date: 2026-02-03
+Superseded: 2026-02-04 (API redesign unified on `clawdstrike` as the primary CLI name)
 
 ## Context
 
-The repo currently exposes two user-visible CLIs:
+The repo historically exposed two user-visible CLIs:
 
-- Rust: `hush` (in `crates/hush-cli`) with subcommands like `clawdstrike check` and `clawdstrike policy ...`.
-- TypeScript/OpenClaw: `clawdstrike` (in `packages/clawdstrike-openclaw`) with `clawdstrike policy ...` and `clawdstrike audit ...`.
+- Rust: `hush` (in `crates/hush-cli`)
+- TypeScript/OpenClaw: `clawdstrike` (in `packages/clawdstrike-openclaw`)
 
-The docs/plans currently mix these names, which blocks parallel work (people can’t tell which commands are canonical vs implementation-specific).
+## Original Decision (now superseded)
 
-## Decision
+For M0, the original decision standardized on `hush` as the canonical CLI name, with `clawdstrike` as a compatibility wrapper.
 
-For M0, standardize documentation conventions without forcing an immediate runtime rename:
+## Current State
 
-1. **Canonical CLI name for this repo’s docs/plans:** use **`hush`** for the “product CLI” and for any commands intended to exist across runtimes long-term (policy-as-code, receipts, audit).
-2. **OpenClaw/Node CLI stays `clawdstrike` for now:** use **`clawdstrike`** only when the workflow is explicitly OpenClaw/TypeScript-specific (e.g., OpenClaw plugin setup, `@clawdstrike/openclaw` examples).
-3. **When both exist, show both with labels:**
-   - `hush ...` *(Rust / canonical)*  
-   - `clawdstrike ...` *(TS/OpenClaw / compatibility surface)*
-4. **Do not invent third names** (e.g. `claw`, `hushclaw`) for end-user commands in docs.
-5. **Ship an alias/wrapper in this direction:** `clawdstrike` → `hush` (same verbs/flags).
+As of the SDK/API redesign (PR #30, #32), the project has unified on `clawdstrike` as the primary CLI name:
 
-## Consequences
+- **Primary CLI binary:** `clawdstrike` (commands: `clawdstrike check`, `clawdstrike policy`, etc.)
+- **Legacy alias:** `hush` (still available for backwards compatibility)
+- **Daemon:** `clawdstriked` (previously `hushd`)
+- **Environment variables:** `CLAWDSTRIKE_*` prefix (previously `HUSHD_*`)
 
-- Docs become unambiguous while Rust and TS worktrees evolve independently.
-- CLI work can implement the wrapper/alias without rewriting the plan docs again.
+The crate names remain unchanged (`hush-cli`, `hush-core`, `hushd`) as internal implementation details.
 
-## Confirmed by Connor (2026-02-03)
+## See Also
 
-- Canonical CLI name: `hush`
-- Compatibility wrapper: `clawdstrike` forwards to `hush`
-- `clawdstrike` is documented as OpenClaw/TS-specific unless explicitly stated otherwise
+- PR #30: SDK/API Redesign - Hard cutover
+- PR #32: Documentation updates for new naming

@@ -3,7 +3,7 @@
 TypeScript support in this repo is split into a few packages. The key distinction:
 
 - `@clawdstrike/sdk` contains **crypto/receipts/guards/prompt-security utilities**.
-- Policy **evaluation** (the canonical Rust policy schema) is done via Rust (`hush` / `hushd`) and can be bridged into Node with `@clawdstrike/hush-cli-engine`.
+- Policy **evaluation** (the canonical Rust policy schema) is done via Rust (`clawdstrike` CLI / `clawdstriked` daemon) and can be bridged into Node with `@clawdstrike/hush-cli-engine`.
 
 ## Packages
 
@@ -52,7 +52,7 @@ Framework-agnostic primitives for enforcement at the tool boundary:
 
 ### `@clawdstrike/hush-cli-engine`
 
-A bridge that implements `PolicyEngineLike` by spawning the `hush` CLI:
+A bridge that implements `PolicyEngineLike` by spawning the `clawdstrike` CLI:
 
 ```ts
 import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';

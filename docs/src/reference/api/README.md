@@ -1,6 +1,6 @@
 # API Reference
 
-Clawdstrike’s stable surface area today is the Rust crates and the `hush` CLI.
+Clawdstrike's stable surface area today is the Rust crates and the `clawdstrike` CLI.
 
 ## Rust crates
 
@@ -10,7 +10,7 @@ Clawdstrike’s stable surface area today is the Rust crates and the `hush` CLI.
 
 ## CLI
 
-The `hush` binary is provided by the `hush-cli` crate.
+The `clawdstrike` binary is provided by the `hush-cli` crate.
 
 ## TypeScript / Python
 
