@@ -2150,7 +2150,9 @@ mod remote_extends_contract {
     }
 
     fn resolver_for_localhost() -> RemotePolicyResolver {
-        let cfg = RemoteExtendsConfig::new(["127.0.0.1".to_string()]);
+        let cfg = RemoteExtendsConfig::new(["127.0.0.1".to_string()])
+            .with_https_only(false)
+            .with_allow_private_ips(true);
         RemotePolicyResolver::new(cfg).expect("resolver")
     }
 

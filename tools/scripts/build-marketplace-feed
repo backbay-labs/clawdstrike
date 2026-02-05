@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import pathlib
+import subprocess
+import sys
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Generate a signed marketplace feed from signed bundle JSONs."
+    )
+    parser.add_argument(
+        "--bundles-dir",
+        default="apps/desktop/src-tauri/resources/marketplace/bundles",
+        help="Directory containing *.signed_bundle.json files",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="apps/desktop/src-tauri/resources/marketplace/feed.signed.json",
+        help="Output path for feed.signed.json",
+    )
+    parser.add_argument(
+        "--feed-id",
+        default="clawdstrike-official",
+        help="Feed id (default: clawdstrike-official)",
+    )
+    parser.add_argument("--seq", default="1", help="Monotonic sequence number (default: 1)")
+    parser.add_argument(
+        "--published-at",
+        help="Override published_at timestamp (ISO-8601/RFC3339). Defaults to now.",
+    )
+    parser.add_argument(
+        "--bundle-uri-prefix",
+        default="builtin://bundles/",
+        help="Prefix used for entry.bundle_uri (default: builtin://bundles/)",
+    )
+    args = parser.parse_args(argv)
+
+    bundles_dir = pathlib.Path(args.bundles_dir)
+    if not bundles_dir.exists():
+        print(f"bundles dir not found: {bundles_dir}", file=sys.stderr)
+        return 2
+
+    cmd = [
+        "cargo",
+        "run",
+        "-p",
+        "clawdstrike",
+        "--bin",
+        "marketplace_feed_gen",
+        "--",
+        "--bundles-dir",
+        str(bundles_dir),
+        "--output",
+        str(pathlib.Path(args.output)),
+        "--feed-id",
+        args.feed_id,
+        "--seq",
+        args.seq,
+        "--bundle-uri-prefix",
+        args.bundle_uri_prefix,
+    ]
+    if args.published_at:
+        cmd.extend(["--published-at", args.published_at])
+
+    proc = subprocess.run(cmd, check=False)
+    return proc.returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
+

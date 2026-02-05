@@ -7,11 +7,24 @@ Reference for the Rust policy type `clawdstrike::Policy`.
 - `version` (string): policy version (defaults to `1.1.0`)
 - `name` (string)
 - `description` (string)
-- `extends` (string, optional): a built-in ruleset id (e.g. `clawdstrike:default`), a file path, or a pinned remote reference (e.g. `https://…/policy.yaml#sha256=…`)
+- `extends` (string, optional): a built-in ruleset id (e.g. `clawdstrike:default`), a file path, or a pinned remote reference (e.g. `https://…/policy.yaml#sha256=…` / `git+…#sha256=…`) when enabled
 - `merge_strategy` (`replace` | `merge` | `deep_merge`)
 - `custom_guards` (list, optional): policy-driven custom guards (resolved via a `CustomGuardRegistry`; fail-closed if required but unavailable)
 - `guards` (object): guard configurations (see below)
 - `settings` (object): engine settings (see below)
+
+## Remote `extends` (security)
+
+Remote `extends` is **disabled by default** and must be explicitly enabled via an **allowlist**:
+
+- `hushd`: configure `remote_extends.allowed_hosts`
+- `hush`: pass `--remote-extends-allow-host` (repeatable)
+
+Remote references must be **integrity pinned** with `#sha256=<64-hex>`. By default, the resolver is hardened:
+
+- HTTPS-only (HTTP requires explicit opt-in)
+- blocks private/loopback/link-local IP resolution by default
+- limits redirects and re-validates scheme/host allowlists on each hop
 
 ## Full schema (example)
 

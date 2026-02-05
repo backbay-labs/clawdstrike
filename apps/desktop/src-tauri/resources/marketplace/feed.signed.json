@@ -1,0 +1,33 @@
+{
+  "feed": {
+    "version": "clawdstrike-marketplace-feed-v1",
+    "feed_id": "clawdstrike-official",
+    "published_at": "2026-02-05T06:18:06.869708+00:00",
+    "seq": 1,
+    "entries": [
+      {
+        "entry_id": "default",
+        "bundle_uri": "builtin://bundles/default.signed_bundle.json",
+        "title": "Default",
+        "description": "Default security rules for AI agent execution",
+        "author": "Clawdstrike"
+      },
+      {
+        "entry_id": "permissive",
+        "bundle_uri": "builtin://bundles/permissive.signed_bundle.json",
+        "title": "Permissive",
+        "description": "Permissive rules for development (use with caution)",
+        "author": "Clawdstrike"
+      },
+      {
+        "entry_id": "strict",
+        "bundle_uri": "builtin://bundles/strict.signed_bundle.json",
+        "title": "Strict",
+        "description": "Strict security rules with minimal permissions",
+        "author": "Clawdstrike"
+      }
+    ]
+  },
+  "signature": "947e7c4781146f02c06f31136b7ba671cdd7f33e7f070831a95fb40e95dc9f6e484b1821e206f50fba90c68c0ff0169ad9fdb48c1d627f8e096345ccfd46fe01",
+  "public_key": "b51f6b9b8b2fcf77fb365f8a191579483c92af88ed914d6f79f08784699411ed"
+}

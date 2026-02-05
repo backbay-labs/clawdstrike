@@ -106,6 +106,18 @@ struct Cli {
     #[arg(long = "remote-extends-max-cache-bytes", default_value_t = 100_000_000)]
     remote_extends_max_cache_bytes: usize,
 
+    /// Allow http:// URLs for remote extends (INSECURE; prefer HTTPS).
+    #[arg(long = "remote-extends-allow-http")]
+    remote_extends_allow_http: bool,
+
+    /// Allow resolving remote extends to private/loopback/link-local IPs (INSECURE).
+    #[arg(long = "remote-extends-allow-private-ips")]
+    remote_extends_allow_private_ips: bool,
+
+    /// Allow redirects to a different host for remote extends (INSECURE).
+    #[arg(long = "remote-extends-allow-cross-host-redirects")]
+    remote_extends_allow_cross_host_redirects: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -697,6 +709,9 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         remote_extends_cache_dir,
         remote_extends_max_fetch_bytes,
         remote_extends_max_cache_bytes,
+        remote_extends_allow_http,
+        remote_extends_allow_private_ips,
+        remote_extends_allow_cross_host_redirects,
         command,
         ..
     } = cli;
@@ -705,7 +720,10 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         .with_limits(
             remote_extends_max_fetch_bytes,
             remote_extends_max_cache_bytes,
-        );
+        )
+        .with_https_only(!remote_extends_allow_http)
+        .with_allow_private_ips(remote_extends_allow_private_ips)
+        .with_allow_cross_host_redirects(remote_extends_allow_cross_host_redirects);
     if let Some(dir) = remote_extends_cache_dir {
         remote_extends = remote_extends.with_cache_dir(dir);
     }

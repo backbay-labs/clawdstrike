@@ -38,6 +38,10 @@
     "icon": [
       "icons/icon.png"
     ],
+    "resources": [
+      "resources/*",
+      "resources/**/*"
+    ],
     "macOS": {
       "minimumSystemVersion": "10.15",
       "frameworks": [],

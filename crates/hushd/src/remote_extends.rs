@@ -2,9 +2,9 @@
 
 use std::collections::HashSet;
 use std::io::Read as _;
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 use clawdstrike::policy::{
     LocalPolicyResolver, PolicyLocation, PolicyResolver, ResolvedPolicySource,
@@ -22,6 +22,9 @@ use crate::config::RemoteExtendsConfig;
 pub struct RemoteExtendsResolverConfig {
     pub allowed_hosts: HashSet<String>,
     pub cache_dir: PathBuf,
+    pub https_only: bool,
+    pub allow_private_ips: bool,
+    pub allow_cross_host_redirects: bool,
     pub max_fetch_bytes: usize,
     pub max_cache_bytes: usize,
 }
@@ -34,10 +37,13 @@ impl RemoteExtendsResolverConfig {
             allowed_hosts: cfg
                 .allowed_hosts
                 .iter()
-                .map(|h| h.trim().to_ascii_lowercase())
+                .map(|h| normalize_host(h))
                 .filter(|h| !h.is_empty())
                 .collect(),
             cache_dir,
+            https_only: cfg.https_only,
+            allow_private_ips: cfg.allow_private_ips,
+            allow_cross_host_redirects: cfg.allow_cross_host_redirects,
             max_fetch_bytes: cfg.max_fetch_bytes,
             max_cache_bytes: cfg.max_cache_bytes,
         }
@@ -55,28 +61,31 @@ fn default_cache_dir() -> PathBuf {
         .join("policies")
 }
 
+fn normalize_host(host: &str) -> String {
+    let host = host.trim();
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    host.to_ascii_lowercase()
+}
+
 #[derive(Clone, Debug)]
 pub struct RemotePolicyResolver {
     cfg: RemoteExtendsResolverConfig,
     local: LocalPolicyResolver,
-    client: Option<&'static Client>,
 }
 
 impl RemotePolicyResolver {
     pub fn new(cfg: RemoteExtendsResolverConfig) -> Result<Self> {
         Ok(Self {
-            client: if cfg.remote_enabled() {
-                Some(blocking_http_client()?)
-            } else {
-                None
-            },
             cfg,
             local: LocalPolicyResolver::new(),
         })
     }
 
     fn ensure_host_allowed(&self, host: &str) -> Result<()> {
-        let host = host.trim().to_ascii_lowercase();
+        let host = normalize_host(host);
         if host.is_empty() {
             return Err(Error::ConfigError(
                 "Remote extends URL missing host".to_string(),
@@ -91,21 +100,86 @@ impl RemotePolicyResolver {
         Ok(())
     }
 
+    fn validate_and_resolve_http_target(
+        &self,
+        url: &Url,
+        initial_host: &str,
+    ) -> Result<(String, Vec<SocketAddr>)> {
+        if self.cfg.https_only && url.scheme() != "https" {
+            return Err(Error::ConfigError(format!(
+                "Remote extends require https:// URLs (got {}://)",
+                url.scheme()
+            )));
+        }
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return Err(Error::ConfigError(format!(
+                "Unsupported URL scheme for remote extends: {}",
+                url.scheme()
+            )));
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(Error::ConfigError(
+                "Remote extends URLs must not include userinfo".to_string(),
+            ));
+        }
+
+        let host = normalize_host(
+            url.host_str()
+                .ok_or_else(|| Error::ConfigError(format!("Invalid URL host: {}", url)))?,
+        );
+        self.ensure_host_allowed(&host)?;
+
+        if !self.cfg.allow_cross_host_redirects && host != initial_host {
+            return Err(Error::ConfigError(format!(
+                "Remote extends redirect changed host ({} -> {}), which is not allowed",
+                initial_host, host
+            )));
+        }
+
+        let port = url.port_or_known_default().ok_or_else(|| {
+            Error::ConfigError(format!("Remote extends URL missing port: {}", url))
+        })?;
+
+        let mut addrs: Vec<SocketAddr> = if let Ok(ip) = host.parse::<IpAddr>() {
+            vec![SocketAddr::new(ip, port)]
+        } else {
+            (host.as_str(), port)
+                .to_socket_addrs()
+                .map_err(|e| Error::ConfigError(format!("Failed to resolve host {}: {}", host, e)))?
+                .collect()
+        };
+
+        if !self.cfg.allow_private_ips {
+            addrs.retain(|addr| is_public_ip(addr.ip()));
+            if addrs.is_empty() {
+                return Err(Error::ConfigError(format!(
+                    "Remote extends host resolved to non-public IPs (blocked): {}",
+                    host
+                )));
+            }
+        }
+
+        Ok((host, addrs))
+    }
+
     fn resolve_http(&self, reference: &str, base: Option<&str>) -> Result<ResolvedPolicySource> {
+        if !self.cfg.remote_enabled() {
+            return Err(Error::ConfigError(
+                "Remote extends are disabled (no allowlisted hosts)".to_string(),
+            ));
+        }
+
         let (path_or_url, expected_sha) = split_sha256_pin(reference)?;
         let url = match base {
             Some(base_url) => join_url(base_url, path_or_url)?,
             None => path_or_url.to_string(),
         };
 
-        let host = parse_url_host(&url)?;
-        self.ensure_host_allowed(&host)?;
-
-        if !self.cfg.remote_enabled() {
-            return Err(Error::ConfigError(
-                "Remote extends are disabled (no allowlisted hosts)".to_string(),
-            ));
-        }
+        let parsed = parse_remote_url(&url, self.cfg.https_only).map_err(Error::ConfigError)?;
+        let host = parsed.host_str().ok_or_else(|| {
+            Error::ConfigError(format!("Invalid URL host in remote extends: {}", parsed))
+        })?;
+        self.ensure_host_allowed(host)?;
 
         let key = format!("url:{}#sha256={}", url, expected_sha);
         let cache_path = self.cache_path_for(&key, "yaml");
@@ -138,22 +212,27 @@ impl RemotePolicyResolver {
     }
 
     fn fetch_http_bytes(&self, url: &str) -> Result<Vec<u8>> {
-        let Some(client) = self.client else {
+        if !self.cfg.remote_enabled() {
             return Err(Error::ConfigError(
                 "Remote extends are disabled (no allowlisted hosts)".to_string(),
             ));
-        };
+        }
 
         const MAX_REDIRECTS: usize = 5;
 
-        let mut current =
-            Url::parse(url).map_err(|e| Error::ConfigError(format!("Invalid URL: {}", e)))?;
+        let mut current = parse_remote_url(url, self.cfg.https_only).map_err(Error::ConfigError)?;
+        current.set_fragment(None);
+
+        let initial_host = current
+            .host_str()
+            .ok_or_else(|| Error::ConfigError(format!("Invalid URL host: {}", current)))?
+            .to_string();
+        let initial_host = normalize_host(&initial_host);
 
         for _ in 0..=MAX_REDIRECTS {
-            let host = current
-                .host_str()
-                .ok_or_else(|| Error::ConfigError(format!("Invalid URL host: {}", current)))?;
-            self.ensure_host_allowed(host)?;
+            let (host, addrs) = self.validate_and_resolve_http_target(&current, &initial_host)?;
+            let client =
+                build_pinned_blocking_http_client(host.clone(), addrs, self.cfg.https_only)?;
 
             let resp = client
                 .get(current.clone())
@@ -179,15 +258,8 @@ impl RemotePolicyResolver {
                 // Fragments are never sent to servers; drop to keep keys consistent.
                 next.set_fragment(None);
 
-                match next.scheme() {
-                    "http" | "https" => {}
-                    other => {
-                        return Err(Error::ConfigError(format!(
-                            "Unsupported URL scheme for remote extends: {}",
-                            other
-                        )));
-                    }
-                }
+                let next = parse_remote_url(next.as_str(), self.cfg.https_only)
+                    .map_err(Error::ConfigError)?;
 
                 current = next;
                 continue;
@@ -229,6 +301,12 @@ impl RemotePolicyResolver {
     }
 
     fn resolve_git_absolute(&self, reference: &str) -> Result<ResolvedPolicySource> {
+        if !self.cfg.remote_enabled() {
+            return Err(Error::ConfigError(
+                "Remote extends are disabled (no allowlisted hosts)".to_string(),
+            ));
+        }
+
         let (spec, expected_sha) = split_sha256_pin(reference)?;
         let spec = spec
             .strip_prefix("git+")
@@ -247,14 +325,13 @@ impl RemotePolicyResolver {
             ));
         }
 
-        if let Ok(host) = parse_url_host(repo) {
-            self.ensure_host_allowed(&host)?;
-        }
-
-        if !self.cfg.remote_enabled() {
-            return Err(Error::ConfigError(
-                "Remote extends are disabled (no allowlisted hosts)".to_string(),
-            ));
+        if let Ok(repo_url) = Url::parse(repo) {
+            if matches!(repo_url.scheme(), "http" | "https") {
+                let host = repo_url.host_str().ok_or_else(|| {
+                    Error::ConfigError(format!("Invalid URL host in remote extends: {}", repo))
+                })?;
+                self.ensure_host_allowed(host)?;
+            }
         }
 
         let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
@@ -426,34 +503,31 @@ fn verify_sha256_pin(bytes: &[u8], expected_hex: &str) -> Result<()> {
     Ok(())
 }
 
-fn parse_url_host(url: &str) -> Result<String> {
-    let (scheme, rest) = url
-        .split_once("://")
-        .ok_or_else(|| Error::ConfigError(format!("Invalid URL in remote extends: {}", url)))?;
+fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, String> {
+    let parsed =
+        Url::parse(url).map_err(|e| format!("Invalid URL in remote extends: {url}: {e}"))?;
+
+    let scheme = parsed.scheme();
     if scheme != "http" && scheme != "https" {
-        return Err(Error::ConfigError(format!(
+        return Err(format!(
             "Unsupported URL scheme for remote extends: {}",
-            scheme
-        )));
+            parsed.scheme()
+        ));
     }
-    let host_and_path = rest.split('/').next().unwrap_or("");
-    let host_and_path = host_and_path
-        .rsplit_once('@')
-        .map(|(_, h)| h)
-        .unwrap_or(host_and_path);
-    let host = host_and_path
-        .split(':')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-    if host.is_empty() {
-        return Err(Error::ConfigError(format!(
-            "Invalid URL host in remote extends: {}",
-            url
-        )));
+    if https_only && scheme != "https" {
+        return Err(format!(
+            "Remote extends require https:// URLs (got {}://)",
+            parsed.scheme()
+        ));
     }
-    Ok(host)
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Remote extends URLs must not include userinfo".to_string());
+    }
+    if parsed.host_str().is_none() {
+        return Err(format!("Invalid URL host in remote extends: {}", parsed));
+    }
+
+    Ok(parsed)
 }
 
 fn join_url(base: &str, reference: &str) -> Result<String> {
@@ -461,24 +535,166 @@ fn join_url(base: &str, reference: &str) -> Result<String> {
         return Ok(reference.to_string());
     }
 
-    let (scheme, rest) = base.split_once("://").ok_or_else(|| {
-        Error::ConfigError(format!("Invalid base URL for remote extends: {}", base))
+    let base = Url::parse(base).map_err(|e| {
+        Error::ConfigError(format!(
+            "Invalid base URL for remote extends: {} ({})",
+            base, e
+        ))
     })?;
-    let mut iter = rest.splitn(2, '/');
-    let host = iter.next().unwrap_or("");
-    let path = iter.next().unwrap_or("");
+    let joined = base.join(reference).map_err(|e| {
+        Error::ConfigError(format!(
+            "Invalid relative URL in remote extends: base={} reference={} ({})",
+            base, reference, e
+        ))
+    })?;
+    Ok(joined.to_string())
+}
 
-    let root = format!("{}://{}", scheme, host);
-    if reference.starts_with('/') {
-        return Ok(format!("{}{}", root, reference));
-    }
+fn build_pinned_blocking_http_client(
+    host: String,
+    addrs: Vec<SocketAddr>,
+    https_only: bool,
+) -> Result<Client> {
+    use reqwest::redirect::Policy;
 
-    let dir = match path.rsplit_once('/') {
-        Some((dir, _)) if !dir.is_empty() => format!("{}/{}", root, dir),
-        _ => root,
+    let build = move || {
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .redirect(Policy::none())
+            .no_proxy()
+            .https_only(https_only)
+            .resolve_to_addrs(&host, &addrs)
+            .build()
+            .map_err(|e| Error::ConfigError(format!("Failed to build HTTP client: {}", e)))
     };
 
-    Ok(format!("{}/{}", dir, reference))
+    // reqwest::blocking spins up its own runtime; initializing that runtime from within an async
+    // Tokio context can panic. If we appear to be inside a Tokio runtime, build the blocking client
+    // in a fresh OS thread.
+    if tokio::runtime::Handle::try_current().is_ok() {
+        std::thread::spawn(build).join().unwrap_or_else(|_| {
+            Err(Error::ConfigError(
+                "Failed to build HTTP client".to_string(),
+            ))
+        })
+    } else {
+        build()
+    }
+}
+
+fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_public_ipv4(v4.octets()),
+        IpAddr::V6(v6) => is_public_ipv6(v6.segments()),
+    }
+}
+
+fn is_public_ipv4(octets: [u8; 4]) -> bool {
+    let [a, b, c, d] = octets;
+
+    // 0.0.0.0/8 (this host / "current network")
+    if a == 0 {
+        return false;
+    }
+
+    // 10.0.0.0/8
+    if a == 10 {
+        return false;
+    }
+
+    // 100.64.0.0/10 (CGNAT)
+    if a == 100 && (64..=127).contains(&b) {
+        return false;
+    }
+
+    // 127.0.0.0/8 (loopback)
+    if a == 127 {
+        return false;
+    }
+
+    // 169.254.0.0/16 (link-local)
+    if a == 169 && b == 254 {
+        return false;
+    }
+
+    // 172.16.0.0/12
+    if a == 172 && (16..=31).contains(&b) {
+        return false;
+    }
+
+    // 192.168.0.0/16
+    if a == 192 && b == 168 {
+        return false;
+    }
+
+    // Documentation / benchmarking blocks:
+    // 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24 (TEST-NETs)
+    if (a == 192 && b == 0 && c == 2)
+        || (a == 198 && b == 51 && c == 100)
+        || (a == 203 && b == 0 && c == 113)
+    {
+        return false;
+    }
+
+    // 198.18.0.0/15 (benchmarking)
+    if a == 198 && (18..=19).contains(&b) {
+        return false;
+    }
+
+    // Multicast 224.0.0.0/4 and reserved 240.0.0.0/4
+    if a >= 224 {
+        return false;
+    }
+
+    // Broadcast (255.255.255.255)
+    if a == 255 && b == 255 && c == 255 && d == 255 {
+        return false;
+    }
+
+    true
+}
+
+fn is_public_ipv6(segments: [u16; 8]) -> bool {
+    let [s0, s1, s2, s3, _s4, _s5, _s6, _s7] = segments;
+
+    // ::/128 (unspecified)
+    if segments == [0, 0, 0, 0, 0, 0, 0, 0] {
+        return false;
+    }
+
+    // ::1/128 (loopback)
+    if segments == [0, 0, 0, 0, 0, 0, 0, 1] {
+        return false;
+    }
+
+    // fc00::/7 (unique local)
+    if (s0 & 0xfe00) == 0xfc00 {
+        return false;
+    }
+
+    // fe80::/10 (link-local unicast)
+    if (s0 & 0xffc0) == 0xfe80 {
+        return false;
+    }
+
+    // ff00::/8 (multicast)
+    if (s0 & 0xff00) == 0xff00 {
+        return false;
+    }
+
+    // 2001:db8::/32 (documentation)
+    if s0 == 0x2001 && s1 == 0x0db8 {
+        return false;
+    }
+
+    // 100::/64 (discard-only)
+    if s0 == 0x0100 && s1 == 0 && s2 == 0 && s3 == 0 {
+        return false;
+    }
+
+    // Otherwise treat as public (global unicast). This is intentionally conservative: we block
+    // the most common private/special ranges to reduce SSRF/DNS rebinding risk.
+    true
 }
 
 fn normalize_git_join(base_file: &str, rel: &str) -> Result<String> {
@@ -541,36 +757,6 @@ fn enforce_cache_size_limit(cache_dir: &Path, max_bytes: usize) {
     }
 }
 
-fn blocking_http_client() -> Result<&'static Client> {
-    static CLIENT: OnceLock<std::result::Result<Client, String>> = OnceLock::new();
-
-    let res = CLIENT.get_or_init(|| {
-        let build = || {
-            Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .map_err(|e| format!("Failed to build HTTP client: {}", e))
-        };
-
-        // reqwest::blocking spins up its own runtime; initializing that runtime from within an
-        // async Tokio context can panic. If we appear to be inside a Tokio runtime, build the
-        // blocking client in a fresh OS thread.
-        if tokio::runtime::Handle::try_current().is_ok() {
-            std::thread::spawn(build)
-                .join()
-                .unwrap_or_else(|_| Err("Failed to build HTTP client".to_string()))
-        } else {
-            build()
-        }
-    });
-
-    match res {
-        Ok(client) => Ok(client),
-        Err(msg) => Err(Error::ConfigError(msg.clone())),
-    }
-}
-
 struct TempGitDir {
     path: PathBuf,
 }
@@ -623,7 +809,8 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    fn spawn_server<F>(
+    fn spawn_server_on<F>(
+        bind_addr: &str,
         handler: F,
     ) -> (
         u16,
@@ -634,7 +821,7 @@ mod tests {
     where
         F: Fn(&mut std::net::TcpStream) + Send + Sync + 'static,
     {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let listener = TcpListener::bind(bind_addr).expect("bind");
         let port = listener.local_addr().expect("local_addr").port();
         listener.set_nonblocking(true).expect("set_nonblocking");
 
@@ -662,8 +849,22 @@ mod tests {
         (port, calls, stop, handle)
     }
 
+    fn spawn_server<F>(
+        handler: F,
+    ) -> (
+        u16,
+        Arc<AtomicUsize>,
+        Arc<AtomicBool>,
+        thread::JoinHandle<()>,
+    )
+    where
+        F: Fn(&mut std::net::TcpStream) + Send + Sync + 'static,
+    {
+        spawn_server_on("127.0.0.1:0", handler)
+    }
+
     #[test]
-    fn redirect_does_not_bypass_allowlist() {
+    fn redirect_to_disallowed_host_is_rejected() {
         let (b_port, b_calls, b_stop, b_handle) = spawn_server(|stream| {
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
@@ -698,6 +899,9 @@ mod tests {
         let cfg = RemoteExtendsResolverConfig {
             allowed_hosts: ["127.0.0.1".to_string()].into_iter().collect(),
             cache_dir: cache_dir.clone(),
+            https_only: false,
+            allow_private_ips: true,
+            allow_cross_host_redirects: true,
             max_fetch_bytes: 1024 * 1024,
             max_cache_bytes: 1024 * 1024,
         };
@@ -718,6 +922,253 @@ mod tests {
 
         thread::sleep(Duration::from_millis(100));
         assert_eq!(b_calls.load(Ordering::Relaxed), 0);
+
+        a_stop.store(true, Ordering::Relaxed);
+        b_stop.store(true, Ordering::Relaxed);
+        let _ = a_handle.join();
+        let _ = b_handle.join();
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn https_only_rejects_http_urls() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: true,
+            allow_private_ips: true,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!("http://127.0.0.1:1/policy.yaml#sha256={}", "0".repeat(64));
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("http should be rejected when https_only=true");
+        assert!(
+            err.to_string().contains("require https://"),
+            "expected https-only rejection, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn private_ip_resolution_is_blocked_by_default() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: false,
+            allow_private_ips: false,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!("http://127.0.0.1:1/policy.yaml#sha256={}", "0".repeat(64));
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("private IPs should be rejected by default");
+        assert!(
+            err.to_string().contains("non-public IPs"),
+            "expected private-IP rejection, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn allow_private_ips_allows_fetching_localhost() {
+        let (port, _calls, stop, handle) = spawn_server(|stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            let body = b"ok\n";
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(body);
+        });
+
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: false,
+            allow_private_ips: true,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let expected_sha = sha256(b"ok\n").to_hex();
+        let reference = format!(
+            "http://127.0.0.1:{}/policy.yaml#sha256={}",
+            port, expected_sha
+        );
+        let resolved = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect("fetch should succeed when private IPs are allowed");
+        assert_eq!(resolved.yaml, "ok\n");
+
+        stop.store(true, Ordering::Relaxed);
+        let _ = handle.join();
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn cross_host_redirects_are_blocked_by_default() {
+        let (b_port, b_calls, b_stop, b_handle) = spawn_server_on("[::1]:0", |stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            let body = b"ok\n";
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(body);
+        });
+
+        let redirect_target = format!("http://[::1]:{}/policy.yaml", b_port);
+        let (a_port, _a_calls, a_stop, a_handle) = spawn_server(move |stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            let resp = format!(
+                "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                redirect_target
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        });
+
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string(), "::1".to_string()]
+                .into_iter()
+                .collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: false,
+            allow_private_ips: true,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!(
+            "http://127.0.0.1:{}/policy.yaml#sha256={}",
+            a_port,
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("cross-host redirect should be rejected by default");
+        assert!(
+            err.to_string().contains("redirect changed host"),
+            "expected cross-host redirect rejection, got: {err}"
+        );
+
+        thread::sleep(Duration::from_millis(100));
+        assert_eq!(
+            b_calls.load(Ordering::Relaxed),
+            0,
+            "redirect target should not be contacted"
+        );
+
+        a_stop.store(true, Ordering::Relaxed);
+        b_stop.store(true, Ordering::Relaxed);
+        let _ = a_handle.join();
+        let _ = b_handle.join();
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn allow_cross_host_redirects_allows_redirect_to_allowlisted_host() {
+        let (b_port, _b_calls, b_stop, b_handle) = spawn_server_on("[::1]:0", |stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            let body = b"ok\n";
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(body);
+        });
+
+        let redirect_target = format!("http://[::1]:{}/policy.yaml", b_port);
+        let (a_port, _a_calls, a_stop, a_handle) = spawn_server(move |stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            let resp = format!(
+                "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                redirect_target
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        });
+
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string(), "::1".to_string()]
+                .into_iter()
+                .collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: false,
+            allow_private_ips: true,
+            allow_cross_host_redirects: true,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let expected_sha = sha256(b"ok\n").to_hex();
+        let reference = format!(
+            "http://127.0.0.1:{}/policy.yaml#sha256={}",
+            a_port, expected_sha
+        );
+        let resolved = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect("cross-host redirect should succeed when enabled and allowlisted");
+        assert_eq!(resolved.yaml, "ok\n");
 
         a_stop.store(true, Ordering::Relaxed);
         b_stop.store(true, Ordering::Relaxed);

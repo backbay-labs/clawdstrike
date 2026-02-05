@@ -51,7 +51,14 @@ guards:
       - "api.mycompany.com"
 ```
 
-Note: `extends` supports built-in ruleset ids, local file paths (resolved relative to the policy file), and pinned remote `https://…#sha256=…` / `git+…#sha256=…` references when enabled via the remote-extends allowlist.
+Note: `extends` supports built-in ruleset ids, local file paths (resolved relative to the policy file), and pinned remote references when enabled via the remote-extends allowlist.
+
+Remote `extends` is hardened by default:
+
+- requires `#sha256=<64-hex>` integrity pins
+- HTTPS-only (HTTP requires explicit opt-in)
+- blocks private/loopback/link-local IP resolution by default
+- limits redirects and re-validates scheme/host allowlists on each hop
 
 ## Next steps
 
