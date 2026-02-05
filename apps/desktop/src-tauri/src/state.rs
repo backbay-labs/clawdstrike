@@ -22,7 +22,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             daemon: Arc::new(RwLock::new(DaemonConnection {
-                url: "http://localhost:8765".to_string(),
+                url: "http://localhost:9876".to_string(),
                 ..Default::default()
             })),
             http_client: reqwest::Client::builder()

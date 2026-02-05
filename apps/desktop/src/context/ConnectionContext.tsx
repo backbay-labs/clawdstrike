@@ -33,7 +33,7 @@ interface ConnectionContextValue extends ConnectionState {
 const ConnectionContext = createContext<ConnectionContextValue | null>(null);
 
 const STORAGE_KEY = "sdr:connection";
-const DEFAULT_URL = "http://localhost:8765";
+const DEFAULT_URL = "http://localhost:9876";
 
 interface StoredConnection {
   mode: ConnectionMode;

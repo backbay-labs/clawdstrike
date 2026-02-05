@@ -105,10 +105,10 @@ apps/desktop/
 
 ### Daemon Connection
 
-By default, SDR Desktop connects to `http://localhost:8765`. Configure this in Settings or use the environment variable:
+By default, SDR Desktop connects to `http://localhost:9876`. Configure this in Settings or use the environment variable:
 
 ```bash
-VITE_HUSHD_URL=http://localhost:8765
+VITE_HUSHD_URL=http://localhost:9876
 ```
 
 ## API Integration

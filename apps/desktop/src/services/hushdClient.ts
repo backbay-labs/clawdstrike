@@ -201,7 +201,7 @@ let defaultClient: HushdClient | null = null;
 
 export function getHushdClient(): HushdClient {
   if (!defaultClient) {
-    defaultClient = new HushdClient("http://localhost:8765");
+    defaultClient = new HushdClient("http://localhost:9876");
   }
   return defaultClient;
 }
