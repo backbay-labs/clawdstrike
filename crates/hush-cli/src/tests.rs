@@ -2610,3 +2610,39 @@ mod canonical_commandline_contract {
         );
     }
 }
+
+#[cfg(all(test, unix))]
+mod keygen_file_permissions {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn write_secret_file_tightens_existing_file_permissions_to_0600() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock is after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "hush-write-secret-file-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+
+        std::fs::write(&path, "old").expect("seed file");
+        let mut perms = std::fs::metadata(&path).expect("metadata").permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&path, perms).expect("set broad mode");
+
+        crate::write_secret_file(path.to_str().expect("utf8 path"), "secret")
+            .expect("write_secret_file");
+
+        let mode = std::fs::metadata(&path)
+            .expect("metadata after write")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let _ = std::fs::remove_file(path);
+    }
+}

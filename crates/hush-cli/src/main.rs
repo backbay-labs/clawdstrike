@@ -1430,13 +1430,15 @@ struct KeygenOutput {
 fn write_secret_file(path: &str, contents: &str) -> std::io::Result<()> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
         let mut f = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .mode(0o600)
             .open(path)?;
+        // Ensure restrictive perms are enforced even when overwriting an existing file.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         f.write_all(contents.as_bytes())?;
         Ok(())
     }
