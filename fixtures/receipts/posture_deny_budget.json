@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "receipt_id": "snap-posture-deny-budget",
+  "timestamp": "2026-02-06T00:00:02Z",
+  "content_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": {
+    "passed": false
+  },
+  "provenance": {
+    "clawdstrike_version": "0.1.0",
+    "policy_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "ruleset": "default",
+    "violations": [
+      {
+        "guard": "posture_budget",
+        "severity": "Error",
+        "message": "budget 'file_writes' exhausted (50/50)"
+      }
+    ]
+  },
+  "metadata": {
+    "clawdstrike": {
+      "posture": {
+        "state_before": "work",
+        "state_after": "quarantine",
+        "budgets_before": {
+          "file_writes": {
+            "used": 50,
+            "limit": 50
+          }
+        },
+        "budgets_after": {},
+        "budget_deltas": {},
+        "transition": {
+          "from": "work",
+          "to": "quarantine",
+          "trigger": "budget_exhausted",
+          "at": "2026-02-06T00:00:02Z"
+        }
+      }
+    }
+  }
+}

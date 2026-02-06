@@ -663,6 +663,18 @@ pub enum AuditSinkConfig {
         #[serde(default)]
         headers: Option<std::collections::HashMap<String, String>>,
     },
+    /// Send audit events as OTLP logs over HTTP.
+    OtlpHttp {
+        endpoint: String,
+        #[serde(default)]
+        headers: Option<std::collections::HashMap<String, String>>,
+        #[serde(default)]
+        service_name: Option<String>,
+        #[serde(default)]
+        service_version: Option<String>,
+        #[serde(default)]
+        resource_attributes: Option<std::collections::HashMap<String, String>>,
+    },
     /// Send audit events to Splunk HTTP Event Collector.
     SplunkHec {
         url: String,
@@ -747,6 +759,78 @@ impl AuditForwardConfig {
                             )
                         })?;
                     AuditSinkConfig::Webhook { url, headers }
+                }
+                AuditSinkConfig::OtlpHttp {
+                    endpoint,
+                    headers,
+                    service_name,
+                    service_version,
+                    resource_attributes,
+                } => {
+                    let endpoint = expand_env_refs(&endpoint).map_err(|e| {
+                        anyhow::anyhow!(
+                            "Invalid audit_forward.sinks[{}].endpoint value: {}",
+                            idx,
+                            e
+                        )
+                    })?;
+                    let headers = headers
+                        .map(|h| {
+                            h.into_iter()
+                                .map(|(k, v)| Ok((k, expand_env_refs(&v)?)))
+                                .collect::<anyhow::Result<std::collections::HashMap<_, _>>>()
+                        })
+                        .transpose()
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid audit_forward.sinks[{}].headers value: {}",
+                                idx,
+                                e
+                            )
+                        })?;
+                    let service_name = service_name
+                        .map(|v| expand_env_refs(&v))
+                        .transpose()
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid audit_forward.sinks[{}].service_name value: {}",
+                                idx,
+                                e
+                            )
+                        })?;
+                    let service_version = service_version
+                        .map(|v| expand_env_refs(&v))
+                        .transpose()
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid audit_forward.sinks[{}].service_version value: {}",
+                                idx,
+                                e
+                            )
+                        })?;
+                    let resource_attributes = resource_attributes
+                        .map(|attrs| {
+                            attrs
+                                .into_iter()
+                                .map(|(k, v)| Ok((k, expand_env_refs(&v)?)))
+                                .collect::<anyhow::Result<std::collections::HashMap<_, _>>>()
+                        })
+                        .transpose()
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Invalid audit_forward.sinks[{}].resource_attributes value: {}",
+                                idx,
+                                e
+                            )
+                        })?;
+
+                    AuditSinkConfig::OtlpHttp {
+                        endpoint,
+                        headers,
+                        service_name,
+                        service_version,
+                        resource_attributes,
+                    }
                 }
                 AuditSinkConfig::SplunkHec {
                     url,
@@ -1570,5 +1654,50 @@ enabled = false
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(!config.rate_limit.enabled);
+    }
+
+    #[test]
+    fn test_audit_forward_otlp_env_resolution() {
+        std::env::set_var("OTLP_ENDPOINT", "https://collector.example:4318");
+        std::env::set_var("OTLP_AUTH", "Bearer abc");
+        std::env::set_var("OTLP_SERVICE", "hushd-test");
+
+        let cfg = AuditForwardConfig {
+            enabled: true,
+            queue_size: 128,
+            timeout_ms: 2_000,
+            sinks: vec![AuditSinkConfig::OtlpHttp {
+                endpoint: "${OTLP_ENDPOINT}".to_string(),
+                headers: Some(
+                    [("Authorization".to_string(), "${OTLP_AUTH}".to_string())]
+                        .into_iter()
+                        .collect(),
+                ),
+                service_name: Some("${OTLP_SERVICE}".to_string()),
+                service_version: None,
+                resource_attributes: None,
+            }],
+        };
+
+        let resolved = cfg.resolve_env_refs().expect("resolve");
+        match &resolved.sinks[0] {
+            AuditSinkConfig::OtlpHttp {
+                endpoint,
+                headers,
+                service_name,
+                ..
+            } => {
+                assert_eq!(endpoint, "https://collector.example:4318");
+                assert_eq!(
+                    headers
+                        .as_ref()
+                        .and_then(|h| h.get("Authorization"))
+                        .map(String::as_str),
+                    Some("Bearer abc")
+                );
+                assert_eq!(service_name.as_deref(), Some("hushd-test"));
+            }
+            _ => panic!("expected otlp sink"),
+        }
     }
 }

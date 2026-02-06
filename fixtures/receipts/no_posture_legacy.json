@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "receipt_id": "snap-no-posture-legacy",
+  "timestamp": "2026-02-06T00:00:04Z",
+  "content_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": {
+    "passed": true
+  },
+  "provenance": {
+    "clawdstrike_version": "0.1.0",
+    "policy_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "ruleset": "default",
+    "violations": []
+  }
+}

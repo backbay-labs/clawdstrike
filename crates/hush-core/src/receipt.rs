@@ -206,6 +206,19 @@ impl Receipt {
         self
     }
 
+    /// Merge metadata with existing metadata using deep object merge semantics.
+    ///
+    /// - object + object: recursive key merge
+    /// - any other source value: replaces target
+    pub fn merge_metadata(mut self, metadata: JsonValue) -> Self {
+        if let Some(existing) = self.metadata.as_mut() {
+            merge_json_values(existing, metadata);
+        } else {
+            self.metadata = Some(metadata);
+        }
+        self
+    }
+
     /// Validate that this receipt uses a supported schema version.
     pub fn validate_version(&self) -> Result<()> {
         validate_receipt_version(&self.version)
@@ -228,6 +241,34 @@ impl Receipt {
     pub fn hash_keccak256(&self) -> Result<Hash> {
         let canonical = self.to_canonical_json()?;
         Ok(keccak256(canonical.as_bytes()))
+    }
+}
+
+fn merge_json_values(target: &mut JsonValue, source: JsonValue) {
+    let JsonValue::Object(source_obj) = source else {
+        *target = source;
+        return;
+    };
+
+    let JsonValue::Object(target_obj) = target else {
+        *target = JsonValue::Object(serde_json::Map::new());
+        merge_json_values(target, JsonValue::Object(source_obj));
+        return;
+    };
+
+    for (key, value) in source_obj {
+        match (target_obj.get_mut(&key), value) {
+            (Some(existing), JsonValue::Object(new_obj)) => {
+                if existing.is_object() {
+                    merge_json_values(existing, JsonValue::Object(new_obj));
+                } else {
+                    *existing = JsonValue::Object(new_obj);
+                }
+            }
+            (_, new_value) => {
+                target_obj.insert(key, new_value);
+            }
+        }
     }
 }
 
@@ -548,5 +589,36 @@ mod tests {
         assert_eq!(receipt.receipt_id, Some("my-receipt".to_string()));
         assert!(receipt.provenance.is_some());
         assert!(receipt.metadata.is_some());
+    }
+
+    #[test]
+    fn test_receipt_metadata_merge() {
+        let receipt = Receipt::new(Hash::zero(), Verdict::pass())
+            .with_metadata(serde_json::json!({
+                "clawdstrike": {"extra_guards": ["a"]},
+                "hush": {"command": ["echo", "hi"]},
+            }))
+            .merge_metadata(serde_json::json!({
+                "clawdstrike": {"posture": {"state_after": "work"}},
+                "hush": {"events": "events.jsonl"},
+            }));
+
+        let metadata = receipt.metadata.expect("metadata");
+        assert_eq!(
+            metadata.pointer("/clawdstrike/extra_guards/0"),
+            Some(&serde_json::json!("a"))
+        );
+        assert_eq!(
+            metadata.pointer("/clawdstrike/posture/state_after"),
+            Some(&serde_json::json!("work"))
+        );
+        assert_eq!(
+            metadata.pointer("/hush/command/0"),
+            Some(&serde_json::json!("echo"))
+        );
+        assert_eq!(
+            metadata.pointer("/hush/events"),
+            Some(&serde_json::json!("events.jsonl"))
+        );
     }
 }

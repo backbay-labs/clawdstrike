@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { loadPolicyFromString } from './loader.js';
 
 describe('policy loader legacy translation', () => {
@@ -25,5 +27,25 @@ tools:
     expect((policy.guards as any)?.forbidden_path?.patterns).toEqual(['~/.ssh']);
     expect((policy.guards as any)?.egress_allowlist?.default_action).toBe('block');
     expect((policy.guards as any)?.mcp_tool?.block).toEqual(['shell_exec']);
+  });
+
+  it('lets child policy override merged version when set to 1.2.0', () => {
+    const yaml = `
+version: "1.2.0"
+name: "Version override"
+extends: strict
+guards:
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/my-repo/**"
+`;
+
+    const policy = loadPolicyFromString(yaml, {
+      resolve: true,
+      rulesetsDir: path.join(process.cwd(), '..', '..', 'rulesets'),
+    });
+    expect(policy.version).toBe('1.2.0');
+    expect((policy.guards as any)?.path_allowlist?.enabled).toBe(true);
   });
 });

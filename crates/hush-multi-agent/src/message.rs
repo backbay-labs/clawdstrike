@@ -148,26 +148,23 @@ impl SignedMessage {
 
         // Optional delegation token.
         if let Some(token) = &self.claims.delegation {
-            token.validate_audience(DELEGATION_AUDIENCE)?;
-            token.validate_timebounds(now_unix)?;
-            token.validate_subject(&self.claims.iss)?;
-
-            if revocations.is_revoked(&token.claims.jti, now_unix) {
-                return Err(Error::Revoked);
-            }
-
-            let ok = match (&token.public_key, delegation_issuer_key) {
-                (Some(pk), _) => token.verify(pk)?,
-                (None, Some(pk)) => token.verify(pk)?,
+            let key = match (&token.public_key, delegation_issuer_key) {
+                (Some(pk), _) => pk,
+                (None, Some(pk)) => pk,
                 (None, None) => {
                     return Err(Error::InvalidClaims(
                         "delegation token missing public key".to_string(),
                     ))
                 }
             };
-            if !ok {
-                return Err(Error::InvalidSignature);
-            }
+
+            token.verify_and_validate(
+                key,
+                now_unix,
+                revocations,
+                DELEGATION_AUDIENCE,
+                Some(&self.claims.iss),
+            )?;
         }
 
         Ok(())

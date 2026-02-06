@@ -54,3 +54,13 @@ export type {
 
 export { BaseToolInterceptor } from './base-tool-interceptor.js';
 export { PolicyEventFactory } from './policy-event-factory.js';
+
+export type {
+  GenericToolBoundaryOptions,
+  GenericToolDispatcher,
+} from './generic-tool-runner.js';
+export {
+  GenericToolBoundary,
+  GenericToolCallBlockedError,
+  wrapGenericToolDispatcher,
+} from './generic-tool-runner.js';

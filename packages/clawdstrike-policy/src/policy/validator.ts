@@ -13,6 +13,25 @@ const RESERVED_PACKAGES = new Set([
   'clawdstrike-safe-browsing',
   'clawdstrike-snyk',
 ]);
+const SUPPORTED_POLICY_VERSIONS = new Set(['1.1.0', '1.2.0']);
+const DEFAULT_POLICY_VERSION = '1.2.0';
+const KNOWN_POSTURE_CAPABILITIES = new Set([
+  'file_access',
+  'file_write',
+  'egress',
+  'shell',
+  'mcp_tool',
+  'patch',
+  'custom',
+]);
+const KNOWN_POSTURE_BUDGETS = new Set([
+  'file_writes',
+  'egress_calls',
+  'shell_commands',
+  'mcp_tool_calls',
+  'patches',
+  'custom_calls',
+]);
 
 export function validatePolicy(policy: unknown): PolicyLintResult {
   const errors: string[] = [];
@@ -23,14 +42,22 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
   }
 
   const p = policy as Policy;
-  const version = p.version ?? '1.1.0';
+  const version = p.version ?? DEFAULT_POLICY_VERSION;
   if (typeof version !== 'string' || !isStrictSemver(version)) {
     errors.push(`version must be a strict semver string (got: ${String(version)})`);
-  } else if (version !== '1.1.0') {
-    errors.push(`unsupported policy version: ${version} (supported: 1.1.0)`);
+  } else if (!SUPPORTED_POLICY_VERSIONS.has(version)) {
+    errors.push(`unsupported policy version: ${version} (supported: 1.1.0, 1.2.0)`);
   }
 
   if (p.guards && isPlainObject(p.guards)) {
+    const pathAllowlist = (p.guards as any).path_allowlist;
+    if (pathAllowlist !== undefined) {
+      if (version === '1.1.0') {
+        errors.push('path_allowlist requires policy version 1.2.0');
+      }
+      validatePathAllowlist(pathAllowlist, 'guards.path_allowlist', errors);
+    }
+
     const custom = (p.guards as any).custom;
     if (custom !== undefined) {
       if (!Array.isArray(custom)) {
@@ -41,6 +68,14 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
         }
       }
     }
+  }
+
+  const posture = (p as any).posture;
+  if (posture !== undefined) {
+    if (version === '1.1.0') {
+      errors.push('posture requires policy version 1.2.0');
+    }
+    validatePosture(posture, 'posture', errors);
   }
 
   const policyCustomGuards = (p as any).custom_guards;
@@ -85,6 +120,129 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
   validatePlaceholders(policy, 'policy', errors);
 
   return { valid: errors.length === 0, errors, warnings };
+}
+
+function validatePathAllowlist(value: unknown, base: string, errors: string[]): void {
+  if (!isPlainObject(value)) {
+    errors.push(`${base} must be an object`);
+    return;
+  }
+
+  const enabled = value.enabled;
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    errors.push(`${base}.enabled must be a boolean`);
+  }
+
+  validateStringArray(value.file_access_allow, `${base}.file_access_allow`, errors);
+  validateStringArray(value.file_write_allow, `${base}.file_write_allow`, errors);
+  validateStringArray(value.patch_allow, `${base}.patch_allow`, errors);
+}
+
+function validatePosture(value: unknown, base: string, errors: string[]): void {
+  if (!isPlainObject(value)) {
+    errors.push(`${base} must be an object`);
+    return;
+  }
+
+  const initial = value.initial;
+  if (typeof initial !== 'string' || initial.trim() === '') {
+    errors.push(`${base}.initial must be a non-empty string`);
+  }
+
+  const states = value.states;
+  if (!isPlainObject(states) || Object.keys(states).length === 0) {
+    errors.push(`${base}.states must be a non-empty object`);
+  } else {
+    for (const [stateName, stateValue] of Object.entries(states)) {
+      const statePath = `${base}.states.${stateName}`;
+      if (!isPlainObject(stateValue)) {
+        errors.push(`${statePath} must be an object`);
+        continue;
+      }
+
+      const capabilities = stateValue.capabilities;
+      if (capabilities !== undefined) {
+        if (!Array.isArray(capabilities)) {
+          errors.push(`${statePath}.capabilities must be an array`);
+        } else {
+          for (let i = 0; i < capabilities.length; i++) {
+            const capability = capabilities[i];
+            if (typeof capability !== 'string') {
+              errors.push(`${statePath}.capabilities[${i}] must be a string`);
+              continue;
+            }
+            if (!KNOWN_POSTURE_CAPABILITIES.has(capability)) {
+              errors.push(`${statePath}.capabilities[${i}] unknown capability: '${capability}'`);
+            }
+          }
+        }
+      }
+
+      const budgets = stateValue.budgets;
+      if (budgets !== undefined) {
+        if (!isPlainObject(budgets)) {
+          errors.push(`${statePath}.budgets must be an object`);
+        } else {
+          for (const [budgetName, budgetValue] of Object.entries(budgets)) {
+            if (!KNOWN_POSTURE_BUDGETS.has(budgetName)) {
+              errors.push(`${statePath}.budgets.${budgetName} unknown budget type: '${budgetName}'`);
+            }
+            if (!Number.isInteger(budgetValue) || (budgetValue as number) < 0) {
+              errors.push(`${statePath}.budgets.${budgetName} budget '${budgetName}' cannot be negative`);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (typeof initial === 'string' && isPlainObject(states) && !Object.prototype.hasOwnProperty.call(states, initial)) {
+    errors.push(`${base}.initial posture.initial '${initial}' not found in states`);
+  }
+
+  const transitions = value.transitions;
+  if (transitions !== undefined) {
+    if (!Array.isArray(transitions)) {
+      errors.push(`${base}.transitions must be an array`);
+    } else {
+      for (let i = 0; i < transitions.length; i++) {
+        const t = transitions[i];
+        const transitionPath = `${base}.transitions[${i}]`;
+        if (!isPlainObject(t)) {
+          errors.push(`${transitionPath} must be an object`);
+          continue;
+        }
+
+        const from = t.from;
+        const to = t.to;
+        const on = t.on;
+        if (typeof from !== 'string' || from.trim() === '') {
+          errors.push(`${transitionPath}.from must be a non-empty string`);
+        } else if (from !== '*' && isPlainObject(states) && !Object.prototype.hasOwnProperty.call(states, from)) {
+          errors.push(`${transitionPath}.from transition references unknown state: '${from}'`);
+        }
+
+        if (typeof to !== 'string' || to.trim() === '') {
+          errors.push(`${transitionPath}.to must be a non-empty string`);
+        } else if (to === '*') {
+          errors.push(`${transitionPath}.to wildcard in 'to' not allowed`);
+        } else if (isPlainObject(states) && !Object.prototype.hasOwnProperty.call(states, to)) {
+          errors.push(`${transitionPath}.to transition references unknown state: '${to}'`);
+        }
+
+        if (typeof on !== 'string') {
+          errors.push(`${transitionPath}.on must be a string`);
+        } else if (on === 'timeout') {
+          const after = t.after;
+          if (typeof after !== 'string') {
+            errors.push(`${transitionPath}.after timeout transition missing 'after' duration`);
+          } else if (!isValidDuration(after)) {
+            errors.push(`${transitionPath}.after invalid duration format: '${after}'`);
+          }
+        }
+      }
+    }
+  }
 }
 
 function validateCustomGuardSpec(value: unknown, base: string, errors: string[]): void {
@@ -234,6 +392,21 @@ function requireString(obj: Record<string, unknown>, field: string, errors: stri
   }
 }
 
+function validateStringArray(value: unknown, field: string, errors: string[]): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!Array.isArray(value)) {
+    errors.push(`${field} must be an array`);
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] !== 'string') {
+      errors.push(`${field}[${i}] must be a string`);
+    }
+  }
+}
+
 function validatePlaceholders(value: unknown, base: string, errors: string[]): void {
   if (typeof value === 'string') {
     for (const match of value.matchAll(PLACEHOLDER_RE)) {
@@ -281,6 +454,10 @@ function envVarForPlaceholder(raw: string): { ok: true; value: string } | { ok: 
 function isStrictSemver(version: string): boolean {
   const m = /^([0-9]|[1-9][0-9]*)\.([0-9]|[1-9][0-9]*)\.([0-9]|[1-9][0-9]*)$/.exec(version);
   return Boolean(m);
+}
+
+function isValidDuration(value: string): boolean {
+  return /^[0-9]+[smh]$/.test(value);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

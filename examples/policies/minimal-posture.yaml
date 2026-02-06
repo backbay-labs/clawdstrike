@@ -1,0 +1,39 @@
+version: "1.2.0"
+name: Minimal Posture
+description: Smallest posture-enabled policy with observe/work/quarantine states
+extends: clawdstrike:default
+
+posture:
+  initial: observe
+  states:
+    observe:
+      description: Observe-only mode
+      capabilities:
+        - file_access
+      budgets: {}
+    work:
+      description: Standard work mode
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - mcp_tool
+      budgets:
+        file_writes: 50
+        egress_calls: 20
+        mcp_tool_calls: 100
+    quarantine:
+      description: Locked mode after policy violations
+      capabilities: []
+      budgets: {}
+  transitions:
+    - from: observe
+      to: work
+      on: user_approval
+    - from: "*"
+      to: quarantine
+      on: critical_violation
+    - from: quarantine
+      to: observe
+      on: timeout
+      after: 5m

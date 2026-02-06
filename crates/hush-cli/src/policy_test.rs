@@ -3,7 +3,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use clawdstrike::{GuardReport, HushEngine, Severity};
+use clawdstrike::{
+    GuardReport, HushEngine, PostureRuntimeState, PostureTransitionRecord, Severity,
+};
 use serde::Deserialize;
 
 use crate::policy_event::{map_policy_event, PolicyEvent};
@@ -70,6 +72,21 @@ struct PolicyTestExpect {
     reason_contains: Option<String>,
     #[serde(default)]
     message_contains: Option<String>,
+    #[serde(default)]
+    posture_state: Option<String>,
+    #[serde(default)]
+    posture_transition: Option<PolicyTestExpectedTransition>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PolicyTestExpectedTransition {
+    #[serde(default)]
+    from: Option<String>,
+    #[serde(default)]
+    to: Option<String>,
+    #[serde(default)]
+    trigger: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -366,19 +383,35 @@ async fn run_case(
     }
 
     let mapped = map_policy_event(&event)?;
-    let report = engine
-        .check_action_report(&mapped.action.as_guard_action(), &mapped.context)
+    let mut posture_state = extract_case_posture_state(case.context.as_ref())?;
+    let posture_report = engine
+        .check_action_report_with_posture(
+            &mapped.action.as_guard_action(),
+            &mapped.context,
+            &mut posture_state,
+        )
         .await?;
+    let report = posture_report.guard_report;
     engine.reset().await;
 
     for r in &report.per_guard {
         *coverage.entry(r.guard.clone()).or_insert(0) += 1;
     }
 
-    assert_expectations(case, &report)
+    assert_expectations(
+        case,
+        &report,
+        posture_state.as_ref(),
+        posture_report.transition.as_ref(),
+    )
 }
 
-fn assert_expectations(case: &PolicyTestCase, report: &GuardReport) -> anyhow::Result<()> {
+fn assert_expectations(
+    case: &PolicyTestCase,
+    report: &GuardReport,
+    posture_state: Option<&PostureRuntimeState>,
+    posture_transition: Option<&PostureTransitionRecord>,
+) -> anyhow::Result<()> {
     let expect = &case.expect;
     let outcome = outcome_for_report(report);
 
@@ -431,7 +464,106 @@ fn assert_expectations(case: &PolicyTestCase, report: &GuardReport) -> anyhow::R
         }
     }
 
+    if let Some(expected_state) = expect.posture_state.as_ref() {
+        let Some(actual_state) = posture_state.as_ref().map(|s| s.current_state.as_str()) else {
+            anyhow::bail!(
+                "expected posture_state {:?}, but no posture state was available",
+                expected_state
+            );
+        };
+        if actual_state != expected_state {
+            anyhow::bail!(
+                "expected posture_state {:?}, got {:?}",
+                expected_state,
+                actual_state
+            );
+        }
+    }
+
+    if let Some(expected_transition) = expect.posture_transition.as_ref() {
+        let Some(actual) = posture_transition else {
+            anyhow::bail!(
+                "expected posture_transition {:?}, but no transition occurred",
+                expected_transition.trigger.as_deref().unwrap_or("<any>")
+            );
+        };
+
+        if let Some(from) = expected_transition.from.as_ref() {
+            if actual.from != *from {
+                anyhow::bail!(
+                    "expected posture_transition.from {:?}, got {:?}",
+                    from,
+                    actual.from
+                );
+            }
+        }
+        if let Some(to) = expected_transition.to.as_ref() {
+            if actual.to != *to {
+                anyhow::bail!(
+                    "expected posture_transition.to {:?}, got {:?}",
+                    to,
+                    actual.to
+                );
+            }
+        }
+        if let Some(trigger) = expected_transition.trigger.as_ref() {
+            if actual.trigger != *trigger {
+                anyhow::bail!(
+                    "expected posture_transition.trigger {:?}, got {:?}",
+                    trigger,
+                    actual.trigger
+                );
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn extract_case_posture_state(
+    context: Option<&serde_yaml::Value>,
+) -> anyhow::Result<Option<PostureRuntimeState>> {
+    let Some(context) = context else {
+        return Ok(None);
+    };
+
+    let json = yaml_to_json(context);
+    let serde_json::Value::Object(mut obj) = json else {
+        return Ok(None);
+    };
+
+    let Some(mut posture_value) = obj.remove("session_posture") else {
+        return Ok(None);
+    };
+
+    if posture_value.is_null() {
+        return Ok(None);
+    }
+
+    let serde_json::Value::Object(ref mut posture_obj) = posture_value else {
+        anyhow::bail!("context.session_posture must be an object or null");
+    };
+
+    if !posture_obj.contains_key("current_state") {
+        if let Some(state) = posture_obj.remove("state") {
+            posture_obj.insert("current_state".to_string(), state);
+        }
+    }
+    posture_obj
+        .entry("entered_at".to_string())
+        .or_insert(serde_json::Value::String(
+            "2026-02-03T00:00:00Z".to_string(),
+        ));
+    posture_obj
+        .entry("budgets".to_string())
+        .or_insert(serde_json::json!({}));
+    posture_obj
+        .entry("transition_history".to_string())
+        .or_insert(serde_json::json!([]));
+
+    let parsed = serde_json::from_value::<PostureRuntimeState>(posture_value)
+        .context("failed to parse context.session_posture")?;
+    Ok(Some(parsed))
 }
 
 fn outcome_for_report(report: &GuardReport) -> &'static str {

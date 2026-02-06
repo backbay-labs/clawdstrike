@@ -65,7 +65,17 @@ Framework-agnostic primitives for enforcement at the tool boundary:
 - `PolicyEventFactory` — normalize a tool call into a canonical `PolicyEvent`
 - `SecurityContext` + `createSecurityContext` — per-session counters + audit log
 - `BaseToolInterceptor` — preflight checks + output sanitization hooks
+- `GenericToolBoundary` + `wrapGenericToolDispatcher` — secure any generic `(toolName, input, runId)` dispatcher
 - `AuditEvent` types (including `prompt_security_*`)
+
+### `@clawdstrike/policy` (experimental)
+
+Canonical policy loading/evaluation package plus custom-guard plugin scaffolding:
+
+- `createPolicyEngine` / `createPolicyEngineFromPolicy`
+- `CustomGuardRegistry`
+- `PluginLoader` / `inspectPlugin` / `loadTrustedPluginIntoRegistry`
+- `parsePluginManifest` for `clawdstrike.plugin.json`
 
 ### `@clawdstrike/hush-cli-engine`
 

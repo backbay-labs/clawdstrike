@@ -160,7 +160,7 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 ### M0: Baseline convergence (P0 prerequisite)
 - [x] Policy schema convergence plan written (decision + migration path). (See `decisions/0002-policy-schema-convergence.md`)
 - [x] Canonical event model documented + fixture corpus created. (See `decisions/0003-policy-event-and-severity.md` and `../../fixtures/policy-events/v1/`)
-- [ ] Cross-SDK parity tests scaffolded (same events, same expected decisions).
+- [x] Cross-SDK parity tests scaffolded (same events, same expected decisions). (See `tools/scripts/policy-parity.mjs`, `.github/workflows/ci.yml` “Policy parity (Rust ↔ TS)”, and `packages/clawdstrike-hush-cli-engine/src/hush-cli-engine.e2e.test.ts`.)
 
 ### M1: P0 Foundation shipped (Custom Guards + Agent Frameworks + Policy-as-Code)
 - [ ] Custom guards plugin system (dev-mode first; production hardening later).
@@ -169,7 +169,7 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 
 ### M2: P1 Differentiation shipped (Prompt Security + Multi-Agent primitives)
 - [x] Prompt security baseline: stronger injection/jailbreak detection + output sanitization. (See `docs/src/reference/guards/README.md`, `crates/clawdstrike/src/jailbreak.rs`, `crates/clawdstrike/src/output_sanitizer.rs`.)
-- [ ] Multi-agent baseline: identities + delegation tokens + audit correlation.
+- [x] Multi-agent baseline: identities + delegation tokens + audit correlation. (Rust baseline primitives in `crates/hush-multi-agent/src/{types.rs,identity_registry.rs,token.rs,message.rs,correlation.rs}`.)
 
 ### M3: P2 Enterprise readiness shipped
 - [ ] Human-in-loop approvals + breakglass.
@@ -194,15 +194,15 @@ Primary specs: `docs/plans/custom-guards/*`
 - [ ] Define guard config schemas and how they are validated (JSON Schema + runtime checks).
 
 ### A2. Plugin manifest + validation
-- [ ] Implement `clawdstrike.plugin.json` (npm) and `clawdstrike.plugin.toml` (Rust) parsing + validation.
-- [ ] Publish JSON Schema(s) for manifests + policy schema(s) (versioned URLs + local copies for offline use).
+- [x] Implement `clawdstrike.plugin.json` (npm) and `clawdstrike.plugin.toml` (Rust) parsing + validation. (See `packages/clawdstrike-policy/src/plugins/manifest.ts`, `packages/clawdstrike-policy/src/plugins/loader.ts`, and `crates/clawdstrike/src/plugins/manifest.rs`.)
+- [ ] Publish JSON Schema(s) for manifests + policy schema(s) (versioned URLs + local copies for offline use). *(Partial: plugin manifest schema scaffolded at `packages/clawdstrike-policy/schemas/clawdstrike.plugin.schema.json`.)*
 - [ ] Add CLI commands for plugin validation (dev ergonomics): `guard validate`, `guard inspect`.
 
 ### A3. TS plugin loader (Node)
-- [ ] Package resolution (local path + npm).
-- [ ] Dynamic import loader with explicit entrypoints per guard.
+- [x] Package resolution (local path + npm). (See `packages/clawdstrike-policy/src/plugins/loader.ts:resolvePluginRoot`.)
+- [x] Dynamic import loader with explicit entrypoints per guard. (See `packages/clawdstrike-policy/src/plugins/loader.ts:PluginLoader.loadIntoRegistry`.)
 - [ ] Guard instance manager: lifecycle, caching, hot reload (dev only).
-- [ ] Capability gate stubs wired through (even before WASM sandbox lands).
+- [x] Capability gate stubs wired through (even before WASM sandbox lands). (See `packages/clawdstrike-policy/src/plugins/loader.ts:validateCapabilityPolicy`.)
 
 ### A4. Rust plugin loader (native)
 - [ ] WASM runtime integration (Wasmtime) as the default for “untrusted/community” plugins.
@@ -268,8 +268,8 @@ Primary specs: `docs/plans/agent-frameworks/*`
 - [x] Ensure correct trace/correlation propagation for audit. (See `packages/clawdstrike-langchain/src/callback-handler.ts`.)
 
 ### B4. Generic adapter “bring your own framework” (P0)
-- [ ] Document and ship a minimal “generic tool runner” wrapper that any framework can plug into.
-- [ ] Provide examples (one TS sample app, one server-side handler).
+- [x] Document and ship a minimal “generic tool runner” wrapper that any framework can plug into. (See `packages/clawdstrike-adapter-core/src/generic-tool-runner.ts`, `packages/clawdstrike-adapter-core/src/generic-tool-runner.test.ts`, and `docs/src/guides/generic-adapter-integration.md`.)
+- [x] Provide examples (one TS sample app, one server-side handler). (See `examples/generic-adapter/sample-app.ts` and `examples/generic-adapter/server-handler.ts`.)
 
 ### B5. P1/P2 frameworks (later)
 - [ ] P1: `@clawdstrike/crewai` (Python bridge strategy TBD).
@@ -286,7 +286,7 @@ Primary specs: `docs/plans/policy-as-code/*`
 - [ ] Decide what’s “source of truth”:
   - Rust: extend `clawdstrike` CLI (`clawdstrike policy lint|test|diff|simulate|migrate|version`).
   - TS: keep `clawdstrike policy ...` for OpenClaw users, but ensure semantics match.
-- [ ] Ensure machine-readable output formats (JSON + optional SARIF for CI).
+- [x] Ensure machine-readable output formats (JSON + optional SARIF for CI). (See `crates/hush-cli/src/policy_lint.rs` and `docs/src/reference/api/cli.md` for `clawdstrike policy lint --sarif`; JSON outputs are available across policy subcommands.)
 
 ### C1. Validation (lint)
 - [x] Implement layered validation:
@@ -302,7 +302,7 @@ Primary specs: `docs/plans/policy-as-code/*`
 ### C3. Diff + migration tooling
 - [x] M0 baseline: `clawdstrike policy diff <left> <right> [--resolve] [--json]` (rulesets or files; optional extends resolution).
 - [x] Breaking-change detector (configurable rules; CI `--fail-on-breaking`). (See `clawdstrike policy impact --fail-on-breaking`.)
-- [ ] Migration transforms for schema upgrades (and a “dry-run” mode).
+- [x] Migration transforms for schema upgrades (and a “dry-run” mode). (See `crates/hush-cli/src/policy_migrate.rs`; default stdout output is dry-run, with `--output`/`--in-place` write modes.)
 
 ### C4. Simulation / replay
 - [x] Batch simulation mode (`events.jsonl` / audit replay) producing a report (counts, top denials). (See `clawdstrike policy simulate`.)
@@ -356,14 +356,14 @@ Primary specs: `docs/plans/prompt-security/*`
 Primary specs: `docs/plans/multi-agent/*`
 
 ### E0. Foundations (types + audit)
-- [ ] Define `AgentIdentity` and registration APIs (TS + Rust).
-- [ ] Define trace/correlation propagation (W3C trace context recommended).
-- [ ] Define “cross-agent event” schema additions (delegation, channel open/close, cross-agent access).
+- [ ] Define `AgentIdentity` and registration APIs (TS + Rust). *(Rust shipped in `crates/hush-multi-agent/src/{types.rs,identity_registry.rs}`; TS parity pending.)*
+- [x] Define trace/correlation propagation (W3C trace context recommended). (See `crates/hush-multi-agent/src/correlation.rs`.)
+- [x] Define “cross-agent event” schema additions (delegation, channel open/close, cross-agent access). (See `crates/hush-multi-agent/src/correlation.rs`.)
 
 ### E1. Delegation tokens
-- [ ] Token format + signing (COSE Sign1 / EdDSA suggested).
-- [ ] Verification middleware + revocation registry interface.
-- [ ] Attenuation enforcement (capability ceiling, chain tracking).
+- [x] Token format + signing (COSE Sign1 / EdDSA suggested). (JCS + Ed25519 baseline in `crates/hush-multi-agent/src/token.rs`.)
+- [x] Verification middleware + revocation registry interface. (See `crates/hush-multi-agent/src/{token.rs,message.rs,revocation.rs}`.)
+- [x] Attenuation enforcement (capability ceiling, chain tracking). (See `crates/hush-multi-agent/src/token.rs:DelegationClaims::redelegate` + `validate_redelegation_from`.)
 
 ### E2. Cross-agent policy enforcement
 - [ ] Cross-agent guard to prevent confused deputy (sender+receiver checks).
@@ -404,7 +404,7 @@ Primary specs: `docs/plans/identity-access/*`
 - [ ] Okta/Auth0: `docs/plans/identity-access/okta-auth0.md`
 
 ### F3. SIEM/SOAR + audit exports
-- [ ] Define audit sink interface (stdout/jsonl, webhook, OTLP, Splunk HEC, Datadog logs).
+- [x] Define audit sink interface (stdout/jsonl, webhook, OTLP, Splunk HEC, Datadog logs). (See `crates/hushd/src/audit/forward.rs`, `crates/hushd/src/config.rs`, and SIEM Datadog exporter in `crates/hushd/src/siem/exporters/datadog.rs`.)
 - [ ] Ensure tamper-evident audit storage options (hash chaining, signed checkpoints).
 - [ ] Add export formats (JSONL + optional CEF/LEEF).
 

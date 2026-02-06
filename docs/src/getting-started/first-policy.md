@@ -2,10 +2,12 @@
 
 Policies are YAML files parsed into `clawdstrike::Policy`. They configure the built-in guards under `guards.*` and engine settings under `settings.*`.
 
+Policy schema `1.2.0` is current. Posture is optional.
+
 ## Minimal policy (inherit a ruleset)
 
 ```yaml
-version: "1.1.0"
+version: "1.2.0"
 name: My Policy
 extends: clawdstrike:default
 ```
@@ -47,6 +49,18 @@ Notes:
 
 - Forbidden paths use Rust `glob` patterns (the same syntax as the built-in rulesets).
 - Paths are matched against a normalized string (backslashes become `/`). `~` is not expanded.
+
+## Optional: enable least-privilege path allowlists (`1.2.0+`)
+
+```yaml
+guards:
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/my-repo/**"
+    file_write_allow:
+      - "**/my-repo/**"
+```
 
 ## Tune secret scanning (patch/file writes)
 
@@ -124,3 +138,5 @@ Resolve `extends` and show the merged result:
 clawdstrike policy validate --resolve policy.yaml
 clawdstrike policy show --merged policy.yaml
 ```
+
+If you want dynamic session states/budgets/transitions, see the posture guide: [Posture Policies](../guides/posture-policy.md).

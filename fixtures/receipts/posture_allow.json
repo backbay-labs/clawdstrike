@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "receipt_id": "snap-posture-allow",
+  "timestamp": "2026-02-06T00:00:00Z",
+  "content_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": {
+    "passed": true
+  },
+  "provenance": {
+    "clawdstrike_version": "0.1.0",
+    "policy_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "ruleset": "default",
+    "violations": []
+  },
+  "metadata": {
+    "clawdstrike": {
+      "posture": {
+        "state_before": "work",
+        "state_after": "work",
+        "budgets_before": {
+          "file_writes": {
+            "used": 5,
+            "limit": 50
+          }
+        },
+        "budgets_after": {
+          "file_writes": {
+            "used": 6,
+            "limit": 50
+          }
+        },
+        "budget_deltas": {
+          "file_writes": 1
+        },
+        "transition": null
+      }
+    }
+  }
+}

@@ -54,17 +54,20 @@ pub mod irm;
 pub mod jailbreak;
 pub mod marketplace_feed;
 pub mod output_sanitizer;
+pub mod pipeline;
 mod placeholders;
+pub mod plugins;
 pub mod policy;
 pub mod policy_bundle;
+pub mod posture;
 pub mod watermarking;
 
-pub use engine::{GuardReport, HushEngine};
+pub use engine::{GuardReport, HushEngine, PostureAwareReport};
 pub use error::{Error, Result};
 pub use guards::{
     CustomGuardFactory, CustomGuardRegistry, EgressAllowlistGuard, ForbiddenPathGuard, Guard,
     GuardContext, GuardResult, JailbreakConfig, JailbreakGuard, McpToolGuard, PatchIntegrityGuard,
-    PromptInjectionGuard, SecretLeakGuard, Severity,
+    PathAllowlistGuard, PromptInjectionGuard, SecretLeakGuard, Severity,
 };
 pub use hygiene::{
     detect_prompt_injection, detect_prompt_injection_with_limit, wrap_user_content, DedupeStatus,
@@ -97,8 +100,18 @@ pub use output_sanitizer::{
     SanitizationResult, SanitizationStream, SensitiveCategory, SensitiveDataFinding, Span,
     StreamingConfig,
 };
+pub use pipeline::{EvaluationPath, EvaluationStage};
+pub use plugins::{
+    parse_plugin_manifest_toml, resolve_plugin_root, PluginExecutionMode, PluginInspectResult,
+    PluginLoadPlan, PluginLoader, PluginLoaderOptions, PluginManifest,
+};
 pub use policy::{Policy, RuleSet};
 pub use policy_bundle::{PolicyBundle, SignedPolicyBundle, POLICY_BUNDLE_SCHEMA_VERSION};
+pub use posture::{
+    PostureBudgetCounter, PostureConfig, PostureProgram, PostureRuntimeState, PostureState,
+    PostureTransition, PostureTransitionRecord, RuntimeTransitionTrigger, TransitionRequirement,
+    TransitionTrigger,
+};
 pub use watermarking::{
     EncodedWatermark, PromptWatermarker, WatermarkConfig, WatermarkEncoding, WatermarkError,
     WatermarkExtractionResult, WatermarkExtractor, WatermarkPayload, WatermarkVerifierConfig,

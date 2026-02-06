@@ -25,3 +25,13 @@ Multiple guards can apply to the same action. `HushEngine` aggregates the per-gu
 - otherwise ⇒ overall is allowed
 
 If `settings.fail_fast: true`, evaluation stops on the first block.
+
+## Posture-Aware Decisions (`1.2.0+`)
+
+When a policy includes `posture`, the engine adds posture checks around guard evaluation:
+
+1. Precheck: capability + budget gate for the current posture state.
+2. Guard pipeline: built-in/custom/async guards.
+3. Postcheck: budget consumption + transition triggers.
+
+This means denials can come from posture precheck (`posture` or `posture_budget`) before any guard runs.

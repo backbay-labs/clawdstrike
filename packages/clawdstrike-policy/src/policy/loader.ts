@@ -116,7 +116,7 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
 
   if (strategy === 'merge') {
     const out: Policy = { ...base };
-    if (child.version && child.version !== '1.1.0') out.version = child.version;
+    if (child.version) out.version = child.version;
     if (child.name) out.name = child.name;
     if (child.description) out.description = child.description;
     if (child.guards) out.guards = child.guards;
@@ -129,7 +129,7 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
 
   // deep_merge
   const out: Policy = { ...base };
-  if (child.version && child.version !== '1.1.0') out.version = child.version;
+  if (child.version) out.version = child.version;
   if (child.name) out.name = child.name;
   if (child.description) out.description = child.description;
 

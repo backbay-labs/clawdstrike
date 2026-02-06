@@ -1,0 +1,33 @@
+{
+  "version": "1.0.0",
+  "receipt_id": "snap-posture-deny-capability",
+  "timestamp": "2026-02-06T00:00:01Z",
+  "content_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": {
+    "passed": false
+  },
+  "provenance": {
+    "clawdstrike_version": "0.1.0",
+    "policy_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "ruleset": "default",
+    "violations": [
+      {
+        "guard": "posture",
+        "severity": "Error",
+        "message": "action 'shell' is not allowed in posture state 'work'"
+      }
+    ]
+  },
+  "metadata": {
+    "clawdstrike": {
+      "posture": {
+        "state_before": "work",
+        "state_after": "work",
+        "budgets_before": {},
+        "budgets_after": {},
+        "budget_deltas": {},
+        "transition": null
+      }
+    }
+  }
+}

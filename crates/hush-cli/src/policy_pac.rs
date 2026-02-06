@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::io::{BufRead, IsTerminal as _, Read as _, Write};
 use std::time::Instant;
 
 use anyhow::Context as _;
-use clawdstrike::{GuardReport, GuardResult, HushEngine, Severity};
+use clawdstrike::{GuardReport, GuardResult, HushEngine, PostureRuntimeState, Severity};
 
 use crate::guard_report_json::GuardReportJson;
 use crate::policy_event::{map_policy_event, PolicyEvent};
@@ -18,6 +19,7 @@ pub struct PolicySimulateOptions<'a> {
     pub summary: bool,
     pub fail_on_deny: bool,
     pub benchmark: bool,
+    pub track_posture: bool,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -66,6 +68,8 @@ pub struct SimulationResultEntry {
     pub outcome: &'static str,
     pub decision: DecisionJson,
     pub report: GuardReportJson,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub posture: Option<SimulatedPostureState>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -79,6 +83,29 @@ pub struct PolicySimulateJsonOutput {
     pub exit_code: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<CliJsonError>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimulatedPostureState {
+    pub state: String,
+    pub budgets: HashMap<String, SimulatedBudgetCounter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition: Option<SimulatedTransition>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SimulatedBudgetCounter {
+    pub used: u64,
+    pub limit: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SimulatedTransition {
+    pub from: String,
+    pub to: String,
+    pub trigger: String,
+    pub at: String,
 }
 
 fn policy_source_for_loaded(source: &crate::policy_diff::ResolvedPolicySource) -> PolicySource {
@@ -148,6 +175,37 @@ fn outcome_and_exit_code(report: &GuardReport) -> (&'static str, ExitCode) {
     }
 
     ("allowed", ExitCode::Ok)
+}
+
+fn posture_snapshot_from_runtime(
+    runtime: Option<&PostureRuntimeState>,
+    transition: Option<&clawdstrike::PostureTransitionRecord>,
+) -> Option<SimulatedPostureState> {
+    let runtime = runtime?;
+    let budgets = runtime
+        .budgets
+        .iter()
+        .map(|(name, counter)| {
+            (
+                name.clone(),
+                SimulatedBudgetCounter {
+                    used: counter.used,
+                    limit: counter.limit,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    Some(SimulatedPostureState {
+        state: runtime.current_state.clone(),
+        budgets,
+        transition: transition.map(|transition| SimulatedTransition {
+            from: transition.from.clone(),
+            to: transition.to.clone(),
+            trigger: transition.trigger.clone(),
+            at: transition.at.clone(),
+        }),
+    })
 }
 
 fn synthetic_error_report_json(message: &str) -> GuardReportJson {
@@ -439,6 +497,7 @@ pub async fn cmd_policy_simulate(
         warn: 0,
         blocked: 0,
     };
+    let mut posture_state: Option<PostureRuntimeState> = None;
 
     for (idx, line) in input.lines().enumerate() {
         let line = match line {
@@ -500,28 +559,64 @@ pub async fn cmd_policy_simulate(
             }
         };
 
-        let report = match engine
-            .check_action_report(&mapped.action.as_guard_action(), &mapped.context)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                return emit_policy_simulate_error(
-                    opts.json,
-                    policy,
-                    &events_path,
-                    summary,
-                    results,
-                    ExitCode::RuntimeError,
-                    "runtime_error",
-                    &format!("Policy evaluation failed on line {}: {}", idx + 1, e),
-                    stdout,
-                    stderr,
-                );
-            }
-        };
+        let (report, posture_snapshot) = if opts.track_posture {
+            let posture_report = match engine
+                .check_action_report_with_posture(
+                    &mapped.action.as_guard_action(),
+                    &mapped.context,
+                    &mut posture_state,
+                )
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    return emit_policy_simulate_error(
+                        opts.json,
+                        policy,
+                        &events_path,
+                        summary,
+                        results,
+                        ExitCode::RuntimeError,
+                        "runtime_error",
+                        &format!("Policy evaluation failed on line {}: {}", idx + 1, e),
+                        stdout,
+                        stderr,
+                    );
+                }
+            };
 
-        engine.reset().await;
+            (
+                posture_report.guard_report,
+                posture_snapshot_from_runtime(
+                    posture_state.as_ref(),
+                    posture_report.transition.as_ref(),
+                ),
+            )
+        } else {
+            let report = match engine
+                .check_action_report(&mapped.action.as_guard_action(), &mapped.context)
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    return emit_policy_simulate_error(
+                        opts.json,
+                        policy,
+                        &events_path,
+                        summary,
+                        results,
+                        ExitCode::RuntimeError,
+                        "runtime_error",
+                        &format!("Policy evaluation failed on line {}: {}", idx + 1, e),
+                        stdout,
+                        stderr,
+                    );
+                }
+            };
+
+            engine.reset().await;
+            (report, None)
+        };
 
         let decision = decision_from_report(&report, mapped.decision_reason);
         let (outcome, _code) = outcome_and_exit_code(&report);
@@ -540,6 +635,7 @@ pub async fn cmd_policy_simulate(
                 outcome,
                 decision,
                 report: GuardReportJson::from_report(&report),
+                posture: posture_snapshot,
             };
 
             if opts.jsonl {

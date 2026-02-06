@@ -1,4 +1,4 @@
-export type PolicySchemaVersion = '1.1.0';
+export type PolicySchemaVersion = '1.1.0' | '1.2.0';
 
 export type TimeoutBehavior = 'allow' | 'deny' | 'warn' | 'defer';
 export type AsyncExecutionMode = 'parallel' | 'sequential' | 'background';
@@ -49,7 +49,15 @@ export interface CustomGuardSpec {
   async?: AsyncGuardPolicyConfig;
 }
 
+export interface PathAllowlistConfig {
+  enabled?: boolean;
+  file_access_allow?: string[];
+  file_write_allow?: string[];
+  patch_allow?: string[];
+}
+
 export interface GuardConfigs {
+  path_allowlist?: PathAllowlistConfig;
   custom?: CustomGuardSpec[];
   // Other guard configs exist in Rust, but threat-intel MVP is custom-only for TS.
   [key: string]: unknown;
@@ -67,6 +75,37 @@ export interface PolicyCustomGuardSpec {
   config?: Record<string, unknown>;
 }
 
+export type TransitionTrigger =
+  | 'user_approval'
+  | 'user_denial'
+  | 'critical_violation'
+  | 'any_violation'
+  | 'timeout'
+  | 'budget_exhausted'
+  | 'pattern_match';
+
+export type TransitionRequirement = { no_violations_in: string };
+
+export interface PostureState {
+  description?: string;
+  capabilities?: string[];
+  budgets?: Record<string, number>;
+}
+
+export interface PostureTransition {
+  from: string;
+  to: string;
+  on: TransitionTrigger;
+  after?: string;
+  requires?: TransitionRequirement[];
+}
+
+export interface PostureConfig {
+  initial: string;
+  states: Record<string, PostureState>;
+  transitions?: PostureTransition[];
+}
+
 export interface Policy {
   version?: string;
   name?: string;
@@ -76,4 +115,5 @@ export interface Policy {
   guards?: GuardConfigs;
   custom_guards?: PolicyCustomGuardSpec[];
   settings?: PolicySettings;
+  posture?: PostureConfig;
 }
