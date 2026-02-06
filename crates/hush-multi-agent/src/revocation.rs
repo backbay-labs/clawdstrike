@@ -224,6 +224,7 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
             conn: &Connection,
             table: &str,
             key_col: &str,
+            order_by: &str,
             max: usize,
         ) -> std::result::Result<(), rusqlite::Error> {
             let count: i64 =
@@ -233,7 +234,9 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
             if (count as usize) > max {
                 let excess = count as usize - max;
                 conn.execute(
-                    &format!("DELETE FROM {table} WHERE {key_col} IN (SELECT {key_col} FROM {table} LIMIT ?1)"),
+                    &format!(
+                        "DELETE FROM {table} WHERE {key_col} IN (SELECT {key_col} FROM {table} ORDER BY {order_by} LIMIT ?1)"
+                    ),
                     rusqlite::params![excess as i64],
                 )?;
             }
@@ -273,7 +276,13 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
                 "INSERT OR REPLACE INTO revocations (token_id, until_unix) VALUES (?1, ?2)",
                 rusqlite::params![token_id, until_unix],
             );
-            let _ = Self::enforce_limit(&conn, "revocations", "token_id", self.max_revocations);
+            let _ = Self::enforce_limit(
+                &conn,
+                "revocations",
+                "token_id",
+                "(until_unix IS NULL) ASC, until_unix ASC, rowid ASC",
+                self.max_revocations,
+            );
         }
 
         fn check_and_mark_nonce(
@@ -313,8 +322,14 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
             )
             .map_err(|e| Error::Database(e.to_string()))?;
 
-            Self::enforce_limit(&conn, "nonces", "nonce_key", self.max_nonces)
-                .map_err(|e| Error::Database(e.to_string()))?;
+            Self::enforce_limit(
+                &conn,
+                "nonces",
+                "nonce_key",
+                "expires_at ASC, rowid ASC",
+                self.max_nonces,
+            )
+            .map_err(|e| Error::Database(e.to_string()))?;
 
             Ok(())
         }
@@ -463,6 +478,44 @@ mod sqlite_tests {
 
         let count = store.nonce_count().expect("count");
         assert!(count <= 5, "expected <= 5, got {count}");
+    }
+
+    #[test]
+    fn sqlite_capacity_limit_nonces_evicts_earliest_expiry() {
+        let store = SqliteRevocationStore::in_memory()
+            .expect("init")
+            .with_max_nonces(1);
+
+        store
+            .check_and_mark_nonce("scope", "z-old", 1000, 30)
+            .expect("insert first");
+        store
+            .check_and_mark_nonce("scope", "a-new", 1000, 120)
+            .expect("insert second");
+
+        store
+            .check_and_mark_nonce("scope", "z-old", 1001, 30)
+            .expect("earliest-expiry nonce should have been evicted");
+        let err = store
+            .check_and_mark_nonce("scope", "a-new", 1001, 30)
+            .expect_err("newer nonce should still be present");
+        assert!(matches!(err, Error::Replay));
+    }
+
+    #[test]
+    fn sqlite_capacity_limit_revocations_evicts_smallest_until_first() {
+        let store = SqliteRevocationStore::in_memory()
+            .expect("init")
+            .with_max_revocations(1);
+
+        store.revoke("z-old".to_string(), Some(2000));
+        store.revoke("a-new".to_string(), Some(3000));
+
+        assert!(
+            !store.is_revoked("z-old", 1000),
+            "older/smaller-until revocation should be evicted first"
+        );
+        assert!(store.is_revoked("a-new", 1000));
     }
 
     #[test]
