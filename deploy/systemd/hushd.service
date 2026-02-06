@@ -5,7 +5,7 @@ After=network.target
 Wants=network-online.target
 
 [Service]
-Type=notify
+Type=simple
 User=hushd
 Group=hushd
 
@@ -69,8 +69,9 @@ ReadOnlyPaths=/
 ReadWritePaths=/var/lib/hushd
 ReadWritePaths=/var/log/hushd
 
-# Watchdog - daemon sends WATCHDOG=1 every 15s; systemd kills if 30s elapses.
-WatchdogSec=30
+# Watchdog is optional. Enable only when hushd is built with `--features systemd`
+# and the unit Type is switched to `notify`.
+# WatchdogSec=30
 
 [Install]
 WantedBy=multi-user.target

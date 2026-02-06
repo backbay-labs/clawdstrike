@@ -63,6 +63,10 @@ describe("Clawdstrike", () => {
     expect(decision.guard).toBe("forbidden_path");
   });
 
+  it("fromPolicy does not silently fall back on invalid policy input", async () => {
+    await expect(Clawdstrike.fromPolicy("this-is-not-a-policy")).rejects.toThrow("expected an object");
+  });
+
   it("fromDaemon evaluates remotely and fails closed on transport errors", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {
