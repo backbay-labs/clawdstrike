@@ -36,6 +36,22 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install TypeScript compiler
+        run: npm install -g typescript@5.9.3
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install mypy
+        run: python -m pip install --disable-pip-version-check mypy==1.19.1
+
       - name: Validate docs code blocks
         run: tools/scripts/validate-docs
 

@@ -34,6 +34,7 @@
 - [Posture Policies](guides/posture-policy.md)
 - [Observe -> Synth -> Tighten](guides/observe-synth.md)
 - [Audit Logging](guides/audit-logging.md)
+- [Marketplace Feed](guides/marketplace-feed.md)
 
 # Reference
 

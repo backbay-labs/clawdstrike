@@ -166,3 +166,153 @@ export async function verifyReceipt(receipt: unknown): Promise<ReceiptVerificati
   const invoke = await getTauriInvoke();
   return invoke("verify_receipt", { receipt });
 }
+
+// === Marketplace Commands ===
+
+export interface MarketplacePolicyDto {
+  entry_id: string;
+  bundle_uri: string;
+  title: string;
+  description: string;
+  category?: string | null;
+  tags: string[];
+  author?: string | null;
+  author_url?: string | null;
+  icon?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  attestation_uid?: string | null;
+  notary_url?: string | null;
+  bundle_public_key?: string | null;
+  signed_bundle: SignedPolicyBundle;
+}
+
+export interface SignedPolicyBundle {
+  bundle: PolicyBundle;
+  signature: string;
+  public_key?: string;
+  [k: string]: unknown;
+}
+
+export interface PolicyBundle {
+  version: string;
+  bundle_id: string;
+  compiled_at: string;
+  policy: PolicySummary;
+  policy_hash: string;
+  sources?: string[];
+  metadata?: unknown;
+  [k: string]: unknown;
+}
+
+export interface PolicySummary {
+  version: string;
+  name: string;
+  description: string;
+  [k: string]: unknown;
+}
+
+export interface MarketplaceListResponse {
+  feed_id: string;
+  published_at: string;
+  seq: number;
+  signer_public_key: string;
+  policies: MarketplacePolicyDto[];
+  warnings?: string[];
+}
+
+export async function listMarketplacePolicies(sources?: string[]): Promise<MarketplaceListResponse> {
+  if (!isTauri()) {
+    throw new Error("Marketplace requires Tauri");
+  }
+
+  const invoke = await getTauriInvoke();
+  return invoke("marketplace_list_policies", { sources });
+}
+
+export async function installMarketplacePolicy(daemonUrl: string, signedBundle: SignedPolicyBundle): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Marketplace requires Tauri");
+  }
+
+  const invoke = await getTauriInvoke();
+  return invoke("marketplace_install_policy", { daemon_url: daemonUrl, signed_bundle: signedBundle });
+}
+
+export interface NotaryVerifyResult {
+  valid: boolean;
+  attester?: string | null;
+  attested_at?: string | null;
+  error?: string | null;
+}
+
+export async function verifyMarketplaceAttestation(notaryUrl: string, uid: string): Promise<NotaryVerifyResult> {
+  if (!isTauri()) {
+    throw new Error("Marketplace requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("marketplace_verify_attestation", { notary_url: notaryUrl, uid });
+}
+
+// === Marketplace Discovery Commands ===
+
+export interface MarketplaceDiscoveryConfig {
+  listen_port?: number | null;
+  bootstrap?: string[];
+  topic?: string | null;
+}
+
+export interface MarketplaceDiscoveryAnnouncement {
+  v?: number;
+  feed_uri: string;
+  feed_id?: string | null;
+  seq?: number | null;
+  signer_public_key?: string | null;
+}
+
+export interface MarketplaceDiscoveryEvent {
+  received_at: string;
+  from_peer_id: string;
+  announcement: MarketplaceDiscoveryAnnouncement;
+}
+
+export interface MarketplaceDiscoveryStatus {
+  running: boolean;
+  peer_id?: string | null;
+  listen_addrs?: string[];
+  topic: string;
+  connected_peers: number;
+  last_error?: string | null;
+}
+
+export async function startMarketplaceDiscovery(config?: MarketplaceDiscoveryConfig): Promise<MarketplaceDiscoveryStatus> {
+  if (!isTauri()) {
+    throw new Error("Marketplace discovery requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("marketplace_discovery_start", { config });
+}
+
+export async function stopMarketplaceDiscovery(): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Marketplace discovery requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("marketplace_discovery_stop");
+}
+
+export async function getMarketplaceDiscoveryStatus(): Promise<MarketplaceDiscoveryStatus> {
+  if (!isTauri()) {
+    throw new Error("Marketplace discovery requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("marketplace_discovery_status");
+}
+
+export async function announceMarketplaceDiscovery(announcement: MarketplaceDiscoveryAnnouncement): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Marketplace discovery requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("marketplace_discovery_announce", { announcement });
+}

@@ -14,12 +14,25 @@ Default serialized version is `1.2.0`.
 - `version` (string)
 - `name` (string)
 - `description` (string)
-- `extends` (string, optional): ruleset id (`clawdstrike:default`), local path, or pinned remote reference
+- `extends` (string, optional): a built-in ruleset id (e.g. `clawdstrike:default`), a file path, or a pinned remote reference (e.g. `https://…/policy.yaml#sha256=…` / `git+…#sha256=…`) when enabled
 - `merge_strategy` (`replace` | `merge` | `deep_merge`)
 - `guards` (object)
 - `custom_guards` (array)
 - `settings` (object)
 - `posture` (object, optional, `1.2.0+`)
+
+## Remote `extends` (security)
+
+Remote `extends` is **disabled by default** and must be explicitly enabled via an **allowlist**:
+
+- `hushd`: configure `remote_extends.allowed_hosts`
+- `hush`: pass `--remote-extends-allow-host` (repeatable)
+
+Remote references must be **integrity pinned** with `#sha256=<64-hex>`. By default, the resolver is hardened:
+
+- HTTPS-only (HTTP requires explicit opt-in)
+- blocks private/loopback/link-local IP resolution by default
+- limits redirects and re-validates scheme/host allowlists on each hop
 
 ## Full schema example
 

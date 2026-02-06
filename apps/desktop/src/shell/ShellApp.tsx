@@ -12,6 +12,7 @@ import { getPlugins } from "./plugins";
 import { ConnectionProvider } from "@/context/ConnectionContext";
 import { PolicyProvider } from "@/context/PolicyContext";
 import { SwarmProvider } from "@/context/SwarmContext";
+import { MarketplaceDiscoveryBootstrap } from "./MarketplaceDiscoveryBootstrap";
 
 export function ShellApp() {
   const plugins = getPlugins();
@@ -20,6 +21,7 @@ export function ShellApp() {
     <ConnectionProvider>
       <PolicyProvider>
         <SwarmProvider>
+          <MarketplaceDiscoveryBootstrap />
           <HashRouter>
             <Routes>
               {/* Main shell with navigation */}

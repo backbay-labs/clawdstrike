@@ -1,0 +1,165 @@
+{
+  "bundle": {
+    "version": "clawdstrike-policy-bundle-v1",
+    "bundle_id": "20944ecb-7cc2-4caa-a247-491ba9374681",
+    "compiled_at": "2026-02-05T06:17:36.807922+00:00",
+    "policy": {
+      "version": "1.1.0",
+      "name": "Strict",
+      "description": "Strict security rules with minimal permissions",
+      "extends": null,
+      "merge_strategy": "deep_merge",
+      "guards": {
+        "forbidden_path": {
+          "enabled": true,
+          "patterns": [
+            "**/.ssh/**",
+            "**/id_rsa*",
+            "**/id_ed25519*",
+            "**/id_ecdsa*",
+            "**/.aws/**",
+            "**/.env",
+            "**/.env.*",
+            "**/.git-credentials",
+            "**/.gitconfig",
+            "**/.gnupg/**",
+            "**/.kube/**",
+            "**/.docker/**",
+            "**/.npmrc",
+            "**/.password-store/**",
+            "**/pass/**",
+            "**/.1password/**",
+            "/etc/shadow",
+            "/etc/passwd",
+            "/etc/sudoers",
+            "**/.vault/**",
+            "**/.secrets/**",
+            "**/credentials/**",
+            "**/private/**"
+          ],
+          "exceptions": [],
+          "additional_patterns": [],
+          "remove_patterns": []
+        },
+        "egress_allowlist": {
+          "enabled": true,
+          "allow": [],
+          "block": [],
+          "default_action": "block",
+          "additional_allow": [],
+          "remove_allow": [],
+          "additional_block": [],
+          "remove_block": []
+        },
+        "secret_leak": {
+          "enabled": true,
+          "redact": true,
+          "severity_threshold": "error",
+          "patterns": [
+            {
+              "name": "aws_access_key",
+              "pattern": "AKIA[0-9A-Z]{16}",
+              "severity": "critical",
+              "luhn_check": false
+            },
+            {
+              "name": "github_token",
+              "pattern": "gh[ps]_[A-Za-z0-9]{36}",
+              "severity": "critical",
+              "luhn_check": false
+            },
+            {
+              "name": "openai_key",
+              "pattern": "sk-[A-Za-z0-9]{48}",
+              "severity": "critical",
+              "luhn_check": false
+            },
+            {
+              "name": "anthropic_key",
+              "pattern": "sk-ant-[A-Za-z0-9\\-]{95}",
+              "severity": "critical",
+              "luhn_check": false
+            },
+            {
+              "name": "private_key",
+              "pattern": "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----",
+              "severity": "critical",
+              "luhn_check": false
+            },
+            {
+              "name": "npm_token",
+              "pattern": "npm_[A-Za-z0-9]{36}",
+              "severity": "critical",
+              "luhn_check": false
+            },
+            {
+              "name": "slack_token",
+              "pattern": "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*",
+              "severity": "critical",
+              "luhn_check": false
+            },
+            {
+              "name": "generic_api_key",
+              "pattern": "(?i)(api[_\\-]?key|apikey)\\s*[:=]\\s*[A-Za-z0-9]{32,}",
+              "severity": "error",
+              "luhn_check": false
+            }
+          ],
+          "skip_paths": [
+            "**/test/**",
+            "**/tests/**"
+          ]
+        },
+        "patch_integrity": {
+          "enabled": true,
+          "max_additions": 500,
+          "max_deletions": 200,
+          "forbidden_patterns": [
+            "(?i)disable[_\\-]?(security|auth|ssl|tls)",
+            "(?i)skip[_\\-]?(verify|validation|check)",
+            "(?i)rm\\s+-rf\\s+/",
+            "(?i)chmod\\s+777",
+            "(?i)eval\\s*\\(",
+            "(?i)exec\\s*\\(",
+            "(?i)reverse[_\\-]?shell",
+            "(?i)bind[_\\-]?shell"
+          ],
+          "require_balance": true,
+          "max_imbalance_ratio": 5.0
+        },
+        "mcp_tool": {
+          "enabled": true,
+          "allow": [
+            "read_file",
+            "list_directory",
+            "search",
+            "grep"
+          ],
+          "block": [],
+          "require_confirmation": [],
+          "default_action": "block",
+          "max_args_size": 524288,
+          "additional_allow": [],
+          "remove_allow": [],
+          "additional_block": [],
+          "remove_block": []
+        },
+        "prompt_injection": null,
+        "jailbreak": null,
+        "custom": []
+      },
+      "custom_guards": [],
+      "settings": {
+        "fail_fast": true,
+        "verbose_logging": false,
+        "session_timeout_secs": 1800
+      }
+    },
+    "policy_hash": "0x707c7a7bca8524020dcb7c36ff4b156d195bb42a99ce09289045f2d248f008f6",
+    "sources": [
+      "file:rulesets/strict.yaml"
+    ]
+  },
+  "signature": "3178c121d2c6b392a2a974a3f4c0985cca0a6d6911f92e779f5e8778a4909c531a62c725036dcb4a25f3b8cca3a78533c0aa029a947b5d551f2b65b0bd1c0c06",
+  "public_key": "04a66588333edb5b212046cc58a5c13d1d1759386a3b482e6dbb8b3ab6af27f7"
+}

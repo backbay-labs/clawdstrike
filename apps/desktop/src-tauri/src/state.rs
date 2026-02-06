@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::marketplace_discovery::MarketplaceDiscoveryManager;
+
 /// Daemon connection information
 #[derive(Debug, Clone, Default)]
 pub struct DaemonConnection {
@@ -16,6 +18,7 @@ pub struct DaemonConnection {
 pub struct AppState {
     pub daemon: Arc<RwLock<DaemonConnection>>,
     pub http_client: reqwest::Client,
+    pub marketplace_discovery: MarketplaceDiscoveryManager,
 }
 
 impl AppState {
@@ -29,6 +32,7 @@ impl AppState {
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("Failed to create HTTP client"),
+            marketplace_discovery: MarketplaceDiscoveryManager::new(),
         }
     }
 }
