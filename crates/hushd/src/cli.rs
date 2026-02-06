@@ -217,7 +217,8 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     // Notify systemd that the daemon is ready (Type=notify).
     #[cfg(feature = "systemd")]
     {
-        sd_notify::notify(true, &[sd_notify::NotifyState::Ready]).ok();
+        // Keep NOTIFY_SOCKET set so later WATCHDOG=1 heartbeats can be sent.
+        sd_notify::notify(false, &[sd_notify::NotifyState::Ready]).ok();
         tracing::info!("sd_notify: READY=1 sent");
     }
 
