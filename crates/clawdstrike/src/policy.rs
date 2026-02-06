@@ -804,7 +804,7 @@ impl Policy {
         match child.merge_strategy {
             MergeStrategy::Replace => child.clone(),
             MergeStrategy::Merge => Self {
-                version: if child.version != default_version() {
+                version: if child.version != self.version {
                     child.version.clone()
                 } else {
                     self.version.clone()
@@ -839,7 +839,7 @@ impl Policy {
                 posture: child.posture.clone().or_else(|| self.posture.clone()),
             },
             MergeStrategy::DeepMerge => Self {
-                version: if child.version != default_version() {
+                version: if child.version != self.version {
                     child.version.clone()
                 } else {
                     self.version.clone()
@@ -2172,6 +2172,24 @@ name: Test
         assert_eq!(merged.name, "Child");
         assert!(!merged.settings.effective_fail_fast()); // child replaces
         assert!(!merged.settings.effective_verbose_logging()); // child replaces
+    }
+
+    #[test]
+    fn test_policy_merge_allows_child_version_1_2_override() {
+        let base = Policy {
+            version: "1.1.0".to_string(),
+            name: "Base".to_string(),
+            ..Default::default()
+        };
+        let child = Policy {
+            version: "1.2.0".to_string(),
+            name: "Child".to_string(),
+            merge_strategy: MergeStrategy::DeepMerge,
+            ..Default::default()
+        };
+
+        let merged = base.merge(&child);
+        assert_eq!(merged.version, "1.2.0");
     }
 
     #[test]

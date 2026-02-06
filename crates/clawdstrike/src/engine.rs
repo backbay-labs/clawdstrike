@@ -386,7 +386,6 @@ impl HushEngine {
                 context,
                 &mut per_guard,
                 &mut evaluation_path,
-                fail_fast,
             )
             .await;
 
@@ -399,7 +398,6 @@ impl HushEngine {
                     context,
                     &mut per_guard,
                     &mut evaluation_path,
-                    fail_fast,
                 )
                 .await;
         }
@@ -462,8 +460,8 @@ impl HushEngine {
         context: &GuardContext,
         per_guard: &mut Vec<GuardResult>,
         evaluation_path: &mut EvaluationPath,
-        fail_fast: bool,
     ) -> bool {
+        let fail_fast = self.policy.settings.effective_fail_fast();
         let stage_start = Instant::now();
         let mut stage_guards: Vec<String> = Vec::new();
         let mut terminated = false;
@@ -557,11 +555,19 @@ impl HushEngine {
             }
 
             let denied = GuardResult::block(precheck.guard, precheck.severity, precheck.message);
+            self.observe_guard_result(&denied).await;
             let guard_report = GuardReport {
                 overall: denied.clone(),
                 per_guard: vec![denied],
                 evaluation_path: None,
             };
+
+            {
+                let mut engine_state = self.state.write().await;
+                engine_state.action_count += 1;
+                // No guard pipeline ran for this check; avoid carrying stale path telemetry.
+                engine_state.last_evaluation_path = None;
+            }
 
             return Ok(PostureAwareReport {
                 guard_report,
@@ -1640,6 +1646,52 @@ posture:
         assert!(!report.guard_report.overall.allowed);
         assert_eq!(report.guard_report.overall.guard, "posture");
         assert_eq!(report.posture_after, "work");
+    }
+
+    #[tokio::test]
+    async fn test_posture_precheck_denial_counts_as_violation_and_fails_receipt() {
+        let policy = Policy::from_yaml(
+            r#"
+version: "1.2.0"
+name: "posture-precheck-receipt"
+posture:
+  initial: work
+  states:
+    work:
+      capabilities: [file_access]
+      budgets: {}
+"#,
+        )
+        .unwrap();
+
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new();
+        let mut posture = None;
+
+        let report = engine
+            .check_action_report_with_posture(
+                &GuardAction::ShellCommand("echo hi"),
+                &context,
+                &mut posture,
+            )
+            .await
+            .unwrap();
+        assert!(!report.guard_report.overall.allowed);
+
+        let stats = engine.stats().await;
+        assert_eq!(stats.action_count, 1);
+        assert_eq!(stats.violation_count, 1);
+
+        let receipt = engine
+            .create_receipt(sha256(b"posture-precheck-denial"))
+            .await
+            .unwrap();
+        assert!(!receipt.verdict.passed);
+        let provenance = receipt
+            .provenance
+            .expect("receipt should include provenance");
+        assert_eq!(provenance.violations.len(), 1);
+        assert_eq!(provenance.violations[0].guard, "posture");
     }
 
     #[tokio::test]

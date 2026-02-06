@@ -26,16 +26,29 @@ pub struct PolicyLintJsonOutput {
     pub error: Option<CliJsonError>,
 }
 
+#[derive(Clone, Debug)]
+pub struct PolicyLintCommand {
+    pub policy_ref: String,
+    pub resolve: bool,
+    pub json: bool,
+    pub sarif: bool,
+    pub strict: bool,
+}
+
 pub fn cmd_policy_lint(
-    policy_ref: String,
-    resolve: bool,
+    command: PolicyLintCommand,
     remote_extends: &RemoteExtendsConfig,
-    json: bool,
-    sarif: bool,
-    strict: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
+    let PolicyLintCommand {
+        policy_ref,
+        resolve,
+        json,
+        sarif,
+        strict,
+    } = command;
+
     let loaded =
         match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve, remote_extends) {
             Ok(v) => v,

@@ -15,7 +15,6 @@ export interface PolicyLoadOptions {
 }
 
 const DEFAULT_RULESETS = new Set(['default', 'strict', 'ai-agent', 'cicd', 'permissive']);
-const DEFAULT_POLICY_VERSION = '1.2.0';
 
 export function loadPolicyFromFile(filePath: string, options: PolicyLoadOptions = {}): Policy {
   const absPath = path.resolve(filePath);
@@ -117,7 +116,7 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
 
   if (strategy === 'merge') {
     const out: Policy = { ...base };
-    if (child.version && child.version !== DEFAULT_POLICY_VERSION) out.version = child.version;
+    if (child.version) out.version = child.version;
     if (child.name) out.name = child.name;
     if (child.description) out.description = child.description;
     if (child.guards) out.guards = child.guards;
@@ -130,7 +129,7 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
 
   // deep_merge
   const out: Policy = { ...base };
-  if (child.version && child.version !== DEFAULT_POLICY_VERSION) out.version = child.version;
+  if (child.version) out.version = child.version;
   if (child.name) out.name = child.name;
   if (child.description) out.description = child.description;
 

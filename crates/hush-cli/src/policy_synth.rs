@@ -251,11 +251,13 @@ fn build_candidate_policy(
     extends: Option<String>,
     with_posture: bool,
 ) -> Policy {
-    let mut policy = Policy::default();
-    policy.version = POLICY_SCHEMA_VERSION.to_string();
-    policy.name = "Synthesized Policy".to_string();
-    policy.description = "Auto-generated from observed policy events".to_string();
-    policy.extends = extends;
+    let mut policy = Policy {
+        version: POLICY_SCHEMA_VERSION.to_string(),
+        name: "Synthesized Policy".to_string(),
+        description: "Auto-generated from observed policy events".to_string(),
+        extends,
+        ..Policy::default()
+    };
 
     policy.guards.forbidden_path = Some(ForbiddenPathConfig::with_defaults());
     policy.guards.secret_leak = Some(SecretLeakConfig::default());

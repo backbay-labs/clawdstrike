@@ -149,7 +149,7 @@ pub struct PluginGuardManifestEntry {
     pub handles: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginCapabilities {
     #[serde(default)]
@@ -162,33 +162,13 @@ pub struct PluginCapabilities {
     pub secrets: PluginSecretsCapabilities,
 }
 
-impl Default for PluginCapabilities {
-    fn default() -> Self {
-        Self {
-            network: false,
-            subprocess: false,
-            filesystem: PluginFilesystemCapabilities::default(),
-            secrets: PluginSecretsCapabilities::default(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginFilesystemCapabilities {
     #[serde(default)]
     pub read: Vec<String>,
     #[serde(default)]
     pub write: bool,
-}
-
-impl Default for PluginFilesystemCapabilities {
-    fn default() -> Self {
-        Self {
-            read: Vec::new(),
-            write: false,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
