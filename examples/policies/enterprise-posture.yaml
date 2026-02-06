@@ -1,0 +1,83 @@
+version: "1.2.0"
+name: Enterprise Posture Policy
+description: Observe/work/elevated/quarantine posture policy with least-privilege filesystem scope
+extends: clawdstrike:strict
+merge_strategy: deep_merge
+
+guards:
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/repos/my-team/**"
+      - "/tmp/**"
+    file_write_allow:
+      - "**/repos/my-team/**"
+      - "/tmp/**"
+    patch_allow:
+      - "**/repos/my-team/**"
+  egress_allowlist:
+    additional_allow:
+      - "api.github.com"
+      - "registry.npmjs.org"
+      - "api.openai.com"
+
+posture:
+  initial: observe
+  states:
+    observe:
+      description: Read-only learning mode
+      capabilities:
+        - file_access
+      budgets: {}
+    work:
+      description: Standard engineering mode
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - mcp_tool
+        - patch
+      budgets:
+        file_writes: 150
+        egress_calls: 80
+        mcp_tool_calls: 250
+        patches: 60
+    elevated:
+      description: Time-boxed elevated mode with shell
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - mcp_tool
+        - patch
+        - shell
+      budgets:
+        file_writes: 500
+        egress_calls: 150
+        mcp_tool_calls: 500
+        patches: 120
+        shell_commands: 20
+    quarantine:
+      description: Lockdown mode
+      capabilities: []
+      budgets: {}
+  transitions:
+    - from: observe
+      to: work
+      on: user_approval
+    - from: work
+      to: elevated
+      on: user_approval
+    - from: elevated
+      to: work
+      on: timeout
+      after: 30m
+    - from: "*"
+      to: quarantine
+      on: critical_violation
+    - from: "*"
+      to: quarantine
+      on: budget_exhausted
+    - from: quarantine
+      to: observe
+      on: user_approval

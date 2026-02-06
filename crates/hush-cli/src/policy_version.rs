@@ -25,7 +25,8 @@ pub fn cmd_policy_version(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
-    let supported = clawdstrike::policy::POLICY_SCHEMA_VERSION.to_string();
+    let supported_versions = clawdstrike::policy::POLICY_SUPPORTED_SCHEMA_VERSIONS;
+    let supported = supported_versions.join(", ");
 
     let loaded =
         match crate::policy_diff::load_policy_from_arg(&policy_ref, resolve, remote_extends) {
@@ -69,7 +70,7 @@ pub fn cmd_policy_version(
     let policy = loaded.policy;
     let policy_source = policy_source_for_loaded(&loaded.source);
 
-    let compatible = policy.version == supported;
+    let compatible = supported_versions.contains(&policy.version.as_str());
     let code = if compatible {
         ExitCode::Ok
     } else {

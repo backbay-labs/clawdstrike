@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::io::Write;
 
 use clawdstrike::Policy;
+use serde_json::json;
 
 use crate::policy_diff::{ResolvedPolicySource, ResolvedPolicySource as Rps};
 use crate::remote_extends::RemoteExtendsConfig;
@@ -30,6 +31,7 @@ pub fn cmd_policy_lint(
     resolve: bool,
     remote_extends: &RemoteExtendsConfig,
     json: bool,
+    sarif: bool,
     strict: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
@@ -44,18 +46,20 @@ pub fn cmd_policy_lint(
                 } else {
                     "config_error"
                 };
+                let message = e.message;
+                let policy = guess_policy_source(&policy_ref);
 
                 if json {
                     let output = PolicyLintJsonOutput {
                         version: CLI_JSON_VERSION,
                         command: "policy_lint",
-                        policy: guess_policy_source(&policy_ref),
+                        policy,
                         valid: false,
                         warnings: Vec::new(),
                         exit_code: code.as_i32(),
                         error: Some(CliJsonError {
                             kind: error_kind,
-                            message: e.message,
+                            message: message.clone(),
                         }),
                     };
                     let _ = writeln!(
@@ -65,8 +69,19 @@ pub fn cmd_policy_lint(
                     );
                     return code;
                 }
+                if sarif {
+                    emit_sarif(
+                        stdout,
+                        &policy,
+                        &[],
+                        code.as_i32(),
+                        Some(message.as_str()),
+                        false,
+                    );
+                    return code;
+                }
 
-                let _ = writeln!(stderr, "Error: {}", e.message);
+                let _ = writeln!(stderr, "Error: {}", message);
                 return code;
             }
         };
@@ -86,7 +101,7 @@ pub fn cmd_policy_lint(
         let output = PolicyLintJsonOutput {
             version: CLI_JSON_VERSION,
             command: "policy_lint",
-            policy: policy_source,
+            policy: policy_source.clone(),
             valid: true,
             warnings,
             exit_code: code.as_i32(),
@@ -97,6 +112,10 @@ pub fn cmd_policy_lint(
             "{}",
             serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
         );
+        return code;
+    }
+    if sarif {
+        emit_sarif(stdout, &policy_source, &warnings, code.as_i32(), None, true);
         return code;
     }
 
@@ -235,7 +254,56 @@ fn lint_policy(policy: &Policy) -> Vec<LintFinding> {
         }
     }
 
+    if let Some(ref posture) = policy.posture {
+        lint_posture(&mut warnings, posture);
+    }
+
     warnings
+}
+
+fn lint_posture(warnings: &mut Vec<LintFinding>, posture: &clawdstrike::PostureConfig) {
+    let mut incoming: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut outgoing: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    for state in posture.states.keys() {
+        incoming.insert(state.clone(), 0);
+        outgoing.insert(state.clone(), 0);
+    }
+
+    for transition in &posture.transitions {
+        if let Some(in_count) = incoming.get_mut(&transition.to) {
+            *in_count += 1;
+        }
+
+        if transition.from == "*" {
+            for out_count in outgoing.values_mut() {
+                *out_count += 1;
+            }
+        } else if let Some(out_count) = outgoing.get_mut(&transition.from) {
+            *out_count += 1;
+        }
+    }
+
+    for state in posture.states.keys() {
+        let in_count = incoming.get(state).copied().unwrap_or(0);
+        if state != &posture.initial && in_count == 0 {
+            warnings.push(LintFinding {
+                code: "POS001",
+                message: format!(
+                    "state '{}' has no incoming transitions (unreachable)",
+                    state
+                ),
+            });
+        }
+
+        let out_count = outgoing.get(state).copied().unwrap_or(0);
+        if out_count == 0 {
+            warnings.push(LintFinding {
+                code: "POS002",
+                message: format!("state '{}' has no outgoing transitions", state),
+            });
+        }
+    }
 }
 
 fn lint_sorted_unique(
@@ -341,5 +409,195 @@ fn guess_policy_source(policy_ref: &str) -> PolicySource {
         _ => PolicySource::PolicyFile {
             path: policy_ref.to_string(),
         },
+    }
+}
+
+fn emit_sarif(
+    stdout: &mut dyn Write,
+    policy: &PolicySource,
+    warnings: &[LintFinding],
+    exit_code: i32,
+    error_message: Option<&str>,
+    valid: bool,
+) {
+    let mut rule_ids: BTreeSet<String> = warnings.iter().map(|w| w.code.to_string()).collect();
+    if error_message.is_some() {
+        rule_ids.insert("LINT_ERROR".to_string());
+    }
+
+    let rules = rule_ids
+        .into_iter()
+        .map(|id| {
+            json!({
+                "id": id,
+                "name": "policy-lint",
+                "shortDescription": { "text": sarif_rule_description(&id) },
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let mut results = Vec::new();
+    for warning in warnings {
+        results.push(json!({
+            "ruleId": warning.code,
+            "level": sarif_level_for_code(warning.code),
+            "message": { "text": warning.message },
+        }));
+    }
+    if let Some(message) = error_message {
+        results.push(json!({
+            "ruleId": "LINT_ERROR",
+            "level": "error",
+            "message": { "text": message },
+        }));
+    }
+
+    let sarif = json!({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "hush policy lint",
+                    "rules": rules,
+                }
+            },
+            "invocations": [{
+                "executionSuccessful": error_message.is_none(),
+                "exitCode": exit_code,
+            }],
+            "results": results,
+            "properties": {
+                "policy": policy,
+                "valid": valid,
+            }
+        }]
+    });
+
+    let _ = writeln!(
+        stdout,
+        "{}",
+        serde_json::to_string_pretty(&sarif).unwrap_or_else(|_| "{}".to_string())
+    );
+}
+
+fn sarif_level_for_code(code: &str) -> &'static str {
+    if code.starts_with("SEC") {
+        "warning"
+    } else if code.starts_with("STY") {
+        "note"
+    } else {
+        "warning"
+    }
+}
+
+fn sarif_rule_description(code: &str) -> &'static str {
+    if code.starts_with("SEC") {
+        "Security lint finding"
+    } else if code.starts_with("STY") {
+        "Style lint finding"
+    } else {
+        "Policy lint finding"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clawdstrike::Policy;
+
+    #[test]
+    fn emits_sarif_with_warning_results() {
+        let mut out = Vec::<u8>::new();
+        let warnings = vec![LintFinding {
+            code: "SEC001",
+            message: "overly permissive".to_string(),
+        }];
+
+        emit_sarif(
+            &mut out,
+            &PolicySource::Ruleset {
+                name: "default".to_string(),
+            },
+            &warnings,
+            ExitCode::Warn.as_i32(),
+            None,
+            true,
+        );
+
+        let value: serde_json::Value = serde_json::from_slice(&out).expect("valid sarif json");
+        assert_eq!(value["version"], "2.1.0");
+        assert_eq!(value["runs"][0]["results"][0]["ruleId"], "SEC001");
+        assert_eq!(value["runs"][0]["results"][0]["level"], "warning");
+    }
+
+    #[test]
+    fn emits_sarif_error_result_for_load_failures() {
+        let mut out = Vec::<u8>::new();
+        emit_sarif(
+            &mut out,
+            &PolicySource::PolicyFile {
+                path: "missing.yaml".to_string(),
+            },
+            &[],
+            ExitCode::ConfigError.as_i32(),
+            Some("missing policy"),
+            false,
+        );
+
+        let value: serde_json::Value = serde_json::from_slice(&out).expect("valid sarif json");
+        let results = value["runs"][0]["results"]
+            .as_array()
+            .expect("results array");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["ruleId"], "LINT_ERROR");
+        assert_eq!(results[0]["level"], "error");
+    }
+
+    #[test]
+    fn lint_warns_on_unreachable_posture_state() {
+        let policy = Policy::from_yaml(
+            r#"
+version: "1.2.0"
+name: "posture lint"
+description: "test"
+posture:
+  initial: work
+  states:
+    work: { capabilities: [file_access] }
+    unreachable: { capabilities: [file_access] }
+  transitions: []
+"#,
+        )
+        .expect("policy");
+
+        let warnings = lint_policy(&policy);
+        assert!(warnings.iter().any(|w| w.code == "POS001"));
+        assert!(warnings.iter().any(|w| w.message.contains("unreachable")));
+    }
+
+    #[test]
+    fn lint_warns_on_terminal_posture_state() {
+        let policy = Policy::from_yaml(
+            r#"
+version: "1.2.0"
+name: "posture lint"
+description: "test"
+posture:
+  initial: observe
+  states:
+    observe: { capabilities: [file_access] }
+    quarantine: { capabilities: [] }
+  transitions:
+    - { from: observe, to: quarantine, on: user_approval }
+"#,
+        )
+        .expect("policy");
+
+        let warnings = lint_policy(&policy);
+        assert!(warnings.iter().any(|w| w.code == "POS002"));
+        assert!(warnings
+            .iter()
+            .any(|w| w.message.contains("no outgoing transitions")));
     }
 }

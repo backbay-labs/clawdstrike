@@ -329,6 +329,7 @@ mod cli_parsing {
                     fail_on_deny,
                     no_fail_on_deny,
                     benchmark,
+                    track_posture,
                 } => {
                     assert_eq!(policy_ref, "default");
                     assert_eq!(events, Some("events.jsonl".to_string()));
@@ -339,8 +340,112 @@ mod cli_parsing {
                     assert!(!fail_on_deny);
                     assert!(!no_fail_on_deny);
                     assert!(!benchmark);
+                    assert!(!track_posture);
                 }
                 _ => panic!("Expected Simulate subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_simulate_track_posture_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "simulate",
+            "default",
+            "events.jsonl",
+            "--track-posture",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Simulate { track_posture, .. } => {
+                    assert!(track_posture);
+                }
+                _ => panic!("Expected Simulate subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_observe_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "observe",
+            "--policy",
+            "clawdstrike:permissive",
+            "--out",
+            "events.jsonl",
+            "--",
+            "echo",
+            "hello",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Observe {
+                    policy,
+                    out,
+                    hushd_url,
+                    session,
+                    command,
+                    ..
+                } => {
+                    assert_eq!(policy, "clawdstrike:permissive");
+                    assert_eq!(out, "events.jsonl");
+                    assert!(hushd_url.is_none());
+                    assert!(session.is_none());
+                    assert_eq!(command, vec!["echo".to_string(), "hello".to_string()]);
+                }
+                _ => panic!("Expected Observe subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_synth_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "synth",
+            "events.jsonl",
+            "--extends",
+            "default",
+            "--out",
+            "candidate.yaml",
+            "--diff-out",
+            "candidate.diff.json",
+            "--risk-out",
+            "candidate.risks.md",
+            "--with-posture",
+            "--json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Synth {
+                    events,
+                    extends,
+                    out,
+                    diff_out,
+                    risk_out,
+                    with_posture,
+                    json,
+                } => {
+                    assert_eq!(events, "events.jsonl");
+                    assert_eq!(extends, Some("default".to_string()));
+                    assert_eq!(out, "candidate.yaml");
+                    assert_eq!(diff_out, Some("candidate.diff.json".to_string()));
+                    assert_eq!(risk_out, "candidate.risks.md");
+                    assert!(with_posture);
+                    assert!(json);
+                }
+                _ => panic!("Expected Synth subcommand"),
             },
             _ => panic!("Expected Policy command"),
         }
@@ -750,11 +855,38 @@ mod cli_parsing {
                     resolve,
                     strict,
                     json,
+                    sarif,
                 } => {
                     assert_eq!(policy_ref, "default");
                     assert!(resolve);
                     assert!(strict);
                     assert!(json);
+                    assert!(!sarif);
+                }
+                _ => panic!("Expected Lint subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_lint_sarif_parses() {
+        let cli = Cli::parse_from(["hush", "policy", "lint", "--sarif", "default"]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Lint {
+                    policy_ref,
+                    resolve,
+                    strict,
+                    json,
+                    sarif,
+                } => {
+                    assert_eq!(policy_ref, "default");
+                    assert!(!resolve);
+                    assert!(!strict);
+                    assert!(!json);
+                    assert!(sarif);
                 }
                 _ => panic!("Expected Lint subcommand"),
             },
@@ -1721,6 +1853,7 @@ mod policy_pac_contract {
                 summary: false,
                 fail_on_deny: true,
                 benchmark: false,
+                track_posture: false,
             },
             &mut out,
             &mut err,
@@ -1790,6 +1923,7 @@ mod policy_pac_contract {
                 summary: false,
                 fail_on_deny: true,
                 benchmark: false,
+                track_posture: false,
             },
             &mut out,
             &mut err,
@@ -1830,6 +1964,7 @@ mod policy_pac_contract {
                 summary: true,
                 fail_on_deny: true,
                 benchmark: false,
+                track_posture: false,
             },
             &mut out,
             &mut err,
@@ -1871,6 +2006,7 @@ mod policy_pac_contract {
                 summary: true,
                 fail_on_deny: false,
                 benchmark: false,
+                track_posture: false,
             },
             &mut out,
             &mut err,
@@ -1931,6 +2067,7 @@ mod policy_pac_contract {
                 summary: false,
                 fail_on_deny: false,
                 benchmark: false,
+                track_posture: false,
             },
             &mut out,
             &mut err,
@@ -2413,6 +2550,30 @@ tools:
 
         let mcp = policy.guards.mcp_tool.as_ref().expect("mcp_tool mapped");
         assert_eq!(mcp.allow, vec!["filesystem_read".to_string()]);
+    }
+
+    #[test]
+    fn migrates_policy_version_1_1_0_to_1_2_0_and_validates() {
+        let input = r#"
+version: "1.1.0"
+name: "Schema bump"
+extends: clawdstrike:default
+"#;
+
+        let res = migrate_policy_yaml(
+            input,
+            &PolicyMigrateOptions {
+                from: Some("1.1.0".to_string()),
+                to: "1.2.0".to_string(),
+                legacy_openclaw: false,
+            },
+        )
+        .expect("migration succeeds");
+
+        assert_eq!(res.mode, PolicyMigrateMode::VersionBump);
+        let policy = clawdstrike::Policy::from_yaml(&res.migrated_yaml).expect("output loads");
+        assert_eq!(policy.version, "1.2.0");
+        assert_eq!(policy.name, "Schema bump");
     }
 }
 

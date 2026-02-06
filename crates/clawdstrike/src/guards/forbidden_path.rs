@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
+use super::path_normalization::normalize_path_for_policy;
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for ForbiddenPathGuard
@@ -188,8 +189,7 @@ impl ForbiddenPathGuard {
 
     /// Check if a path is forbidden
     pub fn is_forbidden(&self, path: &str) -> bool {
-        // Normalize path
-        let path = path.replace('\\', "/");
+        let path = normalize_path_for_policy(path);
 
         // Check exceptions first
         for exception in &self.exceptions {

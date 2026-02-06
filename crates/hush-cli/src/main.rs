@@ -17,7 +17,9 @@
 //! - `hush policy lint <policyRef>` - Lint a policy (warnings)
 //! - `hush policy test <testYaml>` - Run policy tests from YAML
 //! - `hush policy impact <old> <new> <eventsJsonlPath|->` - Compare decisions across policies
-//! - `hush policy migrate <input> --to 1.1.0 [--output <path>|--in-place] [--from <ver>|--legacy-openclaw]` - Migrate a policy to a supported schema version
+//! - `hush policy observe [--out <events.jsonl>] -- <cmd ...>` - Run a command and record PolicyEvent JSONL
+//! - `hush policy synth <events.jsonl> [--out <candidate.yaml>]` - Synthesize a least-privilege policy candidate
+//! - `hush policy migrate <input> --to 1.2.0 [--output <path>|--in-place] [--from <ver>|--legacy-openclaw]` - Migrate a policy to a supported schema version
 //! - `hush policy version <policyRef>` - Show policy schema version compatibility
 //! - `hush run --policy <ref|file> -- <cmd> <args…>` - Best-effort process wrapper (proxy + audit log + receipt)
 //! - `hush daemon start|stop|status|reload` - Daemon management
@@ -42,8 +44,10 @@ mod policy_event;
 mod policy_impact;
 mod policy_lint;
 mod policy_migrate;
+mod policy_observe;
 mod policy_pac;
 mod policy_rego;
+mod policy_synth;
 mod policy_test;
 mod policy_version;
 mod remote_extends;
@@ -350,8 +354,11 @@ enum PolicyCommands {
         #[arg(long)]
         strict: bool,
         /// Emit machine-readable JSON.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "sarif")]
         json: bool,
+        /// Emit machine-readable SARIF 2.1.0 JSON.
+        #[arg(long, conflicts_with = "json")]
+        sarif: bool,
     },
 
     /// Run a policy test suite (YAML)
@@ -405,8 +412,8 @@ enum PolicyCommands {
         /// Input policy YAML path (use - for stdin)
         input: String,
 
-        /// Target schema version (default: 1.1.0)
-        #[arg(long, default_value = "1.1.0")]
+        /// Target schema version (default: 1.2.0)
+        #[arg(long, default_value = "1.2.0")]
         to: String,
 
         /// Source schema version (e.g., 1.0.0). If omitted, uses best-effort detection.
@@ -487,6 +494,56 @@ enum PolicyCommands {
         /// Print throughput/latency metrics to stderr.
         #[arg(long)]
         benchmark: bool,
+
+        /// Track posture state across events while simulating.
+        #[arg(long)]
+        track_posture: bool,
+    },
+
+    /// Observe runtime activity and write canonical PolicyEvent JSONL
+    Observe {
+        /// Policy reference used for local command observation.
+        #[arg(long, default_value = "clawdstrike:permissive")]
+        policy: String,
+        /// Output JSONL path.
+        #[arg(long, default_value = "hush.events.jsonl")]
+        out: String,
+        /// Observe an existing hushd session instead of running a local command.
+        #[arg(long)]
+        hushd_url: Option<String>,
+        /// Bearer token for authenticated hushd audit exports.
+        #[arg(long)]
+        hushd_token: Option<String>,
+        /// Session ID for hushd observation mode.
+        #[arg(long)]
+        session: Option<String>,
+        /// Command to run for local observation mode.
+        #[arg(trailing_var_arg = true)]
+        command: Vec<String>,
+    },
+
+    /// Synthesize a least-privilege policy candidate from observed events
+    Synth {
+        /// Input PolicyEvent JSONL file.
+        events: String,
+        /// Optional base policy reference to extend.
+        #[arg(long)]
+        extends: Option<String>,
+        /// Output synthesized policy YAML path.
+        #[arg(long, default_value = "candidate.yaml")]
+        out: String,
+        /// Optional JSON diff output path (requires --extends).
+        #[arg(long)]
+        diff_out: Option<String>,
+        /// Output markdown risk report path.
+        #[arg(long, default_value = "candidate.risks.md")]
+        risk_out: String,
+        /// Include a generated posture block.
+        #[arg(long)]
+        with_posture: bool,
+        /// Emit machine-readable JSON summary.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1642,11 +1699,13 @@ async fn cmd_policy(
             resolve,
             strict,
             json,
+            sarif,
         } => Ok(policy_lint::cmd_policy_lint(
             policy_ref,
             resolve,
             remote_extends,
             json,
+            sarif,
             strict,
             stdout,
             stderr,
@@ -1764,6 +1823,7 @@ async fn cmd_policy(
             fail_on_deny,
             no_fail_on_deny,
             benchmark,
+            track_posture,
         } => Ok(policy_pac::cmd_policy_simulate(
             policy_ref,
             events,
@@ -1775,11 +1835,57 @@ async fn cmd_policy(
                 summary,
                 fail_on_deny: fail_on_deny || !no_fail_on_deny,
                 benchmark,
+                track_posture,
             },
             stdout,
             stderr,
         )
         .await),
+
+        PolicyCommands::Observe {
+            policy,
+            out,
+            hushd_url,
+            hushd_token,
+            session,
+            command,
+        } => Ok(policy_observe::cmd_policy_observe(
+            policy_observe::PolicyObserveCommand {
+                policy,
+                out: PathBuf::from(out),
+                hushd_url,
+                hushd_token,
+                session,
+                command,
+            },
+            remote_extends,
+            stdout,
+            stderr,
+        )
+        .await),
+
+        PolicyCommands::Synth {
+            events,
+            extends,
+            out,
+            diff_out,
+            risk_out,
+            with_posture,
+            json,
+        } => Ok(policy_synth::cmd_policy_synth(
+            policy_synth::PolicySynthCommand {
+                events: PathBuf::from(events),
+                extends,
+                out: PathBuf::from(out),
+                diff_out: diff_out.map(PathBuf::from),
+                risk_out: PathBuf::from(risk_out),
+                with_posture,
+                json,
+            },
+            remote_extends,
+            stdout,
+            stderr,
+        )),
     }
 }
 

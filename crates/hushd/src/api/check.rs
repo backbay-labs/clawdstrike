@@ -1,18 +1,20 @@
 //! Action checking endpoint
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use clawdstrike::guards::{GuardContext, GuardResult, Severity};
-use clawdstrike::{HushEngine, RequestContext};
+use clawdstrike::guards::{GuardAction, GuardContext, GuardResult, Severity};
+use clawdstrike::{HushEngine, PostureRuntimeState, PostureTransitionRecord, RequestContext};
 use hush_certification::audit::NewAuditEventV2;
 
 use crate::audit::AuditEvent;
 use crate::auth::AuthenticatedActor;
 use crate::certification_webhooks::emit_webhook_event;
 use crate::identity_rate_limit::IdentityRateLimitError;
+use crate::session::{posture_state_from_session, posture_state_patch};
 use crate::siem::types::SecurityEvent;
 use crate::state::{AppState, DaemonEvent};
 
@@ -89,6 +91,30 @@ pub struct CheckResponse {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub posture: Option<PostureInfo>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PostureInfo {
+    pub state: String,
+    pub budgets: HashMap<String, PostureBudgetInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition: Option<PostureTransitionInfo>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PostureBudgetInfo {
+    pub used: u64,
+    pub limit: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PostureTransitionInfo {
+    pub from: String,
+    pub to: String,
+    pub trigger: String,
+    pub at: String,
 }
 
 impl From<GuardResult> for CheckResponse {
@@ -99,6 +125,7 @@ impl From<GuardResult> for CheckResponse {
             severity: canonical_guard_severity(&result.severity).to_string(),
             message: result.message,
             details: result.details,
+            posture: None,
         }
     }
 }
@@ -109,6 +136,64 @@ fn canonical_guard_severity(severity: &Severity) -> &'static str {
         Severity::Warning => "warning",
         Severity::Error => "error",
         Severity::Critical => "critical",
+    }
+}
+
+fn posture_info_from_runtime(
+    posture: &PostureRuntimeState,
+    transition: Option<&PostureTransitionRecord>,
+) -> PostureInfo {
+    let budgets = posture
+        .budgets
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                PostureBudgetInfo {
+                    used: v.used,
+                    limit: v.limit,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    PostureInfo {
+        state: posture.current_state.clone(),
+        budgets,
+        transition: transition.map(|record| PostureTransitionInfo {
+            from: record.from.clone(),
+            to: record.to.clone(),
+            trigger: record.trigger.clone(),
+            at: record.at.clone(),
+        }),
+    }
+}
+
+fn deep_merge_json(target: &mut serde_json::Value, patch: serde_json::Value) {
+    let serde_json::Value::Object(patch_obj) = patch else {
+        *target = patch;
+        return;
+    };
+
+    let serde_json::Value::Object(target_obj) = target else {
+        *target = serde_json::Value::Object(serde_json::Map::new());
+        deep_merge_json(target, serde_json::Value::Object(patch_obj));
+        return;
+    };
+
+    for (key, value) in patch_obj {
+        match (target_obj.get_mut(&key), value) {
+            (Some(existing), serde_json::Value::Object(new_obj)) => {
+                if existing.is_object() {
+                    deep_merge_json(existing, serde_json::Value::Object(new_obj));
+                } else {
+                    *existing = serde_json::Value::Object(new_obj);
+                }
+            }
+            (_, new_value) => {
+                target_obj.insert(key, new_value);
+            }
+        }
     }
 }
 
@@ -145,6 +230,12 @@ pub async fn check_action(
         is_vpn: None,
         is_corporate_network: None,
         timestamp: chrono::Utc::now().to_rfc3339(),
+    };
+
+    let session_lock = if let Some(session_id) = request.session_id.as_deref() {
+        Some(state.sessions.acquire_session_lock(session_id).await)
+    } else {
+        None
     };
 
     let mut context = GuardContext::new().with_request(request_context.clone());
@@ -289,29 +380,59 @@ pub async fn check_action(
         None => Arc::new(HushEngine::with_policy(resolved.policy.clone()).with_generated_keypair()),
     };
 
-    let result = match request.action_type.as_str() {
-        "file_access" => engine.check_file_access(&request.target, &context).await,
+    let posture_enabled = resolved.policy.posture.is_some();
+    if posture_enabled && request.session_id.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "session_id_required_for_posture_policy".to_string(),
+        ));
+    }
+
+    let mut posture_runtime = session_for_audit
+        .as_ref()
+        .and_then(posture_state_from_session);
+
+    let posture_report = match request.action_type.as_str() {
+        "file_access" => {
+            let action = GuardAction::FileAccess(&request.target);
+            engine
+                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .await
+        }
         "file_write" => {
             let content = request.content.as_deref().unwrap_or("").as_bytes();
+            let action = GuardAction::FileWrite(&request.target, content);
             engine
-                .check_file_write(&request.target, content, &context)
+                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
                 .await
         }
         "egress" => {
             let (host, port) =
                 parse_egress_target(&request.target).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-            engine.check_egress(&host, port, &context).await
+            let action = GuardAction::NetworkEgress(&host, port);
+            engine
+                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .await
         }
-        "shell" => engine.check_shell(&request.target, &context).await,
+        "shell" => {
+            let action = GuardAction::ShellCommand(&request.target);
+            engine
+                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .await
+        }
         "mcp_tool" => {
             let args = request.args.clone().unwrap_or(serde_json::json!({}));
+            let action = GuardAction::McpTool(&request.target, &args);
             engine
-                .check_mcp_tool(&request.target, &args, &context)
+                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
                 .await
         }
         "patch" => {
             let diff = request.content.as_deref().unwrap_or("");
-            engine.check_patch(&request.target, diff, &context).await
+            let action = GuardAction::Patch(&request.target, diff);
+            engine
+                .check_action_report_with_posture(&action, &context, &mut posture_runtime)
+                .await
         }
         _ => {
             return Err((
@@ -319,9 +440,44 @@ pub async fn check_action(
                 format!("Unknown action type: {}", request.action_type),
             ));
         }
-    };
+    }
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let result = result.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let result = posture_report.guard_report.overall.clone();
+    let mut response_posture: Option<PostureInfo> = posture_runtime
+        .as_ref()
+        .map(|state| posture_info_from_runtime(state, posture_report.transition.as_ref()));
+
+    if let Some(session_id) = request.session_id.as_deref() {
+        if let Some(posture) = posture_runtime.as_ref() {
+            let patch = posture_state_patch(posture)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let updated = state
+                .sessions
+                .merge_state(session_id, patch)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            let updated_session = updated.ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    "session_not_found_during_posture_update".to_string(),
+                )
+            })?;
+            session_for_audit = Some(updated_session.clone());
+            response_posture =
+                posture_state_from_session(&updated_session)
+                    .as_ref()
+                    .map(|runtime| {
+                        posture_info_from_runtime(runtime, posture_report.transition.as_ref())
+                    });
+        }
+
+        state
+            .sessions
+            .touch_session(session_id)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    drop(session_lock);
 
     let warn = result.allowed && result.severity == Severity::Warning;
     state.metrics.observe_check_outcome(result.allowed, warn);
@@ -424,6 +580,30 @@ pub async fn check_action(
         audit_event.metadata = Some(serde_json::Value::Object(obj));
     }
 
+    if posture_enabled {
+        let mut metadata = match audit_event.metadata.take() {
+            Some(value) if value.is_object() => value,
+            Some(other) => serde_json::json!({ "details": other }),
+            None => serde_json::json!({}),
+        };
+        deep_merge_json(
+            &mut metadata,
+            serde_json::json!({
+                "clawdstrike": {
+                    "posture": {
+                        "state_before": posture_report.posture_before,
+                        "state_after": posture_report.posture_after,
+                        "budgets_before": posture_report.budgets_before,
+                        "budgets_after": posture_report.budgets_after,
+                        "budget_deltas": posture_report.budget_deltas,
+                        "transition": posture_report.transition,
+                    }
+                }
+            }),
+        );
+        audit_event.metadata = Some(metadata);
+    }
+
     // Emit canonical SecurityEvent for exporters.
     {
         let ctx = state.security_ctx.read().await.clone();
@@ -524,5 +704,14 @@ pub async fn check_action(
         );
     }
 
-    Ok(Json(result.into()))
+    let mut response: CheckResponse = result.into();
+    response.posture = response_posture.or_else(|| {
+        session_for_audit
+            .as_ref()
+            .and_then(posture_state_from_session)
+            .as_ref()
+            .map(|runtime| posture_info_from_runtime(runtime, None))
+    });
+
+    Ok(Json(response))
 }

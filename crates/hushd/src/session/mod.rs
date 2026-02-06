@@ -1,12 +1,14 @@
 //! Session management for identity-aware evaluation.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use clawdstrike::{
     AuthMethod, GuardContext, IdentityPrincipal, RequestContext, SessionContext, SessionMetadata,
 };
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::SessionHardeningConfig;
@@ -27,6 +29,24 @@ pub enum SessionError {
 
 pub type Result<T> = std::result::Result<T, SessionError>;
 
+pub type PostureRuntimeState = clawdstrike::PostureRuntimeState;
+pub type PostureBudgetCounter = clawdstrike::PostureBudgetCounter;
+pub type PostureTransitionRecord = clawdstrike::PostureTransitionRecord;
+
+pub fn posture_state_from_session(session: &SessionContext) -> Option<PostureRuntimeState> {
+    let state = session.state.as_ref()?;
+    let posture = state.get("posture")?;
+    serde_json::from_value(posture.clone()).ok()
+}
+
+pub fn posture_state_patch(
+    posture: &PostureRuntimeState,
+) -> std::result::Result<HashMap<String, serde_json::Value>, serde_json::Error> {
+    let mut patch = HashMap::new();
+    patch.insert("posture".to_string(), serde_json::to_value(posture)?);
+    Ok(patch)
+}
+
 #[derive(Clone, Debug)]
 pub struct StoredSession {
     pub session: SessionContext,
@@ -40,6 +60,7 @@ pub struct SessionUpdates {
     pub terminated_at: Option<String>,
     pub request: Option<RequestContext>,
     pub state: Option<HashMap<String, serde_json::Value>>,
+    pub state_patch: Option<HashMap<String, serde_json::Value>>,
 }
 
 pub trait SessionStore: Send + Sync {
@@ -213,12 +234,67 @@ WHERE session_id = ?1
     }
 
     fn update(&self, session_id: &str, updates: SessionUpdates) -> Result<Option<StoredSession>> {
-        let Some(mut record) = self.get(session_id)? else {
+        let mut conn = self.db.lock_conn();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let mut stmt = tx.prepare(
+            r#"
+SELECT session_json, terminated_at
+FROM sessions
+WHERE session_id = ?1
+            "#,
+        )?;
+        let mut rows = stmt.query(rusqlite::params![session_id])?;
+        let Some(row) = rows.next()? else {
             return Ok(None);
         };
 
+        let session_json: String = row.get(0)?;
+        let terminated_at: Option<String> = row.get(1)?;
+        drop(rows);
+        drop(stmt);
+
+        let session: SessionContext = serde_json::from_str(&session_json)?;
+        let mut record = StoredSession {
+            session,
+            terminated_at,
+        };
         apply_updates(&mut record, updates);
-        self.set(&record)?;
+
+        let session_json = serde_json::to_string(&record.session)?;
+        let user_id = record.session.identity.id.clone();
+        let org_id = record
+            .session
+            .identity
+            .organization_id
+            .clone()
+            .or_else(|| record.session.organization.as_ref().map(|o| o.id.clone()));
+
+        tx.execute(
+            r#"
+UPDATE sessions
+SET user_id = ?2,
+    org_id = ?3,
+    created_at = ?4,
+    last_activity_at = ?5,
+    expires_at = ?6,
+    terminated_at = ?7,
+    session_json = ?8
+WHERE session_id = ?1
+            "#,
+            rusqlite::params![
+                record.session.session_id,
+                user_id,
+                org_id,
+                record.session.created_at,
+                record.session.last_activity_at,
+                record.session.expires_at,
+                record.terminated_at,
+                session_json
+            ],
+        )?;
+
+        tx.commit()?;
         Ok(Some(record))
     }
 
@@ -275,6 +351,7 @@ pub struct SessionManager {
     max_ttl_seconds: u64,
     rbac: Option<Arc<RbacManager>>,
     hardening: SessionHardeningConfig,
+    session_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -321,7 +398,43 @@ impl SessionManager {
             max_ttl_seconds,
             rbac,
             hardening,
+            session_locks: Arc::new(DashMap::new()),
         }
+    }
+
+    fn lock_for_session_id(&self, session_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.session_locks
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
+    pub async fn acquire_session_lock(&self, session_id: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        self.lock_for_session_id(session_id).lock_owned().await
+    }
+
+    pub async fn with_session_serialization<T, F, Fut>(&self, session_id: &str, f: F) -> T
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = T>,
+    {
+        let _guard = self.acquire_session_lock(session_id).await;
+        f().await
+    }
+
+    pub fn merge_state(
+        &self,
+        session_id: &str,
+        patch: HashMap<String, serde_json::Value>,
+    ) -> Result<Option<SessionContext>> {
+        let updated = self.store.update(
+            session_id,
+            SessionUpdates {
+                state_patch: Some(patch),
+                ..Default::default()
+            },
+        )?;
+        Ok(updated.map(|r| r.session))
     }
 
     pub fn create_session(
@@ -614,6 +727,12 @@ fn apply_updates(record: &mut StoredSession, updates: SessionUpdates) {
     if let Some(value) = updates.state {
         record.session.state = Some(value);
     }
+    if let Some(patch) = updates.state_patch {
+        let state = record.session.state.get_or_insert_with(HashMap::new);
+        for (k, v) in patch {
+            state.insert(k, v);
+        }
+    }
 }
 
 fn is_expired(session: &SessionContext, now: DateTime<Utc>) -> bool {
@@ -632,6 +751,7 @@ fn parse_rfc3339(value: &str) -> Result<DateTime<Utc>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::control_db::ControlDb;
 
     fn test_identity() -> IdentityPrincipal {
         IdentityPrincipal {
@@ -721,5 +841,155 @@ mod tests {
             .create_session(test_identity(), None)
             .expect("create2");
         assert!(manager.get_session(&s1.session_id).expect("get1").is_none());
+    }
+
+    #[test]
+    fn state_patch_merges_without_clobbering_existing_keys() {
+        let store = Arc::new(InMemorySessionStore::new());
+        let manager = SessionManager::new(
+            store.clone(),
+            3600,
+            86_400,
+            None,
+            SessionHardeningConfig::default(),
+        );
+
+        let mut initial = serde_json::Map::new();
+        initial.insert("bound_source_ip".to_string(), serde_json::json!("10.0.0.1"));
+
+        let session = manager
+            .create_session(
+                test_identity(),
+                Some(CreateSessionOptions {
+                    state: Some(serde_json::Value::Object(initial)),
+                    ..Default::default()
+                }),
+            )
+            .expect("create");
+
+        let mut patch = HashMap::new();
+        patch.insert(
+            "posture".to_string(),
+            serde_json::json!({
+                "current_state": "work",
+                "entered_at": chrono::Utc::now().to_rfc3339(),
+                "budgets": {},
+                "transition_history": [],
+            }),
+        );
+        manager
+            .merge_state(&session.session_id, patch)
+            .expect("merge_state")
+            .expect("updated");
+
+        let updated = manager
+            .get_session(&session.session_id)
+            .expect("get")
+            .expect("session");
+        let state = updated.state.expect("state");
+        assert_eq!(
+            state.get("bound_source_ip"),
+            Some(&serde_json::json!("10.0.0.1"))
+        );
+        assert!(state.contains_key("posture"));
+    }
+
+    #[test]
+    fn sqlite_update_applies_state_patch_atomically() {
+        let db = Arc::new(ControlDb::in_memory().expect("db"));
+        let store = SqliteSessionStore::new(db);
+        let now = chrono::Utc::now().to_rfc3339();
+        let session = SessionContext {
+            session_id: "sess-1".to_string(),
+            identity: test_identity(),
+            created_at: now.clone(),
+            last_activity_at: now.clone(),
+            expires_at: (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+            organization: None,
+            effective_roles: vec![],
+            effective_permissions: vec![],
+            request: None,
+            metadata: None,
+            state: Some(HashMap::from([(
+                "bound_country".to_string(),
+                serde_json::json!("US"),
+            )])),
+        };
+        store
+            .set(&StoredSession {
+                session: session.clone(),
+                terminated_at: None,
+            })
+            .expect("set");
+
+        let mut patch = HashMap::new();
+        patch.insert(
+            "posture".to_string(),
+            serde_json::json!({
+                "current_state": "observe",
+                "entered_at": chrono::Utc::now().to_rfc3339(),
+                "budgets": {},
+                "transition_history": [],
+            }),
+        );
+
+        let updated = store
+            .update(
+                &session.session_id,
+                SessionUpdates {
+                    state_patch: Some(patch),
+                    ..Default::default()
+                },
+            )
+            .expect("update")
+            .expect("updated");
+
+        let state = updated.session.state.expect("state");
+        assert_eq!(state.get("bound_country"), Some(&serde_json::json!("US")));
+        assert!(state.contains_key("posture"));
+    }
+
+    #[test]
+    fn posture_helpers_roundtrip() {
+        let posture = PostureRuntimeState {
+            current_state: "work".to_string(),
+            entered_at: chrono::Utc::now().to_rfc3339(),
+            budgets: HashMap::from([(
+                "file_writes".to_string(),
+                PostureBudgetCounter { used: 1, limit: 10 },
+            )]),
+            transition_history: vec![PostureTransitionRecord {
+                from: "observe".to_string(),
+                to: "work".to_string(),
+                trigger: "user_approval".to_string(),
+                at: chrono::Utc::now().to_rfc3339(),
+            }],
+        };
+
+        let patch = posture_state_patch(&posture).expect("patch");
+        let session = SessionContext {
+            session_id: "sess-2".to_string(),
+            identity: test_identity(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            last_activity_at: chrono::Utc::now().to_rfc3339(),
+            expires_at: (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+            organization: None,
+            effective_roles: vec![],
+            effective_permissions: vec![],
+            request: None,
+            metadata: None,
+            state: Some(patch),
+        };
+
+        let restored = posture_state_from_session(&session).expect("posture");
+        assert_eq!(restored.current_state, "work");
+        assert_eq!(
+            restored
+                .budgets
+                .get("file_writes")
+                .map(|b| (b.used, b.limit)),
+            Some((1, 10))
+        );
+        assert_eq!(restored.transition_history.len(), 1);
     }
 }

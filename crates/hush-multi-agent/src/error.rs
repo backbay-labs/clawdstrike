@@ -5,6 +5,9 @@ pub enum Error {
     #[error("Invalid ID: {0}")]
     InvalidId(String),
 
+    #[error("Identity already exists: {0}")]
+    IdentityAlreadyExists(String),
+
     #[error("Invalid claims: {0}")]
     InvalidClaims(String),
 
@@ -25,6 +28,9 @@ pub enum Error {
 
     #[error("Token revoked")]
     Revoked,
+
+    #[error("Delegation chain violation: {0}")]
+    DelegationChainViolation(String),
 
     #[error("Replay detected")]
     Replay,

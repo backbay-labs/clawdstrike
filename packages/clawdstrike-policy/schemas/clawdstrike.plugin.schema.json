@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawdstrike.dev/schemas/clawdstrike.plugin.schema.json",
+  "title": "Clawdstrike Plugin Manifest",
+  "type": "object",
+  "required": ["version", "name", "guards", "trust"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clawdstrike": {
+      "type": "object",
+      "properties": {
+        "minVersion": {
+          "type": "string"
+        },
+        "maxVersion": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "guards": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "entrypoint"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entrypoint": {
+            "type": "string",
+            "minLength": 1
+          },
+          "handles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "file_read",
+                "file_write",
+                "command_exec",
+                "network_egress",
+                "tool_call",
+                "patch_apply",
+                "secret_access",
+                "custom"
+              ]
+            }
+          },
+          "configSchema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "network": {
+          "type": "boolean"
+        },
+        "subprocess": {
+          "type": "boolean"
+        },
+        "filesystem": {
+          "type": "object",
+          "properties": {
+            "read": {
+              "oneOf": [
+                { "type": "boolean", "const": false },
+                {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              ]
+            },
+            "write": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "secrets": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "access": { "type": "boolean" }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "maxMemoryMb": { "type": "integer", "minimum": 1 },
+        "maxCpuMs": { "type": "integer", "minimum": 1 },
+        "maxTimeoutMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "trust": {
+      "type": "object",
+      "required": ["level"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["trusted", "untrusted"]
+        },
+        "sandbox": {
+          "type": "string",
+          "enum": ["node", "wasm"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

@@ -43,10 +43,14 @@ clawdstrike check --json --action-type egress --ruleset default api.github.com:4
   - `--resolve` resolves `extends` and prints the merged policy.
   - `--check-env` also requires referenced `${VAR}` environment variables to be set.
 - `clawdstrike policy diff <LEFT> <RIGHT> [--resolve] [--json]` — structural diff for rulesets or policy files.
-- `clawdstrike policy lint <FILE> [--resolve] [--json]` — policy linting (risky defaults, common mistakes).
+- `clawdstrike policy lint <FILE> [--resolve] [--strict] [--json|--sarif]` — policy linting (risky defaults, common mistakes).
 - `clawdstrike policy test <SUITE.yaml>` — run a policy test suite.
 - `clawdstrike policy eval <POLICY_REF> <EVENT.json|-> [--resolve] [--json]` — evaluate a canonical `PolicyEvent`.
-- `clawdstrike policy simulate <POLICY_REF> [EVENTS.jsonl|-] [--json|--jsonl|--summary]` — run a stream of events.
+- `clawdstrike policy simulate <POLICY_REF> [EVENTS.jsonl|-] [--json|--jsonl|--summary] [--track-posture]` — run a stream of events.
+- `clawdstrike policy observe [--policy <ref>] [--out <events.jsonl>] -- <cmd ...>` — observe local command activity into canonical `PolicyEvent` JSONL.
+- `clawdstrike policy observe --hushd-url <url> --session <id> [--out <events.jsonl>]` — export + map hushd audit events for a session.
+- `clawdstrike policy synth <EVENTS.jsonl> [--extends <ref>] [--out <candidate.yaml>] [--diff-out <candidate.diff.json>] [--risk-out <candidate.risks.md>] [--with-posture]` — synthesize a least-privilege candidate policy.
+- `clawdstrike policy migrate <INPUT> --to 1.2.0 [--output <path>|--in-place]` — migrate policy schema versions.
 - `clawdstrike policy bundle build <POLICY_REF> --key <private_key> [--resolve] [--embed-pubkey]` — build a signed policy bundle (JSON) for distribution.
 - `clawdstrike policy bundle verify <BUNDLE.json> [--pubkey <pubkey>]` — verify a signed policy bundle.
 
@@ -60,6 +64,9 @@ clawdstrike policy show --merged ./policy.yaml
 clawdstrike policy validate ./policy.yaml
 clawdstrike policy validate --resolve ./policy.yaml
 clawdstrike policy diff default strict --json
+clawdstrike policy observe --out run.events.jsonl -- your-agent-command
+clawdstrike policy synth run.events.jsonl --extends clawdstrike:default --out candidate.yaml --risk-out candidate.risks.md
+clawdstrike policy simulate candidate.yaml run.events.jsonl --json --track-posture
 clawdstrike policy bundle build ai-agent --resolve --key ./bundle-signing.key --embed-pubkey --output ./policy.bundle.json
 clawdstrike policy bundle verify ./policy.bundle.json
 ```

@@ -1,0 +1,51 @@
+version: "1.2.0"
+name: Synthesized Example Policy
+description: Example candidate output shape from `hush policy synth`
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.env*"
+  secret_leak:
+    patterns:
+      - name: aws_access_key_id
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/workspace/**"
+    file_write_allow:
+      - "**/workspace/**"
+    patch_allow:
+      - "**/workspace/**"
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+      - "registry.npmjs.org"
+      - "api.openai.com"
+    default_action: block
+
+posture:
+  initial: work
+  states:
+    work:
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - mcp_tool
+      budgets:
+        file_writes: 75
+        egress_calls: 30
+        mcp_tool_calls: 150
+    quarantine:
+      capabilities: []
+      budgets: {}
+  transitions:
+    - from: "*"
+      to: quarantine
+      on: critical_violation

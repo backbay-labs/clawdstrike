@@ -17,6 +17,7 @@
 - [Architecture](concepts/architecture.md)
 - [Guards](concepts/guards.md)
 - [Policies](concepts/policies.md)
+- [Postures](concepts/postures.md)
 - [Terminology](concepts/terminology.md)
 - [Schema Governance](concepts/schema-governance.md)
 - [Decisions](concepts/decisions.md)
@@ -26,14 +27,18 @@
 - [OpenClaw Integration](guides/openclaw-integration.md)
 - [Vercel AI Integration](guides/vercel-ai-integration.md)
 - [LangChain Integration](guides/langchain-integration.md)
+- [Generic Adapter Integration](guides/generic-adapter-integration.md)
 - [Custom Guards](guides/custom-guards.md)
 - [Threat Intel Guards](guides/threat-intel.md)
 - [Policy Inheritance](guides/policy-inheritance.md)
+- [Posture Policies](guides/posture-policy.md)
+- [Observe -> Synth -> Tighten](guides/observe-synth.md)
 - [Audit Logging](guides/audit-logging.md)
 
 # Reference
 
 - [Policy Schema](reference/policy-schema.md)
+- [Posture Schema](reference/posture-schema.md)
 - [Guards](reference/guards/README.md)
   - [ForbiddenPathGuard](reference/guards/forbidden-path.md)
   - [EgressAllowlistGuard](reference/guards/egress.md)

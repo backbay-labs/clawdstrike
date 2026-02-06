@@ -356,7 +356,7 @@ pub async fn cmd_run(
     let receipt = match engine.create_receipt(content_hash).await {
         Ok(r) => r
             .with_id(session_id.clone())
-            .with_metadata(serde_json::json!({
+            .merge_metadata(serde_json::json!({
                 "hush": {
                     "command": command,
                     "events": events_out,

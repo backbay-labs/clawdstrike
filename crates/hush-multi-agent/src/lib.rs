@@ -10,13 +10,17 @@
 //! It intentionally uses **canonical JSON (RFC 8785 JCS)** + **Ed25519** from `hush-core`
 //! to keep cross-language implementations portable (Rust/TS/Python).
 
+mod correlation;
 mod error;
+mod identity_registry;
 mod message;
 mod revocation;
 mod token;
 mod types;
 
+pub use correlation::{CorrelationContext, CrossAgentAuditEvent, CrossAgentEventType};
 pub use error::{Error, Result};
+pub use identity_registry::{IdentityRegistry, InMemoryIdentityRegistry};
 pub use message::{MessageClaims, SignedMessage};
 pub use revocation::{InMemoryRevocationStore, RevocationStore};
 pub use token::{DelegationClaims, SignedDelegationToken, DELEGATION_AUDIENCE};

@@ -27,6 +27,8 @@ mod forbidden_path;
 mod jailbreak;
 mod mcp_tool;
 mod patch_integrity;
+mod path_allowlist;
+mod path_normalization;
 mod prompt_injection;
 mod secret_leak;
 
@@ -36,6 +38,8 @@ pub use forbidden_path::{ForbiddenPathConfig, ForbiddenPathGuard};
 pub use jailbreak::{JailbreakConfig, JailbreakGuard};
 pub use mcp_tool::{McpDefaultAction, McpToolConfig, McpToolGuard};
 pub use patch_integrity::{PatchIntegrityConfig, PatchIntegrityGuard};
+pub use path_allowlist::{PathAllowlistConfig, PathAllowlistGuard};
+pub use path_normalization::normalize_path_for_policy;
 pub use prompt_injection::{PromptInjectionConfig, PromptInjectionGuard};
 pub use secret_leak::{SecretLeakConfig, SecretLeakGuard};
 

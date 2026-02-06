@@ -7,7 +7,7 @@ import type { PolicyEvent } from '@clawdstrike/adapter-core';
 import { createPolicyEngineFromPolicy } from '../engine.js';
 import { CustomGuardRegistry } from '../custom-registry.js';
 import { loadPolicyFromString } from '../policy/loader.js';
-import { loadTrustedPluginIntoRegistry } from './loader.js';
+import { inspectPlugin, loadTrustedPluginIntoRegistry, PluginLoader } from './loader.js';
 
 function makeTempPluginDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'clawdstrike-plugin-'));
@@ -61,6 +61,7 @@ export default {
   const registry = new CustomGuardRegistry();
   const loaded = await loadTrustedPluginIntoRegistry(dir, registry);
   expect(loaded.registered).toEqual(['acme.deny']);
+  expect(loaded.executionMode).toBe('node');
 
   const policy = loadPolicyFromString(
     `
@@ -87,3 +88,73 @@ custom_guards:
   expect(decision.guard).toBe('acme.deny');
 });
 
+test('gates untrusted high-risk capabilities (scaffold policy)', async () => {
+  const dir = makeTempPluginDir();
+  fs.writeFileSync(
+    path.join(dir, 'clawdstrike.plugin.json'),
+    JSON.stringify({
+      version: '1.0.0',
+      name: 'acme-untrusted-risky',
+      guards: [{ name: 'acme.deny', entrypoint: './guard.mjs' }],
+      trust: { level: 'untrusted', sandbox: 'node' },
+      capabilities: {
+        subprocess: true,
+      },
+    }),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(dir, 'guard.mjs'),
+    `
+export default {
+  id: "acme.deny",
+  build: () => ({
+    name: "acme.deny",
+    handles: () => true,
+    check: () => ({ allowed: true, guard: "acme.deny", severity: "low", message: "Allowed" }),
+  }),
+};
+`,
+    'utf8',
+  );
+
+  const loader = new PluginLoader({
+    trustedOnly: false,
+    allowWasmSandbox: false,
+  });
+
+  await expect(loader.inspect(dir)).rejects.toThrow(/cannot request subprocess capability/i);
+});
+
+test('checks clawdstrike compatibility range during inspect', async () => {
+  const dir = makeTempPluginDir();
+  fs.writeFileSync(
+    path.join(dir, 'clawdstrike.plugin.json'),
+    JSON.stringify({
+      version: '1.0.0',
+      name: 'acme-versioned',
+      clawdstrike: {
+        minVersion: '9.9.9',
+      },
+      guards: [{ name: 'acme.deny', entrypoint: './guard.mjs' }],
+      trust: { level: 'trusted', sandbox: 'node' },
+    }),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(dir, 'guard.mjs'),
+    `
+export default {
+  id: "acme.deny",
+  build: () => ({
+    name: "acme.deny",
+    handles: () => true,
+    check: () => ({ allowed: true, guard: "acme.deny", severity: "low", message: "Allowed" }),
+  }),
+};
+`,
+    'utf8',
+  );
+
+  await expect(inspectPlugin(dir)).rejects.toThrow(/requires clawdstrike >= 9.9.9/i);
+});

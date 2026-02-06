@@ -8,6 +8,16 @@ Native Rust API for policy evaluation and receipt signing.
 - `hush-core`: hashing/signing, Merkle trees, and `SignedReceipt`
 - `hush-proxy`: domain matching + DNS/SNI parsing utilities
 
+## Plugin scaffold (custom guards)
+
+`clawdstrike::plugins` provides manifest parsing and loader planning for custom guard plugins:
+
+- `parse_plugin_manifest_toml`
+- `PluginLoader` + `PluginLoaderOptions`
+- `PluginInspectResult` / `PluginLoadPlan`
+
+This is scaffold-only in the current build: manifest validation and trust/capability policy checks are implemented, while dynamic execution backends (WASM/native loading) are staged.
+
 ## Installation
 
 If you depend on a published version, use `0.1.0`. If you are working from a checkout, use a path dependency.

@@ -93,6 +93,20 @@ fn build_sinks(
                 url.clone(),
                 headers.clone(),
             )?)),
+            AuditSinkConfig::OtlpHttp {
+                endpoint,
+                headers,
+                service_name,
+                service_version,
+                resource_attributes,
+            } => sinks.push(Arc::new(OtlpHttpSink::new(
+                client.clone(),
+                endpoint.clone(),
+                headers.clone(),
+                service_name.clone(),
+                service_version.clone(),
+                resource_attributes.clone(),
+            )?)),
             AuditSinkConfig::SplunkHec {
                 url,
                 token,
@@ -232,6 +246,145 @@ impl AuditSink for WebhookSink {
         }
         Ok(())
     }
+}
+
+struct OtlpHttpSink {
+    client: reqwest::Client,
+    endpoint: reqwest::Url,
+    headers: HashMap<String, String>,
+    service_name: String,
+    service_version: String,
+    resource_attributes: HashMap<String, String>,
+}
+
+impl OtlpHttpSink {
+    fn new(
+        client: reqwest::Client,
+        endpoint: String,
+        headers: Option<HashMap<String, String>>,
+        service_name: Option<String>,
+        service_version: Option<String>,
+        resource_attributes: Option<HashMap<String, String>>,
+    ) -> anyhow::Result<Self> {
+        let mut endpoint: reqwest::Url = endpoint.parse()?;
+        let path = endpoint.path().trim_end_matches('/');
+        if path.is_empty() || path == "/" {
+            endpoint.set_path("/v1/logs");
+        } else if !path.ends_with("/v1/logs") {
+            endpoint.set_path(&format!("{}/v1/logs", path));
+        }
+
+        Ok(Self {
+            client,
+            endpoint,
+            headers: headers.unwrap_or_default(),
+            service_name: service_name.unwrap_or_else(|| "hushd".to_string()),
+            service_version: service_version
+                .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+            resource_attributes: resource_attributes.unwrap_or_default(),
+        })
+    }
+
+    fn build_payload(&self, event: &AuditEvent) -> anyhow::Result<serde_json::Value> {
+        let time_unix_nano = format!(
+            "{}{:09}",
+            event.timestamp.timestamp(),
+            event.timestamp.timestamp_subsec_nanos()
+        );
+
+        let mut resource_attributes = vec![
+            attr("service.name", self.service_name.clone()),
+            attr("service.version", self.service_version.clone()),
+            attr("service.namespace", "clawdstrike".to_string()),
+        ];
+        for (k, v) in &self.resource_attributes {
+            resource_attributes.push(attr(k.as_str(), v.clone()));
+        }
+
+        let mut log_attributes = vec![
+            attr("hush.audit.id", event.id.clone()),
+            attr("hush.audit.event_type", event.event_type.clone()),
+            attr("hush.audit.action_type", event.action_type.clone()),
+            attr("hush.audit.decision", event.decision.clone()),
+        ];
+        if let Some(target) = &event.target {
+            log_attributes.push(attr("hush.audit.target", target.clone()));
+        }
+        if let Some(guard) = &event.guard {
+            log_attributes.push(attr("hush.audit.guard", guard.clone()));
+        }
+        if let Some(session_id) = &event.session_id {
+            log_attributes.push(attr("hush.audit.session_id", session_id.clone()));
+        }
+        if let Some(agent_id) = &event.agent_id {
+            log_attributes.push(attr("hush.audit.agent_id", agent_id.clone()));
+        }
+
+        let body_text = event
+            .message
+            .clone()
+            .unwrap_or_else(|| format!("{} {}", event.event_type, event.decision));
+        let serialized_event = serde_json::to_string(event)?;
+        log_attributes.push(attr("hush.audit.raw_json", serialized_event));
+
+        Ok(serde_json::json!({
+            "resourceLogs": [{
+                "resource": {
+                    "attributes": resource_attributes
+                },
+                "scopeLogs": [{
+                    "scope": {
+                        "name": "hushd.audit_forward",
+                        "version": self.service_version.clone(),
+                    },
+                    "logRecords": [{
+                        "timeUnixNano": time_unix_nano,
+                        "severityText": event
+                            .severity
+                            .clone()
+                            .unwrap_or_else(|| "INFO".to_string()),
+                        "body": {
+                            "stringValue": body_text
+                        },
+                        "attributes": log_attributes
+                    }]
+                }]
+            }]
+        }))
+    }
+}
+
+#[async_trait]
+impl AuditSink for OtlpHttpSink {
+    fn name(&self) -> &'static str {
+        "otlp_http"
+    }
+
+    async fn send(&self, event: &AuditEvent) -> anyhow::Result<()> {
+        let payload = self.build_payload(event)?;
+        let mut req = self.client.post(self.endpoint.clone()).json(&payload);
+        for (k, v) in &self.headers {
+            req = req.header(k, v);
+        }
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "non-2xx from otlp http: {} {}",
+                status,
+                body
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn attr(key: &str, value: String) -> serde_json::Value {
+    serde_json::json!({
+        "key": key,
+        "value": { "stringValue": value }
+    })
 }
 
 struct SplunkHecSink {
@@ -389,5 +542,30 @@ mod tests {
         )
         .expect("sink");
         assert_eq!(sink.url.path(), "/services/collector/event");
+    }
+
+    #[test]
+    fn otlp_http_appends_default_logs_path() {
+        let sink = OtlpHttpSink::new(
+            reqwest::Client::new(),
+            "https://collector.example:4318".to_string(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("sink");
+        assert_eq!(sink.endpoint.path(), "/v1/logs");
+
+        let sink = OtlpHttpSink::new(
+            reqwest::Client::new(),
+            "https://collector.example:4318/custom".to_string(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("sink");
+        assert_eq!(sink.endpoint.path(), "/custom/v1/logs");
     }
 }

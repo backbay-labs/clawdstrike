@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "receipt_id": "snap-posture-transition",
+  "timestamp": "2026-02-06T00:00:03Z",
+  "content_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": {
+    "passed": false
+  },
+  "provenance": {
+    "clawdstrike_version": "0.1.0",
+    "policy_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "ruleset": "default",
+    "violations": [
+      {
+        "guard": "secret_leak",
+        "severity": "Critical",
+        "message": "Potential secret detected"
+      }
+    ]
+  },
+  "metadata": {
+    "clawdstrike": {
+      "posture": {
+        "state_before": "elevated",
+        "state_after": "quarantine",
+        "budgets_before": {
+          "file_writes": {
+            "used": 9,
+            "limit": 200
+          }
+        },
+        "budgets_after": {},
+        "budget_deltas": {},
+        "transition": {
+          "from": "elevated",
+          "to": "quarantine",
+          "trigger": "critical_violation",
+          "at": "2026-02-06T00:00:03Z"
+        }
+      }
+    }
+  }
+}

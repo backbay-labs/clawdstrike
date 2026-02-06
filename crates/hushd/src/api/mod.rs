@@ -46,7 +46,10 @@ pub use rbac::{
     GetRoleResponse, ListRoleAssignmentsResponse, ListRolesResponse, UpsertRoleResponse,
 };
 pub use saml::{SamlExchangeRequest, SamlExchangeResponse};
-pub use session::{CreateSessionResponse, GetSessionResponse, TerminateSessionResponse};
+pub use session::{
+    CreateSessionResponse, GetSessionResponse, SessionPostureResponse, TerminateSessionResponse,
+    TransitionSessionPostureResponse,
+};
 pub use shutdown::ShutdownResponse;
 
 /// Create the API router
@@ -252,6 +255,10 @@ pub fn create_router(state: AppState) -> Router {
             get(policy_scoping::list_assignments),
         )
         .route("/api/v1/session/{id}", get(session::get_session))
+        .route(
+            "/api/v1/session/{id}/posture",
+            get(session::get_session_posture),
+        )
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
         .route("/api/v1/events", get(events::stream_events))
@@ -294,6 +301,10 @@ pub fn create_router(state: AppState) -> Router {
             delete(policy_scoping::delete_assignment),
         )
         .route("/api/v1/session/{id}", delete(session::terminate_session))
+        .route(
+            "/api/v1/session/{id}/transition",
+            post(session::transition_session_posture),
+        )
         .route("/api/v1/shutdown", post(shutdown::shutdown))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 

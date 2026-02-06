@@ -13,7 +13,9 @@ use crate::auth::Scope;
 use crate::authz::require_api_key_scope_or_user_permission;
 use crate::rbac::{Action, ResourceType};
 use crate::session::CreateSessionOptions;
+use crate::session::PostureBudgetCounter;
 use crate::session::SessionError;
+use crate::session::{posture_state_from_session, posture_state_patch, PostureTransitionRecord};
 use crate::state::AppState;
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,6 +40,48 @@ pub struct TerminateSessionRequest {
 #[serde(rename_all = "camelCase")]
 pub struct TerminateSessionResponse {
     pub success: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionSessionPostureRequest {
+    pub to_state: String,
+    pub trigger: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionSessionPostureResponse {
+    pub success: bool,
+    pub from_state: String,
+    pub to_state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPostureResponse {
+    pub state: String,
+    pub entered_at: String,
+    pub budgets: std::collections::HashMap<String, PostureBudgetInfo>,
+    pub transition_history: Vec<PostureTransitionInfo>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostureBudgetInfo {
+    pub used: u64,
+    pub limit: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostureTransitionInfo {
+    pub from: String,
+    pub to: String,
+    pub trigger: String,
+    pub at: String,
 }
 
 /// POST /api/v1/session
@@ -278,4 +322,213 @@ pub async fn terminate_session(
     }
 
     Ok(Json(TerminateSessionResponse { success: true }))
+}
+
+fn to_posture_budget_info(
+    budgets: std::collections::HashMap<String, PostureBudgetCounter>,
+) -> std::collections::HashMap<String, PostureBudgetInfo> {
+    budgets
+        .into_iter()
+        .map(|(name, counter)| {
+            (
+                name,
+                PostureBudgetInfo {
+                    used: counter.used,
+                    limit: counter.limit,
+                },
+            )
+        })
+        .collect()
+}
+
+fn to_posture_transition_info(records: Vec<PostureTransitionRecord>) -> Vec<PostureTransitionInfo> {
+    records
+        .into_iter()
+        .map(|r| PostureTransitionInfo {
+            from: r.from,
+            to: r.to,
+            trigger: r.trigger,
+            at: r.at,
+        })
+        .collect()
+}
+
+/// GET /api/v1/session/:id/posture
+pub async fn get_session_posture(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
+) -> Result<Json<SessionPostureResponse>, (StatusCode, String)> {
+    let session = state
+        .sessions
+        .get_session(&session_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "session_not_found".to_string()))?;
+
+    if let Some(axum::extract::Extension(auth_actor)) = actor.as_ref() {
+        match auth_actor {
+            AuthenticatedActor::User(principal) => {
+                if principal.id != session.identity.id
+                    || principal.issuer != session.identity.issuer
+                {
+                    let is_super_admin = state
+                        .rbac
+                        .effective_roles_for_identity(principal)
+                        .iter()
+                        .any(|r| r == "super-admin");
+                    if !is_super_admin {
+                        let actor_org = principal.organization_id.as_deref();
+                        let session_org = session.identity.organization_id.as_deref();
+                        if actor_org.is_some() && session_org.is_some() && actor_org != session_org
+                        {
+                            return Err((
+                                StatusCode::FORBIDDEN,
+                                "cross_org_session_access_denied".to_string(),
+                            ));
+                        }
+                    }
+                    require_api_key_scope_or_user_permission(
+                        actor.as_ref().map(|e| &e.0),
+                        &state.rbac,
+                        Scope::Read,
+                        ResourceType::Session,
+                        Action::Read,
+                    )?;
+                }
+            }
+            AuthenticatedActor::ApiKey(_) => {
+                require_api_key_scope_or_user_permission(
+                    actor.as_ref().map(|e| &e.0),
+                    &state.rbac,
+                    Scope::Read,
+                    ResourceType::Session,
+                    Action::Read,
+                )?;
+            }
+        }
+    }
+
+    let posture = posture_state_from_session(&session)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "posture_state_not_found".to_string()))?;
+
+    Ok(Json(SessionPostureResponse {
+        state: posture.current_state,
+        entered_at: posture.entered_at,
+        budgets: to_posture_budget_info(posture.budgets),
+        transition_history: to_posture_transition_info(posture.transition_history),
+    }))
+}
+
+/// POST /api/v1/session/:id/transition
+pub async fn transition_session_posture(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
+    Json(request): Json<TransitionSessionPostureRequest>,
+) -> Result<Json<TransitionSessionPostureResponse>, (StatusCode, String)> {
+    if request.to_state.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "to_state_required".to_string()));
+    }
+    if request.trigger != "user_approval" && request.trigger != "user_denial" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "trigger_must_be_user_approval_or_user_denial".to_string(),
+        ));
+    }
+
+    let _session_guard = state.sessions.acquire_session_lock(&session_id).await;
+
+    let session = state
+        .sessions
+        .get_session(&session_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "session_not_found".to_string()))?;
+
+    let mut owner_allowed = false;
+    if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
+        match actor {
+            AuthenticatedActor::User(principal) => {
+                owner_allowed = principal.id == session.identity.id
+                    && principal.issuer == session.identity.issuer;
+                if !owner_allowed {
+                    let is_super_admin = state
+                        .rbac
+                        .effective_roles_for_identity(principal)
+                        .iter()
+                        .any(|r| r == "super-admin");
+                    if !is_super_admin {
+                        let actor_org = principal.organization_id.as_deref();
+                        let session_org = session.identity.organization_id.as_deref();
+                        if actor_org.is_some() && session_org.is_some() && actor_org != session_org
+                        {
+                            return Err((
+                                StatusCode::FORBIDDEN,
+                                "cross_org_session_access_denied".to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            AuthenticatedActor::ApiKey(_) => {}
+        }
+    }
+
+    if !owner_allowed {
+        require_api_key_scope_or_user_permission(
+            actor.as_ref().map(|e| &e.0),
+            &state.rbac,
+            Scope::Admin,
+            ResourceType::Session,
+            Action::Update,
+        )?;
+    }
+
+    let mut posture = posture_state_from_session(&session).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "posture_state_not_initialized".to_string(),
+        )
+    })?;
+
+    let from_state = posture.current_state.clone();
+    let now = chrono::Utc::now().to_rfc3339();
+    posture.current_state = request.to_state.clone();
+    posture.entered_at = now.clone();
+    posture.transition_history.push(PostureTransitionRecord {
+        from: from_state.clone(),
+        to: request.to_state.clone(),
+        trigger: request.trigger.clone(),
+        at: now,
+    });
+
+    let patch = posture_state_patch(&posture)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let updated = state
+        .sessions
+        .merge_state(&session_id, patch)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if updated.is_none() {
+        return Err((StatusCode::NOT_FOUND, "session_not_found".to_string()));
+    }
+
+    let mut audit = AuditEvent::session_start(&session_id, None);
+    audit.event_type = "session_posture_transition".to_string();
+    audit.action_type = "session_transition".to_string();
+    audit.target = Some(session_id.clone());
+    audit.message = Some("Session posture transition applied".to_string());
+    audit.metadata = Some(serde_json::json!({
+        "from_state": from_state,
+        "to_state": request.to_state,
+        "trigger": request.trigger,
+    }));
+    if let Err(err) = state.ledger.record(&audit) {
+        tracing::warn!(error = %err, "Failed to record audit event");
+    }
+
+    Ok(Json(TransitionSessionPostureResponse {
+        success: true,
+        from_state,
+        to_state: posture.current_state,
+        message: None,
+    }))
 }

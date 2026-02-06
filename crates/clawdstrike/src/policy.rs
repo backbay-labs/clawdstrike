@@ -10,15 +10,17 @@ use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
 use crate::guards::{
     EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard, Guard,
     JailbreakConfig, JailbreakGuard, McpToolConfig, McpToolGuard, PatchIntegrityConfig,
-    PatchIntegrityGuard, PromptInjectionConfig, PromptInjectionGuard, SecretLeakConfig,
-    SecretLeakGuard,
+    PatchIntegrityGuard, PathAllowlistConfig, PathAllowlistGuard, PromptInjectionConfig,
+    PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
 };
+use crate::posture::{validate_posture_config, PostureConfig};
 
 /// Current policy schema version.
 ///
 /// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
 /// unsupported versions to prevent silent drift.
-pub const POLICY_SCHEMA_VERSION: &str = "1.1.0";
+pub const POLICY_SCHEMA_VERSION: &str = "1.2.0";
+pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1.1.0", "1.2.0"];
 
 fn default_true() -> bool {
     true
@@ -191,6 +193,9 @@ pub struct Policy {
     /// Global settings
     #[serde(default)]
     pub settings: PolicySettings,
+    /// Optional dynamic posture model (schema v1.2.0+).
+    #[serde(default)]
+    pub posture: Option<PostureConfig>,
 }
 
 fn default_version() -> String {
@@ -208,6 +213,7 @@ impl Default for Policy {
             guards: GuardConfigs::default(),
             custom_guards: Vec::new(),
             settings: PolicySettings::default(),
+            posture: None,
         }
     }
 }
@@ -219,6 +225,9 @@ pub struct GuardConfigs {
     /// Forbidden path guard config
     #[serde(default)]
     pub forbidden_path: Option<ForbiddenPathConfig>,
+    /// Path allowlist guard config
+    #[serde(default)]
+    pub path_allowlist: Option<PathAllowlistConfig>,
     /// Egress allowlist guard config
     #[serde(default)]
     pub egress_allowlist: Option<EgressAllowlistConfig>,
@@ -256,6 +265,12 @@ impl GuardConfigs {
                 (None, Some(child_cfg)) => {
                     Some(ForbiddenPathConfig::default().merge_with(child_cfg))
                 }
+                (None, None) => None,
+            },
+            path_allowlist: match (&self.path_allowlist, &child.path_allowlist) {
+                (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
+                (Some(base), None) => Some(base.clone()),
+                (None, Some(child_cfg)) => Some(child_cfg.clone()),
                 (None, None) => None,
             },
             egress_allowlist: match (&self.egress_allowlist, &child.egress_allowlist) {
@@ -470,6 +485,25 @@ impl Policy {
 
         let mut errors: Vec<PolicyFieldError> = Vec::new();
         let require_env = options.require_env;
+        let supports_v1_2_features = policy_version_supports_posture(&self.version);
+
+        if self.posture.is_some() && !supports_v1_2_features {
+            errors.push(PolicyFieldError::new(
+                "posture",
+                "posture requires policy version 1.2.0".to_string(),
+            ));
+        }
+
+        if self.guards.path_allowlist.is_some() && !supports_v1_2_features {
+            errors.push(PolicyFieldError::new(
+                "guards.path_allowlist",
+                "path_allowlist requires policy version 1.2.0".to_string(),
+            ));
+        }
+
+        if let Some(posture) = &self.posture {
+            validate_posture_config(posture, &mut errors);
+        }
 
         if !self.custom_guards.is_empty() {
             let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -547,6 +581,45 @@ impl Policy {
                 &mut errors,
                 "guards.forbidden_path.remove_patterns",
                 &cfg.remove_patterns,
+                cfg.enabled,
+                require_env,
+            );
+        }
+
+        if let Some(cfg) = &self.guards.path_allowlist {
+            validate_globs(
+                &mut errors,
+                "guards.path_allowlist.file_access_allow",
+                &cfg.file_access_allow,
+            );
+            validate_globs(
+                &mut errors,
+                "guards.path_allowlist.file_write_allow",
+                &cfg.file_write_allow,
+            );
+            validate_globs(
+                &mut errors,
+                "guards.path_allowlist.patch_allow",
+                &cfg.patch_allow,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.path_allowlist.file_access_allow",
+                &cfg.file_access_allow,
+                cfg.enabled,
+                require_env,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.path_allowlist.file_write_allow",
+                &cfg.file_write_allow,
+                cfg.enabled,
+                require_env,
+            );
+            validate_placeholders_in_strings(
+                &mut errors,
+                "guards.path_allowlist.patch_allow",
+                &cfg.patch_allow,
                 cfg.enabled,
                 require_env,
             );
@@ -763,6 +836,7 @@ impl Policy {
                 } else {
                     self.settings.clone()
                 },
+                posture: child.posture.clone().or_else(|| self.posture.clone()),
             },
             MergeStrategy::DeepMerge => Self {
                 version: if child.version != default_version() {
@@ -794,6 +868,12 @@ impl Policy {
                         .settings
                         .session_timeout_secs
                         .or(self.settings.session_timeout_secs),
+                },
+                posture: match (&self.posture, &child.posture) {
+                    (Some(base), Some(child_posture)) => Some(base.merge_with(child_posture)),
+                    (Some(base), None) => Some(base.clone()),
+                    (None, Some(child_posture)) => Some(child_posture.clone()),
+                    (None, None) => None,
                 },
             },
         }
@@ -904,6 +984,12 @@ impl Policy {
                 .clone()
                 .map(ForbiddenPathGuard::with_config)
                 .unwrap_or_default(),
+            path_allowlist: self
+                .guards
+                .path_allowlist
+                .clone()
+                .map(PathAllowlistGuard::with_config)
+                .unwrap_or_default(),
             egress_allowlist: self
                 .guards
                 .egress_allowlist
@@ -980,10 +1066,10 @@ fn validate_policy_version(version: &str) -> Result<()> {
         });
     }
 
-    if version != POLICY_SCHEMA_VERSION {
+    if !POLICY_SUPPORTED_SCHEMA_VERSIONS.contains(&version) {
         return Err(Error::UnsupportedPolicyVersion {
             found: version.to_string(),
-            supported: POLICY_SCHEMA_VERSION.to_string(),
+            supported: POLICY_SUPPORTED_SCHEMA_VERSIONS.join(", "),
         });
     }
 
@@ -1000,6 +1086,17 @@ fn parse_semver_strict(version: &str) -> Option<(u64, u64, u64)> {
     }
 
     Some((major, minor, patch))
+}
+
+fn semver_at_least(version: &str, minimum: (u64, u64, u64)) -> bool {
+    let Some(found) = parse_semver_strict(version) else {
+        return false;
+    };
+    found >= minimum
+}
+
+fn policy_version_supports_posture(version: &str) -> bool {
+    semver_at_least(version, (1, 2, 0))
 }
 
 fn parse_semver_part(part: &str) -> Option<u64> {
@@ -1403,6 +1500,7 @@ fn validate_snyk_spec(errors: &mut Vec<PolicyFieldError>, base: &str, config: &s
 /// Guards instantiated from a policy
 pub(crate) struct PolicyGuards {
     pub forbidden_path: ForbiddenPathGuard,
+    pub path_allowlist: PathAllowlistGuard,
     pub egress_allowlist: EgressAllowlistGuard,
     pub secret_leak: SecretLeakGuard,
     pub patch_integrity: PatchIntegrityGuard,
@@ -1416,6 +1514,7 @@ impl PolicyGuards {
     pub(crate) fn builtin_guards_in_order(&self) -> impl ExactSizeIterator<Item = &dyn Guard> + '_ {
         [
             &self.forbidden_path as &dyn Guard,
+            &self.path_allowlist as &dyn Guard,
             &self.egress_allowlist as &dyn Guard,
             &self.secret_leak as &dyn Guard,
             &self.patch_integrity as &dyn Guard,
@@ -1487,7 +1586,7 @@ mod tests {
     #[test]
     fn test_default_policy() {
         let policy = Policy::new();
-        assert_eq!(policy.version, "1.1.0");
+        assert_eq!(policy.version, "1.2.0");
     }
 
     #[test]
@@ -1759,6 +1858,97 @@ name: Test
             Error::UnsupportedPolicyVersion { .. } => {}
             other => panic!("expected unsupported policy version error, got: {}", other),
         }
+    }
+
+    #[test]
+    fn test_policy_version_accepts_1_2_0() {
+        let yaml = r#"
+version: "1.2.0"
+name: Test
+"#;
+
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.version, "1.2.0");
+    }
+
+    #[test]
+    fn test_posture_parses_for_1_2_0() {
+        let yaml = r#"
+version: "1.2.0"
+name: Test
+posture:
+  initial: work
+  states:
+    work:
+      capabilities:
+        - file_access
+"#;
+
+        let policy = Policy::from_yaml(yaml).unwrap();
+        let posture = policy.posture.expect("posture must exist");
+        assert_eq!(posture.initial, "work");
+        assert!(posture.states.contains_key("work"));
+    }
+
+    #[test]
+    fn test_posture_rejected_for_1_1_0() {
+        let yaml = r#"
+version: "1.1.0"
+name: Test
+posture:
+  initial: work
+  states:
+    work:
+      capabilities:
+        - file_access
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(e.errors.iter().any(|fe| fe.path == "posture"
+                    && fe.message == "posture requires policy version 1.2.0"));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_path_allowlist_rejected_for_1_1_0() {
+        let yaml = r#"
+version: "1.1.0"
+name: Test
+guards:
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/repo/**"
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(e.errors.iter().any(|fe| fe.path == "guards.path_allowlist"
+                    && fe.message == "path_allowlist requires policy version 1.2.0"));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_path_allowlist_parses_for_1_2_0() {
+        let yaml = r#"
+version: "1.2.0"
+name: Test
+guards:
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/repo/**"
+"#;
+
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert!(policy.guards.path_allowlist.is_some());
     }
 
     #[test]
