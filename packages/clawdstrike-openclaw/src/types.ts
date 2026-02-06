@@ -190,7 +190,7 @@ export type DecisionStatus = 'allow' | 'warn' | 'deny';
  */
 export interface Decision {
   /** The decision status: 'allow', 'warn', or 'deny' */
-  status?: DecisionStatus;
+  status: DecisionStatus;
   /** Whether the event is allowed @deprecated Use status === 'allow' || status === 'warn' */
   allowed: boolean;
   /** Whether the event is explicitly denied @deprecated Use status === 'deny' */

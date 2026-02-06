@@ -12,6 +12,7 @@ readme = "../../README.md"
 
 [dependencies]
 ed25519-dalek.workspace = true
+zeroize.workspace = true
 sha2.workspace = true
 sha3.workspace = true
 rand_core.workspace = true
@@ -30,6 +31,11 @@ getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 proptest = "1.9"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "crypto"
+harness = false
 
 [features]
 default = []

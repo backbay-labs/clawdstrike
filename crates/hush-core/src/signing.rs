@@ -5,6 +5,7 @@ use ed25519_dalek::{
 };
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::error::{Error, Result};
 
@@ -96,6 +97,17 @@ impl Signer for Keypair {
 
     fn sign(&self, message: &[u8]) -> Result<Signature> {
         Ok(Keypair::sign(self, message))
+    }
+}
+
+impl Drop for Keypair {
+    fn drop(&mut self) {
+        // Zero the seed bytes (private key material) on drop.
+        // SigningKey stores the seed as [u8; 32] internally.
+        let mut seed = self.signing_key.to_bytes();
+        seed.zeroize();
+        // Overwrite the signing key with a key derived from the zeroed seed.
+        self.signing_key = SigningKey::from_bytes(&seed);
     }
 }
 

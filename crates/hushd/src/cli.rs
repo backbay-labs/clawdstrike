@@ -203,6 +203,23 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(address = %addr, "Listening");
 
+    // Notify systemd that the daemon is ready (Type=notify).
+    #[cfg(feature = "systemd")]
+    {
+        sd_notify::notify(true, &[sd_notify::NotifyState::Ready]).ok();
+        tracing::info!("sd_notify: READY=1 sent");
+    }
+
+    // Spawn periodic watchdog heartbeat for systemd WatchdogSec.
+    #[cfg(feature = "systemd")]
+    tokio::spawn(async {
+        let interval = std::time::Duration::from_secs(15);
+        loop {
+            sd_notify::notify(false, &[sd_notify::NotifyState::Watchdog]).ok();
+            tokio::time::sleep(interval).await;
+        }
+    });
+
     // Handle SIGHUP for policy reload (systemd ExecReload).
     #[cfg(unix)]
     {

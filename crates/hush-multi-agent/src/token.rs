@@ -302,8 +302,60 @@ fn is_capability_subset(lhs: &[AgentCapability], rhs_superset: &[AgentCapability
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::AgentCapability;
 
     use crate::revocation::InMemoryRevocationStore;
+
+    fn make_agent(name: &str) -> AgentId {
+        AgentId::new(name).unwrap()
+    }
+
+    fn make_claims(iat: i64, exp: i64) -> DelegationClaims {
+        DelegationClaims::new(
+            make_agent("agent:issuer"),
+            make_agent("agent:subject"),
+            iat,
+            exp,
+            vec![AgentCapability::DeployApproval],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn sign_and_verify_roundtrip() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+        assert!(token.verify(&kp.public_key()).unwrap());
+    }
+
+    #[test]
+    fn sign_with_public_key_and_verify_embedded() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign_with_public_key(claims, &kp).unwrap();
+        assert!(token.public_key.is_some());
+        assert!(token.verify_embedded().unwrap());
+    }
+
+    #[test]
+    fn verify_with_wrong_key_fails() {
+        let kp = Keypair::generate();
+        let wrong_kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+        assert!(!token.verify(&wrong_kp.public_key()).unwrap());
+    }
+
+    #[test]
+    fn verify_embedded_missing_key_errors() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+        assert!(token.public_key.is_none());
+        let result = token.verify_embedded();
+        assert!(result.is_err());
+    }
 
     #[test]
     fn token_verifies_and_revocation_is_enforced() {
@@ -413,5 +465,145 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains("capabilities exceed ceiling"));
+    }
+
+    #[test]
+    fn attenuation_capabilities_must_be_subset_of_ceiling() {
+        let iss = make_agent("agent:iss");
+        let sub = make_agent("agent:sub");
+
+        let mut claims = DelegationClaims::new(
+            iss,
+            sub,
+            1_000_000,
+            2_000_000,
+            vec![AgentCapability::DeployApproval, AgentCapability::AgentAdmin],
+        )
+        .unwrap();
+
+        // Set ceiling to only DeployApproval -- AgentAdmin exceeds it.
+        claims.cel = vec![AgentCapability::DeployApproval];
+        let result = claims.validate_basic();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceed ceiling"));
+    }
+
+    #[test]
+    fn attenuation_capabilities_within_ceiling_ok() {
+        let iss = make_agent("agent:iss");
+        let sub = make_agent("agent:sub");
+
+        let mut claims = DelegationClaims::new(
+            iss,
+            sub,
+            1_000_000,
+            2_000_000,
+            vec![AgentCapability::DeployApproval],
+        )
+        .unwrap();
+
+        claims.cel = vec![AgentCapability::DeployApproval, AgentCapability::AgentAdmin];
+        claims.validate_basic().unwrap();
+    }
+
+    #[test]
+    fn expired_token_rejected() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 1_500_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+
+        // now = 2_000_000 which is past exp = 1_500_000
+        let result = token.validate_timebounds(2_000_000);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::Expired));
+    }
+
+    #[test]
+    fn not_yet_valid_token_rejected() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+
+        // nbf defaults to iat = 1_000_000, now = 500_000 is before nbf
+        let result = token.validate_timebounds(500_000);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::NotYetValid));
+    }
+
+    #[test]
+    fn valid_timebounds_accepted() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+
+        token.validate_timebounds(1_500_000).unwrap();
+    }
+
+    #[test]
+    fn audience_validation() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+
+        token.validate_audience(DELEGATION_AUDIENCE).unwrap();
+
+        let result = token.validate_audience("wrong:audience");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::AudienceMismatch));
+    }
+
+    #[test]
+    fn subject_validation() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign(claims, &kp).unwrap();
+
+        let expected = make_agent("agent:subject");
+        token.validate_subject(&expected).unwrap();
+
+        let wrong = make_agent("agent:other");
+        let result = token.validate_subject(&wrong);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::SubjectMismatch));
+    }
+
+    #[test]
+    fn claims_reject_empty_capabilities() {
+        let result = DelegationClaims::new(
+            make_agent("a"),
+            make_agent("b"),
+            1_000_000,
+            2_000_000,
+            vec![],
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("capabilities are empty"));
+    }
+
+    #[test]
+    fn claims_reject_exp_before_iat() {
+        let result = DelegationClaims::new(
+            make_agent("a"),
+            make_agent("b"),
+            2_000_000,
+            1_000_000,
+            vec![AgentCapability::DeployApproval],
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exp must be > iat"));
+    }
+
+    #[test]
+    fn serialization_roundtrip() {
+        let kp = Keypair::generate();
+        let claims = make_claims(1_000_000, 2_000_000);
+        let token = SignedDelegationToken::sign_with_public_key(claims, &kp).unwrap();
+
+        let json = serde_json::to_string(&token).unwrap();
+        let deserialized: SignedDelegationToken = serde_json::from_str(&json).unwrap();
+
+        assert!(deserialized.verify_embedded().unwrap());
+        assert_eq!(deserialized.claims.iss.as_str(), "agent:issuer");
+        assert_eq!(deserialized.claims.sub.as_str(), "agent:subject");
     }
 }

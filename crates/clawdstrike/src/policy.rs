@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use globset::GlobBuilder;
 
 use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
+use crate::placeholders::env_var_for_placeholder;
 use crate::guards::{
     EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard, Guard,
     JailbreakConfig, JailbreakGuard, McpToolConfig, McpToolGuard, PatchIntegrityConfig,
@@ -1136,21 +1137,6 @@ fn validate_domain_globs(errors: &mut Vec<PolicyFieldError>, field: &str, patter
             ));
         }
     }
-}
-
-fn env_var_for_placeholder(raw: &str) -> std::result::Result<String, String> {
-    if let Some(rest) = raw.strip_prefix("secrets.") {
-        if rest.is_empty() {
-            return Err("placeholder ${secrets.} is invalid".to_string());
-        }
-        return Ok(rest.to_string());
-    }
-
-    if raw.is_empty() {
-        return Err("placeholder ${} is invalid".to_string());
-    }
-
-    Ok(raw.to_string())
 }
 
 fn validate_placeholders_in_string(

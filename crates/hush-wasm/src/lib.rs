@@ -254,3 +254,171 @@ pub fn generate_merkle_proof(leaf_hashes_json: &str, leaf_index: usize) -> Resul
 
     serde_json::to_string(&proof).map_err(|e| JsError::new(&format!("Serialization failed: {}", e)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hush_core::{sha256 as core_sha256, Keypair, Receipt, SignedReceipt, Verdict};
+
+    #[test]
+    fn sha256_known_input() {
+        // SHA-256 of empty string
+        let result = hash_sha256(b"");
+        assert_eq!(
+            result,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        // SHA-256 of "hello"
+        let result = hash_sha256(b"hello");
+        assert_eq!(
+            result,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn sha256_prefixed() {
+        let result = hash_sha256_prefixed(b"hello");
+        assert!(result.starts_with("0x"));
+        assert_eq!(result.len(), 66); // "0x" + 64 hex chars
+        assert_eq!(
+            result,
+            "0x2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn keccak256_known_input() {
+        // Keccak-256 of empty string (Ethereum standard)
+        let result = hash_keccak256(b"");
+        assert_eq!(
+            result,
+            "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+        );
+    }
+
+    #[test]
+    fn verify_ed25519_roundtrip() {
+        let keypair = Keypair::generate();
+        let message = b"test message for ed25519 verification";
+        let signature = keypair.sign(message);
+
+        let pk_hex = keypair.public_key().to_hex();
+        let sig_hex = signature.to_hex();
+
+        let valid = verify_ed25519(&pk_hex, message, &sig_hex).unwrap();
+        assert!(valid);
+    }
+
+    #[test]
+    fn verify_ed25519_wrong_message() {
+        let keypair = Keypair::generate();
+        let signature = keypair.sign(b"original message");
+
+        let pk_hex = keypair.public_key().to_hex();
+        let sig_hex = signature.to_hex();
+
+        let valid = verify_ed25519(&pk_hex, b"wrong message", &sig_hex).unwrap();
+        assert!(!valid);
+    }
+
+    #[test]
+    fn canonicalize_json_deterministic() {
+        // Test the underlying canonicalization via hush-core (wasm wrappers use JsError).
+        use hush_core::canonical::canonicalize;
+
+        let v1: serde_json::Value = serde_json::from_str(r#"{"b":2,"a":1}"#).unwrap();
+        let v2: serde_json::Value = serde_json::from_str(r#"{"a":1,"b":2}"#).unwrap();
+
+        let canon1 = canonicalize(&v1).unwrap();
+        let canon2 = canonicalize(&v2).unwrap();
+        assert_eq!(canon1, canon2);
+        // Keys should be sorted
+        assert_eq!(canon1, r#"{"a":1,"b":2}"#);
+    }
+
+    #[test]
+    fn compute_merkle_root_and_verify_proof() {
+        // Create leaf hashes
+        let h1 = core_sha256(b"leaf1").to_hex_prefixed();
+        let h2 = core_sha256(b"leaf2").to_hex_prefixed();
+        let h3 = core_sha256(b"leaf3").to_hex_prefixed();
+        let h4 = core_sha256(b"leaf4").to_hex_prefixed();
+
+        let leaves_json = serde_json::to_string(&vec![&h1, &h2, &h3, &h4]).unwrap();
+
+        // Compute root
+        let root = compute_merkle_root(&leaves_json).unwrap();
+        assert!(root.starts_with("0x"));
+
+        // Generate proof for leaf 0
+        let proof_json = generate_merkle_proof(&leaves_json, 0).unwrap();
+
+        // Verify proof
+        let valid = verify_merkle_proof(&h1, &proof_json, &root).unwrap();
+        assert!(valid);
+
+        // Verify wrong leaf fails
+        let invalid = verify_merkle_proof(&h2, &proof_json, &root).unwrap();
+        assert!(!invalid);
+    }
+
+    #[test]
+    fn merkle_proof_different_indices() {
+        let h1 = core_sha256(b"a").to_hex_prefixed();
+        let h2 = core_sha256(b"b").to_hex_prefixed();
+        let leaves_json = serde_json::to_string(&vec![&h1, &h2]).unwrap();
+
+        let root = compute_merkle_root(&leaves_json).unwrap();
+
+        // Proof for index 1
+        let proof_json = generate_merkle_proof(&leaves_json, 1).unwrap();
+        let valid = verify_merkle_proof(&h2, &proof_json, &root).unwrap();
+        assert!(valid);
+    }
+
+    #[test]
+    fn verify_receipt_roundtrip() {
+        // Test using hush-core directly (wasm wrapper returns JsValue).
+        use hush_core::receipt::PublicKeySet;
+
+        let keypair = Keypair::generate();
+        let content_hash = core_sha256(b"test content");
+        let receipt = Receipt::new(content_hash, Verdict::pass());
+        let signed = SignedReceipt::sign(receipt, &keypair).unwrap();
+
+        let keys = PublicKeySet::new(keypair.public_key());
+        let result = signed.verify(&keys);
+        assert!(result.valid);
+        assert!(result.signer_valid);
+    }
+
+    #[test]
+    fn hash_receipt_sha256_and_keccak256() {
+        // Test via hush-core directly (wasm wrapper uses JsError).
+        let content_hash = core_sha256(b"test");
+        let receipt = Receipt::new(content_hash, Verdict::pass());
+
+        let sha_hash = receipt.hash_sha256().unwrap();
+        assert_eq!(sha_hash.to_hex_prefixed().len(), 66);
+
+        let keccak_hash = receipt.hash_keccak256().unwrap();
+        assert_eq!(keccak_hash.to_hex_prefixed().len(), 66);
+
+        // Different algorithms should produce different hashes
+        assert_ne!(sha_hash, keccak_hash);
+    }
+
+    #[test]
+    fn receipt_canonical_json_deterministic() {
+        // Test the canonical JSON of a receipt (mirrors hash_receipt logic).
+        let content_hash = core_sha256(b"test");
+        let receipt = Receipt::new(content_hash, Verdict::pass());
+
+        let canon1 = receipt.to_canonical_json().unwrap();
+        let canon2 = receipt.to_canonical_json().unwrap();
+        assert_eq!(canon1, canon2);
+        assert!(!canon1.is_empty());
+    }
+}

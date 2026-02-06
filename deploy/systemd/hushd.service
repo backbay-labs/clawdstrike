@@ -5,7 +5,7 @@ After=network.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
 User=hushd
 Group=hushd
 
@@ -69,8 +69,8 @@ ReadOnlyPaths=/
 ReadWritePaths=/var/lib/hushd
 ReadWritePaths=/var/log/hushd
 
-# Watchdog (optional - daemon must implement sd_notify)
-# WatchdogSec=30
+# Watchdog - daemon sends WATCHDOG=1 every 15s; systemd kills if 30s elapses.
+WatchdogSec=30
 
 [Install]
 WantedBy=multi-user.target

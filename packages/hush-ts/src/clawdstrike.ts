@@ -1563,6 +1563,7 @@ export class Clawdstrike {
       params.customData as Record<string, unknown> | undefined,
     );
   }
+
 }
 
 export default Clawdstrike;

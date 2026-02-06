@@ -75,6 +75,9 @@ futures.workspace = true
 toml.workspace = true
 dirs.workspace = true
 
+# Systemd notifications (optional, linux-only)
+sd-notify = { version = "0.4", optional = true }
+
 # HTTP client (for status command + remote policy extends + SIEM exporters)
 reqwest = { workspace = true, features = ["blocking"] }
 jsonwebtoken.workspace = true
@@ -83,9 +86,11 @@ url.workspace = true
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }
+tempfile = "3"
 
 [features]
 default = []
+systemd = ["dep:sd-notify"]
 
 [lints]
 workspace = true

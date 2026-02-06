@@ -489,11 +489,6 @@ fn is_obviously_test_credential(value: &str) -> bool {
     // This is opt-in via `allow_test_credentials`.
     let lower = value.to_ascii_lowercase();
 
-    // Common example markers.
-    if lower.contains("example") || lower.contains("dummy") {
-        return true;
-    }
-
     // "All one character" bodies for known key prefixes.
     let is_repeated = |s: &str| match s.chars().next() {
         Some(first) => s.chars().all(|c| c == first),

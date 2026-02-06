@@ -64,6 +64,7 @@ fn expand_secret_ref(value: &str) -> anyhow::Result<String> {
 
 /// TLS configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TlsConfig {
     /// Path to certificate file
     pub cert_path: PathBuf,
@@ -73,6 +74,7 @@ pub struct TlsConfig {
 
 /// Configuration for a single API key
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiKeyConfig {
     /// Human-readable name for the key
     pub name: String,
@@ -88,6 +90,7 @@ pub struct ApiKeyConfig {
 
 /// Authentication configuration
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     /// Whether authentication is required for API endpoints
     #[serde(default)]
@@ -98,6 +101,7 @@ pub struct AuthConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IdentityConfig {
     /// OIDC (JWT) identity configuration
     #[serde(default)]
@@ -114,30 +118,35 @@ pub struct IdentityConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OktaConfig {
     #[serde(default)]
     pub webhooks: Option<OktaWebhookConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OktaWebhookConfig {
     /// Shared secret token for verifying Okta event hooks (`Authorization: Bearer <token>`).
     pub verification_key: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Auth0Config {
     #[serde(default)]
     pub log_stream: Option<Auth0LogStreamConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Auth0LogStreamConfig {
     /// Shared bearer token for verifying Auth0 log stream webhooks (`Authorization: Bearer <token>`).
     pub authorization: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SamlConfig {
     /// Service Provider entity ID (audience)
     pub entity_id: String,
@@ -165,6 +174,7 @@ fn default_validate_saml_conditions() -> bool {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SamlAttributeMapping {
     /// Attribute name for user ID (defaults to NameID when unset)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -198,6 +208,7 @@ impl Default for SamlAttributeMapping {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RbacConfig {
     /// Whether RBAC is enabled for user principals.
     #[serde(default = "default_rbac_enabled")]
@@ -221,6 +232,7 @@ impl Default for RbacConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyScopingConfig {
     /// Whether identity-based policy scoping is enabled.
     #[serde(default = "default_policy_scoping_enabled")]
@@ -248,6 +260,7 @@ impl Default for PolicyScopingConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyScopingCacheConfig {
     #[serde(default = "default_policy_scoping_cache_enabled")]
     pub enabled: bool,
@@ -280,6 +293,7 @@ impl Default for PolicyScopingCacheConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyScopingEscalationPreventionConfig {
     /// Whether escalation prevention checks are enabled.
     #[serde(default)]
@@ -290,6 +304,7 @@ pub struct PolicyScopingEscalationPreventionConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GroupMappingConfig {
     /// Direct mapping: identity group -> RBAC roles
     #[serde(default)]
@@ -306,6 +321,7 @@ pub struct GroupMappingConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GroupPattern {
     pub pattern: String,
     pub roles: Vec<String>,
@@ -314,6 +330,7 @@ pub struct GroupPattern {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OidcConfig {
     /// OIDC issuer URL
     pub issuer: String,
@@ -360,6 +377,7 @@ fn default_jwks_cache_ttl_secs() -> u64 {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OidcReplayProtectionConfig {
     /// Whether replay protection is enabled.
     #[serde(default)]
@@ -370,6 +388,7 @@ pub struct OidcReplayProtectionConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OidcClaimMapping {
     /// Claim for user ID (default: "sub")
     #[serde(default = "default_claim_sub")]
@@ -449,6 +468,7 @@ where
 
 /// Rate limiting configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RateLimitConfig {
     /// Whether rate limiting is enabled
     #[serde(default = "default_rate_limit_enabled")]
@@ -472,6 +492,7 @@ pub struct RateLimitConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IdentityRateLimitConfig {
     /// Whether identity-based rate limiting is enabled.
     #[serde(default)]
@@ -540,6 +561,7 @@ impl Default for RateLimitConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SessionHardeningConfig {
     /// Rotate (terminate) existing user sessions when creating a new session.
     #[serde(default)]
@@ -565,6 +587,7 @@ fn default_remote_max_cache_bytes() -> usize {
 
 /// Remote `extends` configuration (disabled unless allowlisted).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RemoteExtendsConfig {
     /// Allowed hosts for remote policy resolution.
     #[serde(default)]
@@ -622,6 +645,7 @@ pub enum AuditEncryptionKeySource {
 
 /// Audit ledger encryption configuration.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditEncryptionConfig {
     /// Enable encryption at rest for the audit metadata blob.
     #[serde(default)]
@@ -645,6 +669,7 @@ pub struct AuditEncryptionConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditConfig {
     #[serde(default)]
     pub encryption: AuditEncryptionConfig,
@@ -697,6 +722,7 @@ pub enum AuditSinkConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditForwardConfig {
     /// Whether forwarding is enabled.
     #[serde(default)]
@@ -889,6 +915,7 @@ impl AuditForwardConfig {
 }
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Listen address (e.g., "0.0.0.0:8080")
     #[serde(default = "default_listen")]
@@ -1001,7 +1028,7 @@ fn default_log_level() -> String {
 }
 
 fn default_cors() -> bool {
-    true
+    false
 }
 
 impl Default for Config {
@@ -1034,6 +1061,7 @@ impl Default for Config {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SiemSoarConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -1050,6 +1078,7 @@ pub struct SiemSoarConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SiemPrivacyConfig {
     #[serde(default)]
     pub drop_metadata: bool,
@@ -1070,6 +1099,7 @@ fn default_redaction_replacement() -> String {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SiemExportersConfig {
     #[serde(default)]
     pub splunk: Option<ExporterSettings<SplunkConfig>>,
@@ -1416,9 +1446,9 @@ impl Config {
             .map(|v| !v.is_empty())
             .unwrap_or(false);
         if self.auth.enabled && !has_pepper {
-            tracing::warn!(
-                "Auth is enabled but CLAWDSTRIKE_AUTH_PEPPER is not set; API key hashing will use raw SHA-256"
-            );
+            return Err(anyhow::anyhow!(
+                "Auth is enabled but CLAWDSTRIKE_AUTH_PEPPER is not set; refusing to start without a pepper"
+            ));
         }
 
         for (idx, key_config) in self.auth.api_keys.iter().enumerate() {
@@ -1477,7 +1507,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.listen, "127.0.0.1:9876");
         assert_eq!(config.ruleset, "default");
-        assert!(config.cors_enabled);
+        assert!(!config.cors_enabled);
         assert!(!config.audit.encryption.enabled);
         assert!(!config.audit_forward.enabled);
     }
@@ -1553,6 +1583,8 @@ scopes = ["*"]
 
     #[tokio::test]
     async fn test_load_auth_store() -> anyhow::Result<()> {
+        std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", "test-pepper");
+
         let toml = r#"
 listen = "127.0.0.1:9876"
 
@@ -1577,6 +1609,8 @@ scopes = ["check"]
 
     #[tokio::test]
     async fn test_load_auth_store_default_scopes() -> anyhow::Result<()> {
+        std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", "test-pepper");
+
         let toml = r#"
 listen = "127.0.0.1:9876"
 
@@ -1601,6 +1635,7 @@ scopes = []
 
     #[tokio::test]
     async fn test_load_auth_store_expands_env_refs() -> anyhow::Result<()> {
+        std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", "test-pepper");
         std::env::set_var("CLAWDSTRIKE_TEST_API_KEY", "secret-from-env");
 
         let yaml = r#"

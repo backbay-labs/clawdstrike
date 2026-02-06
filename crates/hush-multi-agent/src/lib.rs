@@ -23,5 +23,7 @@ pub use error::{Error, Result};
 pub use identity_registry::{IdentityRegistry, InMemoryIdentityRegistry};
 pub use message::{MessageClaims, SignedMessage};
 pub use revocation::{InMemoryRevocationStore, RevocationStore};
+#[cfg(feature = "sqlite")]
+pub use revocation::SqliteRevocationStore;
 pub use token::{DelegationClaims, SignedDelegationToken, DELEGATION_AUDIENCE};
 pub use types::{AgentCapability, AgentId, AgentIdentity, AgentRole, TrustLevel};

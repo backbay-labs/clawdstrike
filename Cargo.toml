@@ -29,7 +29,8 @@ rust-version = "1.93"
 
 [workspace.dependencies]
 # Crypto
-ed25519-dalek = { version = "2.2", features = ["rand_core"] }
+ed25519-dalek = { version = "2.2", features = ["rand_core", "zeroize"] }
+zeroize = "1"
 sha2 = "0.10"
 sha3 = "0.10"
 rand = "0.9"
