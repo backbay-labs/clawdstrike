@@ -160,11 +160,10 @@ impl SqliteAuthStore {
     /// Open (or create) the store at `path`.
     pub fn new(path: impl AsRef<Path>) -> Result<Self, AuthError> {
         if let Some(parent) = path.as_ref().parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| AuthError::Database(e.to_string()))?;
+            std::fs::create_dir_all(parent).map_err(|e| AuthError::Database(e.to_string()))?;
         }
-        let conn = rusqlite::Connection::open(path)
-            .map_err(|e| AuthError::Database(e.to_string()))?;
+        let conn =
+            rusqlite::Connection::open(path).map_err(|e| AuthError::Database(e.to_string()))?;
         Self::init(conn)
     }
 
@@ -193,7 +192,9 @@ impl SqliteAuthStore {
 
     fn load_all_from_db(conn: &rusqlite::Connection) -> Result<HashMap<String, ApiKey>, AuthError> {
         let mut stmt = conn
-            .prepare("SELECT key_hash, id, name, tier, scopes, created_at, expires_at FROM api_keys")
+            .prepare(
+                "SELECT key_hash, id, name, tier, scopes, created_at, expires_at FROM api_keys",
+            )
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
         let mut map = HashMap::new();
@@ -201,7 +202,10 @@ impl SqliteAuthStore {
             .query([])
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
-        while let Some(row) = rows.next().map_err(|e| AuthError::Database(e.to_string()))? {
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| AuthError::Database(e.to_string()))?
+        {
             let key = row_to_api_key(row)?;
             map.insert(key.key_hash.clone(), key);
         }
@@ -214,9 +218,11 @@ impl SqliteAuthStore {
     }
 
     fn persist_key(conn: &rusqlite::Connection, key: &ApiKey) -> Result<(), AuthError> {
-        let scopes_json = serde_json::to_string(&key.scopes)
-            .map_err(|e| AuthError::Database(e.to_string()))?;
-        let tier_str = key.tier.map(|t| serde_json::to_string(&t).unwrap_or_default());
+        let scopes_json =
+            serde_json::to_string(&key.scopes).map_err(|e| AuthError::Database(e.to_string()))?;
+        let tier_str = key
+            .tier
+            .map(|t| serde_json::to_string(&t).unwrap_or_default());
         let created_str = key.created_at.to_rfc3339();
         let expires_str = key.expires_at.map(|e| e.to_rfc3339());
 
@@ -306,8 +312,7 @@ fn row_to_api_key(row: &rusqlite::Row<'_>) -> Result<ApiKey, AuthError> {
     let created_str: String = row.get(5).map_err(|e| AuthError::Database(e.to_string()))?;
     let expires_str: Option<String> = row.get(6).map_err(|e| AuthError::Database(e.to_string()))?;
 
-    let tier = tier_str
-        .and_then(|s| serde_json::from_str(&s).ok());
+    let tier = tier_str.and_then(|s| serde_json::from_str(&s).ok());
     let scopes = serde_json::from_str(&scopes_json)
         .map_err(|e| AuthError::Database(format!("invalid scopes JSON: {e}")))?;
     let created_at = chrono::DateTime::parse_from_rfc3339(&created_str)
@@ -589,7 +594,10 @@ mod tests {
 
             // Look up directly by the pre-computed hash in the cache.
             let keys = store.list_keys().await;
-            let key = keys.iter().find(|k| k.key_hash == stable_hash).expect("find key");
+            let key = keys
+                .iter()
+                .find(|k| k.key_hash == stable_hash)
+                .expect("find key");
             assert_eq!(key.name, "persistent");
             assert!(key.has_scope(Scope::Admin));
         }

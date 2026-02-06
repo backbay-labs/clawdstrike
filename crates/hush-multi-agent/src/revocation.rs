@@ -104,8 +104,8 @@ mod sqlite_store {
 
     use rusqlite::Connection;
 
-    use crate::error::{Error, Result};
     use super::RevocationStore;
+    use crate::error::{Error, Result};
 
     const DEFAULT_MAX_REVOCATIONS: usize = 100_000;
     const DEFAULT_MAX_NONCES: usize = 100_000;
@@ -136,19 +136,16 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
         /// Open (or create) the store at `path`.
         pub fn new(path: impl AsRef<Path>) -> Result<Self> {
             if let Some(parent) = path.as_ref().parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| Error::Database(e.to_string()))?;
+                std::fs::create_dir_all(parent).map_err(|e| Error::Database(e.to_string()))?;
             }
-            let conn = Connection::open(path)
-                .map_err(|e| Error::Database(e.to_string()))?;
+            let conn = Connection::open(path).map_err(|e| Error::Database(e.to_string()))?;
             Self::init(conn)
         }
 
         /// Create an in-memory store (useful for tests).
         #[cfg(test)]
         pub fn in_memory() -> Result<Self> {
-            let conn = Connection::open_in_memory()
-                .map_err(|e| Error::Database(e.to_string()))?;
+            let conn = Connection::open_in_memory().map_err(|e| Error::Database(e.to_string()))?;
             Self::init(conn)
         }
 
@@ -199,13 +196,22 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
         }
 
         /// Remove expired nonces from the table.
-        fn prune_nonces(conn: &Connection, now_unix: i64) -> std::result::Result<(), rusqlite::Error> {
-            conn.execute("DELETE FROM nonces WHERE expires_at <= ?1", rusqlite::params![now_unix])?;
+        fn prune_nonces(
+            conn: &Connection,
+            now_unix: i64,
+        ) -> std::result::Result<(), rusqlite::Error> {
+            conn.execute(
+                "DELETE FROM nonces WHERE expires_at <= ?1",
+                rusqlite::params![now_unix],
+            )?;
             Ok(())
         }
 
         /// Remove expired time-limited revocations.
-        fn prune_revocations(conn: &Connection, now_unix: i64) -> std::result::Result<(), rusqlite::Error> {
+        fn prune_revocations(
+            conn: &Connection,
+            now_unix: i64,
+        ) -> std::result::Result<(), rusqlite::Error> {
             conn.execute(
                 "DELETE FROM revocations WHERE until_unix IS NOT NULL AND until_unix <= ?1",
                 rusqlite::params![now_unix],
@@ -214,12 +220,16 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
         }
 
         /// Enforce capacity limit by dropping the oldest entries when the table exceeds `max`.
-        fn enforce_limit(conn: &Connection, table: &str, key_col: &str, max: usize) -> std::result::Result<(), rusqlite::Error> {
-            let count: i64 = conn.query_row(
-                &format!("SELECT COUNT(*) FROM {table}"),
-                [],
-                |row| row.get(0),
-            )?;
+        fn enforce_limit(
+            conn: &Connection,
+            table: &str,
+            key_col: &str,
+            max: usize,
+        ) -> std::result::Result<(), rusqlite::Error> {
+            let count: i64 =
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })?;
             if (count as usize) > max {
                 let excess = count as usize - max;
                 conn.execute(
@@ -238,16 +248,18 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
             // Prune expired revocations opportunistically.
             let _ = Self::prune_revocations(&conn, now_unix);
 
-            let result: std::result::Result<Option<Option<i64>>, _> = conn.query_row(
-                "SELECT until_unix FROM revocations WHERE token_id = ?1",
-                rusqlite::params![token_id],
-                |row| row.get::<_, Option<i64>>(0),
-            ).optional();
+            let result: std::result::Result<Option<Option<i64>>, _> = conn
+                .query_row(
+                    "SELECT until_unix FROM revocations WHERE token_id = ?1",
+                    rusqlite::params![token_id],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .optional();
 
             match result {
                 Ok(Some(Some(until))) => now_unix < until,
                 Ok(Some(None)) => true, // permanent revocation (until_unix IS NULL)
-                Ok(None) => false, // row not found
+                Ok(None) => false,      // row not found
                 Err(_) => {
                     // Fail closed: treat DB errors as revoked.
                     true
@@ -278,8 +290,7 @@ CREATE INDEX IF NOT EXISTS idx_revocations_until ON revocations (until_unix);
             let key = format!("{scope}:{nonce}");
             let conn = self.lock_conn();
 
-            Self::prune_nonces(&conn, now_unix)
-                .map_err(|e| Error::Database(e.to_string()))?;
+            Self::prune_nonces(&conn, now_unix).map_err(|e| Error::Database(e.to_string()))?;
 
             // Check if nonce already exists (and is still live).
             let exists: bool = conn

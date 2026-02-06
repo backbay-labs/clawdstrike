@@ -203,7 +203,10 @@ mod tests {
         assert_eq!(parsed.name, "Test Agent");
         assert_eq!(parsed.trust_level, TrustLevel::High);
         assert_eq!(parsed.capabilities.len(), 2);
-        assert_eq!(parsed.metadata.get("env").map(String::as_str), Some("production"));
+        assert_eq!(
+            parsed.metadata.get("env").map(String::as_str),
+            Some("production")
+        );
     }
 
     #[test]

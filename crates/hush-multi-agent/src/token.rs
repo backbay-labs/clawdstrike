@@ -577,7 +577,10 @@ mod tests {
             vec![],
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("capabilities are empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("capabilities are empty"));
     }
 
     #[test]
@@ -590,7 +593,10 @@ mod tests {
             vec![AgentCapability::DeployApproval],
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("exp must be > iat"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exp must be > iat"));
     }
 
     #[test]

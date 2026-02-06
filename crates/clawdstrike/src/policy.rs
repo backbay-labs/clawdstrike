@@ -7,13 +7,13 @@ use std::path::{Path, PathBuf};
 use globset::GlobBuilder;
 
 use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
-use crate::placeholders::env_var_for_placeholder;
 use crate::guards::{
     EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard, Guard,
     JailbreakConfig, JailbreakGuard, McpToolConfig, McpToolGuard, PatchIntegrityConfig,
     PatchIntegrityGuard, PathAllowlistConfig, PathAllowlistGuard, PromptInjectionConfig,
     PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
 };
+use crate::placeholders::env_var_for_placeholder;
 use crate::posture::{validate_posture_config, PostureConfig};
 
 /// Current policy schema version.
