@@ -5,9 +5,10 @@
 
 use quickcheck as qc;
 use std::default::Default;
+use std::num::Wrapping;
 use std::ops::Range;
 use std::cmp::{max, min, Ordering};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 use itertools::{
     multizip,
@@ -19,6 +20,7 @@ use itertools::free::{
     cloned,
     enumerate,
     multipeek,
+    peek_nth,
     put_back,
     put_back_n,
     rciter,
@@ -256,12 +258,13 @@ where
         let mut it = get_it();
 
         for _ in 0..(counts.len() - 1) {
-            if let None = it.next() {
+            #[allow(clippy::manual_assert)]
+            if it.next().is_none() {
                 panic!("Iterator shouldn't be finished, may not be deterministic");
             }
         }
 
-        if let None = it.next() {
+        if it.next().is_none() {
             break 'outer;
         }
 
@@ -436,7 +439,7 @@ quickcheck! {
         }
         assert_eq!(answer, actual);
 
-        assert_eq!(answer.into_iter().last(), a.clone().multi_cartesian_product().last());
+        assert_eq!(answer.into_iter().last(), a.multi_cartesian_product().last());
     }
 
     #[allow(deprecated)]
@@ -487,15 +490,22 @@ quickcheck! {
         exact_size(it)
     }
 
-    fn equal_merge(a: Vec<i16>, b: Vec<i16>) -> bool {
-        let mut sa = a.clone();
-        let mut sb = b.clone();
-        sa.sort();
-        sb.sort();
-        let mut merged = sa.clone();
-        merged.extend(sb.iter().cloned());
+    fn size_peek_nth(a: Iter<u16, Exact>, s: u8) -> bool {
+        let mut it = peek_nth(a);
+        // peek a few times
+        for n in 0..s {
+            it.peek_nth(n as usize);
+        }
+        exact_size(it)
+    }
+
+    fn equal_merge(mut a: Vec<i16>, mut b: Vec<i16>) -> bool {
+        a.sort();
+        b.sort();
+        let mut merged = a.clone();
+        merged.extend(b.iter().cloned());
         merged.sort();
-        itertools::equal(&merged, sa.iter().merge(&sb))
+        itertools::equal(&merged, a.iter().merge(&b))
     }
     fn size_merge(a: Iter<u16>, b: Iter<u16>) -> bool {
         correct_size_hint(a.merge(b))
@@ -506,7 +516,7 @@ quickcheck! {
             exact_size(multizip((a, b, c)))
     }
     fn size_zip_rc(a: Iter<i16>, b: Iter<i16>) -> bool {
-        let rc = rciter(a.clone());
+        let rc = rciter(a);
         correct_size_hint(multizip((&rc, &rc, b)))
     }
 
@@ -515,19 +525,16 @@ quickcheck! {
         correct_size_hint(izip!(filt, b.clone(), c.clone())) &&
             exact_size(izip!(a, b, c))
     }
-    fn equal_kmerge(a: Vec<i16>, b: Vec<i16>, c: Vec<i16>) -> bool {
+    fn equal_kmerge(mut a: Vec<i16>, mut b: Vec<i16>, mut c: Vec<i16>) -> bool {
         use itertools::free::kmerge;
-        let mut sa = a.clone();
-        let mut sb = b.clone();
-        let mut sc = c.clone();
-        sa.sort();
-        sb.sort();
-        sc.sort();
-        let mut merged = sa.clone();
-        merged.extend(sb.iter().cloned());
-        merged.extend(sc.iter().cloned());
+        a.sort();
+        b.sort();
+        c.sort();
+        let mut merged = a.clone();
+        merged.extend(b.iter().cloned());
+        merged.extend(c.iter().cloned());
         merged.sort();
-        itertools::equal(merged.into_iter(), kmerge(vec![sa, sb, sc]))
+        itertools::equal(merged.into_iter(), kmerge(vec![a, b, c]))
     }
 
     // Any number of input iterators
@@ -599,7 +606,7 @@ quickcheck! {
     fn size_2_zip_longest(a: Iter<i16>, b: Iter<i16>) -> bool {
         let it = a.clone().zip_longest(b.clone());
         let jt = a.clone().zip_longest(b.clone());
-        itertools::equal(a.clone(),
+        itertools::equal(a,
                          it.filter_map(|elt| match elt {
                              EitherOrBoth::Both(x, _) => Some(x),
                              EitherOrBoth::Left(x) => Some(x),
@@ -607,7 +614,7 @@ quickcheck! {
                          }
                          ))
             &&
-        itertools::equal(b.clone(),
+        itertools::equal(b,
                          jt.filter_map(|elt| match elt {
                              EitherOrBoth::Both(_, y) => Some(y),
                              EitherOrBoth::Right(y) => Some(y),
@@ -710,7 +717,7 @@ quickcheck! {
 
         assert_eq!(expected_first, curr_perm);
 
-        while let Some(next_perm) = perms.next() {
+        for next_perm in perms {
             assert!(
                 next_perm > curr_perm,
                 "next perm isn't greater-than current; next_perm={:?} curr_perm={:?} n={}",
@@ -740,6 +747,29 @@ quickcheck! {
         let actual = (0..n).permutations(k).collect_vec();
 
         assert_eq!(expected, actual);
+    }
+}
+
+quickcheck! {
+    fn dedup_via_coalesce(a: Vec<i32>) -> bool {
+        let mut b = a.clone();
+        b.dedup();
+        itertools::equal(
+            &b,
+            a
+                .iter()
+                .coalesce(|x, y| {
+                    if x==y {
+                        Ok(x)
+                    } else {
+                        Err((x, y))
+                    }
+                })
+                .fold(vec![], |mut v, n| {
+                    v.push(n);
+                    v
+                })
+        )
     }
 }
 
@@ -875,6 +905,19 @@ quickcheck! {
 }
 
 quickcheck! {
+    fn size_powerset(it: Iter<u8, Exact>) -> bool {
+        // Powerset cardinality gets large very quickly, limit input to keep test fast.
+        correct_size_hint(it.take(12).powerset())
+    }
+}
+
+quickcheck! {
+    fn size_duplicates(it: Iter<i8>) -> bool {
+        correct_size_hint(it.duplicates())
+    }
+}
+
+quickcheck! {
     fn size_unique(it: Iter<i8>) -> bool {
         correct_size_hint(it.unique())
     }
@@ -896,8 +939,7 @@ quickcheck! {
     fn fuzz_group_by_lazy_1(it: Iter<u8>) -> bool {
         let jt = it.clone();
         let groups = it.group_by(|k| *k);
-        let res = itertools::equal(jt, groups.into_iter().flat_map(|(_, x)| x));
-        res
+        itertools::equal(jt, groups.into_iter().flat_map(|(_, x)| x))
     }
 }
 
@@ -1152,6 +1194,556 @@ quickcheck! {
         match a.len() {
             1 => TestResult::from_bool(ret.unwrap() == a[0]),
             _ => TestResult::from_bool(ret.unwrap_err().eq(a.iter().cloned())),
+        }
+    }
+}
+
+quickcheck! {
+    fn at_most_one_i32(a: Vec<i32>) -> TestResult {
+        let ret = a.iter().cloned().at_most_one();
+        match a.len() {
+            0 => TestResult::from_bool(ret.unwrap() == None),
+            1 => TestResult::from_bool(ret.unwrap() == Some(a[0])),
+            _ => TestResult::from_bool(ret.unwrap_err().eq(a.iter().cloned())),
+        }
+    }
+}
+
+quickcheck! {
+    fn consistent_grouping_map_with_by(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+
+        let lookup_grouping_map = a.iter().copied().map(|i| (i % modulo, i)).into_grouping_map().collect::<Vec<_>>();
+        let lookup_grouping_map_by = a.iter().copied().into_grouping_map_by(|i| i % modulo).collect::<Vec<_>>();
+
+        assert_eq!(lookup_grouping_map, lookup_grouping_map_by);
+    }
+
+    fn correct_grouping_map_by_aggregate_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo < 2 { 2 } else { modulo } as u64; // Avoid `% 0`
+        let lookup = a.iter()
+            .map(|&b| b as u64) // Avoid overflows
+            .into_grouping_map_by(|i| i % modulo)
+            .aggregate(|acc, &key, val| {
+                assert!(val % modulo == key);
+                if val % (modulo - 1) == 0 {
+                    None
+                } else {
+                    Some(acc.unwrap_or(0) + val)
+                }
+            });
+        
+        let group_map_lookup = a.iter()
+            .map(|&b| b as u64)
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .filter_map(|(key, vals)| {
+                vals.into_iter().fold(None, |acc, val| {
+                    if val % (modulo - 1) == 0 {
+                        None
+                    } else {
+                        Some(acc.unwrap_or(0) + val)
+                    }
+                }).map(|new_val| (key, new_val))
+            })
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for m in 0..modulo {
+            assert_eq!(
+                lookup.get(&m).copied(), 
+                a.iter()
+                    .map(|&b| b as u64)
+                    .filter(|&val| val % modulo == m)
+                    .fold(None, |acc, val| {
+                        if val % (modulo - 1) == 0 {
+                            None
+                        } else {
+                            Some(acc.unwrap_or(0) + val)
+                        }
+                    })
+            );
+        }
+    }
+
+    fn correct_grouping_map_by_fold_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo } as u64; // Avoid `% 0`
+        let lookup = a.iter().map(|&b| b as u64) // Avoid overflows
+            .into_grouping_map_by(|i| i % modulo)
+            .fold(0u64, |acc, &key, val| {
+                assert!(val % modulo == key);
+                acc + val
+            });
+
+        let group_map_lookup = a.iter()
+            .map(|&b| b as u64)
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().sum()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &sum) in lookup.iter() {
+            assert_eq!(sum, a.iter().map(|&b| b as u64).filter(|&val| val % modulo == key).sum::<u64>());
+        }
+    }
+
+    fn correct_grouping_map_by_fold_first_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo } as u64; // Avoid `% 0`
+        let lookup = a.iter().map(|&b| b as u64) // Avoid overflows
+            .into_grouping_map_by(|i| i % modulo)
+            .fold_first(|acc, &key, val| {
+                assert!(val % modulo == key);
+                acc + val
+            });
+
+        // TODO: Swap `fold1` with stdlib's `fold_first` when it's stabilized
+        let group_map_lookup = a.iter()
+            .map(|&b| b as u64)
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().fold1(|acc, val| acc + val).unwrap()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &sum) in lookup.iter() {
+            assert_eq!(sum, a.iter().map(|&b| b as u64).filter(|&val| val % modulo == key).sum::<u64>());
+        }
+    }
+
+    fn correct_grouping_map_by_collect_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup_grouping_map = a.iter().copied().into_grouping_map_by(|i| i % modulo).collect::<Vec<_>>();
+        let lookup_group_map = a.iter().copied().map(|i| (i % modulo, i)).into_group_map();
+
+        assert_eq!(lookup_grouping_map, lookup_group_map);
+    }
+
+    fn correct_grouping_map_by_max_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).max();
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().max().unwrap()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &max) in lookup.iter() {
+            assert_eq!(Some(max), a.iter().copied().filter(|&val| val % modulo == key).max());
+        }
+    }
+
+    fn correct_grouping_map_by_max_by_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).max_by(|_, v1, v2| v1.cmp(v2));
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().max_by(|v1, v2| v1.cmp(v2)).unwrap()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &max) in lookup.iter() {
+            assert_eq!(Some(max), a.iter().copied().filter(|&val| val % modulo == key).max_by(|v1, v2| v1.cmp(v2)));
+        }
+    }
+
+    fn correct_grouping_map_by_max_by_key_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).max_by_key(|_, &val| val);
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().max_by_key(|&val| val).unwrap()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &max) in lookup.iter() {
+            assert_eq!(Some(max), a.iter().copied().filter(|&val| val % modulo == key).max_by_key(|&val| val));
+        }
+    }
+    
+    fn correct_grouping_map_by_min_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).min();
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().min().unwrap()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &min) in lookup.iter() {
+            assert_eq!(Some(min), a.iter().copied().filter(|&val| val % modulo == key).min());
+        }
+    }
+
+    fn correct_grouping_map_by_min_by_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).min_by(|_, v1, v2| v1.cmp(v2));
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().min_by(|v1, v2| v1.cmp(v2)).unwrap()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &min) in lookup.iter() {
+            assert_eq!(Some(min), a.iter().copied().filter(|&val| val % modulo == key).min_by(|v1, v2| v1.cmp(v2)));
+        }
+    }
+
+    fn correct_grouping_map_by_min_by_key_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).min_by_key(|_, &val| val);
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().min_by_key(|&val| val).unwrap()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &min) in lookup.iter() {
+            assert_eq!(Some(min), a.iter().copied().filter(|&val| val % modulo == key).min_by_key(|&val| val));
+        }
+    }
+    
+    fn correct_grouping_map_by_minmax_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).minmax();
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().minmax()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &minmax) in lookup.iter() {
+            assert_eq!(minmax, a.iter().copied().filter(|&val| val % modulo == key).minmax());
+        }
+    }
+
+    fn correct_grouping_map_by_minmax_by_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).minmax_by(|_, v1, v2| v1.cmp(v2));
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().minmax_by(|v1, v2| v1.cmp(v2))))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &minmax) in lookup.iter() {
+            assert_eq!(minmax, a.iter().copied().filter(|&val| val % modulo == key).minmax_by(|v1, v2| v1.cmp(v2)));
+        }
+    }
+
+    fn correct_grouping_map_by_minmax_by_key_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo }; // Avoid `% 0`
+        let lookup = a.iter().copied().into_grouping_map_by(|i| i % modulo).minmax_by_key(|_, &val| val);
+
+        let group_map_lookup = a.iter().copied()
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().minmax_by_key(|&val| val)))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &minmax) in lookup.iter() {
+            assert_eq!(minmax, a.iter().copied().filter(|&val| val % modulo == key).minmax_by_key(|&val| val));
+        }
+    }
+
+    fn correct_grouping_map_by_sum_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = if modulo == 0 { 1 } else { modulo } as u64; // Avoid `% 0`
+        let lookup = a.iter().map(|&b| b as u64) // Avoid overflows
+            .into_grouping_map_by(|i| i % modulo)
+            .sum();
+
+        let group_map_lookup = a.iter().map(|&b| b as u64)
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().sum()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &sum) in lookup.iter() {
+            assert_eq!(sum, a.iter().map(|&b| b as u64).filter(|&val| val % modulo == key).sum::<u64>());
+        }
+    }
+
+    fn correct_grouping_map_by_product_modulo_key(a: Vec<u8>, modulo: u8) -> () {
+        let modulo = Wrapping(if modulo == 0 { 1 } else { modulo } as u64); // Avoid `% 0`
+        let lookup = a.iter().map(|&b| Wrapping(b as u64)) // Avoid overflows
+            .into_grouping_map_by(|i| i % modulo)
+            .product();
+
+        let group_map_lookup = a.iter().map(|&b| Wrapping(b as u64))
+            .map(|i| (i % modulo, i))
+            .into_group_map()
+            .into_iter()
+            .map(|(key, vals)| (key, vals.into_iter().product::<Wrapping<u64>>()))
+            .collect::<HashMap<_,_>>();
+        assert_eq!(lookup, group_map_lookup);
+
+        for (&key, &prod) in lookup.iter() {
+            assert_eq!(
+                prod,
+                a.iter()
+                    .map(|&b| Wrapping(b as u64))
+                    .filter(|&val| val % modulo == key)
+                    .product::<Wrapping<u64>>()
+            );
+        }
+    }
+
+    // This should check that if multiple elements are equally minimum or maximum
+    // then `max`, `min` and `minmax` pick the first minimum and the last maximum.
+    // This is to be consistent with `std::iter::max` and `std::iter::min`.
+    fn correct_grouping_map_by_min_max_minmax_order_modulo_key() -> () {
+        use itertools::MinMaxResult;
+
+        let lookup = (0..=10)
+            .into_grouping_map_by(|_| 0)
+            .max_by(|_, _, _| Ordering::Equal);
+
+        assert_eq!(lookup[&0], 10);
+
+        let lookup = (0..=10)
+            .into_grouping_map_by(|_| 0)
+            .min_by(|_, _, _| Ordering::Equal);
+
+        assert_eq!(lookup[&0], 0);
+        
+        let lookup = (0..=10)
+            .into_grouping_map_by(|_| 0)
+            .minmax_by(|_, _, _| Ordering::Equal);
+
+        assert_eq!(lookup[&0], MinMaxResult::MinMax(0, 10));
+    }
+}
+
+quickcheck! {
+    fn counts(nums: Vec<isize>) -> TestResult {
+        let counts = nums.iter().counts();
+        for (&item, &count) in counts.iter() {
+            #[allow(clippy::absurd_extreme_comparisons)]
+            if count <= 0 {
+                return TestResult::failed();
+            }
+            if count != nums.iter().filter(|&x| x == item).count() {
+                return TestResult::failed();
+            }
+        }
+        for item in nums.iter() {
+            if !counts.contains_key(item) {
+                return TestResult::failed();
+            }
+        }
+        TestResult::passed()
+    }
+}
+
+quickcheck! {
+    fn test_double_ended_zip_2(a: Vec<u8>, b: Vec<u8>) -> TestResult {
+        let mut x =
+          multizip((a.clone().into_iter(), b.clone().into_iter()))
+            .collect_vec();
+        x.reverse();
+
+        let y =
+          multizip((a.into_iter(), b.into_iter()))
+          .rfold(Vec::new(), |mut vec, e| { vec.push(e); vec });
+
+        TestResult::from_bool(itertools::equal(x, y))
+    }
+
+    fn test_double_ended_zip_3(a: Vec<u8>, b: Vec<u8>, c: Vec<u8>) -> TestResult {
+        let mut x =
+          multizip((a.clone().into_iter(), b.clone().into_iter(), c.clone().into_iter()))
+            .collect_vec();
+        x.reverse();
+
+        let y =
+          multizip((a.into_iter(), b.into_iter(), c.into_iter()))
+          .rfold(Vec::new(), |mut vec, e| { vec.push(e); vec });
+
+        TestResult::from_bool(itertools::equal(x, y))
+    }
+}
+
+
+fn is_fused<I: Iterator>(mut it: I) -> bool
+{
+    for _ in it.by_ref() {}
+    for _ in 0..10{
+        if it.next().is_some(){
+            return false;
+        }
+    }
+    true
+}
+
+quickcheck! {
+    fn fused_combination(a: Iter<i16>) -> bool
+    {
+        is_fused(a.clone().combinations(1)) &&
+        is_fused(a.combinations(3))
+    }
+
+    fn fused_combination_with_replacement(a: Iter<i16>) -> bool
+    {
+        is_fused(a.clone().combinations_with_replacement(1)) &&
+        is_fused(a.combinations_with_replacement(3))
+    }
+
+    fn fused_tuple_combination(a: Iter<i16>) -> bool
+    {
+        is_fused(a.clone().fuse().tuple_combinations::<(_,)>()) &&
+        is_fused(a.fuse().tuple_combinations::<(_,_,_)>())
+    }
+
+    fn fused_unique(a: Iter<i16>) -> bool
+    {
+        is_fused(a.fuse().unique())
+    }
+
+    fn fused_unique_by(a: Iter<i16>) -> bool
+    {
+        is_fused(a.fuse().unique_by(|x| x % 100))
+    }
+
+    fn fused_interleave_shortest(a: Iter<i16>, b: Iter<i16>) -> bool
+    {
+        !is_fused(a.clone().interleave_shortest(b.clone())) &&
+        is_fused(a.fuse().interleave_shortest(b.fuse()))
+    }
+    
+    fn fused_product(a: Iter<i16>, b: Iter<i16>) -> bool
+    {
+        is_fused(a.fuse().cartesian_product(b.fuse()))
+    }
+
+    fn fused_merge(a: Iter<i16>, b: Iter<i16>) -> bool
+    {
+        is_fused(a.fuse().merge(b.fuse()))
+    }
+
+    fn fused_filter_ok(a: Iter<i16>) -> bool
+    {
+        is_fused(a.map(|x| if x % 2 == 0 {Ok(x)} else {Err(x)} )
+                 .filter_ok(|x| x % 3 == 0)
+                 .fuse())
+    }
+
+    fn fused_filter_map_ok(a: Iter<i16>) -> bool
+    {
+        is_fused(a.map(|x| if x % 2 == 0 {Ok(x)} else {Err(x)} )
+                 .filter_map_ok(|x| if x % 3 == 0 {Some(x / 3)} else {None})
+                 .fuse())
+    }
+
+    fn fused_positions(a: Iter<i16>) -> bool
+    {
+        !is_fused(a.clone().positions(|x|x%2==0)) &&
+        is_fused(a.fuse().positions(|x|x%2==0))
+    }
+
+    fn fused_update(a: Iter<i16>) -> bool
+    {
+        !is_fused(a.clone().update(|x|*x+=1)) &&
+        is_fused(a.fuse().update(|x|*x+=1))
+    }
+
+    fn fused_tuple_windows(a: Iter<i16>) -> bool
+    {
+        is_fused(a.fuse().tuple_windows::<(_,_)>())
+    }
+
+    fn fused_pad_using(a: Iter<i16>) -> bool
+    {
+        is_fused(a.fuse().pad_using(100,|_|0))
+    }
+}
+
+quickcheck! {
+    fn min_set_contains_min(a: Vec<(usize, char)>) -> bool {
+        let result_set = a.iter().min_set();
+        if let Some(result_element) = a.iter().min() {
+            result_set.contains(&result_element)
+        } else {
+            result_set.is_empty()
+        }
+    }
+
+    fn min_set_by_contains_min(a: Vec<(usize, char)>) -> bool {
+        let compare = |x: &&(usize, char), y: &&(usize, char)| x.1.cmp(&y.1);
+        let result_set = a.iter().min_set_by(compare);
+        if let Some(result_element) = a.iter().min_by(compare) {
+            result_set.contains(&result_element)
+        } else {
+            result_set.is_empty()
+        }
+    }
+
+    fn min_set_by_key_contains_min(a: Vec<(usize, char)>) -> bool {
+        let key = |x: &&(usize, char)| x.1;
+        let result_set = a.iter().min_set_by_key(&key);
+        if let Some(result_element) = a.iter().min_by_key(&key) {
+            result_set.contains(&result_element)
+        } else {
+            result_set.is_empty()
+        }
+    }
+
+    fn max_set_contains_max(a: Vec<(usize, char)>) -> bool {
+        let result_set = a.iter().max_set();
+        if let Some(result_element) = a.iter().max() {
+            result_set.contains(&result_element)
+        } else {
+            result_set.is_empty()
+        }
+    }
+
+    fn max_set_by_contains_max(a: Vec<(usize, char)>) -> bool {
+        let compare = |x: &&(usize, char), y: &&(usize, char)| x.1.cmp(&y.1);
+        let result_set = a.iter().max_set_by(compare);
+        if let Some(result_element) = a.iter().max_by(compare) {
+            result_set.contains(&result_element)
+        } else {
+            result_set.is_empty()
+        }
+    }
+
+    fn max_set_by_key_contains_max(a: Vec<(usize, char)>) -> bool {
+        let key = |x: &&(usize, char)| x.1;
+        let result_set = a.iter().max_set_by_key(&key);
+        if let Some(result_element) = a.iter().max_by_key(&key) {
+            result_set.contains(&result_element)
+        } else {
+            result_set.is_empty()
         }
     }
 }
