@@ -1,6 +1,7 @@
 # Policy Inheritance
 
-Policies can inherit from a base policy using `extends`. The base can be a built-in ruleset (embedded) or a local file.
+Policies can inherit from a base policy using `extends`. The base can be a built-in ruleset (embedded), a local file,
+or a pinned remote reference when enabled via the remote-extends allowlist.
 
 ## Built-in rulesets
 
@@ -31,6 +32,9 @@ extends: ./base-policy.yaml
 ```
 
 Paths are resolved relative to the policy file.
+
+Remote `extends` is disabled by default and requires host allowlisting + `#sha256=<64-hex>` integrity pins. By default
+only HTTPS is allowed and private IP resolution is blocked; see the [Policy Schema](../reference/policy-schema.md).
 
 ## Merge strategies
 

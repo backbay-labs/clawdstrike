@@ -1,10 +1,38 @@
 /**
  * SettingsView - Daemon connection and preferences
  */
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { clsx } from "clsx";
 import { useConnection, type ConnectionMode } from "@/context/ConnectionContext";
+import {
+  DEFAULT_MARKETPLACE_FEED_SOURCES,
+  formatMarketplaceFeedSourcesInput,
+  loadMarketplaceFeedSources,
+  parseMarketplaceFeedSourcesInput,
+  saveMarketplaceFeedSources,
+} from "@/services/marketplaceSettings";
+import {
+  DEFAULT_MARKETPLACE_DISCOVERY_SETTINGS,
+  formatMarketplaceDiscoveryBootstrapInput,
+  loadMarketplaceDiscoverySettings,
+  parseMarketplaceDiscoveryBootstrapInput,
+  saveMarketplaceDiscoverySettings,
+} from "@/services/marketplaceDiscoverySettings";
+import {
+  DEFAULT_MARKETPLACE_PROVENANCE_SETTINGS,
+  formatMarketplaceTrustedAttestersInput,
+  loadMarketplaceProvenanceSettings,
+  parseMarketplaceTrustedAttestersInput,
+  saveMarketplaceProvenanceSettings,
+} from "@/services/marketplaceProvenanceSettings";
+import {
+  announceMarketplaceDiscovery,
+  getMarketplaceDiscoveryStatus,
+  isTauri,
+  startMarketplaceDiscovery,
+  stopMarketplaceDiscovery,
+  type MarketplaceDiscoveryStatus,
+} from "@/services/tauri";
 
 export function SettingsView() {
   const {
@@ -24,6 +52,34 @@ export function SettingsView() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const [marketplaceSourcesInput, setMarketplaceSourcesInput] = useState<string>(() =>
+    formatMarketplaceFeedSourcesInput(loadMarketplaceFeedSources())
+  );
+  const [marketplaceSaved, setMarketplaceSaved] = useState<string | null>(null);
+
+  const [initialDiscoverySettings] = useState(() => loadMarketplaceDiscoverySettings());
+  const [discoveryEnabled, setDiscoveryEnabled] = useState(initialDiscoverySettings.enabled);
+  const [discoveryListenPort, setDiscoveryListenPort] = useState(
+    initialDiscoverySettings.listenPort ? String(initialDiscoverySettings.listenPort) : ""
+  );
+  const [discoveryBootstrapInput, setDiscoveryBootstrapInput] = useState(() =>
+    formatMarketplaceDiscoveryBootstrapInput(initialDiscoverySettings.bootstrap)
+  );
+  const [discoveryTopic, setDiscoveryTopic] = useState(initialDiscoverySettings.topic ?? "");
+  const [discoverySaved, setDiscoverySaved] = useState<string | null>(null);
+  const [discoveryStatus, setDiscoveryStatus] = useState<MarketplaceDiscoveryStatus | null>(null);
+  const [discoveryAnnounceUri, setDiscoveryAnnounceUri] = useState("");
+
+  const [initialProvenanceSettings] = useState(() => loadMarketplaceProvenanceSettings());
+  const [notaryUrl, setNotaryUrl] = useState(initialProvenanceSettings.notaryUrl ?? "");
+  const [trustedAttestersInput, setTrustedAttestersInput] = useState(() =>
+    formatMarketplaceTrustedAttestersInput(initialProvenanceSettings.trustedAttesters)
+  );
+  const [requireVerifiedAttestation, setRequireVerifiedAttestation] = useState(
+    initialProvenanceSettings.requireVerified
+  );
+  const [provenanceSaved, setProvenanceSaved] = useState<string | null>(null);
+
   const handleTest = async () => {
     setIsTesting(true);
     setTestResult(null);
@@ -40,6 +96,132 @@ export function SettingsView() {
   const handleSave = () => {
     setDaemonUrl(urlInput);
     connect();
+  };
+
+  const handleMarketplaceSave = () => {
+    const sources = parseMarketplaceFeedSourcesInput(marketplaceSourcesInput);
+    saveMarketplaceFeedSources(sources);
+    setMarketplaceSaved("Saved");
+    setTimeout(() => setMarketplaceSaved(null), 2000);
+  };
+
+  const handleMarketplaceReset = () => {
+    setMarketplaceSourcesInput(formatMarketplaceFeedSourcesInput(DEFAULT_MARKETPLACE_FEED_SOURCES));
+    saveMarketplaceFeedSources(DEFAULT_MARKETPLACE_FEED_SOURCES);
+    setMarketplaceSaved("Reset to default");
+    setTimeout(() => setMarketplaceSaved(null), 2000);
+  };
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    getMarketplaceDiscoveryStatus().then(setDiscoveryStatus).catch(() => {
+      // ignore
+    });
+  }, []);
+
+  const parseListenPort = (value: string): number | null => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const n = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(n)) return null;
+    if (n <= 0 || n > 65535) return null;
+    return n;
+  };
+
+  const handleDiscoverySave = async () => {
+    const listenPort = parseListenPort(discoveryListenPort);
+    const bootstrap = parseMarketplaceDiscoveryBootstrapInput(discoveryBootstrapInput);
+    const topic = discoveryTopic.trim() ? discoveryTopic.trim() : null;
+
+    saveMarketplaceDiscoverySettings({
+      enabled: discoveryEnabled,
+      listenPort,
+      bootstrap,
+      topic,
+    });
+
+    if (isTauri()) {
+      try {
+        if (discoveryEnabled) {
+          const status = await startMarketplaceDiscovery({
+            listen_port: listenPort,
+            bootstrap,
+            topic,
+          });
+          setDiscoveryStatus(status);
+          setDiscoverySaved("Discovery running");
+        } else {
+          await stopMarketplaceDiscovery();
+          const status = await getMarketplaceDiscoveryStatus();
+          setDiscoveryStatus(status);
+          setDiscoverySaved("Discovery stopped");
+        }
+      } catch (e) {
+        setDiscoverySaved(e instanceof Error ? e.message : "Failed to update discovery");
+      }
+    } else {
+      setDiscoverySaved("Saved");
+    }
+
+    setTimeout(() => setDiscoverySaved(null), 2000);
+  };
+
+  const handleDiscoveryReset = async () => {
+    const d = DEFAULT_MARKETPLACE_DISCOVERY_SETTINGS;
+    setDiscoveryEnabled(d.enabled);
+    setDiscoveryListenPort(d.listenPort ? String(d.listenPort) : "");
+    setDiscoveryBootstrapInput(formatMarketplaceDiscoveryBootstrapInput(d.bootstrap));
+    setDiscoveryTopic(d.topic ?? "");
+    saveMarketplaceDiscoverySettings(d);
+
+    if (isTauri()) {
+      await stopMarketplaceDiscovery().catch(() => {
+        // ignore
+      });
+      getMarketplaceDiscoveryStatus().then(setDiscoveryStatus).catch(() => {
+        // ignore
+      });
+    }
+
+    setDiscoverySaved("Reset to default");
+    setTimeout(() => setDiscoverySaved(null), 2000);
+  };
+
+  const handleDiscoveryAnnounce = async () => {
+    const feedUri = discoveryAnnounceUri.trim();
+    if (!feedUri) return;
+    try {
+      await announceMarketplaceDiscovery({ feed_uri: feedUri });
+      setDiscoveryAnnounceUri("");
+      setDiscoverySaved("Announced");
+    } catch (e) {
+      setDiscoverySaved(e instanceof Error ? e.message : "Announce failed");
+    }
+    setTimeout(() => setDiscoverySaved(null), 2000);
+  };
+
+  const handleProvenanceSave = () => {
+    const trustedAttesters = parseMarketplaceTrustedAttestersInput(trustedAttestersInput);
+    const url = notaryUrl.trim() ? notaryUrl.trim() : null;
+
+    saveMarketplaceProvenanceSettings({
+      notaryUrl: url,
+      trustedAttesters,
+      requireVerified: requireVerifiedAttestation,
+    });
+
+    setProvenanceSaved("Saved");
+    setTimeout(() => setProvenanceSaved(null), 2000);
+  };
+
+  const handleProvenanceReset = () => {
+    const p = DEFAULT_MARKETPLACE_PROVENANCE_SETTINGS;
+    setNotaryUrl(p.notaryUrl ?? "");
+    setTrustedAttestersInput(formatMarketplaceTrustedAttestersInput(p.trustedAttesters));
+    setRequireVerifiedAttestation(p.requireVerified);
+    saveMarketplaceProvenanceSettings(p);
+    setProvenanceSaved("Reset to default");
+    setTimeout(() => setProvenanceSaved(null), 2000);
   };
 
   return (
@@ -143,6 +325,247 @@ export function SettingsView() {
                 {testResult.message}
               </div>
             )}
+          </div>
+        </Section>
+
+        {/* Marketplace */}
+        <Section title="Marketplace">
+          <div className="space-y-3">
+            <p className="text-sm text-sdr-text-muted">
+              Configure signed marketplace feed sources (one per line). Use <code>builtin</code> for the
+              bundled feed, or add <code>https://…</code> / <code>ipfs://…</code>.
+            </p>
+            <textarea
+              value={marketplaceSourcesInput}
+              onChange={(e) => setMarketplaceSourcesInput(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+              placeholder="builtin"
+            />
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleMarketplaceSave}
+                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={handleMarketplaceReset}
+                className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
+              >
+                Reset
+              </button>
+              {marketplaceSaved && (
+                <span className="text-sm text-sdr-text-muted">{marketplaceSaved}</span>
+              )}
+            </div>
+          </div>
+        </Section>
+
+        {/* Marketplace Discovery */}
+        <Section title="Marketplace Discovery (P2P)">
+          <div className="space-y-3">
+            <p className="text-sm text-sdr-text-muted">
+              Optional P2P gossip for new marketplace feed URIs (e.g. <code>ipfs://…</code>). Discovery is
+              untrusted: the Marketplace still verifies feed and bundle signatures.
+            </p>
+
+            <div className="flex items-start gap-3">
+              <button
+                onClick={() => setDiscoveryEnabled(!discoveryEnabled)}
+                className={clsx(
+                  "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5",
+                  discoveryEnabled ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary"
+                )}
+              >
+                <span
+                  className={clsx(
+                    "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                    discoveryEnabled ? "left-5" : "left-1"
+                  )}
+                />
+              </button>
+              <div>
+                <div className="text-sm font-medium text-sdr-text-primary">Enable discovery</div>
+                <div className="text-sm text-sdr-text-muted">
+                  Uses libp2p gossipsub + mDNS (local network) and optional bootstrap peers.
+                </div>
+              </div>
+            </div>
+
+            {discoveryStatus && (
+              <div className="p-3 rounded-md border border-sdr-border bg-sdr-bg-secondary text-xs text-sdr-text-muted space-y-1">
+                <div>Status: {discoveryStatus.running ? "running" : "stopped"}</div>
+                {discoveryStatus.peer_id && <div>Peer ID: {discoveryStatus.peer_id}</div>}
+                {discoveryStatus.listen_addrs?.length ? (
+                  <div>Listen: {discoveryStatus.listen_addrs[0]}</div>
+                ) : null}
+                {discoveryStatus.last_error && <div>Error: {discoveryStatus.last_error}</div>}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                  Listen port (optional)
+                </label>
+                <input
+                  type="text"
+                  value={discoveryListenPort}
+                  onChange={(e) => setDiscoveryListenPort(e.target.value)}
+                  placeholder="auto"
+                  className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                  Topic (optional)
+                </label>
+                <input
+                  type="text"
+                  value={discoveryTopic}
+                  onChange={(e) => setDiscoveryTopic(e.target.value)}
+                  placeholder="clawdstrike/marketplace/v1/discovery"
+                  className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                Bootstrap peers (optional)
+              </label>
+              <textarea
+                value={discoveryBootstrapInput}
+                onChange={(e) => setDiscoveryBootstrapInput(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                placeholder="/ip4/1.2.3.4/tcp/12345/p2p/12D3KooW…"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDiscoverySave}
+                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={handleDiscoveryReset}
+                className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
+              >
+                Reset
+              </button>
+              {discoverySaved && (
+                <span className="text-sm text-sdr-text-muted">{discoverySaved}</span>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-sdr-border/50">
+              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                Announce feed URI (testing)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={discoveryAnnounceUri}
+                  onChange={(e) => setDiscoveryAnnounceUri(e.target.value)}
+                  placeholder="ipfs://<CID>"
+                  className="flex-1 px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                />
+                <button
+                  onClick={handleDiscoveryAnnounce}
+                  disabled={!discoveryAnnounceUri.trim()}
+                  className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors disabled:opacity-50"
+                >
+                  Announce
+                </button>
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* Marketplace Provenance */}
+        <Section title="Marketplace Provenance (Notary)">
+          <div className="space-y-3">
+            <p className="text-sm text-sdr-text-muted">
+              Optional provenance verification via a notary service (e.g. for EAS attestations). Policies
+              can include an <code>attestation_uid</code> pointer in the marketplace feed.
+            </p>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-sdr-text-primary">
+                Default notary URL (optional)
+              </label>
+              <input
+                type="text"
+                value={notaryUrl}
+                onChange={(e) => setNotaryUrl(e.target.value)}
+                placeholder="https://notary.example.com"
+                className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                Trusted attesters (optional)
+              </label>
+              <textarea
+                value={trustedAttestersInput}
+                onChange={(e) => setTrustedAttestersInput(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                placeholder="0x…"
+              />
+              <p className="text-xs text-sdr-text-muted mt-1">
+                If set, the Marketplace can filter to only attestations issued by these attesters.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <button
+                onClick={() => setRequireVerifiedAttestation(!requireVerifiedAttestation)}
+                className={clsx(
+                  "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5",
+                  requireVerifiedAttestation ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary"
+                )}
+              >
+                <span
+                  className={clsx(
+                    "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                    requireVerifiedAttestation ? "left-5" : "left-1"
+                  )}
+                />
+              </button>
+              <div>
+                <div className="text-sm font-medium text-sdr-text-primary">
+                  Require verified attestations by default
+                </div>
+                <div className="text-sm text-sdr-text-muted">
+                  When enabled, Marketplace shows only policies with a valid attestation.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleProvenanceSave}
+                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={handleProvenanceReset}
+                className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
+              >
+                Reset
+              </button>
+              {provenanceSaved && (
+                <span className="text-sm text-sdr-text-muted">{provenanceSaved}</span>
+              )}
+            </div>
           </div>
         </Section>
 

@@ -639,12 +639,12 @@ fn test_config_tracing_level() {
 }
 
 // Auth tests - these require auth to be enabled on the daemon
-// Run with: CLAWDSTRIKE_TEST_AUTH_ENABLED=1 cargo test -p hushd --test integration
 
 #[tokio::test]
-#[ignore = "requires running daemon with auth enabled"]
 async fn test_auth_required_without_token() {
-    let (client, url) = test_setup();
+    let (daemon, _keys) = common::TestDaemon::spawn_auth_daemon();
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
     let resp = client
         .post(format!("{}/api/v1/check", url))
         .json(&serde_json::json!({
@@ -659,14 +659,14 @@ async fn test_auth_required_without_token() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon with auth enabled"]
 async fn test_auth_with_valid_token() {
-    let (client, url) = test_setup();
-    let api_key = std::env::var("CLAWDSTRIKE_API_KEY").expect("CLAWDSTRIKE_API_KEY not set");
+    let (daemon, keys) = common::TestDaemon::spawn_auth_daemon();
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
 
     let resp = client
         .post(format!("{}/api/v1/check", url))
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Authorization", format!("Bearer {}", keys.check_key))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/test/file.txt"
@@ -679,9 +679,10 @@ async fn test_auth_with_valid_token() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon with auth enabled"]
 async fn test_auth_with_invalid_token() {
-    let (client, url) = test_setup();
+    let (daemon, _keys) = common::TestDaemon::spawn_auth_daemon();
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
 
     let resp = client
         .post(format!("{}/api/v1/check", url))
@@ -698,29 +699,34 @@ async fn test_auth_with_invalid_token() {
 }
 
 #[tokio::test]
-#[ignore = "requires running daemon with auth enabled"]
 async fn test_admin_endpoint_requires_admin_scope() {
-    let (client, url) = test_setup();
-    let api_key = std::env::var("CLAWDSTRIKE_API_KEY").expect("CLAWDSTRIKE_API_KEY not set");
+    let (daemon, keys) = common::TestDaemon::spawn_auth_daemon();
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
 
     let resp = client
         .post(format!("{}/api/v1/policy/reload", url))
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Authorization", format!("Bearer {}", keys.check_key))
         .send()
         .await
         .expect("Failed to connect to daemon");
 
-    // Should be 403 Forbidden if key doesn't have admin scope
-    // or 200 if it does have admin scope
-    assert!(
-        resp.status() == reqwest::StatusCode::FORBIDDEN || resp.status() == reqwest::StatusCode::OK
-    );
+    assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
+
+    let resp = client
+        .post(format!("{}/api/v1/policy/reload", url))
+        .header("Authorization", format!("Bearer {}", keys.admin_key))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_health_always_public() {
-    // Health should work even with auth enabled and no token
-    let (client, url) = test_setup();
+    let (daemon, _keys) = common::TestDaemon::spawn_auth_daemon();
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
     let resp = client
         .get(format!("{}/health", url))
         .send()
@@ -734,9 +740,10 @@ async fn test_health_always_public() {
 // Note: These tests require the daemon to have rate limiting enabled with low limits
 
 #[tokio::test]
-#[ignore = "requires daemon with rate_limit.burst_size = 3"]
 async fn test_rate_limiting_returns_429() {
-    let (client, url) = test_setup();
+    let daemon = common::TestDaemon::spawn_rate_limited_daemon(3, 1);
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
 
     // Make requests until we hit the rate limit
     let mut hit_limit = false;
@@ -764,7 +771,9 @@ async fn test_rate_limiting_returns_429() {
 
 #[tokio::test]
 async fn test_health_not_rate_limited() {
-    let (client, url) = test_setup();
+    let daemon = common::TestDaemon::spawn_rate_limited_daemon(3, 1);
+    let client = reqwest::Client::new();
+    let url = daemon.url.clone();
 
     // Health endpoint should never be rate limited
     // Make many requests quickly

@@ -8,7 +8,11 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Mapping, Sequence
+
+import json
+import os
+import shutil
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,16 @@ class CodeBlock:
 
 
 FENCE_RE = re.compile(r"^```(?P<lang>\\S+)?\\s*$")
+TS_FENCE_LANGS = {"ts", "tsx", "typescript"}
+PY_FENCE_LANGS = {"py", "python"}
+SHELL_FENCE_LANGS = {"bash", "sh", "shell"}
+TS_MISSING_NAME_RE = re.compile(r"Cannot find name '([^']+)'")
+TS_MISSING_NAMESPACE_RE = re.compile(r"Cannot find namespace '([^']+)'")
+TSC_DIAG_RE = re.compile(
+    r"^(?P<file>[^:]+):(?P<line>\\d+):(?P<col>\\d+)\\s+-\\s+error\\s+TS(?P<code>\\d+):\\s+(?P<msg>.*)$"
+)
+MYPY_DIAG_RE = re.compile(r"^(?P<file>[^:]+):(?P<line>\\d+):(?P<kind>error|note):\\s+(?P<msg>.*)$")
+PY_COMPILE_FILE_RE = re.compile(r'^\\s*File\\s+"(?P<file>[^"]+)",\\s+line\\s+(?P<line>\\d+)')
 
 
 def iter_markdown_files(root: pathlib.Path) -> Iterable[pathlib.Path]:
@@ -58,7 +72,7 @@ def extract_fenced_blocks(path: pathlib.Path) -> Iterator[CodeBlock]:
 
 def iter_shell_blocks(blocks: Iterable[CodeBlock]) -> Iterator[CodeBlock]:
     for b in blocks:
-        if b.language in {"bash", "sh", "shell"}:
+        if b.language in SHELL_FENCE_LANGS:
             yield b
 
 
@@ -80,6 +94,390 @@ def bash_syntax_check(block: CodeBlock) -> list[str]:
         return [f"{block.path}:{block.start_line}: {msg}"]
 
 
+def _ts_extract_imports(ts: str) -> dict[str, set[str]]:
+    modules: dict[str, set[str]] = {}
+    for line in ts.splitlines():
+        line = line.strip()
+        if not line.startswith("import"):
+            continue
+
+        # Side-effect import: import "x";
+        m_side = re.match(r'^import\\s+["\\\']([^"\\\']+)["\\\']\\s*;?$', line)
+        if m_side:
+            modules.setdefault(m_side.group(1), set())
+            continue
+
+        # import ... from "x";
+        m_from = re.match(r'^import\\s+(?:type\\s+)?(.+?)\\s+from\\s+["\\\']([^"\\\']+)["\\\']\\s*;?$', line)
+        if not m_from:
+            continue
+        clause, mod = m_from.group(1), m_from.group(2)
+        modules.setdefault(mod, set())
+
+        # Default + optional named: React, { useState as useState2 }
+        if "," in clause and "{" in clause:
+            default_part, rest = clause.split(",", 1)
+            default_part = default_part.strip()
+            if default_part and default_part != "_":
+                modules[mod].add("default")
+            clause = rest.strip()
+
+        # Default only: React
+        if clause and not clause.startswith("{") and not clause.startswith("*"):
+            modules[mod].add("default")
+            continue
+
+        # Namespace import: * as React
+        if clause.startswith("*"):
+            # Nothing to enumerate; ensure module exists.
+            continue
+
+        # Named imports: { a, b as c, type d }
+        m_named = re.match(r"^\\{(.+)\\}$", clause.strip())
+        if not m_named:
+            continue
+        inner = m_named.group(1)
+        for part in inner.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            part = part.removeprefix("type").strip()
+            exported = part.split(" as ", 1)[0].strip()
+            if exported:
+                modules[mod].add(exported)
+
+    return modules
+
+
+def _ts_extract_declared_names(ts: str) -> set[str]:
+    names: set[str] = set()
+    decl_re = re.compile(
+        r"^\\s*(?:export\\s+)?(?:const|let|var|function|class|interface|type|enum)\\s+([A-Za-z_$][\\w$]*)\\b"
+    )
+    for line in ts.splitlines():
+        m = decl_re.match(line)
+        if m:
+            names.add(m.group(1))
+    return names
+
+
+@dataclass
+class _TsSnippet:
+    block: CodeBlock
+    snippet_path: pathlib.Path
+    prelude_lines: list[str]
+    prelude_len: int
+    eligible_names: set[str]
+
+
+def _ts_write_snippet(snippet: _TsSnippet) -> None:
+    body = snippet.block.body
+    out_lines: list[str] = []
+    out_lines.extend(snippet.prelude_lines)
+    if snippet.prelude_lines and (not snippet.prelude_lines[-1].endswith("\n")):
+        out_lines[-1] = out_lines[-1] + "\n"
+
+    if snippet.prelude_lines:
+        out_lines.append("\n")
+
+    out_lines.append(body)
+    if not body.endswith("\n"):
+        out_lines.append("\n")
+
+    # Force module scope to avoid cross-snippet global collisions.
+    out_lines.append("export {};\n")
+
+    snippet.snippet_path.write_text("".join(out_lines), encoding="utf-8")
+
+
+def _ts_build_ambient(modules: Mapping[str, Sequence[str]]) -> str:
+    # The goal is to typecheck snippet bodies without installing deps. We generate minimal
+    # module stubs for any imported modules, exporting `any` members for used names.
+    out: list[str] = []
+    for mod in sorted(modules.keys()):
+        out.append(f'declare module "{mod}" {{\n')
+        exports = sorted(set(modules[mod]))
+        if "default" in exports:
+            out.append("  const __default: any;\n")
+            out.append("  export default __default;\n")
+        for name in exports:
+            if name == "default":
+                continue
+            out.append(f"  export const {name}: any;\n")
+            out.append(f"  export type {name} = any;\n")
+        out.append("}\n")
+    return "".join(out)
+
+
+def _ts_check_blocks(blocks_by_md: Mapping[pathlib.Path, list[CodeBlock]]) -> list[str]:
+    ts_blocks: list[CodeBlock] = []
+    for blocks in blocks_by_md.values():
+        for b in blocks:
+            if b.language in TS_FENCE_LANGS:
+                ts_blocks.append(b)
+
+    if not ts_blocks:
+        return []
+
+    if not shutil.which("tsc"):
+        return ["TypeScript blocks found but `tsc` is not available on PATH"]
+
+    errors: list[str] = []
+
+    with tempfile.TemporaryDirectory(prefix="validate-docs-ts-") as tmpdir_str:
+        tmpdir = pathlib.Path(tmpdir_str)
+        ts_dir = tmpdir / "ts_snippets"
+        ts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build eligibility set per markdown file: any name imported or declared anywhere in that file.
+        eligible_by_md: dict[pathlib.Path, set[str]] = {}
+        all_imports: dict[str, set[str]] = {}
+        for md_path, blocks in blocks_by_md.items():
+            eligible: set[str] = set()
+            for b in blocks:
+                if b.language not in TS_FENCE_LANGS:
+                    continue
+                eligible |= _ts_extract_declared_names(b.body)
+                imports = _ts_extract_imports(b.body)
+                for mod, names in imports.items():
+                    all_imports.setdefault(mod, set()).update(names)
+                for mod, names in imports.items():
+                    # Include imported identifiers themselves as eligible stubs for cross-block examples.
+                    eligible |= {n for n in names if n != "default"}
+            eligible_by_md[md_path] = eligible
+
+        ambient = _ts_build_ambient(all_imports)
+        (ts_dir / "ambient.d.ts").write_text(ambient, encoding="utf-8")
+
+        tsconfig = {
+            "compilerOptions": {
+                "target": "ES2022",
+                "module": "ESNext",
+                "moduleResolution": "Bundler",
+                "lib": ["ES2022", "DOM"],
+                "jsx": "react-jsx",
+                "noEmit": True,
+                "skipLibCheck": True,
+                "esModuleInterop": True,
+                "allowSyntheticDefaultImports": True,
+                "types": [],
+            },
+            "include": ["./**/*"],
+        }
+        (ts_dir / "tsconfig.json").write_text(
+            json.dumps(tsconfig, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        snippets: list[_TsSnippet] = []
+        snippet_by_path: dict[str, _TsSnippet] = {}
+
+        # Write snippet files (no stubs initially).
+        snippet_idx = 0
+        for md_path, blocks in blocks_by_md.items():
+            eligible = eligible_by_md.get(md_path, set())
+            for b in blocks:
+                if b.language not in TS_FENCE_LANGS:
+                    continue
+                ext = "tsx" if b.language == "tsx" else "ts"
+                snippet_path = ts_dir / f"snippet_{snippet_idx}.{ext}"
+                snippet_idx += 1
+                snippet = _TsSnippet(
+                    block=b,
+                    snippet_path=snippet_path,
+                    prelude_lines=[],
+                    prelude_len=0,
+                    eligible_names=eligible,
+                )
+                _ts_write_snippet(snippet)
+                snippets.append(snippet)
+                snippet_by_path[str(snippet_path)] = snippet
+
+        # Iteratively stub only "missing name/namespace" diagnostics that reference identifiers
+        # declared/imported elsewhere in the same markdown file (tutorial-style docs).
+        max_iterations = 6
+        for _ in range(max_iterations):
+            proc = subprocess.run(
+                ["tsc", "-p", str(ts_dir / "tsconfig.json"), "--pretty", "false"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(ts_dir),
+            )
+            output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+            if proc.returncode == 0:
+                break
+
+            changed = False
+            for line in output.splitlines():
+                m = TSC_DIAG_RE.match(line.strip())
+                if not m:
+                    continue
+                file_path = m.group("file")
+                msg = m.group("msg")
+                snippet = snippet_by_path.get(file_path)
+                if not snippet:
+                    continue
+
+                missing_name = None
+                is_namespace = False
+                m_name = TS_MISSING_NAME_RE.search(msg)
+                if m_name:
+                    missing_name = m_name.group(1)
+                m_ns = TS_MISSING_NAMESPACE_RE.search(msg)
+                if m_ns:
+                    missing_name = m_ns.group(1)
+                    is_namespace = True
+
+                if not missing_name:
+                    continue
+
+                if missing_name not in snippet.eligible_names:
+                    continue
+
+                # Avoid re-stubbing the same identifier.
+                stub_tag = f"__stub__:{missing_name}:{'ns' if is_namespace else 'name'}"
+                if any(stub_tag in l for l in snippet.prelude_lines):
+                    continue
+
+                # Add a marker comment to keep the insertion idempotent.
+                if is_namespace:
+                    snippet.prelude_lines.append(f"// {stub_tag}\n")
+                    snippet.prelude_lines.append(f"declare namespace {missing_name} {{}}\n")
+                else:
+                    snippet.prelude_lines.append(f"// {stub_tag}\n")
+                    snippet.prelude_lines.append(f"declare const {missing_name}: any;\n")
+                    snippet.prelude_lines.append(f"type {missing_name} = any;\n")
+
+                snippet.prelude_len = len(snippet.prelude_lines) + 1  # + blank line
+                _ts_write_snippet(snippet)
+                changed = True
+
+            if not changed:
+                # No progress; report raw diagnostics.
+                break
+
+        # Final compile to collect remaining diagnostics (if any).
+        proc = subprocess.run(
+            ["tsc", "-p", str(ts_dir / "tsconfig.json"), "--pretty", "false"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(ts_dir),
+        )
+        if proc.returncode == 0:
+            return []
+
+        output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+        for line in output.splitlines():
+            m = TSC_DIAG_RE.match(line.strip())
+            if not m:
+                continue
+            file_path = m.group("file")
+            line_no = int(m.group("line"))
+            col_no = int(m.group("col"))
+            code = m.group("code")
+            msg = m.group("msg").strip()
+            snippet = snippet_by_path.get(file_path)
+            if not snippet:
+                errors.append(f"{file_path}:{line_no}:{col_no}: TS{code}: {msg}")
+                continue
+
+            body_line = line_no - snippet.prelude_len
+            if body_line < 1:
+                # Prelude diagnostic; map to the start of the code block.
+                doc_line = snippet.block.start_line
+            else:
+                doc_line = snippet.block.start_line + (body_line - 1)
+            errors.append(f"{snippet.block.path}:{doc_line}:{col_no}: TS{code}: {msg}")
+
+    return errors
+
+
+def _python_syntax_check(blocks_by_md: Mapping[pathlib.Path, list[CodeBlock]]) -> list[str]:
+    py_blocks: list[CodeBlock] = []
+    for blocks in blocks_by_md.values():
+        for b in blocks:
+            if b.language in PY_FENCE_LANGS:
+                py_blocks.append(b)
+
+    if not py_blocks:
+        return []
+
+    errors: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="validate-docs-py-") as tmpdir_str:
+        tmpdir = pathlib.Path(tmpdir_str)
+        py_dir = tmpdir / "py_snippets"
+        py_dir.mkdir(parents=True, exist_ok=True)
+
+        mapping: dict[str, CodeBlock] = {}
+        for idx, block in enumerate(py_blocks):
+            snippet_path = py_dir / f"snippet_{idx}.py"
+            snippet_path.write_text(block.body, encoding="utf-8")
+            mapping[str(snippet_path)] = block
+
+        for snippet_path_str, block in mapping.items():
+            proc = subprocess.run(
+                [sys.executable, "-m", "py_compile", snippet_path_str],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if proc.returncode == 0:
+                continue
+            stderr = proc.stderr or proc.stdout or ""
+            line_no = None
+            for l in stderr.splitlines():
+                m = PY_COMPILE_FILE_RE.match(l)
+                if m:
+                    line_no = int(m.group("line"))
+                    break
+            if line_no is None:
+                errors.append(f"{block.path}:{block.start_line}: python -m py_compile failed")
+            else:
+                errors.append(
+                    f"{block.path}:{block.start_line + (line_no - 1)}: python syntax error"
+                )
+
+        # Optional mypy type-check.
+        # We disable `name-defined` to avoid false positives for tutorial-style multi-block examples.
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "mypy",
+                "--ignore-missing-imports",
+                "--disable-error-code=name-defined",
+                "--show-error-codes",
+                "--pretty",
+                "false",
+                str(py_dir),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if proc.returncode != 0 and ("No module named mypy" in (proc.stderr or "") or "No module named mypy" in (proc.stdout or "")):
+            errors.append("Python blocks found but `mypy` is not available (install mypy)")
+            return errors
+
+        output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+        for line in output.splitlines():
+            m = MYPY_DIAG_RE.match(line.strip())
+            if not m:
+                continue
+            file_path = m.group("file")
+            if file_path not in mapping:
+                errors.append(line.strip())
+                continue
+            block = mapping[file_path]
+            line_no = int(m.group("line"))
+            msg = m.group("msg").strip()
+            errors.append(f"{block.path}:{block.start_line + (line_no - 1)}: {msg}")
+
+    return errors
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Validate docs code blocks (no execution).")
     parser.add_argument(
@@ -97,15 +495,21 @@ def main(argv: list[str]) -> int:
     md_files = list(iter_markdown_files(docs_root))
     errors: list[str] = []
 
+    blocks_by_md: dict[pathlib.Path, list[CodeBlock]] = {}
+
     for path in md_files:
         try:
-            blocks = list(extract_fenced_blocks(path))
+            blocks_by_md[path] = list(extract_fenced_blocks(path))
         except ValueError as e:
             errors.append(str(e))
-            continue
+            blocks_by_md[path] = []
 
+    for blocks in blocks_by_md.values():
         for block in iter_shell_blocks(blocks):
             errors.extend(bash_syntax_check(block))
+
+    errors.extend(_ts_check_blocks(blocks_by_md))
+    errors.extend(_python_syntax_check(blocks_by_md))
 
     if errors:
         for e in errors:
@@ -117,4 +521,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

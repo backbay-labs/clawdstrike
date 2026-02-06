@@ -30,6 +30,7 @@
 - [Threat Intel Guards](guides/threat-intel.md)
 - [Policy Inheritance](guides/policy-inheritance.md)
 - [Audit Logging](guides/audit-logging.md)
+- [Marketplace Feed](guides/marketplace-feed.md)
 
 # Reference
 

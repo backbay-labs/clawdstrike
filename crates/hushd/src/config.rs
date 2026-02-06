@@ -572,6 +572,15 @@ pub struct RemoteExtendsConfig {
     /// Optional cache directory override.
     #[serde(default)]
     pub cache_dir: Option<PathBuf>,
+    /// Require HTTPS for remote policy resolution.
+    #[serde(default = "default_remote_extends_https_only")]
+    pub https_only: bool,
+    /// Allow resolving to private/loopback/link-local IPs (INSECURE).
+    #[serde(default)]
+    pub allow_private_ips: bool,
+    /// Allow redirects to a different host than the original request.
+    #[serde(default)]
+    pub allow_cross_host_redirects: bool,
     /// Maximum bytes to fetch for a single remote policy.
     #[serde(default = "default_remote_max_fetch_bytes")]
     pub max_fetch_bytes: usize,
@@ -585,10 +594,17 @@ impl Default for RemoteExtendsConfig {
         Self {
             allowed_hosts: Vec::new(),
             cache_dir: None,
+            https_only: default_remote_extends_https_only(),
+            allow_private_ips: false,
+            allow_cross_host_redirects: false,
             max_fetch_bytes: default_remote_max_fetch_bytes(),
             max_cache_bytes: default_remote_max_cache_bytes(),
         }
     }
+}
+
+fn default_remote_extends_https_only() -> bool {
+    true
 }
 
 /// Audit ledger encryption key source.

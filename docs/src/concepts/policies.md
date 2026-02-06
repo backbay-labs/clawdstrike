@@ -35,6 +35,10 @@ See the [Policy Schema](../reference/policy-schema.md) for exact fields.
 
 - built-in rulesets (`clawdstrike:default`, `clawdstrike:strict`, …)
 - local files (relative to the policy file)
+- pinned remote references (`https://…#sha256=…` / `git+…#sha256=…`) when enabled via the remote-extends allowlist
+
+Remote `extends` is disabled by default and must be explicitly enabled by allowlisting hosts. Remote references must
+include an integrity pin (`#sha256=<64-hex>`).
 
 ## Merge strategy
 

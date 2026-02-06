@@ -52,6 +52,7 @@ pub mod identity;
 pub mod instruction_hierarchy;
 pub mod irm;
 pub mod jailbreak;
+pub mod marketplace_feed;
 pub mod output_sanitizer;
 mod placeholders;
 pub mod policy;
@@ -85,6 +86,10 @@ pub use jailbreak::{
     JailbreakCanonicalizationStats, JailbreakCategory, JailbreakDetectionResult, JailbreakDetector,
     JailbreakGuardConfig, JailbreakSeverity, JailbreakSignal, LayerResult, LayerResults,
     LinearModelConfig, LlmJudge, SessionAggPersisted, SessionRiskSnapshot, SessionStore,
+};
+pub use marketplace_feed::{
+    MarketplaceEntry, MarketplaceFeed, MarketplaceProvenance, SignedMarketplaceFeed,
+    MARKETPLACE_FEED_SCHEMA_VERSION,
 };
 pub use output_sanitizer::{
     AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer,

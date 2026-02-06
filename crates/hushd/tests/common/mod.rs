@@ -6,13 +6,16 @@ use std::process::{Child, Command};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use hushd::config::{Config, RateLimitConfig};
+use hushd::config::{ApiKeyConfig, AuthConfig, Config, RateLimitConfig};
 
 static TEST_DAEMON: OnceLock<Mutex<TestDaemon>> = OnceLock::new();
 
 /// Get the daemon URL from environment or use default
 pub fn daemon_url() -> String {
     if let Ok(url) = std::env::var("CLAWDSTRIKE_TEST_URL") {
+        return url;
+    }
+    if let Ok(url) = std::env::var("HUSHD_TEST_URL") {
         return url;
     }
 
@@ -41,6 +44,12 @@ pub struct TestDaemon {
     process: Option<Child>,
 }
 
+#[derive(Clone, Debug)]
+pub struct TestAuthKeys {
+    pub check_key: String,
+    pub admin_key: String,
+}
+
 impl TestDaemon {
     /// Spawn a new test daemon on an available port
     pub fn spawn() -> Self {
@@ -48,6 +57,58 @@ impl TestDaemon {
             cors_enabled: false,
             rate_limit: RateLimitConfig {
                 enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    pub fn spawn_auth_daemon() -> (Self, TestAuthKeys) {
+        let keys = TestAuthKeys {
+            check_key: format!("test-check-{}", uuid::Uuid::new_v4()),
+            admin_key: format!("test-admin-{}", uuid::Uuid::new_v4()),
+        };
+
+        let daemon = Self::spawn_with_config(Config {
+            cors_enabled: false,
+            auth: AuthConfig {
+                enabled: true,
+                api_keys: vec![
+                    ApiKeyConfig {
+                        name: "test-check".to_string(),
+                        key: keys.check_key.clone(),
+                        scopes: vec!["check".to_string(), "read".to_string()],
+                        expires_at: None,
+                    },
+                    ApiKeyConfig {
+                        name: "test-admin".to_string(),
+                        key: keys.admin_key.clone(),
+                        scopes: vec!["admin".to_string()],
+                        expires_at: None,
+                    },
+                ],
+            },
+            rate_limit: RateLimitConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        (daemon, keys)
+    }
+
+    pub fn spawn_rate_limited_daemon(burst_size: u32, requests_per_second: u32) -> Self {
+        Self::spawn_with_config(Config {
+            cors_enabled: false,
+            auth: AuthConfig {
+                enabled: false,
+                api_keys: Vec::new(),
+            },
+            rate_limit: RateLimitConfig {
+                enabled: true,
+                burst_size,
+                requests_per_second,
                 ..Default::default()
             },
             ..Default::default()
