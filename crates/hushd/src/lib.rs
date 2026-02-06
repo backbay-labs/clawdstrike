@@ -7,6 +7,7 @@ pub mod audit;
 pub mod auth;
 pub mod authz;
 pub mod certification_webhooks;
+pub mod cli;
 pub mod config;
 pub mod control_db;
 pub mod identity;

@@ -20,3 +20,4 @@ src-tauri/gen/schemas/
 
 # Lock files (keep package-lock.json)
 Cargo.lock
+!src-tauri/Cargo.lock

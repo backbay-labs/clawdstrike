@@ -17,6 +17,5 @@ const engine = createHushdEngine({
 });
 
 const decision = await engine.evaluate(event);
-if (!decision.allowed) throw new Error(decision.message);
+if (decision.status === "deny") throw new Error(decision.message ?? "Blocked by policy");
 ```
-

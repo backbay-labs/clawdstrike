@@ -2,11 +2,12 @@
  * Badge - Status and label badges
  */
 import { clsx } from "clsx";
+import type { ReactNode } from "react";
 
 export interface BadgeProps {
   variant?: "default" | "success" | "warning" | "error" | "info";
   size?: "sm" | "md";
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }
 

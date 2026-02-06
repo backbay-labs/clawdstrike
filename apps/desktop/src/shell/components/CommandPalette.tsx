@@ -2,6 +2,7 @@
  * CommandPalette - Quick navigation and command execution
  */
 import { useState, useCallback, useEffect, useRef } from "react";
+import type { KeyboardEvent } from "react";
 import { clsx } from "clsx";
 import { getPlugins } from "../plugins";
 import type { AppId } from "../plugins/types";
@@ -60,7 +61,7 @@ export function CommandPalette({ isOpen, onClose, onSelectApp }: CommandPaletteP
   }, [isOpen]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+    (e: KeyboardEvent) => {
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();

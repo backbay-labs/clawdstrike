@@ -149,6 +149,7 @@ export interface ReceiptVerificationResult {
   merkle_valid?: boolean;
   timestamp_valid: boolean;
   errors: string[];
+  warnings?: string[];
 }
 
 export async function verifyReceipt(receipt: unknown): Promise<ReceiptVerificationResult> {

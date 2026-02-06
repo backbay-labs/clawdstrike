@@ -34,8 +34,16 @@
  * @packageDocumentation
  */
 
+import { EgressAllowlistGuard } from './guards/egress-allowlist.js';
+import { ForbiddenPathGuard } from './guards/forbidden-path.js';
+import { McpToolGuard } from './guards/mcp-tool.js';
+import { PatchIntegrityGuard } from './guards/patch-integrity.js';
 import { GuardAction, GuardContext, Severity } from './guards/types.js';
 import type { Guard, GuardResult } from './guards/types.js';
+import type { EgressAllowlistConfig } from './guards/egress-allowlist.js';
+import type { ForbiddenPathConfig } from './guards/forbidden-path.js';
+import type { McpToolConfig } from './guards/mcp-tool.js';
+import type { PatchIntegrityConfig } from './guards/patch-integrity.js';
 
 // ============================================================
 // Types
@@ -117,12 +125,49 @@ export interface ClawdstrikeConfig {
   failFast?: boolean;
   /** Working directory */
   cwd?: string;
+  /** Optional daemon-backed evaluation */
+  daemon?: DaemonConfig;
 }
 
 /**
  * Policy specification - can be a path, URL, or inline object.
  */
 export type PolicySpec = string | Record<string, unknown>;
+
+interface PolicySettings {
+  fail_fast?: boolean;
+}
+
+interface PolicyDoc {
+  extends?: string;
+  guards?: Record<string, unknown>;
+  settings?: PolicySettings;
+  merge_strategy?: 'replace' | 'merge' | 'deep_merge';
+}
+
+interface DaemonConfig {
+  url: string;
+  apiKey?: string;
+}
+
+interface DaemonCheckRequest {
+  action_type: string;
+  target: string;
+  content?: string;
+  args?: Record<string, unknown>;
+  session_id?: string;
+  agent_id?: string;
+}
+
+interface DaemonCheckResponse {
+  allowed: boolean;
+  guard: string;
+  severity: string;
+  message: string;
+  details?: unknown;
+}
+
+type BuiltinPolicyId = 'default' | 'strict' | 'ai-agent' | 'cicd' | 'permissive';
 
 /**
  * Generic tool set type for framework integration.
@@ -184,6 +229,740 @@ function allowDecision(guard?: string): Decision {
   };
 }
 
+const RULESET_TO_POLICY: Record<Ruleset, BuiltinPolicyId> = {
+  loose: 'permissive',
+  moderate: 'default',
+  strict: 'strict',
+  enterprise: 'strict',
+};
+
+const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
+  default: {
+    guards: {
+      forbidden_path: {
+        patterns: [
+          '**/.ssh/**',
+          '**/id_rsa*',
+          '**/id_ed25519*',
+          '**/id_ecdsa*',
+          '**/.aws/**',
+          '**/.env',
+          '**/.env.*',
+          '**/.git-credentials',
+          '**/.gitconfig',
+          '**/.gnupg/**',
+          '**/.kube/**',
+          '**/.docker/**',
+          '**/.npmrc',
+          '**/.password-store/**',
+          '**/pass/**',
+          '**/.1password/**',
+          '/etc/shadow',
+          '/etc/passwd',
+          '/etc/sudoers',
+        ],
+        exceptions: [],
+      },
+      egress_allowlist: {
+        allow: [
+          '*.openai.com',
+          '*.anthropic.com',
+          'api.github.com',
+          'github.com',
+          '*.githubusercontent.com',
+          '*.npmjs.org',
+          'registry.npmjs.org',
+          'pypi.org',
+          'files.pythonhosted.org',
+          'crates.io',
+          'static.crates.io',
+        ],
+        block: [],
+        default_action: 'block',
+      },
+      patch_integrity: {
+        max_additions: 1000,
+        max_deletions: 500,
+        require_balance: false,
+        max_imbalance_ratio: 10,
+        forbidden_patterns: [
+          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[_\\-]?(verify|validation|check)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
+        ],
+      },
+      mcp_tool: {
+        allow: [],
+        block: ['shell_exec', 'run_command', 'raw_file_write', 'raw_file_delete'],
+        require_confirmation: ['file_write', 'file_delete', 'git_push'],
+        default_action: 'allow',
+        max_args_size: 1024 * 1024,
+      },
+    },
+    settings: {
+      fail_fast: false,
+    },
+  },
+  strict: {
+    guards: {
+      forbidden_path: {
+        patterns: [
+          '**/.ssh/**',
+          '**/id_rsa*',
+          '**/id_ed25519*',
+          '**/id_ecdsa*',
+          '**/.aws/**',
+          '**/.env',
+          '**/.env.*',
+          '**/.git-credentials',
+          '**/.gitconfig',
+          '**/.gnupg/**',
+          '**/.kube/**',
+          '**/.docker/**',
+          '**/.npmrc',
+          '**/.password-store/**',
+          '**/pass/**',
+          '**/.1password/**',
+          '/etc/shadow',
+          '/etc/passwd',
+          '/etc/sudoers',
+          '**/.vault/**',
+          '**/.secrets/**',
+          '**/credentials/**',
+          '**/private/**',
+        ],
+        exceptions: [],
+      },
+      egress_allowlist: {
+        allow: [],
+        block: [],
+        default_action: 'block',
+      },
+      patch_integrity: {
+        max_additions: 500,
+        max_deletions: 200,
+        require_balance: true,
+        max_imbalance_ratio: 5,
+        forbidden_patterns: [
+          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[_\\-]?(verify|validation|check)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
+          '(?i)eval\\s*\\(',
+          '(?i)exec\\s*\\(',
+          '(?i)reverse[_\\-]?shell',
+          '(?i)bind[_\\-]?shell',
+        ],
+      },
+      mcp_tool: {
+        allow: ['read_file', 'list_directory', 'search', 'grep'],
+        block: [],
+        require_confirmation: [],
+        default_action: 'block',
+        max_args_size: 512 * 1024,
+      },
+    },
+    settings: {
+      fail_fast: true,
+    },
+  },
+  'ai-agent': {
+    extends: 'clawdstrike:default',
+    guards: {
+      forbidden_path: {
+        exceptions: ['**/.env.example', '**/.env.template'],
+      },
+      egress_allowlist: {
+        allow: [
+          '*.openai.com',
+          '*.anthropic.com',
+          'api.together.xyz',
+          '*.fireworks.ai',
+          'api.github.com',
+          'github.com',
+          '*.githubusercontent.com',
+          'gitlab.com',
+          'api.gitlab.com',
+          'bitbucket.org',
+          'api.bitbucket.org',
+          '*.npmjs.org',
+          'registry.npmjs.org',
+          'registry.yarnpkg.com',
+          'pypi.org',
+          'files.pythonhosted.org',
+          'crates.io',
+          'static.crates.io',
+          'rubygems.org',
+          'packagist.org',
+          'docs.rs',
+          '*.readthedocs.io',
+          '*.readthedocs.org',
+          'developer.mozilla.org',
+        ],
+        block: [],
+        default_action: 'block',
+      },
+      patch_integrity: {
+        max_additions: 2000,
+        max_deletions: 1000,
+        require_balance: false,
+        max_imbalance_ratio: 20,
+        forbidden_patterns: [
+          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
+          '(?i)reverse[_\\-]?shell',
+        ],
+      },
+      mcp_tool: {
+        allow: [],
+        block: ['shell_exec', 'run_command'],
+        require_confirmation: ['git_push', 'deploy', 'publish'],
+        default_action: 'allow',
+        max_args_size: 2 * 1024 * 1024,
+      },
+    },
+    settings: {
+      fail_fast: false,
+    },
+  },
+  cicd: {
+    extends: 'clawdstrike:default',
+    guards: {
+      forbidden_path: {
+        patterns: [
+          '**/.github/secrets/**',
+          '**/.gitlab-ci-secrets/**',
+          '**/.circleci/secrets/**',
+          '**/.ssh/**',
+          '**/id_rsa*',
+          '**/id_ed25519*',
+          '**/.aws/**',
+          '**/.gnupg/**',
+          '/etc/shadow',
+          '/etc/passwd',
+        ],
+        exceptions: ['**/.github/workflows/**', '**/.gitlab-ci.yml', '**/.circleci/config.yml'],
+      },
+      egress_allowlist: {
+        allow: [
+          '*.npmjs.org',
+          'registry.npmjs.org',
+          'registry.yarnpkg.com',
+          'pypi.org',
+          'files.pythonhosted.org',
+          'crates.io',
+          'static.crates.io',
+          'rubygems.org',
+          'packagist.org',
+          'proxy.golang.org',
+          'storage.googleapis.com',
+          '*.docker.io',
+          '*.docker.com',
+          '*.gcr.io',
+          'ghcr.io',
+          '*.ecr.aws',
+          'github.com',
+          'api.github.com',
+          '*.githubusercontent.com',
+          'gitlab.com',
+          'api.gitlab.com',
+          'gradle.org',
+          'plugins.gradle.org',
+          'repo.maven.apache.org',
+        ],
+        block: [],
+        default_action: 'block',
+      },
+      patch_integrity: {
+        max_additions: 5000,
+        max_deletions: 2500,
+        require_balance: false,
+        max_imbalance_ratio: 50,
+        forbidden_patterns: [
+          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
+        ],
+      },
+      mcp_tool: {
+        allow: ['read_file', 'write_file', 'list_directory', 'run_tests', 'build'],
+        block: ['shell_exec', 'deploy_production'],
+        require_confirmation: [],
+        default_action: 'block',
+        max_args_size: 5 * 1024 * 1024,
+      },
+    },
+    settings: {
+      fail_fast: true,
+    },
+  },
+  permissive: {
+    guards: {
+      egress_allowlist: {
+        allow: ['*'],
+        block: [],
+        default_action: 'allow',
+      },
+      patch_integrity: {
+        max_additions: 10000,
+        max_deletions: 5000,
+        require_balance: false,
+        max_imbalance_ratio: 50,
+      },
+    },
+    settings: {
+      fail_fast: false,
+    },
+  },
+};
+
+function daemonFailureDecision(message: string): Decision {
+  return {
+    status: 'deny',
+    guard: 'daemon',
+    severity: Severity.ERROR,
+    message,
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function toBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  return undefined;
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  return undefined;
+}
+
+function compilePolicyRegex(pattern: string): RegExp {
+  let source = pattern;
+  let flags = '';
+
+  const inlineFlags = source.match(/^\(\?([a-z]+)\)/i);
+  if (inlineFlags) {
+    const rawFlags = inlineFlags[1].toLowerCase();
+    if (rawFlags.includes('i')) flags += 'i';
+    if (rawFlags.includes('m')) flags += 'm';
+    if (rawFlags.includes('s')) flags += 's';
+    source = source.slice(inlineFlags[0].length);
+  }
+
+  return new RegExp(source, flags);
+}
+
+function toForbiddenPathConfig(value: unknown): ForbiddenPathConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  return {
+    patterns: toStringArray(value.patterns),
+    exceptions: toStringArray(value.exceptions),
+  };
+}
+
+function toEgressAllowlistConfig(value: unknown): EgressAllowlistConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const defaultAction = value.default_action === 'allow' ? 'allow' : value.default_action === 'block' ? 'block' : undefined;
+  return {
+    allow: toStringArray(value.allow),
+    block: toStringArray(value.block),
+    defaultAction,
+  };
+}
+
+function toPatchIntegrityConfig(value: unknown): PatchIntegrityConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const forbiddenPatterns = Array.isArray(value.forbidden_patterns)
+    ? value.forbidden_patterns
+      .filter((pattern): pattern is string => typeof pattern === 'string')
+      .map((pattern) => compilePolicyRegex(pattern))
+    : undefined;
+  return {
+    maxAdditions: toNumber(value.max_additions),
+    maxDeletions: toNumber(value.max_deletions),
+    requireBalance: toBoolean(value.require_balance),
+    maxImbalanceRatio: toNumber(value.max_imbalance_ratio),
+    forbiddenPatterns,
+  };
+}
+
+function toMcpToolConfig(value: unknown): McpToolConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const defaultAction = value.default_action === 'allow' ? 'allow' : value.default_action === 'block' ? 'block' : undefined;
+  return {
+    allow: toStringArray(value.allow),
+    block: toStringArray(value.block),
+    requireConfirmation: toStringArray(value.require_confirmation),
+    defaultAction,
+    maxArgsSize: toNumber(value.max_args_size),
+  };
+}
+
+function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
+  const guards: Guard[] = [];
+  const guardConfigs = policy.guards;
+
+  if (!guardConfigs) {
+    return guards;
+  }
+
+  const forbiddenPathConfig = toForbiddenPathConfig(guardConfigs.forbidden_path);
+  if (forbiddenPathConfig) {
+    guards.push(new ForbiddenPathGuard(forbiddenPathConfig));
+  }
+
+  const egressAllowlistConfig = toEgressAllowlistConfig(guardConfigs.egress_allowlist);
+  if (egressAllowlistConfig) {
+    guards.push(new EgressAllowlistGuard(egressAllowlistConfig));
+  }
+
+  const patchIntegrityConfig = toPatchIntegrityConfig(guardConfigs.patch_integrity);
+  if (patchIntegrityConfig) {
+    guards.push(new PatchIntegrityGuard(patchIntegrityConfig));
+  }
+
+  const mcpToolConfig = toMcpToolConfig(guardConfigs.mcp_tool);
+  if (mcpToolConfig) {
+    guards.push(new McpToolGuard(mcpToolConfig));
+  }
+
+  return guards;
+}
+
+function parseSeverity(value: string): Severity {
+  switch (value.toLowerCase()) {
+    case 'warning':
+      return Severity.WARNING;
+    case 'error':
+      return Severity.ERROR;
+    case 'critical':
+      return Severity.CRITICAL;
+    default:
+      return Severity.INFO;
+  }
+}
+
+function isDaemonCheckResponse(value: unknown): value is DaemonCheckResponse {
+  return (
+    isPlainObject(value) &&
+    typeof value.allowed === 'boolean' &&
+    typeof value.guard === 'string' &&
+    typeof value.severity === 'string' &&
+    typeof value.message === 'string'
+  );
+}
+
+function daemonResponseToDecision(response: DaemonCheckResponse): Decision {
+  const severity = parseSeverity(response.severity);
+  return {
+    status: !response.allowed ? 'deny' : severity === Severity.WARNING ? 'warn' : 'allow',
+    guard: response.guard,
+    severity,
+    message: response.message,
+    details: response.details,
+  };
+}
+
+function clonePolicy(policy: PolicyDoc): PolicyDoc {
+  return JSON.parse(JSON.stringify(policy)) as PolicyDoc;
+}
+
+function mergePolicies(base: PolicyDoc, child: PolicyDoc): PolicyDoc {
+  if (child.merge_strategy === 'replace') {
+    return clonePolicy(child);
+  }
+
+  const merged: PolicyDoc = {
+    ...base,
+    ...child,
+    settings: {
+      ...(base.settings ?? {}),
+      ...(child.settings ?? {}),
+    },
+  };
+
+  if (child.merge_strategy === 'merge') {
+    if (!child.guards && base.guards) {
+      merged.guards = base.guards;
+    }
+    return merged;
+  }
+
+  const mergedGuards: Record<string, unknown> = {
+    ...(base.guards ?? {}),
+    ...(child.guards ?? {}),
+  };
+
+  merged.guards = mergedGuards;
+  delete merged.extends;
+  delete merged.merge_strategy;
+  return merged;
+}
+
+function resolveBuiltinPolicyId(ref: string): BuiltinPolicyId | undefined {
+  const trimmed = ref.trim().toLowerCase();
+  const normalized = trimmed.startsWith('clawdstrike:') ? trimmed.slice('clawdstrike:'.length) : trimmed;
+  const withoutExt = normalized.endsWith('.yaml') ? normalized.slice(0, -'.yaml'.length) : normalized;
+  if (withoutExt === 'default') return 'default';
+  if (withoutExt === 'strict') return 'strict';
+  if (withoutExt === 'ai-agent') return 'ai-agent';
+  if (withoutExt === 'cicd') return 'cicd';
+  if (withoutExt === 'permissive') return 'permissive';
+  return undefined;
+}
+
+async function loadPolicyFromSource(policyRefOrYaml: string): Promise<PolicyDoc> {
+  const filePolicy = await tryLoadPolicyFromFile(policyRefOrYaml);
+  if (filePolicy) {
+    return filePolicy;
+  }
+
+  const builtinPolicyId = resolveBuiltinPolicyId(policyRefOrYaml);
+  if (builtinPolicyId) {
+    return resolvePolicyExtends(clonePolicy(BUILTIN_POLICIES[builtinPolicyId]), process.cwd(), new Set<string>());
+  }
+
+  const policy = await parsePolicyYaml(policyRefOrYaml, 'inline policy');
+  return resolvePolicyExtends(policy, process.cwd(), new Set<string>());
+}
+
+async function parsePolicyYaml(yaml: string, source: string): Promise<PolicyDoc> {
+  const { load } = await import('js-yaml');
+  const parsed = load(yaml);
+  if (!isPlainObject(parsed)) {
+    throw new Error(`Invalid policy document in ${source}: expected an object`);
+  }
+  return parsed as PolicyDoc;
+}
+
+async function tryLoadPolicyFromFile(policyRef: string): Promise<PolicyDoc | null> {
+  if (policyRef.includes('\n')) {
+    return null;
+  }
+
+  const path = await import('node:path');
+  const fs = await import('node:fs/promises');
+  const absolutePath = path.resolve(policyRef);
+
+  try {
+    const yaml = await fs.readFile(absolutePath, 'utf8');
+    const parsed = await parsePolicyYaml(yaml, absolutePath);
+    const visited = new Set<string>([absolutePath]);
+    return resolvePolicyExtends(parsed, path.dirname(absolutePath), visited);
+  } catch (error) {
+    if (isNodeErrorWithCode(error, 'ENOENT') || isNodeErrorWithCode(error, 'ENOTDIR')) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): boolean {
+  return isPlainObject(error) && typeof error.code === 'string' && error.code === code;
+}
+
+async function resolvePolicyExtends(policy: PolicyDoc, basePath: string, visited: Set<string>): Promise<PolicyDoc> {
+  if (!policy.extends) {
+    return policy;
+  }
+
+  const baseRef = policy.extends;
+  const builtinPolicyId = resolveBuiltinPolicyId(baseRef);
+  let basePolicy: PolicyDoc;
+
+  if (builtinPolicyId) {
+    const key = `builtin:${builtinPolicyId}`;
+    if (visited.has(key)) {
+      throw new Error(`Circular policy extension detected: ${baseRef}`);
+    }
+    visited.add(key);
+    basePolicy = clonePolicy(BUILTIN_POLICIES[builtinPolicyId]);
+  } else {
+    const path = await import('node:path');
+    const fs = await import('node:fs/promises');
+    const resolvedPath = path.isAbsolute(baseRef) ? baseRef : path.resolve(basePath, baseRef);
+    if (visited.has(resolvedPath)) {
+      throw new Error(`Circular policy extension detected: ${baseRef}`);
+    }
+    visited.add(resolvedPath);
+    const yaml = await fs.readFile(resolvedPath, 'utf8');
+    const parsed = await parsePolicyYaml(yaml, resolvedPath);
+    basePolicy = await resolvePolicyExtends(parsed, path.dirname(resolvedPath), visited);
+  }
+
+  const merged = mergePolicies(basePolicy, policy);
+  return merged;
+}
+
+function getPolicyForRuleset(ruleset: Ruleset): PolicyDoc {
+  const policyId = RULESET_TO_POLICY[ruleset];
+  return clonePolicy(BUILTIN_POLICIES[policyId]);
+}
+
+function toDaemonTarget(action: string, params: Record<string, unknown>): string {
+  if (action === 'shell_command') {
+    const command = params.command;
+    if (typeof command === 'string' && command.length > 0) {
+      return command;
+    }
+    throw new Error('shell_command requires params.command');
+  }
+
+  if (action === 'network_egress') {
+    const host = params.host;
+    const port = params.port;
+    if (typeof host === 'string' && host.length > 0) {
+      if (typeof port === 'number' && Number.isFinite(port)) {
+        return `${host}:${Math.trunc(port)}`;
+      }
+      return host;
+    }
+    const url = params.url;
+    if (typeof url === 'string' && url.length > 0) {
+      return url;
+    }
+    throw new Error('network_egress requires params.host or params.url');
+  }
+
+  const path = params.path;
+  if (typeof path === 'string' && path.length > 0) {
+    return path;
+  }
+
+  const target = params.target;
+  if (typeof target === 'string' && target.length > 0) {
+    return target;
+  }
+
+  throw new Error(`${action} requires params.path or params.target`);
+}
+
+function toDaemonRequest(
+  action: string,
+  params: Record<string, unknown>,
+  context: { sessionId?: string; agentId?: string } = {},
+): DaemonCheckRequest {
+  let actionType = action;
+  if (action === 'file_read') actionType = 'file_access';
+  if (action === 'network_egress') actionType = 'egress';
+  if (action === 'shell_command') actionType = 'shell';
+
+  if (!['file_access', 'file_write', 'egress', 'shell', 'mcp_tool', 'patch'].includes(actionType)) {
+    throw new Error(`Unsupported action type for daemon mode: ${action}`);
+  }
+
+  const request: DaemonCheckRequest = {
+    action_type: actionType,
+    target: actionType === 'mcp_tool'
+      ? (typeof params.tool === 'string' ? params.tool : toDaemonTarget(actionType, params))
+      : toDaemonTarget(action, params),
+  };
+
+  if (actionType === 'file_write' || actionType === 'patch') {
+    if (typeof params.content === 'string') {
+      request.content = params.content;
+    } else if (typeof params.diff === 'string') {
+      request.content = params.diff;
+    }
+  }
+
+  if (actionType === 'mcp_tool') {
+    if (isPlainObject(params.args)) {
+      request.args = params.args;
+    } else if (isPlainObject(params)) {
+      request.args = params;
+    }
+  }
+
+  if (context.sessionId) {
+    request.session_id = context.sessionId;
+  }
+
+  if (context.agentId) {
+    request.agent_id = context.agentId;
+  }
+
+  return request;
+}
+
+async function evaluateViaDaemon(
+  action: string,
+  params: Record<string, unknown>,
+  daemon: DaemonConfig,
+  context: { sessionId?: string; agentId?: string } = {},
+): Promise<Decision> {
+  let request: DaemonCheckRequest;
+  try {
+    request = toDaemonRequest(action, params, context);
+  } catch (error) {
+    return daemonFailureDecision(error instanceof Error ? error.message : 'Invalid daemon request');
+  }
+
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    accept: 'application/json',
+  };
+
+  if (daemon.apiKey) {
+    headers.authorization = `Bearer ${daemon.apiKey}`;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${daemon.url}/api/v1/check`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'network error';
+    return daemonFailureDecision(`Daemon check failed: ${message}`);
+  }
+
+  const responseBody = await response.text();
+  if (!response.ok) {
+    const detail = responseBody ? `: ${responseBody}` : '';
+    return daemonFailureDecision(`Daemon check failed with HTTP ${response.status}${detail}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = responseBody ? JSON.parse(responseBody) : {};
+  } catch {
+    return daemonFailureDecision('Daemon returned invalid JSON');
+  }
+
+  if (!isDaemonCheckResponse(parsed)) {
+    return daemonFailureDecision('Daemon returned malformed decision payload');
+  }
+
+  return daemonResponseToDecision(parsed);
+}
+
 // ============================================================
 // ClawdstrikeSession
 // ============================================================
@@ -201,15 +980,17 @@ export class ClawdstrikeSession {
 
   private readonly guards: Guard[];
   private readonly failFast: boolean;
+  private readonly daemon?: DaemonConfig;
   private checkCount = 0;
   private allowCount = 0;
   private warnCount = 0;
   private denyCount = 0;
   private blockedActions: string[] = [];
 
-  constructor(guards: Guard[], options: SessionOptions = {}, failFast = false) {
+  constructor(guards: Guard[], options: SessionOptions = {}, failFast = false, daemon?: DaemonConfig) {
     this.guards = guards;
     this.failFast = failFast;
+    this.daemon = daemon;
     this.sessionId = options.sessionId ?? createId('sess');
     this.userId = options.userId;
     this.agentId = options.agentId;
@@ -223,6 +1004,15 @@ export class ClawdstrikeSession {
    */
   async check(action: string, params: Record<string, unknown> = {}): Promise<Decision> {
     this.checkCount++;
+
+    if (this.daemon) {
+      const decision = await evaluateViaDaemon(action, params, this.daemon, {
+        sessionId: this.sessionId,
+        agentId: this.agentId,
+      });
+      this.recordDecision(action, decision);
+      return decision;
+    }
 
     const guardAction = this.createGuardAction(action, params);
     const guardContext = this.createGuardContext();
@@ -338,6 +1128,21 @@ export class ClawdstrikeSession {
       metadata: this.metadata,
     });
   }
+
+  private recordDecision(action: string, decision: Decision): void {
+    if (decision.status === 'deny') {
+      this.denyCount++;
+      this.blockedActions.push(action);
+      return;
+    }
+
+    if (decision.status === 'warn') {
+      this.warnCount++;
+      return;
+    }
+
+    this.allowCount++;
+  }
 }
 
 // ============================================================
@@ -374,11 +1179,13 @@ export class Clawdstrike {
   private readonly guards: Guard[];
   private readonly config: ClawdstrikeConfig;
   private readonly defaultContext: GuardContext;
+  private readonly daemon?: DaemonConfig;
 
   private constructor(config: ClawdstrikeConfig, guards: Guard[]) {
     this.config = config;
     this.guards = guards;
     this.defaultContext = new GuardContext({ cwd: config.cwd });
+    this.daemon = config.daemon;
   }
 
   // ============================================================
@@ -397,10 +1204,18 @@ export class Clawdstrike {
    * ```
    */
   static async fromPolicy(yamlOrPath: string): Promise<Clawdstrike> {
-    // For now, we create an instance with default guards
-    // Full policy loading would integrate with @clawdstrike/policy
-    const guards = Clawdstrike.getDefaultGuards('moderate');
-    return new Clawdstrike({ policy: yamlOrPath }, guards);
+    const policy = await loadPolicyFromSource(yamlOrPath);
+    const guards = buildGuardsFromPolicy(policy);
+    if (guards.length === 0) {
+      throw new Error('Policy resolved to zero supported guards; refusing fail-open defaults.');
+    }
+    return new Clawdstrike(
+      {
+        policy: yamlOrPath,
+        failFast: policy.settings?.fail_fast ?? false,
+      },
+      guards,
+    );
   }
 
   /**
@@ -415,11 +1230,15 @@ export class Clawdstrike {
    * const cs = await Clawdstrike.fromDaemon('http://localhost:8080', 'my-api-key');
    * ```
    */
-  static async fromDaemon(url: string, _apiKey?: string): Promise<Clawdstrike> {
-    // Daemon mode uses remote policy evaluation
-    // This is a placeholder - full implementation would use ClawdstrikeClient
-    const guards = Clawdstrike.getDefaultGuards('moderate');
-    return new Clawdstrike({ policy: url }, guards);
+  static async fromDaemon(url: string, apiKey?: string): Promise<Clawdstrike> {
+    const daemonUrl = url.replace(/\/+$/, '');
+    return new Clawdstrike(
+      {
+        policy: daemonUrl,
+        daemon: { url: daemonUrl, apiKey },
+      },
+      [],
+    );
   }
 
   /**
@@ -435,8 +1254,15 @@ export class Clawdstrike {
    * ```
    */
   static withDefaults(ruleset: Ruleset = 'moderate'): Clawdstrike {
-    const guards = Clawdstrike.getDefaultGuards(ruleset);
-    return new Clawdstrike({ ruleset }, guards);
+    const policy = getPolicyForRuleset(ruleset);
+    const guards = buildGuardsFromPolicy(policy);
+    return new Clawdstrike(
+      {
+        ruleset,
+        failFast: policy.settings?.fail_fast ?? false,
+      },
+      guards,
+    );
   }
 
   /**
@@ -450,11 +1276,9 @@ export class Clawdstrike {
     return new Clawdstrike(config, guards);
   }
 
-  private static getDefaultGuards(_ruleset: Ruleset): Guard[] {
-    // Import guards dynamically to avoid circular dependencies
-    // These would be populated based on the ruleset
-    // For now, return empty array - guards are added when needed
-    return [];
+  private static getDefaultGuards(ruleset: Ruleset): Guard[] {
+    const policy = getPolicyForRuleset(ruleset);
+    return buildGuardsFromPolicy(policy);
   }
 
   // ============================================================
@@ -474,6 +1298,10 @@ export class Clawdstrike {
    * ```
    */
   async check(action: string, params: Record<string, unknown> = {}): Promise<Decision> {
+    if (this.daemon) {
+      return evaluateViaDaemon(action, params, this.daemon);
+    }
+
     const guardAction = this.createGuardAction(action, params);
     let warningDecision: Decision | undefined;
 
@@ -607,6 +1435,7 @@ export class Clawdstrike {
       this.guards,
       { ...options, cwd: options.cwd ?? this.config.cwd },
       this.config.failFast,
+      this.daemon,
     );
   }
 

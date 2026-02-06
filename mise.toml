@@ -4,8 +4,12 @@ node = "24"
 python = "3.12"
 
 [tasks.check]
-description = "Run cargo check on workspace"
-run = "cargo check --workspace"
+description = "Run cargo check on workspace and Tauri app crates"
+run = """
+cargo check --workspace
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+"""
 
 [tasks.test]
 description = "Run all tests"
@@ -37,4 +41,6 @@ run = """
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """

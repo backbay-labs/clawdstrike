@@ -41,7 +41,6 @@ function AgentSphere({ agent, isSelected, onSelect }: AgentSphereProps) {
 
   const color = TRUST_COLORS[agent.trust_level] ?? "#9090a0";
   const size = 0.3 + (agent.event_count ?? 0) * 0.01;
-  const glowIntensity = agent.threat_score > 0.5 ? 1.5 : 1;
 
   // Animate pulse when selected or high threat
   useFrame((_, delta) => {

@@ -4,6 +4,7 @@ use std::path::{Component, Path};
 
 use clawdstrike::{SignedMarketplaceFeed, SignedPolicyBundle};
 use hush_core::PublicKey;
+use reqwest::header::LOCATION;
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, State};
@@ -13,6 +14,7 @@ use crate::state::AppState;
 const MAX_FEED_BYTES: usize = 1024 * 1024; // 1 MiB
 const MAX_BUNDLE_BYTES: usize = 2 * 1024 * 1024; // 2 MiB
 const MAX_NOTARY_BYTES: usize = 1024 * 1024; // 1 MiB
+const MAX_FETCH_REDIRECTS: usize = 5;
 
 const BUILTIN_FEED_PATH: &str = "resources/marketplace/feed.signed.json";
 const BUILTIN_BUNDLE_PREFIX: &str = "builtin://bundles/";
@@ -401,52 +403,95 @@ fn ipfs_gateway_urls(ipfs_path: &str) -> Result<Vec<String>, String> {
 }
 
 async fn fetch_http_bytes_limited(
-    client: &reqwest::Client,
+    _client: &reqwest::Client,
     url: &str,
     max_bytes: usize,
 ) -> Result<Vec<u8>, String> {
-    let url = reqwest::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
-    if url.scheme() != "https" && !is_allowed_dev_http(&url) {
-        return Err(format!("Blocked URL scheme: {}", url.scheme()));
-    }
+    let mut current = reqwest::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
+    current.set_fragment(None);
 
-    let mut resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {e}"))?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
+    for _ in 0..=MAX_FETCH_REDIRECTS {
+        validate_fetch_target(&current)?;
 
-    if let Some(len) = resp.content_length() {
-        if len > (max_bytes as u64) {
-            return Err(format!("Response exceeds size limit ({} > {})", len, max_bytes));
+        let mut resp = client
+            .get(current.clone())
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {e}"))?;
+
+        if resp.status().is_redirection() {
+            let location = resp
+                .headers()
+                .get(LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| format!("Redirect missing Location header: {current}"))?;
+            let mut next = current
+                .join(location)
+                .map_err(|e| format!("Invalid redirect URL: {e}"))?;
+            next.set_fragment(None);
+            current = next;
+            continue;
         }
-    }
 
-    let mut bytes = Vec::new();
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("Read failed: {e}"))? {
-        if bytes.len().saturating_add(chunk.len()) > max_bytes {
-            return Err(format!(
-                "Response exceeds size limit (>{} bytes)",
-                max_bytes
-            ));
+        if !resp.status().is_success() {
+            return Err(format!("HTTP {}", resp.status()));
         }
-        bytes.extend_from_slice(&chunk);
+
+        if let Some(len) = resp.content_length() {
+            if len > (max_bytes as u64) {
+                return Err(format!("Response exceeds size limit ({} > {})", len, max_bytes));
+            }
+        }
+
+        let mut bytes = Vec::new();
+        while let Some(chunk) = resp.chunk().await.map_err(|e| format!("Read failed: {e}"))? {
+            if bytes.len().saturating_add(chunk.len()) > max_bytes {
+                return Err(format!(
+                    "Response exceeds size limit (>{} bytes)",
+                    max_bytes
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+
+        return Ok(bytes);
     }
 
-    Ok(bytes)
+    Err(format!(
+        "Too many redirects while fetching marketplace URI (>{MAX_FETCH_REDIRECTS})"
+    ))
+}
+
+fn validate_fetch_target(url: &reqwest::Url) -> Result<(), String> {
+    if url.scheme() == "https" {
+        if cfg!(debug_assertions) || !is_localhost(url) {
+            return Ok(());
+        }
+        return Err(format!(
+            "Blocked localhost target in release build: {}",
+            url
+        ));
+    }
+    if is_allowed_dev_http(url) {
+        return Ok(());
+    }
+    Err(format!("Blocked URL scheme: {}", url.scheme()))
 }
 
 fn is_allowed_dev_http(url: &reqwest::Url) -> bool {
     if url.scheme() != "http" {
         return false;
     }
-    if !cfg!(debug_assertions) {
-        return false;
-    }
+    cfg!(debug_assertions) && is_localhost(url)
+}
+
+fn is_localhost(url: &reqwest::Url) -> bool {
     let host = url.host_str().unwrap_or("");
     matches!(normalize_host(host).as_str(), "localhost" | "127.0.0.1" | "::1")
 }
@@ -474,4 +519,32 @@ fn validate_resource_relpath(rel: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_fetch_target_rejects_release_localhost_https() {
+        let url = reqwest::Url::parse("https://localhost/bundle.json").expect("parse url");
+        if cfg!(debug_assertions) {
+            assert!(validate_fetch_target(&url).is_ok());
+        } else {
+            assert!(validate_fetch_target(&url).is_err());
+        }
+    }
+
+    #[test]
+    fn is_allowed_dev_http_only_allows_localhost() {
+        let localhost = reqwest::Url::parse("http://127.0.0.1/feed.json").expect("parse url");
+        let remote = reqwest::Url::parse("http://example.com/feed.json").expect("parse url");
+        if cfg!(debug_assertions) {
+            assert!(is_allowed_dev_http(&localhost));
+            assert!(!is_allowed_dev_http(&remote));
+        } else {
+            assert!(!is_allowed_dev_http(&localhost));
+            assert!(!is_allowed_dev_http(&remote));
+        }
+    }
 }

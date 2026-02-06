@@ -227,9 +227,14 @@ mod cli_parsing {
 
         match cli.command {
             Commands::Policy { command } => match command {
-                PolicyCommands::Validate { file, resolve } => {
+                PolicyCommands::Validate {
+                    file,
+                    resolve,
+                    check_env,
+                } => {
                     assert_eq!(file, "policy.yaml");
                     assert!(!resolve);
+                    assert!(!check_env);
                 }
                 _ => panic!("Expected Validate subcommand"),
             },
@@ -243,9 +248,14 @@ mod cli_parsing {
 
         match cli.command {
             Commands::Policy { command } => match command {
-                PolicyCommands::Validate { file, resolve } => {
+                PolicyCommands::Validate {
+                    file,
+                    resolve,
+                    check_env,
+                } => {
                     assert_eq!(file, "policy.yaml");
                     assert!(resolve);
+                    assert!(!check_env);
                 }
                 _ => panic!("Expected Validate subcommand"),
             },

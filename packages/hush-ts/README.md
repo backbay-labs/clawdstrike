@@ -1,6 +1,6 @@
 # @clawdstrike/sdk
 
-TypeScript SDK for clawdstrike security verification.
+TypeScript SDK for clawdstrike security verification and fail-closed policy checks.
 
 ## Installation
 
@@ -10,6 +10,7 @@ npm install @clawdstrike/sdk
 
 ## Features
 
+- **Unified checks API**: `Clawdstrike.withDefaults(...)`, `fromPolicy(...)`, `fromDaemon(...)`
 - **Cryptographic primitives**: SHA-256, Keccak-256, Ed25519 signatures
 - **RFC 8785 Canonical JSON**: Deterministic JSON for hashing/signing
 - **RFC 6962 Merkle Trees**: Certificate Transparency compatible
@@ -20,6 +21,38 @@ npm install @clawdstrike/sdk
 - **Jailbreak detection**: Multi-signal jailbreak detection helpers
 
 ## Usage
+
+### Unified policy checks
+
+```typescript
+import { Clawdstrike } from "@clawdstrike/sdk";
+
+// Built-in ruleset aliases: strict, default, ai-agent, cicd, permissive
+const cs = Clawdstrike.withDefaults("strict");
+
+const decision = await cs.checkFile("~/.ssh/id_rsa", "read");
+if (decision.status === "deny") {
+  console.error("Blocked:", decision.message);
+}
+
+// Session API (action key is file_access)
+const session = cs.session({ agentId: "agent-1" });
+await session.check("file_access", { path: "/app/src/main.ts" });
+```
+
+```typescript
+import { Clawdstrike } from "@clawdstrike/sdk";
+
+// Load from local policy path or inline YAML
+const fromPolicy = Clawdstrike.fromPolicy("./strict.yaml");
+
+// Remote daemon-backed checks (fail-closed on network/parse errors)
+const fromDaemon = Clawdstrike.fromDaemon({ baseUrl: "http://127.0.0.1:9876" });
+```
+
+Notes:
+- `fromPolicy` currently maps the supported policy guard set in the TS SDK (`forbidden_path`, `egress_allowlist`, `patch_integrity`, `mcp_tool`).
+- If policy parsing fails or no supported guards can be resolved, checks fail closed.
 
 ### Hashing
 

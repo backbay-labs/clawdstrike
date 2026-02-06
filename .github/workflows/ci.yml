@@ -64,6 +64,42 @@ jobs:
       - name: Test
         run: cargo test --all
 
+  tauri-rust-check:
+    name: Tauri Rust Crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux dependencies for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-tauri-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-tauri-
+            ${{ runner.os }}-cargo-
+
+      - name: Check desktop Tauri crate
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      - name: Check agent Tauri crate
+        run: cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+
   msrv:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
@@ -396,12 +432,29 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-policy-parity-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-policy-parity-
+            ${{ runner.os }}-cargo-
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: packages/clawdstrike-policy/package-lock.json
+          cache-dependency-path: |
+            packages/clawdstrike-policy/package-lock.json
+            packages/clawdstrike-adapter-core/package-lock.json
 
       - name: Bootstrap file deps (adapter-core)
         working-directory: packages/clawdstrike-adapter-core
@@ -411,6 +464,10 @@ jobs:
         working-directory: packages/clawdstrike-adapter-core
         run: npm run build
 
+      - name: Build hush CLI (for policy parity)
+        working-directory: .
+        run: cargo build -p hush-cli --bin hush
+
       - name: Install dependencies
         run: npm ci
 
@@ -419,6 +476,10 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Policy parity (Rust ↔ TS)
+        working-directory: .
+        run: node tools/scripts/policy-parity.mjs
 
       - name: Test
         run: npm test

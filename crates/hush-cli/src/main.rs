@@ -329,6 +329,9 @@ enum PolicyCommands {
         /// Resolve extends and show merged policy
         #[arg(long)]
         resolve: bool,
+        /// Also require referenced environment variables to be set for `${VAR}` placeholders.
+        #[arg(long)]
+        check_env: bool,
     },
 
     /// Diff two policies (rulesets or files)
@@ -1454,16 +1457,44 @@ async fn cmd_policy(
             Ok(ExitCode::Ok)
         }
 
-        PolicyCommands::Validate { file, resolve } => {
+        PolicyCommands::Validate {
+            file,
+            resolve,
+            check_env,
+        } => {
+            let content = std::fs::read_to_string(&file)?;
+            let validation = clawdstrike::policy::PolicyValidationOptions {
+                require_env: check_env,
+            };
+
             let policy = if resolve {
-                let content = std::fs::read_to_string(&file)?;
-                Policy::from_yaml_with_extends_resolver(
+                match Policy::from_yaml_with_extends_resolver_with_validation_options(
                     &content,
                     Some(std::path::Path::new(&file)),
                     &resolver,
-                )?
+                    validation,
+                ) {
+                    Ok(policy) => policy,
+                    Err(e) => {
+                        let code = policy_error_exit_code(&e);
+                        let _ = writeln!(stderr, "Error: {}", e);
+                        return Ok(code);
+                    }
+                }
             } else {
-                Policy::from_yaml_file(&file)?
+                let policy: Policy = match serde_yaml::from_str(&content) {
+                    Ok(policy) => policy,
+                    Err(e) => {
+                        let _ = writeln!(stderr, "Error: {}", e);
+                        return Ok(ExitCode::ConfigError);
+                    }
+                };
+                if let Err(e) = policy.validate_with_options(validation) {
+                    let code = policy_error_exit_code(&e);
+                    let _ = writeln!(stderr, "Error: {}", e);
+                    return Ok(code);
+                }
+                policy
             };
 
             let _ = writeln!(stdout, "Policy is valid:");

@@ -2,6 +2,7 @@
  * EventRow - Single event row in the event stream
  */
 import { clsx } from "clsx";
+import type { ReactNode } from "react";
 import type { AuditEvent } from "@/types/events";
 
 interface EventRowProps {
@@ -60,7 +61,7 @@ export function EventRow({ event, isSelected, onSelect }: EventRowProps) {
 }
 
 function ActionTypeIcon({ type }: { type: string }) {
-  const icons: Record<string, React.ReactNode> = {
+  const icons: Record<string, ReactNode> = {
     file_access: (
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />

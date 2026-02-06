@@ -41,6 +41,7 @@ clawdstrike check --json --action-type egress --ruleset default api.github.com:4
   - `--merged` resolves `extends` (useful for files).
 - `clawdstrike policy validate <FILE>` — validate YAML + patterns.
   - `--resolve` resolves `extends` and prints the merged policy.
+  - `--check-env` also requires referenced `${VAR}` environment variables to be set.
 - `clawdstrike policy diff <LEFT> <RIGHT> [--resolve] [--json]` — structural diff for rulesets or policy files.
 - `clawdstrike policy lint <FILE> [--resolve] [--json]` — policy linting (risky defaults, common mistakes).
 - `clawdstrike policy test <SUITE.yaml>` — run a policy test suite.

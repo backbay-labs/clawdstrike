@@ -8,7 +8,7 @@
 
 This package does **not** ship a policy engine. You provide one:
 
-- `@clawdstrike/hush-cli-engine` (shells out to the `clawdstrike` CLI), or
+- `@clawdstrike/hush-cli-engine` (shells out to the `hush` CLI), or
 - your own implementation of `PolicyEngineLike`.
 
 ## Installation
@@ -25,7 +25,7 @@ npm install @ai-sdk/openai
 
 ## 1) Create an engine (policy evaluation)
 
-The simplest engine is `@clawdstrike/hush-cli-engine`, which calls `clawdstrike policy eval` under the hood.
+The simplest engine is `@clawdstrike/hush-cli-engine`, which calls `hush policy eval` under the hood.
 
 ```ts
 import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
@@ -112,7 +112,7 @@ Notes:
 
 Guard tool calls for `ai/react` streaming chats.
 
-Note: `@clawdstrike/hush-cli-engine` shells out to the `clawdstrike` binary, so it is **server-only**. In the browser, use an engine that calls a server endpoint (or a `clawdstriked` instance).
+Note: `@clawdstrike/hush-cli-engine` shells out to the `hush` binary, so it is **server-only**. In the browser, use an engine that calls a server endpoint (or a `clawdstriked` instance).
 
 ```tsx
 'use client';

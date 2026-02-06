@@ -62,6 +62,7 @@ export interface ReceiptVerification {
   timestamp_valid: boolean;
   policy_hash_match?: boolean;
   errors: string[];
+  warnings?: string[];
 }
 
 export interface ReceiptBundle {

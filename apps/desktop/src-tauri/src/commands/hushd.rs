@@ -22,7 +22,10 @@ struct HealthResponse {
 
 /// Test connection to a daemon URL
 #[tauri::command]
-pub async fn test_connection(url: String, state: State<'_, AppState>) -> Result<DaemonInfo, String> {
+pub async fn test_connection(
+    url: String,
+    state: State<'_, AppState>,
+) -> Result<DaemonInfo, String> {
     let health_url = format!("{}/health", url.trim_end_matches('/'));
 
     let response = state

@@ -46,5 +46,38 @@ describe("Clawdstrike", () => {
     expect(decision.status).toBe("deny");
     expect(decision.guard).toBe("deny-guard");
   });
-});
 
+  it("withDefaults strict enforces forbidden path checks", async () => {
+    const cs = Clawdstrike.withDefaults("strict");
+
+    const decision = await cs.check("file_access", { path: "/etc/passwd" });
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("forbidden_path");
+  });
+
+  it("fromPolicy strict aliases enforce forbidden path checks", async () => {
+    const cs = await Clawdstrike.fromPolicy("strict.yaml");
+
+    const decision = await cs.check("file_access", { path: "/etc/passwd" });
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("forbidden_path");
+  });
+
+  it("fromDaemon evaluates remotely and fails closed on transport errors", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("network down");
+    }) as typeof fetch;
+
+    try {
+      const cs = await Clawdstrike.fromDaemon("http://127.0.0.1:65530", "test-key");
+      const decision = await cs.check("file_access", { path: "/etc/passwd" });
+
+      expect(decision.status).toBe("deny");
+      expect(decision.guard).toBe("daemon");
+      expect(decision.message).toContain("Daemon check failed");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

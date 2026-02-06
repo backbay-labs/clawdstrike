@@ -60,16 +60,27 @@ export interface AuditStats {
   events_by_severity: Record<string, number>;
 }
 
+export interface DaemonEventData {
+  action_type?: string;
+  target?: string;
+  allowed?: boolean;
+  guard?: string;
+  policy_hash?: string;
+  event_id?: string;
+  event_type?: string;
+  [key: string]: unknown;
+}
+
 export interface DaemonEvent {
-  type: "policy_check" | "policy_reload" | "session_start" | "session_end" | "error";
+  type: string;
   timestamp: string;
-  data: AuditEvent | PolicyReloadEvent | SessionEvent | ErrorEvent;
+  data: DaemonEventData | PolicyReloadEvent | SessionEvent | ErrorEvent;
 }
 
 export interface PolicyReloadEvent {
-  policy_hash: string;
-  policy_name: string;
-  guard_count: number;
+  policy_hash?: string;
+  policy_name?: string;
+  guard_count?: number;
 }
 
 export interface SessionEvent {

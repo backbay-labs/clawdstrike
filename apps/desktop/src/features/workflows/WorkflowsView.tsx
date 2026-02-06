@@ -2,6 +2,7 @@
  * WorkflowsView - Automated response chains
  */
 import { useState, useEffect } from "react";
+import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import type { Workflow, WorkflowTrigger, WorkflowAction } from "@/services/tauri";
 import { listWorkflows, saveWorkflow, deleteWorkflow, testWorkflow, isTauri } from "@/services/tauri";
@@ -468,7 +469,7 @@ function WorkflowDetailPanel({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
       <h3 className="text-xs font-medium text-sdr-text-muted uppercase tracking-wide mb-2">

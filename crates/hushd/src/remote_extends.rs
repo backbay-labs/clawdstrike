@@ -325,14 +325,8 @@ impl RemotePolicyResolver {
             ));
         }
 
-        if let Ok(repo_url) = Url::parse(repo) {
-            if matches!(repo_url.scheme(), "http" | "https") {
-                let host = repo_url.host_str().ok_or_else(|| {
-                    Error::ConfigError(format!("Invalid URL host in remote extends: {}", repo))
-                })?;
-                self.ensure_host_allowed(host)?;
-            }
-        }
+        let repo_host = parse_git_remote_host(repo)?;
+        self.ensure_host_allowed(&repo_host)?;
 
         let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
         let cache_path = self.cache_path_for(&key, "yaml");
@@ -528,6 +522,47 @@ fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, Str
     }
 
     Ok(parsed)
+}
+
+fn parse_git_remote_host(repo: &str) -> Result<String> {
+    if let Ok(repo_url) = Url::parse(repo) {
+        let scheme = repo_url.scheme();
+        if !matches!(scheme, "http" | "https" | "ssh" | "git") {
+            return Err(Error::ConfigError(format!(
+                "Unsupported git remote scheme for remote extends: {}",
+                scheme
+            )));
+        }
+        let host = repo_url.host_str().ok_or_else(|| {
+            Error::ConfigError(format!("Invalid URL host in remote extends: {}", repo))
+        })?;
+        return Ok(normalize_host(host));
+    }
+
+    parse_scp_like_git_host(repo).ok_or_else(|| {
+        Error::ConfigError(format!(
+            "Invalid git remote in remote extends (expected URL or scp-style host:path): {}",
+            repo
+        ))
+    })
+}
+
+fn parse_scp_like_git_host(repo: &str) -> Option<String> {
+    let (lhs, rhs) = repo.split_once(':')?;
+    if rhs.is_empty() {
+        return None;
+    }
+    if lhs.contains('/') || lhs.contains('\\') {
+        return None;
+    }
+
+    let host = lhs.rsplit_once('@').map(|(_, host)| host).unwrap_or(lhs);
+    let host = normalize_host(host);
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
 }
 
 fn join_url(base: &str, reference: &str) -> Result<String> {
@@ -884,6 +919,47 @@ mod tests {
             is_public_ip(public),
             "IPv4-mapped public IPv4 should be treated as public"
         );
+    }
+
+    #[test]
+    fn parse_git_remote_host_accepts_scp_style() {
+        let host = parse_git_remote_host("git@github.com:backbay-labs/clawdstrike.git")
+            .expect("scp-like git remote should parse");
+        assert_eq!(host, "github.com");
+    }
+
+    #[test]
+    fn scp_style_git_remote_must_be_allowlisted() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["github.com".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: true,
+            allow_private_ips: false,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!(
+            "git+git@evil.example:org/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("disallowed SCP-style host should be rejected");
+        assert!(
+            err.to_string().contains("host not allowlisted"),
+            "expected allowlist rejection, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
     }
 
     #[test]

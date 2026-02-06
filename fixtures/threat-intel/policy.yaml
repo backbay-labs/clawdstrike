@@ -1,4 +1,4 @@
-version: "1.0.0"
+version: "1.1.0"
 name: Threat Intel Parity
 description: Canonical policy fixture for cross-SDK threat-intel parity
 
@@ -56,4 +56,3 @@ guards:
           enabled: true
           ttl_seconds: 3600
           max_size_mb: 8
-
