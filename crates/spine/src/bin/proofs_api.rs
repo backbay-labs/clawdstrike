@@ -347,6 +347,99 @@ async fn v1_inclusion_proof(
     })))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SyncQuery {
+    issuer: String,
+    from_seq: u64,
+    to_seq: u64,
+}
+
+async fn v1_marketplace_sync(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<SyncQuery>,
+) -> Result<Json<Value>, ApiError> {
+    // Validate range.
+    if q.from_seq == 0 {
+        return Err(ApiError::bad_request("from_seq must be >= 1"));
+    }
+    if q.to_seq < q.from_seq {
+        return Err(ApiError::bad_request("to_seq must be >= from_seq"));
+    }
+    let range = q.to_seq - q.from_seq + 1;
+    if range > spine::MAX_SYNC_RANGE {
+        return Err(ApiError::bad_request(format!(
+            "sync range too large ({range}), max is {}",
+            spine::MAX_SYNC_RANGE
+        )));
+    }
+
+    // Normalize issuer to hex for key lookup.
+    let issuer_hex = spine::parse_issuer_pubkey_hex(&q.issuer)
+        .map_err(|_| ApiError::bad_request("invalid issuer format"))?;
+
+    let mut envelopes: Vec<Value> = Vec::new();
+    for seq in q.from_seq..=q.to_seq {
+        let key = format!("marketplace_entry.{issuer_hex}.{seq}");
+        let Some(envelope_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+            continue;
+        };
+        let Some(bytes) = state
+            .envelope_kv
+            .get(&envelope_hash)
+            .await
+            .map_err(|_| ApiError::internal("failed to read envelope KV"))?
+        else {
+            continue;
+        };
+        let envelope: Value = serde_json::from_slice(&bytes)
+            .map_err(|_| ApiError::internal("invalid envelope JSON"))?;
+        envelopes.push(envelope);
+    }
+
+    Ok(Json(json!({
+        "schema": "clawdstrike.marketplace.sync_response.v1",
+        "curator_issuer": q.issuer,
+        "from_seq": q.from_seq,
+        "to_seq": q.to_seq,
+        "envelopes": envelopes,
+    })))
+}
+
+async fn v1_marketplace_attestation_by_bundle_hash(
+    State(state): State<Arc<AppState>>,
+    Path(bundle_hash): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let key = format!("policy_attestation.{bundle_hash}");
+    let Some(envelope_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+        return Err(ApiError::not_found("no attestation for bundle hash"));
+    };
+    v1_envelope_by_hash(State(state), Path(envelope_hash)).await
+}
+
+async fn v1_marketplace_revocation_by_bundle_hash(
+    State(state): State<Arc<AppState>>,
+    Path(bundle_hash): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let key = format!("policy_revocation.{bundle_hash}");
+    let Some(envelope_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+        return Err(ApiError::not_found("no revocation for bundle hash"));
+    };
+    v1_envelope_by_hash(State(state), Path(envelope_hash)).await
+}
+
+async fn v1_node_attestation_by_issuer(
+    State(state): State<Arc<AppState>>,
+    Path(issuer_hex): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let normalized = normalize_hash_param("issuer_hex", &issuer_hex)?;
+    let key = format!("node_attestation.{normalized}");
+    let Some(envelope_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+        return Err(ApiError::not_found("no node attestation for issuer"));
+    };
+    v1_envelope_by_hash(State(state), Path(envelope_hash)).await
+}
+
 async fn v1_envelope_by_hash(
     State(state): State<Arc<AppState>>,
     Path(envelope_hash): Path<String>,
@@ -518,6 +611,19 @@ async fn main() -> Result<()> {
             "/v1/receipt-verifications/by-target/{target_envelope_hash}",
             get(v1_receipt_verifications_by_target),
         )
+        .route(
+            "/v1/node-attestations/by-issuer/{issuer_hex}",
+            get(v1_node_attestation_by_issuer),
+        )
+        .route(
+            "/v1/marketplace/attestation/{bundle_hash}",
+            get(v1_marketplace_attestation_by_bundle_hash),
+        )
+        .route(
+            "/v1/marketplace/revocation/{bundle_hash}",
+            get(v1_marketplace_revocation_by_bundle_hash),
+        )
+        .route("/v1/marketplace/sync", get(v1_marketplace_sync))
         .route("/v1/proofs/inclusion", get(v1_inclusion_proof))
         .with_state(state);
 

@@ -618,6 +618,146 @@ async fn maybe_index_fact(
                 warn!(key = %format!("receipt_verification.{target}.{verifier_pk}"), "failed to index fact: {e}");
             }
         }
+        spine::NODE_ATTESTATION_SCHEMA => {
+            // Index by issuer pubkey hex for node attestation lookup.
+            let Some(node_id) = fact.get("node_id").and_then(|v| v.as_str()) else {
+                return Ok(());
+            };
+            let issuer_pk = match spine::parse_issuer_pubkey_hex(node_id) {
+                Ok(p) => p,
+                Err(_) => return Ok(()),
+            };
+            if !is_safe_index_key_token(&issuer_pk, 128) {
+                return Ok(());
+            }
+
+            if let Err(e) = fact_index_kv
+                .put(
+                    &format!("node_attestation.{issuer_pk}"),
+                    envelope_hash.as_bytes().to_vec().into(),
+                )
+                .await
+            {
+                warn!(key = %format!("node_attestation.{issuer_pk}"), "failed to index fact: {e}");
+            }
+        }
+        spine::POLICY_ATTESTATION_SCHEMA => {
+            // Index by bundle_hash for attestation lookup.
+            let Some(bundle_hash) = fact.get("bundle_hash").and_then(|v| v.as_str()) else {
+                return Ok(());
+            };
+            if !is_safe_index_key_token(bundle_hash, 256) {
+                return Ok(());
+            }
+
+            if let Err(e) = fact_index_kv
+                .put(
+                    &format!("policy_attestation.{bundle_hash}"),
+                    envelope_hash.as_bytes().to_vec().into(),
+                )
+                .await
+            {
+                warn!(key = %format!("policy_attestation.{bundle_hash}"), "failed to index fact: {e}");
+            }
+        }
+        spine::REVOCATION_SCHEMA => {
+            // Index by bundle_hash for revocation lookup.
+            let Some(bundle_hash) = fact.get("bundle_hash").and_then(|v| v.as_str()) else {
+                return Ok(());
+            };
+            if !is_safe_index_key_token(bundle_hash, 256) {
+                return Ok(());
+            }
+
+            if let Err(e) = fact_index_kv
+                .put(
+                    &format!("policy_revocation.{bundle_hash}"),
+                    envelope_hash.as_bytes().to_vec().into(),
+                )
+                .await
+            {
+                warn!(key = %format!("policy_revocation.{bundle_hash}"), "failed to index fact: {e}");
+            }
+        }
+        spine::FEED_ENTRY_FACT_SCHEMA => {
+            // Index by issuer_hex.seq for marketplace sync endpoint.
+            let issuer = envelope
+                .get("issuer")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let issuer_pk = match spine::parse_issuer_pubkey_hex(issuer) {
+                Ok(p) => p,
+                Err(_) => return Ok(()),
+            };
+            let Some(feed_seq) = fact.get("feed_seq").and_then(|v| v.as_u64()) else {
+                return Ok(());
+            };
+            if !is_safe_index_key_token(&issuer_pk, 128) {
+                return Ok(());
+            }
+
+            if let Err(e) = fact_index_kv
+                .put(
+                    &format!("marketplace_entry.{issuer_pk}.{feed_seq}"),
+                    envelope_hash.as_bytes().to_vec().into(),
+                )
+                .await
+            {
+                warn!(key = %format!("marketplace_entry.{issuer_pk}.{feed_seq}"), "failed to index fact: {e}");
+            }
+        }
+        spine::HEAD_ANNOUNCEMENT_SCHEMA => {
+            // Index latest head by issuer (overwritten on each update).
+            let issuer = envelope
+                .get("issuer")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let issuer_pk = match spine::parse_issuer_pubkey_hex(issuer) {
+                Ok(p) => p,
+                Err(_) => return Ok(()),
+            };
+            if !is_safe_index_key_token(&issuer_pk, 128) {
+                return Ok(());
+            }
+
+            if let Err(e) = fact_index_kv
+                .put(
+                    &format!("marketplace_head.{issuer_pk}"),
+                    envelope_hash.as_bytes().to_vec().into(),
+                )
+                .await
+            {
+                warn!(key = %format!("marketplace_head.{issuer_pk}"), "failed to index fact: {e}");
+            }
+        }
+        spine::RUNTIME_PROOF_SCHEMA => {
+            // Index by sha256(exec_id) for runtime proof lookup.
+            let exec_id = fact
+                .get("execution")
+                .and_then(|e| e.get("exec_id"))
+                .and_then(|v| v.as_str());
+            let Some(exec_id) = exec_id else {
+                return Ok(());
+            };
+            let exec_id_hash = sha256_hex(exec_id.as_bytes());
+            // sha256_hex returns 0x-prefixed; strip prefix for safe token
+            let hash_token = exec_id_hash
+                .strip_prefix("0x")
+                .unwrap_or(&exec_id_hash);
+            if !is_safe_index_key_token(hash_token, 128) {
+                return Ok(());
+            }
+
+            if let Err(e) = fact_index_kv
+                .put(
+                    &format!("runtime_proof.{hash_token}"),
+                    envelope_hash.as_bytes().to_vec().into(),
+                )
+                .await
+            {
+                warn!(key = %format!("runtime_proof.{hash_token}"), "failed to index fact: {e}");
+            }
+        }
         _ => {}
     }
 
