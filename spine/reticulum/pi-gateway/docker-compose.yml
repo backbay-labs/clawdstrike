@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  spine-reticulum:
+    build:
+      context: ..
+      dockerfile: pi-gateway/Dockerfile
+    container_name: spine-reticulum-gateway
+    restart: unless-stopped
+    volumes:
+      - spine-data:/data
+      - spine-logs:/var/log/spine-reticulum
+      - ./config/reticulum.conf:/etc/spine-reticulum/reticulum.conf:ro
+      - ./config/adapter.yaml:/etc/spine-reticulum/adapter.yaml:ro
+      - ./config/disclosure.yaml:/etc/spine-reticulum/disclosure.yaml:ro
+    devices:
+      # RNode LoRa USB radio -- adjust path as needed
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    ports:
+      # Reticulum TCP interface for LAN nodes
+      - "4242:4242"
+    environment:
+      - SPINE_RETICULUM_CONFIG=/etc/spine-reticulum/adapter.yaml
+    healthcheck:
+      test: ["CMD", "spine-reticulum", "status"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  spine-data:
+  spine-logs:

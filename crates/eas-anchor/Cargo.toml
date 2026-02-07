@@ -1,0 +1,37 @@
+[package]
+name = "eas-anchor"
+description = "EAS on-chain anchoring service for ClawdStrike — batches Spine checkpoint hashes into Ethereum Attestation Service attestations on Base L2"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["eas", "ethereum", "attestation", "base-l2", "clawdstrike"]
+categories = ["cryptography", "network-programming"]
+readme = "../../README.md"
+
+[[bin]]
+name = "eas-anchor"
+path = "src/main.rs"
+
+[dependencies]
+hush-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { workspace = true, features = ["env"] }
+thiserror.workspace = true
+anyhow.workspace = true
+toml.workspace = true
+async-nats = "0.39"
+alloy = { version = "1", features = ["provider-http", "signers", "signer-local", "contract", "sol-types"] }
+futures.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

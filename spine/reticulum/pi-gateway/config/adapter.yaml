@@ -1,0 +1,21 @@
+reticulum:
+  config_dir: /etc/spine-reticulum
+  identity_path: /data/reticulum/identity
+
+adapter:
+  node_name: pi-gateway-alpha
+  db_path: /data/spine.db
+  audit_log_path: /var/log/spine-reticulum/audit.jsonl
+  lxmf_storage_dir: /data/lxmf/
+  default_link_bps: 1200
+  revocation_rate_limit_per_hour: 10
+  drop_thresholds:
+    heartbeat: 100
+    node_attestation: 50
+    run: 20
+
+gateway:
+  nats_url: nats://nats.backbay.local:4222
+  disclosure_policy_path: /etc/spine-reticulum/disclosure.yaml
+
+peers: []

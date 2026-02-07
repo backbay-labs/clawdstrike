@@ -13,7 +13,9 @@ members = [
     "crates/spine-cli",
     "crates/tetragon-bridge",
     "crates/hubble-bridge",
+    "crates/eas-anchor",
     "crates/sdr-integration-tests",
+    "crates/cloud-api",
     "packages/hush-py/hush-native",
 ]
 exclude = [
@@ -93,6 +95,8 @@ dashmap = "6.1"
 
 # Database
 rusqlite = { version = "0.38", features = ["bundled"] }
+sqlx-core = { version = "0.8", default-features = false, features = ["json", "chrono", "uuid", "migrate", "_rt-tokio"] }
+sqlx-postgres = { version = "0.8", default-features = false, features = ["chrono", "uuid", "json"] }
 
 # Async utilities
 tokio-stream = { version = "0.1", features = ["sync"] }

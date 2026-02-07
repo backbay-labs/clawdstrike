@@ -1,0 +1,76 @@
+[package]
+name = "clawdstrike-cloud-api"
+description = "ClawdStrike Cloud managed SaaS API service"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["security", "cloud", "saas", "clawdstrike"]
+categories = ["web-programming::http-server"]
+readme = "../../README.md"
+
+[[bin]]
+name = "clawdstrike-cloud-api"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+hush-core.workspace = true
+
+# Web framework
+axum.workspace = true
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower.workspace = true
+tower-http = { workspace = true, features = ["cors", "trace", "limit"] }
+
+# Database (use sqlx-core aliased as "sqlx" + sqlx-postgres to avoid the umbrella
+# crate's sqlite link conflict with rusqlite in the workspace)
+sqlx = { package = "sqlx-core", version = "0.8", default-features = false, features = ["json", "chrono", "uuid", "_rt-tokio"] }
+sqlx-postgres = { version = "0.8", default-features = false, features = ["chrono", "uuid", "json"] }
+
+# Messaging
+async-nats = "0.39"
+
+# Auth
+jsonwebtoken.workspace = true
+
+# HTTP client
+reqwest.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+# Billing (manual Stripe webhook HMAC-SHA256 verification; avoids async-stripe feature conflicts)
+hmac = "0.12"
+
+# Async runtime
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Time
+chrono.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Crypto
+sha2.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

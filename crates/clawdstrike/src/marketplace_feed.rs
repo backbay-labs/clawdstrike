@@ -121,6 +121,30 @@ pub struct MarketplaceProvenance {
     /// Pre-computed inclusion proof for offline verification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inclusion_proof: Option<InclusionProofBundle>,
+    /// Chain ID for on-chain verification (e.g., 8453 for Base L2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_id: Option<u64>,
+    /// EAS schema UID for on-chain verification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_uid: Option<String>,
+    /// EAS-specific data for on-chain anchored attestations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eas_data: Option<EasData>,
+}
+
+/// EAS-specific data for on-chain anchored attestations.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EasData {
+    /// Off-chain attestation content (base64 or hex encoded).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub off_chain_attestation: Option<String>,
+    /// Transaction hash of the on-chain timestamp (0x-prefixed hex).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_tx_hash: Option<String>,
+    /// Block number containing the timestamp transaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_number: Option<u64>,
 }
 
 impl MarketplaceProvenance {
@@ -132,6 +156,9 @@ impl MarketplaceProvenance {
     pub fn effective_type(&self) -> Option<&str> {
         if let Some(t) = &self.r#type {
             return Some(t.as_str());
+        }
+        if self.eas_data.is_some() || (self.chain_id.is_some() && self.schema_uid.is_some()) {
+            return Some("eas");
         }
         if self.spine_envelope_hash.is_some() {
             return Some("spine");
