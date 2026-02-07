@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile for tetragon-bridge
+#
+# Build:
+#   docker build -f docker/Dockerfile.tetragon-bridge -t tetragon-bridge .
+
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
+FROM rust:1.93-bookworm AS builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock ./
+
+# Rewrite workspace members to only include crates needed for tetragon-bridge.
+RUN sed -i '/^\[workspace\]$/,/^\[/ { \
+      /^members/,/^\]/ c\members = [\n    "crates/hush-core",\n    "crates/spine",\n    "crates/tetragon-bridge",\n] \
+    }' Cargo.toml && \
+    sed -i '/^exclude/,/^\]/d' Cargo.toml
+
+COPY crates/hush-core crates/hush-core
+COPY crates/spine crates/spine
+COPY crates/tetragon-bridge crates/tetragon-bridge
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin tetragon-bridge && \
+    cp /build/target/release/tetragon-bridge /usr/local/bin/
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 bridge && \
+    useradd -u 1000 -g bridge -d /var/lib/bridge -m bridge
+
+COPY --from=builder /usr/local/bin/tetragon-bridge /usr/local/bin/
+
+USER bridge
+WORKDIR /var/lib/bridge
+
+ENTRYPOINT ["/usr/bin/tini", "--", "tetragon-bridge"]

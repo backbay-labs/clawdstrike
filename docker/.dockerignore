@@ -1,0 +1,41 @@
+# Build artifacts
+target/
+
+# Desktop and agent apps (Tauri — heavy native deps, not needed for services)
+apps/desktop/
+apps/agent/
+
+# Frontend / Node packages
+packages/
+node_modules/
+
+# Python
+packages/hush-py/
+__pycache__/
+*.pyc
+
+# Documentation
+docs/
+
+# Git
+.git/
+.gitignore
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# CI / misc
+.github/
+fuzz/
+examples/
+fixtures/
+tools/
+vendor/
+HomebrewFormula/
+*.md
+deny.toml
+clippy.toml
+mise.toml

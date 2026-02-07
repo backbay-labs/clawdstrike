@@ -4933,9 +4933,11 @@ name = "sdr-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
  "chrono",
  "clawdstrike",
  "dirs 5.0.1",
+ "futures",
  "hush-core",
  "libp2p",
  "reqwest",

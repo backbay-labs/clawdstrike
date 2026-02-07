@@ -323,6 +323,20 @@ function mapTetragonToMitre(category: SDREventCategory, binary: string): SDRMitr
 }
 
 // ---------------------------------------------------------------------------
+// Public utility: query spine connection status from the Rust backend
+// ---------------------------------------------------------------------------
+
+export async function getSpineStatus(): Promise<{ connected: boolean; message: string } | null> {
+  if (!isTauri()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<{ connected: boolean; message: string }>("spine_status");
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Demo event generator
 // ---------------------------------------------------------------------------
 

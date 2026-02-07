@@ -10,8 +10,10 @@ members = [
     "crates/hush-wasm",
     "crates/hush-multi-agent",
     "crates/spine",
+    "crates/spine-cli",
     "crates/tetragon-bridge",
     "crates/hubble-bridge",
+    "crates/sdr-integration-tests",
     "packages/hush-py/hush-native",
 ]
 exclude = [
