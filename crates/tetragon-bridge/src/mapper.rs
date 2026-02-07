@@ -169,7 +169,10 @@ fn classify_exec_severity(exec: &proto::ProcessExec) -> Severity {
         }
 
         // Exec of a sensitive binary.
-        if SENSITIVE_PATHS.iter().any(|s| process.binary.starts_with(s)) {
+        if SENSITIVE_PATHS
+            .iter()
+            .any(|s| process.binary.starts_with(s))
+        {
             return Severity::Critical;
         }
     }

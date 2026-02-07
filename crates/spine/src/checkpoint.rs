@@ -96,10 +96,7 @@ mod tests {
             .get("witness_node_id")
             .and_then(|v| v.as_str())
             .unwrap();
-        let sig = witness
-            .get("signature")
-            .and_then(|v| v.as_str())
-            .unwrap();
+        let sig = witness.get("signature").and_then(|v| v.as_str()).unwrap();
 
         assert!(verify_witness_signature(&stmt, witness_id, sig).unwrap());
     }
@@ -112,10 +109,7 @@ mod tests {
         let stmt = checkpoint_statement("log-1", 1, None, root, 10, now_rfc3339());
 
         let witness = sign_checkpoint_statement(&kp, &stmt).unwrap();
-        let sig = witness
-            .get("signature")
-            .and_then(|v| v.as_str())
-            .unwrap();
+        let sig = witness.get("signature").and_then(|v| v.as_str()).unwrap();
 
         // Use the wrong node ID (different key)
         let wrong_id = issuer_from_keypair(&other_kp);
@@ -133,20 +127,25 @@ mod tests {
             .get("witness_node_id")
             .and_then(|v| v.as_str())
             .unwrap();
-        let sig = witness
-            .get("signature")
-            .and_then(|v| v.as_str())
-            .unwrap();
+        let sig = witness.get("signature").and_then(|v| v.as_str()).unwrap();
 
         // Tamper with the statement
-        let tampered = checkpoint_statement("log-1", 1, None, "0xbad".to_string(), 10, now_rfc3339());
+        let tampered =
+            checkpoint_statement("log-1", 1, None, "0xbad".to_string(), 10, now_rfc3339());
         assert!(!verify_witness_signature(&tampered, witness_id, sig).unwrap());
     }
 
     #[test]
     fn checkpoint_hash_is_deterministic() {
         let root = hush_core::sha256(b"root").to_hex_prefixed();
-        let stmt = checkpoint_statement("log-1", 1, None, root, 10, "2026-01-01T00:00:00Z".to_string());
+        let stmt = checkpoint_statement(
+            "log-1",
+            1,
+            None,
+            root,
+            10,
+            "2026-01-01T00:00:00Z".to_string(),
+        );
         let h1 = checkpoint_hash(&stmt).unwrap();
         let h2 = checkpoint_hash(&stmt).unwrap();
         assert_eq!(h1, h2);

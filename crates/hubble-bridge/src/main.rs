@@ -10,7 +10,7 @@
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use hubble_bridge::{Bridge, BridgeConfig, hubble::FlowVerdict};
+use hubble_bridge::{hubble::FlowVerdict, Bridge, BridgeConfig};
 
 /// Hubble-to-NATS bridge: publishes signed Spine envelopes from Cilium
 /// network flow events.

@@ -5,10 +5,18 @@ mod commands;
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "spine-cli", about = "Spine protocol CLI for operations and debugging")]
+#[command(
+    name = "spine-cli",
+    about = "Spine protocol CLI for operations and debugging"
+)]
 struct Cli {
     /// NATS server URL
-    #[arg(long, env = "NATS_URL", default_value = "nats://localhost:4222", global = true)]
+    #[arg(
+        long,
+        env = "NATS_URL",
+        default_value = "nats://localhost:4222",
+        global = true
+    )]
     nats_url: String,
 
     /// Output format
@@ -122,9 +130,7 @@ async fn main() -> anyhow::Result<()> {
     let is_json = matches!(cli.format, OutputFormat::Json);
 
     match cli.command {
-        Commands::Status => {
-            commands::status::run(&cli.nats_url, is_json, cli.verbose).await
-        }
+        Commands::Status => commands::status::run(&cli.nats_url, is_json, cli.verbose).await,
         Commands::Envelopes(cmd) => match cmd {
             EnvelopeCommands::List { limit } => {
                 commands::envelopes::list(&cli.nats_url, limit, is_json, cli.verbose).await
@@ -132,9 +138,7 @@ async fn main() -> anyhow::Result<()> {
             EnvelopeCommands::Get { hash } => {
                 commands::envelopes::get(&cli.nats_url, &hash, is_json).await
             }
-            EnvelopeCommands::Sign => {
-                commands::envelopes::sign(&cli.nats_url, is_json).await
-            }
+            EnvelopeCommands::Sign => commands::envelopes::sign(&cli.nats_url, is_json).await,
         },
         Commands::Checkpoints(cmd) => match cmd {
             CheckpointCommands::List { limit } => {
@@ -150,9 +154,7 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Commands::Trust(cmd) => match cmd {
-            TrustCommands::Show { path } => {
-                commands::trust::show(&path, is_json)
-            }
+            TrustCommands::Show { path } => commands::trust::show(&path, is_json),
             TrustCommands::Verify { hash, path } => {
                 commands::trust::verify(&cli.nats_url, &hash, &path, is_json).await
             }

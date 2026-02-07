@@ -6,9 +6,7 @@
 
 use serde_json::{json, Value};
 
-use crate::hubble::proto::{
-    self, Flow, GetFlowsResponse, Verdict,
-};
+use crate::hubble::proto::{self, Flow, GetFlowsResponse, Verdict};
 
 /// Fact schema for Hubble flow events published on the Spine.
 pub const FACT_SCHEMA: &str = "clawdstrike.sdr.fact.hubble_flow.v1";
@@ -42,9 +40,9 @@ const SENSITIVE_NAMESPACES: &[&str] = &["kube-system", "istio-system", "cilium"]
 pub fn map_flow(resp: &GetFlowsResponse) -> Option<Value> {
     let node_name = &resp.node_name;
 
-    resp.response_types.as_ref().map(
-        |proto::get_flows_response::ResponseTypes::Flow(flow)| flow_to_fact(flow, node_name),
-    )
+    resp.response_types
+        .as_ref()
+        .map(|proto::get_flows_response::ResponseTypes::Flow(flow)| flow_to_fact(flow, node_name))
 }
 
 /// Convert a single Hubble flow into a Spine fact.

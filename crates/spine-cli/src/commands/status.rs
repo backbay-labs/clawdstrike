@@ -41,14 +41,8 @@ pub async fn run(nats_url: &str, is_json: bool, verbose: bool) -> Result<()> {
                             println!("    Subjects: {:?}", info.config.subjects);
                             println!("    Messages: {}", info.state.messages);
                             println!("    Bytes: {}", info.state.bytes);
-                            println!(
-                                "    First seq: {}",
-                                info.state.first_sequence
-                            );
-                            println!(
-                                "    Last seq: {}",
-                                info.state.last_sequence
-                            );
+                            println!("    First seq: {}", info.state.first_sequence);
+                            println!("    Last seq: {}", info.state.last_sequence);
                             println!();
                         }
                         Err(e) => {
@@ -57,12 +51,7 @@ pub async fn run(nats_url: &str, is_json: bool, verbose: bool) -> Result<()> {
                     }
                 }
                 Err(_) => {
-                    println!(
-                        "  {} {} {}",
-                        "Stream:".bold(),
-                        name,
-                        "(not found)".yellow()
-                    );
+                    println!("  {} {} {}", "Stream:".bold(), name, "(not found)".yellow());
                 }
             }
         }

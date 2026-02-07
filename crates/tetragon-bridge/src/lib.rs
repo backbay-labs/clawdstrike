@@ -109,13 +109,8 @@ impl Bridge {
 
         // Ensure the JetStream stream exists.
         let subjects = vec![format!("{NATS_SUBJECT_PREFIX}.>")];
-        spine::nats_transport::ensure_stream(
-            &js,
-            STREAM_NAME,
-            subjects,
-            config.stream_replicas,
-        )
-        .await?;
+        spine::nats_transport::ensure_stream(&js, STREAM_NAME, subjects, config.stream_replicas)
+            .await?;
 
         Ok(Self {
             keypair,
@@ -174,10 +169,7 @@ impl Bridge {
     }
 
     /// Handle a single Tetragon event: classify, filter, map, sign, publish.
-    async fn handle_event(
-        &self,
-        resp: &tetragon::proto::GetEventsResponse,
-    ) -> Result<()> {
+    async fn handle_event(&self, resp: &tetragon::proto::GetEventsResponse) -> Result<()> {
         let kind = classify_event(resp);
         if kind == TetragonEventKind::Unknown {
             debug!("skipping unknown event type");
@@ -186,9 +178,7 @@ impl Bridge {
 
         // Namespace filter: if the allowlist is non-empty, only forward events
         // from processes whose pod is in an allowed namespace.
-        if !self.config.namespace_allowlist.is_empty()
-            && !self.event_matches_namespace(resp)
-        {
+        if !self.config.namespace_allowlist.is_empty() && !self.event_matches_namespace(resp) {
             debug!("skipping event outside namespace allowlist");
             return Ok(());
         }
@@ -205,9 +195,10 @@ impl Bridge {
         // Build and sign the Spine envelope.
         let seq = self.seq.fetch_add(1, Ordering::SeqCst);
         let prev_hash = {
-            let guard = self.prev_hash.lock().map_err(|e| {
-                Error::Config(format!("prev_hash lock poisoned: {e}"))
-            })?;
+            let guard = self
+                .prev_hash
+                .lock()
+                .map_err(|e| Error::Config(format!("prev_hash lock poisoned: {e}")))?;
             guard.clone()
         };
 
@@ -221,9 +212,10 @@ impl Bridge {
 
         // Update prev_hash for chain integrity.
         if let Some(hash) = envelope.get("envelope_hash").and_then(|v| v.as_str()) {
-            let mut guard = self.prev_hash.lock().map_err(|e| {
-                Error::Config(format!("prev_hash lock poisoned: {e}"))
-            })?;
+            let mut guard = self
+                .prev_hash
+                .lock()
+                .map_err(|e| Error::Config(format!("prev_hash lock poisoned: {e}")))?;
             *guard = Some(hash.to_string());
         }
 
@@ -247,17 +239,10 @@ impl Bridge {
     }
 
     /// Check whether the event's process pod is in the namespace allowlist.
-    fn event_matches_namespace(
-        &self,
-        resp: &tetragon::proto::GetEventsResponse,
-    ) -> bool {
+    fn event_matches_namespace(&self, resp: &tetragon::proto::GetEventsResponse) -> bool {
         let process = match &resp.event {
-            Some(tetragon::proto::get_events_response::Event::ProcessExec(e)) => {
-                e.process.as_ref()
-            }
-            Some(tetragon::proto::get_events_response::Event::ProcessExit(e)) => {
-                e.process.as_ref()
-            }
+            Some(tetragon::proto::get_events_response::Event::ProcessExec(e)) => e.process.as_ref(),
+            Some(tetragon::proto::get_events_response::Event::ProcessExit(e)) => e.process.as_ref(),
             Some(tetragon::proto::get_events_response::Event::ProcessKprobe(e)) => {
                 e.process.as_ref()
             }

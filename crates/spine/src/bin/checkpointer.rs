@@ -150,9 +150,7 @@ fn is_safe_index_key_token(s: &str, max_len: usize) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
-async fn load_latest_checkpoint(
-    kv: &async_nats::jetstream::kv::Store,
-) -> Result<Option<Value>> {
+async fn load_latest_checkpoint(kv: &async_nats::jetstream::kv::Store) -> Result<Option<Value>> {
     match kv.get("latest").await? {
         Some(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
         None => Ok(None),
@@ -195,9 +193,7 @@ fn build_checkpoint_statement_from_fact(fact: &Value) -> Result<Value> {
     ))
 }
 
-async fn load_leaves_from_index(
-    kv: &async_nats::jetstream::kv::Store,
-) -> Result<Vec<Vec<u8>>> {
+async fn load_leaves_from_index(kv: &async_nats::jetstream::kv::Store) -> Result<Vec<Vec<u8>>> {
     let mut pairs: Vec<(u64, Vec<u8>)> = Vec::new();
     let keys = kv.keys().await?.try_collect::<Vec<String>>().await?;
 
@@ -230,10 +226,7 @@ async fn ensure_log_append(
     }
 
     let ack_future = js
-        .publish(
-            log_subject.to_string(),
-            envelope_hash_bytes.to_vec().into(),
-        )
+        .publish(log_subject.to_string(), envelope_hash_bytes.to_vec().into())
         .await
         .context("failed to append leaf to log stream")?;
     let ack = ack_future.await.context("failed to ack log append")?;
@@ -290,10 +283,7 @@ async fn collect_witness_signatures(
             Err(_) => continue,
         };
 
-        let witness_node_id = match witness_sig
-            .get("witness_node_id")
-            .and_then(|v| v.as_str())
-        {
+        let witness_node_id = match witness_sig.get("witness_node_id").and_then(|v| v.as_str()) {
             Some(v) => v.to_string(),
             None => continue,
         };
@@ -312,8 +302,7 @@ async fn collect_witness_signatures(
             continue;
         }
 
-        let ok =
-            checkpoint::verify_witness_signature(statement, &witness_node_id, &signature)?;
+        let ok = checkpoint::verify_witness_signature(statement, &witness_node_id, &signature)?;
         if !ok {
             anyhow::bail!("witness signature invalid: {witness_node_id}");
         }
@@ -323,11 +312,7 @@ async fn collect_witness_signatures(
     }
 
     if out.len() < quorum {
-        anyhow::bail!(
-            "witness quorum not met (got {} need {})",
-            out.len(),
-            quorum
-        );
+        anyhow::bail!("witness quorum not met (got {} need {})", out.len(), quorum);
     }
 
     Ok(out)
@@ -509,15 +494,13 @@ async fn maybe_index_fact(
                 .await;
         }
         "clawdstrike.spine.fact.receipt_verification.v1" => {
-            let Some(target) = fact.get("target_envelope_hash").and_then(|v| v.as_str())
-            else {
+            let Some(target) = fact.get("target_envelope_hash").and_then(|v| v.as_str()) else {
                 return Ok(());
             };
             if !is_safe_index_key_token(target, 128) {
                 return Ok(());
             }
-            let Some(verifier_node_id) =
-                fact.get("verifier_node_id").and_then(|v| v.as_str())
+            let Some(verifier_node_id) = fact.get("verifier_node_id").and_then(|v| v.as_str())
             else {
                 return Ok(());
             };
@@ -581,12 +564,9 @@ async fn main() -> Result<()> {
     .await?;
 
     let index_kv = nats::ensure_kv(&js, &args.index_bucket, args.replicas).await?;
-    let checkpoint_kv =
-        nats::ensure_kv(&js, &args.checkpoint_bucket, args.replicas).await?;
-    let envelope_kv =
-        nats::ensure_kv(&js, &args.envelope_bucket, args.replicas).await?;
-    let fact_index_kv =
-        nats::ensure_kv(&js, &args.fact_index_bucket, args.replicas).await?;
+    let checkpoint_kv = nats::ensure_kv(&js, &args.checkpoint_bucket, args.replicas).await?;
+    let envelope_kv = nats::ensure_kv(&js, &args.envelope_bucket, args.replicas).await?;
+    let fact_index_kv = nats::ensure_kv(&js, &args.fact_index_bucket, args.replicas).await?;
 
     // Initialize checkpoint state from KV (if present).
     let mut last_checkpoint_tree_size: u64 = 0;
@@ -606,8 +586,7 @@ async fn main() -> Result<()> {
                 last_checkpoint_tree_size = ts;
             }
             let statement = build_checkpoint_statement_from_fact(fact)?;
-            last_checkpoint_hash =
-                Some(checkpoint::checkpoint_hash(&statement)?.to_hex_prefixed());
+            last_checkpoint_hash = Some(checkpoint::checkpoint_hash(&statement)?.to_hex_prefixed());
         }
         info!(
             "loaded latest checkpoint seq={} tree_size={}",

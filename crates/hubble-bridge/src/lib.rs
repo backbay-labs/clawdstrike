@@ -106,13 +106,8 @@ impl Bridge {
 
         // Ensure the JetStream stream exists.
         let subjects = vec![format!("{NATS_SUBJECT}")];
-        spine::nats_transport::ensure_stream(
-            &js,
-            STREAM_NAME,
-            subjects,
-            config.stream_replicas,
-        )
-        .await?;
+        spine::nats_transport::ensure_stream(&js, STREAM_NAME, subjects, config.stream_replicas)
+            .await?;
 
         Ok(Self {
             keypair,
@@ -157,10 +152,7 @@ impl Bridge {
     }
 
     /// Handle a single Hubble flow: classify, filter, map, sign, publish.
-    async fn handle_flow(
-        &self,
-        resp: &hubble::proto::GetFlowsResponse,
-    ) -> Result<()> {
+    async fn handle_flow(&self, resp: &hubble::proto::GetFlowsResponse) -> Result<()> {
         // Extract flow to check verdict and namespace.
         let flow = match &resp.response_types {
             Some(hubble::proto::get_flows_response::ResponseTypes::Flow(f)) => f,
@@ -172,18 +164,18 @@ impl Bridge {
 
         // Verdict filter: if configured, only forward matching verdicts.
         let verdict = classify_verdict(flow);
-        if !self.config.verdict_filter.is_empty()
-            && !self.config.verdict_filter.contains(&verdict)
+        if !self.config.verdict_filter.is_empty() && !self.config.verdict_filter.contains(&verdict)
         {
-            debug!(verdict = verdict.subject_suffix(), "skipping filtered verdict");
+            debug!(
+                verdict = verdict.subject_suffix(),
+                "skipping filtered verdict"
+            );
             return Ok(());
         }
 
         // Namespace filter: if the allowlist is non-empty, only forward flows
         // involving an allowed namespace.
-        if !self.config.namespace_allowlist.is_empty()
-            && !self.flow_matches_namespace(flow)
-        {
+        if !self.config.namespace_allowlist.is_empty() && !self.flow_matches_namespace(flow) {
             debug!("skipping flow outside namespace allowlist");
             return Ok(());
         }
@@ -200,9 +192,10 @@ impl Bridge {
         // Build and sign the Spine envelope.
         let seq = self.seq.fetch_add(1, Ordering::SeqCst);
         let prev_hash = {
-            let guard = self.prev_hash.lock().map_err(|e| {
-                Error::Config(format!("prev_hash lock poisoned: {e}"))
-            })?;
+            let guard = self
+                .prev_hash
+                .lock()
+                .map_err(|e| Error::Config(format!("prev_hash lock poisoned: {e}")))?;
             guard.clone()
         };
 
@@ -216,9 +209,10 @@ impl Bridge {
 
         // Update prev_hash for chain integrity.
         if let Some(hash) = envelope.get("envelope_hash").and_then(|v| v.as_str()) {
-            let mut guard = self.prev_hash.lock().map_err(|e| {
-                Error::Config(format!("prev_hash lock poisoned: {e}"))
-            })?;
+            let mut guard = self
+                .prev_hash
+                .lock()
+                .map_err(|e| Error::Config(format!("prev_hash lock poisoned: {e}")))?;
             *guard = Some(hash.to_string());
         }
 

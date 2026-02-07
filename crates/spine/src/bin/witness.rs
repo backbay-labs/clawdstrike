@@ -62,9 +62,7 @@ async fn main() -> Result<()> {
     };
     if let Some(tb) = trust_bundle.as_ref() {
         if !tb.witness_allowed(&witness_node_id) {
-            anyhow::bail!(
-                "witness_node_id not allowed by trust bundle: {witness_node_id}"
-            );
+            anyhow::bail!("witness_node_id not allowed by trust bundle: {witness_node_id}");
         }
     }
 

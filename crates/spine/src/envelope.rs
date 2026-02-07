@@ -145,8 +145,7 @@ mod tests {
     fn envelope_roundtrip() {
         let kp = Keypair::generate();
         let fact = json!({"type": "policy.update", "data": {"version": 2}});
-        let envelope =
-            build_signed_envelope(&kp, 1, None, fact.clone(), now_rfc3339()).unwrap();
+        let envelope = build_signed_envelope(&kp, 1, None, fact.clone(), now_rfc3339()).unwrap();
 
         assert_eq!(
             envelope.get("schema").and_then(|v| v.as_str()).unwrap(),
@@ -160,14 +159,8 @@ mod tests {
     #[test]
     fn envelope_chain() {
         let kp = Keypair::generate();
-        let e1 = build_signed_envelope(
-            &kp,
-            1,
-            None,
-            json!({"type": "init"}),
-            now_rfc3339(),
-        )
-        .unwrap();
+        let e1 =
+            build_signed_envelope(&kp, 1, None, json!({"type": "init"}), now_rfc3339()).unwrap();
         let h1 = e1
             .get("envelope_hash")
             .and_then(|v| v.as_str())

@@ -72,10 +72,7 @@ pub async fn list(nats_url: &str, limit: u64, is_json: bool, verbose: bool) -> R
             .get("merkle_root")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let tree_size = cp
-            .get("tree_size")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let tree_size = cp.get("tree_size").and_then(|v| v.as_u64()).unwrap_or(0);
         let issued_at = cp
             .get("issued_at")
             .and_then(|v| v.as_str())

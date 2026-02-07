@@ -10,7 +10,7 @@
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use tetragon_bridge::{Bridge, BridgeConfig, tetragon::TetragonEventKind};
+use tetragon_bridge::{tetragon::TetragonEventKind, Bridge, BridgeConfig};
 
 /// Tetragon-to-NATS bridge: publishes signed Spine envelopes from Tetragon
 /// runtime events.
@@ -18,7 +18,11 @@ use tetragon_bridge::{Bridge, BridgeConfig, tetragon::TetragonEventKind};
 #[command(name = "tetragon-bridge", version, about)]
 struct Cli {
     /// Tetragon gRPC endpoint.
-    #[arg(long, default_value = "http://localhost:54321", env = "TETRAGON_ENDPOINT")]
+    #[arg(
+        long,
+        default_value = "http://localhost:54321",
+        env = "TETRAGON_ENDPOINT"
+    )]
     tetragon_endpoint: String,
 
     /// NATS server URL.
@@ -37,7 +41,11 @@ struct Cli {
 
     /// Event types to subscribe to (comma-separated).
     /// Valid: process_exec, process_exit, process_kprobe
-    #[arg(long, value_delimiter = ',', default_value = "process_exec,process_exit,process_kprobe")]
+    #[arg(
+        long,
+        value_delimiter = ',',
+        default_value = "process_exec,process_exit,process_kprobe"
+    )]
     event_types: Vec<String>,
 
     /// Number of JetStream replicas for the envelope stream.

@@ -98,13 +98,11 @@ impl IntoResponse for ApiError {
 }
 
 fn normalize_hash_param(param: &str, raw: &str) -> Result<String, ApiError> {
-    hash::normalize_hash_hex(raw)
-        .ok_or_else(|| ApiError::bad_request(format!("invalid {param}")))
+    hash::normalize_hash_hex(raw).ok_or_else(|| ApiError::bad_request(format!("invalid {param}")))
 }
 
 fn policy_index_key_param(policy_hash: &str) -> Result<String, ApiError> {
-    hash::policy_index_key(policy_hash)
-        .ok_or_else(|| ApiError::bad_request("invalid policy_hash"))
+    hash::policy_index_key(policy_hash).ok_or_else(|| ApiError::bad_request("invalid policy_hash"))
 }
 
 fn receipt_verification_prefix_param(
@@ -121,20 +119,15 @@ async fn get_checkpoint_value(state: &AppState, key: &str) -> Result<Value, ApiE
         .get(key)
         .await
         .map_err(|_| ApiError::not_found(format!("checkpoint not found: {key}")))?;
-    let bytes = bytes
-        .ok_or_else(|| ApiError::not_found(format!("checkpoint not found: {key}")))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|_| ApiError::internal("invalid checkpoint JSON"))
+    let bytes = bytes.ok_or_else(|| ApiError::not_found(format!("checkpoint not found: {key}")))?;
+    serde_json::from_slice(&bytes).map_err(|_| ApiError::internal("invalid checkpoint JSON"))
 }
 
 fn extract_checkpoint_fact(envelope: &Value) -> Result<&Value, ApiError> {
     let fact = envelope
         .get("fact")
         .ok_or_else(|| ApiError::internal("checkpoint envelope missing fact"))?;
-    let schema = fact
-        .get("schema")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let schema = fact.get("schema").and_then(|v| v.as_str()).unwrap_or("");
     if schema != "clawdstrike.spine.fact.log_checkpoint.v1" {
         return Err(ApiError::bad_request(format!(
             "unexpected fact schema: {schema}"
@@ -191,9 +184,7 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-async fn v1_checkpoint_latest(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, ApiError> {
+async fn v1_checkpoint_latest(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
     let value = get_checkpoint_value(&state, "latest").await?;
     Ok(Json(value))
 }
@@ -246,8 +237,7 @@ async fn v1_inclusion_proof(
         .get(&envelope_hash_hex)
         .await
         .map_err(|_| ApiError::internal("failed to read log index"))?;
-    let entry =
-        entry.ok_or_else(|| ApiError::not_found("envelope_hash not in log index"))?;
+    let entry = entry.ok_or_else(|| ApiError::not_found("envelope_hash not in log index"))?;
 
     let seq_str = std::str::from_utf8(&entry).unwrap_or("").trim();
     let log_seq: u64 = seq_str
@@ -302,10 +292,9 @@ async fn v1_envelope_by_hash(
         .get(&key)
         .await
         .map_err(|_| ApiError::internal("failed to read envelope KV"))?;
-    let bytes =
-        bytes.ok_or_else(|| ApiError::not_found("envelope not found"))?;
-    let envelope: Value = serde_json::from_slice(&bytes)
-        .map_err(|_| ApiError::internal("invalid envelope JSON"))?;
+    let bytes = bytes.ok_or_else(|| ApiError::not_found("envelope not found"))?;
+    let envelope: Value =
+        serde_json::from_slice(&bytes).map_err(|_| ApiError::internal("invalid envelope JSON"))?;
     Ok(Json(envelope))
 }
 
@@ -346,8 +335,7 @@ async fn v1_receipt_verifications_by_target(
     State(state): State<Arc<AppState>>,
     Path(target_envelope_hash): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let (target, prefix) =
-        receipt_verification_prefix_param(&target_envelope_hash)?;
+    let (target, prefix) = receipt_verification_prefix_param(&target_envelope_hash)?;
 
     let keys = state
         .fact_index_kv
@@ -363,8 +351,7 @@ async fn v1_receipt_verifications_by_target(
         if !key.starts_with(&prefix) {
             continue;
         }
-        let verifier_pubkey_hex =
-            key.strip_prefix(&prefix).unwrap_or("").to_string();
+        let verifier_pubkey_hex = key.strip_prefix(&prefix).unwrap_or("").to_string();
         let Some(env_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
             continue;
         };
@@ -440,10 +427,7 @@ async fn main() -> Result<()> {
         .route("/v1/checkpoints/latest", get(v1_checkpoint_latest))
         .route("/v1/checkpoints/{seq}", get(v1_checkpoint_by_seq))
         .route("/v1/envelopes/{envelope_hash}", get(v1_envelope_by_hash))
-        .route(
-            "/v1/policies/by-hash/{policy_hash}",
-            get(v1_policy_by_hash),
-        )
+        .route("/v1/policies/by-hash/{policy_hash}", get(v1_policy_by_hash))
         .route(
             "/v1/policies/by-version/{version}",
             get(v1_policy_by_version),
@@ -472,24 +456,21 @@ mod tests {
 
     #[test]
     fn normalize_hash_param_accepts_prefixed_or_unprefixed() {
-        let raw =
-            "0xAABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let raw = "0xAABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
         let normalized = normalize_hash_param("envelope_hash", raw).unwrap();
         assert_eq!(
             normalized,
             "0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
         );
 
-        let raw2 =
-            "aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let raw2 = "aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
         let normalized2 = normalize_hash_param("envelope_hash", raw2).unwrap();
         assert_eq!(normalized2, normalized);
     }
 
     #[test]
     fn policy_index_key_param_normalizes() {
-        let raw =
-            "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let raw = "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
         let key = policy_index_key_param(raw).unwrap();
         assert_eq!(
             key,
@@ -499,8 +480,7 @@ mod tests {
 
     #[test]
     fn receipt_verification_prefix_param_normalizes() {
-        let raw =
-            "0xAABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let raw = "0xAABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
         let (target, prefix) = receipt_verification_prefix_param(raw).unwrap();
         assert_eq!(
             target,

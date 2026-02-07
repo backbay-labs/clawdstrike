@@ -115,13 +115,13 @@ pub use plugins::{
 };
 pub use policy::{Policy, RuleSet};
 pub use policy_bundle::{PolicyBundle, SignedPolicyBundle, POLICY_BUNDLE_SCHEMA_VERSION};
-pub use spine_bridge::{
-    extract_spine_envelope_hash, policy_bundle_to_spine_envelope, POLICY_BUNDLE_FACT_TYPE,
-};
 pub use posture::{
     PostureBudgetCounter, PostureConfig, PostureProgram, PostureRuntimeState, PostureState,
     PostureTransition, PostureTransitionRecord, RuntimeTransitionTrigger, TransitionRequirement,
     TransitionTrigger,
+};
+pub use spine_bridge::{
+    extract_spine_envelope_hash, policy_bundle_to_spine_envelope, POLICY_BUNDLE_FACT_TYPE,
 };
 pub use watermarking::{
     EncodedWatermark, PromptWatermarker, WatermarkConfig, WatermarkEncoding, WatermarkError,

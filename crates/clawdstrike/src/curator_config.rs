@@ -64,9 +64,8 @@ impl CuratorConfigFile {
                 ))
             })?;
         }
-        let contents = toml::to_string_pretty(self).map_err(|e| {
-            Error::ConfigError(format!("Failed to serialize curator config: {e}"))
-        })?;
+        let contents = toml::to_string_pretty(self)
+            .map_err(|e| Error::ConfigError(format!("Failed to serialize curator config: {e}")))?;
         std::fs::write(path, contents).map_err(|e| {
             Error::ConfigError(format!(
                 "Failed to write curator config {}: {}",
@@ -151,9 +150,8 @@ fn parse_hex_keys<'a>(hex_iter: impl Iterator<Item = &'a str>) -> Result<Vec<Pub
     let mut keys = Vec::new();
     for hex in hex_iter {
         let hex = hex.strip_prefix("0x").unwrap_or(hex);
-        let pk = PublicKey::from_hex(hex).map_err(|e| {
-            Error::ConfigError(format!("Invalid curator public key '{hex}': {e}"))
-        })?;
+        let pk = PublicKey::from_hex(hex)
+            .map_err(|e| Error::ConfigError(format!("Invalid curator public key '{hex}': {e}")))?;
         keys.push(pk);
     }
     Ok(keys)

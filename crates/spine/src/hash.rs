@@ -75,9 +75,8 @@ mod tests {
 
     #[test]
     fn policy_key_normalizes() {
-        let k = policy_index_key(
-            "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00",
-        );
+        let k =
+            policy_index_key("AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00");
         assert_eq!(
             k.unwrap(),
             "policy.0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"

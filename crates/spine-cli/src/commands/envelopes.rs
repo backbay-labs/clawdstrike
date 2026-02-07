@@ -82,7 +82,10 @@ pub async fn list(nats_url: &str, limit: u64, is_json: bool, verbose: bool) -> R
             .unwrap_or("unknown");
 
         println!("  {} {}", "Hash:".bold(), hash);
-        println!("    Seq: {}  Issued: {}  Type: {}", seq, issued_at, fact_type);
+        println!(
+            "    Seq: {}  Issued: {}  Type: {}",
+            seq, issued_at, fact_type
+        );
 
         if verbose {
             // Truncate issuer for readability
@@ -132,18 +135,16 @@ pub async fn get(nats_url: &str, hash: &str, is_json: bool) -> Result<()> {
                 match spine::verify_envelope(&envelope) {
                     Ok(true) => println!("\n  {} {}", "Signature:".bold(), "VALID".green()),
                     Ok(false) => println!("\n  {} {}", "Signature:".bold(), "INVALID".red()),
-                    Err(e) => println!(
-                        "\n  {} {} ({})",
-                        "Signature:".bold(),
-                        "ERROR".red(),
-                        e
-                    ),
+                    Err(e) => println!("\n  {} {} ({})", "Signature:".bold(), "ERROR".red(), e),
                 }
             }
         }
         None => {
             if is_json {
-                println!("{}", serde_json::json!({"error": "not found", "hash": normalized}));
+                println!(
+                    "{}",
+                    serde_json::json!({"error": "not found", "hash": normalized})
+                );
             } else {
                 println!(
                     "{} envelope {} not found",
@@ -168,8 +169,7 @@ pub async fn sign(nats_url: &str, is_json: bool) -> Result<()> {
         serde_json::from_str(&input).context("stdin is not valid JSON")?;
 
     let keypair = hush_core::Keypair::generate();
-    let envelope =
-        spine::build_signed_envelope(&keypair, 1, None, fact, spine::now_rfc3339())?;
+    let envelope = spine::build_signed_envelope(&keypair, 1, None, fact, spine::now_rfc3339())?;
 
     let client = spine::nats_transport::connect(nats_url).await?;
     let payload = serde_json::to_vec(&envelope)?;

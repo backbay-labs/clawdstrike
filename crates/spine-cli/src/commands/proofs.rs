@@ -6,7 +6,11 @@ pub async fn inclusion(hash: &str, api_url: &str, is_json: bool) -> Result<()> {
     let normalized = spine::normalize_hash_hex(hash)
         .context("invalid hash format — expected 0x-prefixed 64-char hex")?;
 
-    let url = format!("{}/v1/proofs/inclusion?envelope_hash={}", api_url.trim_end_matches('/'), normalized);
+    let url = format!(
+        "{}/v1/proofs/inclusion?envelope_hash={}",
+        api_url.trim_end_matches('/'),
+        normalized
+    );
 
     let client = reqwest::Client::new();
     let resp = client

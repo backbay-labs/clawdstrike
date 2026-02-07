@@ -21,7 +21,9 @@ use hush_core::{Keypair, MerkleTree};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use tetragon_bridge::tetragon::proto::{self as tet, get_events_response::Event, GetEventsResponse};
+use tetragon_bridge::tetragon::proto::{
+    self as tet, get_events_response::Event, GetEventsResponse,
+};
 
 /// NATS subject prefix matching the real tetragon-bridge.
 const NATS_SUBJECT_PREFIX: &str = "clawdstrike.spine.envelope.tetragon";
@@ -393,7 +395,11 @@ async fn test_envelope_chain_integrity() {
         .map(|e| e["envelope_hash"].as_str().unwrap())
         .collect();
     let unique: std::collections::HashSet<&&str> = hashes.iter().collect();
-    assert_eq!(hashes.len(), unique.len(), "envelope hashes should be unique");
+    assert_eq!(
+        hashes.len(),
+        unique.len(),
+        "envelope hashes should be unique"
+    );
 }
 
 /// Test mixed Tetragon + Hubble events flowing through the same checkpoint.
@@ -510,14 +516,9 @@ async fn test_mixed_bridge_checkpoint() {
         aggregation_info_count: 0,
     };
     let tet_fact_2 = tetragon_bridge::mapper::map_event(&tet_resp_2).unwrap();
-    let tet_env_2 = spine::build_signed_envelope(
-        &kp,
-        seq,
-        prev_hash,
-        tet_fact_2,
-        spine::now_rfc3339(),
-    )
-    .unwrap();
+    let tet_env_2 =
+        spine::build_signed_envelope(&kp, seq, prev_hash, tet_fact_2, spine::now_rfc3339())
+            .unwrap();
     envelopes.push(tet_env_2);
 
     // All envelopes should verify.
@@ -552,7 +553,10 @@ async fn test_mixed_bridge_checkpoint() {
     }
 
     // Verify the Hubble envelope (index 1) fact type.
-    assert_eq!(envelopes[1]["fact"]["schema"], "clawdstrike.sdr.fact.hubble_flow.v1");
+    assert_eq!(
+        envelopes[1]["fact"]["schema"],
+        "clawdstrike.sdr.fact.hubble_flow.v1"
+    );
     assert_eq!(envelopes[1]["fact"]["verdict"], "DROPPED");
     assert_eq!(envelopes[1]["fact"]["severity"], "critical");
 

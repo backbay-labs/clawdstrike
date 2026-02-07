@@ -6,8 +6,8 @@
 use hush_core::{Keypair, MerkleTree};
 use serde_json::json;
 use spine::{
-    build_signed_envelope, checkpoint_hash, checkpoint_statement, issuer_from_keypair,
-    now_rfc3339, sign_checkpoint_statement, verify_envelope, verify_witness_signature, TrustBundle,
+    build_signed_envelope, checkpoint_hash, checkpoint_statement, issuer_from_keypair, now_rfc3339,
+    sign_checkpoint_statement, verify_envelope, verify_witness_signature, TrustBundle,
 };
 
 /// Create keypair, sign a fact, verify signature roundtrips.
@@ -84,14 +84,7 @@ async fn test_checkpoint_merkle_construction() {
 
     // Build a checkpoint statement using the Merkle root
     let merkle_root = tree.root().to_hex_prefixed();
-    let stmt = checkpoint_statement(
-        "test-log",
-        1,
-        None,
-        merkle_root.clone(),
-        n,
-        now_rfc3339(),
-    );
+    let stmt = checkpoint_statement("test-log", 1, None, merkle_root.clone(), n, now_rfc3339());
 
     assert_eq!(stmt["log_id"], "test-log");
     assert_eq!(stmt["checkpoint_seq"], 1);
@@ -161,10 +154,7 @@ async fn test_inclusion_proof_roundtrip() {
         .get("witness_node_id")
         .and_then(|v| v.as_str())
         .unwrap();
-    let sig = witness
-        .get("signature")
-        .and_then(|v| v.as_str())
-        .unwrap();
+    let sig = witness.get("signature").and_then(|v| v.as_str()).unwrap();
     assert!(verify_witness_signature(&stmt, witness_id, sig).unwrap());
 }
 
@@ -177,8 +167,7 @@ async fn test_multi_witness_checkpoint() {
 
     // Build a simple envelope for the tree
     let fact = json!({"type": "multi_witness_test"});
-    let envelope =
-        build_signed_envelope(&curator_kp, 1, None, fact, now_rfc3339()).unwrap();
+    let envelope = build_signed_envelope(&curator_kp, 1, None, fact, now_rfc3339()).unwrap();
     let leaf = serde_json::to_vec(&envelope).unwrap();
     let tree = MerkleTree::from_leaves(&[leaf]).unwrap();
 
@@ -201,10 +190,7 @@ async fn test_multi_witness_checkpoint() {
         .get("witness_node_id")
         .and_then(|v| v.as_str())
         .unwrap();
-    let w1_sig_hex = w1_sig
-        .get("signature")
-        .and_then(|v| v.as_str())
-        .unwrap();
+    let w1_sig_hex = w1_sig.get("signature").and_then(|v| v.as_str()).unwrap();
     assert!(verify_witness_signature(&stmt, w1_id, w1_sig_hex).unwrap());
 
     // Verify witness 2
@@ -212,10 +198,7 @@ async fn test_multi_witness_checkpoint() {
         .get("witness_node_id")
         .and_then(|v| v.as_str())
         .unwrap();
-    let w2_sig_hex = w2_sig
-        .get("signature")
-        .and_then(|v| v.as_str())
-        .unwrap();
+    let w2_sig_hex = w2_sig.get("signature").and_then(|v| v.as_str()).unwrap();
     assert!(verify_witness_signature(&stmt, w2_id, w2_sig_hex).unwrap());
 
     // Cross-verify: witness 1's signature should fail with witness 2's ID
@@ -223,10 +206,7 @@ async fn test_multi_witness_checkpoint() {
     assert!(!verify_witness_signature(&stmt, w1_id, w2_sig_hex).unwrap());
 
     // Both witnesses signed the same checkpoint hash
-    assert_eq!(
-        w1_sig.get("checkpoint_hash"),
-        w2_sig.get("checkpoint_hash")
-    );
+    assert_eq!(w1_sig.get("checkpoint_hash"), w2_sig.get("checkpoint_hash"));
 }
 
 /// Create trust bundle with 2 curators, verify envelope from trusted curator passes, untrusted fails.
@@ -245,10 +225,7 @@ async fn test_trust_bundle_verification() {
         schema: Some("spine.trust.v1".into()),
         allowed_log_ids: vec![],
         allowed_witness_node_ids: vec![trusted_issuer_1.clone(), trusted_issuer_2.clone()],
-        allowed_receipt_signer_node_ids: vec![
-            trusted_issuer_1.clone(),
-            trusted_issuer_2.clone(),
-        ],
+        allowed_receipt_signer_node_ids: vec![trusted_issuer_1.clone(), trusted_issuer_2.clone()],
         allowed_kernel_loader_signer_node_ids: vec![],
         required_receipt_enforcement_tiers: vec![],
         require_kernel_loader_signatures: false,

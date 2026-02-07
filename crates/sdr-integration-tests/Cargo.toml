@@ -11,8 +11,8 @@ publish = false
 [dev-dependencies]
 hush-core.workspace = true
 spine.workspace = true
-tetragon-bridge = { path = "../tetragon-bridge" }
-hubble-bridge = { path = "../hubble-bridge" }
+tetragon-bridge = { path = "../tetragon-bridge", version = "0.1.0" }
+hubble-bridge = { path = "../hubble-bridge", version = "0.1.0" }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

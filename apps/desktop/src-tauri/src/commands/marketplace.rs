@@ -606,7 +606,7 @@ pub async fn marketplace_verify_spine_proof(
         return Err("Missing proofs API URL".to_string());
     }
 
-    let url = format!("{base}/v1/proofs/inclusion/{envelope_hash}");
+    let url = format!("{base}/v1/proofs/inclusion?envelope_hash={envelope_hash}");
 
     let bytes = fetch_http_bytes_limited(&state.http_client, &url, MAX_NOTARY_BYTES).await?;
     let value: serde_json::Value =

@@ -9,7 +9,9 @@ use hush_core::Keypair;
 use serde_json::json;
 
 // Tetragon protobuf types
-use tetragon_bridge::tetragon::proto::{self as tet, get_events_response::Event, GetEventsResponse};
+use tetragon_bridge::tetragon::proto::{
+    self as tet, get_events_response::Event, GetEventsResponse,
+};
 
 // Hubble protobuf types
 use hubble_bridge::hubble::proto::{self as hub};
@@ -113,12 +115,14 @@ async fn test_tetragon_process_exec_mapping() {
     };
 
     let fact = tetragon_bridge::mapper::map_event(&resp);
-    assert!(fact.is_some(), "mapper should produce a fact for ProcessExec");
+    assert!(
+        fact.is_some(),
+        "mapper should produce a fact for ProcessExec"
+    );
     let fact = fact.unwrap();
 
     assert_eq!(
-        fact["schema"],
-        "clawdstrike.sdr.fact.tetragon_event.v1",
+        fact["schema"], "clawdstrike.sdr.fact.tetragon_event.v1",
         "fact schema should match FACT_SCHEMA"
     );
     assert_eq!(fact["event_type"], "process_exec");
@@ -184,8 +188,7 @@ async fn test_hubble_flow_mapping() {
     let fact = fact.unwrap();
 
     assert_eq!(
-        fact["schema"],
-        "clawdstrike.sdr.fact.hubble_flow.v1",
+        fact["schema"], "clawdstrike.sdr.fact.hubble_flow.v1",
         "fact schema should match Hubble FACT_SCHEMA"
     );
     assert_eq!(fact["verdict"], "FORWARDED");
@@ -257,14 +260,8 @@ async fn test_bridge_envelope_signature_valid() {
 
     let tet_fact = tetragon_bridge::mapper::map_event(&tet_resp).unwrap();
 
-    let tet_envelope = spine::build_signed_envelope(
-        &kp,
-        1,
-        None,
-        tet_fact,
-        spine::now_rfc3339(),
-    )
-    .unwrap();
+    let tet_envelope =
+        spine::build_signed_envelope(&kp, 1, None, tet_fact, spine::now_rfc3339()).unwrap();
 
     assert!(
         spine::verify_envelope(&tet_envelope).unwrap(),
@@ -294,14 +291,9 @@ async fn test_bridge_envelope_signature_valid() {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let hub_envelope = spine::build_signed_envelope(
-        &kp,
-        2,
-        prev_hash.clone(),
-        hub_fact,
-        spine::now_rfc3339(),
-    )
-    .unwrap();
+    let hub_envelope =
+        spine::build_signed_envelope(&kp, 2, prev_hash.clone(), hub_fact, spine::now_rfc3339())
+            .unwrap();
 
     assert!(
         spine::verify_envelope(&hub_envelope).unwrap(),

@@ -43,13 +43,8 @@ pub fn policy_bundle_to_spine_envelope(
         "compiled_at": signed_bundle.bundle.compiled_at,
     });
 
-    let envelope = spine::build_signed_envelope(
-        keypair,
-        seq,
-        prev_envelope_hash,
-        fact,
-        spine::now_rfc3339(),
-    )?;
+    let envelope =
+        spine::build_signed_envelope(keypair, seq, prev_envelope_hash, fact, spine::now_rfc3339())?;
 
     Ok(envelope)
 }
@@ -105,16 +100,13 @@ mod tests {
         let spine_kp = Keypair::generate();
 
         let bundle1 = PolicyBundle::new(Policy::default()).expect("bundle1");
-        let signed1 =
-            SignedPolicyBundle::sign_with_public_key(bundle1, &bundle_kp).expect("sign1");
+        let signed1 = SignedPolicyBundle::sign_with_public_key(bundle1, &bundle_kp).expect("sign1");
 
-        let e1 =
-            policy_bundle_to_spine_envelope(&signed1, &spine_kp, 1, None).expect("envelope1");
+        let e1 = policy_bundle_to_spine_envelope(&signed1, &spine_kp, 1, None).expect("envelope1");
         let h1 = extract_spine_envelope_hash(&e1).expect("hash1");
 
         let bundle2 = PolicyBundle::new(Policy::default()).expect("bundle2");
-        let signed2 =
-            SignedPolicyBundle::sign_with_public_key(bundle2, &bundle_kp).expect("sign2");
+        let signed2 = SignedPolicyBundle::sign_with_public_key(bundle2, &bundle_kp).expect("sign2");
 
         let e2 = policy_bundle_to_spine_envelope(&signed2, &spine_kp, 2, Some(h1.clone()))
             .expect("envelope2");
