@@ -26,13 +26,21 @@ pub enum AuthError {
 pub struct AuthStore {
     /// Map from key hash to ApiKey
     keys: RwLock<HashMap<String, ApiKey>>,
+    /// Optional pepper resolved at store construction time.
+    pepper: Option<Vec<u8>>,
 }
 
 impl AuthStore {
     /// Create a new empty auth store
     pub fn new() -> Self {
+        Self::with_pepper(current_pepper_from_env())
+    }
+
+    /// Create a store with an explicit pepper.
+    pub fn with_pepper(pepper: Option<Vec<u8>>) -> Self {
         Self {
             keys: RwLock::new(HashMap::new()),
+            pepper,
         }
     }
 
@@ -43,9 +51,13 @@ impl AuthStore {
     ///
     /// If unset, falls back to raw SHA-256.
     pub fn hash_key(key: &str) -> String {
-        let pepper = std::env::var("CLAWDSTRIKE_AUTH_PEPPER").ok();
-        let pepper = pepper.as_deref().filter(|s| !s.is_empty());
-        hash_key_with_pepper(key, pepper.map(|p| p.as_bytes()))
+        let pepper = current_pepper_from_env();
+        hash_key_with_pepper(key, pepper.as_deref())
+    }
+
+    /// Compute a key hash using this store's configured pepper.
+    pub fn hash_key_for_token(&self, key: &str) -> String {
+        hash_key_with_pepper(key, self.pepper.as_deref())
     }
 
     /// Add a key to the store
@@ -56,7 +68,7 @@ impl AuthStore {
 
     /// Validate a raw API key token and return the ApiKey if valid
     pub async fn validate_key(&self, token: &str) -> Result<ApiKey, AuthError> {
-        let hash = Self::hash_key(token);
+        let hash = self.hash_key_for_token(token);
         let keys = self.keys.read().await;
 
         let key = keys.get(&hash).cloned().ok_or(AuthError::InvalidKey)?;
@@ -131,6 +143,13 @@ impl Default for AuthStore {
     }
 }
 
+fn current_pepper_from_env() -> Option<Vec<u8>> {
+    std::env::var("CLAWDSTRIKE_AUTH_PEPPER")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.into_bytes())
+}
+
 // ---------------------------------------------------------------------------
 // SQLite-backed durable AuthStore
 // ---------------------------------------------------------------------------
@@ -154,28 +173,43 @@ CREATE TABLE IF NOT EXISTS api_keys (
 pub struct SqliteAuthStore {
     cache: RwLock<HashMap<String, ApiKey>>,
     conn: Mutex<rusqlite::Connection>,
+    pepper: Option<Vec<u8>>,
 }
 
 impl SqliteAuthStore {
     /// Open (or create) the store at `path`.
     pub fn new(path: impl AsRef<Path>) -> Result<Self, AuthError> {
+        Self::new_with_pepper(path, current_pepper_from_env())
+    }
+
+    /// Open (or create) the store at `path` with an explicit pepper.
+    pub fn new_with_pepper(
+        path: impl AsRef<Path>,
+        pepper: Option<Vec<u8>>,
+    ) -> Result<Self, AuthError> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent).map_err(|e| AuthError::Database(e.to_string()))?;
         }
         let conn =
             rusqlite::Connection::open(path).map_err(|e| AuthError::Database(e.to_string()))?;
-        Self::init(conn)
+        Self::init(conn, pepper)
     }
 
     /// Create an in-memory store (useful for tests).
     #[cfg(test)]
     pub fn in_memory() -> Result<Self, AuthError> {
-        let conn = rusqlite::Connection::open_in_memory()
-            .map_err(|e| AuthError::Database(e.to_string()))?;
-        Self::init(conn)
+        Self::in_memory_with_pepper(current_pepper_from_env())
     }
 
-    fn init(conn: rusqlite::Connection) -> Result<Self, AuthError> {
+    /// Create an in-memory store (useful for tests) with an explicit pepper.
+    #[cfg(test)]
+    pub fn in_memory_with_pepper(pepper: Option<Vec<u8>>) -> Result<Self, AuthError> {
+        let conn = rusqlite::Connection::open_in_memory()
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+        Self::init(conn, pepper)
+    }
+
+    fn init(conn: rusqlite::Connection, pepper: Option<Vec<u8>>) -> Result<Self, AuthError> {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
             .map_err(|e| AuthError::Database(e.to_string()))?;
         conn.execute_batch(CREATE_API_KEYS_TABLE)
@@ -187,6 +221,7 @@ impl SqliteAuthStore {
         Ok(Self {
             cache: RwLock::new(cache),
             conn: Mutex::new(conn),
+            pepper,
         })
     }
 
@@ -273,6 +308,10 @@ impl SqliteAuthStore {
         AuthStore::hash_key(key)
     }
 
+    fn hash_key_for_token(&self, key: &str) -> String {
+        hash_key_with_pepper(key, self.pepper.as_deref())
+    }
+
     /// Add a key to the store (persists to SQLite).
     pub async fn add_key(&self, key: ApiKey) -> Result<(), AuthError> {
         {
@@ -286,7 +325,7 @@ impl SqliteAuthStore {
 
     /// Validate a raw API key token and return the ApiKey if valid.
     pub async fn validate_key(&self, token: &str) -> Result<ApiKey, AuthError> {
-        let hash = Self::hash_key(token);
+        let hash = self.hash_key_for_token(token);
         let cached = {
             let cache = self.cache.read().await;
             cache.get(&hash).cloned()
@@ -418,7 +457,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_store_add_and_validate() {
-        let store = AuthStore::new();
+        let store = AuthStore::with_pepper(None);
         let raw_key = "test-api-key-12345";
 
         let mut scopes = HashSet::new();
@@ -426,7 +465,7 @@ mod tests {
 
         let key = ApiKey {
             id: "1".to_string(),
-            key_hash: AuthStore::hash_key(raw_key),
+            key_hash: store.hash_key_for_token(raw_key),
             name: "test".to_string(),
             tier: None,
             scopes,
@@ -443,19 +482,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_store_invalid_key() {
-        let store = AuthStore::new();
+        let store = AuthStore::with_pepper(None);
         let result = store.validate_key("nonexistent").await;
         assert!(matches!(result, Err(AuthError::InvalidKey)));
     }
 
     #[tokio::test]
     async fn test_auth_store_expired_key() {
-        let store = AuthStore::new();
+        let store = AuthStore::with_pepper(None);
         let raw_key = "expired-key";
 
         let key = ApiKey {
             id: "1".to_string(),
-            key_hash: AuthStore::hash_key(raw_key),
+            key_hash: store.hash_key_for_token(raw_key),
             name: "expired".to_string(),
             tier: None,
             scopes: HashSet::new(),
@@ -471,9 +510,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_store_remove_key() {
-        let store = AuthStore::new();
+        let store = AuthStore::with_pepper(None);
         let raw_key = "removable-key";
-        let hash = AuthStore::hash_key(raw_key);
+        let hash = store.hash_key_for_token(raw_key);
 
         let key = ApiKey {
             id: "1".to_string(),
@@ -494,11 +533,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_store_list_keys() {
-        let store = AuthStore::new();
+        let store = AuthStore::with_pepper(None);
 
         let key1 = ApiKey {
             id: "1".to_string(),
-            key_hash: AuthStore::hash_key("key1"),
+            key_hash: store.hash_key_for_token("key1"),
             name: "first".to_string(),
             tier: None,
             scopes: HashSet::new(),
@@ -508,7 +547,7 @@ mod tests {
 
         let key2 = ApiKey {
             id: "2".to_string(),
-            key_hash: AuthStore::hash_key("key2"),
+            key_hash: store.hash_key_for_token("key2"),
             name: "second".to_string(),
             tier: None,
             scopes: HashSet::new(),
@@ -530,7 +569,7 @@ mod tests {
     fn make_test_key(raw_key: &str, name: &str, scopes: HashSet<Scope>) -> ApiKey {
         ApiKey {
             id: uuid::Uuid::new_v4().to_string(),
-            key_hash: AuthStore::hash_key(raw_key),
+            key_hash: hash_key_with_pepper(raw_key, None),
             name: name.to_string(),
             tier: None,
             scopes,
@@ -541,7 +580,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_auth_store_add_and_validate() {
-        let store = SqliteAuthStore::in_memory().expect("init");
+        let store = SqliteAuthStore::in_memory_with_pepper(None).expect("init");
         let raw = "test-sqlite-key";
         let mut scopes = HashSet::new();
         scopes.insert(Scope::Check);
@@ -555,19 +594,19 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_auth_store_invalid_key() {
-        let store = SqliteAuthStore::in_memory().expect("init");
+        let store = SqliteAuthStore::in_memory_with_pepper(None).expect("init");
         let result = store.validate_key("nonexistent").await;
         assert!(matches!(result, Err(AuthError::InvalidKey)));
     }
 
     #[tokio::test]
     async fn sqlite_auth_store_expired_key() {
-        let store = SqliteAuthStore::in_memory().expect("init");
+        let store = SqliteAuthStore::in_memory_with_pepper(None).expect("init");
         let raw = "expired-sqlite-key";
 
         let key = ApiKey {
             id: "1".to_string(),
-            key_hash: AuthStore::hash_key(raw),
+            key_hash: hash_key_with_pepper(raw, None),
             name: "expired".to_string(),
             tier: None,
             scopes: HashSet::new(),
@@ -582,9 +621,9 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_auth_store_remove_key() {
-        let store = SqliteAuthStore::in_memory().expect("init");
+        let store = SqliteAuthStore::in_memory_with_pepper(None).expect("init");
         let raw = "removable-sqlite-key";
-        let hash = AuthStore::hash_key(raw);
+        let hash = hash_key_with_pepper(raw, None);
 
         let key = make_test_key(raw, "removable", HashSet::new());
         store.add_key(key).await.expect("add");
@@ -596,7 +635,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_auth_store_list_keys() {
-        let store = SqliteAuthStore::in_memory().expect("init");
+        let store = SqliteAuthStore::in_memory_with_pepper(None).expect("init");
 
         store
             .add_key(make_test_key("k1", "first", HashSet::new()))
@@ -622,7 +661,7 @@ mod tests {
         scopes.insert(Scope::Admin);
 
         {
-            let store = SqliteAuthStore::new(&path).expect("init");
+            let store = SqliteAuthStore::new_with_pepper(&path, None).expect("init");
             let key = ApiKey {
                 id: "p1".to_string(),
                 key_hash: stable_hash.clone(),
@@ -638,7 +677,7 @@ mod tests {
 
         // Reopen from the same path: key should still be there.
         {
-            let store = SqliteAuthStore::new(&path).expect("reopen");
+            let store = SqliteAuthStore::new_with_pepper(&path, None).expect("reopen");
             assert_eq!(store.key_count().await, 1);
 
             // Look up directly by the pre-computed hash in the cache.
@@ -660,7 +699,7 @@ mod tests {
         let stable_hash = hash_key_with_pepper("remove-persist-key", None);
 
         {
-            let store = SqliteAuthStore::new(&path).expect("init");
+            let store = SqliteAuthStore::new_with_pepper(&path, None).expect("init");
             let key = ApiKey {
                 id: "r1".to_string(),
                 key_hash: stable_hash.clone(),
@@ -677,14 +716,14 @@ mod tests {
 
         // Reopen: removed key should still be gone.
         {
-            let store = SqliteAuthStore::new(&path).expect("reopen");
+            let store = SqliteAuthStore::new_with_pepper(&path, None).expect("reopen");
             assert_eq!(store.key_count().await, 0);
         }
     }
 
     #[tokio::test]
     async fn sqlite_auth_store_tier_round_trips() {
-        let store = SqliteAuthStore::in_memory().expect("init");
+        let store = SqliteAuthStore::in_memory_with_pepper(None).expect("init");
         let raw = "tier-key";
 
         let mut scopes = HashSet::new();
@@ -692,7 +731,7 @@ mod tests {
 
         let key = ApiKey {
             id: "t1".to_string(),
-            key_hash: AuthStore::hash_key(raw),
+            key_hash: hash_key_with_pepper(raw, None),
             name: "tiered".to_string(),
             tier: Some(crate::auth::ApiKeyTier::Gold),
             scopes,
@@ -711,9 +750,9 @@ mod tests {
         let dir = tempfile::tempdir().expect("tmpdir");
         let path = dir.path().join("auth.db");
 
-        let store = SqliteAuthStore::new(&path).expect("init");
+        let store = SqliteAuthStore::new_with_pepper(&path, None).expect("init");
         let raw = "externally-added";
-        let hash = AuthStore::hash_key(raw);
+        let hash = hash_key_with_pepper(raw, None);
 
         // Simulate another process adding a key directly in SQLite.
         let conn = rusqlite::Connection::open(&path).expect("open sqlite");
@@ -731,9 +770,9 @@ mod tests {
         let dir = tempfile::tempdir().expect("tmpdir");
         let path = dir.path().join("auth.db");
 
-        let store = SqliteAuthStore::new(&path).expect("init");
+        let store = SqliteAuthStore::new_with_pepper(&path, None).expect("init");
         let raw = "externally-removed";
-        let hash = AuthStore::hash_key(raw);
+        let hash = hash_key_with_pepper(raw, None);
         let key = make_test_key(raw, "victim", HashSet::new());
         store.add_key(key).await.expect("add");
         assert!(store.validate_key(raw).await.is_ok());

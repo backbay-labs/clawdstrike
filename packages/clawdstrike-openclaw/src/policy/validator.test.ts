@@ -68,4 +68,18 @@ describe('validatePolicy', () => {
     expect(result.valid).toBe(false);
     expect(result.errors.join('\n')).toMatch(/missing environment variable/i);
   });
+
+  it('accepts canonical schema policies', () => {
+    const policy = {
+      version: '1.2.0',
+      guards: {
+        forbidden_path: {
+          patterns: ['~/.ssh'],
+        },
+      },
+    };
+    const result = validatePolicy(policy as any);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
 });

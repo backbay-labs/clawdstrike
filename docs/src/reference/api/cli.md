@@ -44,9 +44,12 @@ clawdstrike check --json --action-type egress --ruleset default api.github.com:4
   - `--check-env` also requires referenced `${VAR}` environment variables to be set.
 - `clawdstrike policy diff <LEFT> <RIGHT> [--resolve] [--json]` — structural diff for rulesets or policy files.
 - `clawdstrike policy lint <FILE> [--resolve] [--strict] [--json|--sarif]` — policy linting (risky defaults, common mistakes).
-- `clawdstrike policy test <SUITE.yaml>` — run a policy test suite.
+- `clawdstrike policy test <SUITE.yaml> [--coverage|--by-guard] [--min-coverage <PERCENT>] [--format text|json|html|junit] [--output <PATH>] [--snapshots] [--update-snapshots] [--mutation]` — run a policy test suite.
+- `clawdstrike policy test generate <POLICY_REF> [--events <EVENTS.jsonl>] [--output <SUITE.yaml>] [--json]` — generate a baseline test suite from policy defaults and optional observed events.
 - `clawdstrike policy eval <POLICY_REF> <EVENT.json|-> [--resolve] [--json]` — evaluate a canonical `PolicyEvent`.
 - `clawdstrike policy simulate <POLICY_REF> [EVENTS.jsonl|-] [--json|--jsonl|--summary] [--track-posture]` — run a stream of events.
+- `clawdstrike policy rego compile <POLICY.rego> [--entrypoint <QUERY>] [--json]` — compile/check a Rego module.
+- `clawdstrike policy rego eval <POLICY.rego> <INPUT.json|-> [--entrypoint <QUERY>] [--trace] [--json]` — evaluate Rego against input JSON.
 - `clawdstrike policy observe [--policy <ref>] [--out <events.jsonl>] -- <cmd ...>` — observe local command activity into canonical `PolicyEvent` JSONL.
 - `clawdstrike policy observe --hushd-url <url> --session <id> [--out <events.jsonl>]` — export + map hushd audit events for a session.
 - `clawdstrike policy synth <EVENTS.jsonl> [--extends <ref>] [--out <candidate.yaml>] [--diff-out <candidate.diff.json>] [--risk-out <candidate.risks.md>] [--with-posture]` — synthesize a least-privilege candidate policy.
@@ -64,11 +67,27 @@ clawdstrike policy show --merged ./policy.yaml
 clawdstrike policy validate ./policy.yaml
 clawdstrike policy validate --resolve ./policy.yaml
 clawdstrike policy diff default strict --json
+clawdstrike policy rego compile ./policy.rego --entrypoint data.example.allow
+clawdstrike policy rego eval ./policy.rego ./input.json --entrypoint data.example.allow --trace
+clawdstrike policy test ./tests/policy.test.yaml --coverage --min-coverage 80 --format junit --output ./reports/policy-tests.xml
+clawdstrike policy test generate clawdstrike:default --events ./events.jsonl --output ./tests/generated.policy.test.yaml
 clawdstrike policy observe --out run.events.jsonl -- your-agent-command
 clawdstrike policy synth run.events.jsonl --extends clawdstrike:default --out candidate.yaml --risk-out candidate.risks.md
 clawdstrike policy simulate candidate.yaml run.events.jsonl --json --track-posture
 clawdstrike policy bundle build ai-agent --resolve --key ./bundle-signing.key --embed-pubkey --output ./policy.bundle.json
 clawdstrike policy bundle verify ./policy.bundle.json
+```
+
+## `clawdstrike guard`
+
+- `clawdstrike guard inspect <PLUGIN_REF> [--json]` — inspect manifest metadata and compatibility.
+- `clawdstrike guard validate <PLUGIN_REF> [--strict] [--json]` — validate manifest and plugin load plan.
+
+Examples:
+
+```bash
+clawdstrike guard inspect ./plugins/my-guard
+clawdstrike guard validate ./plugins/my-guard --strict --json
 ```
 
 ## Receipts and crypto

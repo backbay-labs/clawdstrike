@@ -56,6 +56,10 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - `hush policy show` - Display ruleset policy
 - `hush policy validate` - Validate a policy YAML file
 - `hush policy list` - List available rulesets
+- `hush guard inspect|validate` - Inspect and validate plugin manifests/load plans
+- `hush policy rego compile|eval` - Embedded Rego compile/eval with optional trace output
+- `hush policy test generate` - Generate baseline policy test suites from policy + observed events
+- `hush policy test` enhancements - `--min-coverage`, `--format` (`text|json|html|junit`), `--output`, `--snapshots`, `--update-snapshots`, `--mutation`
 - `hush run` - Best-effort process wrapper (CONNECT proxy egress enforcement + audit log + signed receipt)
 - `hush completions` - Generate shell completions (bash, zsh, fish, powershell, elvish)
 
@@ -66,6 +70,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - Prometheus `/metrics` endpoint
 - Canonical PolicyEvent evaluation (`POST /api/v1/eval`)
 - SQLite audit ledger with optional at-rest encryption for metadata
+- Certification badge PNG rendering (`format=png`, `size=1x|2x`)
 
 #### TypeScript SDK (`@clawdstrike/sdk`, `hush-ts`)
 
@@ -75,6 +80,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - **JailbreakDetector**: Multi-layer detection with session aggregation
 - **OutputSanitizer**: Streaming-compatible sanitization with multiple redaction strategies
 - **PromptWatermarker** / **WatermarkExtractor**: Embed and extract signed provenance markers
+- Built-in prompt security guards in policy path: `prompt_injection`, `jailbreak_detection`
 
 #### Framework Adapters
 
@@ -83,6 +89,13 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - `@clawdstrike/hushd-engine` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
 - `@clawdstrike/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
 - `@clawdstrike/langchain` - Tool wrappers and callback handlers for LangChain
+
+### Changed
+
+- Canonical-first policy handling across SDKs: canonical `version: "1.1.0"/"1.2.0"` is primary, with legacy `clawdstrike-v1.0` accepted via translation and deprecation warning.
+- WASM plugin runtime now executes via Rust Wasmtime path with capability checks and resource ceilings; TS `executionMode: wasm` uses the CLI bridge path instead of a stub failure.
+- `hushd` auth pepper is now instance-bound (resolved at store creation) to eliminate global env race conditions in parallel test/runtime paths.
+- Local TS file-dependency workflows are now clean-install safe via `@clawdstrike/adapter-core` `prepare` build and CI smoke coverage.
 
 #### OpenClaw Integration (`@clawdstrike/clawdstrike-security`)
 

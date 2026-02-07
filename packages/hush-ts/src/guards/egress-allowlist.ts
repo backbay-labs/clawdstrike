@@ -1,6 +1,7 @@
 import { Guard, GuardAction, GuardContext, GuardResult, Severity } from "./types";
 
 export interface EgressAllowlistConfig {
+  enabled?: boolean;
   allow?: string[];
   block?: string[];
   defaultAction?: "allow" | "block";
@@ -112,21 +113,26 @@ function globToRegExp(pattern: string): RegExp {
  */
 export class EgressAllowlistGuard implements Guard {
   readonly name = "egress_allowlist";
+  private enabled: boolean;
   private allow: RegExp[];
   private block: RegExp[];
   private defaultAction: "allow" | "block";
 
   constructor(config: EgressAllowlistConfig = {}) {
+    this.enabled = config.enabled ?? true;
     this.allow = (config.allow ?? []).map((p) => globToRegExp(p));
     this.block = (config.block ?? []).map((p) => globToRegExp(p));
     this.defaultAction = config.defaultAction ?? "block";
   }
 
   handles(action: GuardAction): boolean {
-    return action.actionType === "network_egress";
+    return this.enabled && action.actionType === "network_egress";
   }
 
   check(action: GuardAction, _context: GuardContext): GuardResult {
+    if (!this.enabled) {
+      return GuardResult.allow(this.name);
+    }
     if (!this.handles(action)) {
       return GuardResult.allow(this.name);
     }

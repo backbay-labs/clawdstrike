@@ -84,12 +84,23 @@ impl PluginLoader {
 
     pub fn plan_load(&self, plugin_ref: &str) -> Result<PluginLoadPlan> {
         let inspect = self.inspect(plugin_ref)?;
-
         if inspect.execution_mode == PluginExecutionMode::Wasm {
-            return Err(Error::ConfigError(format!(
-                "WASM plugin loading scaffold is present but runtime is not implemented yet: {}",
-                inspect.manifest.plugin.name
-            )));
+            for guard in &inspect.manifest.guards {
+                let Some(entrypoint) = guard.entrypoint.as_deref() else {
+                    return Err(Error::ConfigError(format!(
+                        "wasm plugin guard {} must declare an entrypoint",
+                        guard.name
+                    )));
+                };
+                let wasm_path = inspect.root.join(entrypoint);
+                if !wasm_path.exists() {
+                    return Err(Error::ConfigError(format!(
+                        "wasm plugin guard {} entrypoint not found: {}",
+                        guard.name,
+                        wasm_path.display()
+                    )));
+                }
+            }
         }
 
         let guard_ids = inspect
@@ -375,5 +386,38 @@ sandbox = "native"
             .inspect(".")
             .expect_err("should reject incompatible version");
         assert!(err.to_string().contains("requires clawdstrike >="));
+    }
+
+    #[test]
+    fn plan_load_accepts_wasm_plugins_when_sandbox_enabled() {
+        let dir = TempDir::new().expect("tempdir");
+        write_manifest(
+            &dir,
+            r#"
+[plugin]
+version = "1.0.0"
+name = "acme-plugin"
+
+[[guards]]
+name = "acme.guard"
+entrypoint = "./guard.wasm"
+
+[trust]
+level = "untrusted"
+sandbox = "wasm"
+"#,
+        );
+        std::fs::write(dir.path().join("guard.wasm"), b"\0asm").expect("write wasm stub");
+
+        let loader = PluginLoader::new(PluginLoaderOptions {
+            from_dir: dir.path().to_path_buf(),
+            trusted_only: false,
+            allow_wasm_sandbox: true,
+            ..PluginLoaderOptions::default()
+        });
+
+        let plan = loader.plan_load(".").expect("plan load");
+        assert_eq!(plan.inspect.execution_mode, PluginExecutionMode::Wasm);
+        assert_eq!(plan.guard_ids, vec!["acme.guard".to_string()]);
     }
 }

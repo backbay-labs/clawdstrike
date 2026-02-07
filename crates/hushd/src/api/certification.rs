@@ -952,6 +952,56 @@ fn parse_badge_theme(s: Option<&str>) -> BadgeTheme {
     }
 }
 
+fn parse_png_scale(s: Option<&str>) -> Result<f32, V1Error> {
+    let raw = s.unwrap_or("1x").trim().to_ascii_lowercase();
+    if raw == "1x" {
+        return Ok(1.0);
+    }
+    if raw == "2x" {
+        return Ok(2.0);
+    }
+
+    Err(V1Error::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "INVALID_SIZE",
+        "Unsupported PNG size (use 1x or 2x).",
+    ))
+}
+
+fn render_badge_png_bytes(svg: &str, scale: f32) -> Result<Vec<u8>, V1Error> {
+    let options = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(svg, &options).map_err(|e| {
+        V1Error::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "PNG_RENDER_FAILED",
+            format!("failed to parse badge SVG: {}", e),
+        )
+    })?;
+
+    let size = tree.size();
+    let width = ((size.width() * scale).round() as u32).max(1);
+    let height = ((size.height() * scale).round() as u32).max(1);
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height).ok_or_else(|| {
+        V1Error::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "PNG_RENDER_FAILED",
+            "failed to allocate PNG pixel buffer",
+        )
+    })?;
+
+    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
+    let mut pixmap_mut = pixmap.as_mut();
+    resvg::render(&tree, transform, &mut pixmap_mut);
+
+    pixmap.encode_png().map_err(|e| {
+        V1Error::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "PNG_RENDER_FAILED",
+            format!("failed to encode PNG badge: {}", e),
+        )
+    })
+}
+
 fn wants_json(headers: &HeaderMap) -> bool {
     headers
         .get(header::ACCEPT)
@@ -1041,14 +1091,6 @@ pub async fn get_badge(
         BadgeFormat::Svg
     };
 
-    if matches!(format, BadgeFormat::Png) {
-        return Err(V1Error::new(
-            StatusCode::NOT_IMPLEMENTED,
-            "NOT_IMPLEMENTED",
-            "PNG badge rendering is not implemented yet (use SVG or JSON).",
-        ));
-    }
-
     if matches!(format, BadgeFormat::Json) {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
@@ -1122,10 +1164,27 @@ pub async fn get_badge(
         parse_badge_theme(query.theme.as_deref()),
     );
 
+    if matches!(format, BadgeFormat::Png) {
+        let scale = parse_png_scale(query.size.as_deref())?;
+        let png = render_badge_png_bytes(&svg, scale)?;
+        let mut resp = png.into_response();
+        resp.headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
+        resp.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=300"),
+        );
+        return Ok(resp);
+    }
+
     let mut resp = svg.into_response();
     resp.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("image/svg+xml; charset=utf-8"),
+    );
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=300"),
     );
     Ok(resp)
 }

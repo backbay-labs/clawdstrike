@@ -12,7 +12,8 @@ mod cli_parsing {
     use clap::Parser;
 
     use crate::{
-        Cli, Commands, DaemonCommands, MerkleCommands, PolicyBundleCommands, PolicyCommands,
+        Cli, Commands, DaemonCommands, GuardCommands, MerkleCommands, PolicyBundleCommands,
+        PolicyCommands, PolicyTestCommands, RegoCommands,
     };
 
     #[test]
@@ -909,17 +910,187 @@ mod cli_parsing {
         match cli.command {
             Commands::Policy { command } => match command {
                 PolicyCommands::Test {
+                    command,
                     test_file,
                     resolve,
                     json,
                     coverage,
+                    by_guard,
+                    min_coverage,
+                    format,
+                    output,
+                    snapshots,
+                    update_snapshots,
+                    mutation,
                 } => {
-                    assert_eq!(test_file, "tests/policy.test.yaml");
+                    assert!(command.is_none());
+                    assert_eq!(test_file.as_deref(), Some("tests/policy.test.yaml"));
                     assert!(resolve);
                     assert!(json);
                     assert!(coverage);
+                    assert!(!by_guard);
+                    assert!(min_coverage.is_none());
+                    assert_eq!(format, crate::PolicyTestOutputFormat::Text);
+                    assert!(output.is_none());
+                    assert!(!snapshots);
+                    assert!(!update_snapshots);
+                    assert!(!mutation);
                 }
                 _ => panic!("Expected Test subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_test_generate_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "test",
+            "generate",
+            "default",
+            "--events",
+            "fixtures/policy-events/v1/events.jsonl",
+            "--output",
+            "generated.policy-test.yaml",
+            "--json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Test {
+                    command, test_file, ..
+                } => {
+                    assert!(test_file.is_none());
+                    match command {
+                        Some(PolicyTestCommands::Generate {
+                            policy_ref,
+                            events,
+                            output,
+                            json,
+                        }) => {
+                            assert_eq!(policy_ref, "default");
+                            assert_eq!(
+                                events.as_deref(),
+                                Some("fixtures/policy-events/v1/events.jsonl")
+                            );
+                            assert_eq!(output.as_deref(), Some("generated.policy-test.yaml"));
+                            assert!(json);
+                        }
+                        _ => panic!("Expected policy test generate subcommand"),
+                    }
+                }
+                _ => panic!("Expected Test subcommand"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_guard_inspect_parses() {
+        let cli = Cli::parse_from(["hush", "guard", "inspect", "--json", "./plugin"]);
+
+        match cli.command {
+            Commands::Guard { command } => match command {
+                GuardCommands::Inspect { plugin_ref, json } => {
+                    assert_eq!(plugin_ref, "./plugin");
+                    assert!(json);
+                }
+                _ => panic!("Expected guard inspect subcommand"),
+            },
+            _ => panic!("Expected Guard command"),
+        }
+    }
+
+    #[test]
+    fn test_guard_validate_parses() {
+        let cli = Cli::parse_from(["hush", "guard", "validate", "--strict", "./plugin"]);
+
+        match cli.command {
+            Commands::Guard { command } => match command {
+                GuardCommands::Validate {
+                    plugin_ref,
+                    strict,
+                    json,
+                } => {
+                    assert_eq!(plugin_ref, "./plugin");
+                    assert!(strict);
+                    assert!(!json);
+                }
+                _ => panic!("Expected guard validate subcommand"),
+            },
+            _ => panic!("Expected Guard command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_rego_compile_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "rego",
+            "compile",
+            "policy.rego",
+            "--entrypoint",
+            "data.example.allow",
+            "--json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Rego { command } => match command {
+                    RegoCommands::Compile {
+                        file,
+                        entrypoint,
+                        json,
+                    } => {
+                        assert_eq!(file, "policy.rego");
+                        assert_eq!(entrypoint, Some("data.example.allow".to_string()));
+                        assert!(json);
+                    }
+                    _ => panic!("Expected Rego compile"),
+                },
+                _ => panic!("Expected policy rego command"),
+            },
+            _ => panic!("Expected Policy command"),
+        }
+    }
+
+    #[test]
+    fn test_policy_rego_eval_parses() {
+        let cli = Cli::parse_from([
+            "hush",
+            "policy",
+            "rego",
+            "eval",
+            "policy.rego",
+            "-",
+            "--entrypoint",
+            "data.example.allow",
+            "--trace",
+            "--json",
+        ]);
+
+        match cli.command {
+            Commands::Policy { command } => match command {
+                PolicyCommands::Rego { command } => match command {
+                    RegoCommands::Eval {
+                        file,
+                        input,
+                        entrypoint,
+                        trace,
+                        json,
+                    } => {
+                        assert_eq!(file, "policy.rego");
+                        assert_eq!(input, "-");
+                        assert_eq!(entrypoint, Some("data.example.allow".to_string()));
+                        assert!(trace);
+                        assert!(json);
+                    }
+                    _ => panic!("Expected Rego eval"),
+                },
+                _ => panic!("Expected policy rego command"),
             },
             _ => panic!("Expected Policy command"),
         }
@@ -2105,9 +2276,11 @@ mod policy_test_runner_contract {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::policy_test::cmd_policy_test;
+    use crate::policy_test::{
+        cmd_policy_test, cmd_policy_test_generate, PolicyTestGenerateOptions, PolicyTestRunOptions,
+    };
     use crate::remote_extends::RemoteExtendsConfig;
-    use crate::ExitCode;
+    use crate::{ExitCode, PolicyTestOutputFormat};
 
     fn temp_path(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -2160,8 +2333,16 @@ suites:
             test_path.to_string_lossy().to_string(),
             false,
             &remote,
-            true,
-            true,
+            PolicyTestRunOptions {
+                json: true,
+                coverage: true,
+                min_coverage: None,
+                format: PolicyTestOutputFormat::Json,
+                output: None,
+                snapshots: false,
+                update_snapshots: false,
+                mutation: false,
+            },
             &mut out,
             &mut err,
         )
@@ -2181,6 +2362,354 @@ suites:
             v.get("coverage").is_some(),
             "expected coverage when enabled"
         );
+    }
+
+    #[tokio::test]
+    async fn policy_test_runner_enforces_min_coverage_threshold() {
+        let test_path = temp_path("policy_test_min_coverage.yaml");
+        std::fs::write(
+            &test_path,
+            r#"
+name: "Min Coverage"
+policy: "clawdstrike:default"
+suites:
+  - name: "Single Guard"
+    tests:
+      - name: "only forbidden path"
+        input:
+          eventType: file_read
+          data:
+            type: file
+            path: /home/user/.ssh/id_rsa
+            operation: read
+        expect:
+          denied: true
+          guard: forbidden_path
+"#,
+        )
+        .expect("write test file");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+        let code = cmd_policy_test(
+            test_path.to_string_lossy().to_string(),
+            false,
+            &remote,
+            PolicyTestRunOptions {
+                json: true,
+                coverage: true,
+                min_coverage: Some(100.0),
+                format: PolicyTestOutputFormat::Json,
+                output: None,
+                snapshots: false,
+                update_snapshots: false,
+                mutation: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Fail);
+        assert!(err.is_empty());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        let failures = v
+            .get("failures")
+            .and_then(|f| f.as_array())
+            .expect("failures array");
+        assert!(failures
+            .iter()
+            .any(|f| f.get("test").and_then(|t| t.as_str()) == Some("min_coverage")));
+    }
+
+    #[tokio::test]
+    async fn policy_test_runner_writes_html_and_junit_reports() {
+        let test_path = temp_path("policy_test_reports.yaml");
+        std::fs::write(
+            &test_path,
+            r#"
+name: "Report Formats"
+policy: "clawdstrike:default"
+suites:
+  - name: "Allow"
+    tests:
+      - name: "allows normal path"
+        input:
+          eventType: file_read
+          data:
+            type: file
+            path: /workspace/src/main.rs
+            operation: read
+        expect:
+          allowed: true
+"#,
+        )
+        .expect("write test file");
+
+        let remote = RemoteExtendsConfig::disabled();
+
+        let html_path = temp_path("report.html");
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let html_code = cmd_policy_test(
+            test_path.to_string_lossy().to_string(),
+            false,
+            &remote,
+            PolicyTestRunOptions {
+                json: false,
+                coverage: true,
+                min_coverage: None,
+                format: PolicyTestOutputFormat::Html,
+                output: Some(html_path.to_string_lossy().to_string()),
+                snapshots: false,
+                update_snapshots: false,
+                mutation: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+        assert_eq!(html_code, ExitCode::Ok);
+        assert!(err.is_empty());
+        let html = std::fs::read_to_string(&html_path).expect("html report");
+        assert!(html.contains("<!doctype html>"));
+        assert!(html.contains("Policy Test Report"));
+
+        let junit_path = temp_path("report.xml");
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let junit_code = cmd_policy_test(
+            test_path.to_string_lossy().to_string(),
+            false,
+            &remote,
+            PolicyTestRunOptions {
+                json: false,
+                coverage: false,
+                min_coverage: None,
+                format: PolicyTestOutputFormat::Junit,
+                output: Some(junit_path.to_string_lossy().to_string()),
+                snapshots: false,
+                update_snapshots: false,
+                mutation: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+        assert_eq!(junit_code, ExitCode::Ok);
+        assert!(err.is_empty());
+        let xml = std::fs::read_to_string(&junit_path).expect("junit report");
+        assert!(xml.contains("<testsuite"));
+    }
+
+    #[tokio::test]
+    async fn policy_test_runner_supports_snapshots_and_mutation_mode() {
+        let test_path = temp_path("policy_test_snapshots.yaml");
+        std::fs::write(
+            &test_path,
+            r#"
+name: "Snapshots"
+policy: "clawdstrike:default"
+suites:
+  - name: "Simple"
+    tests:
+      - name: "allow write"
+        input:
+          eventType: file_write
+          data:
+            type: file
+            path: ./output/report.txt
+            operation: write
+        expect:
+          allowed: true
+"#,
+        )
+        .expect("write test file");
+        let snapshot_path = PathBuf::from(format!("{}.snapshot.json", test_path.to_string_lossy()));
+
+        let remote = RemoteExtendsConfig::disabled();
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let missing_snapshot_code = cmd_policy_test(
+            test_path.to_string_lossy().to_string(),
+            false,
+            &remote,
+            PolicyTestRunOptions {
+                json: true,
+                coverage: false,
+                min_coverage: None,
+                format: PolicyTestOutputFormat::Json,
+                output: None,
+                snapshots: true,
+                update_snapshots: false,
+                mutation: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+        assert_eq!(missing_snapshot_code, ExitCode::Fail);
+        assert!(err.is_empty());
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let update_snapshot_code = cmd_policy_test(
+            test_path.to_string_lossy().to_string(),
+            false,
+            &remote,
+            PolicyTestRunOptions {
+                json: true,
+                coverage: false,
+                min_coverage: None,
+                format: PolicyTestOutputFormat::Json,
+                output: None,
+                snapshots: true,
+                update_snapshots: true,
+                mutation: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+        assert_eq!(update_snapshot_code, ExitCode::Ok);
+        assert!(snapshot_path.exists());
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let mutation_code = cmd_policy_test(
+            test_path.to_string_lossy().to_string(),
+            false,
+            &remote,
+            PolicyTestRunOptions {
+                json: true,
+                coverage: false,
+                min_coverage: None,
+                format: PolicyTestOutputFormat::Json,
+                output: None,
+                snapshots: false,
+                update_snapshots: false,
+                mutation: true,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+        assert_eq!(mutation_code, ExitCode::Fail);
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        let failures = v
+            .get("failures")
+            .and_then(|f| f.as_array())
+            .expect("failures array");
+        assert!(failures
+            .iter()
+            .any(|f| f.get("suite").and_then(|s| s.as_str()) == Some("<mutation>")));
+    }
+
+    #[tokio::test]
+    async fn policy_test_generate_writes_suite_from_policy_and_events() {
+        let output_path = temp_path("generated_suite.yaml");
+        let events = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = cmd_policy_test_generate(
+            "default".to_string(),
+            false,
+            &remote,
+            PolicyTestGenerateOptions {
+                events: Some(events.to_string_lossy().to_string()),
+                output: Some(output_path.to_string_lossy().to_string()),
+                json: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Ok);
+        assert!(err.is_empty());
+        let generated = std::fs::read_to_string(&output_path).expect("generated file");
+        assert!(generated.contains("Generated Baseline Cases"));
+        assert!(generated.contains("Observed Event Cases"));
+        assert!(generated.contains("policy: default"));
+    }
+}
+
+#[cfg(all(test, feature = "rego-runtime"))]
+mod rego_contract {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::policy_rego::cmd_policy_rego;
+    use crate::{ExitCode, RegoCommands};
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("hush_cli_rego_{name}_{nanos}"))
+    }
+
+    #[test]
+    fn rego_compile_and_eval_commands_work() {
+        let rego_path = temp_path("policy.rego");
+        std::fs::write(
+            &rego_path,
+            r#"
+package example
+
+allow if {
+  input.user == "admin"
+}
+"#,
+        )
+        .expect("write rego");
+
+        let input_path = temp_path("input.json");
+        std::fs::write(&input_path, r#"{"user":"admin"}"#).expect("write input");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let compile_code = cmd_policy_rego(
+            RegoCommands::Compile {
+                file: rego_path.to_string_lossy().to_string(),
+                entrypoint: Some("data.example.allow".to_string()),
+                json: true,
+            },
+            &mut out,
+            &mut err,
+        );
+        assert_eq!(compile_code, ExitCode::Ok);
+        assert!(err.is_empty());
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let eval_code = cmd_policy_rego(
+            RegoCommands::Eval {
+                file: rego_path.to_string_lossy().to_string(),
+                input: input_path.to_string_lossy().to_string(),
+                entrypoint: Some("data.example.allow".to_string()),
+                trace: true,
+                json: true,
+            },
+            &mut out,
+            &mut err,
+        );
+        assert_eq!(eval_code, ExitCode::Ok);
+        assert!(err.is_empty());
+
+        let json: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(
+            json.get("command").and_then(|v| v.as_str()),
+            Some("policy_rego_eval")
+        );
+        let result = json.get("result").expect("result field");
+        assert!(result.get("result").is_some());
     }
 }
 

@@ -52,7 +52,7 @@ Tier 3: Enterprise readiness (close deals)
   - Rust policy schema is `version: "1.1.0"` and config lives under `guards.*`.
   - TS OpenClaw policy schema is `version: "clawdstrike-v1.0"` and config lives under `egress/filesystem/execution/...`.
   - The new P0/P1 specs (custom guards, PaC, composition) assume a guard-centric schema.
-- Guard parity mismatch (built-ins differ between Rust and TS; prompt-injection exists in Rust, not in TS).
+- Guard parity baseline has improved: TS/OpenClaw now accepts canonical schema and includes prompt-injection/jailbreak built-ins; continue widening corpus + edge-case parity coverage.
 - Engine architecture gap (still): plugins/composition need a dynamic registry + policy representation. **Progress:** `HushEngine` now supports runtime appended guards (built-ins first, extras last).
 - CLI naming mismatch (resolved): `hush` is canonical; `clawdstrike` is TS/OpenClaw-specific + planned wrapper/alias to forward to `hush` (ADR 0001).
 
@@ -163,7 +163,7 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 - [x] Cross-SDK parity tests scaffolded (same events, same expected decisions). (See `tools/scripts/policy-parity.mjs`, `.github/workflows/ci.yml` “Policy parity (Rust ↔ TS)”, and `packages/clawdstrike-hush-cli-engine/src/hush-cli-engine.e2e.test.ts`.)
 
 ### M1: P0 Foundation shipped (Custom Guards + Agent Frameworks + Policy-as-Code)
-- [ ] Custom guards plugin system (dev-mode first; production hardening later).
+- [x] Custom guards plugin system (dev-mode first; production hardening later). *(Manifest validation + Rust wasm runtime + TS wasm bridge path landed; hardening continues.)*
 - [x] `@clawdstrike/adapter-core` + at least 2 “real” integrations (Vercel AI + LangChain). (See `packages/clawdstrike-adapter-core/`, `packages/clawdstrike-vercel-ai/`, `packages/clawdstrike-langchain/`.)
 - [x] Policy-as-code CLI: lint + test (YAML test suite) + diff + simulate. (See `crates/hush-cli/src/policy_lint.rs`, `crates/hush-cli/src/policy_test.rs`, `crates/hush-cli/src/policy_pac.rs`, `crates/hush-cli/src/policy_diff.rs`.)
 
@@ -196,7 +196,7 @@ Primary specs: `docs/plans/custom-guards/*`
 ### A2. Plugin manifest + validation
 - [x] Implement `clawdstrike.plugin.json` (npm) and `clawdstrike.plugin.toml` (Rust) parsing + validation. (See `packages/clawdstrike-policy/src/plugins/manifest.ts`, `packages/clawdstrike-policy/src/plugins/loader.ts`, and `crates/clawdstrike/src/plugins/manifest.rs`.)
 - [ ] Publish JSON Schema(s) for manifests + policy schema(s) (versioned URLs + local copies for offline use). *(Partial: plugin manifest schema scaffolded at `packages/clawdstrike-policy/schemas/clawdstrike.plugin.schema.json`.)*
-- [ ] Add CLI commands for plugin validation (dev ergonomics): `guard validate`, `guard inspect`.
+- [x] Add CLI commands for plugin validation (dev ergonomics): `guard validate`, `guard inspect`.
 
 ### A3. TS plugin loader (Node)
 - [x] Package resolution (local path + npm). (See `packages/clawdstrike-policy/src/plugins/loader.ts:resolvePluginRoot`.)
@@ -205,9 +205,9 @@ Primary specs: `docs/plans/custom-guards/*`
 - [x] Capability gate stubs wired through (even before WASM sandbox lands). (See `packages/clawdstrike-policy/src/plugins/loader.ts:validateCapabilityPolicy`.)
 
 ### A4. Rust plugin loader (native)
-- [ ] WASM runtime integration (Wasmtime) as the default for “untrusted/community” plugins.
-- [ ] Host function surface + capability enforcement (network/fs/secrets/subprocess).
-- [ ] Resource limits (cpu/memory/wall clock) enforced per plugin call.
+- [x] WASM runtime integration (Wasmtime) as the default for “untrusted/community” plugins.
+- [x] Host function surface + capability enforcement (network/fs/secrets/subprocess).
+- [x] Resource limits (cpu/memory/wall clock) enforced per plugin call.
 - [ ] (Optional later) Native `dlopen` path for certified/first-party plugins.
 
 ### A5. Capability system (security boundary)
@@ -254,7 +254,7 @@ Primary specs: `docs/plans/agent-frameworks/*`
 ### B1. Policy engine packaging strategy (TS)
 - [ ] Decide: keep policy engine in `@clawdstrike/openclaw` and depend on it, OR extract to `@clawdstrike/policy` for reuse.
 - [ ] Align policy schema with the canonical decision from M0 (migration shim if needed).
-- [ ] Bring built-in guard parity with Rust where feasible (mcp_tool, prompt_injection, etc.).
+- [x] Bring built-in guard parity with Rust where feasible (mcp_tool, prompt_injection, etc.). *(Canonical-first path + prompt/jailbreak parity + permissive/default alignment in hush-ts.)*
 
 ### B2. Vercel AI SDK integration (P0)
 - [x] Create `@clawdstrike/vercel-ai` with middleware + streaming support. (See `packages/clawdstrike-vercel-ai/`.)
@@ -297,7 +297,7 @@ Primary specs: `docs/plans/policy-as-code/*`
 ### C2. Testing framework (YAML test suites)
 - [x] Implement `policy.test.yaml` runner with fixtures, contexts, parameterization. (See `crates/hush-cli/src/policy_test.rs`.)
 - [x] Add coverage model (which guards/rules were exercised). (See `clawdstrike policy test --coverage`.)
-- [ ] Add snapshot testing for decisions + mutation testing (later, likely P1).
+- [x] Add snapshot testing for decisions + mutation testing (baseline). *(Implemented `--snapshots`, `--update-snapshots`, `--mutation` in `hush policy test`.)*
 
 ### C3. Diff + migration tooling
 - [x] M0 baseline: `clawdstrike policy diff <left> <right> [--resolve] [--json]` (rulesets or files; optional extends resolution).
@@ -310,9 +310,9 @@ Primary specs: `docs/plans/policy-as-code/*`
 - [ ] “Shadow mode” concept captured (likely P1/P2 with `hushd`).
 
 ### C5. OPA/Rego integration (likely P1 unless enterprise asks)
-- [ ] Embed OPA/Rego engine (Rust/WASM).
+- [x] Embed OPA/Rego engine (Rust/WASM). *(Regorus-backed runtime behind `rego-runtime` feature in `hush-cli`.)*
 - [ ] Hybrid YAML+Rego combination modes and “replaces guard” migration story.
-- [ ] Rego tooling: compile, eval, trace/explain.
+- [x] Rego tooling: compile, eval, trace/explain.
 
 ---
 

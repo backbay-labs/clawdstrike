@@ -25,6 +25,7 @@ export type {
   PluginLoadResult,
   PluginLoaderOptions,
   PluginResolveOptions,
+  WasmExecutionBridgeOptions,
 } from './plugins/loader.js';
 export {
   inspectPlugin,

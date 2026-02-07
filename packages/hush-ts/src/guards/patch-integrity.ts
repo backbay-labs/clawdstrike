@@ -16,6 +16,8 @@ const DEFAULT_FORBIDDEN_PATTERNS = [
 ];
 
 export interface PatchIntegrityConfig {
+  /** Enable/disable this guard */
+  enabled?: boolean;
   /** Maximum lines added in a single patch */
   maxAdditions?: number;
   /** Maximum lines deleted in a single patch */
@@ -53,6 +55,7 @@ export interface ForbiddenMatch {
  */
 export class PatchIntegrityGuard implements Guard {
   readonly name = "patch_integrity";
+  private enabled: boolean;
   private maxAdditions: number;
   private maxDeletions: number;
   private forbiddenPatterns: RegExp[];
@@ -60,6 +63,7 @@ export class PatchIntegrityGuard implements Guard {
   private maxImbalanceRatio: number;
 
   constructor(config: PatchIntegrityConfig = {}) {
+    this.enabled = config.enabled ?? true;
     this.maxAdditions = config.maxAdditions ?? 1000;
     this.maxDeletions = config.maxDeletions ?? 500;
     this.forbiddenPatterns = config.forbiddenPatterns ?? DEFAULT_FORBIDDEN_PATTERNS;
@@ -68,10 +72,13 @@ export class PatchIntegrityGuard implements Guard {
   }
 
   handles(action: GuardAction): boolean {
-    return action.actionType === "patch";
+    return this.enabled && action.actionType === "patch";
   }
 
   check(action: GuardAction, _context: GuardContext): GuardResult {
+    if (!this.enabled) {
+      return GuardResult.allow(this.name);
+    }
     if (!this.handles(action)) {
       return GuardResult.allow(this.name);
     }

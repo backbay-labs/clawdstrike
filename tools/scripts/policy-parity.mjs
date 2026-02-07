@@ -11,9 +11,36 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..', '..');
 
-const fixturesDir = path.join(repoRoot, 'fixtures', 'threat-intel');
-const policyPath = path.join(fixturesDir, 'policy.yaml');
-const eventsPath = path.join(fixturesDir, 'events.jsonl');
+const suites = [
+  {
+    name: 'threat-intel',
+    policyRef: path.join(repoRoot, 'fixtures', 'threat-intel', 'policy.yaml'),
+    eventsPath: path.join(repoRoot, 'fixtures', 'threat-intel', 'events.jsonl'),
+    usesThreatIntelMocks: true,
+    engineKind: 'policy',
+  },
+  {
+    name: 'default-ruleset',
+    policyRef: path.join(repoRoot, 'rulesets', 'default.yaml'),
+    eventsPath: path.join(repoRoot, 'fixtures', 'policy-events', 'v1', 'events.jsonl'),
+    usesThreatIntelMocks: false,
+    engineKind: 'sdk',
+  },
+  {
+    name: 'strict-ruleset',
+    policyRef: path.join(repoRoot, 'rulesets', 'strict.yaml'),
+    eventsPath: path.join(repoRoot, 'fixtures', 'policy-events', 'v1', 'events.jsonl'),
+    usesThreatIntelMocks: false,
+    engineKind: 'sdk',
+  },
+  {
+    name: 'permissive-ruleset',
+    policyRef: path.join(repoRoot, 'rulesets', 'permissive.yaml'),
+    eventsPath: path.join(repoRoot, 'fixtures', 'policy-events', 'v1', 'events.jsonl'),
+    usesThreatIntelMocks: false,
+    engineKind: 'sdk',
+  },
+];
 
 function sha256Hex(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -99,13 +126,13 @@ async function startMockServer({ maliciousFileHash }) {
   };
 }
 
-async function runHushSimulate(env) {
+async function runHushSimulate(env, policyRef, eventsPath) {
   const hushPath = path.join(repoRoot, 'target', 'debug', 'hush');
   if (!fs.existsSync(hushPath)) {
     throw new Error(`missing hush binary at ${hushPath}; build it first`);
   }
 
-  const { stdout, stderr, code, signal } = await spawnCapture(hushPath, ['policy', 'simulate', policyPath, eventsPath, '--json'], {
+  const { stdout, stderr, code, signal } = await spawnCapture(hushPath, ['policy', 'simulate', policyRef, eventsPath, '--json'], {
     cwd: repoRoot,
     env,
     timeoutMs: 30_000,
@@ -120,17 +147,60 @@ async function runHushSimulate(env) {
   return JSON.parse(stdout);
 }
 
-async function runTsEngine(env, events) {
-  const distEntry = path.join(repoRoot, 'packages', 'clawdstrike-policy', 'dist', 'index.js');
-  const mod = await import(pathToFileURL(distEntry).href);
-  const engine = mod.createPolicyEngine({ policyRef: policyPath, resolve: false });
+async function runTsEngine(env, policyRef, events, engineKind) {
+  const byId = new Map();
 
-  const out = new Map();
-  for (const evt of events) {
-    const decision = await engine.evaluate(evt);
-    out.set(evt.eventId, decision);
+  if (engineKind === 'policy') {
+    const distEntry = path.join(repoRoot, 'packages', 'clawdstrike-policy', 'dist', 'index.js');
+    const mod = await import(pathToFileURL(distEntry).href);
+    const engine = mod.createPolicyEngine({ policyRef, resolve: false });
+    for (const evt of events) {
+      const decision = await engine.evaluate(evt);
+      byId.set(evt.eventId, decision);
+    }
+    return byId;
   }
-  return out;
+
+  if (engineKind === 'sdk') {
+    const distEntry = path.join(repoRoot, 'packages', 'hush-ts', 'dist', 'index.js');
+    if (!fs.existsSync(distEntry)) {
+      throw new Error(`missing hush-ts dist at ${distEntry}; run npm --prefix packages/hush-ts run build`);
+    }
+    const mod = await import(pathToFileURL(distEntry).href);
+    const sdk = await mod.Clawdstrike.fromPolicy(policyRef);
+    for (const evt of events) {
+      const decision = await evaluateSdkEvent(sdk, evt);
+      byId.set(evt.eventId, decision);
+    }
+    return byId;
+  }
+
+  throw new Error(`unknown TS engine kind: ${String(engineKind)}`);
+}
+
+async function evaluateSdkEvent(sdk, event) {
+  const data = event?.data ?? {};
+  switch (event?.eventType) {
+    case 'file_read':
+      return sdk.check('file_access', { path: data.path });
+    case 'file_write':
+      return sdk.check('file_write', { path: data.path, content: data.content });
+    case 'network_egress':
+      return sdk.check('network_egress', { host: data.host, port: data.port, url: data.url });
+    case 'tool_call':
+      return sdk.check('mcp_tool', { tool: data.toolName, args: data.parameters ?? {} });
+    case 'patch_apply':
+      return sdk.check('patch', { path: data.filePath, diff: data.patchContent });
+    case 'custom':
+      return sdk.check('custom', {
+        customType: data.customType,
+        customData: {
+          text: data.text,
+        },
+      });
+    default:
+      return sdk.check('custom', { customType: 'custom', customData: data });
+  }
 }
 
 function spawnCapture(command, args, opts) {
@@ -186,12 +256,30 @@ function pickComparableDecision(d) {
   const allowedFromStatus = status && ['allow', 'allowed', 'pass', 'ok'].includes(status);
   const deniedFromStatus = status && ['deny', 'denied', 'block', 'blocked', 'fail', 'error'].includes(status);
   const warnFromStatus = status && ['warn', 'warning'].includes(status);
+  const allowed = typeof d?.allowed === 'boolean' ? d.allowed : Boolean(allowedFromStatus);
+  const denied = typeof d?.denied === 'boolean' ? d.denied : Boolean(deniedFromStatus);
+  const warn = typeof d?.warn === 'boolean' ? d.warn : Boolean(warnFromStatus);
+  const guard = d.guard ?? null;
+  let severity = d.severity ?? null;
+  if (typeof severity === 'string') {
+    const normalized = severity.toLowerCase();
+    if (normalized === 'info' || normalized === 'low') severity = 'low';
+    else if (normalized === 'warning' || normalized === 'warn' || normalized === 'medium') severity = 'medium';
+    else if (normalized === 'error' || normalized === 'high') severity = 'high';
+    else if (normalized === 'critical') severity = 'critical';
+    else severity = normalized;
+  }
+
+  if (allowed && !denied && !warn && guard === null && severity === 'low') {
+    severity = null;
+  }
+
   return {
-    allowed: typeof d?.allowed === 'boolean' ? d.allowed : Boolean(allowedFromStatus),
-    denied: typeof d?.denied === 'boolean' ? d.denied : Boolean(deniedFromStatus),
-    warn: typeof d?.warn === 'boolean' ? d.warn : Boolean(warnFromStatus),
-    guard: d.guard ?? null,
-    severity: d.severity ?? null,
+    allowed,
+    denied,
+    warn,
+    guard,
+    severity,
   };
 }
 
@@ -220,46 +308,74 @@ function compare(tsById, hushOutput) {
 }
 
 async function main() {
-  const events = readJsonl(eventsPath);
-  const file1 = events.find((e) => e.eventId === 'ti-0001');
-  if (!file1) throw new Error('missing ti-0001');
+  const suiteSummaries = [];
 
-  const contentB64 = file1?.data?.contentBase64 ?? '';
-  const maliciousHash = sha256Hex(Buffer.from(contentB64, 'base64'));
+  for (const suite of suites) {
+    const events = readJsonl(suite.eventsPath);
+    let server = null;
+    const env = { ...process.env };
 
-  const server = await startMockServer({ maliciousFileHash: maliciousHash });
+    if (suite.usesThreatIntelMocks) {
+      const file1 = events.find((e) => e.eventId === 'ti-0001');
+      if (!file1) throw new Error('missing ti-0001 for threat-intel parity suite');
 
-  // Set env vars for both the in-process TS engine and the spawned hush CLI.
-  process.env.VT_API_KEY = 'dummy';
-  process.env.GSB_API_KEY = 'dummy';
-  process.env.GSB_CLIENT_ID = 'clawdstrike-parity';
-  process.env.SNYK_API_TOKEN = 'dummy';
-  process.env.SNYK_ORG_ID = 'org-123';
-  process.env.TI_VT_BASE_URL = `${server.baseUrl}/vt/api/v3`;
-  process.env.TI_GSB_BASE_URL = `${server.baseUrl}/gsb/v4`;
-  process.env.TI_SNYK_BASE_URL = `${server.baseUrl}/snyk/api/v1`;
+      const contentB64 = file1?.data?.contentBase64 ?? '';
+      const maliciousHash = sha256Hex(Buffer.from(contentB64, 'base64'));
+      server = await startMockServer({ maliciousFileHash: maliciousHash });
 
-  const env = { ...process.env };
-
-  try {
-    const tsById = await runTsEngine(env, events);
-    const hush = await runHushSimulate(env);
-    const mismatches = compare(tsById, hush);
-
-    if (mismatches.length > 0) {
-      // eslint-disable-next-line no-console
-      console.error(`policy parity failed (${mismatches.length} mismatch(es))`);
-      for (const m of mismatches.slice(0, 20)) {
-        // eslint-disable-next-line no-console
-        console.error(JSON.stringify(m, null, 2));
-      }
-      process.exit(1);
+      env.VT_API_KEY = 'dummy';
+      env.GSB_API_KEY = 'dummy';
+      env.GSB_CLIENT_ID = 'clawdstrike-parity';
+      env.SNYK_API_TOKEN = 'dummy';
+      env.SNYK_ORG_ID = 'org-123';
+      env.TI_VT_BASE_URL = `${server.baseUrl}/vt/api/v3`;
+      env.TI_GSB_BASE_URL = `${server.baseUrl}/gsb/v4`;
+      env.TI_SNYK_BASE_URL = `${server.baseUrl}/snyk/api/v1`;
+      process.env.VT_API_KEY = env.VT_API_KEY;
+      process.env.GSB_API_KEY = env.GSB_API_KEY;
+      process.env.GSB_CLIENT_ID = env.GSB_CLIENT_ID;
+      process.env.SNYK_API_TOKEN = env.SNYK_API_TOKEN;
+      process.env.SNYK_ORG_ID = env.SNYK_ORG_ID;
+      process.env.TI_VT_BASE_URL = env.TI_VT_BASE_URL;
+      process.env.TI_GSB_BASE_URL = env.TI_GSB_BASE_URL;
+      process.env.TI_SNYK_BASE_URL = env.TI_SNYK_BASE_URL;
     }
 
+    try {
+      const tsById = await runTsEngine(env, suite.policyRef, events, suite.engineKind);
+      const hush = await runHushSimulate(env, suite.policyRef, suite.eventsPath);
+      const mismatches = compare(tsById, hush);
+      suiteSummaries.push({
+        name: suite.name,
+        policyRef: suite.policyRef,
+        events: events.length,
+        mismatches,
+      });
+    } finally {
+      if (server) {
+        await server.close();
+      }
+    }
+  }
+
+  const failed = suiteSummaries.filter((s) => s.mismatches.length > 0);
+  if (failed.length > 0) {
     // eslint-disable-next-line no-console
-    console.log(`policy parity ok (${events.length} events)`);
-  } finally {
-    await server.close();
+    console.error(`policy parity failed (${failed.length} suite(s) with mismatches)`);
+    for (const suite of failed) {
+      // eslint-disable-next-line no-console
+      console.error(`suite=${suite.name} policy=${suite.policyRef} mismatches=${suite.mismatches.length}`);
+      for (const mismatch of suite.mismatches.slice(0, 20)) {
+        // eslint-disable-next-line no-console
+        console.error(JSON.stringify(mismatch, null, 2));
+      }
+    }
+    process.exit(1);
+  }
+
+  for (const suite of suiteSummaries) {
+    // eslint-disable-next-line no-console
+    console.log(`policy parity ok suite=${suite.name} events=${suite.events}`);
   }
 }
 

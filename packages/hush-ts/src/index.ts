@@ -88,6 +88,10 @@ export {
   McpToolGuard,
   type McpToolConfig,
   ToolDecision,
+  PromptInjectionGuard,
+  type PromptInjectionConfig,
+  JailbreakGuard,
+  type JailbreakGuardConfig,
 } from "./guards";
 
 // Prompt watermarking

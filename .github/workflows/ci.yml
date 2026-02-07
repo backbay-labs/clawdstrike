@@ -44,6 +44,9 @@ jobs:
       - name: Install TypeScript compiler
         run: npm install -g typescript@5.9.3
 
+      - name: Smoke test TS file dependency workflows
+        run: bash scripts/smoke-ts-file-deps.sh
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -499,26 +502,32 @@ jobs:
             dir: packages/clawdstrike-hush-cli-engine
             bootstrap_adapter_core: true
             bootstrap_sdk: false
+            bootstrap_hush: true
           - name: Codex
             dir: packages/clawdstrike-codex
             bootstrap_adapter_core: true
             bootstrap_sdk: false
+            bootstrap_hush: false
           - name: OpenCode
             dir: packages/clawdstrike-opencode
             bootstrap_adapter_core: true
             bootstrap_sdk: false
+            bootstrap_hush: false
           - name: Claude Code
             dir: packages/clawdstrike-claude-code
             bootstrap_adapter_core: true
             bootstrap_sdk: false
+            bootstrap_hush: false
           - name: Vercel AI
             dir: packages/clawdstrike-vercel-ai
             bootstrap_adapter_core: true
             bootstrap_sdk: true
+            bootstrap_hush: false
           - name: LangChain
             dir: packages/clawdstrike-langchain
             bootstrap_adapter_core: true
             bootstrap_sdk: false
+            bootstrap_hush: false
     steps:
       - uses: actions/checkout@v6
 
@@ -528,6 +537,18 @@ jobs:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+
+      - name: Install Rust toolchain
+        if: ${{ matrix.bootstrap_hush }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build hush binary
+        if: ${{ matrix.bootstrap_hush }}
+        run: cargo build -p hush-cli
+
+      - name: Export HUSH_PATH for e2e tests
+        if: ${{ matrix.bootstrap_hush }}
+        run: echo "HUSH_PATH=${{ github.workspace }}/target/debug/hush" >> "$GITHUB_ENV"
 
       - name: Bootstrap file deps (adapter-core)
         if: ${{ matrix.bootstrap_adapter_core }}

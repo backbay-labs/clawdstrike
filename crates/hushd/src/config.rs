@@ -1440,11 +1440,13 @@ impl Config {
     ///
     /// Supports `${VAR}` environment variable references inside `auth.api_keys[].key`.
     pub async fn load_auth_store(&self) -> anyhow::Result<AuthStore> {
-        let store = AuthStore::new();
+        let pepper = std::env::var("CLAWDSTRIKE_AUTH_PEPPER")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| v.into_bytes());
+        let store = AuthStore::with_pepper(pepper.clone());
 
-        let has_pepper = std::env::var("CLAWDSTRIKE_AUTH_PEPPER")
-            .map(|v| !v.is_empty())
-            .unwrap_or(false);
+        let has_pepper = pepper.is_some();
         let has_api_keys = !self.auth.api_keys.is_empty();
         if self.auth.enabled && has_api_keys && !has_pepper {
             return Err(anyhow::anyhow!(
@@ -1480,7 +1482,7 @@ impl Config {
 
             let api_key = ApiKey {
                 id: uuid::Uuid::new_v4().to_string(),
-                key_hash: AuthStore::hash_key(&key),
+                key_hash: store.hash_key_for_token(&key),
                 name: key_config.name.clone(),
                 tier: None,
                 scopes,
@@ -1501,7 +1503,40 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
     use super::*;
+
+    fn auth_pepper_env_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    struct AuthPepperEnvGuard {
+        previous: Option<String>,
+    }
+
+    impl AuthPepperEnvGuard {
+        fn set(value: Option<&str>) -> Self {
+            let previous = std::env::var("CLAWDSTRIKE_AUTH_PEPPER").ok();
+            match value {
+                Some(v) => std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", v),
+                None => std::env::remove_var("CLAWDSTRIKE_AUTH_PEPPER"),
+            }
+            Self { previous }
+        }
+    }
+
+    impl Drop for AuthPepperEnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(v) => std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", v),
+                None => std::env::remove_var("CLAWDSTRIKE_AUTH_PEPPER"),
+            }
+        }
+    }
 
     #[test]
     fn test_default_config() {
@@ -1584,7 +1619,8 @@ scopes = ["*"]
 
     #[tokio::test]
     async fn test_load_auth_store() -> anyhow::Result<()> {
-        std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", "test-pepper");
+        let _lock = auth_pepper_env_lock();
+        let _pepper = AuthPepperEnvGuard::set(Some("test-pepper"));
 
         let toml = r#"
 listen = "127.0.0.1:9876"
@@ -1610,7 +1646,8 @@ scopes = ["check"]
 
     #[tokio::test]
     async fn test_load_auth_store_default_scopes() -> anyhow::Result<()> {
-        std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", "test-pepper");
+        let _lock = auth_pepper_env_lock();
+        let _pepper = AuthPepperEnvGuard::set(Some("test-pepper"));
 
         let toml = r#"
 listen = "127.0.0.1:9876"
@@ -1636,7 +1673,8 @@ scopes = []
 
     #[tokio::test]
     async fn test_load_auth_store_expands_env_refs() -> anyhow::Result<()> {
-        std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", "test-pepper");
+        let _lock = auth_pepper_env_lock();
+        let _pepper = AuthPepperEnvGuard::set(Some("test-pepper"));
         std::env::set_var("CLAWDSTRIKE_TEST_API_KEY", "secret-from-env");
 
         let yaml = r#"
@@ -1659,7 +1697,8 @@ auth:
     #[tokio::test]
     async fn test_load_auth_store_allows_auth_enabled_without_api_keys_and_without_pepper(
     ) -> anyhow::Result<()> {
-        std::env::remove_var("CLAWDSTRIKE_AUTH_PEPPER");
+        let _lock = auth_pepper_env_lock();
+        let _pepper = AuthPepperEnvGuard::set(None);
 
         let toml = r#"
 listen = "127.0.0.1:9876"
@@ -1675,7 +1714,8 @@ enabled = true
 
     #[tokio::test]
     async fn test_load_auth_store_requires_pepper_when_api_keys_are_configured() {
-        std::env::remove_var("CLAWDSTRIKE_AUTH_PEPPER");
+        let _lock = auth_pepper_env_lock();
+        let _pepper = AuthPepperEnvGuard::set(None);
 
         let toml = r#"
 listen = "127.0.0.1:9876"
