@@ -1445,7 +1445,8 @@ impl Config {
         let has_pepper = std::env::var("CLAWDSTRIKE_AUTH_PEPPER")
             .map(|v| !v.is_empty())
             .unwrap_or(false);
-        if self.auth.enabled && !has_pepper {
+        let has_api_keys = !self.auth.api_keys.is_empty();
+        if self.auth.enabled && has_api_keys && !has_pepper {
             return Err(anyhow::anyhow!(
                 "Auth is enabled but CLAWDSTRIKE_AUTH_PEPPER is not set; refusing to start without a pepper"
             ));
@@ -1653,6 +1654,51 @@ auth:
         let key = store.validate_key("secret-from-env").await?;
         assert_eq!(key.name, "env");
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_auth_store_allows_auth_enabled_without_api_keys_and_without_pepper(
+    ) -> anyhow::Result<()> {
+        std::env::remove_var("CLAWDSTRIKE_AUTH_PEPPER");
+
+        let toml = r#"
+listen = "127.0.0.1:9876"
+
+[auth]
+enabled = true
+"#;
+
+        let config: Config = toml::from_str(toml)?;
+        let _store = config.load_auth_store().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_auth_store_requires_pepper_when_api_keys_are_configured() {
+        std::env::remove_var("CLAWDSTRIKE_AUTH_PEPPER");
+
+        let toml = r#"
+listen = "127.0.0.1:9876"
+
+[auth]
+enabled = true
+
+[[auth.api_keys]]
+name = "test"
+key = "my-secret-key"
+scopes = ["check"]
+"#;
+
+        let config: Config = toml::from_str(toml).expect("parse config");
+        match config.load_auth_store().await {
+            Ok(_) => panic!("missing pepper should fail when api_keys are configured"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("CLAWDSTRIKE_AUTH_PEPPER"),
+                    "unexpected error: {err}"
+                );
+            }
+        }
     }
 
     #[test]
