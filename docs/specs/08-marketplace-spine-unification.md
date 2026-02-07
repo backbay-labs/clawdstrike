@@ -81,6 +81,12 @@ each marketplace construct to its Spine equivalent:
 | libp2p gossipsub discovery | Spine head announcements + gossip | **Same transport, different semantics** |
 | `verify_trusted(&[PublicKey])` | Spine TrustBundle | **Same verification model** |
 
+### Existing SDK Packages (backbay-sdk)
+
+The `@backbay/notary` package already implements RFC 8785 canonical JSON + SHA-256 hashing for the marketplace's `RunReceipt` attestation pipeline. Its `canonicalize()` and `hashObject()` functions use the same deterministic JSON algorithm as `hush_core::canonicalize_json()`. When unifying marketplace with Spine, the notary's canonical JSON and EAS attestation modules can be reused rather than ported to a new package.
+
+The `@backbay/witness` package verifies Ed25519 signatures and Merkle proofs in the browser via WASM -- the same primitives Spine uses server-side. Extending witness with a Spine verification backend (Spec 07) means the unified marketplace can verify provenance client-side without new crypto code.
+
 ---
 
 ## Target State

@@ -176,7 +176,7 @@ dependencies = [
     "lxmf>=0.6.0",          # LXMF store-and-forward messaging
     "cbor2>=5.6.0",          # CBOR encoding (RFC 8949)
     "nats-py>=2.9.0",        # NATS client (for gateway mode)
-    "ed25519-blake2b>=1.4",  # Ed25519 verification
+    "PyNaCl>=1.5.0",         # Ed25519 verification (libsodium, SHA-512 based -- compatible with hush-core)
     "rfc8785>=0.1.2",        # RFC 8785 canonical JSON (JCS) by Trail of Bits
     "pyyaml>=6.0",           # Config parsing
     "click>=8.1",            # CLI framework
@@ -201,7 +201,7 @@ import json
 from typing import Optional
 
 import rfc8785
-from ed25519 import VerifyingKey
+from nacl.signing import VerifyKey
 
 ENVELOPE_SCHEMA_V1 = "aegis.spine.envelope.v1"
 
@@ -248,10 +248,10 @@ def verify_envelope(envelope: dict) -> bool:
 
     # Verify Ed25519 signature
     canonical = canonical_json_bytes(unsigned)
-    vk = VerifyingKey(bytes.fromhex(pubkey_hex))
+    vk = VerifyKey(bytes.fromhex(pubkey_hex))
     sig_bytes = bytes.fromhex(sig_hex.removeprefix("0x"))
     try:
-        vk.verify(sig_bytes, canonical)
+        vk.verify(canonical, sig_bytes)
         return True
     except Exception:
         return False
@@ -1187,12 +1187,12 @@ transports are unaffected.
 
 ## 10. Open Questions
 
-1. **Ed25519 library choice for Python:** The `ed25519-blake2b` package
-   uses the same Ed25519 algorithm as `ed25519-dalek` (Rust), but we must
-   confirm byte-level signature compatibility. Alternative: use `PyNaCl`
-   (libsodium bindings) which is a more common Ed25519 implementation.
-   **Recommendation:** Use `PyNaCl` for wider compatibility and audit
-   history.
+1. **Ed25519 library choice for Python:** ~~The `ed25519-blake2b` package~~
+   **Resolved:** Use `PyNaCl` (libsodium bindings). The `ed25519-blake2b`
+   package uses BLAKE2b instead of SHA-512 as the internal hash, producing
+   **incompatible signatures** with `ed25519-dalek` (Rust). `PyNaCl` uses
+   standard Ed25519 (RFC 8032, SHA-512) which is byte-compatible with
+   `hush_core::Keypair`.
 
 2. **Reticulum announce frequency:** The default announce period of 300
    seconds (5 minutes) may be too long for rapid peer discovery in
@@ -1210,6 +1210,16 @@ transports are unaffected.
    proves insufficient on links below 100 bps. When should this decision
    be revisited? **Recommendation:** After Phase 1 field testing with
    actual LoRa hardware.
+
+5. **Alternative P2P transport -- speakeasy's libp2p:** The `@backbay/speakeasy`
+   package (`standalone/backbay-sdk/packages/speakeasy`) already has a working
+   libp2p Gossipsub transport with WebRTC/WebSocket for browser-native P2P
+   messaging. It uses Ed25519 identity (same curve as Spine). For scenarios where
+   internet connectivity exists but NATS is unavailable, speakeasy's libp2p
+   transport could serve as an alternative to Reticulum (Plane A-L vs Plane A-R).
+   **Recommendation:** Keep Reticulum for offline/RF scenarios. Consider
+   speakeasy's libp2p as complementary for browser-native nodes that have
+   internet access but need decentralized discovery.
 
 ---
 

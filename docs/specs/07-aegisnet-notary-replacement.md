@@ -65,6 +65,18 @@ is reachable. What is missing:
 - **Provenance enrichment**: Feed entries do not carry inclusion proofs for offline use
 - **Witness verification**: The desktop does not verify witness co-signatures
 
+### Existing SDK Packages (backbay-sdk)
+
+The `@backbay/witness` package (`standalone/backbay-sdk/packages/witness`) provides browser-side cryptographic verification that overlaps significantly with this spec's client verification needs:
+
+- **Ed25519 verification (WASM):** Same primitives as `hush-core`, compiled to WASM for browser use
+- **Merkle proof verification:** `verifyMerkleProof(leaf, proof, root)` — identical algorithm to `hush_core::MerkleProof::verify()`
+- **RFC 8785 canonical JSON:** `getCanonicalJson()` for deterministic hashing
+- **Multi-backend verification:** `fetchAndVerifyChain()` supports pluggable verification backends (currently Rekor, EAS, Solana)
+- **React components:** `VerificationBadge` and `VerificationDetails` in `@backbay/witness-react` provide ready-made UI for verification status display
+
+Rather than building new browser-side verification from scratch, this spec should extend `@backbay/witness` with a **Spine verification backend** (`fetchers/spine.ts`) that queries the Proofs API and verifies Merkle inclusion proofs using the existing WASM crypto.
+
 ### Proofs API
 
 The Proofs API (`crates/spine/src/bin/proofs_api.rs`) exposes:
@@ -403,9 +415,14 @@ GET /v1/marketplace/revocation/{bundle_hash}
 Update the marketplace views to use the unified verification path:
 
 1. In `MarketplaceView.tsx` (or equivalent), when displaying a policy entry:
+   The desktop should use `@backbay/witness-react`'s `VerificationBadge`
+   component for provenance badges, extending it with Spine-specific status
+   strings ("Spine Verified", "Spine Offline Verified"). The
+   `VerificationDetails` component can display the full verification chain
+   including witness count and checkpoint info.
    - If `spine_envelope_hash` is present, show a "Spine Verified" badge with
      checkpoint info.
-   - If offline inclusion proof is bundled, show "Offline Verified" badge.
+   - If offline inclusion proof is bundled, show "Spine Offline Verified" badge.
    - If only notary is available, show the existing "Notary Verified" badge.
    - Show witness count ("2/3 witnesses" style).
 
@@ -449,6 +466,8 @@ check for revocations:
 | `crates/spine/src/bin/proofs_api.rs` | **Modify** | Add `/v1/marketplace/attestation/{bundle_hash}` and `/v1/marketplace/revocation/{bundle_hash}` endpoints |
 | `apps/desktop/src/services/marketplaceProvenanceSettings.ts` | **Modify** | Add `proofsApiUrl`, `preferSpine`, `trustedWitnessKeys` fields |
 | `crates/spine/tests/marketplace_facts_test.rs` | **Create** | Serde roundtrip and envelope integration tests |
+| `backbay-sdk/packages/witness/src/fetchers/spine.ts` | **Create** | Spine Proofs API verification backend for `fetchAndVerifyChain()` |
+| `backbay-sdk/packages/witness-react/` | **Reference** | Reuse `VerificationBadge` and `VerificationDetails` for marketplace UI |
 
 ---
 
@@ -513,6 +532,8 @@ Existing feed JSON files remain valid.
 | Desktop marketplace commands | Exists | `apps/desktop/src-tauri/src/commands/marketplace.rs` with `marketplace_verify_spine_proof` already doing local Merkle verification |
 | NATS JetStream | Deployed | Required for attestation envelope submission |
 | Spec 06 (Identity Binding) | Recommended | Attestation envelopes are stronger when issuer identity is bound to SPIFFE SVID, but this spec works without it |
+| `@backbay/witness` | Existing (backbay-sdk) | Browser-side Ed25519 + Merkle verification; extend with Spine backend |
+| `@backbay/witness-react` | Existing (backbay-sdk) | React verification UI components |
 
 ---
 

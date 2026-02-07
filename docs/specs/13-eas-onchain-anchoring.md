@@ -4,7 +4,7 @@
 > on ClawdStrike policy attestations, curator actions, and key rotations.
 >
 > **Status:** Draft | **Date:** 2026-02-07
-> **Effort Estimate:** 5-7 engineer-days
+> **Effort Estimate:** 3-5 engineer-days
 > **Branch:** `feat/sdr-execution`
 
 ---
@@ -93,6 +93,40 @@ blockchain timestamps.
 - No client-side EAS verification
 - No EAS revocation flow
 - No Base L2 wallet/signer infrastructure
+
+### 2.5 Existing SDK Packages
+
+Two packages in the Backbay SDK already provide production EAS infrastructure
+that this spec should reuse rather than rebuild:
+
+**`@backbay/notary`** (`standalone/backbay-sdk/packages/notary`) -- EAS
+attestation creation pipeline:
+
+- `createAttestation(receipt, cid)` for off-chain attestations
+- `createOnchainAttestation(receipt, cid)` for on-chain attestations
+- `verifyAttestation(uid)` for verification
+- Uses `@ethereum-attestation-service/eas-sdk` v2.9.0 + `ethers` v6.13.0 +
+  `viem` v2.21.0
+- `getEasExplorerUrl(uid)` for explorer links, `isEasConfigured()` for
+  checking schemaUid + key availability
+- Supports both offchain and onchain attestation flows
+- Current attestation schema encodes RunReceipt data:
+  `{universeId, worldId, runId, receiptHash, manifestHash, artifactsCid, passed}`
+- Needs a new schema encoder for Spine checkpoint and policy attestation data
+
+**`@backbay/witness`** (`standalone/backbay-sdk/packages/witness`) -- client-side
+EAS verification:
+
+- `src/fetchers/eas.ts` with GraphQL queries to EAS endpoints
+- Chain-aware verification across Ethereum (1), Optimism (10), Arbitrum (42161),
+  Base (8453)
+- Verification checks: schema ID match, `receiptHash` binding, revocation status
+- `fetchAndVerifyChain()` for parallel multi-chain verification
+- React components (`VerificationBadge`, `VerificationDetails`) for
+  verification UI in the desktop app
+
+Both packages live at `standalone/backbay-sdk/packages/{notary,witness}` and
+are already integrated into the Backbay platform.
 
 ---
 
@@ -265,6 +299,8 @@ async function registerSchemas() {
 ```
 
 **Cost:** ~$0.10-$0.30 per schema registration on Base L2 (one-time).
+
+> **Reuse opportunity:** The schema registration script can reuse `@backbay/notary`'s existing EAS SDK setup and `getWalletClient()` / `getPublicClient()` helpers. The notary already initializes EAS SDK with a signer.
 
 ### Step 3: EAS Anchor Service (Rust)
 
@@ -452,36 +488,43 @@ pub async fn subscribe_checkpoints(
 ### Step 4: Off-Chain Attestation for Individual Policies
 
 For individual policy attestations (Schema 1), use EAS off-chain attestations
-with on-chain timestamp:
+with on-chain timestamp.
+
+> **Instead of creating `packages/eas-utils/`**, extend `@backbay/notary` with a `spine-eas.ts` module. The notary already has the EAS SDK initialization, signer management, and offchain/onchain attestation flow. Adding Spine checkpoint and policy attestation schemas is ~100 LOC on top of existing infrastructure.
+
+**New module: `backbay-sdk/packages/notary/src/lib/spine-eas.ts`**
 
 ```typescript
-// packages/eas-utils/src/attest-policy.ts
+// backbay-sdk/packages/notary/src/lib/spine-eas.ts
+//
+// Spine-specific EAS schema encoders, built on top of the notary's
+// existing EAS infrastructure (EAS SDK init, signer, offchain/onchain flow).
 
-import { EAS, SchemaEncoder } from "@ethereum-attestation-service/eas-sdk";
+import { SchemaEncoder } from "@ethereum-attestation-service/eas-sdk";
+import { createAttestation, createOnchainAttestation } from "./eas";
 
-const EAS_CONTRACT = "0xA1207F3BBa224E2c9c3c6D5aF63D816e6e1f8e4b";
+// Schema 1: Policy Attestation
+const POLICY_SCHEMA = "bytes32 bundleHash, string feedId, string entryId, " +
+    "bytes32 curatorKey, uint64 feedSeq, string policyVersion";
 
-export async function createPolicyAttestation(
-    signer: ethers.Signer,
-    schemaUid: string,
-    params: {
-        bundleHash: string;      // 0x-prefixed SHA-256
-        feedId: string;
-        entryId: string;
-        curatorKey: string;      // 0x-prefixed Ed25519 pubkey
-        feedSeq: number;
-        policyVersion: string;
-    }
-): Promise<{ offchainAttestation: string; timestampTxHash?: string }> {
-    const eas = new EAS(EAS_CONTRACT);
-    eas.connect(signer);
+// Schema 2: Checkpoint Anchor
+const CHECKPOINT_SCHEMA = "bytes32 checkpointHash, uint64 checkpointSeq, " +
+    "uint64 treeSize, bytes32 logOperatorKey, bytes32 witnessKey";
 
-    const schemaEncoder = new SchemaEncoder(
-        "bytes32 bundleHash, string feedId, string entryId, " +
-        "bytes32 curatorKey, uint64 feedSeq, string policyVersion"
-    );
+// Schema 3: Key Rotation
+const KEY_ROTATION_SCHEMA = "bytes32 oldKey, bytes32 newKey, string feedId, " +
+    "uint64 rotationSeq, string reason";
 
-    const encodedData = schemaEncoder.encodeData([
+export async function createPolicyAttestation(params: {
+    bundleHash: string;      // 0x-prefixed SHA-256
+    feedId: string;
+    entryId: string;
+    curatorKey: string;      // 0x-prefixed Ed25519 pubkey
+    feedSeq: number;
+    policyVersion: string;
+}): Promise<{ offchainAttestation: string; timestampTxHash?: string }> {
+    const encoder = new SchemaEncoder(POLICY_SCHEMA);
+    const encodedData = encoder.encodeData([
         { name: "bundleHash", value: params.bundleHash, type: "bytes32" },
         { name: "feedId", value: params.feedId, type: "string" },
         { name: "entryId", value: params.entryId, type: "string" },
@@ -490,27 +533,28 @@ export async function createPolicyAttestation(
         { name: "policyVersion", value: params.policyVersion, type: "string" },
     ]);
 
-    // Create off-chain attestation (free, no gas)
-    const offchain = await eas.getOffchain();
-    const offchainAttestation = await offchain.signOffchainAttestation({
-        recipient: "0x0000000000000000000000000000000000000000",
-        expirationTime: 0n,    // no expiration (revocable instead)
-        time: BigInt(Math.floor(Date.now() / 1000)),
-        revocable: true,
-        schema: schemaUid,
-        refUID: "0x0000000000000000000000000000000000000000000000000000000000000000",
-        data: encodedData,
-    }, signer);
+    // Delegates to @backbay/notary's existing attestation flow
+    return createAttestation(encodedData, { revocable: true });
+}
 
-    // Optionally timestamp on-chain (minimal gas: ~$0.01 on Base)
-    const timestampTxHash = await eas.timestamp(
-        offchainAttestation.uid
-    );
+export async function createCheckpointAnchorAttestation(params: {
+    checkpointHash: string;
+    checkpointSeq: number;
+    treeSize: number;
+    logOperatorKey: string;
+    witnessKey: string;
+}): Promise<string> {
+    const encoder = new SchemaEncoder(CHECKPOINT_SCHEMA);
+    const encodedData = encoder.encodeData([
+        { name: "checkpointHash", value: params.checkpointHash, type: "bytes32" },
+        { name: "checkpointSeq", value: params.checkpointSeq, type: "uint64" },
+        { name: "treeSize", value: params.treeSize, type: "uint64" },
+        { name: "logOperatorKey", value: params.logOperatorKey, type: "bytes32" },
+        { name: "witnessKey", value: params.witnessKey, type: "bytes32" },
+    ]);
 
-    return {
-        offchainAttestation: JSON.stringify(offchainAttestation),
-        timestampTxHash: timestampTxHash?.hash,
-    };
+    // On-chain attestation (not revocable) via existing notary flow
+    return createOnchainAttestation(encodedData, { revocable: false });
 }
 ```
 
@@ -534,93 +578,41 @@ Add EAS verification to the ClawdStrike desktop client and CLI:
    - "Blockchain anchored" (highest)
 ```
 
-**New TypeScript utility for desktop:**
+> **Instead of creating `packages/eas-utils/src/verify.ts`**, extend
+> `@backbay/witness`'s `fetchers/eas.ts` to support ClawdStrike-specific EAS
+> schemas. The witness package already has multi-chain EAS verification,
+> GraphQL queries, and revocation checking. Add a new `fetchers/spine-eas.ts`
+> alongside the existing EAS fetcher, and wire it into `fetchAndVerifyChain()`.
+> The React components (`VerificationBadge`, `VerificationDetails`) can be used
+> directly in the desktop app.
 
-```typescript
-// packages/eas-utils/src/verify.ts
+**New module: `backbay-sdk/packages/witness/src/fetchers/spine-eas.ts`**
 
-import { EAS } from "@ethereum-attestation-service/eas-sdk";
-import { ethers } from "ethers";
-
-export interface EasVerificationResult {
-    verified: boolean;
-    attestationUid: string;
-    attester: string;
-    timestamp: number;          // Unix timestamp from block
-    revoked: boolean;
-    revokedAt?: number;
-    chainId: number;
-    blockNumber: number;
-    error?: string;
-}
-
-export async function verifyEasAttestation(
-    provenance: {
-        attestation_uid: string;
-        chain_id: number;
-        schema_uid: string;
-    },
-    rpcUrl: string = "https://mainnet.base.org"
-): Promise<EasVerificationResult> {
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const eas = new EAS("0xA1207F3BBa224E2c9c3c6D5aF63D816e6e1f8e4b");
-    eas.connect(provider);
-
-    try {
-        const attestation = await eas.getAttestation(
-            provenance.attestation_uid
-        );
-
-        return {
-            verified: true,
-            attestationUid: provenance.attestation_uid,
-            attester: attestation.attester,
-            timestamp: Number(attestation.time),
-            revoked: attestation.revocationTime > 0n,
-            revokedAt: attestation.revocationTime > 0n
-                ? Number(attestation.revocationTime) : undefined,
-            chainId: provenance.chain_id,
-            blockNumber: 0,  // filled from tx receipt
-        };
-    } catch (error) {
-        return {
-            verified: false,
-            attestationUid: provenance.attestation_uid,
-            attester: "",
-            timestamp: 0,
-            revoked: false,
-            chainId: provenance.chain_id,
-            blockNumber: 0,
-            error: String(error),
-        };
-    }
-}
-```
+The spine-eas fetcher extends the existing `eas.ts` fetcher with
+ClawdStrike-specific schema decoding (policy attestation, checkpoint anchor,
+key rotation). It returns the same `EasVerificationResult` shape and plugs
+into the existing `fetchAndVerifyChain()` pipeline.
 
 ### Step 6: Revocation Flow
 
 For emergency key compromise or policy revocation:
 
-```typescript
-// packages/eas-utils/src/revoke.ts
+Revocation can be added to `@backbay/notary`'s `spine-eas.ts` module:
 
-export async function revokeAttestation(
-    signer: ethers.Signer,
+```typescript
+// backbay-sdk/packages/notary/src/lib/spine-eas.ts (addition)
+
+export async function revokeSpineAttestation(
     schemaUid: string,
     attestationUid: string,
     reason?: string
 ): Promise<string> {
-    const eas = new EAS("0xA1207F3BBa224E2c9c3c6D5aF63D816e6e1f8e4b");
-    eas.connect(signer);
-
+    // Uses @backbay/notary's existing getWalletClient() and EAS SDK init
+    const eas = getEasInstance();
     const tx = await eas.revoke({
         schema: schemaUid,
-        data: {
-            uid: attestationUid,
-            value: 0n,
-        },
+        data: { uid: attestationUid, value: 0n },
     });
-
     return tx.hash;
 }
 ```
@@ -694,16 +686,12 @@ Update the provenance type to support EAS:
 | `crates/eas-anchor/src/batcher.rs` | Attestation batching logic | 120 |
 | `crates/eas-anchor/src/eas_client.rs` | EAS contract interaction (alloy) | 200 |
 | `crates/eas-anchor/src/nats_sub.rs` | NATS subscription for checkpoints | 100 |
-| `packages/eas-utils/package.json` | TS package for EAS utilities | 20 |
-| `packages/eas-utils/src/attest-policy.ts` | Off-chain policy attestation | 80 |
-| `packages/eas-utils/src/verify.ts` | Client-side EAS verification | 100 |
-| `packages/eas-utils/src/revoke.ts` | Revocation flow | 40 |
-| `packages/eas-utils/src/schemas.ts` | Schema UIDs and ABI constants | 50 |
-| `packages/eas-utils/src/index.ts` | Package exports | 10 |
-| `packages/eas-utils/tests/verify.test.ts` | Verification tests | 100 |
+| `backbay-sdk/packages/notary/src/lib/spine-eas.ts` | Spine-specific EAS schema encoders + attestation + revocation | 150 |
+| `backbay-sdk/packages/witness/src/fetchers/spine-eas.ts` | Spine-specific EAS verification for `fetchAndVerifyChain()` | 100 |
+| `backbay-sdk/packages/notary/tests/spine-eas.test.ts` | Schema encoding + attestation tests | 100 |
 | `scripts/register-eas-schemas.ts` | One-time schema registration script | 80 |
 | `scripts/eas-anchor.toml` | Reference config for anchor service | 30 |
-| **Total estimated** | | **~1,095** |
+| **Total estimated** | | **~845** |
 
 ### Modified Files
 
@@ -761,8 +749,8 @@ EAS anchoring is entirely **additive and optional**:
 
 1. **Remove `crates/eas-anchor/`** -- the anchor service is an independent
    binary. Stopping it has zero impact on AegisNet or hushd.
-2. **Remove `packages/eas-utils/`** -- client-side EAS verification is a
-   separate npm package. The desktop app falls back to AegisNet-only
+2. **Revert `spine-eas.ts` modules** in `@backbay/notary` and
+   `@backbay/witness` -- the desktop app falls back to AegisNet-only
    verification.
 3. **On-chain schemas persist** -- registered EAS schemas on Base L2 remain
    but are inert without the anchor service creating new attestations.
@@ -787,6 +775,8 @@ EAS anchoring is entirely **additive and optional**:
 | `alloy` Rust crate | **External, stable** | Ethereum interaction |
 | Spec #7 (AegisNet notary replacement) | **Pending** | EAS extends AegisNet, does not require it |
 | Spec #12 (Reticulum adapter) | **Pending** | Revocations propagate via Reticulum |
+| `@backbay/notary` EAS module | Existing (backbay-sdk) | EAS attestation creation; extend with Spine schemas |
+| `@backbay/witness` EAS fetcher | Existing (backbay-sdk) | Client-side EAS verification; extend with Spine schemas |
 
 ---
 

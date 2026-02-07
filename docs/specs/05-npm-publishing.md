@@ -36,6 +36,18 @@ This implements the npm publishing track from Section 4.6 of `docs/research/open
 
 A potential 12th package: the desktop app may have a publishable subset, but this is out of scope. The 11 packages listed above plus any additional adapter packages found during implementation constitute the target set.
 
+### Cross-SDK dependencies
+
+Three packages from the `@backbay` scope (`standalone/backbay-sdk/packages/`) are identified as reusable by other specs:
+
+| Package | Used By | Purpose |
+|---------|---------|---------|
+| `@backbay/notary` | Specs 10, 13 | IPFS uploads (w3up-client), EAS attestations |
+| `@backbay/witness` | Specs 07, 13 | Browser-side Ed25519/Merkle verification, EAS verification |
+| `@backbay/witness-react` | Spec 07 | React verification UI components (`VerificationBadge`, `VerificationDetails`) |
+
+When publishing `@clawdstrike/*` packages, consider whether shared crypto utilities (RFC 8785 canonical JSON, SHA-256 hashing) should be extracted from `@backbay/notary` into a shared `@backbay/crypto` or `@clawdstrike/crypto` package to avoid duplicating the canonical JSON implementation across `@clawdstrike/sdk` (hush-ts) and `@backbay/notary`.
+
 ### Key issues blocking npm publish
 
 1. **`"private": true`** -- 7 of 11 packages are marked private, preventing `npm publish`.

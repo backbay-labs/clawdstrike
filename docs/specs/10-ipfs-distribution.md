@@ -2,7 +2,7 @@
 
 > **Status:** Draft | **Date:** 2026-02-07
 > **Author:** Phase C Spec Agent
-> **Effort estimate:** 6-8 engineer-days
+> **Effort estimate:** 4-6 engineer-days
 > **Dependencies:** None (can be done in parallel with other marketplace work)
 
 ---
@@ -48,6 +48,18 @@ The marketplace uses a three-layer signed model implemented in:
 
 **`apps/desktop/src/services/marketplaceProvenanceSettings.ts`:**
 - `MarketplaceProvenanceSettings` tracks `requireVerified`, `trustedAttesters[]`, and `notaryUrl`
+
+### Existing SDK Reuse
+
+`@backbay/notary` (located at `standalone/backbay-sdk/packages/notary/src/lib/ipfs.ts`) already has a production IPFS upload pipeline built on `@web3-storage/w3up-client` v16.0.0. It provides:
+
+- **`uploadFile(filePath)`** and **`uploadDirectory(dirPath)`** -- pin files/directories to IPFS via web3.storage
+- **`checkAvailability(cid)`** -- verify a CID is retrievable from the IPFS network
+- **`getIpfsGatewayUrl(cid)`** -- format gateway URLs for a given CID
+- **Space management** -- `setupAuthentication(email)`, `listSpaces()`, `createSpace()`, `selectSpace()`
+- **`isIpfsConfigured()`** -- check whether IPFS credentials are present (via `NOTARY_*` environment variables)
+
+Additionally, `@backbay/notary` has its own RFC 8785 canonical JSON implementation (`canonicalize()`, `hashObject()`, `sha256()`), which overlaps with `hush-ts`'s canonical JSON support. These implementations can be shared or consolidated to avoid divergence.
 
 ### What is missing
 
@@ -126,6 +138,8 @@ Since `MarketplaceEntry` uses `deny_unknown_fields`, this is a schema change. Th
 **Important:** The MARKETPLACE_FEED_SCHEMA_VERSION stays at `clawdstrike-marketplace-feed-v1` since the new fields are optional and backward-compatible. If strict schema versioning is desired, bump to `v2` and handle both in `validate_version()`.
 
 ### Step 2: Add IPFS pinning client module
+
+> **Note:** The TypeScript side of IPFS upload should reuse `@backbay/notary`'s existing `ipfs.ts` module (w3up-client wrapper) rather than building a new one. The Rust `IpfsClient` in this step covers the Rust CLI and daemon use case; the desktop app's TypeScript layer should import from `@backbay/notary` or extract its IPFS module into a shared `@backbay/ipfs` package.
 
 **New file:** `crates/clawdstrike/src/ipfs.rs`
 
@@ -238,6 +252,8 @@ Workflow:
 6. Output the feed CID for P2P discovery announcement
 
 ### Step 4: Gateway fetch pipeline for desktop client
+
+> **Note:** The desktop app's TypeScript layer should use `@backbay/notary`'s `checkAvailability(cid)` for IPFS availability checks and `getIpfsGatewayUrl(cid)` for gateway URL formatting, while the Rust Tauri backend handles the actual fetch + SHA-256 verification.
 
 **File:** `apps/desktop/src-tauri/src/commands/marketplace.rs`
 
@@ -367,6 +383,7 @@ No protocol changes needed -- the existing gossipsub format already supports thi
 | `apps/desktop/src/services/marketplaceSettings.ts` | Modify | Add `IpfsGatewaySettings` interface and storage |
 | `apps/desktop/src/services/marketplaceSettings.test.ts` | Modify | Add tests for IPFS gateway settings |
 | `apps/desktop/src/features/settings/SettingsView.tsx` | Modify | Add IPFS gateways section in settings UI |
+| `packages/notary` (backbay-sdk) | Reference | Import IPFS upload functions; may extract to shared `@backbay/ipfs` package |
 
 ---
 
@@ -439,6 +456,7 @@ The IPFS integration test is gated behind a `--features ipfs-integration-test` f
 | `reqwest` crate | Already in workspace | Used for Pinata API calls and gateway fetch |
 | Spec 03 (Multi-curator config) | Soft | Curators need signing keys; currently manual key management |
 | Spec 07 (AegisNet notary) | Soft | IPFS CIDs can be attested in AegisNet for additional trust |
+| `@backbay/notary` IPFS module | Existing (backbay-sdk) | w3up-client wrapper for IPFS uploads; reuse for TS-side upload pipeline |
 
 ---
 
