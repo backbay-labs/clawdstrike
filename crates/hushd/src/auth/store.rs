@@ -213,6 +213,29 @@ impl SqliteAuthStore {
         Ok(map)
     }
 
+    fn load_key_from_db(
+        conn: &rusqlite::Connection,
+        key_hash: &str,
+    ) -> Result<Option<ApiKey>, AuthError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT key_hash, id, name, tier, scopes, created_at, expires_at FROM api_keys WHERE key_hash = ?1",
+            )
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        let mut rows = stmt
+            .query(rusqlite::params![key_hash])
+            .map_err(|e| AuthError::Database(e.to_string()))?;
+
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| AuthError::Database(e.to_string()))?
+        {
+            return row_to_api_key(row).map(Some);
+        }
+        Ok(None)
+    }
+
     fn lock_conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -264,9 +287,35 @@ impl SqliteAuthStore {
     /// Validate a raw API key token and return the ApiKey if valid.
     pub async fn validate_key(&self, token: &str) -> Result<ApiKey, AuthError> {
         let hash = Self::hash_key(token);
-        let cache = self.cache.read().await;
+        let cached = {
+            let cache = self.cache.read().await;
+            cache.get(&hash).cloned()
+        };
 
-        let key = cache.get(&hash).cloned().ok_or(AuthError::InvalidKey)?;
+        // Always reconcile with SQLite so external key add/remove operations are observed.
+        let db_key = {
+            let conn = self.lock_conn();
+            Self::load_key_from_db(&conn, &hash)?
+        };
+
+        let key = match (cached, db_key) {
+            (Some(_), Some(db_key)) => {
+                let mut cache = self.cache.write().await;
+                cache.insert(hash.clone(), db_key.clone());
+                db_key
+            }
+            (Some(_), None) => {
+                let mut cache = self.cache.write().await;
+                cache.remove(&hash);
+                return Err(AuthError::InvalidKey);
+            }
+            (None, Some(db_key)) => {
+                let mut cache = self.cache.write().await;
+                cache.insert(hash.clone(), db_key.clone());
+                db_key
+            }
+            (None, None) => return Err(AuthError::InvalidKey),
+        };
 
         if key.is_expired() {
             return Err(AuthError::KeyExpired);
@@ -655,5 +704,50 @@ mod tests {
 
         let validated = store.validate_key(raw).await.expect("validate");
         assert_eq!(validated.tier, Some(crate::auth::ApiKeyTier::Gold));
+    }
+
+    #[tokio::test]
+    async fn sqlite_auth_store_validate_key_refreshes_on_external_insert() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let path = dir.path().join("auth.db");
+
+        let store = SqliteAuthStore::new(&path).expect("init");
+        let raw = "externally-added";
+        let hash = AuthStore::hash_key(raw);
+
+        // Simulate another process adding a key directly in SQLite.
+        let conn = rusqlite::Connection::open(&path).expect("open sqlite");
+        let key = make_test_key(raw, "external", HashSet::new());
+        SqliteAuthStore::persist_key(&conn, &key).expect("persist external key");
+
+        // Cache starts stale/missing; validate_key should refresh from DB on miss.
+        let validated = store.validate_key(raw).await.expect("validate");
+        assert_eq!(validated.key_hash, hash);
+        assert_eq!(validated.name, "external");
+    }
+
+    #[tokio::test]
+    async fn sqlite_auth_store_validate_key_detects_external_delete() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let path = dir.path().join("auth.db");
+
+        let store = SqliteAuthStore::new(&path).expect("init");
+        let raw = "externally-removed";
+        let hash = AuthStore::hash_key(raw);
+        let key = make_test_key(raw, "victim", HashSet::new());
+        store.add_key(key).await.expect("add");
+        assert!(store.validate_key(raw).await.is_ok());
+
+        // Simulate another process removing the key directly in SQLite.
+        let conn = rusqlite::Connection::open(&path).expect("open sqlite");
+        conn.execute(
+            "DELETE FROM api_keys WHERE key_hash = ?1",
+            rusqlite::params![hash],
+        )
+        .expect("delete external key");
+
+        // Cached value should be invalidated when DB says key is gone.
+        let result = store.validate_key(raw).await;
+        assert!(matches!(result, Err(AuthError::InvalidKey)));
     }
 }
