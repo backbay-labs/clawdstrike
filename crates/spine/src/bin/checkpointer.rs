@@ -45,7 +45,7 @@ struct Args {
     #[arg(long, default_value = "CLAWDSTRIKE_LOG_INDEX")]
     index_bucket: String,
 
-    /// KV bucket storing checkpoints (keys: latest, checkpoint/<seq>)
+    /// KV bucket storing checkpoints (keys: `latest`, `checkpoint/<seq>`)
     #[arg(long, default_value = "CLAWDSTRIKE_CHECKPOINTS")]
     checkpoint_bucket: String,
 

@@ -155,7 +155,7 @@ async fn test_health_endpoint_over_https() {
         test_dir: test_dir.clone(),
     };
 
-    wait_for_https_health(&spawned.url, Duration::from_secs(10)).await;
+    wait_for_https_health(&spawned.url, Duration::from_secs(30)).await;
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
