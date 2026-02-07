@@ -1,0 +1,51 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: sdr-exec-allowlist
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+    clawdstrike.io/policy-tier: kernel
+    clawdstrike.io/category: process
+  annotations:
+    clawdstrike.io/mitre-techniques: "T1059,T1204"
+    clawdstrike.io/description: "Allowlist authorized binaries in SDR namespaces"
+spec:
+  kprobes:
+  - call: "sys_execve"
+    syscall: true
+    args:
+    - index: 0
+      type: "string"
+    selectors:
+    # Allow known SDR binaries silently
+    - matchBinaries:
+      - operator: In
+        values:
+        - "/usr/bin/aegisnet-checkpointer"
+        - "/usr/bin/aegisnet-witness"
+        - "/usr/bin/aegisnet-proofs-api"
+        - "/usr/bin/aegisnet-model-registry"
+        - "/usr/bin/aegisctl"
+        - "/usr/bin/hushd"
+        - "/usr/bin/clawdstriked"
+        - "/usr/bin/spine-checkpointer"
+        - "/usr/bin/spine-witness"
+        - "/usr/bin/spine-proofs-api"
+        - "/usr/bin/tetragon-bridge"
+        - "/usr/bin/hubble-bridge"
+      matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchActions:
+      - action: NoPost
+    # Alert on any other exec in non-host namespace
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchActions:
+      - action: Post
+        rateLimit: "1m"

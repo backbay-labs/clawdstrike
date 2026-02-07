@@ -1,0 +1,33 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: sdr-crypto-mining-detection
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+    clawdstrike.io/policy-tier: kernel
+    clawdstrike.io/category: cryptominer
+  annotations:
+    clawdstrike.io/mitre-techniques: "T1496"
+    clawdstrike.io/description: "Kill processes connecting to known crypto mining pool ports"
+spec:
+  kprobes:
+  - call: "tcp_connect"
+    syscall: false
+    args:
+    - index: 0
+      type: "sock"
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: "DPort"
+        values:
+        - "3333"
+        - "4444"
+        - "5555"
+        - "7777"
+        - "8888"
+        - "9999"
+        - "14444"
+        - "14433"
+      matchActions:
+      - action: Sigkill

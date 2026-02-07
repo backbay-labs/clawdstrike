@@ -1,0 +1,38 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: sdr-guard-enforcement
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+    clawdstrike.io/policy-tier: kernel
+    clawdstrike.io/category: enforcement
+  annotations:
+    clawdstrike.io/mitre-techniques: "T1562"
+    clawdstrike.io/description: "Prevent unauthorized writes to ClawdStrike policy files"
+spec:
+  kprobes:
+  - call: "security_file_permission"
+    syscall: false
+    args:
+    - index: 0
+      type: "file"
+    - index: 1
+      type: "int"
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: "Prefix"
+        values:
+        - "/etc/clawdstrike/"
+        - "/var/lib/clawdstrike/policies/"
+      - index: 1
+        operator: "Mask"
+        values:
+        - "2"  # MAY_WRITE
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - "/usr/bin/hushd"
+        - "/usr/bin/clawdstriked"
+      matchActions:
+      - action: Sigkill

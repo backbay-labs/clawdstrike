@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - 01-exec-allowlist.yaml
+  - 02-file-integrity-monitoring.yaml
+  - 03-network-egress.yaml
+  - 04-container-escape-detection.yaml
+  - 05-crypto-mining-detection.yaml
+  - 06-guard-enforcement.yaml
+commonLabels:
+  app.kubernetes.io/managed-by: clawdstrike

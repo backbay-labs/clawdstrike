@@ -1,0 +1,30 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: sdr-file-integrity-monitoring
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+    clawdstrike.io/policy-tier: kernel
+    clawdstrike.io/category: fim
+  annotations:
+    clawdstrike.io/mitre-techniques: "T1003,T1552"
+    clawdstrike.io/description: "Monitor access to sensitive config and key material"
+spec:
+  lsmhooks:
+  - hook: "file_open"
+    args:
+    - index: 0
+      type: "file"
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: "Prefix"
+        values:
+        - "/etc/aegisnet/"
+        - "/etc/clawdstrike/"
+        - "/var/lib/clawdstrike/policies/"
+        - "/var/run/secrets/kubernetes.io/"
+        - "/var/run/spire/agent/"
+      matchActions:
+      - action: Post
+        imaHash: true
