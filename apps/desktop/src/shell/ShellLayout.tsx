@@ -5,6 +5,7 @@ import { Suspense, useCallback, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { NavRail } from "./components/NavRail";
 import { CommandPalette } from "./components/CommandPalette";
+import { SOCBackground } from "./SOCBackground";
 import { getPlugins } from "./plugins";
 import { useActiveApp, useSessionActions } from "./sessions";
 import { useShellShortcuts } from "./keyboard";
@@ -72,11 +73,14 @@ export function ShellLayout() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-sdr-bg-primary">
+      {/* Ambient 3D background */}
+      <SOCBackground />
+
       {/* Left navigation rail */}
       <NavRail activeAppId={activeAppId} onSelectApp={handleSelectApp} />
 
       {/* Main content area */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="relative z-10 flex-1 flex flex-col overflow-hidden">
         {/* Content */}
         <div className="flex-1 overflow-hidden">
           <Suspense

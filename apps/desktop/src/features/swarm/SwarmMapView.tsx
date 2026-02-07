@@ -4,6 +4,8 @@
 import { Suspense, useState, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
+import { EnvironmentLayer } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
 import { useSwarm, useSelectedAgent } from "@/context/SwarmContext";
 import { useConnection } from "@/context/ConnectionContext";
 import { AgentNodes } from "./components/AgentNodes";
@@ -33,6 +35,7 @@ export function SwarmMapView() {
     <div className="relative h-full">
       {/* 3D Canvas */}
       <div className="absolute inset-0">
+        <EnvironmentLayer preset="cyberpunk-city" intensity={0.2} />
         <Canvas
           camera={{ position: [0, 5, 12], fov: 50 }}
           style={{ background: "#0a0a0f" }}
@@ -83,19 +86,19 @@ export function SwarmMapView() {
         </div>
 
         <div className="flex items-center gap-2 pointer-events-auto">
-          <button
+          <GlowButton
             onClick={() => setShowLegend(!showLegend)}
-            className="px-3 py-1.5 text-sm bg-sdr-bg-secondary/80 text-sdr-text-secondary hover:text-sdr-text-primary rounded-md backdrop-blur transition-colors"
+            variant="secondary"
           >
             {showLegend ? "Hide" : "Show"} Legend
-          </button>
-          <button
+          </GlowButton>
+          <GlowButton
             onClick={handleRefresh}
             disabled={isLoading}
-            className="px-3 py-1.5 text-sm bg-sdr-bg-secondary/80 text-sdr-text-secondary hover:text-sdr-text-primary rounded-md backdrop-blur transition-colors disabled:opacity-50"
+            variant="secondary"
           >
             {isLoading ? "Loading..." : "Refresh"}
-          </button>
+          </GlowButton>
         </div>
       </div>
 

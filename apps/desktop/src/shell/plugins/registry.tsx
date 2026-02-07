@@ -26,6 +26,18 @@ const WorkflowsView = React.lazy(() =>
 const SettingsView = React.lazy(() =>
   import("@/features/settings/SettingsView").then((m) => ({ default: m.SettingsView }))
 );
+const ThreatRadarView = React.lazy(() =>
+  import("@/features/threat-radar/ThreatRadarView").then((m) => ({ default: m.ThreatRadarView }))
+);
+const AttackGraphView = React.lazy(() =>
+  import("@/features/attack-graph/AttackGraphView").then((m) => ({ default: m.AttackGraphView }))
+);
+const NetworkMapView = React.lazy(() =>
+  import("@/features/network-map/NetworkMapView").then((m) => ({ default: m.NetworkMapView }))
+);
+const SecurityOverviewView = React.lazy(() =>
+  import("@/features/security-overview/SecurityOverviewView").then((m) => ({ default: m.SecurityOverviewView }))
+);
 
 // Plugin definitions
 const plugins: AppPlugin[] = [
@@ -84,6 +96,38 @@ const plugins: AppPlugin[] = [
     description: "Daemon connection and preferences",
     order: 7,
     routes: [{ path: "", element: <SettingsView />, index: true }],
+  },
+  {
+    id: "threat-radar",
+    name: "Threat Radar",
+    icon: "radar",
+    description: "Live 3D threat detection radar",
+    order: 8,
+    routes: [{ path: "", element: <ThreatRadarView />, index: true }],
+  },
+  {
+    id: "attack-graph",
+    name: "Attack Graph",
+    icon: "graph",
+    description: "MITRE ATT&CK chain visualization",
+    order: 9,
+    routes: [{ path: "", element: <AttackGraphView />, index: true }],
+  },
+  {
+    id: "network-map",
+    name: "Network Map",
+    icon: "topology",
+    description: "3D network infrastructure map",
+    order: 10,
+    routes: [{ path: "", element: <NetworkMapView />, index: true }],
+  },
+  {
+    id: "security-overview",
+    name: "Security Overview",
+    icon: "dashboard",
+    description: "Composite security monitoring",
+    order: 11,
+    routes: [{ path: "", element: <SecurityOverviewView />, index: true }],
   },
 ];
 

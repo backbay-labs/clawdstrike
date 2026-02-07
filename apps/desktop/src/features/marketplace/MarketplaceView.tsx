@@ -18,6 +18,7 @@ import {
   type MarketplacePolicyDto,
   type NotaryVerifyResult,
 } from "@/services/tauri";
+import { GlassCard, GlowButton, GlowInput, Badge } from "@backbay/glia/primitives";
 
 type PolicyCategory = "all" | "compliance" | "ai-safety" | "enterprise" | "minimal" | "custom";
 
@@ -273,31 +274,26 @@ export function MarketplaceView() {
           <div className="flex items-center gap-4">
             {/* Search */}
             <div className="relative flex-1 max-w-md">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sdr-text-muted" />
-              <input
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sdr-text-muted z-10" />
+              <GlowInput
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search policies..."
-                className="w-full pl-9 pr-3 py-2 bg-sdr-bg-tertiary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue"
+                className="w-full pl-9"
               />
             </div>
 
             {/* Category tabs */}
             <div className="flex items-center gap-1">
               {CATEGORIES.map((cat) => (
-                <button
+                <GlowButton
                   key={cat.id}
                   onClick={() => setCategory(cat.id)}
-                  className={clsx(
-                    "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                    category === cat.id
-                      ? "bg-sdr-accent-blue/20 text-sdr-accent-blue"
-                      : "text-sdr-text-secondary hover:text-sdr-text-primary hover:bg-sdr-bg-tertiary"
-                  )}
+                  variant={category === cat.id ? "default" : "secondary"}
                 >
                   {cat.label}
-                </button>
+                </GlowButton>
               ))}
             </div>
 
@@ -459,10 +455,7 @@ function PolicyCard({ policy, attestationUid, attestationStatus, onClick }: Poli
   const attestationPill = getAttestationPill(attestationUid, attestationStatus);
 
   return (
-    <button
-      onClick={onClick}
-      className="text-left p-4 bg-sdr-bg-secondary rounded-lg border border-sdr-border hover:border-sdr-accent-blue/50 transition-colors"
-    >
+    <GlassCard className="cursor-pointer hover:ring-1 hover:ring-sdr-accent-blue/50 transition-all" onClick={onClick}>
       <div className="flex items-start justify-between mb-2">
         <div>
           <h3 className="font-medium text-sdr-text-primary">{policy.title}</h3>
@@ -481,15 +474,12 @@ function PolicyCard({ policy, attestationUid, attestationStatus, onClick }: Poli
 
       <div className="flex flex-wrap gap-1 mt-3">
         {policy.tags.slice(0, 3).map((tag) => (
-          <span
-            key={tag}
-            className="px-2 py-0.5 text-xs bg-sdr-bg-tertiary text-sdr-text-muted rounded"
-          >
+          <Badge key={tag} variant="outline">
             {tag}
-          </span>
+          </Badge>
         ))}
       </div>
-    </button>
+    </GlassCard>
   );
 }
 
@@ -595,12 +585,9 @@ function PolicyDetailPanel({
           </h3>
           <div className="flex flex-wrap gap-1">
             {policy.tags.map((tag) => (
-              <span
-                key={tag}
-                className="px-2 py-0.5 text-xs bg-sdr-bg-tertiary text-sdr-text-secondary rounded"
-              >
+              <Badge key={tag} variant="outline">
                 {tag}
-              </span>
+              </Badge>
             ))}
           </div>
         </div>
@@ -680,13 +667,13 @@ function PolicyDetailPanel({
 
       {/* Actions */}
       <div className="p-4 border-t border-sdr-border">
-        <button
+        <GlowButton
           onClick={handleInstall}
           disabled={!connected || isInstalling}
-          className="w-full px-4 py-2.5 bg-sdr-accent-blue text-white font-medium rounded-md hover:bg-sdr-accent-blue/90 disabled:opacity-50 transition-colors"
+          className="w-full"
         >
           {!connected ? "Connect to install" : isInstalling ? "Installing..." : "Install Policy"}
-        </button>
+        </GlowButton>
       </div>
     </div>
   );
