@@ -1,0 +1,78 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hushd
+  namespace: clawdstrike
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+spec:
+  description: "hushd: enforcement daemon serving agent check API and SSE events"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: hushd
+  ingress:
+    # Agent SDK clients (from any namespace, via ingress or direct)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: envoy-gateway
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: POST
+                path: "/api/v1/check"
+              - method: GET
+                path: "/api/v1/events"
+              - method: GET
+                path: "/api/v1/audit/.*"
+              - method: GET
+                path: "/health"
+    # Desktop app SSE (from within namespace)
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: clawdstrike
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    # Prometheus metrics
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "2112"
+              protocol: TCP
+  egress:
+    # NATS JetStream (subscribe to Tetragon/Hubble subjects)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: nats
+      authentication:
+        mode: "required"
+      toPorts:
+        - ports:
+            - port: "4222"
+              protocol: TCP
+    # Spine proofs-api (verify receipts, fetch inclusion proofs)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: spine-proofs-api
+      authentication:
+        mode: "required"
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY

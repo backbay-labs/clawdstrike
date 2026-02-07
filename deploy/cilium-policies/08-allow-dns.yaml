@@ -1,0 +1,24 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: sdr-allow-dns
+  namespace: clawdstrike
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+spec:
+  description: "Allow all SDR pods to resolve DNS"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: clawdstrike
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
