@@ -78,6 +78,10 @@ pub fn build_signed_envelope(
     fact: Value,
     issued_at: String,
 ) -> Result<Value> {
+    chrono::DateTime::parse_from_rfc3339(&issued_at).map_err(|e| {
+        Error::InvalidTimestamp(format!("issued_at is not a valid RFC 3339 timestamp: {e}"))
+    })?;
+
     let issuer = issuer_from_keypair(keypair);
 
     let unsigned = json!({

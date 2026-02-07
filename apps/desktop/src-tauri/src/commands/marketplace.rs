@@ -587,6 +587,10 @@ pub struct SpineProofResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_seq: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_index: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -612,10 +616,15 @@ pub async fn marketplace_verify_spine_proof(
     let value: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|e| format!("Invalid proofs API JSON: {e}"))?;
 
-    let included = value
+    let has_included_flag = value
         .get("included")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let has_audit_path = value
+        .get("audit_path")
+        .and_then(|v| v.as_array())
+        .is_some();
+    let included = has_included_flag || has_audit_path;
 
     let log_id = value
         .get("log_id")
@@ -624,6 +633,14 @@ pub async fn marketplace_verify_spine_proof(
 
     let checkpoint_seq = value
         .get("checkpoint_seq")
+        .and_then(|v| v.as_u64());
+
+    let tree_size = value
+        .get("tree_size")
+        .and_then(|v| v.as_u64());
+
+    let log_index = value
+        .get("log_index")
         .and_then(|v| v.as_u64());
 
     let error = value
@@ -635,6 +652,8 @@ pub async fn marketplace_verify_spine_proof(
         included,
         log_id,
         checkpoint_seq,
+        tree_size,
+        log_index,
         error,
     })
 }

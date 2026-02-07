@@ -47,9 +47,6 @@ ignore = [
     # `rustls-pemfile` is unmaintained — transitive dep via `async-nats`.
     # Upstream migration to `rustls-pki-types` PemObject is tracked.
     "RUSTSEC-2025-0134",
-    # `time` 0.3.x DoS via RFC 2822 parsing — transitive dep via `async-nats`.
-    # We don't expose user-controlled RFC 2822 parsing; awaiting `time` 0.3.47+ bump.
-    "RUSTSEC-2026-0009",
 ]
 
 [sources]

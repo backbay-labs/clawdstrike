@@ -158,7 +158,9 @@ async fn load_leaves_for_tree_size(
             continue;
         };
 
-        let seq_str = std::str::from_utf8(&value).unwrap_or("").trim();
+        let seq_str = std::str::from_utf8(&value)
+            .map_err(|_| ApiError::internal("log index entry is not valid UTF-8"))?
+            .trim();
         let seq: u64 = match seq_str.parse() {
             Ok(s) => s,
             Err(_) => continue,
@@ -176,6 +178,15 @@ async fn load_leaves_for_tree_size(
         return Err(ApiError::internal(
             "log index incomplete for requested tree_size",
         ));
+    }
+    for i in 1..pairs.len() {
+        if pairs[i].0 != pairs[i - 1].0 + 1 {
+            return Err(ApiError::internal(format!(
+                "log index has gap: seq {} followed by {}",
+                pairs[i - 1].0,
+                pairs[i].0
+            )));
+        }
     }
     Ok(pairs.into_iter().map(|(_, b)| b).collect())
 }
@@ -239,7 +250,9 @@ async fn v1_inclusion_proof(
         .map_err(|_| ApiError::internal("failed to read log index"))?;
     let entry = entry.ok_or_else(|| ApiError::not_found("envelope_hash not in log index"))?;
 
-    let seq_str = std::str::from_utf8(&entry).unwrap_or("").trim();
+    let seq_str = std::str::from_utf8(&entry)
+        .map_err(|_| ApiError::internal("log index entry is not valid UTF-8"))?
+        .trim();
     let log_seq: u64 = seq_str
         .parse()
         .map_err(|_| ApiError::internal("invalid log index entry"))?;
@@ -273,6 +286,7 @@ async fn v1_inclusion_proof(
 
     Ok(Json(json!({
         "schema": "clawdstrike.spine.proof.inclusion.v1",
+        "included": true,
         "log_id": log_id,
         "checkpoint_seq": checkpoint_seq,
         "tree_size": tree_size,

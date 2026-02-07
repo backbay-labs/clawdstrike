@@ -14,9 +14,10 @@ use futures::StreamExt;
 use futures::TryStreamExt;
 use serde_json::{json, Value};
 use tokio::time::{interval, timeout, Instant};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
+use async_nats::jetstream::context::Publish;
 use hush_core::{sha256_hex, Hash, Keypair, MerkleTree, PublicKey, Signature};
 use spine::{checkpoint, nats_transport as nats, TrustBundle};
 
@@ -211,6 +212,21 @@ async fn load_leaves_from_index(kv: &async_nats::jetstream::kv::Store) -> Result
     }
 
     pairs.sort_by_key(|(seq, _)| *seq);
+
+    // Validate contiguous sequences (no gaps).
+    for i in 1..pairs.len() {
+        let prev_seq = pairs[i - 1].0;
+        let curr_seq = pairs[i].0;
+        if curr_seq != prev_seq + 1 {
+            anyhow::bail!(
+                "log index has gap: expected seq {} after {}, got {}",
+                prev_seq + 1,
+                prev_seq,
+                curr_seq
+            );
+        }
+    }
+
     Ok(pairs.into_iter().map(|(_, b)| b).collect())
 }
 
@@ -225,8 +241,16 @@ async fn ensure_log_append(
         return Ok(0);
     }
 
+    // Use Nats-Msg-Id = envelope_hash to make the publish idempotent.
+    // If publish succeeds but the KV put below fails, a retry will be
+    // de-duplicated by the JetStream server within its dedup window.
     let ack_future = js
-        .publish(log_subject.to_string(), envelope_hash_bytes.to_vec().into())
+        .send_publish(
+            log_subject.to_string(),
+            Publish::build()
+                .payload(envelope_hash_bytes.to_vec().into())
+                .message_id(envelope_hash_hex),
+        )
         .await
         .context("failed to append leaf to log stream")?;
     let ack = ack_future.await.context("failed to ack log append")?;
@@ -262,7 +286,15 @@ async fn collect_witness_signatures(
         )
         .await?;
 
-    let deadline = Instant::now() + witness_timeout;
+    // When no trust bundle is configured (quorum defaults to 1), check if
+    // there are actually any witness subscribers. If no reply arrives within
+    // 1 second, return an empty Vec instead of waiting the full timeout.
+    let effective_timeout = if trust_bundle.is_none() {
+        Duration::from_secs(1).min(witness_timeout)
+    } else {
+        witness_timeout
+    };
+    let deadline = Instant::now() + effective_timeout;
     let mut out: Vec<(String, String)> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -302,9 +334,17 @@ async fn collect_witness_signatures(
             continue;
         }
 
-        let ok = checkpoint::verify_witness_signature(statement, &witness_node_id, &signature)?;
+        let ok = match checkpoint::verify_witness_signature(statement, &witness_node_id, &signature)
+        {
+            Ok(valid) => valid,
+            Err(err) => {
+                warn!(witness = %witness_node_id, "witness signature verification error: {err:#}");
+                continue;
+            }
+        };
         if !ok {
-            anyhow::bail!("witness signature invalid: {witness_node_id}");
+            warn!(witness = %witness_node_id, "witness signature invalid, skipping");
+            continue;
         }
 
         seen.insert(witness_node_id.clone());
@@ -312,6 +352,9 @@ async fn collect_witness_signatures(
     }
 
     if out.len() < quorum {
+        if trust_bundle.is_none() && out.is_empty() {
+            return Ok(Vec::new());
+        }
         anyhow::bail!("witness quorum not met (got {} need {})", out.len(), quorum);
     }
 
@@ -351,7 +394,9 @@ async fn maybe_checkpoint(
     let tree = MerkleTree::from_leaves(&leaves)?;
     let merkle_root = tree.root().to_hex_prefixed();
     let issued_at = spine::now_rfc3339();
-    let checkpoint_seq = *last_envelope_seq + 1;
+    let checkpoint_seq = last_envelope_seq
+        .checked_add(1)
+        .context("checkpoint sequence overflow")?;
 
     let prev_checkpoint_hash = (*last_checkpoint_hash).clone();
     let statement = checkpoint::checkpoint_statement(
@@ -451,6 +496,10 @@ async fn maybe_index_fact(
         return Ok(());
     };
     let schema = fact.get("schema").and_then(|v| v.as_str()).unwrap_or("");
+    if schema.is_empty() {
+        debug!("envelope has no fact schema, skipping index");
+        return Ok(());
+    }
 
     match schema {
         "clawdstrike.spine.fact.policy.v1" => {
@@ -461,21 +510,27 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            let _ = fact_index_kv
+            if let Err(e) = fact_index_kv
                 .put(
                     &format!("policy.{policy_hash}"),
                     envelope_hash.as_bytes().to_vec().into(),
                 )
-                .await;
+                .await
+            {
+                warn!(key = %format!("policy.{policy_hash}"), "failed to index fact: {e}");
+            }
 
             if let Some(version) = fact.get("policy_version").and_then(|v| v.as_str()) {
                 if is_safe_index_key_token(version, 200) {
-                    let _ = fact_index_kv
+                    if let Err(e) = fact_index_kv
                         .put(
                             &format!("policy_version.{version}"),
                             policy_hash.as_bytes().to_vec().into(),
                         )
-                        .await;
+                        .await
+                    {
+                        warn!(key = %format!("policy_version.{version}"), "failed to index fact: {e}");
+                    }
                 }
             }
         }
@@ -486,12 +541,15 @@ async fn maybe_index_fact(
             if !is_safe_index_key_token(run_id, 256) {
                 return Ok(());
             }
-            let _ = fact_index_kv
+            if let Err(e) = fact_index_kv
                 .put(
                     &format!("run_receipt.{run_id}"),
                     envelope_hash.as_bytes().to_vec().into(),
                 )
-                .await;
+                .await
+            {
+                warn!(key = %format!("run_receipt.{run_id}"), "failed to index fact: {e}");
+            }
         }
         "clawdstrike.spine.fact.receipt_verification.v1" => {
             let Some(target) = fact.get("target_envelope_hash").and_then(|v| v.as_str()) else {
@@ -512,12 +570,15 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            let _ = fact_index_kv
+            if let Err(e) = fact_index_kv
                 .put(
                     &format!("receipt_verification.{target}.{verifier_pk}"),
                     envelope_hash.as_bytes().to_vec().into(),
                 )
-                .await;
+                .await
+            {
+                warn!(key = %format!("receipt_verification.{target}.{verifier_pk}"), "failed to index fact: {e}");
+            }
         }
         _ => {}
     }

@@ -192,10 +192,10 @@ impl Bridge {
         // Build and sign the Spine envelope.
         let seq = self.seq.fetch_add(1, Ordering::SeqCst);
         let prev_hash = {
-            let guard = self
-                .prev_hash
-                .lock()
-                .map_err(|e| Error::Config(format!("prev_hash lock poisoned: {e}")))?;
+            let guard = self.prev_hash.lock().unwrap_or_else(|poisoned| {
+                tracing::warn!("prev_hash mutex was poisoned, recovering");
+                poisoned.into_inner()
+            });
             guard.clone()
         };
 
@@ -209,18 +209,29 @@ impl Bridge {
 
         // Update prev_hash for chain integrity.
         if let Some(hash) = envelope.get("envelope_hash").and_then(|v| v.as_str()) {
-            let mut guard = self
-                .prev_hash
-                .lock()
-                .map_err(|e| Error::Config(format!("prev_hash lock poisoned: {e}")))?;
+            let mut guard = self.prev_hash.lock().unwrap_or_else(|poisoned| {
+                tracing::warn!("prev_hash mutex was poisoned, recovering");
+                poisoned.into_inner()
+            });
             *guard = Some(hash.to_string());
         }
 
         // Publish to NATS.
+        let subject = NATS_SUBJECT.to_string();
+
+        if subject.is_empty()
+            || !subject.is_ascii()
+            || subject.contains(' ')
+            || subject.contains('\n')
+        {
+            tracing::error!(subject = %subject, "invalid NATS subject, skipping publish");
+            return Err(Error::Config(format!("invalid NATS subject: {subject}")));
+        }
+
         let payload = serde_json::to_vec(&envelope)?;
 
         self.nats_client
-            .publish(NATS_SUBJECT.to_string(), payload.into())
+            .publish(subject.clone(), payload.into())
             .await
             .map_err(|e| Error::Nats(format!("publish failed: {e}")))?;
 

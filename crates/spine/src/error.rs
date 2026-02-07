@@ -18,6 +18,9 @@ pub enum Error {
     #[error("invalid trust bundle: {0}")]
     InvalidTrustBundle(String),
 
+    #[error("invalid timestamp: {0}")]
+    InvalidTimestamp(String),
+
     #[error("NATS error: {0}")]
     Nats(String),
 
