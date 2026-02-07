@@ -2,8 +2,8 @@ import { Guard, GuardAction, GuardContext, GuardResult, Severity } from "./types
 
 const DEFAULT_FORBIDDEN_PATTERNS = [
   // Disable security features
-  /(?:i)disable[_\-]?(security|auth|ssl|tls)/i,
-  /(?:i)skip[_\-]?(verify|validation|check)/i,
+  /disable[ _\-]?(security|auth|ssl|tls)/i,
+  /skip[ _\-]?(verify|validation|check)/i,
   // Dangerous operations
   /rm\s+-rf\s+\//i,
   /chmod\s+777/i,

@@ -45,8 +45,8 @@ fn default_max_deletions() -> usize {
 fn default_forbidden_patterns() -> Vec<String> {
     vec![
         // Disable security features
-        r"(?i)disable[_\-]?(security|auth|ssl|tls)".to_string(),
-        r"(?i)skip[_\-]?(verify|validation|check)".to_string(),
+        r"(?i)disable[ _\-]?(security|auth|ssl|tls)".to_string(),
+        r"(?i)skip[ _\-]?(verify|validation|check)".to_string(),
         // Dangerous operations
         r"(?i)rm\s+-rf\s+/".to_string(),
         r"(?i)chmod\s+777".to_string(),
@@ -301,10 +301,17 @@ mod tests {
 
         let diff = r#"
 +disable_security = True
++disable security = True
 +rm -rf /
 "#;
 
         let analysis = guard.analyze(diff);
+        assert!(
+            analysis
+                .forbidden_matches
+                .iter()
+                .any(|m| m.line.contains("disable security"))
+        );
         assert!(!analysis.forbidden_matches.is_empty());
         assert!(!analysis.is_safe());
     }

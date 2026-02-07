@@ -326,8 +326,8 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 10,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
-          '(?i)skip[_\\-]?(verify|validation|check)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[\\s_\\-]?(verify|validation|check)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
         ],
@@ -385,8 +385,8 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: true,
         max_imbalance_ratio: 5,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
-          '(?i)skip[_\\-]?(verify|validation|check)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[\\s_\\-]?(verify|validation|check)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
           '(?i)eval\\s*\\(',
@@ -449,7 +449,7 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 20,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
           '(?i)reverse[_\\-]?shell',
@@ -521,7 +521,7 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 50,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
         ],
