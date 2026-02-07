@@ -3,6 +3,9 @@
  */
 import { useState, useMemo } from "react";
 import { clsx } from "clsx";
+import { GlassPanel, GlassCard } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
+import { Badge } from "@backbay/glia/primitives";
 import { usePolicy } from "@/context/PolicyContext";
 import { useConnection } from "@/context/ConnectionContext";
 import { BUILTIN_RULESETS, type BuiltinRuleset } from "@/types/policies";
@@ -49,7 +52,7 @@ export function PolicyViewerView() {
   return (
     <div className="flex h-full">
       {/* Policy list sidebar */}
-      <div className="w-64 border-r border-sdr-border bg-sdr-bg-secondary flex flex-col">
+      <GlassPanel className="w-64 border-r border-sdr-border flex flex-col">
         <div className="px-4 py-3 border-b border-sdr-border">
           <h2 className="font-medium text-sdr-text-primary">Policies</h2>
         </div>
@@ -60,12 +63,18 @@ export function PolicyViewerView() {
             <div className="text-xs text-sdr-text-muted uppercase tracking-wide px-2 py-1">
               Active
             </div>
-            <PolicyListItem
-              name={currentPolicy?.name ?? "Current Policy"}
-              description={isLoading ? "Loading..." : error ?? "Active daemon policy"}
-              selected={selectedSource === "current"}
+            <GlassCard
+              className={clsx(
+                "cursor-pointer mb-1",
+                selectedSource === "current" && "ring-1 ring-sdr-accent-blue"
+              )}
               onClick={() => setSelectedSource("current")}
-            />
+            >
+              <div className="font-medium text-sm">{currentPolicy?.name ?? "Current Policy"}</div>
+              <div className="text-xs text-sdr-text-muted truncate">
+                {isLoading ? "Loading..." : error ?? "Active daemon policy"}
+              </div>
+            </GlassCard>
           </div>
 
           {/* Built-in rulesets */}
@@ -74,28 +83,33 @@ export function PolicyViewerView() {
               Built-in Rulesets
             </div>
             {BUILTIN_RULESETS.map((ruleset) => (
-              <PolicyListItem
+              <GlassCard
                 key={ruleset.id}
-                name={ruleset.name}
-                description={ruleset.description}
-                selected={selectedSource === ruleset.id}
+                className={clsx(
+                  "cursor-pointer mb-1",
+                  selectedSource === ruleset.id && "ring-1 ring-sdr-accent-blue"
+                )}
                 onClick={() => setSelectedSource(ruleset.id)}
-              />
+              >
+                <div className="font-medium text-sm">{ruleset.name}</div>
+                <div className="text-xs text-sdr-text-muted truncate">{ruleset.description}</div>
+              </GlassCard>
             ))}
           </div>
         </div>
 
         {/* Actions */}
         <div className="p-3 border-t border-sdr-border">
-          <button
+          <GlowButton
             onClick={handleReload}
             disabled={isReloading}
-            className="w-full px-3 py-2 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors disabled:opacity-50"
+            variant="secondary"
+            className="w-full"
           >
             {isReloading ? "Reloading..." : "Reload Policy"}
-          </button>
+          </GlowButton>
         </div>
-      </div>
+      </GlassPanel>
 
       {/* Policy content */}
       <div className="flex-1 flex flex-col">
@@ -135,40 +149,10 @@ export function PolicyViewerView() {
   );
 }
 
-interface PolicyListItemProps {
-  name: string;
-  description: string;
-  selected: boolean;
-  onClick: () => void;
-}
-
-function PolicyListItem({ name, description, selected, onClick }: PolicyListItemProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        "w-full text-left px-3 py-2 rounded-md transition-colors",
-        selected
-          ? "bg-sdr-accent-blue/20 text-sdr-text-primary"
-          : "text-sdr-text-secondary hover:bg-sdr-bg-tertiary hover:text-sdr-text-primary"
-      )}
-    >
-      <div className="font-medium text-sm">{name}</div>
-      <div className="text-xs text-sdr-text-muted truncate">{description}</div>
-    </button>
-  );
-}
 
 function ValidationBadge({ valid }: { valid: boolean }) {
   return (
-    <span
-      className={clsx(
-        "flex items-center gap-1 px-2 py-1 text-xs font-medium rounded",
-        valid
-          ? "bg-sdr-accent-green/20 text-sdr-accent-green"
-          : "bg-sdr-accent-red/20 text-sdr-accent-red"
-      )}
-    >
+    <Badge variant={valid ? "default" : "destructive"}>
       {valid ? (
         <>
           <CheckIcon className="w-3 h-3" />
@@ -180,7 +164,7 @@ function ValidationBadge({ valid }: { valid: boolean }) {
           Invalid
         </>
       )}
-    </span>
+    </Badge>
   );
 }
 
@@ -197,12 +181,9 @@ function GuardSummary({ guards }: { guards: unknown }) {
     <div className="flex items-center gap-2 px-4 py-2 border-b border-sdr-border bg-sdr-bg-secondary/50">
       <span className="text-xs text-sdr-text-muted">Guards:</span>
       {enabledGuards.map((guard) => (
-        <span
-          key={guard}
-          className="px-2 py-0.5 text-xs bg-sdr-accent-blue/20 text-sdr-accent-blue rounded"
-        >
+        <Badge key={guard} variant="outline">
           {guard.replace(/_/g, " ")}
-        </span>
+        </Badge>
       ))}
       {enabledGuards.length === 0 && (
         <span className="text-xs text-sdr-text-muted">No guards enabled</span>

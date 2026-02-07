@@ -7,6 +7,7 @@
  */
 import { Suspense } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { UiThemeProvider } from "@backbay/glia/theme";
 import { ShellLayout } from "./ShellLayout";
 import { getPlugins } from "./plugins";
 import { ConnectionProvider } from "@/context/ConnectionContext";
@@ -18,6 +19,7 @@ export function ShellApp() {
   const plugins = getPlugins();
 
   return (
+    <UiThemeProvider themeId="nebula">
     <ConnectionProvider>
       <PolicyProvider>
         <SwarmProvider>
@@ -61,5 +63,6 @@ export function ShellApp() {
         </SwarmProvider>
       </PolicyProvider>
     </ConnectionProvider>
+    </UiThemeProvider>
   );
 }

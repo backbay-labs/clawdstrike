@@ -1,6 +1,7 @@
 /**
  * SwarmLegend - Legend for trust level colors
  */
+import { GlassCard } from "@backbay/glia/primitives";
 import { TRUST_COLORS, type TrustLevel } from "@/types/agents";
 
 const TRUST_LEVELS: { level: TrustLevel; label: string }[] = [
@@ -13,7 +14,7 @@ const TRUST_LEVELS: { level: TrustLevel; label: string }[] = [
 
 export function SwarmLegend() {
   return (
-    <div className="bg-sdr-bg-secondary/90 backdrop-blur border border-sdr-border rounded-lg p-3">
+    <GlassCard className="p-3">
       <h3 className="text-xs font-medium text-sdr-text-muted uppercase tracking-wide mb-2">
         Trust Levels
       </h3>
@@ -55,6 +56,6 @@ export function SwarmLegend() {
           <p>Click agent to select</p>
         </div>
       </div>
-    </div>
+    </GlassCard>
   );
 }

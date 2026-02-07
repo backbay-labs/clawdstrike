@@ -4,6 +4,10 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
+import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
+import { GlowInput } from "@backbay/glia/primitives";
+import { Badge } from "@backbay/glia/primitives";
 import type { Workflow, WorkflowTrigger, WorkflowAction } from "@/services/tauri";
 import { listWorkflows, saveWorkflow, deleteWorkflow, testWorkflow, isTauri } from "@/services/tauri";
 
@@ -137,24 +141,21 @@ export function WorkflowsView() {
   };
 
   return (
-    <div className="flex h-full">
+    <GlassPanel className="flex h-full">
       {/* Workflow list */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-sdr-border bg-sdr-bg-secondary">
+        <GlassHeader className="flex items-center justify-between px-4 py-3">
           <div>
             <h1 className="text-lg font-semibold text-sdr-text-primary">Workflows</h1>
             <p className="text-sm text-sdr-text-muted mt-0.5">
               Automated response chains for policy events
             </p>
           </div>
-          <button
-            onClick={handleNewWorkflow}
-            className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white font-medium rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
-          >
+          <GlowButton onClick={handleNewWorkflow}>
             New Workflow
-          </button>
-        </div>
+          </GlowButton>
+        </GlassHeader>
 
         {/* Workflow list */}
         <div className="flex-1 overflow-y-auto">
@@ -209,7 +210,7 @@ export function WorkflowsView() {
           onTest={() => handleTest(selectedWorkflow.id)}
         />
       )}
-    </div>
+    </GlassPanel>
   );
 }
 
@@ -282,9 +283,9 @@ function TriggerBadge({ trigger }: { trigger: WorkflowTrigger }) {
   };
 
   return (
-    <span className="px-1.5 py-0.5 text-xs bg-sdr-bg-tertiary text-sdr-text-muted rounded">
+    <Badge variant="outline">
       {labels[trigger.type] ?? trigger.type}
-    </span>
+    </Badge>
   );
 }
 
@@ -348,11 +349,11 @@ function WorkflowDetailPanel({
               <label className="block text-sm font-medium text-sdr-text-primary mb-1">
                 Name
               </label>
-              <input
+              <GlowInput
                 type="text"
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className="w-full px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-primary rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue"
+                className="w-full"
               />
             </div>
 
@@ -424,44 +425,37 @@ function WorkflowDetailPanel({
       <div className="p-4 border-t border-sdr-border space-y-2">
         {isEditing ? (
           <>
-            <button
-              onClick={handleSave}
-              className="w-full px-3 py-2 bg-sdr-accent-blue text-white font-medium rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
-            >
+            <GlowButton onClick={handleSave} className="w-full">
               Save Workflow
-            </button>
-            <button
+            </GlowButton>
+            <GlowButton
+              variant="secondary"
               onClick={() => {
                 setDraft(workflow);
                 onClose();
               }}
-              className="w-full px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
+              className="w-full"
             >
               Cancel
-            </button>
+            </GlowButton>
           </>
         ) : (
           <>
             <div className="flex gap-2">
-              <button
-                onClick={onEdit}
-                className="flex-1 px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
-              >
+              <GlowButton variant="secondary" onClick={onEdit} className="flex-1">
                 Edit
-              </button>
-              <button
-                onClick={onTest}
-                className="flex-1 px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
-              >
+              </GlowButton>
+              <GlowButton variant="secondary" onClick={onTest} className="flex-1">
                 Test
-              </button>
+              </GlowButton>
             </div>
-            <button
+            <GlowButton
+              variant="secondary"
               onClick={onDelete}
-              className="w-full px-3 py-2 text-sdr-accent-red hover:bg-sdr-accent-red/10 rounded-md transition-colors"
+              className="w-full text-sdr-accent-red"
             >
               Delete Workflow
-            </button>
+            </GlowButton>
           </>
         )}
       </div>
@@ -517,9 +511,9 @@ function ActionDisplay({ action }: { action: WorkflowAction }) {
 
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className="px-2 py-0.5 bg-sdr-bg-tertiary text-sdr-text-muted rounded text-xs">
+      <Badge variant="outline">
         {labels[action.type] ?? action.type}
-      </span>
+      </Badge>
       <span className="text-sdr-text-secondary truncate">
         {action.type === "slack_webhook" && action.channel}
         {action.type === "email" && action.to.join(", ")}

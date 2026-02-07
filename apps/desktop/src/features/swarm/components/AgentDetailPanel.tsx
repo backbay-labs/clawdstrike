@@ -3,6 +3,7 @@
  */
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
+import { GlassPanel, GlowButton, Badge } from "@backbay/glia/primitives";
 import type { AgentNode } from "@/types/agents";
 import { TRUST_COLORS } from "@/types/agents";
 import { useSwarm } from "@/context/SwarmContext";
@@ -21,7 +22,7 @@ export function AgentDetailPanel({ agent, onClose }: AgentDetailPanelProps) {
   const outgoingDelegations = delegations.filter((d) => d.from === agent.id);
 
   return (
-    <div className="h-full bg-sdr-bg-secondary/95 backdrop-blur border-l border-sdr-border flex flex-col">
+    <GlassPanel className="h-full border-l border-sdr-border flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-sdr-border">
         <div className="flex items-center gap-2">
@@ -67,12 +68,9 @@ export function AgentDetailPanel({ agent, onClose }: AgentDetailPanelProps) {
           {agent.capabilities.length > 0 ? (
             <div className="flex flex-wrap gap-1">
               {agent.capabilities.map((cap, i) => (
-                <span
-                  key={i}
-                  className="px-2 py-0.5 text-xs bg-sdr-bg-tertiary text-sdr-text-secondary rounded"
-                >
+                <Badge key={i} variant="outline">
                   {cap.type}
-                </span>
+                </Badge>
               ))}
             </div>
           ) : (
@@ -126,11 +124,11 @@ export function AgentDetailPanel({ agent, onClose }: AgentDetailPanelProps) {
 
       {/* Actions */}
       <div className="p-3 border-t border-sdr-border">
-        <button className="w-full px-3 py-2 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors">
+        <GlowButton variant="secondary" className="w-full">
           View Events
-        </button>
+        </GlowButton>
       </div>
-    </div>
+    </GlassPanel>
   );
 }
 
@@ -174,15 +172,10 @@ function Row({
 }
 
 function TrustBadge({ level }: { level: string }) {
-  const color = TRUST_COLORS[level as keyof typeof TRUST_COLORS] ?? "#9090a0";
-
   return (
-    <span
-      className="px-2 py-0.5 text-xs font-medium rounded"
-      style={{ backgroundColor: `${color}20`, color }}
-    >
+    <Badge variant="secondary">
       {level}
-    </span>
+    </Badge>
   );
 }
 

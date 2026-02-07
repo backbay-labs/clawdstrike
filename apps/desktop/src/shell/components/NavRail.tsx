@@ -3,6 +3,7 @@
  */
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
+import { GlitchText } from "@backbay/glia/primitives";
 import type { AppId, PluginIcon } from "../plugins/types";
 import { getPlugins } from "../plugins";
 
@@ -15,7 +16,7 @@ export function NavRail({ activeAppId, onSelectApp }: NavRailProps) {
   const plugins = getPlugins();
 
   return (
-    <nav className="flex flex-col w-16 h-full bg-sdr-bg-secondary border-r border-sdr-border py-4">
+    <nav className="relative z-10 flex flex-col w-16 h-full bg-sdr-bg-secondary border-r border-sdr-border py-4">
       <div className="flex flex-col gap-1 px-2">
         {plugins.map((plugin) => (
           <NavButton
@@ -141,6 +142,46 @@ function NavIcon({ icon }: { icon: PluginIcon }) {
         />
       </>
     ),
+    radar: (
+      <path
+        d="M12 2a10 10 0 100 20 10 10 0 000-20M12 12V2M12 12l7 7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    ),
+    graph: (
+      <path
+        d="M4 8h4M16 8h4M8 8a4 4 0 108 0 4 4 0 00-8 0M12 12v4M8 20h8"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    ),
+    topology: (
+      <path
+        d="M12 2v4M4 8h4M16 8h4M12 14v4M8 8l4 6M16 8l-4 6M4 8l8 10M20 8l-8 10"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    ),
+    dashboard: (
+      <path
+        d="M3 3h8v8H3zM13 3h8v5h-8zM13 11h8v10h-8zM3 13h8v8H3z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    ),
   };
 
   return (
@@ -151,11 +192,16 @@ function NavIcon({ icon }: { icon: PluginIcon }) {
 }
 
 function ConnectionIndicator() {
-  // This will be connected to the ConnectionContext later
   return (
-    <div className="relative">
-      <div className="w-3 h-3 rounded-full bg-sdr-accent-green animate-pulse" />
-      <div className="absolute inset-0 w-3 h-3 rounded-full bg-sdr-accent-green/50 animate-ping" />
+    <div className="flex flex-col items-center">
+      <div className="relative">
+        <div className="w-3 h-3 rounded-full bg-sdr-accent-green animate-pulse" />
+        <div className="absolute inset-0 w-3 h-3 rounded-full bg-sdr-accent-green/50 animate-ping" />
+      </div>
+      <GlitchText
+        variants={["HUSHD", "CONNECTED", "SECURE"]}
+        className="text-[8px] text-sdr-accent-green mt-1"
+      />
     </div>
   );
 }

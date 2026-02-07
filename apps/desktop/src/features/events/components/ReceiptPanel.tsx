@@ -4,6 +4,8 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
+import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
 import type { AuditEvent } from "@/types/events";
 
 interface ReceiptPanelProps {
@@ -15,9 +17,9 @@ export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
   const [activeTab, setActiveTab] = useState<"details" | "json">("details");
 
   return (
-    <div className="w-96 border-l border-sdr-border bg-sdr-bg-secondary flex flex-col">
+    <GlassPanel className="w-96 border-l border-sdr-border flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-sdr-border">
+      <GlassHeader className="flex items-center justify-between px-4 py-3">
         <h2 className="font-medium text-sdr-text-primary">Event Details</h2>
         <button
           onClick={onClose}
@@ -25,7 +27,7 @@ export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
         >
           <CloseIcon />
         </button>
-      </div>
+      </GlassHeader>
 
       {/* Tabs */}
       <div className="flex border-b border-sdr-border">
@@ -52,14 +54,14 @@ export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
 
       {/* Footer actions */}
       <div className="flex items-center gap-2 px-4 py-3 border-t border-sdr-border">
-        <button className="flex-1 px-3 py-2 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors">
+        <GlowButton variant="secondary" className="flex-1">
           Copy JSON
-        </button>
-        <button className="flex-1 px-3 py-2 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors">
+        </GlowButton>
+        <GlowButton variant="secondary" className="flex-1">
           Export
-        </button>
+        </GlowButton>
       </div>
-    </div>
+    </GlassPanel>
   );
 }
 

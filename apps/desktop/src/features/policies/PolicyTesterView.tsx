@@ -4,6 +4,10 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { clsx } from "clsx";
+import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
+import { GlowInput } from "@backbay/glia/primitives";
+import { Badge } from "@backbay/glia/primitives";
 import { useConnection } from "@/context/ConnectionContext";
 import { HushdClient, type CheckResponse } from "@/services/hushdClient";
 import type { ActionType } from "@/types/events";
@@ -64,14 +68,14 @@ export function PolicyTesterView() {
   return (
     <div className="flex h-full">
       {/* Form panel */}
-      <div className="w-1/2 border-r border-sdr-border flex flex-col">
+      <GlassPanel className="w-1/2 border-r border-sdr-border flex flex-col">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-sdr-border bg-sdr-bg-secondary">
+        <GlassHeader className="px-4 py-3">
           <h1 className="text-lg font-semibold text-sdr-text-primary">Policy Tester</h1>
           <p className="text-sm text-sdr-text-muted mt-0.5">
             Simulate policy checks against the active policy
           </p>
-        </div>
+        </GlassHeader>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -97,12 +101,12 @@ export function PolicyTesterView() {
             <label className="block text-sm font-medium text-sdr-text-primary mb-2">
               Target
             </label>
-            <input
+            <GlowInput
               type="text"
               value={form.target}
               onChange={(e) => setForm({ ...form, target: e.target.value })}
               placeholder={getTargetPlaceholder(form.actionType)}
-              className="w-full px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+              className="w-full font-mono text-sm"
             />
             <p className="text-xs text-sdr-text-muted mt-1">
               {getTargetHelp(form.actionType)}
@@ -130,31 +134,31 @@ export function PolicyTesterView() {
             <label className="block text-sm font-medium text-sdr-text-primary mb-2">
               Agent ID <span className="text-sdr-text-muted">(optional)</span>
             </label>
-            <input
+            <GlowInput
               type="text"
               value={form.agentId}
               onChange={(e) => setForm({ ...form, agentId: e.target.value })}
               placeholder="agent_coder_001"
-              className="w-full px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+              className="w-full font-mono text-sm"
             />
           </div>
 
           {/* Submit */}
-          <button
+          <GlowButton
             type="submit"
             disabled={isRunning || !form.target.trim()}
-            className="w-full px-4 py-2.5 bg-sdr-accent-blue text-white font-medium rounded-md hover:bg-sdr-accent-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full"
           >
             {isRunning ? "Running Check..." : "Run Check"}
-          </button>
+          </GlowButton>
         </form>
-      </div>
+      </GlassPanel>
 
       {/* Result panel */}
-      <div className="w-1/2 flex flex-col bg-sdr-bg-primary">
-        <div className="px-4 py-3 border-b border-sdr-border bg-sdr-bg-secondary">
+      <GlassPanel className="w-1/2 flex flex-col">
+        <GlassHeader className="px-4 py-3">
           <h2 className="font-medium text-sdr-text-primary">Result</h2>
-        </div>
+        </GlassHeader>
 
         <div className="flex-1 overflow-y-auto p-4">
           {isRunning && (
@@ -178,7 +182,7 @@ export function PolicyTesterView() {
             </div>
           )}
         </div>
-      </div>
+      </GlassPanel>
     </div>
   );
 }
@@ -269,14 +273,9 @@ function ResultDisplay({ result }: { result: CheckResponse }) {
           ) : (
             <XCircleIcon className="w-6 h-6 text-verdict-blocked" />
           )}
-          <span
-            className={clsx(
-              "text-lg font-semibold",
-              result.allowed ? "text-verdict-allowed" : "text-verdict-blocked"
-            )}
-          >
+          <Badge variant={result.allowed ? "default" : "destructive"} className="text-lg font-semibold">
             {result.allowed ? "ALLOWED" : "BLOCKED"}
-          </span>
+          </Badge>
         </div>
       </div>
 

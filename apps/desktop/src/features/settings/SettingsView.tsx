@@ -3,6 +3,10 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { clsx } from "clsx";
+import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
+import { GlowInput } from "@backbay/glia/primitives";
+import { Badge } from "@backbay/glia/primitives";
 import { useConnection, type ConnectionMode } from "@/context/ConnectionContext";
 import {
   DEFAULT_MARKETPLACE_FEED_SOURCES,
@@ -225,13 +229,13 @@ export function SettingsView() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
+    <GlassPanel className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto p-6 space-y-8">
         {/* Header */}
-        <div>
+        <GlassHeader>
           <h1 className="text-2xl font-semibold text-sdr-text-primary">Settings</h1>
           <p className="text-sdr-text-muted mt-1">Configure your SDR Desktop connection</p>
-        </div>
+        </GlassHeader>
 
         {/* Connection Status */}
         <Section title="Connection Status">
@@ -239,7 +243,9 @@ export function SettingsView() {
             <StatusIndicator status={status} />
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-sdr-text-primary capitalize">{status}</span>
+                <Badge variant={status === "connected" ? "default" : status === "error" ? "destructive" : "secondary"}>
+                  {status}
+                </Badge>
                 {info?.version && (
                   <span className="text-sm text-sdr-text-muted">v{info.version}</span>
                 )}
@@ -253,20 +259,16 @@ export function SettingsView() {
               )}
             </div>
             {status === "connected" ? (
-              <button
-                onClick={disconnect}
-                className="px-3 py-1.5 text-sm text-sdr-text-secondary hover:text-sdr-text-primary bg-sdr-bg-tertiary rounded-md transition-colors"
-              >
+              <GlowButton onClick={disconnect} variant="secondary">
                 Disconnect
-              </button>
+              </GlowButton>
             ) : (
-              <button
+              <GlowButton
                 onClick={connect}
                 disabled={status === "connecting"}
-                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 disabled:opacity-50 transition-colors"
               >
                 {status === "connecting" ? "Connecting..." : "Connect"}
-              </button>
+              </GlowButton>
             )}
           </div>
         </Section>
@@ -288,29 +290,28 @@ export function SettingsView() {
         {/* Daemon URL */}
         <Section title="Daemon URL">
           <div className="space-y-3">
-            <input
+            <GlowInput
               type="text"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               placeholder="http://localhost:9876"
-              className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono"
+              className="w-full font-mono"
             />
 
             <div className="flex items-center gap-2">
-              <button
+              <GlowButton
                 onClick={handleTest}
                 disabled={isTesting || !urlInput}
-                className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors disabled:opacity-50"
+                variant="secondary"
               >
                 {isTesting ? "Testing..." : "Test Connection"}
-              </button>
-              <button
+              </GlowButton>
+              <GlowButton
                 onClick={handleSave}
                 disabled={urlInput === daemonUrl}
-                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 disabled:opacity-50 transition-colors"
               >
                 Save & Connect
-              </button>
+              </GlowButton>
             </div>
 
             {testResult && (
@@ -633,7 +634,7 @@ export function SettingsView() {
           </div>
         </Section>
       </div>
-    </div>
+    </GlassPanel>
   );
 }
 

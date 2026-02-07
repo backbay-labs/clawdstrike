@@ -3,6 +3,8 @@
  */
 import { useState, useMemo } from "react";
 import { clsx } from "clsx";
+import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
 import { useConnection } from "@/context/ConnectionContext";
 import { useEventStream } from "@/services/eventStream";
 import type { AuditEvent, ActionType, Decision, Severity, DaemonEvent } from "@/types/events";
@@ -72,36 +74,31 @@ export function EventStreamView() {
   }
 
   return (
-    <div className="flex h-full">
+    <GlassPanel className="flex h-full">
       {/* Main event list */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-sdr-border bg-sdr-bg-secondary">
+        <GlassHeader className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold text-sdr-text-primary">Event Stream</h1>
             <StatusBadge isConnected={isConnected} isLive={isLive} />
           </div>
 
           <div className="flex items-center gap-2">
-            <button
+            <GlowButton
               onClick={toggleLive}
-              className={clsx(
-                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                isLive
-                  ? "bg-sdr-accent-green/20 text-sdr-accent-green"
-                  : "bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary"
-              )}
+              variant={isLive ? "default" : "secondary"}
             >
               {isLive ? "Live" : "Paused"}
-            </button>
-            <button
+            </GlowButton>
+            <GlowButton
               onClick={clearEvents}
-              className="px-3 py-1.5 text-sm text-sdr-text-secondary hover:text-sdr-text-primary bg-sdr-bg-tertiary rounded-md transition-colors"
+              variant="secondary"
             >
               Clear
-            </button>
+            </GlowButton>
           </div>
-        </div>
+        </GlassHeader>
 
         {/* Filters */}
         <EventFilters filter={filter} onFilterChange={setFilter} guards={guards} />
@@ -141,7 +138,7 @@ export function EventStreamView() {
       {selectedEvent && (
         <ReceiptPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       )}
-    </div>
+    </GlassPanel>
   );
 }
 

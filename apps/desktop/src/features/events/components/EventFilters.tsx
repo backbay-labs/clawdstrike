@@ -1,6 +1,8 @@
 /**
  * EventFilters - Filter bar for event stream
  */
+import { GlowButton } from "@backbay/glia/primitives";
+import { GlowInput } from "@backbay/glia/primitives";
 import type { EventFilter } from "../EventStreamView";
 import type { ActionType, Decision, Severity } from "@/types/events";
 
@@ -36,13 +38,13 @@ export function EventFilters({ filter, onFilterChange, guards }: EventFiltersPro
     <div className="flex items-center gap-3 px-4 py-2 border-b border-sdr-border bg-sdr-bg-secondary/50">
       {/* Search */}
       <div className="relative flex-1 max-w-xs">
-        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sdr-text-muted" />
-        <input
+        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sdr-text-muted z-10" />
+        <GlowInput
           type="text"
           value={filter.search ?? ""}
           onChange={(e) => onFilterChange({ ...filter, search: e.target.value || undefined })}
           placeholder="Search targets, agents..."
-          className="w-full pl-9 pr-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue"
+          className="w-full pl-9"
         />
       </div>
 
@@ -82,12 +84,12 @@ export function EventFilters({ filter, onFilterChange, guards }: EventFiltersPro
 
       {/* Clear filters */}
       {(filter.actionType || filter.decision || filter.severity || filter.guard || filter.search) && (
-        <button
+        <GlowButton
           onClick={() => onFilterChange({})}
-          className="px-2 py-1.5 text-xs text-sdr-text-muted hover:text-sdr-text-primary"
+          variant="secondary"
         >
           Clear
-        </button>
+        </GlowButton>
       )}
     </div>
   );

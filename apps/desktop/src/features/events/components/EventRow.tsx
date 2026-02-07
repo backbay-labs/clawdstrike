@@ -3,6 +3,7 @@
  */
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
+import { Badge } from "@backbay/glia/primitives";
 import type { AuditEvent } from "@/types/events";
 
 interface EventRowProps {
@@ -110,27 +111,22 @@ function DecisionBadge({ decision }: { decision: string }) {
   const isAllowed = decision === "allowed";
 
   return (
-    <span
-      className={clsx(
-        "shrink-0 px-2 py-0.5 text-xs font-medium rounded",
-        isAllowed ? "bg-verdict-allowed/20 text-verdict-allowed" : "bg-verdict-blocked/20 text-verdict-blocked"
-      )}
-    >
+    <Badge variant={isAllowed ? "default" : "destructive"}>
       {isAllowed ? "ALLOW" : "BLOCK"}
-    </span>
+    </Badge>
   );
 }
 
 function SeverityBadge({ severity }: { severity: string }) {
-  const colors: Record<string, string> = {
-    warning: "bg-severity-warning/20 text-severity-warning",
-    error: "bg-severity-error/20 text-severity-error",
-    critical: "bg-severity-critical/20 text-severity-critical",
+  const variantMap: Record<string, "secondary" | "destructive" | "outline"> = {
+    warning: "secondary",
+    error: "destructive",
+    critical: "destructive",
   };
 
   return (
-    <span className={clsx("px-2 py-0.5 text-xs font-medium rounded uppercase", colors[severity])}>
-      {severity}
-    </span>
+    <Badge variant={variantMap[severity] ?? "outline"}>
+      {severity.toUpperCase()}
+    </Badge>
   );
 }
