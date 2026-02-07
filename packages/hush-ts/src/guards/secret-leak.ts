@@ -4,6 +4,11 @@ const OUTPUT_ACTION_TYPES = new Set(["output", "bash_output", "tool_result", "re
 
 export interface SecretLeakConfig {
   secrets?: string[];
+  patterns?: Array<{
+    name?: string;
+    pattern: string;
+    severity?: "info" | "warning" | "error" | "critical";
+  }>;
   enabled?: boolean;
 }
 
@@ -13,11 +18,19 @@ export interface SecretLeakConfig {
 export class SecretLeakGuard implements Guard {
   readonly name = "secret_leak";
   private secrets: string[];
+  private patterns: Array<{ name?: string; regex: RegExp; severity: Severity }>;
   private enabled: boolean;
 
   constructor(config: SecretLeakConfig = {}) {
     // Filter out empty/whitespace-only secrets
     this.secrets = (config.secrets ?? []).filter((s) => s && s.trim());
+    this.patterns = (config.patterns ?? [])
+      .filter((entry) => entry && typeof entry.pattern === "string" && entry.pattern.trim().length > 0)
+      .map((entry) => ({
+        name: entry.name,
+        regex: new RegExp(entry.pattern),
+        severity: this.parseSeverity(entry.severity),
+      }));
     this.enabled = config.enabled ?? true;
   }
 
@@ -29,8 +42,8 @@ export class SecretLeakGuard implements Guard {
   }
 
   check(action: GuardAction, _context: GuardContext): GuardResult {
-    // Skip if disabled or no secrets configured
-    if (!this.enabled || this.secrets.length === 0) {
+    // Skip if disabled or no configured detectors
+    if (!this.enabled || (this.secrets.length === 0 && this.patterns.length === 0)) {
       return GuardResult.allow(this.name);
     }
 
@@ -60,7 +73,35 @@ export class SecretLeakGuard implements Guard {
       }
     }
 
+    // Check configured regex patterns from policy YAML.
+    for (const entry of this.patterns) {
+      if (entry.regex.test(text)) {
+        const hint = entry.name ?? entry.regex.source.slice(0, 24);
+        return GuardResult.block(
+          this.name,
+          entry.severity,
+          "Secret pattern matched in output"
+        ).withDetails({
+          secret_hint: hint,
+          action_type: action.customType,
+        });
+      }
+    }
+
     return GuardResult.allow(this.name);
+  }
+
+  private parseSeverity(value?: string): Severity {
+    switch (value) {
+      case "warning":
+        return Severity.WARNING;
+      case "error":
+        return Severity.ERROR;
+      case "critical":
+        return Severity.CRITICAL;
+      default:
+        return Severity.CRITICAL;
+    }
   }
 
   private extractText(data?: Record<string, unknown>): string {

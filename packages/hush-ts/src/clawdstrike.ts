@@ -628,8 +628,27 @@ function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
   if (!isPlainObject(value)) {
     return undefined;
   }
+  const toSecretLeakSeverity = (
+    severity: unknown,
+  ): "info" | "warning" | "error" | "critical" | undefined => {
+    if (severity === 'info' || severity === 'warning' || severity === 'error' || severity === 'critical') {
+      return severity;
+    }
+    return undefined;
+  };
+  const patterns = Array.isArray(value.patterns)
+    ? value.patterns
+      .filter((entry): entry is Record<string, unknown> => isPlainObject(entry) && typeof entry.pattern === 'string')
+      .map((entry) => ({
+        name: typeof entry.name === 'string' ? entry.name : undefined,
+        pattern: entry.pattern as string,
+        severity: toSecretLeakSeverity(entry.severity),
+      }))
+    : undefined;
+
   return {
     secrets: toStringArray(value.secrets),
+    patterns,
     enabled: toBoolean(value.enabled),
   };
 }

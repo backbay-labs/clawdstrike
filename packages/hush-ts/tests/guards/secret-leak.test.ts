@@ -115,4 +115,17 @@ describe("SecretLeakGuard", () => {
 
     expect(result.allowed).toBe(false);
   });
+
+  it("matches regex patterns from config", () => {
+    const config: SecretLeakConfig = {
+      patterns: [{ name: "openai_key", pattern: "sk-[A-Za-z0-9]{10}", severity: "critical" }],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", { content: "token sk-ABC123DEF4 leaked" });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.allowed).toBe(false);
+    expect(result.guard).toBe("secret_leak");
+    expect(result.message).toContain("Secret pattern matched");
+  });
 });
