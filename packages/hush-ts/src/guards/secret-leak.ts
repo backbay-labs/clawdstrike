@@ -2,6 +2,22 @@ import { Guard, GuardAction, GuardContext, GuardResult, Severity } from "./types
 
 const OUTPUT_ACTION_TYPES = new Set(["output", "bash_output", "tool_result", "response"]);
 
+function compileSecretLeakPattern(pattern: string): RegExp {
+  let source = pattern;
+  let flags = "";
+
+  const inlineFlags = source.match(/^\(\?([a-z]+)\)/i);
+  if (inlineFlags) {
+    const rawFlags = inlineFlags[1].toLowerCase();
+    if (rawFlags.includes("i")) flags += "i";
+    if (rawFlags.includes("m")) flags += "m";
+    if (rawFlags.includes("s")) flags += "s";
+    source = source.slice(inlineFlags[0].length);
+  }
+
+  return new RegExp(source, flags);
+}
+
 export interface SecretLeakConfig {
   secrets?: string[];
   patterns?: Array<{
@@ -28,7 +44,7 @@ export class SecretLeakGuard implements Guard {
       .filter((entry) => entry && typeof entry.pattern === "string" && entry.pattern.trim().length > 0)
       .map((entry) => ({
         name: entry.name,
-        regex: new RegExp(entry.pattern),
+        regex: compileSecretLeakPattern(entry.pattern),
         severity: this.parseSeverity(entry.severity),
       }));
     this.enabled = config.enabled ?? true;

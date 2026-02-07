@@ -153,4 +153,17 @@ describe("SecretLeakGuard", () => {
     expect(result.severity).toBe(Severity.WARNING);
     expect(result.message).toContain("Secret pattern matched");
   });
+
+  it("supports inline regex flags in pattern definitions", () => {
+    const config: SecretLeakConfig = {
+      patterns: [{ name: "generic_api_key", pattern: "(?i)(api[_\\-]?key)\\s*[:=]\\s*[A-Za-z0-9]{8,}" }],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", { content: "API_KEY: ABCDEFGH12345678" });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.allowed).toBe(false);
+    expect(result.severity).toBe(Severity.CRITICAL);
+    expect(result.guard).toBe("secret_leak");
+  });
 });
