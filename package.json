@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "workspaces": [
+    "packages/clawdstrike-adapter-core",
+    "packages/hush-ts",
+    "packages/clawdstrike-policy",
+    "packages/clawdstrike-claude-code",
+    "packages/clawdstrike-codex",
+    "packages/clawdstrike-vercel-ai",
+    "packages/clawdstrike-langchain",
+    "packages/clawdstrike-openclaw",
+    "packages/clawdstrike-opencode",
+    "packages/clawdstrike-hush-cli-engine",
+    "packages/clawdstrike-hushd-engine"
+  ]
+}
