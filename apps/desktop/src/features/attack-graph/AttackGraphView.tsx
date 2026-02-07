@@ -1,55 +1,18 @@
 /**
  * AttackGraphView - MITRE ATT&CK chain visualization
+ *
+ * Dynamically builds attack chains from live SDR events grouped by process
+ * tree lineage. Falls back to demo mode when no spine connection is available.
  */
-import { Suspense, useState } from "react";
+import { Suspense, useState, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { AttackGraph } from "@backbay/glia/primitives";
 import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
 import type { AttackChain, AttackTechnique } from "@backbay/glia/primitives";
-
-const MOCK_CHAINS: AttackChain[] = [
-  {
-    id: "chain-1",
-    name: "APT-29 Campaign",
-    actor: "Cozy Bear",
-    campaign: "SolarStorm",
-    status: "active",
-    techniques: [
-      { id: "T1566.001", name: "Spearphishing Attachment", tactic: "initial-access", detected: true, confidence: 0.92 },
-      { id: "T1059.001", name: "PowerShell Execution", tactic: "execution", detected: true, confidence: 0.88 },
-      { id: "T1053.005", name: "Scheduled Task", tactic: "persistence", detected: true, confidence: 0.75 },
-      { id: "T1071.001", name: "Web Protocols C2", tactic: "command-and-control", detected: false, confidence: 0.6 },
-      { id: "T1048.003", name: "Exfil Over HTTPS", tactic: "exfiltration", detected: false, confidence: 0.45 },
-    ],
-  },
-  {
-    id: "chain-2",
-    name: "Ransomware Intrusion",
-    actor: "Unknown",
-    status: "contained",
-    techniques: [
-      { id: "T1190", name: "Exploit Public App", tactic: "initial-access", detected: true, confidence: 0.95 },
-      { id: "T1059.003", name: "Windows Cmd Shell", tactic: "execution", detected: true, confidence: 0.9 },
-      { id: "T1547.001", name: "Registry Run Keys", tactic: "persistence", detected: true, confidence: 0.85 },
-      { id: "T1078", name: "Valid Accounts", tactic: "privilege-escalation", detected: true, confidence: 0.72 },
-      { id: "T1486", name: "Data Encrypted", tactic: "impact", detected: true, confidence: 0.98 },
-    ],
-  },
-  {
-    id: "chain-3",
-    name: "Insider Threat",
-    actor: "Internal",
-    status: "remediated",
-    techniques: [
-      { id: "T1078.002", name: "Domain Accounts", tactic: "initial-access", detected: true, confidence: 0.7 },
-      { id: "T1083", name: "File Discovery", tactic: "discovery", detected: true, confidence: 0.65 },
-      { id: "T1560.001", name: "Archive via Utility", tactic: "collection", detected: true, confidence: 0.82 },
-      { id: "T1041", name: "Exfil Over C2", tactic: "exfiltration", detected: true, confidence: 0.88 },
-    ],
-  },
-];
+import { useSpineEvents } from "@/hooks/useSpineEvents";
+import type { SpineConnectionStatus } from "@/types/spine";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "destructive",
@@ -72,8 +35,33 @@ const TACTIC_LABELS: Record<string, string> = {
   impact: "Impact",
 };
 
+function StatusIndicator({ status }: { status: SpineConnectionStatus }) {
+  const config = {
+    connected: { color: "bg-green-500", label: "Live" },
+    demo: { color: "bg-amber-500", label: "Demo" },
+    connecting: { color: "bg-blue-500 animate-pulse", label: "Connecting" },
+    disconnected: { color: "bg-red-500", label: "Offline" },
+  };
+  const { color, label } = config[status];
+
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-white/60">
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+      {label}
+    </span>
+  );
+}
+
 export function AttackGraphView() {
   const [selectedTechnique, setSelectedTechnique] = useState<AttackTechnique | null>(null);
+  const { chains, liveChains, status } = useSpineEvents({ enabled: true });
+
+  // Stats for the header
+  const stats = useMemo(() => {
+    const totalTechniques = chains.reduce((sum, c) => sum + c.techniques.length, 0);
+    const activeCount = chains.filter((c) => c.status === "active").length;
+    return { totalTechniques, activeCount };
+  }, [chains]);
 
   return (
     <div className="flex h-full" style={{ background: "#0a0a0f" }}>
@@ -86,7 +74,7 @@ export function AttackGraphView() {
             <pointLight position={[-8, -4, -8]} intensity={0.3} color="#6622ff" />
 
             <AttackGraph
-              chains={MOCK_CHAINS}
+              chains={chains}
               layout="killchain"
               showMitreIds={true}
               highlightDetected={true}
@@ -113,9 +101,10 @@ export function AttackGraphView() {
           <div>
             <h1 className="text-lg font-semibold text-white">Attack Graph</h1>
             <p className="text-sm text-white/50">
-              {MOCK_CHAINS.length} attack chains &middot; MITRE ATT&CK mapping
+              {chains.length} attack chains &middot; {stats.totalTechniques} techniques mapped
             </p>
           </div>
+          <StatusIndicator status={status} />
         </div>
       </div>
 
@@ -160,7 +149,7 @@ export function AttackGraphView() {
 
             <div className="border-t border-white/10 pt-3">
               <div className="text-xs text-white/40 font-mono mb-2">CHAINS USING THIS TECHNIQUE</div>
-              {MOCK_CHAINS.filter((chain) =>
+              {chains.filter((chain) =>
                 chain.techniques.some((t) => t.id === selectedTechnique.id)
               ).map((chain) => (
                 <div key={chain.id} className="flex items-center justify-between py-1.5">
@@ -169,27 +158,55 @@ export function AttackGraphView() {
                 </div>
               ))}
             </div>
+
+            {/* Show contributing events from live chains */}
+            {liveChains.length > 0 && (
+              <div className="border-t border-white/10 pt-3">
+                <div className="text-xs text-white/40 font-mono mb-2">CONTRIBUTING EVENTS</div>
+                {liveChains
+                  .flatMap((lc) => lc.techniques.filter((t) => t.id === selectedTechnique.id).flatMap((t) => t.eventIds))
+                  .slice(0, 5)
+                  .map((eventId) => {
+                    const liveEvent = liveChains
+                      .flatMap((lc) => lc.events)
+                      .find((e) => e.id === eventId);
+                    return liveEvent ? (
+                      <div key={eventId} className="text-xs text-white/50 py-0.5 truncate">
+                        {liveEvent.summary}
+                      </div>
+                    ) : null;
+                  })}
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-4">
-            <p className="text-sm text-white/40 text-center mt-8">
-              Click a technique node to view details
-            </p>
+            {chains.length === 0 ? (
+              <p className="text-sm text-white/40 text-center mt-8">
+                Waiting for events to build attack chains...
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-white/40 text-center mt-8">
+                  Click a technique node to view details
+                </p>
 
-            <div className="mt-6 space-y-3">
-              <div className="text-xs text-white/40 font-mono mb-2">ACTIVE CHAINS</div>
-              {MOCK_CHAINS.map((chain) => (
-                <div key={chain.id} className="p-2.5 rounded-lg border border-white/5 bg-white/[0.02]">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-white/80 font-medium">{chain.name}</span>
-                    <Badge variant={STATUS_VARIANT[chain.status]}>{chain.status}</Badge>
-                  </div>
-                  <div className="text-xs text-white/40">
-                    {chain.techniques.length} techniques &middot; {chain.actor ?? "Unknown actor"}
-                  </div>
+                <div className="mt-6 space-y-3">
+                  <div className="text-xs text-white/40 font-mono mb-2">ACTIVE CHAINS</div>
+                  {chains.map((chain) => (
+                    <div key={chain.id} className="p-2.5 rounded-lg border border-white/5 bg-white/[0.02]">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-white/80 font-medium">{chain.name}</span>
+                        <Badge variant={STATUS_VARIANT[chain.status]}>{chain.status}</Badge>
+                      </div>
+                      <div className="text-xs text-white/40">
+                        {chain.techniques.length} techniques &middot; {chain.actor ?? "Unknown actor"}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         )}
       </GlassPanel>

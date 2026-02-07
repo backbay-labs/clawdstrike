@@ -44,6 +44,7 @@
 //! ```
 
 pub mod async_guards;
+pub mod curator_config;
 pub mod engine;
 pub mod error;
 pub mod guards;
@@ -60,8 +61,10 @@ pub mod plugins;
 pub mod policy;
 pub mod policy_bundle;
 pub mod posture;
+pub mod spine_bridge;
 pub mod watermarking;
 
+pub use curator_config::{CuratorConfigFile, CuratorTrustSet};
 pub use engine::{GuardReport, HushEngine, PostureAwareReport};
 pub use error::{Error, Result};
 pub use guards::{
@@ -112,6 +115,9 @@ pub use plugins::{
 };
 pub use policy::{Policy, RuleSet};
 pub use policy_bundle::{PolicyBundle, SignedPolicyBundle, POLICY_BUNDLE_SCHEMA_VERSION};
+pub use spine_bridge::{
+    extract_spine_envelope_hash, policy_bundle_to_spine_envelope, POLICY_BUNDLE_FACT_TYPE,
+};
 pub use posture::{
     PostureBudgetCounter, PostureConfig, PostureProgram, PostureRuntimeState, PostureState,
     PostureTransition, PostureTransitionRecord, RuntimeTransitionTrigger, TransitionRequirement,

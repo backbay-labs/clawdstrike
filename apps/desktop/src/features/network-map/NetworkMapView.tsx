@@ -1,45 +1,19 @@
 /**
  * NetworkMapView - 3D network infrastructure topology map
+ *
+ * Builds network topology from Hubble flow events. When connected to spine,
+ * nodes and edges are dynamically created from observed network flows. Falls
+ * back to demo mode with simulated Hubble-style events.
  */
-import { Suspense, useState } from "react";
+import { Suspense, useState, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { NetworkTopology } from "@backbay/glia/primitives";
 import { GlassPanel } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
 import type { NetworkNode, NetworkEdge } from "@backbay/glia/primitives";
-
-const MOCK_NODES: NetworkNode[] = [
-  { id: "fw-1", type: "firewall", hostname: "edge-fw-01", ip: "10.0.0.1", status: "healthy", services: ["iptables", "ids"], vulnerabilities: 0 },
-  { id: "rt-1", type: "router", hostname: "core-rtr-01", ip: "10.0.1.1", status: "healthy", services: ["bgp", "ospf"], vulnerabilities: 0 },
-  { id: "srv-1", type: "server", hostname: "web-prod-01", ip: "10.1.1.10", status: "healthy", services: ["nginx", "node"], vulnerabilities: 2 },
-  { id: "srv-2", type: "server", hostname: "api-prod-01", ip: "10.1.1.11", status: "warning", services: ["fastapi", "redis"], vulnerabilities: 1 },
-  { id: "srv-3", type: "server", hostname: "db-prod-01", ip: "10.1.2.10", status: "healthy", services: ["postgres", "pgbouncer"], vulnerabilities: 0 },
-  { id: "srv-4", type: "server", hostname: "auth-prod-01", ip: "10.1.1.20", status: "compromised", services: ["keycloak"], vulnerabilities: 4 },
-  { id: "ws-1", type: "workstation", hostname: "dev-ws-01", ip: "10.2.1.10", status: "healthy", services: ["ssh"], vulnerabilities: 0 },
-  { id: "ws-2", type: "workstation", hostname: "dev-ws-02", ip: "10.2.1.11", status: "healthy", services: ["ssh"], vulnerabilities: 0 },
-  { id: "cloud-1", type: "cloud", hostname: "aws-vpc-prod", ip: "172.31.0.1", status: "healthy", services: ["ec2", "s3", "rds"], vulnerabilities: 1 },
-  { id: "iot-1", type: "iot", hostname: "sensor-array-01", ip: "10.3.1.5", status: "warning", services: ["mqtt"], vulnerabilities: 3 },
-  { id: "mob-1", type: "mobile", hostname: "fleet-mdm", ip: "10.4.0.1", status: "healthy", services: ["mdm-agent"], vulnerabilities: 0 },
-  { id: "srv-5", type: "server", hostname: "log-collector", ip: "10.1.3.10", status: "healthy", services: ["elasticsearch", "logstash"], vulnerabilities: 0 },
-];
-
-const MOCK_EDGES: NetworkEdge[] = [
-  { id: "e1", source: "fw-1", target: "rt-1", protocol: "tcp", bandwidth: 8000, encrypted: true, status: "active" },
-  { id: "e2", source: "rt-1", target: "srv-1", protocol: "https", port: 443, bandwidth: 5000, encrypted: true, status: "active" },
-  { id: "e3", source: "rt-1", target: "srv-2", protocol: "https", port: 8080, bandwidth: 3200, encrypted: true, status: "active" },
-  { id: "e4", source: "srv-2", target: "srv-3", protocol: "tcp", port: 5432, bandwidth: 2000, encrypted: true, status: "active" },
-  { id: "e5", source: "srv-1", target: "srv-4", protocol: "https", port: 8443, bandwidth: 1500, encrypted: true, status: "suspicious" },
-  { id: "e6", source: "rt-1", target: "ws-1", protocol: "ssh", port: 22, bandwidth: 100, encrypted: true, status: "active" },
-  { id: "e7", source: "rt-1", target: "ws-2", protocol: "ssh", port: 22, bandwidth: 80, encrypted: true, status: "idle" },
-  { id: "e8", source: "rt-1", target: "cloud-1", protocol: "https", port: 443, bandwidth: 6000, encrypted: true, status: "active" },
-  { id: "e9", source: "cloud-1", target: "srv-3", protocol: "tcp", port: 5432, bandwidth: 1200, encrypted: true, status: "active" },
-  { id: "e10", source: "rt-1", target: "iot-1", protocol: "udp", port: 1883, bandwidth: 200, encrypted: false, status: "active" },
-  { id: "e11", source: "rt-1", target: "mob-1", protocol: "https", port: 443, bandwidth: 500, encrypted: true, status: "active" },
-  { id: "e12", source: "srv-4", target: "fw-1", protocol: "tcp", port: 4444, bandwidth: 900, encrypted: false, status: "suspicious" },
-  { id: "e13", source: "srv-1", target: "srv-5", protocol: "tcp", port: 9200, bandwidth: 1800, encrypted: true, status: "active" },
-  { id: "e14", source: "srv-2", target: "srv-5", protocol: "tcp", port: 9200, bandwidth: 1500, encrypted: true, status: "active" },
-];
+import { useSpineEvents } from "@/hooks/useSpineEvents";
+import type { SpineConnectionStatus, SDREvent } from "@/types/spine";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   healthy: "default",
@@ -58,8 +32,50 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   mobile: "Mobile",
 };
 
+function StatusIndicator({ status }: { status: SpineConnectionStatus }) {
+  const config = {
+    connected: { color: "bg-green-500", label: "Live" },
+    demo: { color: "bg-amber-500", label: "Demo" },
+    connecting: { color: "bg-blue-500 animate-pulse", label: "Connecting" },
+    disconnected: { color: "bg-red-500", label: "Offline" },
+  };
+  const { color, label } = config[status];
+
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-white/60">
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+      {label}
+    </span>
+  );
+}
+
 export function NetworkMapView() {
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
+  const { networkNodes, networkEdges, events, status } = useSpineEvents({ enabled: true });
+
+  // Stats for the topology
+  const stats = useMemo(() => {
+    const suspiciousEdges = networkEdges.filter((e) => e.status === "suspicious").length;
+    const compromisedNodes = networkNodes.filter((n) => n.status === "compromised" || n.status === "warning").length;
+    return { suspiciousEdges, compromisedNodes };
+  }, [networkNodes, networkEdges]);
+
+  // Find edges for a selected node
+  const selectedNodeEdges = useMemo(() => {
+    if (!selectedNode) return [];
+    return networkEdges.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id);
+  }, [selectedNode, networkEdges]);
+
+  // Find recent events for a selected node
+  const selectedNodeEvents = useMemo(() => {
+    if (!selectedNode) return [];
+    return events
+      .filter((e) => {
+        if (!e.network) return false;
+        return e.network.srcIp === selectedNode.ip || e.network.dstIp === selectedNode.ip;
+      })
+      .slice(0, 10);
+  }, [selectedNode, events]);
 
   return (
     <div className="relative h-full" style={{ background: "#0a0a0f" }}>
@@ -72,8 +88,8 @@ export function NetworkMapView() {
             <pointLight position={[-8, 5, -8]} intensity={0.3} color="#00aaff" />
 
             <NetworkTopology
-              nodes={MOCK_NODES}
-              edges={MOCK_EDGES}
+              nodes={networkNodes}
+              edges={networkEdges}
               showTraffic={true}
               showLabels={true}
               selectedNode={selectedNode?.id}
@@ -98,10 +114,24 @@ export function NetworkMapView() {
         <div>
           <h1 className="text-lg font-semibold text-white">Network Map</h1>
           <p className="text-sm text-white/50">
-            {MOCK_NODES.length} nodes &middot; {MOCK_EDGES.length} connections
+            {networkNodes.length} nodes &middot; {networkEdges.length} connections
+            {stats.suspiciousEdges > 0 && (
+              <span className="text-amber-400"> &middot; {stats.suspiciousEdges} suspicious</span>
+            )}
           </p>
         </div>
+        <StatusIndicator status={status} />
       </div>
+
+      {/* Empty state */}
+      {networkNodes.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-center text-white/30">
+            <p className="text-lg">Waiting for network flow data...</p>
+            <p className="text-sm mt-1">Topology builds from Hubble flow events</p>
+          </div>
+        </div>
+      )}
 
       {/* Floating node detail panel */}
       {selectedNode && (
@@ -124,7 +154,7 @@ export function NetworkMapView() {
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <div className="text-white/40 font-mono mb-0.5">TYPE</div>
-                  <div className="text-white/80">{NODE_TYPE_LABELS[selectedNode.type]}</div>
+                  <div className="text-white/80">{NODE_TYPE_LABELS[selectedNode.type] ?? selectedNode.type}</div>
                 </div>
                 <div>
                   <div className="text-white/40 font-mono mb-0.5">IP ADDRESS</div>
@@ -135,11 +165,15 @@ export function NetworkMapView() {
               <div>
                 <div className="text-xs text-white/40 font-mono mb-1">SERVICES</div>
                 <div className="flex flex-wrap gap-1">
-                  {selectedNode.services.map((service) => (
-                    <Badge key={service} variant="outline" className="text-[10px]">
-                      {service}
-                    </Badge>
-                  ))}
+                  {selectedNode.services.length > 0 ? (
+                    selectedNode.services.map((service) => (
+                      <Badge key={service} variant="outline" className="text-[10px]">
+                        {service}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-white/30">No services detected</span>
+                  )}
                 </div>
               </div>
 
@@ -153,9 +187,28 @@ export function NetworkMapView() {
               <div>
                 <div className="text-xs text-white/40 font-mono mb-1">CONNECTIONS</div>
                 <div className="text-xs text-white/60">
-                  {MOCK_EDGES.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id).length} active links
+                  {selectedNodeEdges.length} active links
+                  {selectedNodeEdges.filter((e) => e.status === "suspicious").length > 0 && (
+                    <span className="text-amber-400">
+                      {" "}({selectedNodeEdges.filter((e) => e.status === "suspicious").length} suspicious)
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {/* Recent flow events for this node */}
+              {selectedNodeEvents.length > 0 && (
+                <div className="border-t border-white/10 pt-3">
+                  <div className="text-xs text-white/40 font-mono mb-2">RECENT FLOWS</div>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {selectedNodeEvents.map((event) => (
+                      <div key={event.id} className="text-[10px] text-white/50 truncate font-mono">
+                        {event.summary}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </GlassPanel>
         </div>

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::commands::spine::SpineSubscription;
 use crate::marketplace_discovery::MarketplaceDiscoveryManager;
 
 /// Daemon connection information
@@ -19,6 +20,7 @@ pub struct AppState {
     pub daemon: Arc<RwLock<DaemonConnection>>,
     pub http_client: reqwest::Client,
     pub marketplace_discovery: MarketplaceDiscoveryManager,
+    pub spine_subscription: Arc<RwLock<SpineSubscription>>,
 }
 
 impl AppState {
@@ -33,6 +35,7 @@ impl AppState {
                 .build()
                 .expect("Failed to create HTTP client"),
             marketplace_discovery: MarketplaceDiscoveryManager::new(),
+            spine_subscription: Arc::new(RwLock::new(SpineSubscription::default())),
         }
     }
 }

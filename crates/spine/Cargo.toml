@@ -1,0 +1,27 @@
+[package]
+name = "spine"
+description = "Aegis Spine protocol for ClawdStrike — envelope signing, checkpoints, trust bundles, and NATS transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["security", "attestation", "spine", "clawdstrike"]
+categories = ["cryptography", "authentication"]
+readme = "../../README.md"
+
+[dependencies]
+hush-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+async-nats = "0.39"
+tokio.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

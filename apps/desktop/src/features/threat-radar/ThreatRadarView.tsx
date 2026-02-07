@@ -1,5 +1,8 @@
 /**
  * ThreatRadarView - Interactive 3D threat detection radar
+ *
+ * Consumes live SDR events via useSpineEvents and maps them to radar blips.
+ * Falls back to demo mode when no spine/NATS connection is available.
  */
 import { Suspense, useState } from "react";
 import { Canvas } from "@react-three/fiber";
@@ -9,6 +12,8 @@ import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
 import { EnvironmentLayer } from "@backbay/glia/primitives";
 import type { Threat, ThreatType } from "@backbay/glia/primitives";
+import { useSpineEvents } from "@/hooks/useSpineEvents";
+import type { SpineConnectionStatus } from "@/types/spine";
 
 const SEVERITY_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   critical: "destructive",
@@ -24,17 +29,6 @@ function getSeverityLabel(severity: number): string {
   return "low";
 }
 
-const MOCK_THREATS: Threat[] = [
-  { id: "t1", angle: 0.4, distance: 0.7, severity: 0.95, type: "malware", active: true, label: "Ransomware Payload" },
-  { id: "t2", angle: 1.3, distance: 0.5, severity: 0.8, type: "phishing", active: true, label: "Spear Phishing Campaign" },
-  { id: "t3", angle: 2.1, distance: 0.3, severity: 0.6, type: "ddos", active: false, label: "DDoS Amplification" },
-  { id: "t4", angle: 3.0, distance: 0.85, severity: 0.9, type: "intrusion", active: true, label: "Lateral Movement Detected" },
-  { id: "t5", angle: 4.2, distance: 0.45, severity: 0.4, type: "anomaly", active: false, label: "Unusual Data Transfer" },
-  { id: "t6", angle: 5.0, distance: 0.6, severity: 0.75, type: "malware", active: true, label: "Trojan Dropper" },
-  { id: "t7", angle: 5.8, distance: 0.9, severity: 0.35, type: "phishing", active: false, label: "Credential Harvesting" },
-  { id: "t8", angle: 1.8, distance: 0.2, severity: 0.55, type: "intrusion", active: false, label: "Port Scan Activity" },
-];
-
 const THREAT_TYPE_COLORS: Record<ThreatType, string> = {
   malware: "#ff3344",
   intrusion: "#ff6622",
@@ -43,13 +37,39 @@ const THREAT_TYPE_COLORS: Record<ThreatType, string> = {
   phishing: "#aa44ff",
 };
 
-function formatTime(offset: number): string {
-  const minutes = Math.floor(offset);
+function formatTime(timestamp: string): string {
+  const ms = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "just now";
   return `${minutes}m ago`;
+}
+
+function StatusIndicator({ status }: { status: SpineConnectionStatus }) {
+  const config = {
+    connected: { color: "bg-green-500", label: "Live" },
+    demo: { color: "bg-amber-500", label: "Demo" },
+    connecting: { color: "bg-blue-500 animate-pulse", label: "Connecting" },
+    disconnected: { color: "bg-red-500", label: "Offline" },
+  };
+  const { color, label } = config[status];
+
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-white/60">
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+      {label}
+    </span>
+  );
 }
 
 export function ThreatRadarView() {
   const [selectedThreat, setSelectedThreat] = useState<Threat | null>(null);
+  const { threats, events, status } = useSpineEvents({ enabled: true });
+
+  // Find the original SDR event for a threat to get its timestamp
+  const getEventTimestamp = (threatId: string): string => {
+    const event = events.find((e) => e.id === threatId);
+    return event?.timestamp ?? new Date().toISOString();
+  };
 
   return (
     <div className="flex h-full" style={{ background: "#0a0a0f" }}>
@@ -62,7 +82,7 @@ export function ThreatRadarView() {
             <pointLight position={[-5, 5, -5]} intensity={0.3} color="#00ff44" />
 
             <ThreatRadar
-              threats={MOCK_THREATS}
+              threats={threats}
               showStats={true}
               showLabels={true}
               enableGlow={true}
@@ -86,9 +106,10 @@ export function ThreatRadarView() {
           <div>
             <h1 className="text-lg font-semibold text-white">Threat Radar</h1>
             <p className="text-sm text-white/50">
-              {MOCK_THREATS.filter((t) => t.active).length} active threats detected
+              {threats.filter((t) => t.active).length} active threats detected
             </p>
           </div>
+          <StatusIndicator status={status} />
         </div>
 
         {/* Environment Layer */}
@@ -102,41 +123,47 @@ export function ThreatRadarView() {
         <GlassHeader>
           <span className="text-sm font-semibold text-white/90">Threat Feed</span>
           <Badge variant="destructive">
-            {MOCK_THREATS.filter((t) => t.active).length} Active
+            {threats.filter((t) => t.active).length} Active
           </Badge>
         </GlassHeader>
 
         <div className="p-3 space-y-2">
-          {MOCK_THREATS.sort((a, b) => b.severity - a.severity).map((threat, index) => {
-            const level = getSeverityLabel(threat.severity);
-            return (
-              <button
-                key={threat.id}
-                onClick={() => setSelectedThreat(threat)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedThreat?.id === threat.id
-                    ? "border-cyan-500/40 bg-cyan-500/10"
-                    : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-mono uppercase" style={{ color: THREAT_TYPE_COLORS[threat.type] }}>
-                    {threat.type}
-                  </span>
-                  <Badge variant={SEVERITY_VARIANT[level]}>
-                    {level}
-                  </Badge>
-                </div>
-                <div className="text-sm text-white/80 font-medium">{threat.label}</div>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-xs text-white/40">{formatTime(index * 3 + 2)}</span>
-                  {threat.active && (
-                    <span className="text-xs text-red-400 font-mono">ACTIVE</span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
+          {threats.length === 0 ? (
+            <div className="text-center text-white/30 text-sm py-8">
+              Waiting for events...
+            </div>
+          ) : (
+            [...threats].sort((a, b) => b.severity - a.severity).map((threat) => {
+              const level = getSeverityLabel(threat.severity);
+              return (
+                <button
+                  key={threat.id}
+                  onClick={() => setSelectedThreat(threat)}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedThreat?.id === threat.id
+                      ? "border-cyan-500/40 bg-cyan-500/10"
+                      : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-mono uppercase" style={{ color: THREAT_TYPE_COLORS[threat.type] }}>
+                      {threat.type}
+                    </span>
+                    <Badge variant={SEVERITY_VARIANT[level]}>
+                      {level}
+                    </Badge>
+                  </div>
+                  <div className="text-sm text-white/80 font-medium truncate">{threat.label}</div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-white/40">{formatTime(getEventTimestamp(threat.id))}</span>
+                    {threat.active && (
+                      <span className="text-xs text-red-400 font-mono">ACTIVE</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       </GlassPanel>
     </div>

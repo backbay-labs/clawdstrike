@@ -2,7 +2,7 @@
 
 use std::path::{Component, Path};
 
-use clawdstrike::{SignedMarketplaceFeed, SignedPolicyBundle};
+use clawdstrike::{CuratorConfigFile, CuratorTrustSet, SignedMarketplaceFeed, SignedPolicyBundle};
 use hush_core::PublicKey;
 use reqwest::header::LOCATION;
 use serde::{Deserialize, Serialize};
@@ -19,17 +19,12 @@ const MAX_FETCH_REDIRECTS: usize = 5;
 const BUILTIN_FEED_PATH: &str = "resources/marketplace/feed.signed.json";
 const BUILTIN_BUNDLE_PREFIX: &str = "builtin://bundles/";
 const IPFS_PREFIX: &str = "ipfs://";
+const CURATOR_CONFIG_FILENAME: &str = "trusted_curators.toml";
 
 const DEFAULT_IPFS_GATEWAYS: &[&str] = &[
     "https://w3s.link",
     "https://cloudflare-ipfs.com",
     "https://ipfs.io",
-];
-
-// Hard-coded curator keys. Feed must verify against one of these.
-const TRUSTED_FEED_PUBKEYS_HEX: &[&str] = &[
-    // clawdstrike-official (apps/desktop/src-tauri/resources/marketplace/feed.signed.json)
-    "b51f6b9b8b2fcf77fb365f8a191579483c92af88ed914d6f79f08784699411ed",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,6 +44,8 @@ pub struct MarketplacePolicyDto {
     pub attestation_uid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notary_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spine_envelope_hash: Option<String>,
     pub bundle_public_key: Option<String>,
     pub signed_bundle: SignedPolicyBundle,
 }
@@ -70,7 +67,8 @@ pub async fn marketplace_list_policies(
     sources: Option<Vec<String>>,
     state: State<'_, AppState>,
 ) -> Result<MarketplaceListResponse, String> {
-    let trusted = trusted_feed_pubkeys()?;
+    let trust_set = load_curator_trust_set()?;
+    let trusted = trust_set.keys();
     let sources = sources.unwrap_or_else(|| vec!["builtin".to_string()]);
 
     let mut attempts = Vec::new();
@@ -86,7 +84,7 @@ pub async fn marketplace_list_policies(
                         continue;
                     }
                 };
-                match parsed.verify_trusted(&trusted) {
+                match parsed.verify_trusted(trusted) {
                     Ok(signer) => {
                         selected = Some((parsed, signer));
                         break;
@@ -189,6 +187,10 @@ pub async fn marketplace_list_policies(
                 .as_ref()
                 .and_then(|p| p.attestation_uid.clone()),
             notary_url: entry.provenance.as_ref().and_then(|p| p.notary_url.clone()),
+            spine_envelope_hash: entry
+                .provenance
+                .as_ref()
+                .and_then(|p| p.spine_envelope_hash.clone()),
             bundle_public_key: signed_bundle.public_key.as_ref().map(|k| k.to_hex()),
             signed_bundle,
         });
@@ -310,14 +312,14 @@ pub async fn marketplace_verify_attestation(
     })
 }
 
-fn trusted_feed_pubkeys() -> Result<Vec<PublicKey>, String> {
-    let mut keys = Vec::new();
-    for hex in TRUSTED_FEED_PUBKEYS_HEX {
-        let pk = PublicKey::from_hex(hex)
-            .map_err(|e| format!("Invalid TRUSTED_FEED_PUBKEYS_HEX entry {hex}: {e}"))?;
-        keys.push(pk);
-    }
-    Ok(keys)
+fn curator_config_path() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("clawdstrike").join(CURATOR_CONFIG_FILENAME))
+}
+
+fn load_curator_trust_set() -> Result<CuratorTrustSet, String> {
+    let config_path = curator_config_path();
+    CuratorTrustSet::load(config_path.as_deref())
+        .map_err(|e| format!("Failed to load curator trust set: {e}"))
 }
 
 async fn load_signed_feed(
@@ -503,6 +505,138 @@ fn normalize_host(host: &str) -> String {
         .and_then(|h| h.strip_suffix(']'))
         .unwrap_or(host);
     host.to_ascii_lowercase()
+}
+
+// ---------------------------------------------------------------------------
+// Curator management commands
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CuratorKeyInfo {
+    pub hex: String,
+    pub source: String,
+}
+
+#[tauri::command]
+pub async fn marketplace_list_curators() -> Result<Vec<CuratorKeyInfo>, String> {
+    let trust_set = load_curator_trust_set()?;
+    let keys: Vec<CuratorKeyInfo> = trust_set
+        .keys()
+        .iter()
+        .map(|k| CuratorKeyInfo {
+            hex: k.to_hex(),
+            source: "merged".to_string(),
+        })
+        .collect();
+    Ok(keys)
+}
+
+#[tauri::command]
+pub async fn marketplace_add_curator(hex_key: String) -> Result<(), String> {
+    let hex_key = hex_key.trim().to_string();
+    // Validate the key is parseable
+    PublicKey::from_hex(&hex_key).map_err(|e| format!("Invalid public key: {e}"))?;
+
+    let config_path = curator_config_path()
+        .ok_or_else(|| "Cannot determine config directory".to_string())?;
+
+    let mut config = CuratorConfigFile::load(&config_path)
+        .map_err(|e| format!("Failed to load config: {e}"))?
+        .unwrap_or_default();
+
+    if !config.trusted_keys.contains(&hex_key) {
+        config.trusted_keys.push(hex_key);
+    }
+
+    config
+        .save(&config_path)
+        .map_err(|e| format!("Failed to save config: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn marketplace_remove_curator(hex_key: String) -> Result<(), String> {
+    let hex_key = hex_key.trim().to_string();
+
+    let config_path = curator_config_path()
+        .ok_or_else(|| "Cannot determine config directory".to_string())?;
+
+    let mut config = CuratorConfigFile::load(&config_path)
+        .map_err(|e| format!("Failed to load config: {e}"))?
+        .unwrap_or_default();
+
+    config.trusted_keys.retain(|k| k != &hex_key);
+
+    config
+        .save(&config_path)
+        .map_err(|e| format!("Failed to save config: {e}"))?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Spine proofs-api verification
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpineProofResult {
+    pub included: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn marketplace_verify_spine_proof(
+    proofs_api_url: String,
+    envelope_hash: String,
+    state: State<'_, AppState>,
+) -> Result<SpineProofResult, String> {
+    let envelope_hash = envelope_hash.trim();
+    if envelope_hash.is_empty() {
+        return Err("Missing envelope hash".to_string());
+    }
+
+    let base = proofs_api_url.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return Err("Missing proofs API URL".to_string());
+    }
+
+    let url = format!("{base}/v1/proofs/inclusion/{envelope_hash}");
+
+    let bytes = fetch_http_bytes_limited(&state.http_client, &url, MAX_NOTARY_BYTES).await?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("Invalid proofs API JSON: {e}"))?;
+
+    let included = value
+        .get("included")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let log_id = value
+        .get("log_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let checkpoint_seq = value
+        .get("checkpoint_seq")
+        .and_then(|v| v.as_u64());
+
+    let error = value
+        .get("error")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    Ok(SpineProofResult {
+        included,
+        log_id,
+        checkpoint_seq,
+        error,
+    })
 }
 
 fn validate_resource_relpath(rel: &str) -> Result<(), String> {

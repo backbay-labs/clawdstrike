@@ -9,6 +9,8 @@ members = [
     "crates/hushd",
     "crates/hush-wasm",
     "crates/hush-multi-agent",
+    "crates/spine",
+    "crates/tetragon-bridge",
     "packages/hush-py/hush-native",
 ]
 exclude = [
@@ -114,6 +116,7 @@ hush-core = { path = "crates/hush-core", version = "0.1.0" }
 hush-proxy = { path = "crates/hush-proxy", version = "0.1.0" }
 clawdstrike = { path = "crates/clawdstrike", version = "0.1.0" }
 hush-certification = { path = "crates/hush-certification", version = "0.1.0" }
+spine = { path = "crates/spine", version = "0.1.0" }
 
 [profile.release]
 lto = true

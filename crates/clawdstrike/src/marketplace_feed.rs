@@ -83,6 +83,9 @@ pub struct MarketplaceProvenance {
     /// Optional notary base URL (e.g., `https://notary.example.com`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notary_url: Option<String>,
+    /// Optional Spine envelope hash for provenance tracing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spine_envelope_hash: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -13,6 +13,7 @@ readme = "../../README.md"
 [dependencies]
 hush-core.workspace = true
 hush-proxy.workspace = true
+spine.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 serde.workspace = true
