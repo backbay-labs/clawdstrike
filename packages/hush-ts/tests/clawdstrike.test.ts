@@ -156,8 +156,9 @@ guards:
     });
 
     expect(decision.status).toBe("allow");
-    expect(decision.guard).toBeUndefined();
+    expect(decision.guard).toBe("secret_leak");
     expect(decision.severity).toBe(Severity.INFO);
+    expect(decision.message).toContain("Secret pattern matched");
   });
 
   it("fromDaemon evaluates remotely and fails closed on transport errors", async () => {

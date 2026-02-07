@@ -1070,6 +1070,7 @@ export class ClawdstrikeSession {
     const guardAction = this.createGuardAction(action, params);
     const guardContext = this.createGuardContext();
     let warningDecision: Decision | undefined;
+    let informationalDecision: Decision | undefined;
 
     for (const guard of this.guards) {
       if (!guard.handles(guardAction)) {
@@ -1091,11 +1092,21 @@ export class ClawdstrikeSession {
         if (this.failFast) {
           return decision;
         }
+        continue;
+      }
+
+      if (decision.status === 'allow' && decision.message && decision.message !== 'Allowed') {
+        informationalDecision ??= decision;
       }
     }
 
     if (warningDecision) {
       return warningDecision;
+    }
+
+    if (informationalDecision) {
+      this.allowCount++;
+      return informationalDecision;
     }
 
     this.allowCount++;
@@ -1357,6 +1368,7 @@ export class Clawdstrike {
 
     const guardAction = this.createGuardAction(action, params);
     let warningDecision: Decision | undefined;
+    let informationalDecision: Decision | undefined;
 
     for (const guard of this.guards) {
       if (!guard.handles(guardAction)) {
@@ -1375,10 +1387,15 @@ export class Clawdstrike {
         if (this.config.failFast) {
           return decision;
         }
+        continue;
+      }
+
+      if (decision.status === 'allow' && decision.message && decision.message !== 'Allowed') {
+        informationalDecision ??= decision;
       }
     }
 
-    return warningDecision ?? allowDecision();
+    return warningDecision ?? informationalDecision ?? allowDecision();
   }
 
   /**
