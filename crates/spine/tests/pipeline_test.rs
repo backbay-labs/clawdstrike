@@ -233,6 +233,7 @@ async fn test_trust_bundle_verification() {
         required_receipt_enforcement_tiers: vec![],
         require_kernel_loader_signatures: false,
         witness_quorum: 2,
+        require_attested_issuers: false,
     };
 
     bundle.validate().unwrap();
@@ -326,6 +327,7 @@ async fn test_witness_quorum_met() {
         required_receipt_enforcement_tiers: vec![],
         require_kernel_loader_signatures: false,
         witness_quorum: 2,
+        require_attested_issuers: false,
     };
     bundle.validate().unwrap();
 
@@ -386,6 +388,7 @@ async fn test_witness_quorum_not_met() {
         required_receipt_enforcement_tiers: vec![],
         require_kernel_loader_signatures: false,
         witness_quorum: 2,
+        require_attested_issuers: false,
     };
     bundle.validate().unwrap();
 

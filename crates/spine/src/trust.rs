@@ -12,6 +12,14 @@ fn default_witness_quorum() -> usize {
     1
 }
 
+/// Enforcement tiers, ordered by strength.
+pub const ENFORCEMENT_TIERS: &[&str] = &[
+    "best_effort",
+    "daemon_enforced",
+    "linux_kernel_enforced",
+    "linux_kernel_attested",
+];
+
 /// Trust bundle for "mesh-grade" verification.
 ///
 /// When a list is non-empty, values must be present in that list (explicit
@@ -51,6 +59,11 @@ pub struct TrustBundle {
     /// Required number of *distinct* allowed witness signatures on a checkpoint.
     #[serde(default = "default_witness_quorum")]
     pub witness_quorum: usize,
+
+    /// When true, receipt signers must have a valid `node_attestation.v1` fact
+    /// in the log with a SPIFFE ID. Verification requires querying the log.
+    #[serde(default)]
+    pub require_attested_issuers: bool,
 }
 
 impl TrustBundle {
@@ -99,6 +112,12 @@ impl TrustBundle {
             return Err(Error::InvalidTrustBundle(
                 "require_kernel_loader_signatures requires allowed_kernel_loader_signer_node_ids"
                     .into(),
+            ));
+        }
+
+        if self.require_attested_issuers && self.allowed_receipt_signer_node_ids.is_empty() {
+            return Err(Error::InvalidTrustBundle(
+                "require_attested_issuers requires allowed_receipt_signer_node_ids".into(),
             ));
         }
 
@@ -161,6 +180,7 @@ mod tests {
             required_receipt_enforcement_tiers: vec![],
             require_kernel_loader_signatures: false,
             witness_quorum: 1,
+            require_attested_issuers: false,
         }
     }
 
@@ -236,5 +256,71 @@ mod tests {
         restored.validate().unwrap();
         assert_eq!(restored.allowed_log_ids, b.allowed_log_ids);
         assert_eq!(restored.witness_quorum, 2);
+    }
+
+    #[test]
+    fn require_attested_issuers_without_receipt_signers_rejected() {
+        let b = TrustBundle {
+            require_attested_issuers: true,
+            ..dev_bundle()
+        };
+        assert!(b.validate().is_err());
+    }
+
+    #[test]
+    fn require_attested_issuers_with_receipt_signers_ok() {
+        let b = TrustBundle {
+            require_attested_issuers: true,
+            allowed_receipt_signer_node_ids: vec!["signer-a".into()],
+            ..dev_bundle()
+        };
+        assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn require_attested_issuers_defaults_false() {
+        let json = r#"{"witness_quorum": 1}"#;
+        let b: TrustBundle = serde_json::from_str(json).unwrap();
+        assert!(!b.require_attested_issuers);
+        b.validate().unwrap();
+    }
+
+    #[test]
+    fn enforcement_tiers_ordering() {
+        assert_eq!(super::ENFORCEMENT_TIERS.len(), 4);
+        assert_eq!(super::ENFORCEMENT_TIERS[0], "best_effort");
+        assert_eq!(super::ENFORCEMENT_TIERS[1], "daemon_enforced");
+        assert_eq!(super::ENFORCEMENT_TIERS[2], "linux_kernel_enforced");
+        assert_eq!(super::ENFORCEMENT_TIERS[3], "linux_kernel_attested");
+    }
+
+    #[test]
+    fn enforcement_tier_allowed_with_filter() {
+        let b = TrustBundle {
+            required_receipt_enforcement_tiers: vec![
+                "daemon_enforced".into(),
+                "linux_kernel_enforced".into(),
+                "linux_kernel_attested".into(),
+            ],
+            ..dev_bundle()
+        };
+        assert!(!b.receipt_enforcement_tier_allowed("best_effort"));
+        assert!(b.receipt_enforcement_tier_allowed("daemon_enforced"));
+        assert!(b.receipt_enforcement_tier_allowed("linux_kernel_enforced"));
+        assert!(b.receipt_enforcement_tier_allowed("linux_kernel_attested"));
+    }
+
+    #[test]
+    fn serde_roundtrip_with_attested_issuers() {
+        let b = TrustBundle {
+            require_attested_issuers: true,
+            allowed_receipt_signer_node_ids: vec!["signer-1".into()],
+            ..dev_bundle()
+        };
+        b.validate().unwrap();
+        let json = serde_json::to_string_pretty(&b).unwrap();
+        let restored: TrustBundle = serde_json::from_str(&json).unwrap();
+        restored.validate().unwrap();
+        assert!(restored.require_attested_issuers);
     }
 }

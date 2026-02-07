@@ -21,6 +21,8 @@ chrono.workspace = true
 thiserror.workspace = true
 async-nats = "0.39"
 tokio.workspace = true
+x509-parser = "0.16"
+pem = "3"
 
 # Binary-only dependencies (behind "bins" feature)
 anyhow = { workspace = true, optional = true }
