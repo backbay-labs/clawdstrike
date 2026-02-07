@@ -1,0 +1,42 @@
+name: bindings/c-cpp
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Run at 8:00 AM every day
+    - cron: "0 8 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/toolchains/rust
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          shared-key: ${{ runner.os }}-regorus
+      - name: Fetch dependencies
+        run: cargo fetch --locked
+
+      - name: Fetch FFI crate dependencies
+        run: cargo fetch --locked --manifest-path bindings/ffi/Cargo.toml
+
+      - name: Setup gcc, g++, cmake, ninja
+        run: sudo apt update && sudo apt install -y gcc g++ cmake ninja-build
+
+      - name: Test C binding via xtask
+        run: cargo xtask test-c --release --frozen
+
+      - name: Test C (no-std) binding via xtask
+        run: cargo xtask test-c-nostd --release --frozen --skip-ffi
+
+      - name: Test C++ binding via xtask
+        run: cargo xtask test-cpp --release --frozen --skip-ffi

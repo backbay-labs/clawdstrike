@@ -1,0 +1,32 @@
+name: publish-wasm
+
+permissions:
+  pull-requests: write
+  contents: write
+
+on: workflow_dispatch
+
+jobs:
+  publish-wasm:
+    name: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          fetch-depth: 0
+      # Setup .npmrc file to publish to npm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build
+        run: wasm-pack build --target nodejs --release
+        working-directory: ./bindings/wasm
+      - name: Publish
+        run: wasm-pack publish --target nodejs
+        working-directory: ./bindings/wasm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}

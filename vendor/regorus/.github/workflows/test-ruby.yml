@@ -1,0 +1,42 @@
+name: bindings/ruby
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    if: false # temporarily disabled
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ruby and Rust
+        uses: oxidize-rb/actions/setup-ruby-and-rust@7ca44a16e287e5ff7dd72ab53f4bd41cbf34a571 #v1.26
+        with:
+          bundler: 2.6.5
+          rubygems: 3.6.5
+          ruby-version: "3.4.2"
+          rustup-toolchain: "stable"
+          bundler-cache: true
+          cargo-cache: true
+          working-directory: "bindings/ruby"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          shared-key: ${{ runner.os }}-regorus
+
+      - name: Fetch dependencies
+        run: cargo fetch --locked
+
+      - name: Fetch Ruby crate dependencies
+        run: cargo fetch --locked --manifest-path bindings/ruby/Cargo.toml
+
+      - name: Run ruby tests
+        run: cargo xtask test-ruby --release --frozen

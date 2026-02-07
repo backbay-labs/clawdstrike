@@ -1,0 +1,140 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: all
+    rego: |
+      package test
+      # One item
+      x = {1}
+
+      # Multiple items
+       y = {
+          2.5, "abc", { 4, `raw`
+          },
+          # Empty set has a special syntax
+          set( ),
+          # Nested empty
+          {{{{{}}}}}
+      }
+    num_expressions: 17
+    num_statements: 0
+    num_queries: 0
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 1
+              assign:
+                span: = {1}
+                op: "="
+                value:
+                  set:
+                    - number: 1
+                      eidx: 2
+                  eidx: 3
+          bodies: --skip--
+
+      - spec:
+          head:
+            compr:
+              refr:
+                var: y
+                eidx: 4
+              assign:
+                op: "="
+                value:
+                  set:
+                    - number: 2.5
+                      eidx: 5
+                    - string: abc
+                      eidx: 6
+                    - set:
+                        - number: 4
+                          eidx: 7
+                        - rawstring: raw
+                          eidx: 8
+                      eidx: 9
+                    - set: []
+                      eidx: 10
+                    - set:
+                        - set:
+                            - set:
+                              - set:
+                                - object:
+                                    span: "{}"
+                                    fields: []
+                                  eidx: 11
+                                eidx: 12
+                              eidx: 13
+                          eidx: 14
+                      eidx: 15
+                  eidx: 16
+          bodies: []
+
+  - note: trailing-comma
+    rego: |
+      package test
+      x = {1,}
+      y = {1,2
+      ,}
+    num_expressions: 8
+    num_queries: 0
+    num_statements: 0
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 1
+              assign:
+                op: "="
+                value:
+                  set:
+                    span: "{1,}"
+                    values:
+                      - number: 1
+                        eidx: 2
+                  eidx: 3
+          bodies: []
+      - spec:
+          head:
+            compr:
+              refr:
+                var: y
+                eidx: 4
+              assign:
+                op: "="
+                value:
+                  set:
+                    span: "{1,2\n,}"
+                    values:
+                      - number: 1
+                        eidx: 5
+                      - number: 2
+                        eidx: 6
+                  eidx: 7
+          bodies: []
+
+
+  - note: no-comma
+    rego: |
+      package test
+      x = {1 2}
+    error: expecting `}` while parsing set
+
+  - note: two-trailing-commas
+    rego: |
+      package test
+      x = {1,2,,}
+    error: expecting expression
+
+  - note: unclosed
+    rego: |
+      package test
+      x = { 1
+    error: expecting `}` while parsing set
+

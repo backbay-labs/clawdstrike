@@ -1,0 +1,48 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: basic
+    modules:
+      - |
+        package test
+
+        x = y {
+          p = 1
+          # var can appear on rhs
+          2 = q
+          y = p
+          # No local var is created for r
+          r = 1
+
+          # Nested scope
+          x := [ k |
+            a = k
+            # A loop index var with same name as parent scope.
+            # The outer var is used.
+            [1,2,3][idx]
+            r1 = { q |
+              # := forces a local variable
+              rrr = t
+              q := [1, 2, 3][idx1]
+            }
+          ]
+
+          [a, [b]] = [[p], q]
+
+          # an index var
+          [1,2, 3][idx]
+        }
+
+        r = 1
+        rrr = "fun"
+    scopes:
+      - locals: ["x"]
+        unscoped: ["p", "y", "q", "a", "b", "idx"]
+        inputs: ["r", "rrr"]
+      - locals: []
+        unscoped: ["k", "r1"]
+        inputs: ["a", "idx", "rrr"]
+      - locals: ["q"]
+        unscoped: ["idx1", "t"]
+        inputs: ["rrr"]

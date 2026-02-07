@@ -1,0 +1,36 @@
+name: musl
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Run at 8:00 AM every day
+    - cron: "0 8 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+    - uses: ./.github/actions/toolchains/rust
+      with:
+        targets: x86_64-unknown-linux-musl
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+      with:
+        shared-key: ${{ runner.os }}-regorus
+    - name: Fetch dependencies
+      run: cargo fetch --locked
+    - name: Fetch MUSL target dependencies
+      run: cargo fetch --locked --target x86_64-unknown-linux-musl
+    - name: Install musl-gcc
+      run: sudo apt update && sudo apt install -y musl-tools
+    - name: Run MUSL suite via xtask
+      run: cargo xtask test-musl --release --frozen --target x86_64-unknown-linux-musl

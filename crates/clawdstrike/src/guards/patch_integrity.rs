@@ -306,12 +306,10 @@ mod tests {
 "#;
 
         let analysis = guard.analyze(diff);
-        assert!(
-            analysis
-                .forbidden_matches
-                .iter()
-                .any(|m| m.line.contains("disable security"))
-        );
+        assert!(analysis
+            .forbidden_matches
+            .iter()
+            .any(|m| m.line.contains("disable security")));
         assert!(!analysis.forbidden_matches.is_empty());
         assert!(!analysis.is_safe());
     }

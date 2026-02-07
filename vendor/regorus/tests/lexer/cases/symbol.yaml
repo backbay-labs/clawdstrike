@@ -1,0 +1,23 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  # Two single char symbols in a row must be parsed correctly.
+  - note: single-char-two-in-a-row
+    rego: |
+      ++--**//&&||{{}}(())[[]];;,,..::<<>>
+    tokens: [
+    "+", "+", "-", "-", "*", "*", "/", "/", "&", "&",
+    "|", "|", "{", "{", "}", "}", "(", "(", ")", ")",
+    "[", "[", "]", "]", ";", ";", ",", ",", ".", ".",
+    ":", ":", "<", "<", ">", ">",
+    ""]
+    
+  # Multi char operators must be correctly parsed.
+  - note: multi-char-in-a-row
+    rego: ">====<== ==="
+    tokens: [
+    ">=", "==", "=", "<=", "=", "==", "=",
+    ""]
+      
+      

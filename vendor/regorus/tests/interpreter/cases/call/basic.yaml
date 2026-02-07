@@ -1,0 +1,87 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: basic
+    data: {}
+    modules:
+      - |
+        package test
+
+        inc(x) = x + 1
+
+        a1 = inc(5)
+    query: data.test
+    want_result:
+      a1: 6
+
+  - note: call-in-arg
+    data: {}
+    modules:
+      - |
+        package test
+
+        inc(x) = x + 1
+
+        a1 = inc(inc(5))
+    query: data.test
+    want_result:
+      a1: 7
+
+  - note: call-nested
+    data: {}
+    modules:
+      - |
+        package test
+        
+        sub(a, b) := a - b
+
+        foo(a, b) := r {
+        r =(a + b) * sub(a, b)
+        }
+
+        a = foo(5, 6)
+    query: data.test
+    want_result:
+      a: -11
+      
+  - note: call-return-undefined
+    data: {}
+    modules:
+      - |
+        package test
+
+        inc(x) = y {
+           x > 10 # This will evaluate to false.
+           y = 100 # y will be undefined.
+        }
+
+        a1 = inc(5)
+    query: data.test
+    want_result: {}
+
+  - note: call parameter raises error
+    data: {}
+    modules:
+      - |
+        package test
+        import rego.v1
+        
+        bar := 1 if {
+          1 + "hello"
+        }
+        foo := 1 if {
+          count(bar)
+        }
+    query: data.test
+    error: expects numeric argument.
+
+  - note: multiline-member-access-should-error
+    data: {}
+    modules:
+      - |
+        package test
+        output := regex.
+        match("^a", "b")
+    query: data.test
+    error: invalid whitespace between . and identifier

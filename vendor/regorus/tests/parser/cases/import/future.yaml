@@ -1,0 +1,210 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: namespace
+    rego: |
+      package test
+      import future.keywords
+    num_expressions: 3
+    imports:
+      - span: import future.keywords
+        refr:
+          refdot:
+            span: future.keywords
+            refr:
+              var: future
+              eidx: 1
+            field: keywords
+          eidx: 2
+
+  - note: all
+    rego: |
+      package test
+      import              future.keywords.contains import future.keywords.every
+      import              future.keywords.if
+      import
+      future.keywords.in
+    num_expressions: 13
+    imports:
+      - span: import              future.keywords.contains
+        refr:
+          refdot:
+            span: future.keywords.contains
+            refr:
+              refdot:
+                span: future.keywords
+                refr:
+                  var: future
+                  eidx: 1
+                field: keywords
+              eidx: 2
+            field: contains
+          eidx: 3
+      - span: import future.keywords.every
+        refr:
+          refdot:
+            span: future.keywords.every
+            refr:
+              refdot:
+                span: future.keywords
+                refr:
+                  var: future
+                  eidx: 4
+                field: keywords
+              eidx: 5
+            field: every
+          eidx: 6
+      - span: import              future.keywords.if
+        refr:
+          refdot:
+            span: future.keywords.if
+            refr:
+              refdot:
+                span: future.keywords
+                refr:
+                  var: future
+                  eidx: 7
+                field: keywords
+              eidx: 8
+            field: if
+          eidx: 9
+      - span: "import\nfuture.keywords.in"
+        refr:
+          refdot:
+            span: future.keywords.in
+            refr:
+              refdot:
+                span: future.keywords
+                refr:
+                  var: future
+                  eidx: 10
+                field: keywords
+              eidx: 11
+            field: in
+          eidx: 12
+
+  - note: bracket
+    rego: |
+      package test
+      import              future["keywords"]["contains"] import future.keywords["every"]
+      import
+      future["keywords"].if
+    num_expressions: 14
+    num_statements: 0
+    num_queries: 0
+    imports:
+      - span: import              future["keywords"]["contains"]
+        refr:
+          refbrack:
+            span: future["keywords"]["contains"]
+            refr:
+              refbrack:
+                span: future["keywords"]
+                refr:
+                  var: future
+                  eidx: 1
+                index:
+                  string: keywords
+                  eidx: 2
+              eidx: 3
+            index:
+              string: contains
+              eidx: 4
+          eidx: 5
+      - span: import future.keywords["every"]
+        refr:
+          refbrack:
+            span: future.keywords["every"]
+            refr:
+              refdot:
+                span: future.keywords
+                refr:
+                  var: future
+                  eidx: 6
+                field: keywords
+              eidx: 7
+            index:
+              string: every
+              eidx: 8
+          eidx: 9
+      - span: "import\nfuture[\"keywords\"].if"
+        refr:
+          refdot:
+            span: future["keywords"].if
+            refr:
+              refbrack:
+                span: future["keywords"]
+                refr:
+                  var: future
+                  eidx: 10
+                index:
+                  string: keywords
+                  eidx: 11
+              eidx: 12
+            field: if
+          eidx: 13
+
+  - note: as
+    rego: |
+      package test
+      import future.keywords.in as on
+    error: "`future` imports cannot be aliased"
+
+  - note: shadow
+    rego: |
+      package test
+      import future.keywords
+      import future["keywords"]
+    #error: "this import shadows previous import of `contains`"
+    query: data.test
+    num_expressions: 6
+    num_queries: 0
+    num_statements: 0
+    want_result: {}
+
+  - note: invalid-future-component
+    rego: |
+      package test
+      import future.keywords.foo.bar
+    error: "invalid future keyword"
+
+  - note: shadow/1
+    rego: |
+      package test
+      import future.keywords
+      import future.keywords.if
+    #error: "this import shadows previous import of `if`"
+    num_expressions: 6
+    num_queries: 0
+    num_statements: 0
+    query: data.test
+    want_result: {}
+
+  - note: shadow/2
+    rego: |
+      package test
+      import future.keywords.if
+      import future.keywords
+    #error: "this import shadows previous import of `if`"
+    query: data.test
+    num_expressions: 6
+    num_queries: 0
+    num_statements: 0
+    want_result: {}
+
+  - note: in-as-var
+    rego: |
+      package test
+      import future.keywords.if
+      in = 5
+    num_expressions: 6
+    num_queries: 0
+    num_statements: 0
+
+  - note: in-as-var-imported
+    rego: |
+      package test
+      import future.keywords.in
+      in = 5
+    error: unexpected keyword `in`

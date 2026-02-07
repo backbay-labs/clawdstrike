@@ -1,0 +1,53 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: basic
+    rego: |
+      package test
+
+      # bool ops have lower precedence than arithmetic operators
+      x = 1 + 2 > 3 - 2
+
+      # TODO: lock down
+      # different types against object
+      # different types against set
+      # strings etc
+    num_expressions: 9
+    num_queries: 0
+    num_statements: 0
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 1
+              assign:
+                op: =
+                value:
+                  boolexpr:
+                    op: ">"
+                    lhs:
+                      arithexpr:
+                        op: "+"
+                        lhs:
+                            number: 1
+                            eidx: 2
+                        rhs:
+                          number: 2
+                          eidx: 3
+                      eidx: 4
+                    rhs:
+                      arithexpr:
+                        op: "-"
+                        lhs:
+                          number: 3
+                          eidx: 5
+                        rhs:
+                          number: 2
+                          eidx: 6
+                      eidx: 7
+                  eidx: 8
+
+          bodies: []

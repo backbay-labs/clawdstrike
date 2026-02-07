@@ -458,6 +458,7 @@ jobs:
           cache-dependency-path: |
             packages/clawdstrike-policy/package-lock.json
             packages/clawdstrike-adapter-core/package-lock.json
+            packages/hush-ts/package-lock.json
 
       - name: Bootstrap file deps (adapter-core)
         working-directory: packages/clawdstrike-adapter-core
@@ -478,6 +479,14 @@ jobs:
         run: npm run typecheck
 
       - name: Build
+        run: npm run build
+
+      - name: Bootstrap file deps (hush-ts)
+        working-directory: packages/hush-ts
+        run: npm ci
+
+      - name: Build file deps (hush-ts)
+        working-directory: packages/hush-ts
         run: npm run build
 
       - name: Policy parity (Rust ↔ TS)

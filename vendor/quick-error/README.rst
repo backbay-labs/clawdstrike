@@ -3,7 +3,7 @@ Quick Error
 ===========
 
 :Status: production-ready
-:Documentation: http://tailhook.github.io/quick-error/
+:Documentation: https://docs.rs/quick-error/
 
 A macro which makes error types pleasant to write.
 
@@ -25,13 +25,13 @@ Here is the comprehensive example:
             Io(err: io::Error) {
                 from()
                 display("I/O error: {}", err)
-                cause(err)
+                source(err)
             }
             Other(descr: &'static str) {
                 display("Error {}", descr)
             }
             IoAt { place: &'static str, err: io::Error } {
-                cause(err)
+                source(err)
                 display(me) -> ("io error at {}: {}", place, err)
                 from(s: String) -> {
                     place: "some string",

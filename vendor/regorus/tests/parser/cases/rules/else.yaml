@@ -1,0 +1,355 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: no-query
+    rego: |
+      package test
+
+      x = 10 else {
+        true
+      }
+    error: unexpected keyword `else`
+
+  - note: no-query
+    num_expressions: 5
+    num_statements: 2
+    num_queries: 2
+    rego: |
+      package test
+
+      x = 10 {
+        false
+      } {
+        true
+      }
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 1
+              assign:
+                op: "="
+                value:
+                  number: 10
+                  eidx: 2
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - literal:
+                      expr:
+                        bool: false
+                        eidx: 3
+                    sidx: 0
+            - query:
+                qidx: 1
+                stmts:
+                  - literal:
+                      expr:
+                        bool: true
+                        eidx: 4
+                    sidx: 1
+
+  - note: no-else
+    rego: |
+      package test
+
+      x = 10 {
+        false
+      } {
+        true
+      }
+    num_expressions: 5
+    num_statements: 2
+    num_queries: 2
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 1
+              assign:
+                op: "="
+                value:
+                  number: 10
+                  eidx: 2
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - literal:
+                      expr:
+                        bool: false
+                        eidx: 3
+                    sidx: 0
+            - query:
+                qidx: 1
+                stmts:
+                  - literal:
+                      expr:
+                        bool: true
+                        eidx: 4
+                    sidx: 1
+
+  - note: if-no-else
+    rego: |
+      package test
+      import future.keywords.if
+
+      x = 10 if {
+        false
+      } {
+        true
+      }
+    num_expressions: 8
+    num_statements: 2
+    num_queries: 2
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 4
+              assign:
+                op: "="
+                value:
+                  number: 10
+                  eidx: 5
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - literal:
+                      expr:
+                        bool: false
+                        eidx: 6
+                    sidx: 0
+            - query:
+                qidx: 1
+                stmts:
+                  - literal:
+                      expr:
+                        bool: true
+                        eidx: 7
+                    sidx: 1
+
+  - note: rule-named-if
+    rego: |
+      package test
+
+      x = 10 if {
+        false
+      } {
+        true
+      }
+    num_expressions: 6
+    num_statements: 2
+    num_queries: 2
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 1
+              assign:
+                op: "="
+                value:
+                  number: 10
+                  eidx: 2
+          bodies: []
+      - spec:
+          head:
+            compr:
+              refr:
+                var: if
+                eidx: 3
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - literal:
+                      expr:
+                        bool: false
+                        eidx: 4
+                    sidx: 0
+            - query:
+                qidx: 1
+                stmts:
+                  - literal:
+                      expr:
+                         bool: true
+                         eidx: 5
+                    sidx: 1
+
+  - note: query-else
+    rego: |
+      package test
+
+      x = 10 {
+        false
+      } else {
+        true
+      }
+    num_expressions: 5
+    num_queries: 2
+    num_statements: 2
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 1
+              assign:
+                op: "="
+                value:
+                  number: 10
+                  eidx: 2
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - literal:
+                      expr:
+                        bool: false
+                        eidx: 3
+                    sidx: 0
+            - query:
+                qidx: 1
+                stmts:
+                  - literal:
+                      expr:
+                        bool: true
+                        eidx: 4
+                    sidx: 1
+
+  - note: if-literal-else
+    rego: |
+      package test
+      import future.keywords.if
+
+      x = 10 if 1 < 0 else {
+        true
+      }
+    num_expressions: 10
+    num_statements: 2
+    num_queries: 2
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 4
+              assign:
+                op: "="
+                value:
+                  number: 10
+                  eidx: 5
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - literal:
+                      expr:
+                        boolexpr:
+                          op: "<"
+                          lhs:
+                            number: 1
+                            eidx: 6
+                          rhs:
+                            number: 0
+                            eidx: 7
+                        eidx: 8
+                    sidx: 0
+            - query:
+                qidx: 1
+                stmts:
+                  - literal:
+                      expr:
+                        bool: true
+                        eidx: 9
+                    sidx: 1
+
+  - note: if-literal-else-assign
+    rego: |
+      package test
+      import future.keywords.if
+
+      # This will evaluate to 10
+      x = 10 if 1 < 0 else := 20 {
+        true
+      }
+    num_expressions: 11
+    num_statements: 2
+    num_queries: 2
+    policy:
+      - spec:
+          head:
+            compr:
+              refr:
+                var: x
+                eidx: 4
+              assign:
+                op: "="
+                value:
+                  number: 10
+                  eidx: 5
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - literal:
+                      expr:
+                        boolexpr:
+                          op: "<"
+                          lhs:
+                            number: 1
+                            eidx: 6
+                          rhs:
+                            number: 0
+                            eidx: 7
+                        eidx: 8
+                    sidx: 0
+            - assign:
+                op: ":="
+                value:
+                  number: 20
+                  eidx: 9
+              query:
+                qidx: 1
+                stmts:
+                  - literal:
+                      expr:
+                        bool: true
+                        eidx: 10
+                    sidx: 1
+
+  - note: contains-else-error
+    rego: |
+      package test
+      import rego.v1
+
+      a contains "b" if {
+        false
+      } else if {
+        true
+      }
+    error: else cannot be used with set rules
+
+  - note: old-style-set-else-error
+    rego: |
+      package test
+
+      a["b"] {
+        false
+      } else {
+        true
+      }
+    error: else cannot be used with set rules
