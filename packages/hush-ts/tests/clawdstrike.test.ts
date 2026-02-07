@@ -92,6 +92,27 @@ guards:
     expect(egressDecision.guard).toBe("egress_allowlist");
   });
 
+  it("fromPolicy wires secret_leak config into SecretLeakGuard", async () => {
+    const policy = `
+version: "1.2.0"
+name: "secret leak wiring"
+guards:
+  secret_leak:
+    enabled: true
+    secrets:
+      - "sk-live-12345"
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const decision = await cs.check("custom", {
+      customType: "output",
+      customData: { content: "model output sk-live-12345 leaked" },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("secret_leak");
+  });
+
   it("fromDaemon evaluates remotely and fails closed on transport errors", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {

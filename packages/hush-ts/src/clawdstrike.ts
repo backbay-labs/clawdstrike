@@ -38,12 +38,14 @@ import { EgressAllowlistGuard } from './guards/egress-allowlist.js';
 import { ForbiddenPathGuard } from './guards/forbidden-path.js';
 import { McpToolGuard } from './guards/mcp-tool.js';
 import { PatchIntegrityGuard } from './guards/patch-integrity.js';
+import { SecretLeakGuard } from './guards/secret-leak.js';
 import { GuardAction, GuardContext, Severity } from './guards/types.js';
 import type { Guard, GuardResult } from './guards/types.js';
 import type { EgressAllowlistConfig } from './guards/egress-allowlist.js';
 import type { ForbiddenPathConfig } from './guards/forbidden-path.js';
 import type { McpToolConfig } from './guards/mcp-tool.js';
 import type { PatchIntegrityConfig } from './guards/patch-integrity.js';
+import type { SecretLeakConfig } from './guards/secret-leak.js';
 
 // ============================================================
 // Types
@@ -622,6 +624,16 @@ function toMcpToolConfig(value: unknown): McpToolConfig | undefined {
   };
 }
 
+function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  return {
+    secrets: toStringArray(value.secrets),
+    enabled: toBoolean(value.enabled),
+  };
+}
+
 function isGuardEnabled(value: unknown): boolean {
   if (!isPlainObject(value)) {
     return false;
@@ -663,6 +675,13 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
     : undefined;
   if (mcpToolConfig) {
     guards.push(new McpToolGuard(mcpToolConfig));
+  }
+
+  const secretLeakConfig = isGuardEnabled(guardConfigs.secret_leak)
+    ? toSecretLeakConfig(guardConfigs.secret_leak)
+    : undefined;
+  if (secretLeakConfig) {
+    guards.push(new SecretLeakGuard(secretLeakConfig));
   }
 
   return guards;
