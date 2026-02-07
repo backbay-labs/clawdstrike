@@ -8,9 +8,7 @@
 //! can fall back to demo mode.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::sync::RwLock;
+use tauri::{AppHandle, Runtime, State};
 
 use crate::state::AppState;
 
@@ -124,7 +122,7 @@ pub async fn spine_status(
 /// Once the `tetragon-nats-bridge` is running, this will use a proper NATS
 /// client subscription (e.g. `async-nats` crate).
 async fn spine_event_loop<R: Runtime>(
-    app: AppHandle<R>,
+    _app: AppHandle<R>,
     nats_url: String,
     mut cancel: tokio::sync::watch::Receiver<bool>,
 ) {

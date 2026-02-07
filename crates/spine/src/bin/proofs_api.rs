@@ -1,0 +1,511 @@
+//! ClawdStrike Spine proofs API.
+//!
+//! Axum HTTP server exposing checkpoint and inclusion-proof endpoints.
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::get,
+    Json, Router,
+};
+use clap::Parser;
+use futures::TryStreamExt;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use tower_http::trace::TraceLayer;
+use tracing::{info, warn};
+use tracing_subscriber::{fmt, EnvFilter};
+
+use hush_core::{Hash, MerkleTree};
+use spine::{hash, nats_transport as nats};
+
+#[derive(Parser, Debug)]
+#[command(name = "spine-proofs-api")]
+#[command(about = "ClawdStrike Spine proofs API (inclusion proofs for log checkpoints)")]
+struct Args {
+    /// NATS server URL
+    #[arg(long, env = "NATS_URL", default_value = "nats://localhost:4222")]
+    nats_url: String,
+
+    /// KV bucket mapping envelope_hash -> log sequence number
+    #[arg(long, default_value = "CLAWDSTRIKE_LOG_INDEX")]
+    index_bucket: String,
+
+    /// KV bucket storing checkpoints (keys: latest, checkpoint/<seq>)
+    #[arg(long, default_value = "CLAWDSTRIKE_CHECKPOINTS")]
+    checkpoint_bucket: String,
+
+    /// KV bucket storing SignedEnvelope payloads (keyed by envelope_hash)
+    #[arg(long, default_value = "CLAWDSTRIKE_ENVELOPES")]
+    envelope_bucket: String,
+
+    /// KV bucket indexing facts (policy hashes, versions, run_ids) to envelope hashes
+    #[arg(long, default_value = "CLAWDSTRIKE_FACT_INDEX")]
+    fact_index_bucket: String,
+
+    /// Bind address (host:port)
+    #[arg(long, default_value = "0.0.0.0:8080")]
+    listen: String,
+}
+
+#[derive(Clone)]
+struct AppState {
+    index_kv: async_nats::jetstream::kv::Store,
+    checkpoint_kv: async_nats::jetstream::kv::Store,
+    envelope_kv: async_nats::jetstream::kv::Store,
+    fact_index_kv: async_nats::jetstream::kv::Store,
+}
+
+#[derive(Debug)]
+struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl ApiError {
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            message: message.into(),
+        }
+    }
+
+    fn internal(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: message.into(),
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let body = Json(json!({ "error": self.message }));
+        (self.status, body).into_response()
+    }
+}
+
+fn normalize_hash_param(param: &str, raw: &str) -> Result<String, ApiError> {
+    hash::normalize_hash_hex(raw)
+        .ok_or_else(|| ApiError::bad_request(format!("invalid {param}")))
+}
+
+fn policy_index_key_param(policy_hash: &str) -> Result<String, ApiError> {
+    hash::policy_index_key(policy_hash)
+        .ok_or_else(|| ApiError::bad_request("invalid policy_hash"))
+}
+
+fn receipt_verification_prefix_param(
+    target_envelope_hash: &str,
+) -> Result<(String, String), ApiError> {
+    let target = normalize_hash_param("target_envelope_hash", target_envelope_hash)?;
+    let prefix = format!("receipt_verification.{target}.");
+    Ok((target, prefix))
+}
+
+async fn get_checkpoint_value(state: &AppState, key: &str) -> Result<Value, ApiError> {
+    let bytes = state
+        .checkpoint_kv
+        .get(key)
+        .await
+        .map_err(|_| ApiError::not_found(format!("checkpoint not found: {key}")))?;
+    let bytes = bytes
+        .ok_or_else(|| ApiError::not_found(format!("checkpoint not found: {key}")))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| ApiError::internal("invalid checkpoint JSON"))
+}
+
+fn extract_checkpoint_fact(envelope: &Value) -> Result<&Value, ApiError> {
+    let fact = envelope
+        .get("fact")
+        .ok_or_else(|| ApiError::internal("checkpoint envelope missing fact"))?;
+    let schema = fact
+        .get("schema")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if schema != "clawdstrike.spine.fact.log_checkpoint.v1" {
+        return Err(ApiError::bad_request(format!(
+            "unexpected fact schema: {schema}"
+        )));
+    }
+    Ok(fact)
+}
+
+async fn load_leaves_for_tree_size(
+    index_kv: &async_nats::jetstream::kv::Store,
+    tree_size: u64,
+) -> Result<Vec<Vec<u8>>, ApiError> {
+    let keys = index_kv
+        .keys()
+        .await
+        .map_err(|_| ApiError::internal("failed to list log index keys"))?
+        .try_collect::<Vec<String>>()
+        .await
+        .map_err(|_| ApiError::internal("failed to collect log index keys"))?;
+    let mut pairs: Vec<(u64, Vec<u8>)> = Vec::new();
+
+    for key in keys {
+        let Some(value) = index_kv
+            .get(&key)
+            .await
+            .map_err(|_| ApiError::internal("failed to read log index"))?
+        else {
+            continue;
+        };
+
+        let seq_str = std::str::from_utf8(&value).unwrap_or("").trim();
+        let seq: u64 = match seq_str.parse() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if seq == 0 || seq > tree_size {
+            continue;
+        }
+        let h = Hash::from_hex(&key)
+            .map_err(|_| ApiError::internal("invalid envelope_hash in index"))?;
+        pairs.push((seq, h.as_bytes().to_vec()));
+    }
+
+    pairs.sort_by_key(|(seq, _)| *seq);
+    if pairs.len() as u64 != tree_size {
+        return Err(ApiError::internal(
+            "log index incomplete for requested tree_size",
+        ));
+    }
+    Ok(pairs.into_iter().map(|(_, b)| b).collect())
+}
+
+async fn healthz() -> &'static str {
+    "ok"
+}
+
+async fn v1_checkpoint_latest(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, ApiError> {
+    let value = get_checkpoint_value(&state, "latest").await?;
+    Ok(Json(value))
+}
+
+async fn v1_checkpoint_by_seq(
+    State(state): State<Arc<AppState>>,
+    Path(seq): Path<u64>,
+) -> Result<Json<Value>, ApiError> {
+    let value = get_checkpoint_value(&state, &format!("checkpoint/{seq}")).await?;
+    Ok(Json(value))
+}
+
+#[derive(Deserialize)]
+struct InclusionQuery {
+    envelope_hash: String,
+    checkpoint_seq: Option<u64>,
+}
+
+async fn v1_inclusion_proof(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<InclusionQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let checkpoint_envelope = if let Some(seq) = q.checkpoint_seq {
+        get_checkpoint_value(&state, &format!("checkpoint/{seq}")).await?
+    } else {
+        get_checkpoint_value(&state, "latest").await?
+    };
+
+    let fact = extract_checkpoint_fact(&checkpoint_envelope)?;
+    let log_id = fact
+        .get("log_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::internal("checkpoint fact missing log_id"))?;
+    let checkpoint_seq = fact
+        .get("checkpoint_seq")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| ApiError::internal("checkpoint fact missing checkpoint_seq"))?;
+    let tree_size = fact
+        .get("tree_size")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| ApiError::internal("checkpoint fact missing tree_size"))?;
+    let merkle_root = fact
+        .get("merkle_root")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::internal("checkpoint fact missing merkle_root"))?;
+
+    let envelope_hash_hex = normalize_hash_param("envelope_hash", &q.envelope_hash)?;
+    let entry = state
+        .index_kv
+        .get(&envelope_hash_hex)
+        .await
+        .map_err(|_| ApiError::internal("failed to read log index"))?;
+    let entry =
+        entry.ok_or_else(|| ApiError::not_found("envelope_hash not in log index"))?;
+
+    let seq_str = std::str::from_utf8(&entry).unwrap_or("").trim();
+    let log_seq: u64 = seq_str
+        .parse()
+        .map_err(|_| ApiError::internal("invalid log index entry"))?;
+
+    if log_seq == 0 || log_seq > tree_size {
+        return Err(ApiError::not_found(
+            "envelope_hash not committed by this checkpoint",
+        ));
+    }
+    let log_index = log_seq - 1;
+
+    let leaves = load_leaves_for_tree_size(&state.index_kv, tree_size).await?;
+    let tree = MerkleTree::from_leaves(&leaves)
+        .map_err(|_| ApiError::internal("failed to build merkle tree"))?;
+    let proof = tree
+        .inclusion_proof(log_index as usize)
+        .map_err(|_| ApiError::internal("failed to generate inclusion proof"))?;
+
+    if tree.root().to_hex_prefixed() != merkle_root {
+        warn!(
+            "checkpoint merkle_root mismatch (log_id={}, checkpoint_seq={})",
+            log_id, checkpoint_seq
+        );
+    }
+
+    let audit_path: Vec<String> = proof
+        .audit_path
+        .iter()
+        .map(|h| h.to_hex_prefixed())
+        .collect();
+
+    Ok(Json(json!({
+        "schema": "clawdstrike.spine.proof.inclusion.v1",
+        "log_id": log_id,
+        "checkpoint_seq": checkpoint_seq,
+        "tree_size": tree_size,
+        "log_index": log_index,
+        "envelope_hash": envelope_hash_hex,
+        "audit_path": audit_path,
+    })))
+}
+
+async fn v1_envelope_by_hash(
+    State(state): State<Arc<AppState>>,
+    Path(envelope_hash): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let key = normalize_hash_param("envelope_hash", &envelope_hash)?;
+    let bytes = state
+        .envelope_kv
+        .get(&key)
+        .await
+        .map_err(|_| ApiError::internal("failed to read envelope KV"))?;
+    let bytes =
+        bytes.ok_or_else(|| ApiError::not_found("envelope not found"))?;
+    let envelope: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| ApiError::internal("invalid envelope JSON"))?;
+    Ok(Json(envelope))
+}
+
+async fn v1_policy_by_hash(
+    State(state): State<Arc<AppState>>,
+    Path(policy_hash): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let key = policy_index_key_param(&policy_hash)?;
+    let Some(envelope_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+        return Err(ApiError::not_found("policy hash not indexed"));
+    };
+    v1_envelope_by_hash(State(state), Path(envelope_hash)).await
+}
+
+async fn v1_policy_by_version(
+    State(state): State<Arc<AppState>>,
+    Path(version): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let key = format!("policy_version.{}", version);
+    let Some(policy_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+        return Err(ApiError::not_found("policy version not indexed"));
+    };
+    v1_policy_by_hash(State(state), Path(policy_hash)).await
+}
+
+async fn v1_run_receipt_by_run_id(
+    State(state): State<Arc<AppState>>,
+    Path(run_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let key = format!("run_receipt.{}", run_id);
+    let Some(envelope_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+        return Err(ApiError::not_found("run_id not indexed"));
+    };
+    v1_envelope_by_hash(State(state), Path(envelope_hash)).await
+}
+
+async fn v1_receipt_verifications_by_target(
+    State(state): State<Arc<AppState>>,
+    Path(target_envelope_hash): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let (target, prefix) =
+        receipt_verification_prefix_param(&target_envelope_hash)?;
+
+    let keys = state
+        .fact_index_kv
+        .keys()
+        .await
+        .map_err(|_| ApiError::internal("failed to list fact index keys"))?
+        .try_collect::<Vec<String>>()
+        .await
+        .map_err(|_| ApiError::internal("failed to collect fact index keys"))?;
+
+    let mut out: Vec<Value> = Vec::new();
+    for key in keys {
+        if !key.starts_with(&prefix) {
+            continue;
+        }
+        let verifier_pubkey_hex =
+            key.strip_prefix(&prefix).unwrap_or("").to_string();
+        let Some(env_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
+            continue;
+        };
+        let bytes = state
+            .envelope_kv
+            .get(&env_hash)
+            .await
+            .map_err(|_| ApiError::internal("failed to read envelope KV"))?;
+        let Some(bytes) = bytes else { continue };
+        let envelope: Value = serde_json::from_slice(&bytes)
+            .map_err(|_| ApiError::internal("invalid envelope JSON"))?;
+        out.push(json!({
+            "verifier_pubkey_hex": verifier_pubkey_hex,
+            "envelope_hash": env_hash,
+            "envelope": envelope,
+        }));
+    }
+
+    Ok(Json(json!({
+        "schema": "clawdstrike.spine.query.receipt_verifications.v1",
+        "target_envelope_hash": target,
+        "verifications": out,
+    })))
+}
+
+async fn kv_get_utf8(
+    kv: &async_nats::jetstream::kv::Store,
+    key: &str,
+) -> Result<Option<String>, ApiError> {
+    let entry = kv
+        .get(key)
+        .await
+        .map_err(|_| ApiError::internal("failed to read KV"))?;
+    let Some(bytes) = entry else {
+        return Ok(None);
+    };
+    let s = std::str::from_utf8(&bytes)
+        .map_err(|_| ApiError::internal("invalid UTF-8 in KV value"))?
+        .trim()
+        .to_string();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(s))
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse()?))
+        .with_target(false)
+        .init();
+
+    let args = Args::parse();
+
+    let client = nats::connect(&args.nats_url).await?;
+    let js = nats::jetstream(client);
+
+    let index_kv = nats::ensure_kv(&js, &args.index_bucket, 3).await?;
+    let checkpoint_kv = nats::ensure_kv(&js, &args.checkpoint_bucket, 3).await?;
+    let envelope_kv = nats::ensure_kv(&js, &args.envelope_bucket, 3).await?;
+    let fact_index_kv = nats::ensure_kv(&js, &args.fact_index_bucket, 3).await?;
+
+    let state = Arc::new(AppState {
+        index_kv,
+        checkpoint_kv,
+        envelope_kv,
+        fact_index_kv,
+    });
+
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .route("/v1/checkpoints/latest", get(v1_checkpoint_latest))
+        .route("/v1/checkpoints/{seq}", get(v1_checkpoint_by_seq))
+        .route("/v1/envelopes/{envelope_hash}", get(v1_envelope_by_hash))
+        .route(
+            "/v1/policies/by-hash/{policy_hash}",
+            get(v1_policy_by_hash),
+        )
+        .route(
+            "/v1/policies/by-version/{version}",
+            get(v1_policy_by_version),
+        )
+        .route(
+            "/v1/run-receipts/by-run-id/{run_id}",
+            get(v1_run_receipt_by_run_id),
+        )
+        .route(
+            "/v1/receipt-verifications/by-target/{target_envelope_hash}",
+            get(v1_receipt_verifications_by_target),
+        )
+        .route("/v1/proofs/inclusion", get(v1_inclusion_proof))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    let addr: SocketAddr = args.listen.parse().context("invalid listen address")?;
+    info!("proofs API listening on http://{}", addr);
+    axum::serve(tokio::net::TcpListener::bind(addr).await?, app).await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_hash_param_accepts_prefixed_or_unprefixed() {
+        let raw =
+            "0xAABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let normalized = normalize_hash_param("envelope_hash", raw).unwrap();
+        assert_eq!(
+            normalized,
+            "0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
+        );
+
+        let raw2 =
+            "aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let normalized2 = normalize_hash_param("envelope_hash", raw2).unwrap();
+        assert_eq!(normalized2, normalized);
+    }
+
+    #[test]
+    fn policy_index_key_param_normalizes() {
+        let raw =
+            "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let key = policy_index_key_param(raw).unwrap();
+        assert_eq!(
+            key,
+            "policy.0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
+        );
+    }
+
+    #[test]
+    fn receipt_verification_prefix_param_normalizes() {
+        let raw =
+            "0xAABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let (target, prefix) = receipt_verification_prefix_param(raw).unwrap();
+        assert_eq!(
+            target,
+            "0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
+        );
+        assert_eq!(prefix, format!("receipt_verification.{target}."));
+    }
+}
