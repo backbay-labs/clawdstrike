@@ -30,7 +30,7 @@ pub async fn run(nats_url: &str, is_json: bool, verbose: bool) -> Result<()> {
     if verbose {
         println!("\n{}", "JetStream Streams".bold().green());
 
-        let stream_names = ["spine-envelopes", "spine-checkpoints"];
+        let stream_names = ["CLAWDSTRIKE_ENVELOPES", "CLAWDSTRIKE_CHECKPOINTS"];
         for name in &stream_names {
             match js.get_stream(name).await {
                 Ok(mut stream) => {

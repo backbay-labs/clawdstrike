@@ -65,9 +65,9 @@ pub async fn verify(nats_url: &str, hash: &str, trust_path: &str, is_json: bool)
     let js = spine::nats_transport::jetstream(client);
 
     let kv = js
-        .get_key_value("spine-envelopes-kv")
+        .get_key_value("CLAWDSTRIKE_ENVELOPES_KV")
         .await
-        .context("failed to get spine-envelopes-kv bucket")?;
+        .context("failed to get CLAWDSTRIKE_ENVELOPES_KV bucket")?;
 
     let entry = kv
         .get(&normalized)

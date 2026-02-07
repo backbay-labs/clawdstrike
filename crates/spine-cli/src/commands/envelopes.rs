@@ -3,15 +3,15 @@ use colored::Colorize;
 use futures::StreamExt;
 use std::io::Read;
 
-/// List recent envelopes from the spine-envelopes JetStream stream.
+/// List recent envelopes from the CLAWDSTRIKE_ENVELOPES JetStream stream.
 pub async fn list(nats_url: &str, limit: u64, is_json: bool, verbose: bool) -> Result<()> {
     let client = spine::nats_transport::connect(nats_url).await?;
     let js = spine::nats_transport::jetstream(client);
 
     let mut stream = js
-        .get_stream("spine-envelopes")
+        .get_stream("CLAWDSTRIKE_ENVELOPES")
         .await
-        .context("failed to get spine-envelopes stream")?;
+        .context("failed to get CLAWDSTRIKE_ENVELOPES stream")?;
 
     let info = stream.info().await.context("failed to get stream info")?;
 
@@ -109,9 +109,9 @@ pub async fn get(nats_url: &str, hash: &str, is_json: bool) -> Result<()> {
     let js = spine::nats_transport::jetstream(client);
 
     let kv = js
-        .get_key_value("spine-envelopes-kv")
+        .get_key_value("CLAWDSTRIKE_ENVELOPES_KV")
         .await
-        .context("failed to get spine-envelopes-kv bucket")?;
+        .context("failed to get CLAWDSTRIKE_ENVELOPES_KV bucket")?;
 
     let entry = kv
         .get(&normalized)
@@ -174,7 +174,7 @@ pub async fn sign(nats_url: &str, is_json: bool) -> Result<()> {
     let client = spine::nats_transport::connect(nats_url).await?;
     let payload = serde_json::to_vec(&envelope)?;
     client
-        .publish("spine.envelopes.signed", payload.into())
+        .publish("clawdstrike.spine.envelope.cli.v1", payload.into())
         .await
         .context("failed to publish envelope")?;
 

@@ -2,15 +2,15 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use futures::StreamExt;
 
-/// List recent checkpoints from the spine-checkpoints JetStream stream.
+/// List recent checkpoints from the CLAWDSTRIKE_CHECKPOINTS JetStream stream.
 pub async fn list(nats_url: &str, limit: u64, is_json: bool, verbose: bool) -> Result<()> {
     let client = spine::nats_transport::connect(nats_url).await?;
     let js = spine::nats_transport::jetstream(client);
 
     let mut stream = js
-        .get_stream("spine-checkpoints")
+        .get_stream("CLAWDSTRIKE_CHECKPOINTS")
         .await
-        .context("failed to get spine-checkpoints stream")?;
+        .context("failed to get CLAWDSTRIKE_CHECKPOINTS stream")?;
 
     let info = stream.info().await.context("failed to get stream info")?;
 
@@ -106,9 +106,9 @@ pub async fn verify(nats_url: &str, hash: &str, is_json: bool) -> Result<()> {
     let js = spine::nats_transport::jetstream(client);
 
     let kv = js
-        .get_key_value("spine-checkpoints-kv")
+        .get_key_value("CLAWDSTRIKE_CHECKPOINTS_KV")
         .await
-        .context("failed to get spine-checkpoints-kv bucket")?;
+        .context("failed to get CLAWDSTRIKE_CHECKPOINTS_KV bucket")?;
 
     let entry = kv
         .get(&normalized)
