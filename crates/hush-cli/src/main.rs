@@ -1425,6 +1425,30 @@ struct KeygenOutput {
     public_hex: String,
 }
 
+/// Write a file with mode 0o600 on Unix (owner-only read/write).
+/// Falls back to `std::fs::write` on non-Unix platforms.
+fn write_secret_file(path: &str, contents: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        // Ensure restrictive perms are enforced even when overwriting an existing file.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        f.write_all(contents.as_bytes())?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents)?;
+        Ok(())
+    }
+}
+
 fn cmd_keygen(output: &str, tpm_seal: bool) -> anyhow::Result<KeygenOutput> {
     let public_path = format!("{}.pub", output);
 
@@ -1446,7 +1470,7 @@ fn cmd_keygen(output: &str, tpm_seal: bool) -> anyhow::Result<KeygenOutput> {
         seed.fill(0);
 
         let json = serde_json::to_string_pretty(&blob)?;
-        std::fs::write(output, json)?;
+        write_secret_file(output, &json)?;
         std::fs::write(&public_path, &public_hex)?;
 
         return Ok(KeygenOutput {
@@ -1461,7 +1485,7 @@ fn cmd_keygen(output: &str, tpm_seal: bool) -> anyhow::Result<KeygenOutput> {
     let private_hex = keypair.to_hex();
     let public_hex = keypair.public_key().to_hex();
 
-    std::fs::write(output, &private_hex)?;
+    write_secret_file(output, &private_hex)?;
     std::fs::write(&public_path, &public_hex)?;
 
     Ok(KeygenOutput {

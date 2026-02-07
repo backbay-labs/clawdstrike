@@ -1,16 +1,17 @@
-//! Arithmetic on **Iterator** *.size_hint()* values.
+//! Arithmetic on `Iterator.size_hint()` values.
 //!
 
 use std::usize;
 use std::cmp;
+use std::u32;
 
-/// **SizeHint** is the return type of **Iterator::size_hint()**.
+/// `SizeHint` is the return type of `Iterator::size_hint()`.
 pub type SizeHint = (usize, Option<usize>);
 
-/// Add **SizeHint** correctly.
+/// Add `SizeHint` correctly.
 #[inline]
 pub fn add(a: SizeHint, b: SizeHint) -> SizeHint {
-    let min = a.0.checked_add(b.0).unwrap_or(usize::MAX);
+    let min = a.0.saturating_add(b.0);
     let max = match (a.1, b.1) {
         (Some(x), Some(y)) => x.checked_add(y),
         _ => None,
@@ -19,7 +20,7 @@ pub fn add(a: SizeHint, b: SizeHint) -> SizeHint {
     (min, max)
 }
 
-/// Add **x** correctly to a **SizeHint**.
+/// Add `x` correctly to a `SizeHint`.
 #[inline]
 pub fn add_scalar(sh: SizeHint, x: usize) -> SizeHint {
     let (mut low, mut hi) = sh;
@@ -28,7 +29,7 @@ pub fn add_scalar(sh: SizeHint, x: usize) -> SizeHint {
     (low, hi)
 }
 
-/// Sbb **x** correctly to a **SizeHint**.
+/// Subtract `x` correctly from a `SizeHint`.
 #[inline]
 #[allow(dead_code)]
 pub fn sub_scalar(sh: SizeHint, x: usize) -> SizeHint {
@@ -39,7 +40,7 @@ pub fn sub_scalar(sh: SizeHint, x: usize) -> SizeHint {
 }
 
 
-/// Multiply **SizeHint** correctly
+/// Multiply `SizeHint` correctly
 ///
 /// ```ignore
 /// use std::usize;
@@ -56,7 +57,7 @@ pub fn sub_scalar(sh: SizeHint, x: usize) -> SizeHint {
 /// ```
 #[inline]
 pub fn mul(a: SizeHint, b: SizeHint) -> SizeHint {
-    let low = a.0.checked_mul(b.0).unwrap_or(usize::MAX);
+    let low = a.0.saturating_mul(b.0);
     let hi = match (a.1, b.1) {
         (Some(x), Some(y)) => x.checked_mul(y),
         (Some(0), None) | (None, Some(0)) => Some(0),
@@ -65,12 +66,26 @@ pub fn mul(a: SizeHint, b: SizeHint) -> SizeHint {
     (low, hi)
 }
 
-/// Multiply **x** correctly with a **SizeHint**.
+/// Multiply `x` correctly with a `SizeHint`.
 #[inline]
 pub fn mul_scalar(sh: SizeHint, x: usize) -> SizeHint {
     let (mut low, mut hi) = sh;
     low = low.saturating_mul(x);
     hi = hi.and_then(|elt| elt.checked_mul(x));
+    (low, hi)
+}
+
+/// Raise `base` correctly by a `SizeHint` exponent.
+#[inline]
+pub fn pow_scalar_base(base: usize, exp: SizeHint) -> SizeHint {
+    let exp_low = cmp::min(exp.0, u32::MAX as usize) as u32;
+    let low = base.saturating_pow(exp_low);
+
+    let hi = exp.1.and_then(|exp| {
+        let exp_hi = cmp::min(exp, u32::MAX as usize) as u32;
+        base.checked_pow(exp_hi)
+    });
+
     (low, hi)
 }
 

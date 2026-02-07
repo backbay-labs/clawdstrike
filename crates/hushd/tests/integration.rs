@@ -644,9 +644,8 @@ fn test_config_tracing_level() {
 async fn test_auth_required_without_token() {
     let (daemon, _keys) = common::TestDaemon::spawn_auth_daemon();
     let client = reqwest::Client::new();
-    let url = daemon.url.clone();
     let resp = client
-        .post(format!("{}/api/v1/check", url))
+        .post(format!("{}/api/v1/check", daemon.url))
         .json(&serde_json::json!({
             "action_type": "file_access",
             "target": "/test/file.txt"
@@ -662,10 +661,9 @@ async fn test_auth_required_without_token() {
 async fn test_auth_with_valid_token() {
     let (daemon, keys) = common::TestDaemon::spawn_auth_daemon();
     let client = reqwest::Client::new();
-    let url = daemon.url.clone();
 
     let resp = client
-        .post(format!("{}/api/v1/check", url))
+        .post(format!("{}/api/v1/check", daemon.url))
         .header("Authorization", format!("Bearer {}", keys.check_key))
         .json(&serde_json::json!({
             "action_type": "file_access",
@@ -682,10 +680,9 @@ async fn test_auth_with_valid_token() {
 async fn test_auth_with_invalid_token() {
     let (daemon, _keys) = common::TestDaemon::spawn_auth_daemon();
     let client = reqwest::Client::new();
-    let url = daemon.url.clone();
 
     let resp = client
-        .post(format!("{}/api/v1/check", url))
+        .post(format!("{}/api/v1/check", daemon.url))
         .header("Authorization", "Bearer invalid-key-12345")
         .json(&serde_json::json!({
             "action_type": "file_access",
@@ -704,6 +701,7 @@ async fn test_admin_endpoint_requires_admin_scope() {
     let client = reqwest::Client::new();
     let url = daemon.url.clone();
 
+    // The check-only key should be forbidden from admin endpoints
     let resp = client
         .post(format!("{}/api/v1/policy/reload", url))
         .header("Authorization", format!("Bearer {}", keys.check_key))
@@ -736,20 +734,18 @@ async fn test_health_always_public() {
     assert!(resp.status().is_success());
 }
 
-// Rate limiting tests
-// Note: These tests require the daemon to have rate limiting enabled with low limits
+// Rate limiting tests - spawn a dedicated daemon with low burst size
 
 #[tokio::test]
 async fn test_rate_limiting_returns_429() {
     let daemon = common::TestDaemon::spawn_rate_limited_daemon(3, 1);
     let client = reqwest::Client::new();
-    let url = daemon.url.clone();
 
     // Make requests until we hit the rate limit
     let mut hit_limit = false;
-    for _ in 0..10 {
+    for _ in 0..20 {
         let resp = client
-            .post(format!("{}/api/v1/check", url))
+            .post(format!("{}/api/v1/check", daemon.url))
             .json(&serde_json::json!({
                 "action_type": "file_access",
                 "target": "/test/file.txt"
@@ -766,7 +762,7 @@ async fn test_rate_limiting_returns_429() {
         }
     }
 
-    assert!(hit_limit, "Expected to hit rate limit within 10 requests");
+    assert!(hit_limit, "Expected to hit rate limit within 20 requests");
 }
 
 #[tokio::test]

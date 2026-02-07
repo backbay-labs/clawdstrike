@@ -69,7 +69,8 @@ ReadOnlyPaths=/
 ReadWritePaths=/var/lib/hushd
 ReadWritePaths=/var/log/hushd
 
-# Watchdog (optional - daemon must implement sd_notify)
+# Watchdog is optional. Enable only when hushd is built with `--features systemd`
+# and the unit Type is switched to `notify`.
 # WatchdogSec=30
 
 [Install]

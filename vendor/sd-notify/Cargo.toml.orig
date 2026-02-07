@@ -1,0 +1,20 @@
+[package]
+name = "sd-notify"
+version = "0.4.5"
+edition = "2021"
+description = "Lightweight crate for systemd service state notifications"
+readme = "README.md"
+keywords = ["systemd", "sd_notify"]
+categories = ["os"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lnicola/sd-notify"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[features]
+fdstore = ["dep:sendfd"]
+
+[dependencies]
+sendfd = { version = "0.4", optional = true }
+libc = "0.2"

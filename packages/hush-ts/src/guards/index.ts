@@ -4,6 +4,9 @@ export {
   GuardContext,
   GuardAction,
   type Guard,
+  type CanonicalSeverity,
+  toCanonicalSeverity,
+  fromCanonicalSeverity,
 } from "./types";
 export { ForbiddenPathGuard, type ForbiddenPathConfig } from "./forbidden-path";
 export { EgressAllowlistGuard, type EgressAllowlistConfig } from "./egress-allowlist";

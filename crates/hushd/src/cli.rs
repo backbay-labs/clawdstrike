@@ -61,6 +61,17 @@ fn format_listen(host: &str, port: u16) -> String {
     }
 }
 
+#[cfg(feature = "systemd")]
+fn watchdog_interval_from_env() -> Option<std::time::Duration> {
+    let watchdog_usec = std::env::var("WATCHDOG_USEC").ok()?.parse::<u64>().ok()?;
+    if watchdog_usec == 0 {
+        return None;
+    }
+
+    // Send heartbeats at half the configured timeout so jitter does not trip WatchdogSec.
+    Some(std::time::Duration::from_micros((watchdog_usec / 2).max(1)))
+}
+
 #[derive(Parser)]
 #[command(about = "Clawdstrike security daemon", long_about = None)]
 #[command(version)]
@@ -202,6 +213,31 @@ async fn run_daemon(config: Config) -> anyhow::Result<()> {
     // Create listener
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(address = %addr, "Listening");
+
+    // Notify systemd that the daemon is ready (Type=notify).
+    #[cfg(feature = "systemd")]
+    {
+        // Keep NOTIFY_SOCKET set so later WATCHDOG=1 heartbeats can be sent.
+        sd_notify::notify(false, &[sd_notify::NotifyState::Ready]).ok();
+        tracing::info!("sd_notify: READY=1 sent");
+    }
+
+    // Spawn periodic watchdog heartbeat when systemd enables watchdog supervision.
+    #[cfg(feature = "systemd")]
+    if let Some(interval) = watchdog_interval_from_env() {
+        tracing::info!(
+            interval_usec = interval.as_micros(),
+            "sd_notify: watchdog enabled"
+        );
+        tokio::spawn(async move {
+            loop {
+                sd_notify::notify(false, &[sd_notify::NotifyState::Watchdog]).ok();
+                tokio::time::sleep(interval).await;
+            }
+        });
+    } else {
+        tracing::debug!("sd_notify: WATCHDOG_USEC not set, watchdog heartbeat disabled");
+    }
 
     // Handle SIGHUP for policy reload (systemd ExecReload).
     #[cfg(unix)]

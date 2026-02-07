@@ -9,6 +9,49 @@ export enum Severity {
 }
 
 /**
+ * Canonical severity vocabulary (per ADR 0003 / adapter-core).
+ */
+export type CanonicalSeverity = "low" | "medium" | "high" | "critical";
+
+/**
+ * Convert SDK Severity enum to the canonical (adapter-core) vocabulary.
+ *
+ * Mapping:
+ *   INFO     -> low
+ *   WARNING  -> medium
+ *   ERROR    -> high
+ *   CRITICAL -> critical
+ */
+export function toCanonicalSeverity(severity: Severity): CanonicalSeverity {
+  switch (severity) {
+    case Severity.INFO:
+      return "low";
+    case Severity.WARNING:
+      return "medium";
+    case Severity.ERROR:
+      return "high";
+    case Severity.CRITICAL:
+      return "critical";
+  }
+}
+
+/**
+ * Convert canonical (adapter-core) severity to the SDK Severity enum.
+ */
+export function fromCanonicalSeverity(canonical: CanonicalSeverity): Severity {
+  switch (canonical) {
+    case "low":
+      return Severity.INFO;
+    case "medium":
+      return Severity.WARNING;
+    case "high":
+      return Severity.ERROR;
+    case "critical":
+      return Severity.CRITICAL;
+  }
+}
+
+/**
  * Result of a guard check.
  */
 export class GuardResult {

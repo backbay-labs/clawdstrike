@@ -53,4 +53,5 @@ spec:
           configMap:
             name: clawdstriked-config
         - name: clawdstriked-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: clawdstriked-data

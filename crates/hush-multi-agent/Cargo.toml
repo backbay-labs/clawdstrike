@@ -15,9 +15,16 @@ serde_json.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
+rusqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1.9"
+rusqlite.workspace = true
+tempfile = "3"
+
+[features]
+default = []
+sqlite = ["dep:rusqlite"]
 
 [lints]
 workspace = true

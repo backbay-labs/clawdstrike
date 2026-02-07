@@ -38,12 +38,14 @@ import { EgressAllowlistGuard } from './guards/egress-allowlist.js';
 import { ForbiddenPathGuard } from './guards/forbidden-path.js';
 import { McpToolGuard } from './guards/mcp-tool.js';
 import { PatchIntegrityGuard } from './guards/patch-integrity.js';
+import { SecretLeakGuard } from './guards/secret-leak.js';
 import { GuardAction, GuardContext, Severity } from './guards/types.js';
 import type { Guard, GuardResult } from './guards/types.js';
 import type { EgressAllowlistConfig } from './guards/egress-allowlist.js';
 import type { ForbiddenPathConfig } from './guards/forbidden-path.js';
 import type { McpToolConfig } from './guards/mcp-tool.js';
 import type { PatchIntegrityConfig } from './guards/patch-integrity.js';
+import type { SecretLeakConfig } from './guards/secret-leak.js';
 
 // ============================================================
 // Types
@@ -622,6 +624,42 @@ function toMcpToolConfig(value: unknown): McpToolConfig | undefined {
   };
 }
 
+function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const toSecretLeakSeverity = (
+    severity: unknown,
+  ): "info" | "warning" | "error" | "critical" | undefined => {
+    if (severity === 'info' || severity === 'warning' || severity === 'error' || severity === 'critical') {
+      return severity;
+    }
+    return undefined;
+  };
+  const patterns = Array.isArray(value.patterns)
+    ? value.patterns
+      .filter((entry): entry is Record<string, unknown> => isPlainObject(entry) && typeof entry.pattern === 'string')
+      .map((entry) => ({
+        name: typeof entry.name === 'string' ? entry.name : undefined,
+        pattern: entry.pattern as string,
+        severity: toSecretLeakSeverity(entry.severity),
+      }))
+    : undefined;
+
+  return {
+    secrets: toStringArray(value.secrets),
+    patterns,
+    enabled: toBoolean(value.enabled),
+  };
+}
+
+function isGuardEnabled(value: unknown): boolean {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return value.enabled !== false;
+}
+
 function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
   const guards: Guard[] = [];
   const guardConfigs = policy.guards;
@@ -630,24 +668,39 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
     return guards;
   }
 
-  const forbiddenPathConfig = toForbiddenPathConfig(guardConfigs.forbidden_path);
+  const forbiddenPathConfig = isGuardEnabled(guardConfigs.forbidden_path)
+    ? toForbiddenPathConfig(guardConfigs.forbidden_path)
+    : undefined;
   if (forbiddenPathConfig) {
     guards.push(new ForbiddenPathGuard(forbiddenPathConfig));
   }
 
-  const egressAllowlistConfig = toEgressAllowlistConfig(guardConfigs.egress_allowlist);
+  const egressAllowlistConfig = isGuardEnabled(guardConfigs.egress_allowlist)
+    ? toEgressAllowlistConfig(guardConfigs.egress_allowlist)
+    : undefined;
   if (egressAllowlistConfig) {
     guards.push(new EgressAllowlistGuard(egressAllowlistConfig));
   }
 
-  const patchIntegrityConfig = toPatchIntegrityConfig(guardConfigs.patch_integrity);
+  const patchIntegrityConfig = isGuardEnabled(guardConfigs.patch_integrity)
+    ? toPatchIntegrityConfig(guardConfigs.patch_integrity)
+    : undefined;
   if (patchIntegrityConfig) {
     guards.push(new PatchIntegrityGuard(patchIntegrityConfig));
   }
 
-  const mcpToolConfig = toMcpToolConfig(guardConfigs.mcp_tool);
+  const mcpToolConfig = isGuardEnabled(guardConfigs.mcp_tool)
+    ? toMcpToolConfig(guardConfigs.mcp_tool)
+    : undefined;
   if (mcpToolConfig) {
     guards.push(new McpToolGuard(mcpToolConfig));
+  }
+
+  const secretLeakConfig = isGuardEnabled(guardConfigs.secret_leak)
+    ? toSecretLeakConfig(guardConfigs.secret_leak)
+    : undefined;
+  if (secretLeakConfig) {
+    guards.push(new SecretLeakGuard(secretLeakConfig));
   }
 
   return guards;
@@ -1017,6 +1070,7 @@ export class ClawdstrikeSession {
     const guardAction = this.createGuardAction(action, params);
     const guardContext = this.createGuardContext();
     let warningDecision: Decision | undefined;
+    let informationalDecision: Decision | undefined;
 
     for (const guard of this.guards) {
       if (!guard.handles(guardAction)) {
@@ -1038,11 +1092,21 @@ export class ClawdstrikeSession {
         if (this.failFast) {
           return decision;
         }
+        continue;
+      }
+
+      if (decision.status === 'allow' && decision.message && decision.message !== 'Allowed') {
+        informationalDecision ??= decision;
       }
     }
 
     if (warningDecision) {
       return warningDecision;
+    }
+
+    if (informationalDecision) {
+      this.allowCount++;
+      return informationalDecision;
     }
 
     this.allowCount++;
@@ -1304,6 +1368,7 @@ export class Clawdstrike {
 
     const guardAction = this.createGuardAction(action, params);
     let warningDecision: Decision | undefined;
+    let informationalDecision: Decision | undefined;
 
     for (const guard of this.guards) {
       if (!guard.handles(guardAction)) {
@@ -1322,10 +1387,15 @@ export class Clawdstrike {
         if (this.config.failFast) {
           return decision;
         }
+        continue;
+      }
+
+      if (decision.status === 'allow' && decision.message && decision.message !== 'Allowed') {
+        informationalDecision ??= decision;
       }
     }
 
-    return warningDecision ?? allowDecision();
+    return warningDecision ?? informationalDecision ?? allowDecision();
   }
 
   /**
@@ -1563,6 +1633,7 @@ export class Clawdstrike {
       params.customData as Record<string, unknown> | undefined,
     );
   }
+
 }
 
 export default Clawdstrike;

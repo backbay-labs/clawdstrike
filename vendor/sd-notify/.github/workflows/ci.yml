@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: rustfmt, clippy
+
+      - name: Fetch
+        run: cargo fetch
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      - name: Build
+        run: cargo build
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Build tests
+        run: cargo test --no-run
+
+      - name: Test
+        run: cargo test

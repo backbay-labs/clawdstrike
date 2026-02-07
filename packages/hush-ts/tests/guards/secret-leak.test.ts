@@ -115,4 +115,55 @@ describe("SecretLeakGuard", () => {
 
     expect(result.allowed).toBe(false);
   });
+
+  it("matches regex patterns from config", () => {
+    const config: SecretLeakConfig = {
+      patterns: [{ name: "openai_key", pattern: "sk-[A-Za-z0-9]{10}", severity: "critical" }],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", { content: "token sk-ABC123DEF4 leaked" });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.allowed).toBe(false);
+    expect(result.guard).toBe("secret_leak");
+    expect(result.message).toContain("Secret pattern matched");
+  });
+
+  it("treats info-severity pattern matches as non-blocking", () => {
+    const config: SecretLeakConfig = {
+      patterns: [{ name: "informational", pattern: "sk-[A-Za-z0-9]{10}", severity: "info" }],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", { content: "token sk-ABC123DEF4 leaked" });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.allowed).toBe(true);
+    expect(result.severity).toBe(Severity.INFO);
+  });
+
+  it("treats warning-severity pattern matches as warnings", () => {
+    const config: SecretLeakConfig = {
+      patterns: [{ name: "warn", pattern: "sk-[A-Za-z0-9]{10}", severity: "warning" }],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", { content: "token sk-ABC123DEF4 leaked" });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.allowed).toBe(true);
+    expect(result.severity).toBe(Severity.WARNING);
+    expect(result.message).toContain("Secret pattern matched");
+  });
+
+  it("supports inline regex flags in pattern definitions", () => {
+    const config: SecretLeakConfig = {
+      patterns: [{ name: "generic_api_key", pattern: "(?i)(api[_\\-]?key)\\s*[:=]\\s*[A-Za-z0-9]{8,}" }],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", { content: "API_KEY: ABCDEFGH12345678" });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.allowed).toBe(false);
+    expect(result.severity).toBe(Severity.CRITICAL);
+    expect(result.guard).toBe("secret_leak");
+  });
 });

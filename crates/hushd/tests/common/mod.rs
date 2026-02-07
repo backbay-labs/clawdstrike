@@ -64,6 +64,8 @@ impl TestDaemon {
     }
 
     pub fn spawn_auth_daemon() -> (Self, TestAuthKeys) {
+        // Auth pepper is required when auth is enabled (fail-closed enforcement).
+        unsafe { std::env::set_var("CLAWDSTRIKE_AUTH_PEPPER", "test-pepper-for-integration") };
         let keys = TestAuthKeys {
             check_key: format!("test-check-{}", uuid::Uuid::new_v4()),
             admin_key: format!("test-admin-{}", uuid::Uuid::new_v4()),

@@ -1,13 +1,13 @@
 use std::cell::{Cell, RefCell};
-use std::vec;
+use alloc::vec::{self, Vec};
 
-/// A trait to unify FnMut for GroupBy with the chunk key in IntoChunks
+/// A trait to unify `FnMut` for `GroupBy` with the chunk key in `IntoChunks`
 trait KeyFunction<A> {
     type Key;
     fn call_mut(&mut self, arg: A) -> Self::Key;
 }
 
-impl<'a, A, K, F: ?Sized> KeyFunction<A> for F
+impl<A, K, F: ?Sized> KeyFunction<A> for F
     where F: FnMut(A) -> K
 {
     type Key = K;
@@ -18,7 +18,7 @@ impl<'a, A, K, F: ?Sized> KeyFunction<A> for F
 }
 
 
-/// ChunkIndex acts like the grouping key function for IntoChunks
+/// `ChunkIndex` acts like the grouping key function for `IntoChunks`
 #[derive(Debug)]
 struct ChunkIndex {
     size: usize,
@@ -37,7 +37,7 @@ impl ChunkIndex {
     }
 }
 
-impl<'a, A> KeyFunction<A> for ChunkIndex {
+impl<A> KeyFunction<A> for ChunkIndex {
     type Key = usize;
     #[inline(always)]
     fn call_mut(&mut self, _arg: A) -> Self::Key {
@@ -279,12 +279,12 @@ impl<K, I, F> GroupInner<K, I, F>
 /// no allocations. It needs allocations only if several group iterators
 /// are alive at the same time.
 ///
-/// This type implements `IntoIterator` (it is **not** an iterator
+/// This type implements [`IntoIterator`] (it is **not** an iterator
 /// itself), because the group iterators need to borrow from this
 /// value. It should be stored in a local variable or temporary and
 /// iterated.
 ///
-/// See [`.group_by()`](../trait.Itertools.html#method.group_by) for more information.
+/// See [`.group_by()`](crate::Itertools::group_by) for more information.
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 pub struct GroupBy<K, I, F>
     where I: Iterator,
@@ -330,7 +330,7 @@ impl<K, I, F> GroupBy<K, I, F>
 
     /// `client`: Index of group
     fn drop_group(&self, client: usize) {
-        self.inner.borrow_mut().drop_group(client)
+        self.inner.borrow_mut().drop_group(client);
     }
 }
 
@@ -354,7 +354,7 @@ impl<'a, K, I, F> IntoIterator for &'a GroupBy<K, I, F>
 /// Iterator element type is `(K, Group)`:
 /// the group's key `K` and the group's iterator.
 ///
-/// See [`.group_by()`](../trait.Itertools.html#method.group_by) for more information.
+/// See [`.group_by()`](crate::Itertools::group_by) for more information.
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 pub struct Groups<'a, K: 'a, I: 'a, F: 'a>
     where I: Iterator,
@@ -453,14 +453,14 @@ pub fn new_chunks<J>(iter: J, size: usize) -> IntoChunks<J::IntoIter>
 /// `IntoChunks` behaves just like `GroupBy`: it is iterable, and
 /// it only buffers if several chunk iterators are alive at the same time.
 ///
-/// This type implements `IntoIterator` (it is **not** an iterator
+/// This type implements [`IntoIterator`] (it is **not** an iterator
 /// itself), because the chunk iterators need to borrow from this
 /// value. It should be stored in a local variable or temporary and
 /// iterated.
 ///
 /// Iterator element type is `Chunk`, each chunk's iterator.
 ///
-/// See [`.chunks()`](../trait.Itertools.html#method.chunks) for more information.
+/// See [`.chunks()`](crate::Itertools::chunks) for more information.
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 pub struct IntoChunks<I>
     where I: Iterator,
@@ -482,7 +482,7 @@ impl<I> IntoChunks<I>
 
     /// `client`: Index of chunk
     fn drop_group(&self, client: usize) {
-        self.inner.borrow_mut().drop_group(client)
+        self.inner.borrow_mut().drop_group(client);
     }
 }
 
@@ -505,7 +505,7 @@ impl<'a, I> IntoIterator for &'a IntoChunks<I>
 ///
 /// Iterator element type is `Chunk`.
 ///
-/// See [`.chunks()`](../trait.Itertools.html#method.chunks) for more information.
+/// See [`.chunks()`](crate::Itertools::chunks) for more information.
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 pub struct Chunks<'a, I: 'a>
     where I: Iterator,

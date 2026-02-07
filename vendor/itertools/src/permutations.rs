@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use std::fmt;
 use std::iter::once;
 
@@ -6,7 +7,7 @@ use super::lazy_buffer::LazyBuffer;
 /// An iterator adaptor that iterates through all the `k`-permutations of the
 /// elements from an iterator.
 ///
-/// See [`.permutations()`](../trait.Itertools.html#method.permutations) for
+/// See [`.permutations()`](crate::Itertools::permutations) for
 /// more information.
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 pub struct Permutations<I: Iterator> {
@@ -104,27 +105,23 @@ where
 
         let &mut Permutations { ref vals, ref state } = self;
 
-        match state {
-            &PermutationState::StartUnknownLen { .. } => panic!("unexpected iterator state"),
-            &PermutationState::OngoingUnknownLen { k, min_n } => {
+        match *state {
+            PermutationState::StartUnknownLen { .. } => panic!("unexpected iterator state"),
+            PermutationState::OngoingUnknownLen { k, min_n } => {
                 let latest_idx = min_n - 1;
                 let indices = (0..(k - 1)).chain(once(latest_idx));
 
                 Some(indices.map(|i| vals[i].clone()).collect())
             }
-            &PermutationState::Complete(CompleteState::Start { .. }) => None,
-            &PermutationState::Complete(CompleteState::Ongoing { ref indices, ref cycles }) => {
+            PermutationState::Complete(CompleteState::Ongoing { ref indices, ref cycles }) => {
                 let k = cycles.len();
-
                 Some(indices[0..k].iter().map(|&i| vals[i].clone()).collect())
             },
-            &PermutationState::Empty => None
+            PermutationState::Complete(CompleteState::Start { .. }) | PermutationState::Empty => None
         }
     }
 
     fn count(self) -> usize {
-        let Permutations { vals, state } = self;
-
         fn from_complete(complete_state: CompleteState) -> usize {
             match complete_state.remaining() {
                 CompleteStateRemaining::Known(count) => count,
@@ -134,6 +131,7 @@ where
             }
         }
 
+        let Permutations { vals, state } = self;
         match state {
             PermutationState::StartUnknownLen { k } => {
                 let n = vals.len() + vals.it.count();
@@ -174,11 +172,11 @@ where
     fn advance(&mut self) {
         let &mut Permutations { ref mut vals, ref mut state } = self;
 
-        *state = match state {
-            &mut PermutationState::StartUnknownLen { k } => {
+        *state = match *state {
+            PermutationState::StartUnknownLen { k } => {
                 PermutationState::OngoingUnknownLen { k, min_n: k }
             }
-            &mut PermutationState::OngoingUnknownLen { k, min_n } => {
+            PermutationState::OngoingUnknownLen { k, min_n } => {
                 if vals.get_next() {
                     PermutationState::OngoingUnknownLen { k, min_n: min_n + 1 }
                 } else {
@@ -194,20 +192,20 @@ where
                     PermutationState::Complete(complete_state)
                 }
             }
-            &mut PermutationState::Complete(ref mut state) => {
+            PermutationState::Complete(ref mut state) => {
                 state.advance();
 
                 return;
             }
-            &mut PermutationState::Empty => { return; }
+            PermutationState::Empty => { return; }
         };
     }
 }
 
 impl CompleteState {
     fn advance(&mut self) {
-        *self = match self {
-            &mut CompleteState::Start { n, k } => {
+        *self = match *self {
+            CompleteState::Start { n, k } => {
                 let indices = (0..n).collect();
                 let cycles = ((n - k)..n).rev().collect();
 
@@ -216,7 +214,7 @@ impl CompleteState {
                     indices
                 }
             },
-            &mut CompleteState::Ongoing { ref mut indices, ref mut cycles } => {
+            CompleteState::Ongoing { ref mut indices, ref mut cycles } => {
                 let n = indices.len();
                 let k = cycles.len();
 
@@ -243,8 +241,8 @@ impl CompleteState {
     fn remaining(&self) -> CompleteStateRemaining {
         use self::CompleteStateRemaining::{Known, Overflow};
 
-        match self {
-            &CompleteState::Start { n, k } => {
+        match *self {
+            CompleteState::Start { n, k } => {
                 if n < k {
                     return Known(0);
                 }
@@ -258,7 +256,7 @@ impl CompleteState {
                     None => Overflow
                 }
             }
-            &CompleteState::Ongoing { ref indices, ref cycles } => {
+            CompleteState::Ongoing { ref indices, ref cycles } => {
                 let mut count: usize = 0;
 
                 for (i, &c) in cycles.iter().enumerate() {

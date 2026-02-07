@@ -29,7 +29,9 @@ describe('createHushdEngine', () => {
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
     const engine = createHushdEngine({ baseUrl: 'http://127.0.0.1:9876', timeoutMs: 5000 });
-    await engine.evaluate(exampleEvent);
+    const decision = await engine.evaluate(exampleEvent);
+
+    expect(decision.status).toBe('allow');
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:9876/api/v1/eval',

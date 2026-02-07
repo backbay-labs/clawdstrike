@@ -12,7 +12,7 @@ env:
 
 jobs:
   fuzz:
-    name: Fuzz DNS/SNI Parsers
+    name: Fuzz All Targets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -27,6 +27,11 @@ jobs:
         run: |
           cd fuzz
           # Keep these time-bounded to avoid runaway CI costs.
+          # 60s per target, ~6 minutes total.
           cargo +nightly fuzz run fuzz_dns_parse -- -max_total_time=60
           cargo +nightly fuzz run fuzz_sni_parse -- -max_total_time=60
+          cargo +nightly fuzz run fuzz_policy_parse -- -max_total_time=60
+          cargo +nightly fuzz run fuzz_secret_leak -- -max_total_time=60
+          cargo +nightly fuzz run fuzz_sha256 -- -max_total_time=60
+          cargo +nightly fuzz run fuzz_merkle -- -max_total_time=60
 
