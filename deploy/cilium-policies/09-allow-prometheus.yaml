@@ -1,0 +1,23 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: sdr-allow-prometheus
+  namespace: clawdstrike
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+spec:
+  description: "Allow Prometheus to scrape all SDR service metrics"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: clawdstrike
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "2112"
+              protocol: TCP
+            - port: "9090"
+              protocol: TCP

@@ -1,0 +1,65 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: nats-jetstream
+  namespace: clawdstrike
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+spec:
+  description: "NATS JetStream: accept connections from SDR services, inter-replica clustering"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: nats
+  ingress:
+    # Client connections from all SDR services
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/part-of: clawdstrike
+      toPorts:
+        - ports:
+            - port: "4222"
+              protocol: TCP
+    # Cross-namespace bridge connections (tetragon-bridge in kube-system)
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            app.kubernetes.io/component: tetragon-bridge
+      toPorts:
+        - ports:
+            - port: "4222"
+              protocol: TCP
+    # NATS cluster routing (inter-replica)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: nats
+      toPorts:
+        - ports:
+            - port: "6222"
+              protocol: TCP
+    # Prometheus metrics
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "8222"
+              protocol: TCP
+  egress:
+    # NATS cluster routing (inter-replica)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: nats
+      toPorts:
+        - ports:
+            - port: "6222"
+              protocol: TCP
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY

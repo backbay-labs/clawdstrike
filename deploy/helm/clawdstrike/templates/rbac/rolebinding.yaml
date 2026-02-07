@@ -1,0 +1,17 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "clawdstrike.serviceAccountName" . }}
+    namespace: {{ include "clawdstrike.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "clawdstrike.fullname" . }}
+{{- end }}

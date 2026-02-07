@@ -2,8 +2,8 @@
 
 use std::path::{Component, Path};
 
-use clawdstrike::{SignedMarketplaceFeed, SignedPolicyBundle};
-use hush_core::PublicKey;
+use clawdstrike::{CuratorConfigFile, CuratorTrustSet, SignedMarketplaceFeed, SignedPolicyBundle, ContentIds};
+use hush_core::{sha256, Hash, MerkleProof, PublicKey};
 use reqwest::header::LOCATION;
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
@@ -19,17 +19,12 @@ const MAX_FETCH_REDIRECTS: usize = 5;
 const BUILTIN_FEED_PATH: &str = "resources/marketplace/feed.signed.json";
 const BUILTIN_BUNDLE_PREFIX: &str = "builtin://bundles/";
 const IPFS_PREFIX: &str = "ipfs://";
+const CURATOR_CONFIG_FILENAME: &str = "trusted_curators.toml";
 
 const DEFAULT_IPFS_GATEWAYS: &[&str] = &[
     "https://w3s.link",
     "https://cloudflare-ipfs.com",
     "https://ipfs.io",
-];
-
-// Hard-coded curator keys. Feed must verify against one of these.
-const TRUSTED_FEED_PUBKEYS_HEX: &[&str] = &[
-    // clawdstrike-official (apps/desktop/src-tauri/resources/marketplace/feed.signed.json)
-    "b51f6b9b8b2fcf77fb365f8a191579483c92af88ed914d6f79f08784699411ed",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,6 +44,8 @@ pub struct MarketplacePolicyDto {
     pub attestation_uid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notary_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spine_envelope_hash: Option<String>,
     pub bundle_public_key: Option<String>,
     pub signed_bundle: SignedPolicyBundle,
 }
@@ -70,7 +67,8 @@ pub async fn marketplace_list_policies(
     sources: Option<Vec<String>>,
     state: State<'_, AppState>,
 ) -> Result<MarketplaceListResponse, String> {
-    let trusted = trusted_feed_pubkeys()?;
+    let trust_set = load_curator_trust_set()?;
+    let trusted = trust_set.keys();
     let sources = sources.unwrap_or_else(|| vec!["builtin".to_string()]);
 
     let mut attempts = Vec::new();
@@ -86,7 +84,7 @@ pub async fn marketplace_list_policies(
                         continue;
                     }
                 };
-                match parsed.verify_trusted(&trusted) {
+                match parsed.verify_trusted(trusted) {
                     Ok(signer) => {
                         selected = Some((parsed, signer));
                         break;
@@ -113,7 +111,14 @@ pub async fn marketplace_list_policies(
     let mut policies = Vec::new();
 
     for entry in &signed.feed.entries {
-        let bundle_bytes = match load_bundle_bytes(&app, &state.http_client, &entry.bundle_uri).await
+        let bundle_bytes = match load_bundle_bytes_with_hints(
+            &app,
+            &state.http_client,
+            &entry.bundle_uri,
+            &entry.gateway_hints,
+            entry.content_ids.as_ref(),
+        )
+        .await
         {
             Ok(v) => v,
             Err(e) => {
@@ -189,6 +194,10 @@ pub async fn marketplace_list_policies(
                 .as_ref()
                 .and_then(|p| p.attestation_uid.clone()),
             notary_url: entry.provenance.as_ref().and_then(|p| p.notary_url.clone()),
+            spine_envelope_hash: entry
+                .provenance
+                .as_ref()
+                .and_then(|p| p.spine_envelope_hash.clone()),
             bundle_public_key: signed_bundle.public_key.as_ref().map(|k| k.to_hex()),
             signed_bundle,
         });
@@ -310,14 +319,14 @@ pub async fn marketplace_verify_attestation(
     })
 }
 
-fn trusted_feed_pubkeys() -> Result<Vec<PublicKey>, String> {
-    let mut keys = Vec::new();
-    for hex in TRUSTED_FEED_PUBKEYS_HEX {
-        let pk = PublicKey::from_hex(hex)
-            .map_err(|e| format!("Invalid TRUSTED_FEED_PUBKEYS_HEX entry {hex}: {e}"))?;
-        keys.push(pk);
-    }
-    Ok(keys)
+fn curator_config_path() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("clawdstrike").join(CURATOR_CONFIG_FILENAME))
+}
+
+fn load_curator_trust_set() -> Result<CuratorTrustSet, String> {
+    let config_path = curator_config_path();
+    CuratorTrustSet::load(config_path.as_deref())
+        .map_err(|e| format!("Failed to load curator trust set: {e}"))
 }
 
 async fn load_signed_feed(
@@ -337,13 +346,37 @@ async fn load_bundle_bytes(
     client: &reqwest::Client,
     uri: &str,
 ) -> Result<Vec<u8>, String> {
+    load_bundle_bytes_with_hints(app, client, uri, &[], None).await
+}
+
+async fn load_bundle_bytes_with_hints(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    uri: &str,
+    gateway_hints: &[String],
+    content_ids: Option<&ContentIds>,
+) -> Result<Vec<u8>, String> {
     if let Some(rel) = uri.strip_prefix(BUILTIN_BUNDLE_PREFIX) {
         validate_resource_relpath(rel)?;
         let rel_path = format!("resources/marketplace/bundles/{rel}");
         return read_resource_bytes(app, &rel_path, MAX_BUNDLE_BYTES);
     }
 
-    load_uri_bytes(client, uri, MAX_BUNDLE_BYTES).await
+    let bytes = load_uri_bytes_with_hints(client, uri, MAX_BUNDLE_BYTES, gateway_hints).await?;
+
+    // Defense-in-depth: verify SHA-256 against content_ids if present
+    if let Some(ids) = content_ids {
+        let actual = sha256(&bytes);
+        if actual != ids.sha256 {
+            return Err(format!(
+                "Bundle SHA-256 mismatch (expected {}, got {})",
+                ids.sha256.to_hex(),
+                actual.to_hex()
+            ));
+        }
+    }
+
+    Ok(bytes)
 }
 
 fn read_resource_bytes(app: &AppHandle, rel_path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
@@ -367,8 +400,17 @@ async fn load_uri_bytes(
     uri: &str,
     max_bytes: usize,
 ) -> Result<Vec<u8>, String> {
+    load_uri_bytes_with_hints(client, uri, max_bytes, &[]).await
+}
+
+async fn load_uri_bytes_with_hints(
+    client: &reqwest::Client,
+    uri: &str,
+    max_bytes: usize,
+    gateway_hints: &[String],
+) -> Result<Vec<u8>, String> {
     if let Some(ipfs) = uri.strip_prefix(IPFS_PREFIX) {
-        let urls = ipfs_gateway_urls(ipfs)?;
+        let urls = ipfs_gateway_urls_with_hints(ipfs, gateway_hints)?;
         let mut errs = Vec::new();
         for url in urls {
             match fetch_http_bytes_limited(client, &url, max_bytes).await {
@@ -383,6 +425,13 @@ async fn load_uri_bytes(
 }
 
 fn ipfs_gateway_urls(ipfs_path: &str) -> Result<Vec<String>, String> {
+    ipfs_gateway_urls_with_hints(ipfs_path, &[])
+}
+
+fn ipfs_gateway_urls_with_hints(
+    ipfs_path: &str,
+    gateway_hints: &[String],
+) -> Result<Vec<String>, String> {
     // ipfs://<CID>/<path>
     let trimmed = ipfs_path.trim().trim_start_matches('/');
     if trimmed.is_empty() {
@@ -395,10 +444,28 @@ fn ipfs_gateway_urls(ipfs_path: &str) -> Result<Vec<String>, String> {
         .unwrap_or((trimmed, String::new()));
 
     let mut urls = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // Gateway hints first (per-entry overrides)
+    for hint in gateway_hints {
+        let base = hint.trim().trim_end_matches('/');
+        if !base.is_empty() {
+            let url = format!("{base}/ipfs/{cid}{rest}");
+            if seen.insert(url.clone()) {
+                urls.push(url);
+            }
+        }
+    }
+
+    // Default gateways
     for gateway in DEFAULT_IPFS_GATEWAYS {
         let base = gateway.trim_end_matches('/');
-        urls.push(format!("{base}/ipfs/{cid}{rest}"));
+        let url = format!("{base}/ipfs/{cid}{rest}");
+        if seen.insert(url.clone()) {
+            urls.push(url);
+        }
     }
+
     Ok(urls)
 }
 
@@ -503,6 +570,188 @@ fn normalize_host(host: &str) -> String {
         .and_then(|h| h.strip_suffix(']'))
         .unwrap_or(host);
     host.to_ascii_lowercase()
+}
+
+// ---------------------------------------------------------------------------
+// Curator management commands
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CuratorKeyInfo {
+    pub hex: String,
+    pub source: String,
+}
+
+#[tauri::command]
+pub async fn marketplace_list_curators() -> Result<Vec<CuratorKeyInfo>, String> {
+    let trust_set = load_curator_trust_set()?;
+    let keys: Vec<CuratorKeyInfo> = trust_set
+        .keys()
+        .iter()
+        .map(|k| CuratorKeyInfo {
+            hex: k.to_hex(),
+            source: "merged".to_string(),
+        })
+        .collect();
+    Ok(keys)
+}
+
+#[tauri::command]
+pub async fn marketplace_add_curator(hex_key: String) -> Result<(), String> {
+    let hex_key = hex_key.trim().to_string();
+    // Validate the key is parseable
+    PublicKey::from_hex(&hex_key).map_err(|e| format!("Invalid public key: {e}"))?;
+
+    let config_path = curator_config_path()
+        .ok_or_else(|| "Cannot determine config directory".to_string())?;
+
+    let mut config = CuratorConfigFile::load(&config_path)
+        .map_err(|e| format!("Failed to load config: {e}"))?
+        .unwrap_or_default();
+
+    if !config.trusted_keys.contains(&hex_key) {
+        config.trusted_keys.push(hex_key);
+    }
+
+    config
+        .save(&config_path)
+        .map_err(|e| format!("Failed to save config: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn marketplace_remove_curator(hex_key: String) -> Result<(), String> {
+    let hex_key = hex_key.trim().to_string();
+
+    let config_path = curator_config_path()
+        .ok_or_else(|| "Cannot determine config directory".to_string())?;
+
+    let mut config = CuratorConfigFile::load(&config_path)
+        .map_err(|e| format!("Failed to load config: {e}"))?
+        .unwrap_or_default();
+
+    config.trusted_keys.retain(|k| k != &hex_key);
+
+    config
+        .save(&config_path)
+        .map_err(|e| format!("Failed to save config: {e}"))?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Spine proofs-api verification
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpineProofResult {
+    pub included: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_seq: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_index: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_verified: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn marketplace_verify_spine_proof(
+    proofs_api_url: String,
+    envelope_hash: String,
+    state: State<'_, AppState>,
+) -> Result<SpineProofResult, String> {
+    let envelope_hash = envelope_hash.trim();
+    if envelope_hash.is_empty() {
+        return Err("Missing envelope hash".to_string());
+    }
+
+    let base = proofs_api_url.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return Err("Missing proofs API URL".to_string());
+    }
+
+    let url = format!("{base}/v1/proofs/inclusion?envelope_hash={envelope_hash}");
+
+    let bytes = fetch_http_bytes_limited(&state.http_client, &url, MAX_NOTARY_BYTES).await?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("Invalid proofs API JSON: {e}"))?;
+
+    let has_included_flag = value
+        .get("included")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let has_audit_path = value
+        .get("audit_path")
+        .and_then(|v| v.as_array())
+        .is_some();
+    let included = has_included_flag || has_audit_path;
+
+    let log_id = value
+        .get("log_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let checkpoint_seq = value
+        .get("checkpoint_seq")
+        .and_then(|v| v.as_u64());
+
+    let tree_size = value
+        .get("tree_size")
+        .and_then(|v| v.as_u64());
+
+    let log_index = value
+        .get("log_index")
+        .and_then(|v| v.as_u64());
+
+    let error = value
+        .get("error")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // Local proof verification if audit_path is present
+    let proof_verified = (|| -> Option<bool> {
+        let audit_path_json = value.get("audit_path")?.as_array()?;
+        let ts = value.get("tree_size")?.as_u64()? as usize;
+        let li = value.get("log_index")?.as_u64()? as usize;
+        let merkle_root_hex = value.get("merkle_root").and_then(|v| v.as_str())?;
+        let envelope_hash_hex = value.get("envelope_hash").and_then(|v| v.as_str())?;
+
+        let audit_path: Vec<Hash> = audit_path_json
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(|s| Hash::from_hex(s).ok())
+            .collect();
+        if audit_path.len() != audit_path_json.len() {
+            return Some(false);
+        }
+
+        let expected_root = Hash::from_hex(merkle_root_hex).ok()?;
+        let eh = Hash::from_hex(envelope_hash_hex).ok()?;
+
+        let proof = MerkleProof {
+            tree_size: ts,
+            leaf_index: li,
+            audit_path,
+        };
+        Some(proof.verify(eh.as_bytes(), &expected_root))
+    })();
+
+    Ok(SpineProofResult {
+        included,
+        log_id,
+        checkpoint_seq,
+        tree_size,
+        log_index,
+        proof_verified,
+        error,
+    })
 }
 
 fn validate_resource_relpath(rel: &str) -> Result<(), String> {

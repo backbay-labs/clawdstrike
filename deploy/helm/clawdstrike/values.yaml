@@ -1,0 +1,230 @@
+# -- Global settings
+global:
+  # -- Image pull policy
+  imagePullPolicy: IfNotPresent
+  # -- Image pull secrets
+  imagePullSecrets: []
+  # -- Override namespace (defaults to Release.Namespace)
+  namespace: ""
+
+# -- Override chart name
+nameOverride: ""
+# -- Override full release name
+fullnameOverride: ""
+
+# -- Namespace creation
+namespace:
+  create: true
+  name: "clawdstrike-system"
+
+# ---------------------------------------------------------------------------
+# NATS JetStream
+# ---------------------------------------------------------------------------
+nats:
+  # -- Enable bundled NATS deployment
+  enabled: true
+  # -- Use an external NATS cluster instead of deploying one
+  external:
+    enabled: false
+    url: ""
+  image:
+    repository: nats
+    tag: "2.10-alpine"
+  replicas: 1
+  jetstream:
+    enabled: true
+    storage:
+      size: 10Gi
+      storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  monitoring:
+    enabled: true
+    port: 8222
+
+# ---------------------------------------------------------------------------
+# Spine services (checkpointer, witness, proofs-api)
+# ---------------------------------------------------------------------------
+spine:
+  enabled: true
+  image:
+    repository: ghcr.io/backbay-labs/clawdstrike/spine
+    # -- Overrides appVersion for spine images
+    tag: ""
+  env:
+    RUST_LOG: "info,spine=debug"
+
+  checkpointer:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+  witness:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 128Mi
+
+  proofsApi:
+    enabled: true
+    replicas: 1
+    port: 8080
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+    service:
+      type: ClusterIP
+      port: 8080
+
+# ---------------------------------------------------------------------------
+# hushd (enforcement daemon)
+# ---------------------------------------------------------------------------
+hushd:
+  enabled: true
+  image:
+    repository: ghcr.io/backbay-labs/clawdstrike/hushd
+    tag: ""
+  replicas: 1
+  port: 9876
+  config:
+    ruleset: "default"
+    logLevel: "info"
+  auth:
+    enabled: true
+    # -- Name of existing Secret containing CLAWDSTRIKE_API_KEY and CLAWDSTRIKE_ADMIN_KEY
+    existingSecret: ""
+    # -- API key (only used if existingSecret is empty; stored in auto-generated Secret)
+    apiKey: ""
+    adminKey: ""
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 9876
+
+# ---------------------------------------------------------------------------
+# Bridge DaemonSets
+# ---------------------------------------------------------------------------
+bridges:
+  tetragon:
+    enabled: false
+    image:
+      repository: ghcr.io/backbay-labs/clawdstrike/tetragon-bridge
+      tag: ""
+    grpcEndpoint: "localhost:54321"
+    env:
+      RUST_LOG: "info,tetragon_bridge=debug"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    # -- Node selector for bridge DaemonSet
+    nodeSelector: {}
+    tolerations: []
+
+  hubble:
+    enabled: false
+    image:
+      repository: ghcr.io/backbay-labs/clawdstrike/hubble-bridge
+      tag: ""
+    grpcEndpoint: "localhost:4245"
+    env:
+      RUST_LOG: "info,hubble_bridge=debug"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    nodeSelector: {}
+    tolerations: []
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: proofs-api.clawdstrike.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: proofs-api
+    - host: hushd.clawdstrike.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: hushd
+  tls: []
+
+# ---------------------------------------------------------------------------
+# Monitoring
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+# ---------------------------------------------------------------------------
+# Network Policy
+# ---------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# RBAC
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# Pod-level settings (applied to all components unless overridden)
+# ---------------------------------------------------------------------------
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]

@@ -1,7 +1,6 @@
 {
   "name": "@clawdstrike/vercel-ai",
   "version": "0.1.0",
-  "private": true,
   "description": "Minimal Clawdstrike tool wrappers for the Vercel AI SDK",
   "type": "module",
   "main": "dist/index.js",
@@ -23,8 +22,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core",
-    "@clawdstrike/sdk": "file:../hush-ts"
+    "@clawdstrike/adapter-core": "^0.1.0",
+    "@clawdstrike/sdk": "^0.1.0"
   },
   "peerDependencies": {
     "@ai-sdk/react": ">=3.0.0",
@@ -59,7 +58,25 @@
     "dist",
     "README.md"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/clawdstrike-vercel-ai"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "keywords": [
+    "clawdstrike",
+    "security",
+    "ai-agent",
+    "vercel-ai"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   }

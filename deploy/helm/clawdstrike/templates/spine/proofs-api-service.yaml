@@ -1,0 +1,17 @@
+{{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-proofs-api
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "proofs-api") | nindent 4 }}
+spec:
+  type: {{ .Values.spine.proofsApi.service.type }}
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "proofs-api") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.spine.proofsApi.service.port }}
+      targetPort: http
+{{- end }}

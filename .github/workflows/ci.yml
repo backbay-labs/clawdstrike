@@ -33,6 +33,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -65,7 +68,7 @@ jobs:
         run: cargo build --all-targets
 
       - name: Test
-        run: cargo test --all
+        run: cargo test --all --exclude sdr-integration-tests
 
   tauri-rust-check:
     name: Tauri Rust Crates
@@ -79,7 +82,8 @@ jobs:
           sudo apt-get install -y \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            protobuf-compiler
           sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
 
       - name: Install Rust toolchain
@@ -103,6 +107,54 @@ jobs:
       - name: Check agent Tauri crate
         run: cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 
+  desktop-frontend:
+    name: Desktop Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - name: Install deps
+        working-directory: apps/desktop
+        run: bun install --frozen-lockfile
+      - name: TypeScript typecheck
+        working-directory: apps/desktop
+        run: bun run typecheck
+
+  sdr-integration-tests:
+    name: SDR Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: check
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-sdr-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-sdr-
+            ${{ runner.os }}-cargo-
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Spine pipeline tests
+        run: cargo test -p spine --test pipeline_test
+
+      - name: Bridge roundtrip tests
+        run: cargo test -p sdr-integration-tests --test bridge_roundtrip_test
+
+      - name: E2E pipeline tests
+        run: cargo test -p sdr-integration-tests --test e2e_pipeline
+
   msrv:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
@@ -111,6 +163,9 @@ jobs:
 
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@1.93
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Build with MSRV
         run: cargo build --all-targets
@@ -123,6 +178,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Test offline
         run: scripts/cargo-offline.sh test --workspace --all-targets
@@ -137,6 +195,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Build documentation
         run: cargo doc --no-deps --all-features
@@ -183,6 +244,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -245,6 +309,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -270,6 +337,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Cache cargo registry
         uses: actions/cache@v4

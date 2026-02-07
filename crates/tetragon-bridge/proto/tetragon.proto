@@ -1,0 +1,330 @@
+// Minimal Tetragon export API definitions.
+// Derived from github.com/cilium/tetragon/api/v1/tetragon
+// Only the types needed for the bridge are included.
+
+syntax = "proto3";
+
+package tetragon;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+
+// --- Core event types ---
+
+message Process {
+  google.protobuf.UInt32Value exec_id = 1;
+  google.protobuf.UInt32Value pid = 2;
+  google.protobuf.UInt32Value uid = 3;
+  string cwd = 4;
+  string binary = 5;
+  string arguments = 6;
+  string flags = 7;
+  google.protobuf.Timestamp start_time = 8;
+  google.protobuf.UInt32Value auid = 9;
+  Pod pod = 10;
+  string docker = 11;
+  google.protobuf.UInt32Value parent_exec_id = 12;
+  Cap cap = 13;
+  Namespaces ns = 14;
+  google.protobuf.UInt32Value tid = 15;
+}
+
+message Pod {
+  Namespace namespace = 1;
+  string name = 2;
+  Container container = 3;
+  map<string, string> pod_labels = 4;
+  Workload workload = 5;
+}
+
+message Namespace {
+  string value = 1;
+}
+
+message Container {
+  string id = 1;
+  string name = 2;
+  Image image = 3;
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.UInt32Value pid = 5;
+  bool maybe_exec_probe = 6;
+}
+
+message Image {
+  string id = 1;
+  string name = 2;
+}
+
+message Workload {
+  string name = 1;
+  string kind = 2;
+}
+
+message Cap {
+  repeated CapType permitted = 1;
+  repeated CapType effective = 2;
+  repeated CapType inheritable = 3;
+}
+
+enum CapType {
+  CAP_CHOWN = 0;
+  DAC_OVERRIDE = 1;
+  DAC_READ_SEARCH = 2;
+  FOWNER = 3;
+  FSETID = 4;
+  KILL = 5;
+  SETGID = 6;
+  SETUID = 7;
+  SETPCAP = 8;
+  LINUX_IMMUTABLE = 9;
+  NET_BIND_SERVICE = 10;
+  NET_BROADCAST = 11;
+  NET_ADMIN = 12;
+  NET_RAW = 13;
+  IPC_LOCK = 14;
+  IPC_OWNER = 15;
+  SYS_MODULE = 16;
+  SYS_RAWIO = 17;
+  SYS_CHROOT = 18;
+  SYS_PTRACE = 19;
+  SYS_PACCT = 20;
+  SYS_ADMIN = 21;
+  SYS_BOOT = 22;
+  SYS_NICE = 23;
+  SYS_RESOURCE = 24;
+  SYS_TIME = 25;
+  SYS_TTY_CONFIG = 26;
+  MKNOD = 27;
+  LEASE = 28;
+  AUDIT_WRITE = 29;
+  AUDIT_CONTROL = 30;
+  SETFCAP = 31;
+  MAC_OVERRIDE = 32;
+  MAC_ADMIN = 33;
+  SYSLOG = 34;
+  WAKE_ALARM = 35;
+  BLOCK_SUSPEND = 36;
+  AUDIT_READ = 37;
+  PERFMON = 38;
+  BPF = 39;
+  CHECKPOINT_RESTORE = 40;
+}
+
+message Namespaces {
+  Ns uts = 1;
+  Ns ipc = 2;
+  Ns mnt = 3;
+  Ns pid = 4;
+  Ns pid_for_children = 5;
+  Ns net = 6;
+  Ns time = 7;
+  Ns time_for_children = 8;
+  Ns cgroup = 9;
+  Ns user = 10;
+}
+
+message Ns {
+  uint32 inum = 1;
+  bool is_host = 2;
+}
+
+message ProcessExec {
+  Process process = 1;
+  Process parent = 2;
+  string ancestors = 3;
+}
+
+message ProcessExit {
+  Process process = 1;
+  Process parent = 2;
+  string signal = 3;
+  uint32 status = 4;
+  google.protobuf.Timestamp time = 5;
+}
+
+message ProcessKprobe {
+  Process process = 1;
+  Process parent = 2;
+  string function_name = 3;
+  repeated KprobeArgument args = 4;
+  string action = 5;
+  string policy_name = 6;
+  string message = 7;
+  repeated string tags = 8;
+}
+
+message KprobeArgument {
+  oneof arg {
+    string string_arg = 1;
+    int64 int_arg = 2;
+    KprobeSkb skb_arg = 3;
+    uint64 size_arg = 4;
+    bytes bytes_arg = 5;
+    KprobePath path_arg = 6;
+    KprobeFile file_arg = 7;
+    KprobeTruncatedBytes truncated_bytes_arg = 8;
+    KprobeSock sock_arg = 9;
+    KprobeCred cred_arg = 10;
+    int32 bpf_attr_arg = 11;
+    int32 perf_event_arg = 12;
+    KprobeBpfMap bpf_map_arg = 13;
+    uint32 uint_arg = 14;
+    KprobeUserNamespace user_namespace_arg = 15;
+    KprobeCapability capability_arg = 16;
+    ProcessCredentials process_credentials_arg = 17;
+    KprobeLinuxBinprm linux_binprm_arg = 18;
+    string net_dev_arg = 19;
+  }
+  string label = 100;
+}
+
+message KprobeSkb {
+  uint32 hash = 1;
+  uint32 len = 2;
+  uint32 priority = 3;
+  uint32 mark = 4;
+  string saddr = 5;
+  string daddr = 6;
+  uint32 sport = 7;
+  uint32 dport = 8;
+  uint32 proto = 9;
+  string sec_path_len = 10;
+  string sec_path_olen = 11;
+  string protocol = 12;
+  string family = 13;
+}
+
+message KprobePath {
+  string mount = 1;
+  string path = 2;
+  string flags = 3;
+}
+
+message KprobeFile {
+  string mount = 1;
+  string path = 2;
+  string flags = 3;
+  string permission = 4;
+}
+
+message KprobeTruncatedBytes {
+  bytes bytes = 1;
+  uint64 orig_size = 2;
+}
+
+message KprobeSock {
+  string family = 1;
+  string type = 2;
+  string protocol = 3;
+  uint32 mark = 4;
+  uint32 priority = 5;
+  string saddr = 6;
+  string daddr = 7;
+  uint32 sport = 8;
+  uint32 dport = 9;
+  string cookie = 10;
+  string state = 11;
+}
+
+message KprobeCred {
+  repeated CapType permitted = 1;
+  repeated CapType effective = 2;
+  repeated CapType inheritable = 3;
+}
+
+message KprobeBpfMap {
+  uint32 map_type = 1;
+  uint32 key_size = 2;
+  uint32 value_size = 3;
+  uint32 max_entries = 4;
+  string map_name = 5;
+}
+
+message KprobeUserNamespace {
+  int32 level = 1;
+  uint32 owner = 2;
+  uint32 group = 3;
+  Ns ns = 4;
+}
+
+message KprobeCapability {
+  int32 value = 1;
+  string name = 2;
+}
+
+message ProcessCredentials {
+  uint32 uid = 1;
+  uint32 gid = 2;
+  uint32 euid = 3;
+  uint32 egid = 4;
+  uint32 suid = 5;
+  uint32 sgid = 6;
+  uint32 fsuid = 7;
+  uint32 fsgid = 8;
+  uint32 securebits = 9;
+  Cap cap = 10;
+  repeated Ns user_ns = 11;
+}
+
+message KprobeLinuxBinprm {
+  string path = 1;
+  string flags = 2;
+}
+
+// --- Response messages ---
+
+message GetEventsResponse {
+  oneof event {
+    ProcessExec process_exec = 1;
+    ProcessExit process_exit = 5;
+    ProcessKprobe process_kprobe = 9;
+  }
+  string node_name = 1000;
+  google.protobuf.Timestamp time = 1001;
+  uint64 aggregation_info_count = 1002;
+}
+
+message GetEventsRequest {
+  repeated EventType allow_list = 1;
+  repeated EventType deny_list = 2;
+  AggregationOptions aggregation_options = 3;
+  repeated FieldFilter field_filters = 4;
+}
+
+enum EventType {
+  UNDEF = 0;
+  PROCESS_EXEC = 1;
+  PROCESS_EXIT = 5;
+  PROCESS_KPROBE = 9;
+  PROCESS_TRACEPOINT = 10;
+  PROCESS_LOADER = 11;
+  PROCESS_UPROBE = 12;
+  PROCESS_THROTTLE = 27;
+  TEST = 40000;
+  RATE_LIMIT_INFO = 40001;
+}
+
+message AggregationOptions {
+  google.protobuf.Duration window_size = 1;
+  uint64 channel_buffer_size = 2;
+}
+
+message FieldFilter {
+  EventType event_set = 1;
+  google.protobuf.FieldMask fields = 2;
+  FieldFilterAction action = 3;
+  bool invert_event_set = 4;
+}
+
+enum FieldFilterAction {
+  INCLUDE = 0;
+  EXCLUDE = 1;
+}
+
+// --- Export service ---
+
+service FineGuidanceSensors {
+  rpc GetEvents(GetEventsRequest) returns (stream GetEventsResponse) {}
+}

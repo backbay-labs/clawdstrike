@@ -1,0 +1,18 @@
+apiVersion: v2
+name: clawdstrike
+description: Helm chart for ClawdStrike SDR (Swarm Detection & Response) stack
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/backbay-labs/clawdstrike
+sources:
+  - https://github.com/backbay-labs/clawdstrike
+maintainers:
+  - name: Backbay Labs
+    url: https://github.com/backbay-labs
+keywords:
+  - security
+  - ai-agent
+  - sdr
+  - clawdstrike
+  - runtime-enforcement

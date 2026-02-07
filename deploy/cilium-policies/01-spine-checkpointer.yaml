@@ -1,0 +1,42 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: spine-checkpointer
+  namespace: clawdstrike
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+spec:
+  description: "Spine checkpointer: subscribe to envelopes, publish checkpoints to NATS"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: spine-checkpointer
+  ingress:
+    # Prometheus metrics
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "2112"
+              protocol: TCP
+  egress:
+    # NATS JetStream
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: nats
+      authentication:
+        mode: "required"
+      toPorts:
+        - ports:
+            - port: "4222"
+              protocol: TCP
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY

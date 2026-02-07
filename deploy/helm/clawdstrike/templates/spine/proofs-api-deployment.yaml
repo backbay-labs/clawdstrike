@@ -1,0 +1,57 @@
+{{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-proofs-api
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "proofs-api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.spine.proofsApi.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "proofs-api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "proofs-api") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/spine/spine-configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: proofs-api
+          image: "{{ .Values.spine.image.repository }}:{{ .Values.spine.image.tag | default (printf "spine-proofs-api-%s" .Chart.AppVersion) }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: SPINE_BIN
+              value: spine-proofs-api
+          envFrom:
+            - configMapRef:
+                name: {{ include "clawdstrike.fullname" . }}-spine
+          ports:
+            - name: http
+              containerPort: {{ .Values.spine.proofsApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.spine.proofsApi.resources | nindent 12 }}
+{{- end }}

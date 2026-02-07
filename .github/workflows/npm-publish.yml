@@ -1,0 +1,54 @@
+name: Publish npm packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build -w
+      - run: npm test -w
+
+      # Publish in topological order
+      - name: Publish @clawdstrike/adapter-core
+        run: npm publish -w packages/clawdstrike-adapter-core --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @clawdstrike/sdk
+        run: npm publish -w packages/hush-ts --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @clawdstrike/policy
+        run: npm publish -w packages/clawdstrike-policy --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish remaining packages
+        run: |
+          for pkg in \
+            packages/clawdstrike-claude-code \
+            packages/clawdstrike-codex \
+            packages/clawdstrike-vercel-ai \
+            packages/clawdstrike-langchain \
+            packages/clawdstrike-openclaw \
+            packages/clawdstrike-opencode \
+            packages/clawdstrike-hush-cli-engine \
+            packages/clawdstrike-hushd-engine; do
+            npm publish -w "$pkg" --provenance || true
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

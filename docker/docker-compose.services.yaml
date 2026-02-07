@@ -1,0 +1,113 @@
+###############################################################################
+# ClawdStrike services — local development / testing
+#
+# Usage:
+#   docker compose -f docker/docker-compose.services.yaml up -d nats
+#   docker compose -f docker/docker-compose.services.yaml up spine-checkpointer spine-witness spine-proofs-api
+#
+# Optional bridge services (need gRPC endpoints):
+#   TETRAGON_GRPC=host.docker.internal:54321 \
+#     docker compose -f docker/docker-compose.services.yaml up tetragon-bridge
+###############################################################################
+
+services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------------
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"   # client
+      - "8222:8222"   # monitoring
+    command: ["--jetstream", "--store_dir", "/data"]
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Spine services
+  # ---------------------------------------------------------------------------
+  spine-checkpointer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spine
+      args:
+        BIN: spine-checkpointer
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      RUST_LOG: info,spine=debug
+
+  spine-witness:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spine
+      args:
+        BIN: spine-witness
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      RUST_LOG: info,spine=debug
+
+  spine-proofs-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spine
+      args:
+        BIN: spine-proofs-api
+    ports:
+      - "8080:8080"
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      RUST_LOG: info,spine=debug
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # Bridge services (optional — require external gRPC endpoints)
+  # ---------------------------------------------------------------------------
+  tetragon-bridge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tetragon-bridge
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      TETRAGON_GRPC: ${TETRAGON_GRPC:-host.docker.internal:54321}
+      RUST_LOG: info,tetragon_bridge=debug
+    profiles:
+      - bridges
+
+  hubble-bridge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.hubble-bridge
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      HUBBLE_GRPC: ${HUBBLE_GRPC:-host.docker.internal:4245}
+      RUST_LOG: info,hubble_bridge=debug
+    profiles:
+      - bridges
+
+volumes:
+  nats-data:

@@ -1,0 +1,28 @@
+[package]
+name = "spine-cli"
+description = "CLI tool for spine operations and debugging"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "spine-cli"
+path = "src/main.rs"
+
+[dependencies]
+spine.workspace = true
+hush-core.workspace = true
+clap.workspace = true
+tokio.workspace = true
+async-nats = "0.39"
+serde_json.workspace = true
+anyhow.workspace = true
+colored = "3"
+chrono.workspace = true
+reqwest.workspace = true
+futures.workspace = true
+
+[lints]
+workspace = true

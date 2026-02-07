@@ -1,0 +1,48 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tetragon-bridge
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+spec:
+  description: "Tetragon bridge: gRPC from Tetragon, publish to NATS"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: tetragon-bridge
+  ingress:
+    # Prometheus metrics
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "2112"
+              protocol: TCP
+  egress:
+    # Tetragon gRPC (localhost within same pod)
+    - toEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "54321"
+              protocol: TCP
+    # NATS JetStream (cross-namespace)
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: clawdstrike
+            app.kubernetes.io/component: nats
+      toPorts:
+        - ports:
+            - port: "4222"
+              protocol: TCP
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY

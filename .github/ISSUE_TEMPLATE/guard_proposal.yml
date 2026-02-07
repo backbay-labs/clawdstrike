@@ -1,0 +1,56 @@
+name: Guard Proposal
+description: Propose a new built-in or community guard
+labels: ["guard-proposal", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose a new guard for ClawdStrike. Guards implement the `Guard` or `AsyncGuard` trait
+        and provide security checks at the agent tool boundary.
+  - type: input
+    id: guard_name
+    attributes:
+      label: Guard Name
+      description: "e.g., RateLimitGuard, SqlInjectionGuard"
+      placeholder: "MyNewGuard"
+    validations:
+      required: true
+  - type: textarea
+    id: threat_model
+    attributes:
+      label: Threat Model
+      description: What attack or risk does this guard protect against?
+    validations:
+      required: true
+  - type: textarea
+    id: detection_logic
+    attributes:
+      label: Detection / Enforcement Logic
+      description: How does the guard detect or prevent the threat?
+    validations:
+      required: true
+  - type: textarea
+    id: policy_config
+    attributes:
+      label: Policy Configuration
+      description: Example YAML policy config for this guard
+      render: yaml
+    validations:
+      required: false
+  - type: dropdown
+    id: guard_type
+    attributes:
+      label: Guard Type
+      options:
+        - "Sync (Guard trait)"
+        - "Async (AsyncGuard trait)"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: prior_art
+    attributes:
+      label: Prior Art
+      description: Similar features in other tools (e.g., Falco rules, OPA policies)
+    validations:
+      required: false

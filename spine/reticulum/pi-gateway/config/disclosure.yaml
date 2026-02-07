@@ -1,0 +1,23 @@
+nats_to_reticulum:
+  allowed:
+    - clawdstrike.spine.fact.revocation.v1
+    - clawdstrike.spine.fact.log_checkpoint.v1
+    - clawdstrike.spine.fact.policy_delta.v1
+    - clawdstrike.spine.fact.incident.v1
+  blocked:
+    - clawdstrike.spine.envelope.tetragon.*
+    - aegisnet.hubble.*
+
+reticulum_to_nats:
+  allowed:
+    - clawdstrike.spine.fact.revocation.v1
+    - clawdstrike.spine.fact.incident.v1
+    - clawdstrike.spine.fact.log_checkpoint.v1
+    - clawdstrike.spine.fact.node_attestation.v1
+  blocked:
+    - clawdstrike.spine.fact.heartbeat.v1
+
+rate_limits:
+  bytes_per_second: 150
+  envelopes_per_minute: 30
+  unknown_issuer_quota: 100

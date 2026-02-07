@@ -1,0 +1,28 @@
+{{- if .Values.hushd.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hushd
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
+data:
+  config.yaml: |
+    listen: "0.0.0.0:{{ .Values.hushd.port }}"
+    ruleset: "{{ .Values.hushd.config.ruleset }}"
+    audit_db: "/var/lib/hushd/audit.db"
+    log_level: "{{ .Values.hushd.config.logLevel }}"
+    nats_url: "{{ include "clawdstrike.natsUrl" . }}"
+    {{- if .Values.hushd.auth.enabled }}
+
+    auth:
+      enabled: true
+      api_keys:
+        - name: "default"
+          key: "${CLAWDSTRIKE_API_KEY}"
+          scopes: ["check", "read"]
+        - name: "admin"
+          key: "${CLAWDSTRIKE_ADMIN_KEY}"
+          scopes: ["*"]
+    {{- end }}
+{{- end }}

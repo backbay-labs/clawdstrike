@@ -1,0 +1,42 @@
+{{- if and .Values.spine.enabled .Values.spine.checkpointer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-checkpointer
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "checkpointer") | nindent 4 }}
+spec:
+  replicas: {{ .Values.spine.checkpointer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "checkpointer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "checkpointer") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/spine/spine-configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: checkpointer
+          image: "{{ .Values.spine.image.repository }}:{{ .Values.spine.image.tag | default (printf "spine-checkpointer-%s" .Chart.AppVersion) }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: SPINE_BIN
+              value: spine-checkpointer
+          envFrom:
+            - configMapRef:
+                name: {{ include "clawdstrike.fullname" . }}-spine
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.spine.checkpointer.resources | nindent 12 }}
+{{- end }}

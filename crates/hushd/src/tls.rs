@@ -40,6 +40,10 @@ impl TlsListener {
 
         let key = PrivateKeyDer::from_pem_file(&tls.key_path)?;
 
+        // Ensure a CryptoProvider is available (handles vendored builds where
+        // feature-based auto-detection may not resolve a single provider).
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let mut config = ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)?;

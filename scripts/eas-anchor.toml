@@ -1,0 +1,38 @@
+# EAS Anchor Service — Reference Configuration
+#
+# Copy this file and populate the schema UIDs after running
+# scripts/register-eas-schemas.ts on your target chain.
+
+[chain]
+# Base L2 mainnet (use https://sepolia.base.org for testnet)
+rpc_url = "https://mainnet.base.org"
+chain_id = 8453
+eas_contract = "0xA1207F3BBa224E2c9c3c6D5aF63D816e6e1f8e4b"
+schema_registry = "0xA7b39296258348C78294F95B872b282326A97BDF"
+
+[signer]
+# Name of the environment variable containing the signer private key (hex).
+# For production, use a KMS-backed signer instead.
+private_key_env = "EAS_SIGNER_PRIVATE_KEY"
+# kms_key_id = "aws-kms://arn:aws:kms:us-east-1:123456:key/abc-123"
+
+[batching]
+# Maximum attestations per multiAttest() transaction.
+max_batch_size = 50
+# Flush interval in seconds (5 minutes).
+batch_interval_secs = 300
+# Minimum pending attestations before allowing a flush.
+min_batch_size = 1
+
+[schemas]
+# Populate these after running: npx ts-node scripts/register-eas-schemas.ts
+# Schema 1: Policy Attestation (revocable)
+policy_attestation_uid = ""
+# Schema 2: Checkpoint Anchor (not revocable)
+checkpoint_anchor_uid = ""
+# Schema 3: Key Rotation (revocable)
+key_rotation_uid = ""
+
+[nats]
+url = "nats://127.0.0.1:4222"
+subject = "clawdstrike.spine.envelope.log_checkpoint.v1"

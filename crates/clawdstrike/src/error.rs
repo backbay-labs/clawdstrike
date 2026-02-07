@@ -92,6 +92,15 @@ pub enum Error {
 
     #[error("Core error: {0}")]
     CoreError(#[from] hush_core::Error),
+
+    #[error("Spine error: {0}")]
+    SpineError(String),
+}
+
+impl From<spine::Error> for Error {
+    fn from(e: spine::Error) -> Self {
+        Error::SpineError(e.to_string())
+    }
 }
 
 /// Result type for clawdstrike operations

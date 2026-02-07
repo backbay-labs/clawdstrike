@@ -9,6 +9,13 @@ members = [
     "crates/hushd",
     "crates/hush-wasm",
     "crates/hush-multi-agent",
+    "crates/spine",
+    "crates/spine-cli",
+    "crates/tetragon-bridge",
+    "crates/hubble-bridge",
+    "crates/eas-anchor",
+    "crates/sdr-integration-tests",
+    "crates/cloud-api",
     "packages/hush-py/hush-native",
 ]
 exclude = [
@@ -23,7 +30,7 @@ exclude = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/backbay-labs/clawdstrike"
 rust-version = "1.93"
 
@@ -72,7 +79,7 @@ chrono-tz = { version = "0.10", features = ["serde"] }
 uuid = { version = "1.20", features = ["v4", "v7", "serde", "js"] }
 
 # CLI
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 
 # HTTP server
 axum = { version = "0.8", features = ["macros"] }
@@ -88,6 +95,8 @@ dashmap = "6.1"
 
 # Database
 rusqlite = { version = "0.38", features = ["bundled"] }
+sqlx-core = { version = "0.8", default-features = false, features = ["json", "chrono", "uuid", "migrate", "_rt-tokio"] }
+sqlx-postgres = { version = "0.8", default-features = false, features = ["chrono", "uuid", "json"] }
 
 # Async utilities
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -98,7 +107,7 @@ toml = "0.9"
 dirs = "6.0"
 
 # HTTP client
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "multipart"] }
 
 # Compression
 flate2 = "1.1"
@@ -114,6 +123,7 @@ hush-core = { path = "crates/hush-core", version = "0.1.0" }
 hush-proxy = { path = "crates/hush-proxy", version = "0.1.0" }
 clawdstrike = { path = "crates/clawdstrike", version = "0.1.0" }
 hush-certification = { path = "crates/hush-certification", version = "0.1.0" }
+spine = { path = "crates/spine", version = "0.1.0" }
 
 [profile.release]
 lto = true

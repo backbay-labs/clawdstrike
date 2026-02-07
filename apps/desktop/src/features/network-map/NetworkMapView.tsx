@@ -1,165 +1,262 @@
 /**
- * NetworkMapView - 3D network infrastructure topology map
+ * NetworkMapView - Hubble network flow data table
+ *
+ * Shows recent network flows from Hubble in a sortable table.
+ * Subscribes to spine events filtered to network_flow and dns_query categories.
  */
-import { Suspense, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { NetworkTopology } from "@backbay/glia/primitives";
-import { GlassPanel } from "@backbay/glia/primitives";
+import { useMemo, useCallback } from "react";
+import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
-import type { NetworkNode, NetworkEdge } from "@backbay/glia/primitives";
+import { GlowButton } from "@backbay/glia/primitives";
+import { useSpineEvents } from "@/hooks/useSpineEvents";
+import type { SDREvent, SpineConnectionStatus } from "@/types/spine";
 
-const MOCK_NODES: NetworkNode[] = [
-  { id: "fw-1", type: "firewall", hostname: "edge-fw-01", ip: "10.0.0.1", status: "healthy", services: ["iptables", "ids"], vulnerabilities: 0 },
-  { id: "rt-1", type: "router", hostname: "core-rtr-01", ip: "10.0.1.1", status: "healthy", services: ["bgp", "ospf"], vulnerabilities: 0 },
-  { id: "srv-1", type: "server", hostname: "web-prod-01", ip: "10.1.1.10", status: "healthy", services: ["nginx", "node"], vulnerabilities: 2 },
-  { id: "srv-2", type: "server", hostname: "api-prod-01", ip: "10.1.1.11", status: "warning", services: ["fastapi", "redis"], vulnerabilities: 1 },
-  { id: "srv-3", type: "server", hostname: "db-prod-01", ip: "10.1.2.10", status: "healthy", services: ["postgres", "pgbouncer"], vulnerabilities: 0 },
-  { id: "srv-4", type: "server", hostname: "auth-prod-01", ip: "10.1.1.20", status: "compromised", services: ["keycloak"], vulnerabilities: 4 },
-  { id: "ws-1", type: "workstation", hostname: "dev-ws-01", ip: "10.2.1.10", status: "healthy", services: ["ssh"], vulnerabilities: 0 },
-  { id: "ws-2", type: "workstation", hostname: "dev-ws-02", ip: "10.2.1.11", status: "healthy", services: ["ssh"], vulnerabilities: 0 },
-  { id: "cloud-1", type: "cloud", hostname: "aws-vpc-prod", ip: "172.31.0.1", status: "healthy", services: ["ec2", "s3", "rds"], vulnerabilities: 1 },
-  { id: "iot-1", type: "iot", hostname: "sensor-array-01", ip: "10.3.1.5", status: "warning", services: ["mqtt"], vulnerabilities: 3 },
-  { id: "mob-1", type: "mobile", hostname: "fleet-mdm", ip: "10.4.0.1", status: "healthy", services: ["mdm-agent"], vulnerabilities: 0 },
-  { id: "srv-5", type: "server", hostname: "log-collector", ip: "10.1.3.10", status: "healthy", services: ["elasticsearch", "logstash"], vulnerabilities: 0 },
-];
+// ---------------------------------------------------------------------------
+// Flow row type for the table
+// ---------------------------------------------------------------------------
 
-const MOCK_EDGES: NetworkEdge[] = [
-  { id: "e1", source: "fw-1", target: "rt-1", protocol: "tcp", bandwidth: 8000, encrypted: true, status: "active" },
-  { id: "e2", source: "rt-1", target: "srv-1", protocol: "https", port: 443, bandwidth: 5000, encrypted: true, status: "active" },
-  { id: "e3", source: "rt-1", target: "srv-2", protocol: "https", port: 8080, bandwidth: 3200, encrypted: true, status: "active" },
-  { id: "e4", source: "srv-2", target: "srv-3", protocol: "tcp", port: 5432, bandwidth: 2000, encrypted: true, status: "active" },
-  { id: "e5", source: "srv-1", target: "srv-4", protocol: "https", port: 8443, bandwidth: 1500, encrypted: true, status: "suspicious" },
-  { id: "e6", source: "rt-1", target: "ws-1", protocol: "ssh", port: 22, bandwidth: 100, encrypted: true, status: "active" },
-  { id: "e7", source: "rt-1", target: "ws-2", protocol: "ssh", port: 22, bandwidth: 80, encrypted: true, status: "idle" },
-  { id: "e8", source: "rt-1", target: "cloud-1", protocol: "https", port: 443, bandwidth: 6000, encrypted: true, status: "active" },
-  { id: "e9", source: "cloud-1", target: "srv-3", protocol: "tcp", port: 5432, bandwidth: 1200, encrypted: true, status: "active" },
-  { id: "e10", source: "rt-1", target: "iot-1", protocol: "udp", port: 1883, bandwidth: 200, encrypted: false, status: "active" },
-  { id: "e11", source: "rt-1", target: "mob-1", protocol: "https", port: 443, bandwidth: 500, encrypted: true, status: "active" },
-  { id: "e12", source: "srv-4", target: "fw-1", protocol: "tcp", port: 4444, bandwidth: 900, encrypted: false, status: "suspicious" },
-  { id: "e13", source: "srv-1", target: "srv-5", protocol: "tcp", port: 9200, bandwidth: 1800, encrypted: true, status: "active" },
-  { id: "e14", source: "srv-2", target: "srv-5", protocol: "tcp", port: 9200, bandwidth: 1500, encrypted: true, status: "active" },
-];
+interface FlowRow {
+  id: string;
+  timestamp: string;
+  srcPod: string;
+  srcIp: string;
+  dstIp: string;
+  protocol: string;
+  dstPort: number | undefined;
+  verdict: string;
+  severity: string;
+  l7Summary: string;
+  direction: string;
+}
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  healthy: "default",
-  warning: "secondary",
-  compromised: "destructive",
-  offline: "outline",
+// ---------------------------------------------------------------------------
+// Verdict / severity badge variants
+// ---------------------------------------------------------------------------
+
+const VERDICT_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  forwarded: "default",
+  dropped: "destructive",
+  error: "destructive",
+  audit: "secondary",
 };
 
-const NODE_TYPE_LABELS: Record<string, string> = {
-  server: "Server",
-  workstation: "Workstation",
-  router: "Router",
-  firewall: "Firewall",
-  cloud: "Cloud",
-  iot: "IoT Device",
-  mobile: "Mobile",
+const SEVERITY_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  info: "outline",
+  low: "outline",
+  medium: "secondary",
+  high: "destructive",
+  critical: "destructive",
 };
 
-export function NetworkMapView() {
-  const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null);
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function eventToFlowRow(event: SDREvent): FlowRow | null {
+  if (event.category !== "network_flow" && event.category !== "dns_query") {
+    return null;
+  }
+
+  const net = event.network;
+  const raw = event.raw as Record<string, unknown> | undefined;
+  const l7 = raw?.l7 as Record<string, unknown> | undefined;
+
+  let l7Summary = "";
+  if (l7) {
+    const record = l7.record as Record<string, unknown> | undefined;
+    if (record) {
+      const recordType = record.type as string | undefined;
+      if (recordType === "http") {
+        l7Summary = `HTTP ${record.method ?? ""} ${record.url ?? ""} [${record.code ?? ""}]`;
+      } else if (recordType === "dns") {
+        l7Summary = `DNS ${record.query ?? ""}`;
+      } else if (recordType === "kafka") {
+        l7Summary = `Kafka ${record.topic ?? ""}`;
+      }
+    }
+  }
+
+  if (!l7Summary && event.category === "dns_query" && net?.dnsName) {
+    l7Summary = `DNS ${net.dnsName}`;
+  }
+
+  return {
+    id: event.id,
+    timestamp: event.timestamp,
+    srcPod: event.origin?.pod ?? "",
+    srcIp: net?.srcIp ?? "",
+    dstIp: net?.dstIp ?? "",
+    protocol: net?.protocol?.toUpperCase() ?? "",
+    dstPort: net?.dstPort,
+    verdict: net?.verdict ?? "",
+    severity: event.severityLabel,
+    l7Summary,
+    direction: net?.direction ?? "",
+  };
+}
+
+function formatTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString(undefined, { hour12: false });
+  } catch {
+    return iso;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Status indicator
+// ---------------------------------------------------------------------------
+
+function StatusIndicator({ status }: { status: SpineConnectionStatus }) {
+  const config = {
+    connected: { color: "bg-sdr-accent-green", label: "Live" },
+    demo: { color: "bg-sdr-accent-amber", label: "Demo" },
+    connecting: { color: "bg-sdr-accent-blue animate-pulse", label: "Connecting" },
+    disconnected: { color: "bg-sdr-accent-red", label: "Offline" },
+  };
+  const { color, label } = config[status];
 
   return (
-    <div className="relative h-full" style={{ background: "#0a0a0f" }}>
-      {/* 3D Canvas */}
-      <div className="absolute inset-0">
-        <Canvas camera={{ position: [0, 6, 14], fov: 50 }}>
-          <Suspense fallback={null}>
-            <ambientLight intensity={0.3} />
-            <pointLight position={[10, 10, 10]} intensity={0.6} />
-            <pointLight position={[-8, 5, -8]} intensity={0.3} color="#00aaff" />
+    <span className="flex items-center gap-1.5 text-xs text-sdr-text-muted">
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+      {label}
+    </span>
+  );
+}
 
-            <NetworkTopology
-              nodes={MOCK_NODES}
-              edges={MOCK_EDGES}
-              showTraffic={true}
-              showLabels={true}
-              selectedNode={selectedNode?.id}
-              onNodeClick={(node) => setSelectedNode(node)}
-            />
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
-            <OrbitControls
-              enablePan
-              enableZoom
-              enableRotate
-              minDistance={5}
-              maxDistance={30}
-              autoRotate={!selectedNode}
-              autoRotateSpeed={0.3}
-            />
-          </Suspense>
-        </Canvas>
-      </div>
+export function NetworkMapView() {
+  const { events, status, clearEvents } = useSpineEvents({ enabled: true });
 
-      {/* Header overlay */}
-      <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-[#0a0a0f] to-transparent pointer-events-none">
-        <div>
-          <h1 className="text-lg font-semibold text-white">Network Map</h1>
-          <p className="text-sm text-white/50">
-            {MOCK_NODES.length} nodes &middot; {MOCK_EDGES.length} connections
-          </p>
+  const flowRows = useMemo(() => {
+    const rows: FlowRow[] = [];
+    for (const event of events) {
+      const row = eventToFlowRow(event);
+      if (row) rows.push(row);
+    }
+    return rows;
+  }, [events]);
+
+  const stats = useMemo(() => {
+    const dropped = flowRows.filter((r) => r.verdict === "dropped").length;
+    const dns = flowRows.filter((r) => r.l7Summary.startsWith("DNS")).length;
+    return { total: flowRows.length, dropped, dns };
+  }, [flowRows]);
+
+  const handleClear = useCallback(() => {
+    clearEvents();
+  }, [clearEvents]);
+
+  return (
+    <GlassPanel className="flex flex-col h-full">
+      <GlassHeader className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold text-sdr-text-primary">Network Map</h1>
+          <StatusIndicator status={status} />
         </div>
-      </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-sdr-text-muted">
+            {stats.total} flows
+            {stats.dropped > 0 && (
+              <span className="text-sdr-accent-red ml-1">({stats.dropped} dropped)</span>
+            )}
+            {stats.dns > 0 && <span className="ml-1">/ {stats.dns} DNS</span>}
+          </span>
+          <GlowButton onClick={handleClear} variant="secondary">
+            Clear
+          </GlowButton>
+        </div>
+      </GlassHeader>
 
-      {/* Floating node detail panel */}
-      {selectedNode && (
-        <div className="absolute bottom-4 right-4 w-80">
-          <GlassPanel className="p-0 overflow-hidden" elevation="hud">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-white/90">{selectedNode.hostname}</span>
-                <Badge variant={STATUS_VARIANT[selectedNode.status]}>{selectedNode.status}</Badge>
-              </div>
-              <button
-                onClick={() => setSelectedNode(null)}
-                className="text-white/40 hover:text-white/80 text-sm"
-              >
-                x
-              </button>
-            </div>
-
-            <div className="p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <div className="text-white/40 font-mono mb-0.5">TYPE</div>
-                  <div className="text-white/80">{NODE_TYPE_LABELS[selectedNode.type]}</div>
-                </div>
-                <div>
-                  <div className="text-white/40 font-mono mb-0.5">IP ADDRESS</div>
-                  <div className="text-white/80 font-mono">{selectedNode.ip}</div>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs text-white/40 font-mono mb-1">SERVICES</div>
-                <div className="flex flex-wrap gap-1">
-                  {selectedNode.services.map((service) => (
-                    <Badge key={service} variant="outline" className="text-[10px]">
-                      {service}
+      <div className="flex-1 overflow-y-auto">
+        {flowRows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-sdr-text-muted">
+            <p className="text-sm">Waiting for Hubble network flows...</p>
+            <p className="text-xs mt-1">Flows appear when the spine connection is active</p>
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-sdr-bg-secondary border-b border-sdr-border">
+              <tr>
+                <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-sdr-text-muted font-medium">
+                  Time
+                </th>
+                <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-sdr-text-muted font-medium">
+                  Source
+                </th>
+                <th className="px-1 py-2 w-6" />
+                <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-sdr-text-muted font-medium">
+                  Destination
+                </th>
+                <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-sdr-text-muted font-medium w-16">
+                  Proto
+                </th>
+                <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-sdr-text-muted font-medium w-24">
+                  Verdict
+                </th>
+                <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-sdr-text-muted font-medium w-20">
+                  Severity
+                </th>
+                <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-sdr-text-muted font-medium">
+                  L7 Info
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sdr-border-subtle">
+              {flowRows.map((row) => (
+                <tr key={row.id} className="hover:bg-sdr-bg-hover transition-colors">
+                  <td className="px-3 py-1.5 font-mono text-[11px] text-sdr-text-muted whitespace-nowrap">
+                    {formatTime(row.timestamp)}
+                  </td>
+                  <td className="px-3 py-1.5 truncate max-w-[180px]">
+                    <span className="text-sdr-text-primary">{row.srcPod || row.srcIp || "-"}</span>
+                    {row.srcPod && row.srcIp && (
+                      <span className="text-[10px] text-sdr-text-muted ml-1 font-mono">
+                        {row.srcIp}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-1 py-1.5 text-sdr-text-muted text-center">
+                    &rarr;
+                  </td>
+                  <td className="px-3 py-1.5 truncate max-w-[180px]">
+                    <span className="text-sdr-text-primary">{row.dstIp || "-"}</span>
+                    {row.dstPort !== undefined && (
+                      <span className="text-[10px] text-sdr-text-muted ml-1 font-mono">
+                        :{row.dstPort}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-sdr-text-secondary">
+                    {row.protocol || "-"}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {row.verdict ? (
+                      <Badge variant={VERDICT_VARIANT[row.verdict] ?? "outline"}>
+                        {row.verdict}
+                      </Badge>
+                    ) : (
+                      <span className="text-sdr-text-muted">-</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <Badge variant={SEVERITY_VARIANT[row.severity] ?? "outline"}>
+                      {row.severity}
                     </Badge>
-                  ))}
-                </div>
-              </div>
-
-              {selectedNode.vulnerabilities !== undefined && selectedNode.vulnerabilities > 0 && (
-                <div>
-                  <div className="text-xs text-white/40 font-mono mb-1">VULNERABILITIES</div>
-                  <Badge variant="destructive">{selectedNode.vulnerabilities} found</Badge>
-                </div>
-              )}
-
-              <div>
-                <div className="text-xs text-white/40 font-mono mb-1">CONNECTIONS</div>
-                <div className="text-xs text-white/60">
-                  {MOCK_EDGES.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id).length} active links
-                </div>
-              </div>
-            </div>
-          </GlassPanel>
-        </div>
-      )}
-    </div>
+                  </td>
+                  <td className="px-3 py-1.5 text-[11px] text-sdr-text-secondary font-mono truncate max-w-[250px]">
+                    {row.l7Summary || "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </GlassPanel>
   );
 }

@@ -44,6 +44,7 @@
 //! ```
 
 pub mod async_guards;
+pub mod curator_config;
 pub mod engine;
 pub mod error;
 pub mod guards;
@@ -60,8 +61,13 @@ pub mod plugins;
 pub mod policy;
 pub mod policy_bundle;
 pub mod posture;
+pub mod spine_bridge;
 pub mod watermarking;
 
+pub use curator_config::{
+    default_config_path, CuratorConfig, CuratorConfigFile, CuratorEntry, CuratorTrustSet,
+    RichCuratorConfigFile, TrustLevel, ValidatedCurator,
+};
 pub use engine::{GuardReport, HushEngine, PostureAwareReport};
 pub use error::{Error, Result};
 pub use guards::{
@@ -91,9 +97,12 @@ pub use jailbreak::{
     LinearModelConfig, LlmJudge, SessionAggPersisted, SessionRiskSnapshot, SessionStore,
 };
 pub use marketplace_feed::{
-    MarketplaceEntry, MarketplaceFeed, MarketplaceProvenance, SignedMarketplaceFeed,
-    MARKETPLACE_FEED_SCHEMA_VERSION,
+    ContentIds, InclusionProofBundle, MarketplaceEntry, MarketplaceFeed, MarketplaceProvenance,
+    SignedMarketplaceFeed, WitnessSignatureRef, MARKETPLACE_FEED_SCHEMA_VERSION,
 };
+
+#[cfg(feature = "ipfs")]
+pub mod ipfs;
 pub use output_sanitizer::{
     AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer,
     OutputSanitizer, OutputSanitizerConfig, ProcessingStats, Redaction, RedactionStrategy,
@@ -116,6 +125,9 @@ pub use posture::{
     PostureBudgetCounter, PostureConfig, PostureProgram, PostureRuntimeState, PostureState,
     PostureTransition, PostureTransitionRecord, RuntimeTransitionTrigger, TransitionRequirement,
     TransitionTrigger,
+};
+pub use spine_bridge::{
+    extract_spine_envelope_hash, policy_bundle_to_spine_envelope, POLICY_BUNDLE_FACT_TYPE,
 };
 pub use watermarking::{
     EncodedWatermark, PromptWatermarker, WatermarkConfig, WatermarkEncoding, WatermarkError,

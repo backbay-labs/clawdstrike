@@ -1,0 +1,21 @@
+# ClawdStrike Trusted Curators Configuration
+#
+# Each [[curator]] entry registers a trusted feed signer.
+# Copy this file to ~/.clawdstrike/trusted_curators.toml and edit as needed.
+
+[[curator]]
+name = "clawdstrike-official"
+public_key = "b51f6b9b8b2fcf77fb365f8a191579483c92af88ed914d6f79f08784699411ed"
+trust_level = "full"
+feed_ids = ["clawdstrike-official"]
+
+# [[curator]]
+# name = "acme-security-team"
+# public_key = "0xdef456789abc..."
+# trust_level = "full"
+# feed_ids = []  # Empty = trust for any feed
+
+# [[curator]]
+# name = "community-experimental"
+# public_key = "0x789012345def..."
+# trust_level = "audit-only"  # Shown in UI but requires explicit approval

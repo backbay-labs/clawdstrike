@@ -1,0 +1,47 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: sdr-container-escape-detection
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+    clawdstrike.io/policy-tier: kernel
+    clawdstrike.io/category: escape
+  annotations:
+    clawdstrike.io/mitre-techniques: "T1611,T1548"
+    clawdstrike.io/description: "Detect container escape and privilege escalation attempts"
+spec:
+  kprobes:
+  # Detect setuid to root from non-host namespace
+  - call: "sys_setuid"
+    syscall: true
+    args:
+    - index: 0
+      type: "int"
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: "Equal"
+        values:
+        - "0"
+      matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchActions:
+      - action: Sigkill
+  # Detect unshare (new namespace creation)
+  - call: "sys_unshare"
+    syscall: true
+    args:
+    - index: 0
+      type: "int"
+    selectors:
+    - matchNamespaceChanges:
+      - operator: In
+        values:
+        - "Mnt"
+        - "Pid"
+        - "Net"
+      matchActions:
+      - action: Post

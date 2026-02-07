@@ -1,15 +1,21 @@
 export interface MarketplaceProvenanceSettings {
   notaryUrl: string | null;
+  proofsApiUrl: string | null;
   trustedAttesters: string[];
   requireVerified: boolean;
+  preferSpine: boolean;
+  trustedWitnessKeys: string[];
 }
 
 const STORAGE_KEY = "sdr:marketplace:provenance";
 
 export const DEFAULT_MARKETPLACE_PROVENANCE_SETTINGS: MarketplaceProvenanceSettings = {
   notaryUrl: null,
+  proofsApiUrl: null,
   trustedAttesters: [],
   requireVerified: false,
+  preferSpine: true,
+  trustedWitnessKeys: [],
 };
 
 function uniq(items: string[]): string[] {
@@ -43,8 +49,11 @@ function normalizeSettings(value: unknown): MarketplaceProvenanceSettings {
   const v = value as Record<string, unknown>;
   return {
     notaryUrl: normalizeNotaryUrl(v.notaryUrl),
+    proofsApiUrl: normalizeNotaryUrl(v.proofsApiUrl),
     trustedAttesters: normalizeTrustedAttesters(v.trustedAttesters),
     requireVerified: Boolean(v.requireVerified),
+    preferSpine: v.preferSpine !== undefined ? Boolean(v.preferSpine) : true,
+    trustedWitnessKeys: normalizeTrustedAttesters(v.trustedWitnessKeys),
   };
 }
 

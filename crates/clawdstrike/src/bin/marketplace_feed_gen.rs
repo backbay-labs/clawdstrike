@@ -180,6 +180,9 @@ fn build_entries(
             created_at: None,
             updated_at: None,
             provenance: None,
+            curator_public_key: None,
+            content_ids: None,
+            gateway_hints: Vec::new(),
         });
     }
 

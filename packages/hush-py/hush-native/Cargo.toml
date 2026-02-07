@@ -3,7 +3,7 @@ name = "hush-native"
 version = "0.1.0"
 edition = "2021"
 description = "Native Rust bindings for hush Python SDK"
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 name = "hush_native"

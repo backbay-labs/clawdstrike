@@ -1,0 +1,40 @@
+name: Ruleset / Policy Proposal
+description: Propose a community security ruleset
+labels: ["ruleset", "community"]
+body:
+  - type: input
+    id: ruleset_name
+    attributes:
+      label: Ruleset Name
+      placeholder: "e.g., hipaa-phi-protection, aws-agent-baseline"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What does this ruleset protect against?
+    validations:
+      required: true
+  - type: textarea
+    id: policy_yaml
+    attributes:
+      label: Policy YAML
+      description: Draft policy YAML (schema v1.1.0)
+      render: yaml
+    validations:
+      required: true
+  - type: dropdown
+    id: extends
+    attributes:
+      label: Base Ruleset
+      description: Which built-in ruleset does this extend?
+      options:
+        - "permissive"
+        - "default"
+        - "strict"
+        - "ai-agent"
+        - "cicd"
+        - "None (standalone)"
+    validations:
+      required: true

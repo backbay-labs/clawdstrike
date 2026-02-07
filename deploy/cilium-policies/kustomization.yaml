@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - 00-namespace-isolation.yaml
+  - 01-spine-checkpointer.yaml
+  - 02-spine-witness.yaml
+  - 03-spine-proofs-api.yaml
+  - 04-tetragon-bridge.yaml
+  - 05-hubble-bridge.yaml
+  - 06-hushd.yaml
+  - 07-nats-jetstream.yaml
+  - 08-allow-dns.yaml
+  - 09-allow-prometheus.yaml
+commonLabels:
+  app.kubernetes.io/managed-by: clawdstrike

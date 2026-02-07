@@ -5,6 +5,7 @@ use tauri::State;
 
 use crate::state::AppState;
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckRequest {
     pub policy_ref: String,

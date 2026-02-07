@@ -1,0 +1,51 @@
+# Minimal values for CI chart testing (small resources, no persistence)
+nats:
+  replicas: 1
+  jetstream:
+    storage:
+      size: 1Gi
+
+spine:
+  checkpointer:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  witness:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  proofsApi:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+hushd:
+  persistence:
+    enabled: false
+  auth:
+    enabled: false
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+bridges:
+  tetragon:
+    enabled: false
+  hubble:
+    enabled: false

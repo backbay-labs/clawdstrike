@@ -39,12 +39,17 @@ dirs = "5"
 # Logging
 tracing = "0.1"
 
+# NATS
+async-nats = "0.39"
+futures = "0.3"
+
 # P2P discovery (optional)
 libp2p = { version = "0.56", features = ["tokio", "tcp", "dns", "noise", "yamux", "gossipsub", "mdns", "macros"] }
 
 # Local crates
 hush-core = { path = "../../../crates/hush-core" }
 clawdstrike = { path = "../../../crates/clawdstrike" }
+spine = { path = "../../../crates/spine" }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

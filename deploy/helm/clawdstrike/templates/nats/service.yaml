@@ -1,0 +1,23 @@
+{{- if and .Values.nats.enabled (not .Values.nats.external.enabled) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-nats
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "nats") | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "nats") | nindent 4 }}
+  ports:
+    - name: client
+      port: 4222
+      targetPort: client
+    {{- if .Values.nats.monitoring.enabled }}
+    - name: monitoring
+      port: {{ .Values.nats.monitoring.port }}
+      targetPort: monitoring
+    {{- end }}
+{{- end }}

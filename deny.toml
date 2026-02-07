@@ -44,6 +44,9 @@ ignore = [
     # `regorus` currently depends on `bincode` 2.x, which is marked unmaintained.
     # We feature-gate the Rego runtime and track this upstream for migration.
     "RUSTSEC-2025-0141",
+    # `rustls-pemfile` is unmaintained — transitive dep via `async-nats`.
+    # Upstream migration to `rustls-pki-types` PemObject is tracked.
+    "RUSTSEC-2025-0134",
 ]
 
 [sources]

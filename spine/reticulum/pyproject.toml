@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spine-reticulum-adapter"
+version = "0.1.0"
+description = "Reticulum mesh transport adapter for ClawdStrike Spine signed envelopes"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Backbay Industries" },
+]
+dependencies = [
+    "rns>=0.9.3",
+    "lxmf>=0.6.0",
+    "cbor2>=5.6.0",
+    "nats-py>=2.9.0",
+    "PyNaCl>=1.5.0",
+    "rfc8785>=0.1.2",
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+spine-reticulum = "spine_reticulum.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spine_reticulum"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

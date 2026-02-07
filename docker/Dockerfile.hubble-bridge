@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile for hubble-bridge
+#
+# Build:
+#   docker build -f docker/Dockerfile.hubble-bridge -t hubble-bridge .
+
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
+FROM rust:1.93-bookworm AS builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy minimal workspace manifest (only hubble-bridge crates) and lockfile.
+COPY docker/workspace-hubble.toml Cargo.toml
+COPY Cargo.lock ./
+
+COPY crates/hush-core crates/hush-core
+COPY crates/spine crates/spine
+COPY crates/hubble-bridge crates/hubble-bridge
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin hubble-bridge && \
+    cp /build/target/release/hubble-bridge /usr/local/bin/
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 bridge && \
+    useradd -u 1000 -g bridge -d /var/lib/bridge -m bridge
+
+COPY --from=builder /usr/local/bin/hubble-bridge /usr/local/bin/
+
+USER bridge
+WORKDIR /var/lib/bridge
+
+ENTRYPOINT ["/usr/bin/tini", "--", "hubble-bridge"]
