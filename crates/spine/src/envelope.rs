@@ -29,6 +29,9 @@ pub fn parse_issuer_pubkey_hex(issuer: &str) -> Result<String> {
         .strip_prefix(prefix)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| Error::InvalidIssuer(issuer.to_string()))?;
+    if rest.len() != 64 || !rest.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(Error::InvalidIssuer(issuer.to_string()));
+    }
     Ok(rest.to_string())
 }
 
@@ -84,6 +87,9 @@ pub fn build_signed_envelope(
 
     let issuer = issuer_from_keypair(keypair);
 
+    // Note: Field order in json!() does not affect the envelope hash.
+    // canonicalize_json() applies RFC 8785 key sorting before hashing,
+    // ensuring deterministic output regardless of insertion order.
     let unsigned = json!({
         "schema": ENVELOPE_SCHEMA_V1,
         "issuer": issuer,
@@ -147,7 +153,10 @@ pub fn verify_envelope(envelope: &Value) -> Result<bool> {
     // Verify that the embedded envelope_hash matches the computed hash.
     let computed_hash = sha256_hex(&bytes);
     if computed_hash != claimed_hash {
-        return Ok(false);
+        return Err(Error::HashMismatch {
+            expected: claimed_hash.to_string(),
+            computed: computed_hash,
+        });
     }
 
     Ok(pubkey.verify(&bytes, &signature))
@@ -209,7 +218,11 @@ mod tests {
 
         // tamper
         envelope["fact"] = json!({"ok": false});
-        assert!(!verify_envelope(&envelope).unwrap());
+        let err = verify_envelope(&envelope).unwrap_err();
+        assert!(
+            matches!(err, crate::error::Error::HashMismatch { .. }),
+            "expected HashMismatch, got: {err}"
+        );
     }
 
     #[test]
@@ -224,6 +237,22 @@ mod tests {
     fn parse_issuer_rejects_bad_prefix() {
         assert!(parse_issuer_pubkey_hex("bad:prefix:abc").is_err());
         assert!(parse_issuer_pubkey_hex("aegis:ed25519:").is_err());
+    }
+
+    #[test]
+    fn parse_issuer_rejects_bad_hex_or_length() {
+        // Too short
+        assert!(parse_issuer_pubkey_hex("aegis:ed25519:abcd").is_err());
+        // Right length but non-hex chars
+        assert!(parse_issuer_pubkey_hex(
+            "aegis:ed25519:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        )
+        .is_err());
+        // Too long
+        assert!(parse_issuer_pubkey_hex(
+            "aegis:ed25519:aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd0011223300"
+        )
+        .is_err());
     }
 
     #[test]

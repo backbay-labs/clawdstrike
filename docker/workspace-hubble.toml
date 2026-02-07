@@ -1,0 +1,115 @@
+# Minimal workspace Cargo.toml for hubble-bridge Docker builds.
+# Only includes crates needed to build hubble-bridge.
+# This replaces the sed-based Cargo.toml rewriting in Dockerfile.hubble-bridge.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/hush-core",
+    "crates/spine",
+    "crates/hubble-bridge",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/backbay-labs/clawdstrike"
+rust-version = "1.93"
+
+[workspace.dependencies]
+# Crypto
+ed25519-dalek = { version = "2.2", features = ["rand_core", "zeroize"] }
+zeroize = "1"
+sha2 = "0.10"
+sha3 = "0.10"
+rand = "0.9"
+rand_core = { version = "0.6", features = ["getrandom"] }
+hex = "0.4"
+base64 = "0.22"
+openssl = { version = "0.10", features = ["vendored"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+ryu = "1.0"
+
+# Async runtime
+tokio = { version = "1.49", features = ["full"] }
+async-trait = "0.1"
+
+# Patterns
+regex = "1.12"
+glob = "0.3"
+globset = "0.4"
+roxmltree = "0.21"
+rust-xmlsec = "1.0.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
+
+# UUID
+uuid = { version = "1.20", features = ["v4", "v7", "serde", "js"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# HTTP server
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+rustls = "0.23"
+rustls-pki-types = "1.14"
+tokio-rustls = "0.26"
+
+# Rate limiting
+governor = "0.10"
+dashmap = "6.1"
+
+# Database
+rusqlite = { version = "0.38", features = ["bundled"] }
+
+# Async utilities
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+
+# Config
+toml = "0.9"
+dirs = "6.0"
+
+# HTTP client
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+# Compression
+flate2 = "1.1"
+
+# URL parsing
+url = "2.5"
+
+# JWT (OIDC)
+jsonwebtoken = "9"
+
+# Internal crates
+hush-core = { path = "crates/hush-core", version = "0.1.0" }
+hush-proxy = { path = "crates/hush-proxy", version = "0.1.0" }
+clawdstrike = { path = "crates/clawdstrike", version = "0.1.0" }
+hush-certification = { path = "crates/hush-certification", version = "0.1.0" }
+spine = { path = "crates/spine", version = "0.1.0" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

@@ -10,22 +10,27 @@ keywords = ["security", "attestation", "spine", "clawdstrike"]
 categories = ["cryptography", "authentication"]
 readme = "../../README.md"
 
+[features]
+bins = ["dep:anyhow", "dep:clap", "dep:axum", "dep:tower-http", "dep:tracing", "dep:tracing-subscriber", "dep:futures", "dep:uuid"]
+
 [dependencies]
 hush-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
-anyhow.workspace = true
 async-nats = "0.39"
 tokio.workspace = true
-clap.workspace = true
-axum.workspace = true
-tower-http.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-futures.workspace = true
-uuid.workspace = true
+
+# Binary-only dependencies (behind "bins" feature)
+anyhow = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
@@ -33,14 +38,17 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 [[bin]]
 name = "spine-checkpointer"
 path = "src/bin/checkpointer.rs"
+required-features = ["bins"]
 
 [[bin]]
 name = "spine-witness"
 path = "src/bin/witness.rs"
+required-features = ["bins"]
 
 [[bin]]
 name = "spine-proofs-api"
 path = "src/bin/proofs_api.rs"
+required-features = ["bins"]
 
 [lints]
 workspace = true

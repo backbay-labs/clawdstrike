@@ -22,6 +22,7 @@ const ENV_VAR: &str = "CLAWDSTRIKE_TRUSTED_CURATORS";
 
 /// On-disk representation of `trusted_curators.toml`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CuratorConfigFile {
     /// Hex-encoded Ed25519 public keys of trusted curators.
     #[serde(default)]
@@ -109,11 +110,19 @@ impl CuratorTrustSet {
 
         // Environment variable
         if let Ok(env_val) = std::env::var(ENV_VAR) {
+            let mut env_keys = Vec::new();
             for chunk in env_val.split(',') {
                 let trimmed = chunk.trim();
                 if !trimmed.is_empty() {
-                    hex_keys.push(trimmed.to_string());
+                    env_keys.push(trimmed.to_string());
                 }
+            }
+            if !env_keys.is_empty() {
+                tracing::warn!(
+                    count = env_keys.len(),
+                    "loaded curator trust keys from CLAWDSTRIKE_TRUSTED_CURATORS env var"
+                );
+                hex_keys.extend(env_keys);
             }
         }
 

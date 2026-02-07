@@ -18,6 +18,9 @@ pub enum Error {
     #[error("invalid trust bundle: {0}")]
     InvalidTrustBundle(String),
 
+    #[error("envelope hash mismatch: expected {expected}, computed {computed}")]
+    HashMismatch { expected: String, computed: String },
+
     #[error("invalid timestamp: {0}")]
     InvalidTimestamp(String),
 

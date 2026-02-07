@@ -4,11 +4,55 @@
 
 use crate::error::{Error, Result};
 
-/// Connect to a NATS server.
+/// Optional authentication configuration for NATS connections.
+#[derive(Debug, Default, Clone)]
+pub struct NatsAuthConfig {
+    /// Path to a `.creds` file for NATS authentication.
+    pub creds_file: Option<String>,
+    /// Bearer token for NATS authentication.
+    pub token: Option<String>,
+    /// NKey seed for NATS authentication.
+    pub nkey_seed: Option<String>,
+}
+
+/// Connect to a NATS server (no authentication).
 pub async fn connect(servers: &str) -> Result<async_nats::Client> {
-    async_nats::connect(servers)
-        .await
-        .map_err(|e| Error::Nats(format!("failed to connect to NATS at {servers}: {e}")))
+    connect_with_auth(servers, None).await
+}
+
+/// Connect to a NATS server with optional authentication.
+pub async fn connect_with_auth(
+    servers: &str,
+    auth: Option<&NatsAuthConfig>,
+) -> Result<async_nats::Client> {
+    let map_err = |e| Error::Nats(format!("failed to connect to NATS at {servers}: {e}"));
+
+    let client = match auth {
+        Some(NatsAuthConfig {
+            creds_file: Some(path),
+            ..
+        }) => async_nats::ConnectOptions::with_credentials_file(path)
+            .await
+            .map_err(|e| Error::Nats(format!("failed to load NATS credentials from {path}: {e}")))?
+            .connect(servers)
+            .await
+            .map_err(map_err)?,
+        Some(NatsAuthConfig {
+            token: Some(token), ..
+        }) => async_nats::ConnectOptions::with_token(token.clone())
+            .connect(servers)
+            .await
+            .map_err(map_err)?,
+        Some(NatsAuthConfig {
+            nkey_seed: Some(seed),
+            ..
+        }) => async_nats::ConnectOptions::with_nkey(seed.clone())
+            .connect(servers)
+            .await
+            .map_err(map_err)?,
+        _ => async_nats::connect(servers).await.map_err(map_err)?,
+    };
+    Ok(client)
 }
 
 /// Create a JetStream context from a NATS client.

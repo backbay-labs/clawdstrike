@@ -28,20 +28,13 @@ struct Args {
     #[arg(long, default_value = "clawdstrike.spine.witness.sign.v1")]
     request_subject: String,
 
-    /// Hex-encoded 32-byte Ed25519 seed for the witness key
-    #[arg(long, env = "SPINE_WITNESS_SEED_HEX")]
+    /// Hex-encoded 32-byte Ed25519 seed for the witness key (env only)
+    #[arg(env = "SPINE_WITNESS_SEED_HEX")]
     witness_seed_hex: String,
 
     /// Trust bundle JSON (optional; restricts which logs this witness will sign for)
     #[arg(long, env = "SPINE_TRUST_BUNDLE")]
     trust_bundle: Option<PathBuf>,
-}
-
-fn normalize_seed_hex(seed: &str) -> String {
-    seed.trim()
-        .strip_prefix("0x")
-        .unwrap_or(seed.trim())
-        .to_string()
 }
 
 #[tokio::main]
@@ -52,7 +45,7 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let witness_keypair = Keypair::from_hex(&normalize_seed_hex(&args.witness_seed_hex))
+    let witness_keypair = Keypair::from_hex(&spine::normalize_seed_hex(&args.witness_seed_hex))
         .context("invalid SPINE_WITNESS_SEED_HEX")?;
     let witness_node_id = spine::issuer_from_keypair(&witness_keypair);
 

@@ -18,15 +18,10 @@ ARG BIN
 
 WORKDIR /build
 
-# Copy workspace manifest and lockfile, then strip it to only service crates.
+# Copy minimal workspace manifest (only spine crates) and lockfile.
 # This avoids pulling in desktop app, wasm, python, and other heavy deps.
-COPY Cargo.toml Cargo.lock ./
-
-# Rewrite workspace members to only include crates needed for spine builds.
-RUN sed -i '/^\[workspace\]$/,/^\[/ { \
-      /^members/,/^\]/ c\members = [\n    "crates/hush-core",\n    "crates/spine",\n] \
-    }' Cargo.toml && \
-    sed -i '/^exclude/,/^\]/d' Cargo.toml
+COPY docker/workspace-spine.toml Cargo.toml
+COPY Cargo.lock ./
 
 # Copy only the crates we need.
 COPY crates/hush-core crates/hush-core
@@ -58,12 +53,12 @@ RUN groupadd -g 1000 spine && \
 COPY --from=builder /usr/local/bin/spine-checkpointer /usr/local/bin/
 COPY --from=builder /usr/local/bin/spine-witness /usr/local/bin/
 COPY --from=builder /usr/local/bin/spine-proofs-api /usr/local/bin/
+COPY docker/entrypoint-spine.sh /usr/local/bin/entrypoint-spine.sh
 
 USER spine
 WORKDIR /var/lib/spine
 
-# Default to BIN arg; override at runtime with docker run <image> spine-witness
+# Default to BIN arg; override at runtime with SPINE_BIN=spine-witness
 ARG BIN
 ENV SPINE_BIN=${BIN}
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "exec $SPINE_BIN"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint-spine.sh"]

@@ -154,6 +154,9 @@ pub async fn unsubscribe_spine_events(
     }
     sub.active = false;
     sub.nats_url = None;
+    sub.event_count = 0;
+    sub.last_event_at = None;
+    sub.last_error = None;
 
     Ok(())
 }
@@ -234,6 +237,27 @@ async fn spine_event_loop<R: Runtime>(
                         continue;
                     }
                 };
+
+                // Verify envelope signature before forwarding to the frontend.
+                // Fail-closed: skip any envelope that cannot be verified.
+                match spine::verify_envelope(&envelope) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        tracing::warn!(
+                            subject = %msg.subject,
+                            "Spine envelope signature verification failed, skipping"
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            subject = %msg.subject,
+                            "Spine envelope verification error: {}, skipping",
+                            e
+                        );
+                        continue;
+                    }
+                }
 
                 // Update event counters
                 {

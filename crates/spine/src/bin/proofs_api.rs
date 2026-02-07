@@ -2,13 +2,17 @@
 //!
 //! Axum HTTP server exposing checkpoint and inclusion-proof endpoints.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::StatusCode,
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -51,6 +55,22 @@ struct Args {
     /// Bind address (host:port)
     #[arg(long, default_value = "0.0.0.0:8080")]
     listen: String,
+
+    /// API bearer token (optional; when set, all /v1/* routes require Authorization header)
+    #[arg(long, env = "SPINE_API_TOKEN")]
+    api_token: Option<String>,
+
+    /// Maximum requests per second (simple rate limiter)
+    #[arg(long, env = "SPINE_RATE_LIMIT", default_value = "100")]
+    rate_limit: u64,
+
+    /// Maximum number of keys to scan in receipt-verifications-by-target
+    #[arg(long, env = "SPINE_MAX_KEYS_SCAN", default_value = "10000")]
+    max_keys_scan: usize,
+
+    /// JetStream replication factor for KV buckets (dev default: 1)
+    #[arg(long, env = "SPINE_REPLICAS", default_value = "1")]
+    replicas: usize,
 }
 
 #[derive(Clone)]
@@ -59,6 +79,9 @@ struct AppState {
     checkpoint_kv: async_nats::jetstream::kv::Store,
     envelope_kv: async_nats::jetstream::kv::Store,
     fact_index_kv: async_nats::jetstream::kv::Store,
+    max_keys_scan: usize,
+    /// Cache: tree_size -> Vec<Vec<u8>> leaves (avoids re-scanning KV for repeated proofs).
+    leaves_cache: Arc<Mutex<HashMap<u64, Vec<Vec<u8>>>>>,
 }
 
 #[derive(Debug)]
@@ -209,6 +232,7 @@ async fn v1_checkpoint_by_seq(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct InclusionQuery {
     envelope_hash: String,
     checkpoint_seq: Option<u64>,
@@ -264,7 +288,22 @@ async fn v1_inclusion_proof(
     }
     let log_index = log_seq - 1;
 
-    let leaves = load_leaves_for_tree_size(&state.index_kv, tree_size).await?;
+    let leaves = {
+        let cached = state
+            .leaves_cache
+            .lock()
+            .ok()
+            .and_then(|c| c.get(&tree_size).cloned());
+        if let Some(l) = cached {
+            l
+        } else {
+            let l = load_leaves_for_tree_size(&state.index_kv, tree_size).await?;
+            if let Ok(mut c) = state.leaves_cache.lock() {
+                c.insert(tree_size, l.clone());
+            }
+            l
+        }
+    };
     let tree = MerkleTree::from_leaves(&leaves)
         .map_err(|_| ApiError::internal("failed to build merkle tree"))?;
     let proof = tree
@@ -372,8 +411,18 @@ async fn v1_receipt_verifications_by_target(
         .await
         .map_err(|_| ApiError::internal("failed to collect fact index keys"))?;
 
+    let max_keys = state.max_keys_scan;
     let mut out: Vec<Value> = Vec::new();
+    let mut scanned: usize = 0;
     for key in keys {
+        scanned += 1;
+        if scanned > max_keys {
+            warn!(
+                "receipt verifications scan capped at {} keys for target={}",
+                max_keys, target
+            );
+            break;
+        }
         if !key.starts_with(&prefix) {
             continue;
         }
@@ -436,20 +485,23 @@ async fn main() -> Result<()> {
     let client = nats::connect(&args.nats_url).await?;
     let js = nats::jetstream(client);
 
-    let index_kv = nats::ensure_kv(&js, &args.index_bucket, 3).await?;
-    let checkpoint_kv = nats::ensure_kv(&js, &args.checkpoint_bucket, 3).await?;
-    let envelope_kv = nats::ensure_kv(&js, &args.envelope_bucket, 3).await?;
-    let fact_index_kv = nats::ensure_kv(&js, &args.fact_index_bucket, 3).await?;
+    let replicas = args.replicas;
+    let index_kv = nats::ensure_kv(&js, &args.index_bucket, replicas).await?;
+    let checkpoint_kv = nats::ensure_kv(&js, &args.checkpoint_bucket, replicas).await?;
+    let envelope_kv = nats::ensure_kv(&js, &args.envelope_bucket, replicas).await?;
+    let fact_index_kv = nats::ensure_kv(&js, &args.fact_index_bucket, replicas).await?;
 
     let state = Arc::new(AppState {
         index_kv,
         checkpoint_kv,
         envelope_kv,
         fact_index_kv,
+        max_keys_scan: args.max_keys_scan,
+        leaves_cache: Arc::new(Mutex::new(HashMap::new())),
     });
 
-    let app = Router::new()
-        .route("/healthz", get(healthz))
+    // Build the /v1/* router with auth and rate limiting middleware.
+    let v1_routes = Router::new()
         .route("/v1/checkpoints/latest", get(v1_checkpoint_latest))
         .route("/v1/checkpoints/{seq}", get(v1_checkpoint_by_seq))
         .route("/v1/envelopes/{envelope_hash}", get(v1_envelope_by_hash))
@@ -467,8 +519,70 @@ async fn main() -> Result<()> {
             get(v1_receipt_verifications_by_target),
         )
         .route("/v1/proofs/inclusion", get(v1_inclusion_proof))
-        .layer(TraceLayer::new_for_http())
         .with_state(state);
+
+    // Rate limiter: counter reset every second by a background task.
+    let rate_counter = Arc::new(AtomicU64::new(0));
+    let rate_limit = args.rate_limit;
+    {
+        let counter = rate_counter.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                ticker.tick().await;
+                counter.store(0, Ordering::Relaxed);
+            }
+        });
+    }
+
+    // Layer rate limiting onto v1 routes.
+    let rate_counter_mw = rate_counter.clone();
+    let v1_routes = v1_routes.layer(middleware::from_fn(move |req: Request, next: Next| {
+        let counter = rate_counter_mw.clone();
+        let limit = rate_limit;
+        async move {
+            let current = counter.fetch_add(1, Ordering::Relaxed);
+            if current >= limit {
+                let body = Json(json!({ "error": "rate limit exceeded" }));
+                return (StatusCode::TOO_MANY_REQUESTS, body).into_response();
+            }
+            next.run(req).await
+        }
+    }));
+
+    // Layer auth if configured.
+    let v1_routes = if let Some(token) = args.api_token {
+        let expected = Arc::new(token);
+        v1_routes.layer(middleware::from_fn(move |req: Request, next: Next| {
+            let expected = expected.clone();
+            async move {
+                let auth_header = req
+                    .headers()
+                    .get("authorization")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                match auth_header {
+                    Some(h)
+                        if h.strip_prefix("Bearer ")
+                            .is_some_and(|t| t == expected.as_str()) =>
+                    {
+                        next.run(req).await
+                    }
+                    _ => {
+                        let body = Json(json!({ "error": "unauthorized" }));
+                        (StatusCode::UNAUTHORIZED, body).into_response()
+                    }
+                }
+            }
+        }))
+    } else {
+        v1_routes
+    };
+
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .merge(v1_routes)
+        .layer(TraceLayer::new_for_http());
 
     let addr: SocketAddr = args.listen.parse().context("invalid listen address")?;
     info!("proofs API listening on http://{}", addr);

@@ -7,7 +7,10 @@
 //!   --signing-key 0xdeadbeef...
 //! ```
 
+use std::time::Duration;
+
 use clap::Parser;
+use tracing::{error, warn};
 use tracing_subscriber::EnvFilter;
 
 use tetragon_bridge::{tetragon::TetragonEventKind, Bridge, BridgeConfig};
@@ -31,7 +34,7 @@ struct Cli {
 
     /// Hex-encoded Ed25519 seed for envelope signing.
     /// If omitted, an ephemeral keypair is generated.
-    #[arg(long, env = "SIGNING_KEY")]
+    #[arg(env = "SIGNING_KEY")]
     signing_key: Option<String>,
 
     /// Only forward events from these Kubernetes namespaces (comma-separated).
@@ -86,10 +89,32 @@ async fn main() -> anyhow::Result<()> {
         namespace_allowlist: cli.namespace_allowlist,
         event_types: parse_event_types(&cli.event_types),
         stream_replicas: cli.stream_replicas,
+        ..BridgeConfig::default()
     };
 
-    let bridge = Bridge::new(config).await?;
-    bridge.run().await?;
-
-    Ok(())
+    let mut backoff = Duration::from_secs(1);
+    loop {
+        match Bridge::new(config.clone()).await {
+            Ok(bridge) => {
+                backoff = Duration::from_secs(1);
+                match bridge.run().await {
+                    Ok(()) => {
+                        warn!("bridge stream ended, reconnecting...");
+                    }
+                    Err(e) => {
+                        error!(error = %e, "bridge error, reconnecting...");
+                    }
+                }
+            }
+            Err(e) => {
+                error!(error = %e, "failed to create bridge");
+            }
+        }
+        warn!(
+            backoff_secs = backoff.as_secs(),
+            "reconnecting after backoff"
+        );
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(Duration::from_secs(60));
+    }
 }

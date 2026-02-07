@@ -90,7 +90,7 @@ services:
         condition: service_healthy
     environment:
       NATS_URL: nats://nats:4222
-      TETRAGON_GRPC: ${TETRAGON_GRPC:-localhost:54321}
+      TETRAGON_GRPC: ${TETRAGON_GRPC:-host.docker.internal:54321}
       RUST_LOG: info,tetragon_bridge=debug
     profiles:
       - bridges
@@ -104,7 +104,7 @@ services:
         condition: service_healthy
     environment:
       NATS_URL: nats://nats:4222
-      HUBBLE_GRPC: ${HUBBLE_GRPC:-localhost:4245}
+      HUBBLE_GRPC: ${HUBBLE_GRPC:-host.docker.internal:4245}
       RUST_LOG: info,hubble_bridge=debug
     profiles:
       - bridges

@@ -69,8 +69,8 @@ struct Args {
     #[arg(long, env = "SPINE_TRUST_BUNDLE")]
     trust_bundle: Option<PathBuf>,
 
-    /// Hex-encoded 32-byte Ed25519 seed for the log operator key
-    #[arg(long, env = "SPINE_LOG_SEED_HEX")]
+    /// Hex-encoded 32-byte Ed25519 seed for the log operator key (env only)
+    #[arg(env = "SPINE_LOG_SEED_HEX")]
     log_seed_hex: String,
 
     /// Minimum number of new leaves required to emit a new checkpoint
@@ -88,13 +88,6 @@ struct Args {
     /// JetStream replication factor for log/index/checkpoints (dev default: 3)
     #[arg(long, default_value = "3")]
     replicas: usize,
-}
-
-fn normalize_seed_hex(seed: &str) -> String {
-    seed.trim()
-        .strip_prefix("0x")
-        .unwrap_or(seed.trim())
-        .to_string()
 }
 
 fn verify_signed_envelope(envelope: &Value) -> Result<(String, Vec<u8>)> {
@@ -194,7 +187,17 @@ fn build_checkpoint_statement_from_fact(fact: &Value) -> Result<Value> {
     ))
 }
 
+/// Load all leaves from the index KV bucket.
 async fn load_leaves_from_index(kv: &async_nats::jetstream::kv::Store) -> Result<Vec<Vec<u8>>> {
+    load_leaves_from_index_after(kv, 0).await
+}
+
+/// Load leaves from the index KV bucket with seq > `min_seq`.
+/// Returns pairs sorted by seq, validated for contiguity starting from `min_seq + 1`.
+async fn load_leaves_from_index_after(
+    kv: &async_nats::jetstream::kv::Store,
+    min_seq: u64,
+) -> Result<Vec<Vec<u8>>> {
     let mut pairs: Vec<(u64, Vec<u8>)> = Vec::new();
     let keys = kv.keys().await?.try_collect::<Vec<String>>().await?;
 
@@ -207,6 +210,9 @@ async fn load_leaves_from_index(kv: &async_nats::jetstream::kv::Store) -> Result
             Ok(s) => s,
             Err(_) => continue,
         };
+        if seq <= min_seq {
+            continue;
+        }
         let h = Hash::from_hex(&key)?;
         pairs.push((seq, h.as_bytes().to_vec()));
     }
@@ -214,6 +220,16 @@ async fn load_leaves_from_index(kv: &async_nats::jetstream::kv::Store) -> Result
     pairs.sort_by_key(|(seq, _)| *seq);
 
     // Validate contiguous sequences (no gaps).
+    if let Some(first) = pairs.first() {
+        if min_seq > 0 && first.0 != min_seq + 1 {
+            anyhow::bail!(
+                "log index has gap: expected seq {} after {}, got {}",
+                min_seq + 1,
+                min_seq,
+                first.0
+            );
+        }
+    }
     for i in 1..pairs.len() {
         let prev_seq = pairs[i - 1].0;
         let curr_seq = pairs[i].0;
@@ -365,6 +381,7 @@ async fn collect_witness_signatures(
 
     if out.len() < quorum {
         if trust_bundle.is_none() && out.is_empty() {
+            tracing::warn!("no trust bundle configured — checkpoint created with zero witness co-signatures (dev mode)");
             return Ok(Vec::new());
         }
         anyhow::bail!("witness quorum not met (got {} need {})", out.len(), quorum);
@@ -388,10 +405,14 @@ async fn maybe_checkpoint(
     last_envelope_seq: &mut u64,
     last_envelope_hash: &mut Option<String>,
     last_checkpoint_hash: &mut Option<String>,
+    checkpoint_counter: &mut u64,
+    cached_leaves: &mut Vec<Vec<u8>>,
     checkpoint_every: u64,
 ) -> Result<()> {
-    let leaves = load_leaves_from_index(index_kv).await?;
-    let tree_size = leaves.len() as u64;
+    // Incremental load: only fetch leaves with seq > current cached count.
+    let new_leaves = load_leaves_from_index_after(index_kv, cached_leaves.len() as u64).await?;
+    cached_leaves.extend(new_leaves);
+    let tree_size = cached_leaves.len() as u64;
 
     if tree_size == 0 {
         return Ok(());
@@ -403,12 +424,14 @@ async fn maybe_checkpoint(
         return Ok(());
     }
 
-    let tree = MerkleTree::from_leaves(&leaves)?;
+    *checkpoint_counter = checkpoint_counter
+        .checked_add(1)
+        .context("checkpoint counter overflow")?;
+    let checkpoint_seq = *checkpoint_counter;
+
+    let tree = MerkleTree::from_leaves(cached_leaves)?;
     let merkle_root = tree.root().to_hex_prefixed();
     let issued_at = spine::now_rfc3339();
-    let checkpoint_seq = last_envelope_seq
-        .checked_add(1)
-        .context("checkpoint sequence overflow")?;
 
     let prev_checkpoint_hash = (*last_checkpoint_hash).clone();
     let statement = checkpoint::checkpoint_statement(
@@ -451,10 +474,13 @@ async fn maybe_checkpoint(
         "issued_at": issued_at,
     });
 
+    let envelope_seq = last_envelope_seq
+        .checked_add(1)
+        .context("envelope sequence overflow")?;
     let prev_envelope_hash = (*last_envelope_hash).clone();
     let envelope = spine::build_signed_envelope(
         log_keypair,
-        checkpoint_seq,
+        envelope_seq,
         prev_envelope_hash,
         checkpoint_fact,
         spine::now_rfc3339(),
@@ -482,7 +508,7 @@ async fn maybe_checkpoint(
         .context("failed to store latest checkpoint in KV")?;
 
     *last_checkpoint_tree_size = tree_size;
-    *last_envelope_seq = checkpoint_seq;
+    *last_envelope_seq = envelope_seq;
     *last_envelope_hash = envelope
         .get("envelope_hash")
         .and_then(|v| v.as_str())
@@ -606,7 +632,7 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let log_keypair = Keypair::from_hex(&normalize_seed_hex(&args.log_seed_hex))
+    let log_keypair = Keypair::from_hex(&spine::normalize_seed_hex(&args.log_seed_hex))
         .context("invalid SPINE_LOG_SEED_HEX")?;
     let log_id = spine::issuer_from_keypair(&log_keypair);
 
@@ -646,6 +672,7 @@ async fn main() -> Result<()> {
     let mut last_envelope_seq: u64 = 0;
     let mut last_envelope_hash: Option<String> = None;
     let mut last_checkpoint_hash: Option<String> = None;
+    let mut checkpoint_counter: u64 = 0;
 
     if let Some(latest) = load_latest_checkpoint(&checkpoint_kv).await? {
         if let Some(seq) = latest.get("seq").and_then(|v| v.as_u64()) {
@@ -658,14 +685,24 @@ async fn main() -> Result<()> {
             if let Some(ts) = fact.get("tree_size").and_then(|v| v.as_u64()) {
                 last_checkpoint_tree_size = ts;
             }
+            if let Some(cs) = fact.get("checkpoint_seq").and_then(|v| v.as_u64()) {
+                checkpoint_counter = cs;
+            }
             let statement = build_checkpoint_statement_from_fact(fact)?;
             last_checkpoint_hash = Some(checkpoint::checkpoint_hash(&statement)?.to_hex_prefixed());
         }
         info!(
-            "loaded latest checkpoint seq={} tree_size={}",
-            last_envelope_seq, last_checkpoint_tree_size
+            "loaded latest checkpoint counter={} envelope_seq={} tree_size={}",
+            checkpoint_counter, last_envelope_seq, last_checkpoint_tree_size
         );
     }
+
+    // Pre-load existing leaves so incremental loading starts from the right offset.
+    let mut cached_leaves: Vec<Vec<u8>> = if last_checkpoint_tree_size > 0 {
+        load_leaves_from_index(&index_kv).await?
+    } else {
+        Vec::new()
+    };
 
     let mut sub = client
         .subscribe(args.subscribe_subject.clone())
@@ -692,6 +729,8 @@ async fn main() -> Result<()> {
                     &mut last_envelope_seq,
                     &mut last_envelope_hash,
                     &mut last_checkpoint_hash,
+                    &mut checkpoint_counter,
+                    &mut cached_leaves,
                     args.checkpoint_every,
                 ).await {
                     warn!("checkpoint loop error: {err:#}");
@@ -711,8 +750,15 @@ async fn main() -> Result<()> {
                     }
                 };
 
-                if envelope_kv.get(&envelope_hash_hex).await?.is_none() {
-                    let _ = envelope_kv.put(&envelope_hash_hex, msg.payload.clone()).await;
+                match envelope_kv.get(&envelope_hash_hex).await {
+                    Ok(None) => {
+                        let _ = envelope_kv.put(&envelope_hash_hex, msg.payload.clone()).await;
+                    }
+                    Ok(Some(_)) => {}
+                    Err(err) => {
+                        warn!("transient NATS error checking envelope KV: {err:#}");
+                        continue;
+                    }
                 }
 
                 let _ = maybe_index_fact(&fact_index_kv, &envelope, &envelope_hash_hex).await;
@@ -722,13 +768,19 @@ async fn main() -> Result<()> {
                     Err(_) => continue,
                 };
 
-                let seq = ensure_log_append(
+                let seq = match ensure_log_append(
                     &js,
                     &index_kv,
                     &args.log_subject,
                     &envelope_hash_hex,
                     h.as_bytes(),
-                ).await?;
+                ).await {
+                    Ok(s) => s,
+                    Err(err) => {
+                        warn!("transient NATS error appending to log: {err:#}");
+                        continue;
+                    }
+                };
 
                 if seq > 0 {
                     info!("appended leaf seq={} envelope_hash={}", seq, envelope_hash_hex);

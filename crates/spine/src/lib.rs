@@ -32,3 +32,13 @@ pub use envelope::{
 pub use error::{Error, Result};
 pub use hash::{normalize_hash_hex, policy_index_key, receipt_verification_prefix};
 pub use trust::TrustBundle;
+
+/// Normalize a hex seed string by trimming whitespace and stripping an optional `0x` prefix.
+pub fn normalize_seed_hex(seed: &str) -> String {
+    let trimmed = seed.trim();
+    trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed)
+        .to_string()
+}

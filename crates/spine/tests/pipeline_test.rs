@@ -42,10 +42,13 @@ async fn test_envelope_sign_and_verify() {
     assert!(envelope.get("prev_envelope_hash").unwrap().is_null());
     assert_eq!(envelope.get("fact").unwrap(), &fact);
 
-    // Verify tampered envelope fails
+    // Verify tampered envelope fails with HashMismatch error
     let mut tampered = envelope.clone();
     tampered["fact"]["severity"] = json!("critical");
-    assert!(!verify_envelope(&tampered).unwrap());
+    assert!(
+        verify_envelope(&tampered).is_err(),
+        "tampered envelope should return Err(HashMismatch)"
+    );
 }
 
 /// Create N envelopes, build Merkle tree checkpoint, verify root.
@@ -302,4 +305,122 @@ async fn test_trust_bundle_verification() {
         .and_then(|v| v.as_str())
         .unwrap();
     assert!(!bundle.witness_allowed(uw_id));
+}
+
+/// Witness quorum met: 2 valid witnesses meet quorum=2.
+#[tokio::test]
+async fn test_witness_quorum_met() {
+    let log_kp = Keypair::generate();
+    let w1_kp = Keypair::generate();
+    let w2_kp = Keypair::generate();
+
+    let w1_id = issuer_from_keypair(&w1_kp);
+    let w2_id = issuer_from_keypair(&w2_kp);
+
+    let bundle = TrustBundle {
+        schema: Some("spine.trust.v1".into()),
+        allowed_log_ids: vec![],
+        allowed_witness_node_ids: vec![w1_id.clone(), w2_id.clone()],
+        allowed_receipt_signer_node_ids: vec![],
+        allowed_kernel_loader_signer_node_ids: vec![],
+        required_receipt_enforcement_tiers: vec![],
+        require_kernel_loader_signatures: false,
+        witness_quorum: 2,
+    };
+    bundle.validate().unwrap();
+
+    // Build a checkpoint statement
+    let fact = json!({"type": "quorum_test"});
+    let envelope = build_signed_envelope(&log_kp, 1, None, fact, now_rfc3339()).unwrap();
+    let leaf = serde_json::to_vec(&envelope).unwrap();
+    let tree = MerkleTree::from_leaves(&[leaf]).unwrap();
+    let stmt = checkpoint_statement(
+        "quorum-test-log",
+        1,
+        None,
+        tree.root().to_hex_prefixed(),
+        1,
+        now_rfc3339(),
+    );
+
+    // Both witnesses sign
+    let w1_sig = sign_checkpoint_statement(&w1_kp, &stmt).unwrap();
+    let w2_sig = sign_checkpoint_statement(&w2_kp, &stmt).unwrap();
+
+    // Collect allowed witness signatures and verify quorum
+    let witness_sigs = vec![&w1_sig, &w2_sig];
+    let mut accepted: Vec<&serde_json::Value> = Vec::new();
+    for sig in &witness_sigs {
+        let node_id = sig.get("witness_node_id").and_then(|v| v.as_str()).unwrap();
+        let sig_hex = sig.get("signature").and_then(|v| v.as_str()).unwrap();
+        if bundle.witness_allowed(node_id)
+            && verify_witness_signature(&stmt, node_id, sig_hex).unwrap()
+        {
+            accepted.push(sig);
+        }
+    }
+
+    assert_eq!(accepted.len(), 2);
+    assert!(
+        accepted.len() >= bundle.witness_quorum,
+        "witness quorum should be met"
+    );
+}
+
+/// Witness quorum not met: only 1 valid witness when quorum=2.
+#[tokio::test]
+async fn test_witness_quorum_not_met() {
+    let log_kp = Keypair::generate();
+    let w1_kp = Keypair::generate();
+    let w2_kp = Keypair::generate();
+
+    let w1_id = issuer_from_keypair(&w1_kp);
+    let w2_id = issuer_from_keypair(&w2_kp);
+
+    let bundle = TrustBundle {
+        schema: Some("spine.trust.v1".into()),
+        allowed_log_ids: vec![],
+        allowed_witness_node_ids: vec![w1_id.clone(), w2_id.clone()],
+        allowed_receipt_signer_node_ids: vec![],
+        allowed_kernel_loader_signer_node_ids: vec![],
+        required_receipt_enforcement_tiers: vec![],
+        require_kernel_loader_signatures: false,
+        witness_quorum: 2,
+    };
+    bundle.validate().unwrap();
+
+    // Build a checkpoint statement
+    let fact = json!({"type": "quorum_reject_test"});
+    let envelope = build_signed_envelope(&log_kp, 1, None, fact, now_rfc3339()).unwrap();
+    let leaf = serde_json::to_vec(&envelope).unwrap();
+    let tree = MerkleTree::from_leaves(&[leaf]).unwrap();
+    let stmt = checkpoint_statement(
+        "quorum-test-log",
+        1,
+        None,
+        tree.root().to_hex_prefixed(),
+        1,
+        now_rfc3339(),
+    );
+
+    // Only witness 1 signs (witness 2 is absent)
+    let w1_sig = sign_checkpoint_statement(&w1_kp, &stmt).unwrap();
+
+    let witness_sigs = vec![&w1_sig];
+    let mut accepted: Vec<&serde_json::Value> = Vec::new();
+    for sig in &witness_sigs {
+        let node_id = sig.get("witness_node_id").and_then(|v| v.as_str()).unwrap();
+        let sig_hex = sig.get("signature").and_then(|v| v.as_str()).unwrap();
+        if bundle.witness_allowed(node_id)
+            && verify_witness_signature(&stmt, node_id, sig_hex).unwrap()
+        {
+            accepted.push(sig);
+        }
+    }
+
+    assert_eq!(accepted.len(), 1);
+    assert!(
+        accepted.len() < bundle.witness_quorum,
+        "witness quorum should NOT be met with only 1 of 2 witnesses"
+    );
 }

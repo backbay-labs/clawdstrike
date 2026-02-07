@@ -24,8 +24,8 @@ pub mod error;
 pub mod hubble;
 pub mod mapper;
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use hush_core::Keypair;
 use tracing::{debug, error, info, warn};
@@ -57,6 +57,8 @@ pub struct BridgeConfig {
     pub verdict_filter: Vec<FlowVerdict>,
     /// Number of JetStream replicas for the stream.
     pub stream_replicas: usize,
+    /// Maximum consecutive handle_flow errors before run() returns an error.
+    pub max_consecutive_errors: u64,
 }
 
 impl Default for BridgeConfig {
@@ -68,8 +70,15 @@ impl Default for BridgeConfig {
             namespace_allowlist: Vec::new(),
             verdict_filter: Vec::new(),
             stream_replicas: 1,
+            max_consecutive_errors: 50,
         }
     }
+}
+
+/// Combined sequence + hash state protected by a single lock.
+struct ChainState {
+    seq: u64,
+    prev_hash: Option<String>,
 }
 
 /// The Hubble-to-NATS bridge.
@@ -81,8 +90,7 @@ pub struct Bridge {
     #[allow(dead_code)]
     js: async_nats::jetstream::Context,
     config: BridgeConfig,
-    seq: AtomicU64,
-    prev_hash: Mutex<Option<String>>,
+    chain_state: Mutex<ChainState>,
 }
 
 impl Bridge {
@@ -114,8 +122,10 @@ impl Bridge {
             nats_client,
             js,
             config,
-            seq: AtomicU64::new(1),
-            prev_hash: Mutex::new(None),
+            chain_state: Mutex::new(ChainState {
+                seq: 1,
+                prev_hash: None,
+            }),
         })
     }
 
@@ -130,11 +140,30 @@ impl Bridge {
 
         info!("flow stream open, processing flows");
 
+        let mut consecutive_errors: u64 = 0;
+        let mut backoff = Duration::from_millis(100);
+        let max_backoff = Duration::from_secs(30);
+
         loop {
             match stream.message().await {
                 Ok(Some(resp)) => {
                     if let Err(e) = self.handle_flow(&resp).await {
-                        error!(error = %e, "failed to handle flow");
+                        consecutive_errors += 1;
+                        warn!(
+                            error = %e,
+                            consecutive_errors,
+                            "failed to handle flow"
+                        );
+                        if consecutive_errors >= self.config.max_consecutive_errors {
+                            return Err(Error::Config(format!(
+                                "too many consecutive errors ({consecutive_errors}), giving up"
+                            )));
+                        }
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(max_backoff);
+                    } else {
+                        consecutive_errors = 0;
+                        backoff = Duration::from_millis(100);
                     }
                 }
                 Ok(None) => {
@@ -189,49 +218,37 @@ impl Bridge {
             }
         };
 
-        // Build and sign the Spine envelope.
-        let seq = self.seq.fetch_add(1, Ordering::SeqCst);
-        let prev_hash = {
-            let guard = self.prev_hash.lock().unwrap_or_else(|poisoned| {
-                tracing::warn!("prev_hash mutex was poisoned, recovering");
+        // Build and sign the Spine envelope under a single lock, then drop the
+        // guard before the async NATS publish.
+        let (envelope, seq) = {
+            let mut state = self.chain_state.lock().unwrap_or_else(|poisoned| {
+                tracing::warn!("chain_state mutex was poisoned, recovering");
                 poisoned.into_inner()
             });
-            guard.clone()
+            let seq = state.seq;
+            let prev_hash = state.prev_hash.clone();
+
+            let envelope = spine::build_signed_envelope(
+                &self.keypair,
+                seq,
+                prev_hash,
+                fact,
+                spine::now_rfc3339(),
+            )?;
+
+            // Update chain state atomically.
+            state.seq += 1;
+            if let Some(hash) = envelope.get("envelope_hash").and_then(|v| v.as_str()) {
+                state.prev_hash = Some(hash.to_string());
+            }
+            (envelope, seq)
         };
 
-        let envelope = spine::build_signed_envelope(
-            &self.keypair,
-            seq,
-            prev_hash,
-            fact,
-            spine::now_rfc3339(),
-        )?;
-
-        // Update prev_hash for chain integrity.
-        if let Some(hash) = envelope.get("envelope_hash").and_then(|v| v.as_str()) {
-            let mut guard = self.prev_hash.lock().unwrap_or_else(|poisoned| {
-                tracing::warn!("prev_hash mutex was poisoned, recovering");
-                poisoned.into_inner()
-            });
-            *guard = Some(hash.to_string());
-        }
-
         // Publish to NATS.
-        let subject = NATS_SUBJECT.to_string();
-
-        if subject.is_empty()
-            || !subject.is_ascii()
-            || subject.contains(' ')
-            || subject.contains('\n')
-        {
-            tracing::error!(subject = %subject, "invalid NATS subject, skipping publish");
-            return Err(Error::Config(format!("invalid NATS subject: {subject}")));
-        }
-
         let payload = serde_json::to_vec(&envelope)?;
 
         self.nats_client
-            .publish(subject.clone(), payload.into())
+            .publish(NATS_SUBJECT.to_string(), payload.into())
             .await
             .map_err(|e| Error::Nats(format!("publish failed: {e}")))?;
 

@@ -16,13 +16,9 @@ RUN apt-get update && \
 
 WORKDIR /build
 
-COPY Cargo.toml Cargo.lock ./
-
-# Rewrite workspace members to only include crates needed for hubble-bridge.
-RUN sed -i '/^\[workspace\]$/,/^\[/ { \
-      /^members/,/^\]/ c\members = [\n    "crates/hush-core",\n    "crates/spine",\n    "crates/hubble-bridge",\n] \
-    }' Cargo.toml && \
-    sed -i '/^exclude/,/^\]/d' Cargo.toml
+# Copy minimal workspace manifest (only hubble-bridge crates) and lockfile.
+COPY docker/workspace-hubble.toml Cargo.toml
+COPY Cargo.lock ./
 
 COPY crates/hush-core crates/hush-core
 COPY crates/spine crates/spine

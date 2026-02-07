@@ -18,6 +18,7 @@ fn default_witness_quorum() -> usize {
 /// allowlist). When a list is empty, the bundle does not constrain that
 /// dimension (MVP / dev mode).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TrustBundle {
     /// Optional schema tag for forwards compatibility (not enforced today).
     #[serde(default)]

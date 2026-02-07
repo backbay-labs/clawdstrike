@@ -49,6 +49,7 @@ libp2p = { version = "0.56", features = ["tokio", "tcp", "dns", "noise", "yamux"
 # Local crates
 hush-core = { path = "../../../crates/hush-core" }
 clawdstrike = { path = "../../../crates/clawdstrike" }
+spine = { path = "../../../crates/spine" }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

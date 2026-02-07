@@ -64,6 +64,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/spine:${{ matrix.bin }}-${{ github.sha }}
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+
   tetragon-bridge:
     name: Tetragon Bridge
     runs-on: ubuntu-latest
@@ -92,6 +100,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/tetragon-bridge:${{ github.sha }}
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+
   hubble-bridge:
     name: Hubble Bridge
     runs-on: ubuntu-latest
@@ -119,3 +135,11 @@ jobs:
             ${{ env.IMAGE_PREFIX }}/hubble-bridge:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/hubble-bridge:${{ github.sha }}
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'

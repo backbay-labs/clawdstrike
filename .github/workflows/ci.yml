@@ -68,7 +68,7 @@ jobs:
         run: cargo build --all-targets
 
       - name: Test
-        run: cargo test --all
+        run: cargo test --all --exclude sdr-integration-tests
 
   tauri-rust-check:
     name: Tauri Rust Crates
@@ -123,6 +123,7 @@ jobs:
   sdr-integration-tests:
     name: SDR Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: check
     steps:
       - uses: actions/checkout@v6
@@ -130,7 +131,17 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-sdr-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-sdr-
+            ${{ runner.os }}-cargo-
 
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler

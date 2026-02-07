@@ -16,13 +16,9 @@ RUN apt-get update && \
 
 WORKDIR /build
 
-COPY Cargo.toml Cargo.lock ./
-
-# Rewrite workspace members to only include crates needed for tetragon-bridge.
-RUN sed -i '/^\[workspace\]$/,/^\[/ { \
-      /^members/,/^\]/ c\members = [\n    "crates/hush-core",\n    "crates/spine",\n    "crates/tetragon-bridge",\n] \
-    }' Cargo.toml && \
-    sed -i '/^exclude/,/^\]/d' Cargo.toml
+# Copy minimal workspace manifest (only tetragon-bridge crates) and lockfile.
+COPY docker/workspace-tetragon.toml Cargo.toml
+COPY Cargo.lock ./
 
 COPY crates/hush-core crates/hush-core
 COPY crates/spine crates/spine

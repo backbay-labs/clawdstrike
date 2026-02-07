@@ -241,6 +241,76 @@ async fn test_hubble_dns_flow_mapping() {
     assert_eq!(fact["l7"]["record"]["rcode"], 0);
 }
 
+/// Test ProcessExit event mapping: verify event_type and severity.
+#[tokio::test]
+async fn test_tetragon_process_exit_mapping() {
+    let resp = GetEventsResponse {
+        event: Some(Event::ProcessExit(tet::ProcessExit {
+            process: Some(make_tetragon_process("/usr/bin/sleep", Some("default"))),
+            parent: Some(make_tetragon_process("/usr/bin/bash", Some("default"))),
+            signal: "SIGTERM".to_string(),
+            status: 143,
+            time: None,
+        })),
+        node_name: "worker-1".to_string(),
+        time: None,
+        aggregation_info_count: 0,
+    };
+
+    let fact = tetragon_bridge::mapper::map_event(&resp);
+    assert!(
+        fact.is_some(),
+        "mapper should produce a fact for ProcessExit"
+    );
+    let fact = fact.unwrap();
+
+    assert_eq!(fact["schema"], "clawdstrike.sdr.fact.tetragon_event.v1");
+    assert_eq!(fact["event_type"], "process_exit");
+    assert_eq!(fact["severity"], "low"); // exit events are always low
+    assert_eq!(fact["node_name"], "worker-1");
+    assert_eq!(fact["signal"], "SIGTERM");
+    assert_eq!(fact["status"], 143);
+    assert!(fact["process"].is_object());
+    assert_eq!(fact["process"]["binary"], "/usr/bin/sleep");
+}
+
+/// Test that a GetEventsResponse with event: None returns None from map_event.
+#[tokio::test]
+async fn test_tetragon_none_event_mapping() {
+    let resp = GetEventsResponse {
+        event: None,
+        node_name: "worker-1".to_string(),
+        time: None,
+        aggregation_info_count: 0,
+    };
+
+    let fact = tetragon_bridge::mapper::map_event(&resp);
+    assert!(fact.is_none(), "mapper should return None for event: None");
+}
+
+/// Test that a Hubble flow with Verdict::Error maps to high severity.
+#[tokio::test]
+async fn test_hubble_error_verdict_mapping() {
+    let flow = make_hubble_flow(hub::Verdict::Error, "default", "app-ns");
+    let resp = hub::GetFlowsResponse {
+        response_types: Some(hub::get_flows_response::ResponseTypes::Flow(flow)),
+        node_name: "worker-1".to_string(),
+        time: None,
+    };
+
+    let fact = hubble_bridge::mapper::map_flow(&resp);
+    assert!(
+        fact.is_some(),
+        "mapper should produce a fact for Error verdict"
+    );
+    let fact = fact.unwrap();
+
+    assert_eq!(fact["schema"], "clawdstrike.sdr.fact.hubble_flow.v1");
+    assert_eq!(fact["verdict"], "ERROR");
+    assert_eq!(fact["severity"], "high"); // Error verdict = high severity
+    assert_eq!(fact["node_name"], "worker-1");
+}
+
 /// Map an event through bridge, verify the resulting envelope's Ed25519 signature is valid.
 #[tokio::test]
 async fn test_bridge_envelope_signature_valid() {
@@ -321,7 +391,7 @@ async fn test_bridge_envelope_signature_valid() {
     let mut tampered = hub_envelope.clone();
     tampered["fact"]["severity"] = json!("low");
     assert!(
-        !spine::verify_envelope(&tampered).unwrap(),
+        spine::verify_envelope(&tampered).is_err(),
         "tampered envelope should fail verification"
     );
 }
