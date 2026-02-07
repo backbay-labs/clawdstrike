@@ -242,7 +242,7 @@ export class PluginLoader {
           handles: (event) => {
             if (handles.size === 0) return true;
             const action = mapPolicyEventToGuardHandle(event?.eventType);
-            return handles.has(action) || handles.has('custom');
+            return handles.has(action);
           },
           check: async (event) => {
             const bridge = await invokeWasmBridge({
