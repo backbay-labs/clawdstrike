@@ -181,6 +181,8 @@ fn build_entries(
             updated_at: None,
             provenance: None,
             curator_public_key: None,
+            content_ids: None,
+            gateway_hints: Vec::new(),
         });
     }
 

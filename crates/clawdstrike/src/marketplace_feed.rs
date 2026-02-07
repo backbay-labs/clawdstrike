@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::curator_config::{CuratorConfig, ValidatedCurator};
 use crate::error::{Error, Result};
+use hush_core::Hash;
 
 pub const MARKETPLACE_FEED_SCHEMA_VERSION: &str = "clawdstrike-marketplace-feed-v1";
 
@@ -45,6 +46,17 @@ impl MarketplaceFeed {
     }
 }
 
+/// Content identifiers for verifiable fetching (dual-CID: IPFS + SHA-256).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContentIds {
+    /// IPFS CIDv1 (base32, typically SHA-256 under the hood).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipfs_cid: Option<String>,
+    /// SHA-256 of the canonical JSON of the signed bundle.
+    pub sha256: Hash,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceEntry {
@@ -76,20 +88,82 @@ pub struct MarketplaceEntry {
     /// Optional curator public key that added this entry (hex-encoded).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub curator_public_key: Option<String>,
+    /// Content identifiers for verifiable fetching.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_ids: Option<ContentIds>,
+    /// Ordered list of IPFS gateway base URLs for fallback fetching.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gateway_hints: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceProvenance {
+    /// Verification type: `"notary"`, `"spine"`, `"eas"`.
+    /// When absent, inferred from which fields are populated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
     /// Optional attestation UID (e.g., EAS UID) that can be verified via a notary service.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation_uid: Option<String>,
     /// Optional notary base URL (e.g., `https://notary.example.com`).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notary_url: Option<String>,
     /// Optional Spine envelope hash for provenance tracing.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spine_envelope_hash: Option<String>,
+    /// Log operator ID for Spine verification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_id: Option<String>,
+    /// Checkpoint sequence for Spine verification (pin to a specific checkpoint).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_seq: Option<u64>,
+    /// Pre-computed inclusion proof for offline verification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inclusion_proof: Option<InclusionProofBundle>,
+}
+
+impl MarketplaceProvenance {
+    /// Determine the effective provenance verification type.
+    ///
+    /// If `type` is explicitly set, returns that. Otherwise, infers from
+    /// which fields are populated: `spine_envelope_hash` -> `"spine"`,
+    /// `attestation_uid` + `notary_url` -> `"notary"`.
+    pub fn effective_type(&self) -> Option<&str> {
+        if let Some(t) = &self.r#type {
+            return Some(t.as_str());
+        }
+        if self.spine_envelope_hash.is_some() {
+            return Some("spine");
+        }
+        if self.attestation_uid.is_some() && self.notary_url.is_some() {
+            return Some("notary");
+        }
+        None
+    }
+}
+
+/// Pre-computed inclusion proof for offline Spine verification.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InclusionProofBundle {
+    /// RFC 6962 Merkle audit path (hex-encoded hashes).
+    pub audit_path: Vec<String>,
+    pub checkpoint_seq: u64,
+    pub tree_size: u64,
+    pub log_index: u64,
+    pub merkle_root: String,
+    /// Witness signatures on the checkpoint.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub witness_signatures: Vec<WitnessSignatureRef>,
+}
+
+/// Reference to a witness co-signature on a checkpoint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessSignatureRef {
+    pub witness_node_id: String,
+    pub signature: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -212,6 +286,8 @@ mod tests {
                 updated_at: None,
                 provenance: None,
                 curator_public_key: None,
+                content_ids: None,
+                gateway_hints: Vec::new(),
             }],
             metadata: None,
         };
@@ -297,6 +373,8 @@ mod tests {
                 updated_at: None,
                 provenance: None,
                 curator_public_key: None,
+                content_ids: None,
+                gateway_hints: Vec::new(),
             }],
             metadata: Some(serde_json::json!({ "b": 1, "a": 2 })),
         };
@@ -435,5 +513,116 @@ trust_level = "audit-only"
         let signed = SignedMarketplaceFeed::sign(feed, &kp).unwrap();
         let curator = signed.verify_with_config(&config).unwrap();
         assert_eq!(curator.trust_level, TrustLevel::AuditOnly);
+    }
+
+    #[test]
+    fn content_ids_serde_round_trip() {
+        let ids = ContentIds {
+            ipfs_cid: Some(
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".to_string(),
+            ),
+            sha256: hush_core::sha256(b"test content"),
+        };
+        let json = serde_json::to_string(&ids).unwrap();
+        let parsed: ContentIds = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.ipfs_cid, ids.ipfs_cid);
+        assert_eq!(parsed.sha256, ids.sha256);
+    }
+
+    #[test]
+    fn content_ids_without_ipfs_cid() {
+        let ids = ContentIds {
+            ipfs_cid: None,
+            sha256: hush_core::sha256(b"test"),
+        };
+        let json = serde_json::to_string(&ids).unwrap();
+        assert!(!json.contains("ipfs_cid"));
+        let parsed: ContentIds = serde_json::from_str(&json).unwrap();
+        assert!(parsed.ipfs_cid.is_none());
+    }
+
+    #[test]
+    fn entry_with_content_ids_and_gateway_hints() {
+        let entry = MarketplaceEntry {
+            entry_id: "test-1".to_string(),
+            bundle_uri: "ipfs://bafytest123".to_string(),
+            title: None,
+            description: None,
+            category: None,
+            tags: Vec::new(),
+            author: None,
+            author_url: None,
+            icon: None,
+            created_at: None,
+            updated_at: None,
+            provenance: None,
+            curator_public_key: None,
+            content_ids: Some(ContentIds {
+                ipfs_cid: Some("bafytest123".to_string()),
+                sha256: hush_core::sha256(b"bundle data"),
+            }),
+            gateway_hints: vec!["https://my-gw.example.com/ipfs/".to_string()],
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("content_ids"));
+        assert!(json.contains("gateway_hints"));
+        let parsed: MarketplaceEntry = serde_json::from_str(&json).unwrap();
+        assert!(parsed.content_ids.is_some());
+        assert_eq!(parsed.gateway_hints.len(), 1);
+    }
+
+    #[test]
+    fn entry_without_content_ids_backward_compat() {
+        // Existing feeds without the new fields should still deserialize
+        let json = r#"{
+            "entry_id": "legacy-1",
+            "bundle_uri": "https://example.com/bundle.json"
+        }"#;
+        let parsed: MarketplaceEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.entry_id, "legacy-1");
+        assert!(parsed.content_ids.is_none());
+        assert!(parsed.gateway_hints.is_empty());
+    }
+
+    #[test]
+    fn signed_feed_with_content_ids_round_trip() {
+        let keypair = Keypair::generate();
+        let feed = MarketplaceFeed {
+            version: MARKETPLACE_FEED_SCHEMA_VERSION.to_string(),
+            feed_id: "ipfs-test".to_string(),
+            published_at: "2026-02-07T00:00:00Z".to_string(),
+            seq: 1,
+            entries: vec![MarketplaceEntry {
+                entry_id: "ipfs-bundle-1".to_string(),
+                bundle_uri: "ipfs://bafytest".to_string(),
+                title: Some("IPFS Bundle".to_string()),
+                description: None,
+                category: None,
+                tags: Vec::new(),
+                author: None,
+                author_url: None,
+                icon: None,
+                created_at: None,
+                updated_at: None,
+                provenance: None,
+                curator_public_key: None,
+                content_ids: Some(ContentIds {
+                    ipfs_cid: Some("bafytest".to_string()),
+                    sha256: hush_core::sha256(b"test"),
+                }),
+                gateway_hints: vec!["https://gw.example.com/ipfs/".to_string()],
+            }],
+            metadata: None,
+        };
+
+        let signed = SignedMarketplaceFeed::sign_with_public_key(feed, &keypair).unwrap();
+        assert!(signed.verify_embedded().unwrap());
+
+        // Round-trip through JSON
+        let json = serde_json::to_string(&signed).unwrap();
+        let parsed: SignedMarketplaceFeed = serde_json::from_str(&json).unwrap();
+        assert!(parsed.verify(&keypair.public_key()).unwrap());
+        assert_eq!(parsed.feed.entries[0].gateway_hints.len(), 1);
+        assert!(parsed.feed.entries[0].content_ids.is_some());
     }
 }

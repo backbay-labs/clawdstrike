@@ -277,13 +277,15 @@ impl CuratorConfig {
 
     /// Parse from a TOML string.
     pub fn parse(toml_str: &str) -> Result<Self> {
-        let file: RichCuratorConfigFile = toml::from_str(toml_str).map_err(|e| {
-            Error::ConfigError(format!("Invalid curator config TOML: {e}"))
-        })?;
+        let file: RichCuratorConfigFile = toml::from_str(toml_str)
+            .map_err(|e| Error::ConfigError(format!("Invalid curator config TOML: {e}")))?;
 
         let mut entries = Vec::with_capacity(file.curator.len());
         for entry in file.curator {
-            let hex = entry.public_key.strip_prefix("0x").unwrap_or(&entry.public_key);
+            let hex = entry
+                .public_key
+                .strip_prefix("0x")
+                .unwrap_or(&entry.public_key);
             let pk = PublicKey::from_hex(hex).map_err(|e| {
                 Error::ConfigError(format!(
                     "Invalid public key for curator '{}': {}",

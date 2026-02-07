@@ -97,9 +97,12 @@ pub use jailbreak::{
     LinearModelConfig, LlmJudge, SessionAggPersisted, SessionRiskSnapshot, SessionStore,
 };
 pub use marketplace_feed::{
-    MarketplaceEntry, MarketplaceFeed, MarketplaceProvenance, SignedMarketplaceFeed,
-    MARKETPLACE_FEED_SCHEMA_VERSION,
+    ContentIds, InclusionProofBundle, MarketplaceEntry, MarketplaceFeed, MarketplaceProvenance,
+    SignedMarketplaceFeed, WitnessSignatureRef, MARKETPLACE_FEED_SCHEMA_VERSION,
 };
+
+#[cfg(feature = "ipfs")]
+pub mod ipfs;
 pub use output_sanitizer::{
     AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer,
     OutputSanitizer, OutputSanitizerConfig, ProcessingStats, Redaction, RedactionStrategy,

@@ -51,6 +51,7 @@ harness = false
 
 [features]
 default = []
+ipfs = []
 llm-judge-openai = []
 wasm-plugin-runtime = ["dep:wasmtime"]
 

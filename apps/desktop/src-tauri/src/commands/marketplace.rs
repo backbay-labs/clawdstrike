@@ -2,8 +2,8 @@
 
 use std::path::{Component, Path};
 
-use clawdstrike::{CuratorConfigFile, CuratorTrustSet, SignedMarketplaceFeed, SignedPolicyBundle};
-use hush_core::{Hash, MerkleProof, PublicKey};
+use clawdstrike::{CuratorConfigFile, CuratorTrustSet, SignedMarketplaceFeed, SignedPolicyBundle, ContentIds};
+use hush_core::{sha256, Hash, MerkleProof, PublicKey};
 use reqwest::header::LOCATION;
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
@@ -111,7 +111,14 @@ pub async fn marketplace_list_policies(
     let mut policies = Vec::new();
 
     for entry in &signed.feed.entries {
-        let bundle_bytes = match load_bundle_bytes(&app, &state.http_client, &entry.bundle_uri).await
+        let bundle_bytes = match load_bundle_bytes_with_hints(
+            &app,
+            &state.http_client,
+            &entry.bundle_uri,
+            &entry.gateway_hints,
+            entry.content_ids.as_ref(),
+        )
+        .await
         {
             Ok(v) => v,
             Err(e) => {
@@ -339,13 +346,37 @@ async fn load_bundle_bytes(
     client: &reqwest::Client,
     uri: &str,
 ) -> Result<Vec<u8>, String> {
+    load_bundle_bytes_with_hints(app, client, uri, &[], None).await
+}
+
+async fn load_bundle_bytes_with_hints(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    uri: &str,
+    gateway_hints: &[String],
+    content_ids: Option<&ContentIds>,
+) -> Result<Vec<u8>, String> {
     if let Some(rel) = uri.strip_prefix(BUILTIN_BUNDLE_PREFIX) {
         validate_resource_relpath(rel)?;
         let rel_path = format!("resources/marketplace/bundles/{rel}");
         return read_resource_bytes(app, &rel_path, MAX_BUNDLE_BYTES);
     }
 
-    load_uri_bytes(client, uri, MAX_BUNDLE_BYTES).await
+    let bytes = load_uri_bytes_with_hints(client, uri, MAX_BUNDLE_BYTES, gateway_hints).await?;
+
+    // Defense-in-depth: verify SHA-256 against content_ids if present
+    if let Some(ids) = content_ids {
+        let actual = sha256(&bytes);
+        if actual != ids.sha256 {
+            return Err(format!(
+                "Bundle SHA-256 mismatch (expected {}, got {})",
+                ids.sha256.to_hex(),
+                actual.to_hex()
+            ));
+        }
+    }
+
+    Ok(bytes)
 }
 
 fn read_resource_bytes(app: &AppHandle, rel_path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
@@ -369,8 +400,17 @@ async fn load_uri_bytes(
     uri: &str,
     max_bytes: usize,
 ) -> Result<Vec<u8>, String> {
+    load_uri_bytes_with_hints(client, uri, max_bytes, &[]).await
+}
+
+async fn load_uri_bytes_with_hints(
+    client: &reqwest::Client,
+    uri: &str,
+    max_bytes: usize,
+    gateway_hints: &[String],
+) -> Result<Vec<u8>, String> {
     if let Some(ipfs) = uri.strip_prefix(IPFS_PREFIX) {
-        let urls = ipfs_gateway_urls(ipfs)?;
+        let urls = ipfs_gateway_urls_with_hints(ipfs, gateway_hints)?;
         let mut errs = Vec::new();
         for url in urls {
             match fetch_http_bytes_limited(client, &url, max_bytes).await {
@@ -385,6 +425,13 @@ async fn load_uri_bytes(
 }
 
 fn ipfs_gateway_urls(ipfs_path: &str) -> Result<Vec<String>, String> {
+    ipfs_gateway_urls_with_hints(ipfs_path, &[])
+}
+
+fn ipfs_gateway_urls_with_hints(
+    ipfs_path: &str,
+    gateway_hints: &[String],
+) -> Result<Vec<String>, String> {
     // ipfs://<CID>/<path>
     let trimmed = ipfs_path.trim().trim_start_matches('/');
     if trimmed.is_empty() {
@@ -397,10 +444,28 @@ fn ipfs_gateway_urls(ipfs_path: &str) -> Result<Vec<String>, String> {
         .unwrap_or((trimmed, String::new()));
 
     let mut urls = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // Gateway hints first (per-entry overrides)
+    for hint in gateway_hints {
+        let base = hint.trim().trim_end_matches('/');
+        if !base.is_empty() {
+            let url = format!("{base}/ipfs/{cid}{rest}");
+            if seen.insert(url.clone()) {
+                urls.push(url);
+            }
+        }
+    }
+
+    // Default gateways
     for gateway in DEFAULT_IPFS_GATEWAYS {
         let base = gateway.trim_end_matches('/');
-        urls.push(format!("{base}/ipfs/{cid}{rest}"));
+        let url = format!("{base}/ipfs/{cid}{rest}");
+        if seen.insert(url.clone()) {
+            urls.push(url);
+        }
     }
+
     Ok(urls)
 }
 

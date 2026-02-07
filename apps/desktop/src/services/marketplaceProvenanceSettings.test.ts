@@ -41,14 +41,20 @@ describe("marketplaceProvenanceSettings", () => {
   it("round-trips save/load", () => {
     saveMarketplaceProvenanceSettings({
       notaryUrl: "https://notary.example.com",
+      proofsApiUrl: "https://proofs.example.com",
       trustedAttesters: ["0xabc"],
       requireVerified: true,
+      preferSpine: true,
+      trustedWitnessKeys: ["0xdef"],
     });
 
     expect(loadMarketplaceProvenanceSettings()).toEqual({
       notaryUrl: "https://notary.example.com",
+      proofsApiUrl: "https://proofs.example.com",
       trustedAttesters: ["0xabc"],
       requireVerified: true,
+      preferSpine: true,
+      trustedWitnessKeys: ["0xdef"],
     });
   });
 
