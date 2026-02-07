@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::mpsc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -342,14 +343,12 @@ pub fn execute_wasm_guard_bytes(
         .map_err(|_| Error::ConfigError("wasm guard input exceeds ABI limit".to_string()))?;
 
     let timeout_fired = Arc::new(AtomicBool::new(false));
-    let cancel_timeout = Arc::new(AtomicBool::new(false));
     let timeout_fired_for_thread = Arc::clone(&timeout_fired);
-    let cancel_timeout_for_thread = Arc::clone(&cancel_timeout);
     let timeout_duration = Duration::from_millis(u64::from(options.resources.max_timeout_ms));
     let engine_for_thread = engine.clone();
+    let (cancel_tx, cancel_rx) = mpsc::channel::<()>();
     let timeout_thread = std::thread::spawn(move || {
-        std::thread::sleep(timeout_duration);
-        if !cancel_timeout_for_thread.load(Ordering::SeqCst) {
+        if cancel_rx.recv_timeout(timeout_duration).is_err() {
             timeout_fired_for_thread.store(true, Ordering::SeqCst);
             engine_for_thread.increment_epoch();
         }
@@ -364,7 +363,7 @@ pub fn execute_wasm_guard_bytes(
             input_len,
         ),
     );
-    cancel_timeout.store(true, Ordering::SeqCst);
+    let _ = cancel_tx.send(());
     let _ = timeout_thread.join();
 
     if let Some(cap) = store.data().capability_fault.as_deref() {
@@ -766,5 +765,42 @@ mod tests {
         assert!(!exec.result.allowed);
         let kind = exec.audit.first().map(|a| a.kind).unwrap_or("none");
         assert!(kind == "timeout" || kind == "sandbox_fault");
+    }
+
+    #[test]
+    fn fast_guard_call_does_not_wait_for_timeout_window() {
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "clawdstrike_host" "set_output" (func $set_output (param i32 i32) (result i32)))
+                (import "clawdstrike_host" "request_capability" (func $cap (param i32) (result i32)))
+                (memory (export "memory") 1)
+                (data (i32.const 64) "{\"allowed\":true,\"severity\":\"low\",\"message\":\"ok\"}")
+                (func (export "clawdstrike_guard_init") (result i32)
+                  i32.const 1)
+                (func (export "clawdstrike_guard_handles") (param i32 i32) (result i32)
+                  i32.const 1)
+                (func (export "clawdstrike_guard_check") (param i32 i32) (result i32)
+                  i32.const 64
+                  i32.const 48
+                  call $set_output
+                  drop
+                  i32.const 0)
+            )"#,
+        )
+        .expect("valid wat");
+
+        let mut options = WasmGuardRuntimeOptions::default();
+        options.resources.max_timeout_ms = 4000;
+
+        let start = std::time::Instant::now();
+        let exec = execute_wasm_guard_bytes(&wasm, &envelope(), &options).expect("execute");
+        let elapsed = start.elapsed();
+
+        assert!(exec.result.allowed, "expected allowed guard result");
+        assert!(
+            elapsed < Duration::from_millis(2500),
+            "fast guard call took {:?}, expected to complete well before timeout window",
+            elapsed
+        );
     }
 }
