@@ -6,7 +6,9 @@ use std::sync::{
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use wasmtime::{Caller, Engine, ExternType, Linker, Module, Store};
+use wasmtime::{
+    Caller, Engine, ExternType, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
+};
 
 use crate::error::{Error, Result};
 use crate::guards::{GuardResult, Severity};
@@ -65,15 +67,19 @@ struct HostState {
     output: Option<Vec<u8>>,
     capability_fault: Option<String>,
     host_fault: Option<String>,
+    store_limits: StoreLimits,
 }
 
 impl HostState {
-    fn new(capabilities: PluginCapabilities) -> Self {
+    fn new(capabilities: PluginCapabilities, max_memory_mb: u32) -> Self {
+        let max_bytes = max_memory_bytes(max_memory_mb);
+        let store_limits = StoreLimitsBuilder::new().memory_size(max_bytes).build();
         Self {
             capabilities,
             output: None,
             capability_fault: None,
             host_fault: None,
+            store_limits,
         }
     }
 }
@@ -225,7 +231,14 @@ pub fn execute_wasm_guard_bytes(
             Error::ConfigError(format!("failed to bind request_capability hostcall: {e}"))
         })?;
 
-    let mut store = Store::new(&engine, HostState::new(options.capabilities.clone()));
+    let mut store = Store::new(
+        &engine,
+        HostState::new(
+            options.capabilities.clone(),
+            options.resources.max_memory_mb,
+        ),
+    );
+    store.limiter(|state| &mut state.store_limits);
     let fuel = u64::from(options.resources.max_cpu_ms).saturating_mul(100_000);
     store
         .set_fuel(fuel)
@@ -453,23 +466,39 @@ pub fn execute_wasm_guard_bytes(
 }
 
 fn enforce_memory_limit(module: &Module, max_memory_mb: u32, guard: &str) -> Result<()> {
-    let max_bytes = u64::from(max_memory_mb).saturating_mul(1024 * 1024);
-    let mut declared_bytes = 0_u64;
+    let max_bytes = max_memory_bytes_u64(max_memory_mb);
     for export in module.exports() {
         if let ExternType::Memory(memory) = export.ty() {
-            declared_bytes = memory.minimum().saturating_mul(65_536);
-            break;
+            let page_size = memory.page_size();
+            let declared_min_bytes = memory.minimum().saturating_mul(page_size);
+            if declared_min_bytes > max_bytes {
+                return Err(Error::ConfigError(format!(
+                    "wasm guard {} declares {} bytes of minimum linear memory, exceeding max_memory_mb={}",
+                    guard, declared_min_bytes, max_memory_mb
+                )));
+            }
+
+            if let Some(declared_max_pages) = memory.maximum() {
+                let declared_max_bytes = declared_max_pages.saturating_mul(page_size);
+                if declared_max_bytes > max_bytes {
+                    return Err(Error::ConfigError(format!(
+                        "wasm guard {} declares {} bytes of maximum linear memory, exceeding max_memory_mb={}",
+                        guard, declared_max_bytes, max_memory_mb
+                    )));
+                }
+            }
         }
     }
 
-    if declared_bytes > max_bytes {
-        return Err(Error::ConfigError(format!(
-            "wasm guard {} declares {} bytes of linear memory, exceeding max_memory_mb={}",
-            guard, declared_bytes, max_memory_mb
-        )));
-    }
-
     Ok(())
+}
+
+fn max_memory_bytes_u64(max_memory_mb: u32) -> u64 {
+    u64::from(max_memory_mb).saturating_mul(1024 * 1024)
+}
+
+fn max_memory_bytes(max_memory_mb: u32) -> usize {
+    usize::try_from(max_memory_bytes_u64(max_memory_mb)).unwrap_or(usize::MAX)
 }
 
 fn write_into_memory(
@@ -629,6 +658,84 @@ mod tests {
         assert_eq!(
             exec.audit.first().map(|a| a.kind),
             Some("capability_denied")
+        );
+    }
+
+    #[test]
+    fn enforces_declared_maximum_memory_limit() {
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "clawdstrike_host" "set_output" (func $set_output (param i32 i32) (result i32)))
+                (import "clawdstrike_host" "request_capability" (func $cap (param i32) (result i32)))
+                (memory (export "memory") 1 200)
+                (func (export "clawdstrike_guard_init") (result i32)
+                  i32.const 1)
+                (func (export "clawdstrike_guard_handles") (param i32 i32) (result i32)
+                  i32.const 1)
+                (func (export "clawdstrike_guard_check") (param i32 i32) (result i32)
+                  i32.const 0)
+            )"#,
+        )
+        .expect("valid wat");
+
+        let mut options = WasmGuardRuntimeOptions::default();
+        options.resources.max_memory_mb = 1;
+        let err = execute_wasm_guard_bytes(&wasm, &envelope(), &options).expect_err("must fail");
+        match err {
+            Error::ConfigError(msg) => assert!(
+                msg.contains("maximum linear memory"),
+                "unexpected error message: {msg}"
+            ),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn enforces_runtime_memory_growth_limit() {
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "clawdstrike_host" "set_output" (func $set_output (param i32 i32) (result i32)))
+                (import "clawdstrike_host" "request_capability" (func $cap (param i32) (result i32)))
+                (memory (export "memory") 1)
+                (data (i32.const 64) "{\"allowed\":false,\"severity\":\"high\",\"message\":\"memory growth denied\"}")
+                (data (i32.const 160) "{\"allowed\":true,\"severity\":\"low\",\"message\":\"memory growth allowed\"}")
+                (func (export "clawdstrike_guard_init") (result i32)
+                  i32.const 1)
+                (func (export "clawdstrike_guard_handles") (param i32 i32) (result i32)
+                  i32.const 1)
+                (func (export "clawdstrike_guard_check") (param i32 i32) (result i32)
+                  i32.const 100
+                  memory.grow
+                  i32.const -1
+                  i32.eq
+                  if
+                    i32.const 64
+                    i32.const 68
+                    call $set_output
+                    drop
+                  else
+                    i32.const 160
+                    i32.const 67
+                    call $set_output
+                    drop
+                  end
+                  i32.const 0)
+            )"#,
+        )
+        .expect("valid wat");
+
+        let mut options = WasmGuardRuntimeOptions::default();
+        options.resources.max_memory_mb = 1;
+
+        let exec = execute_wasm_guard_bytes(&wasm, &envelope(), &options).expect("execute");
+        assert!(
+            !exec.result.allowed,
+            "memory growth should have been denied"
+        );
+        assert!(
+            exec.result.message.contains("memory growth denied"),
+            "unexpected message: {}",
+            exec.result.message
         );
     }
 

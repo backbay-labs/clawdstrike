@@ -574,7 +574,7 @@ pub async fn cmd_policy_test(
     stderr: &mut dyn Write,
 ) -> ExitCode {
     let json = options.json;
-    let coverage = options.coverage;
+    let coverage = options.coverage || options.min_coverage.is_some();
     let path = PathBuf::from(&test_file);
     let raw = match std::fs::read_to_string(&path) {
         Ok(v) => v,

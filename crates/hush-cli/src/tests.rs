@@ -2460,6 +2460,71 @@ suites:
     }
 
     #[tokio::test]
+    async fn policy_test_runner_min_coverage_implies_coverage() {
+        let test_path = temp_path("policy_test_min_coverage_implies_coverage.yaml");
+        std::fs::write(
+            &test_path,
+            r#"
+name: "Min Coverage Implies Coverage"
+policy: "clawdstrike:default"
+suites:
+  - name: "Single Guard"
+    tests:
+      - name: "only forbidden path"
+        input:
+          eventType: file_read
+          data:
+            type: file
+            path: /home/user/.ssh/id_rsa
+            operation: read
+        expect:
+          denied: true
+          guard: forbidden_path
+"#,
+        )
+        .expect("write test file");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+        let code = cmd_policy_test(
+            test_path.to_string_lossy().to_string(),
+            false,
+            &remote,
+            PolicyTestRunOptions {
+                json: true,
+                coverage: false,
+                min_coverage: Some(100.0),
+                format: PolicyTestOutputFormat::Json,
+                output: None,
+                snapshots: false,
+                update_snapshots: false,
+                mutation: false,
+            },
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::Fail);
+        assert!(err.is_empty());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert!(
+            v.get("coverage_percent")
+                .and_then(|value| value.as_f64())
+                .is_some(),
+            "coverage percent should be computed when min_coverage is set"
+        );
+        let failures = v
+            .get("failures")
+            .and_then(|f| f.as_array())
+            .expect("failures array");
+        assert!(failures
+            .iter()
+            .any(|f| f.get("test").and_then(|t| t.as_str()) == Some("min_coverage")));
+    }
+
+    #[tokio::test]
     async fn policy_test_runner_writes_html_and_junit_reports() {
         let test_path = temp_path("policy_test_reports.yaml");
         std::fs::write(
