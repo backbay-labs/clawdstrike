@@ -434,7 +434,7 @@ async fn test_v1_certification_lifecycle_basic() {
         .unwrap_or("");
     assert!(ctype.contains("image/svg+xml"));
 
-    // Badge (explicit format): PNG is not implemented yet.
+    // Badge (explicit format): PNG.
     let resp = client
         .get(format!(
             "{}/v1/certifications/{}/badge?format=png",
@@ -443,7 +443,16 @@ async fn test_v1_certification_lifecycle_basic() {
         .send()
         .await
         .expect("Failed to get badge (format=png)");
-    assert_eq!(resp.status(), reqwest::StatusCode::NOT_IMPLEMENTED);
+    assert!(resp.status().is_success());
+    let ctype = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(ctype.contains("image/png"));
+    let body = resp.bytes().await.expect("png body bytes");
+    assert!(body.len() > 8);
+    assert_eq!(&body[..8], b"\x89PNG\r\n\x1a\n");
 
     // Revoke certification.
     let resp = client

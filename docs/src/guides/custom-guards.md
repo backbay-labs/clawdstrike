@@ -39,4 +39,4 @@ let policy = Policy::from_yaml_file("policy.yaml")?;
 let engine = HushEngine::with_policy(policy).with_extra_guard(Box::new(AlwaysWarn));
 ```
 
-`guards.custom[]` supports a small reserved set of built-in threat-intel guards (see [Threat Intel Guards](threat-intel.md)). Dynamic plugin loading/marketplaces are still planned work.
+`guards.custom[]` supports a reserved set of built-in threat-intel guards (see [Threat Intel Guards](threat-intel.md)) plus manifest-based plugin loading. Use `hush guard inspect` and `hush guard validate` to verify plugin metadata/compatibility, and use `executionMode: wasm` for sandboxed plugin execution paths.

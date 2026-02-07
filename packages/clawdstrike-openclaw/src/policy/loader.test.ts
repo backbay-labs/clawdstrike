@@ -23,6 +23,28 @@ egress:
     const yaml = `{{{invalid`;
     expect(() => loadPolicyFromString(yaml)).toThrow();
   });
+
+  it('accepts canonical policy schema and translates to OpenClaw shape', () => {
+    const yaml = `
+version: "1.2.0"
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "~/.ssh"
+  egress_allowlist:
+    allow:
+      - "api.github.com"
+    block:
+      - "evil.example"
+    default_action: block
+`;
+    const policy = loadPolicyFromString(yaml);
+    expect(policy.version).toBe('clawdstrike-v1.0');
+    expect(policy.filesystem?.forbidden_paths).toContain('~/.ssh');
+    expect(policy.egress?.allowed_domains).toContain('api.github.com');
+    expect(policy.egress?.denied_domains).toContain('evil.example');
+  });
 });
 
 describe('loadPolicy', () => {

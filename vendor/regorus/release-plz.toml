@@ -1,0 +1,27 @@
+[workspace]
+git_release_enable = false
+git_tag_enable = false
+changelog_update = false
+dependencies_update = false
+publish = false
+
+[[package]]
+name = "regorus"
+git_tag_enable = true
+git_release_enable = true
+changelog_update = true
+publish = true
+
+[[package]]
+name = "regorus-mimalloc"
+publish = true
+changelog_update = false
+
+[[package]]
+name = "regorus-mimalloc-sys"
+publish = true
+changelog_update = false
+
+[[package]]
+name = "xtask"
+release = false

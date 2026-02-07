@@ -101,6 +101,11 @@ pub use output_sanitizer::{
     StreamingConfig,
 };
 pub use pipeline::{EvaluationPath, EvaluationStage};
+#[cfg(feature = "wasm-plugin-runtime")]
+pub use plugins::{
+    execute_wasm_guard_bytes, execute_wasm_guard_module, validate_wasm_guard_module,
+    WasmGuardExecution, WasmGuardInputEnvelope, WasmGuardRuntimeOptions, WasmRuntimeAuditRecord,
+};
 pub use plugins::{
     parse_plugin_manifest_toml, resolve_plugin_root, PluginExecutionMode, PluginInspectResult,
     PluginLoadPlan, PluginLoader, PluginLoaderOptions, PluginManifest,

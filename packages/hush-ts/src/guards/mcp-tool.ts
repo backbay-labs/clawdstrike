@@ -12,6 +12,8 @@ const DEFAULT_BLOCKED_TOOLS = [
 const DEFAULT_REQUIRE_CONFIRMATION = ["file_write", "file_delete", "git_push"];
 
 export interface McpToolConfig {
+  /** Enable/disable this guard */
+  enabled?: boolean;
   /** Allowed tool names (if non-empty, only these are allowed) */
   allow?: string[];
   /** Blocked tool names (takes precedence over allow) */
@@ -41,6 +43,7 @@ export enum ToolDecision {
  */
 export class McpToolGuard implements Guard {
   readonly name = "mcp_tool";
+  private enabled: boolean;
   private allowSet: Set<string>;
   private blockSet: Set<string>;
   private confirmSet: Set<string>;
@@ -48,6 +51,7 @@ export class McpToolGuard implements Guard {
   private maxArgsSize: number;
 
   constructor(config: McpToolConfig = {}) {
+    this.enabled = config.enabled ?? true;
     this.allowSet = new Set(config.allow ?? []);
     this.blockSet = new Set(config.block ?? DEFAULT_BLOCKED_TOOLS);
     this.confirmSet = new Set(config.requireConfirmation ?? DEFAULT_REQUIRE_CONFIRMATION);
@@ -56,10 +60,13 @@ export class McpToolGuard implements Guard {
   }
 
   handles(action: GuardAction): boolean {
-    return action.actionType === "mcp_tool";
+    return this.enabled && action.actionType === "mcp_tool";
   }
 
   check(action: GuardAction, _context: GuardContext): GuardResult {
+    if (!this.enabled) {
+      return GuardResult.allow(this.name);
+    }
     if (!this.handles(action)) {
       return GuardResult.allow(this.name);
     }

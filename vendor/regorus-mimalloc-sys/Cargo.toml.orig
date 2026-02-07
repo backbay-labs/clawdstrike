@@ -1,0 +1,14 @@
+[package]
+name = "regorus-mimalloc-sys"
+description = "Vendored mimalloc C allocator bindings for regorus"
+version = "2.2.6"
+build = "build.rs"
+links = "mimalloc"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/microsoft/regorus"
+
+[dependencies]
+
+[build-dependencies]
+cc = "1.0"

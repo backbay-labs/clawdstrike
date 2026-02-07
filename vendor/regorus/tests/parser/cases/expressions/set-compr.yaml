@@ -1,0 +1,283 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: case1-compr
+    rego: |
+      package test
+      x = {1}
+      y = {2}
+      z = { x | y } #, 5} # in {5}, 6}
+    num_expressions: 11
+    num_statements: 1
+    num_queries: 1
+    policy:
+      - --skip--
+      - --skip--
+      - spec:
+          head:
+            compr:
+              refr:
+                var: z
+                eidx: 7
+              assign:
+                op: =
+                value:
+                  setcompr:
+                    term:
+                      var: x
+                      eidx: 8
+                    query:
+                      qidx: 0
+                      stmts:
+                        - span: y
+                          sidx: 0
+                          literal:
+                            expr:
+                              var: y
+                              eidx: 9
+                  eidx: 10
+          bodies: []
+
+  - note: case2-set
+    rego: |
+      package test
+      x = {1}
+      y = {2}
+      z = { x | y, 5} # in {5}, 6}
+    num_expressions: 13
+    num_statements: 0
+    num_queries: 0
+    policy:
+      - --skip--
+      - --skip--
+      - spec:
+          head:
+            compr:
+              refr:
+                var: z
+                eidx: 7
+              assign:
+                op: =
+                value:
+                  set:
+                    - binexpr:
+                        op: "|"
+                        lhs:
+                          var: x
+                          eidx: 8
+                        rhs:
+                          var: y
+                          eidx: 9
+                      eidx: 10
+                    - number: 5
+                      eidx: 11
+                  eidx: 12
+          bodies: []
+
+  - note: case3-compr
+    rego: |
+      package test
+      import future.keywords.in
+      x = {1}
+      y = {2}
+      z = { x | y, 5 in {5}} #, 6}
+    num_expressions: 18
+    num_statements: 1
+    num_queries: 1
+    policy:
+      - --skip--
+      - --skip--
+      - spec:
+          head:
+            compr:
+              refr:
+                var: z
+                eidx: 10
+              assign:
+                op: =
+                value:
+                  setcompr:
+                    term:
+                      var: x
+                      eidx: 11
+                    query:
+                      qidx: 0
+                      stmts:
+                        - span: y, 5 in {5}
+                          sidx: 0
+                          literal:
+                            expr:
+                              inexpr:
+                                key:
+                                 var: y
+                                 eidx: 12
+                                value:
+                                  number: 5
+                                  eidx: 13
+                                collection:
+                                  set:
+                                    - number: 5
+                                      eidx: 14
+                                  eidx: 15
+                              eidx: 16
+                  eidx: 17
+          bodies: []
+
+  - note: case4-set
+    rego: |
+      package test
+      import future.keywords.in
+      x = {1}
+      y = {2}
+      z = { x | y, 5 in {5}, 6}
+    num_expressions: 20
+    num_statements: 0
+    num_queries: 0
+    policy:
+      - --skip--
+      - --skip--
+      - spec:
+          head:
+            compr:
+              refr:
+                var: z
+                eidx: 10
+              assign:
+                op: =
+                value:
+                  set:
+                    - binexpr:
+                        op: "|"
+                        lhs:
+                          var: x
+                          eidx: 11
+                        rhs:
+                          var: y
+                          eidx: 12
+                      eidx: 13
+                    - inexpr:
+                        value:
+                          number: 5
+                          eidx: 14
+                        collection:
+                          set:
+                            - number: 5
+                              eidx: 15
+                          eidx: 16
+                      eidx: 17
+                    - number: 6
+                      eidx: 18
+                  eidx: 19
+          bodies: []
+
+  - note: case5-set
+    rego: |
+      package test
+      import future.keywords.in
+      x = {1}
+      y = {2}
+      z = { x - {10} | y, 5 in {5}} #, 6}
+    num_expressions: 22
+    num_statements: 0
+    num_queries: 0
+    policy:
+      - --skip--
+      - --skip--
+      - spec:
+          head:
+            compr:
+              refr:
+                var: z
+                eidx: 10
+              assign:
+                op: =
+                value:
+                  set:
+                    - binexpr:
+                        op: "|"
+                        lhs:
+                          arithexpr:
+                            op: "-"
+                            lhs:
+                              var: x
+                              eidx: 11
+                            rhs:
+                              set:
+                                - number: 10
+                                  eidx: 12
+                              eidx: 13
+                          eidx: 14
+                        rhs:
+                          var: y
+                          eidx: 15
+                      eidx: 16
+                    - inexpr:
+                        value:
+                          number: 5
+                          eidx: 17
+                        collection:
+                          set:
+                            - number: 5
+                              eidx: 18
+                          eidx: 19
+                      eidx: 20
+                  eidx: 21
+          bodies: []
+
+  - note: case6-compr
+    rego: |
+      package test
+      import future.keywords.in
+      x = {1}
+      y = {2}
+      z = { (x - {10}) | y, 5 in {5}} #, 6}
+    num_expressions: 21
+    num_statements: 1
+    num_queries: 1
+    policy:
+      - --skip--
+      - --skip--
+      - spec:
+          head:
+            compr:
+              refr:
+                var: z
+                eidx: 10
+              assign:
+                op: =
+                value:
+                  setcompr:
+                    term:
+                      arithexpr:
+                        op: "-"
+                        lhs:
+                          var: x
+                          eidx: 11
+                        rhs:
+                          set:
+                            - number: 10
+                              eidx: 12
+                          eidx: 13
+                      eidx: 14
+                    query:
+                      qidx: 0
+                      stmts:
+                        - sidx: 0
+                          literal:
+                            expr:
+                              inexpr:
+                                key:
+                                  var: y
+                                  eidx: 15
+                                value:
+                                  number: 5
+                                  eidx: 16
+                                collection:
+                                  set:
+                                    - number: 5
+                                      eidx: 17
+                                  eidx: 18
+                              eidx: 19
+                  eidx: 20
+          bodies: []

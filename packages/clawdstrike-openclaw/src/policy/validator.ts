@@ -1,6 +1,8 @@
 import type { Policy, PolicyLintResult } from '../types.js';
+import { validatePolicy as validateCanonicalPolicy } from '@clawdstrike/policy';
 
 export const POLICY_SCHEMA_VERSION = 'clawdstrike-v1.0';
+const SUPPORTED_CANONICAL_VERSIONS = new Set(['1.1.0', '1.2.0']);
 
 const VALID_EGRESS_MODES = new Set(['allowlist', 'denylist', 'open', 'deny_all']);
 const VALID_VIOLATION_ACTIONS = new Set(['cancel', 'warn', 'isolate', 'escalate']);
@@ -119,8 +121,17 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
     errors.push(`version is required (expected: ${POLICY_SCHEMA_VERSION})`);
   } else if (typeof p.version !== 'string') {
     errors.push('version must be a string');
+  } else if (SUPPORTED_CANONICAL_VERSIONS.has(p.version)) {
+    const canonical = validateCanonicalPolicy(policy as any);
+    return {
+      valid: canonical.valid,
+      errors: canonical.errors,
+      warnings: canonical.warnings,
+    };
   } else if (p.version !== POLICY_SCHEMA_VERSION) {
-    errors.push(`unsupported policy version: ${p.version} (supported: ${POLICY_SCHEMA_VERSION})`);
+    errors.push(
+      `unsupported policy version: ${p.version} (supported: ${POLICY_SCHEMA_VERSION}, 1.1.0, 1.2.0)`,
+    );
   }
 
   if (p.extends !== undefined && typeof p.extends !== 'string') {

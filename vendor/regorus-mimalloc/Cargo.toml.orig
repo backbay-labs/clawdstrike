@@ -1,0 +1,16 @@
+[package]
+name = "regorus-mimalloc"
+description = "Vendored mimalloc allocator for regorus"
+edition = "2021"
+version = "2.2.6"
+license = "MIT"
+repository = "https://github.com/microsoft/regorus"
+
+[features]
+default = ["std"]
+std = []
+allocator-memory-limits = ["std"]
+
+[target.'cfg(not(any(target_family = "wasm")))'.dependencies]
+mimalloc-sys = { package = "regorus-mimalloc-sys", path = "./mimalloc-sys", version = "2.2.6" }
+

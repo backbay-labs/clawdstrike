@@ -1,12 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { describe, it, expect } from 'vitest';
 
 import type { PolicyEvent } from '@clawdstrike/adapter-core';
 import { createHushCliEngine } from './hush-cli-engine.js';
 
-const describeE2E = process.env.HUSH_E2E === '1' ? describe : describe.skip;
+const describeE2E = hasRunnableHush(process.env.HUSH_PATH ?? 'hush') ? describe : describe.skip;
 
 describeE2E('hush-cli-engine (e2e)', () => {
   it('evaluates via real hush binary', async () => {
@@ -102,4 +103,12 @@ function toStatus(value: any): 'allow' | 'warn' | 'deny' {
   }
 
   return 'allow';
+}
+
+function hasRunnableHush(hushPath: string): boolean {
+  const result = spawnSync(hushPath, ['--version'], {
+    stdio: 'ignore',
+    timeout: 5_000,
+  });
+  return result.status === 0;
 }

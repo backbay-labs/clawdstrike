@@ -36,15 +36,19 @@
 
 import { EgressAllowlistGuard } from './guards/egress-allowlist.js';
 import { ForbiddenPathGuard } from './guards/forbidden-path.js';
+import { JailbreakGuard } from './guards/jailbreak.js';
 import { McpToolGuard } from './guards/mcp-tool.js';
 import { PatchIntegrityGuard } from './guards/patch-integrity.js';
+import { PromptInjectionGuard } from './guards/prompt-injection.js';
 import { SecretLeakGuard } from './guards/secret-leak.js';
 import { GuardAction, GuardContext, Severity } from './guards/types.js';
 import type { Guard, GuardResult } from './guards/types.js';
 import type { EgressAllowlistConfig } from './guards/egress-allowlist.js';
 import type { ForbiddenPathConfig } from './guards/forbidden-path.js';
+import type { JailbreakGuardConfig } from './guards/jailbreak.js';
 import type { McpToolConfig } from './guards/mcp-tool.js';
 import type { PatchIntegrityConfig } from './guards/patch-integrity.js';
+import type { PromptInjectionConfig } from './guards/prompt-injection.js';
 import type { SecretLeakConfig } from './guards/secret-leak.js';
 
 // ============================================================
@@ -171,6 +175,41 @@ interface DaemonCheckResponse {
 
 type BuiltinPolicyId = 'default' | 'strict' | 'ai-agent' | 'cicd' | 'permissive';
 
+const DEFAULT_POLICY_SECRET_LEAK_PATTERNS: Array<{
+  name: string;
+  pattern: string;
+  severity: "info" | "warning" | "error" | "critical";
+}> = [
+  { name: "aws_access_key", pattern: "AKIA[0-9A-Z]{16}", severity: "critical" },
+  {
+    name: "aws_secret_key",
+    pattern:
+      "(?i)aws[_\\-]?secret[_\\-]?access[_\\-]?key['\"]?\\s*[:=]\\s*['\"]?[A-Za-z0-9/+=]{40}",
+    severity: "critical",
+  },
+  { name: "github_token", pattern: "gh[ps]_[A-Za-z0-9]{36}", severity: "critical" },
+  { name: "github_pat", pattern: "github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}", severity: "critical" },
+  { name: "openai_key", pattern: "sk-[A-Za-z0-9]{48}", severity: "critical" },
+  { name: "anthropic_key", pattern: "sk-ant-[A-Za-z0-9\\-]{95}", severity: "critical" },
+  { name: "private_key", pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----", severity: "critical" },
+  { name: "npm_token", pattern: "npm_[A-Za-z0-9]{36}", severity: "critical" },
+  {
+    name: "slack_token",
+    pattern: "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*",
+    severity: "critical",
+  },
+  {
+    name: "generic_api_key",
+    pattern: "(?i)(api[_\\-]?key|apikey)['\"]?\\s*[:=]\\s*['\"]?[A-Za-z0-9]{32,}",
+    severity: "warning",
+  },
+  {
+    name: "generic_secret",
+    pattern: "(?i)(secret|password|passwd|pwd)['\"]?\\s*[:=]\\s*['\"]?[A-Za-z0-9!@#$%^&*]{8,}",
+    severity: "warning",
+  },
+];
+
 /**
  * Generic tool set type for framework integration.
  */
@@ -226,7 +265,6 @@ function allowDecision(guard?: string): Decision {
   return {
     status: 'allow',
     guard,
-    severity: Severity.INFO,
     message: 'Allowed',
   };
 }
@@ -288,8 +326,8 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 10,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
-          '(?i)skip[_\\-]?(verify|validation|check)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[\\s_\\-]?(verify|validation|check)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
         ],
@@ -347,8 +385,8 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: true,
         max_imbalance_ratio: 5,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
-          '(?i)skip[_\\-]?(verify|validation|check)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[\\s_\\-]?(verify|validation|check)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
           '(?i)eval\\s*\\(',
@@ -411,7 +449,7 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 20,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
           '(?i)reverse[_\\-]?shell',
@@ -483,7 +521,7 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 50,
         forbidden_patterns: [
-          '(?i)disable[_\\-]?(security|auth|ssl|tls)',
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
           '(?i)rm\\s+-rf\\s+/',
           '(?i)chmod\\s+777',
         ],
@@ -575,6 +613,7 @@ function toForbiddenPathConfig(value: unknown): ForbiddenPathConfig | undefined 
     return undefined;
   }
   return {
+    enabled: toBoolean(value.enabled),
     patterns: toStringArray(value.patterns),
     exceptions: toStringArray(value.exceptions),
   };
@@ -586,6 +625,7 @@ function toEgressAllowlistConfig(value: unknown): EgressAllowlistConfig | undefi
   }
   const defaultAction = value.default_action === 'allow' ? 'allow' : value.default_action === 'block' ? 'block' : undefined;
   return {
+    enabled: toBoolean(value.enabled),
     allow: toStringArray(value.allow),
     block: toStringArray(value.block),
     defaultAction,
@@ -602,6 +642,7 @@ function toPatchIntegrityConfig(value: unknown): PatchIntegrityConfig | undefine
       .map((pattern) => compilePolicyRegex(pattern))
     : undefined;
   return {
+    enabled: toBoolean(value.enabled),
     maxAdditions: toNumber(value.max_additions),
     maxDeletions: toNumber(value.max_deletions),
     requireBalance: toBoolean(value.require_balance),
@@ -616,6 +657,7 @@ function toMcpToolConfig(value: unknown): McpToolConfig | undefined {
   }
   const defaultAction = value.default_action === 'allow' ? 'allow' : value.default_action === 'block' ? 'block' : undefined;
   return {
+    enabled: toBoolean(value.enabled),
     allow: toStringArray(value.allow),
     block: toStringArray(value.block),
     requireConfirmation: toStringArray(value.require_confirmation),
@@ -636,7 +678,7 @@ function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
     }
     return undefined;
   };
-  const patterns = Array.isArray(value.patterns)
+  let patterns = Array.isArray(value.patterns)
     ? value.patterns
       .filter((entry): entry is Record<string, unknown> => isPlainObject(entry) && typeof entry.pattern === 'string')
       .map((entry) => ({
@@ -646,61 +688,124 @@ function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
       }))
     : undefined;
 
+  const secrets = toStringArray(value.secrets);
+  if (!patterns && !secrets) {
+    patterns = DEFAULT_POLICY_SECRET_LEAK_PATTERNS.map((entry) => ({ ...entry }));
+  }
+
   return {
-    secrets: toStringArray(value.secrets),
+    secrets,
     patterns,
     enabled: toBoolean(value.enabled),
   };
 }
 
-function isGuardEnabled(value: unknown): boolean {
+function toPromptInjectionConfig(value: unknown): PromptInjectionConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const warnLevel = value.warn_at_or_above;
+  const blockLevel = value.block_at_or_above;
+  const toLevel = (raw: unknown): 'suspicious' | 'high' | 'critical' | undefined => {
+    if (raw === 'suspicious' || raw === 'high' || raw === 'critical') return raw;
+    return undefined;
+  };
+  return {
+    enabled: toBoolean(value.enabled),
+    warn_at_or_above: toLevel(warnLevel),
+    block_at_or_above: toLevel(blockLevel),
+    max_scan_bytes: toNumber(value.max_scan_bytes),
+  };
+}
+
+function toJailbreakConfig(value: unknown): JailbreakGuardConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  return {
+    enabled: toBoolean(value.enabled),
+    warn_threshold: toNumber(value.warn_threshold),
+    block_threshold: toNumber(value.block_threshold),
+    max_scan_bytes: toNumber(value.max_scan_bytes),
+  };
+}
+
+function isGuardDisabled(value: unknown): boolean {
+  if (value === false) {
+    return true;
+  }
   if (!isPlainObject(value)) {
     return false;
   }
-  return value.enabled !== false;
+  return value.enabled === false;
 }
 
 function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
   const guards: Guard[] = [];
-  const guardConfigs = policy.guards;
+  const guardConfigs = policy.guards ?? {};
 
-  if (!guardConfigs) {
-    return guards;
+  if (!isGuardDisabled(guardConfigs.forbidden_path)) {
+    guards.push(
+      new ForbiddenPathGuard(
+        toForbiddenPathConfig(
+          isPlainObject(guardConfigs.forbidden_path) ? guardConfigs.forbidden_path : {},
+        ) ?? {},
+      ),
+    );
   }
 
-  const forbiddenPathConfig = isGuardEnabled(guardConfigs.forbidden_path)
-    ? toForbiddenPathConfig(guardConfigs.forbidden_path)
-    : undefined;
-  if (forbiddenPathConfig) {
-    guards.push(new ForbiddenPathGuard(forbiddenPathConfig));
+  if (!isGuardDisabled(guardConfigs.egress_allowlist)) {
+    guards.push(
+      new EgressAllowlistGuard(
+        toEgressAllowlistConfig(
+          isPlainObject(guardConfigs.egress_allowlist) ? guardConfigs.egress_allowlist : {},
+        ) ?? {},
+      ),
+    );
   }
 
-  const egressAllowlistConfig = isGuardEnabled(guardConfigs.egress_allowlist)
-    ? toEgressAllowlistConfig(guardConfigs.egress_allowlist)
-    : undefined;
-  if (egressAllowlistConfig) {
-    guards.push(new EgressAllowlistGuard(egressAllowlistConfig));
+  if (!isGuardDisabled(guardConfigs.patch_integrity)) {
+    guards.push(
+      new PatchIntegrityGuard(
+        toPatchIntegrityConfig(
+          isPlainObject(guardConfigs.patch_integrity) ? guardConfigs.patch_integrity : {},
+        ) ?? {},
+      ),
+    );
   }
 
-  const patchIntegrityConfig = isGuardEnabled(guardConfigs.patch_integrity)
-    ? toPatchIntegrityConfig(guardConfigs.patch_integrity)
-    : undefined;
-  if (patchIntegrityConfig) {
-    guards.push(new PatchIntegrityGuard(patchIntegrityConfig));
+  if (!isGuardDisabled(guardConfigs.mcp_tool)) {
+    guards.push(
+      new McpToolGuard(
+        toMcpToolConfig(
+          isPlainObject(guardConfigs.mcp_tool) ? guardConfigs.mcp_tool : {},
+        ) ?? {},
+      ),
+    );
   }
 
-  const mcpToolConfig = isGuardEnabled(guardConfigs.mcp_tool)
-    ? toMcpToolConfig(guardConfigs.mcp_tool)
-    : undefined;
-  if (mcpToolConfig) {
-    guards.push(new McpToolGuard(mcpToolConfig));
+  if (!isGuardDisabled(guardConfigs.secret_leak)) {
+    guards.push(
+      new SecretLeakGuard(
+        toSecretLeakConfig(
+          isPlainObject(guardConfigs.secret_leak) ? guardConfigs.secret_leak : {},
+        ) ?? {},
+      ),
+    );
   }
 
-  const secretLeakConfig = isGuardEnabled(guardConfigs.secret_leak)
-    ? toSecretLeakConfig(guardConfigs.secret_leak)
-    : undefined;
-  if (secretLeakConfig) {
-    guards.push(new SecretLeakGuard(secretLeakConfig));
+  if (!isGuardDisabled(guardConfigs.prompt_injection)) {
+    const promptInjectionConfig = toPromptInjectionConfig(
+      isPlainObject(guardConfigs.prompt_injection) ? guardConfigs.prompt_injection : {},
+    );
+    guards.push(new PromptInjectionGuard(promptInjectionConfig ?? {}));
+  }
+
+  if (!isGuardDisabled(guardConfigs.jailbreak)) {
+    const jailbreakConfig = toJailbreakConfig(
+      isPlainObject(guardConfigs.jailbreak) ? guardConfigs.jailbreak : {},
+    );
+    guards.push(new JailbreakGuard(jailbreakConfig ?? {}));
   }
 
   return guards;

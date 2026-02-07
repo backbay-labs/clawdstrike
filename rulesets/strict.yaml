@@ -75,8 +75,8 @@ guards:
     require_balance: true
     max_imbalance_ratio: 5.0
     forbidden_patterns:
-      - "(?i)disable[_\\-]?(security|auth|ssl|tls)"
-      - "(?i)skip[_\\-]?(verify|validation|check)"
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)"
+      - "(?i)skip[\\s_\\-]?(verify|validation|check)"
       - "(?i)rm\\s+-rf\\s+/"
       - "(?i)chmod\\s+777"
       - "(?i)eval\\s*\\("

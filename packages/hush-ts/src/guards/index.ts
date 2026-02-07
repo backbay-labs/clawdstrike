@@ -22,3 +22,5 @@ export {
   type McpToolConfig,
   ToolDecision,
 } from "./mcp-tool";
+export { PromptInjectionGuard, type PromptInjectionConfig } from "./prompt-injection";
+export { JailbreakGuard, type JailbreakGuardConfig } from "./jailbreak";

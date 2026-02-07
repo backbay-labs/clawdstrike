@@ -63,6 +63,7 @@ globset.workspace = true
 roxmltree.workspace = true
 openssl.workspace = true
 rust-xmlsec.workspace = true
+resvg = { version = "0.45.1", default-features = true }
 
 # Database
 rusqlite.workspace = true

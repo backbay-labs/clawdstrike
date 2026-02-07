@@ -24,6 +24,7 @@ allow = [
     "CC0-1.0",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
+    "MIT-0",
 ]
 confidence-threshold = 0.8
 
@@ -40,6 +41,9 @@ ignore = [
     # `atty` is pulled in transitively via `rust-xmlsec` (used for SAML).
     # It's only used for terminal detection, and has no maintained upgrade path.
     "RUSTSEC-2024-0375",
+    # `regorus` currently depends on `bincode` 2.x, which is marked unmaintained.
+    # We feature-gate the Rego runtime and track this upstream for migration.
+    "RUSTSEC-2025-0141",
 ]
 
 [sources]

@@ -1,0 +1,172 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: single-char
+    rego: package a
+    num_expressions: 1
+    num_statements: 0
+    num_queries: 0
+    package:
+      span: package a
+      refr:
+        var: a
+        eidx: 0
+
+  - note: simple
+    rego: package test
+    num_expressions: 1
+    num_statements: 0
+    num_queries: 0
+    package:
+      span: package test
+      refr:
+        var: test
+        eidx: 0
+
+  - note: dot
+    rego: package a.b
+    num_expressions: 2
+    num_statements: 0
+    num_queries: 0
+    package:
+      span: package a.b
+      refr:
+        refdot:
+          span: a.b
+          refr:
+            var: a
+            eidx: 0
+          field: b
+        eidx: 1
+
+  - note: multi-dot
+    rego: package a.b.c
+    num_expressions: 3
+    num_statements: 0
+    num_queries: 0
+    package:
+      span: package a.b.c
+      refr:
+        refdot:
+          span: a.b.c
+          refr:
+            refdot:
+              span: a.b
+              refr:
+                var: a
+                eidx: 0
+              field: b
+            eidx: 1
+          field: c
+        eidx: 2
+
+  - note: bracket
+    rego: package a["b"]
+    num_expressions: 3
+    num_statements: 0
+    num_queries: 0
+    package:
+      span: package a["b"]
+      refr:
+        refbrack:
+          span: a["b"]
+          refr:
+            var: a
+            eidx: 0
+          index:
+            string: b
+            eidx: 1
+        eidx: 2
+
+  - note: multi-bracket
+    rego: package a["b"]["c.d"]
+    num_expressions: 5
+    num_statements: 0
+    num_queries: 0
+    package:
+      span: package a["b"]["c.d"]
+      refr:
+        refbrack:
+          span: a["b"]["c.d"]
+          refr:
+            refbrack:
+              span: a["b"]
+              refr:
+                var: a
+                eidx: 0
+              index:
+                string: b
+                eidx: 1
+            eidx: 2
+          index:
+            string: c.d
+            eidx: 3
+        eidx: 4
+
+  - note: complex
+    rego: package a["b.c"].d["e.f"].g
+    num_expressions: 7
+    num_statements: 0
+    num_queries: 0
+    package:
+      span: package a["b.c"].d["e.f"].g
+      refr:
+        refdot:
+          span: a["b.c"].d["e.f"].g
+          refr:
+            refbrack:
+              span: a["b.c"].d["e.f"]
+              refr:
+                refdot:
+                  span: a["b.c"].d
+                  refr:
+                    refbrack:
+                      span: a["b.c"]
+                      refr:
+                        var: a
+                        eidx: 0
+                      index:
+                        string: "b.c"
+                        eidx: 1
+                    eidx: 2
+                  field: d
+                eidx: 3
+              index:
+                string: e.f
+                eidx: 4
+            eidx: 5
+          field: g
+        eidx: 6
+
+  - note: missing-package-keyword
+    rego: packge a
+    error: expecting `package`
+
+  - note: missing-var
+    rego: package 5
+    error: expecting identifier
+
+  - note: missing-var-1
+    rego: package (
+    error: expecting identifier
+
+  - note: missing-field
+    rego: package a.b.
+    error: expecting identifier
+
+  - note: space-after-dot
+    rego: package a. b
+    error: invalid whitespace between . and identifier
+
+  - note: space-before-dot
+    rego: package a .b
+    error: invalid whitespace before .
+
+  - note: space-after-lbracket
+    rego: package a ["b"]
+    error: invalid whitespace before [
+
+  - note: non-string-index
+    rego: package a[1]
+    error: expected string

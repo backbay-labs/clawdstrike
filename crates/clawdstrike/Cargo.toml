@@ -32,6 +32,7 @@ unicode-normalization = "0.1"
 base64.workspace = true
 reqwest.workspace = true
 hex.workspace = true
+wasmtime = { version = "41.0.3", optional = true, default-features = false, features = ["runtime", "cranelift", "std"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
@@ -40,6 +41,7 @@ tokio-test = "0.4"
 tempfile = "3.24"
 axum.workspace = true
 criterion = { version = "0.5", features = ["html_reports"] }
+wat = "1.241.2"
 
 [[bench]]
 name = "engine"
@@ -48,6 +50,7 @@ harness = false
 [features]
 default = []
 llm-judge-openai = []
+wasm-plugin-runtime = ["dep:wasmtime"]
 
 [lints]
 workspace = true

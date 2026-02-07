@@ -1,0 +1,13 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: carriage-return/ok
+    rego: "\n\n\r\n\n\n		"
+    tokens: [""]
+
+  - note: carriage-return/ok
+    rego: "\r \n"
+    tokens: [""]
+    error: \r must be followed by \n
+    

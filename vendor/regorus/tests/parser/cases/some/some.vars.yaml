@@ -1,0 +1,98 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+cases:
+  - note: single-multi-vars
+    rego: |
+      package test
+      x = y {
+         # Single var
+         some a
+         # Multiple var. With and without spaces.
+         some
+         d,e,
+         f
+      }
+    num_expressions: 3
+    num_statements: 2
+    num_queries: 1
+    policy:
+      - spec:
+          head: --skip--
+          bodies:
+            - query:
+                qidx: 0
+                stmts:
+                  - span: some a
+                    literal:
+                      some-vars:
+                        span: some a
+                        vars:
+                          - a
+                    sidx: 0
+                  - span: "some\n   d,e,\n   f"
+                    literal:
+                      some-vars:
+                        span: "some\n   d,e,\n   f"
+                        vars: [d, e, f]
+                    sidx: 1
+
+  - note: same-line-error
+    rego: |
+      package test
+      x = y {
+          some a some b
+      }
+    error: expecting `}` while parsing query
+
+  - note: keyword
+    rego: |
+      package test
+      x = y {
+          some as
+      }
+    error: unexpected keyword `as`
+
+  - note: top-level
+    rego: |
+      package test
+      x = some y
+    error: unexpected keyword `some`
+
+  - note: top-level1
+    rego: |
+      package test
+      some y
+    error: unexpected keyword `some`
+
+  - note: some-in-set
+    rego: |
+      package test
+      x = { some y }
+    error: unexpected keyword `some`
+
+  - note: non-var
+    rego: |
+       package test
+       x = y {
+           some a, 5
+       }
+    error: encountered `5` while expecting identifier
+
+  - note: no-vars-before-in
+    rego: |
+      package test
+      import future.keywords.in
+      x = y {
+          some in xs
+      }
+    error: "unexpected keyword `in`"
+
+  - note: too-many-before-in
+    rego: |
+      package test
+      import future.keywords.in
+      x = y {
+          some a, b, c in xs
+      }
+    error: "encountered `c` while expecting `in`"

@@ -1,0 +1,202 @@
+[workspace]
+
+members = [
+    "tests/ensure_no_std",
+  "xtask",
+]
+
+[package]
+name = "regorus"
+description = "A fast, lightweight Rego (OPA policy language) interpreter"
+version = "0.9.0"
+edition = "2021"
+license = "MIT AND Apache-2.0 AND BSD-3-Clause"
+repository = "https://github.com/microsoft/regorus"
+keywords = ["interpreter", "no_std", "opa", "policy-as-code", "rego"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+doctest = false
+
+[features]
+default = ["full-opa", "arc", "rvm"]
+
+arc = []
+ast = []
+azure_policy = ["dep:jsonschema", "arc", "dashmap"]
+azure-rbac = []
+base64 = ["dep:data-encoding"]
+base64url = ["dep:data-encoding"]
+coverage = []
+hex = ["dep:data-encoding"]
+http = []
+glob = ["dep:globset"]
+graph = []
+jsonschema = ["dep:jsonschema"]
+mimalloc = ["dep:mimalloc"]
+net = ["dep:ipnet"]
+no_std = ["lazy_static/spin_no_std"]
+opa-runtime = []
+regex = ["dep:regex"]
+rvm = ["dep:bincode", "dep:indexmap"]
+semver = ["dep:semver"]
+allocator-memory-limits = ["std", "mimalloc", "mimalloc/allocator-memory-limits"]
+std = ["rand/std", "rand/std_rng", "serde_json/std", "msvc_spectre_libs" ]
+time = ["dep:chrono", "dep:chrono-tz"]
+uuid = ["dep:uuid"]
+urlquery = ["dep:url"]
+yaml = ["serde_yaml"]
+full-opa = [
+    "base64",
+    "base64url",
+    "coverage",
+    "glob",
+    "graph",
+    "hex",
+    "http",
+    "jsonschema",
+    "allocator-memory-limits",
+    "mimalloc",
+    "net",
+    "opa-runtime",
+    "regex",
+    "semver",
+    "std",
+    "time",
+    "uuid",
+    "urlquery",
+    "yaml",
+
+    #"rego-extensions"
+]
+
+# Features that can be used in no_std environments.
+# Note that: the spin_no_std feature in lazy_static must be specified.
+opa-no-std = [
+  "arc",
+  "base64",
+  "base64url",
+  "coverage",
+  "graph",
+  "hex",
+  "no_std",
+  "opa-runtime",
+  "regex",
+  "semver",
+  # Configure lazy_static to use spinlocks.
+  "lazy_static/spin_no_std"
+]
+
+# Rego language extensions
+rego-extensions = []
+
+# This feature enables some testing utils for OPA tests.
+opa-testutil = []
+rand = ["dep:rand"]
+
+[dependencies]
+anyhow = { version = "1.0.45", default-features = false }
+serde = {version = "1.0.150", default-features = false, features = ["derive", "rc", "alloc"] }
+serde_json = { version = "1.0.89", default-features = false, features = ["alloc"] }
+lazy_static =  { version = "1.4.0", default-features = false }
+thiserror = { version = "2.0", default-features = false }
+
+data-encoding = { version = "2.8.0", optional = true, default-features=false, features = ["alloc"] }
+num-bigint = { version = "0.4", default-features = false }
+num-traits = { version = "0.2", default-features = false }
+spin = { version = "0.9.8", default-features = false, features = ["mutex", "spin_mutex"] }
+
+globset = { version = "0.4.16", features = ["simd-accel"], default-features = false, optional = true }
+regex = {version = "1.11.1", optional = true, default-features = false }
+semver = {version = "1.0.25", optional = true, default-features = false }
+url = { version = "2.5.4", optional = true }
+uuid = { version = "1.15.1", default-features = false, features = ["v4", "fast-rng"], optional = true }
+jsonschema = { version = "0.30.0", default-features = false, optional = true }
+chrono = { version = "0.4.40", optional = true }
+chrono-tz = { version = "0.10.1", optional = true }
+ipnet = { version = "2.11.0", optional = true, default-features = false }
+
+serde_yaml = {version = "0.9.16", default-features = false, optional = true }
+# Specify thread_rng for in order to use random_range
+rand = { version = "0.9.0", default-features = false, features = ["thread_rng"], optional = true }
+
+# Causes the project to link with the Spectre-mitigated CRT and libs.
+msvc_spectre_libs = { version = "0.1", features = ["error"], optional = true }
+dashmap = { version = "6.1", default-features = false, optional = true }
+mimalloc = { package = "regorus-mimalloc", path = "mimalloc", version = "2.2.6", optional = true }
+
+# rvm related deps
+indexmap = { version = "2.12.1", default-features = false, features = ["serde"], optional = true }
+bincode = { version = "2.0.1", default-features = false, features = ["alloc", "serde"], optional = true }
+
+[dev-dependencies]
+anyhow = "1.0.45"
+cfg-if = "1.0.0"
+clap = { version = "4.5.53", features = ["derive"] }
+prettydiff = { version = "0.9.0", default-features = false }
+serde_yaml = "0.9.16"
+test-generator = "0.3.1"
+walkdir = "2.3.2"
+criterion = { version = "0.8" }
+
+num_cpus = "1.16"
+
+[build-dependencies]
+anyhow = "1.0"
+
+[profile.release]
+debug = true
+lto = true
+codegen-units = 1
+
+[[test]]
+name="opa"
+harness=false
+test=false
+required-features = ["full-opa"]
+
+[[test]]
+name="aci"
+harness=false
+test=false
+
+[[test]]
+name="kata"
+harness=false
+test=false
+
+[[bench]]
+name = "regorus_benchmark"
+harness = false
+
+[[bench]]
+name = "schema_validation_benchmark"
+harness = false
+required-features = ["azure_policy"]
+
+[[bench]]
+name = "engine_evaluation_benchmark"
+path = "benches/evaluation/engine_evaluation_benchmark.rs"
+harness = false
+
+[[bench]]
+name = "compiled_policy_evaluation_benchmark"
+path = "benches/evaluation/compiled_policy_evaluation_benchmark.rs"
+harness = false
+
+[[bench]]
+name = "aci_benchmark"
+harness = false
+
+[[example]]
+name="regorus"
+harness=false
+test=false
+doctest=false
+
+[package.metadata.docs.rs]
+# To build locally:
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --no-deps
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

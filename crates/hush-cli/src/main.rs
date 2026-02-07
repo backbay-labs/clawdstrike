@@ -16,6 +16,7 @@
 //! - `hush policy simulate <policyRef> <eventsJsonlPath|->` - Evaluate a JSONL stream of PolicyEvents
 //! - `hush policy lint <policyRef>` - Lint a policy (warnings)
 //! - `hush policy test <testYaml>` - Run policy tests from YAML
+//! - `hush policy test generate <policyRef>` - Generate a baseline policy test suite
 //! - `hush policy impact <old> <new> <eventsJsonlPath|->` - Compare decisions across policies
 //! - `hush policy observe [--out <events.jsonl>] -- <cmd ...>` - Run a command and record PolicyEvent JSONL
 //! - `hush policy synth <events.jsonl> [--out <candidate.yaml>]` - Synthesize a least-privilege policy candidate
@@ -24,7 +25,7 @@
 //! - `hush run --policy <ref|file> -- <cmd> <args…>` - Best-effort process wrapper (proxy + audit log + receipt)
 //! - `hush daemon start|stop|status|reload` - Daemon management
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::generate;
 use rand::Rng;
 use std::io::{self, Read, Write};
@@ -36,6 +37,7 @@ use clawdstrike::{GuardContext, GuardResult, HushEngine, Policy, RuleSet, Severi
 use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, SignedReceipt};
 
 mod canonical_commandline;
+mod guard_cli;
 mod guard_report_json;
 mod hush_run;
 mod policy_bundle;
@@ -226,6 +228,12 @@ enum Commands {
         command: PolicyCommands,
     },
 
+    /// Guard plugin tooling
+    Guard {
+        #[command(subcommand)]
+        command: GuardCommands,
+    },
+
     /// Daemon management commands
     Daemon {
         #[command(subcommand)]
@@ -375,17 +383,41 @@ enum PolicyCommands {
 
     /// Run a policy test suite (YAML)
     Test {
+        /// Optional test subcommands (`generate`, etc.)
+        #[command(subcommand)]
+        command: Option<PolicyTestCommands>,
         /// Path to a policy test YAML file
-        test_file: String,
+        test_file: Option<String>,
         /// Resolve extends in the referenced policy
         #[arg(long)]
         resolve: bool,
         /// Emit machine-readable JSON.
         #[arg(long)]
         json: bool,
-        /// Emit guard coverage counts
+        /// Emit guard coverage counts (by guard)
         #[arg(long)]
         coverage: bool,
+        /// Alias for --coverage
+        #[arg(long)]
+        by_guard: bool,
+        /// Minimum required guard coverage percentage (0-100).
+        #[arg(long)]
+        min_coverage: Option<f64>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = PolicyTestOutputFormat::Text)]
+        format: PolicyTestOutputFormat,
+        /// Optional output file path. Writes report instead of stdout.
+        #[arg(long)]
+        output: Option<String>,
+        /// Enable snapshot assertions for deterministic outputs.
+        #[arg(long)]
+        snapshots: bool,
+        /// Update snapshots in-place when assertions differ.
+        #[arg(long)]
+        update_snapshots: bool,
+        /// Enable mutation run mode (baseline: flips decision expectations).
+        #[arg(long)]
+        mutation: bool,
     },
 
     /// Impact analysis: compare two policies over a stream of PolicyEvents
@@ -560,18 +592,130 @@ enum PolicyCommands {
 }
 
 #[derive(Subcommand, Debug)]
+enum PolicyTestCommands {
+    /// Generate a baseline policy test suite from a policy (and optional observed events JSONL)
+    Generate {
+        /// Policy reference (ruleset id or policy file path)
+        policy_ref: String,
+        /// Optional observed PolicyEvent JSONL stream to synthesize expectation cases
+        #[arg(long)]
+        events: Option<String>,
+        /// Optional output path for generated YAML.
+        #[arg(long)]
+        output: Option<String>,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 enum RegoCommands {
-    /// Compile a .rego policy into a bundle (stub)
+    /// Compile a .rego policy module
     Compile {
         /// Path to .rego file
         file: String,
+        /// Optional rule/query entrypoint (e.g. data.example.allow)
+        #[arg(long)]
+        entrypoint: Option<String>,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
     },
-    /// Evaluate a .rego policy against an input JSON (stub)
+    /// Evaluate a .rego policy against an input JSON
     Eval {
         /// Path to .rego file
         file: String,
         /// Input JSON path (use - for stdin)
         input: String,
+        /// Optional rule/query entrypoint (e.g. data.example.allow). Defaults to `data`.
+        #[arg(long)]
+        entrypoint: Option<String>,
+        /// Emit trace details for query evaluation.
+        #[arg(long)]
+        trace: bool,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+enum PolicyTestOutputFormat {
+    Text,
+    Json,
+    Html,
+    Junit,
+}
+
+#[derive(Subcommand, Debug)]
+enum GuardCommands {
+    /// Inspect plugin metadata and compatibility
+    Inspect {
+        /// Plugin reference (local path)
+        plugin_ref: String,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Validate plugin manifest and load plan
+    Validate {
+        /// Plugin reference (local path)
+        plugin_ref: String,
+        /// Perform strict wasm ABI validation.
+        #[arg(long)]
+        strict: bool,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Internal wasm guard execution bridge used by TS adapters.
+    #[command(hide = true)]
+    WasmCheck {
+        /// Absolute or relative path to wasm module.
+        #[arg(long)]
+        entrypoint: String,
+        /// Guard id expected in output.
+        #[arg(long)]
+        guard: String,
+        /// Input JSON payload (`-` reads stdin).
+        #[arg(long)]
+        input_json: String,
+        /// Optional action type hint.
+        #[arg(long)]
+        action_type: Option<String>,
+        /// Guard config JSON (`{}` by default).
+        #[arg(long, default_value = "{}")]
+        config_json: String,
+        /// Allow network hostcalls.
+        #[arg(long)]
+        allow_network: bool,
+        /// Allow subprocess hostcalls.
+        #[arg(long)]
+        allow_subprocess: bool,
+        /// Allow filesystem read hostcalls.
+        #[arg(long)]
+        allow_fs_read: bool,
+        /// Allow filesystem write hostcalls.
+        #[arg(long)]
+        allow_fs_write: bool,
+        /// Allow secret-access hostcalls.
+        #[arg(long)]
+        allow_secrets: bool,
+        /// Max memory budget in MB.
+        #[arg(long, default_value_t = 64)]
+        max_memory_mb: u32,
+        /// Max CPU budget in milliseconds.
+        #[arg(long, default_value_t = 100)]
+        max_cpu_ms: u32,
+        /// Max wall timeout in milliseconds.
+        #[arg(long, default_value_t = 5000)]
+        max_timeout_ms: u32,
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -871,6 +1015,8 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
                 }
             }
         }
+
+        Commands::Guard { command } => guard_cli::cmd_guard(command, stdout, stderr).as_i32(),
 
         Commands::Daemon { command } => cmd_daemon(command, stdout, stderr).as_i32(),
 
@@ -1756,20 +1902,69 @@ async fn cmd_policy(
         )),
 
         PolicyCommands::Test {
+            command,
             test_file,
             resolve,
             json,
             coverage,
-        } => Ok(policy_test::cmd_policy_test(
-            test_file,
-            resolve,
-            remote_extends,
-            json,
-            coverage,
-            stdout,
-            stderr,
-        )
-        .await),
+            by_guard,
+            min_coverage,
+            format,
+            output,
+            snapshots,
+            update_snapshots,
+            mutation,
+        } => {
+            if let Some(subcommand) = command {
+                match subcommand {
+                    PolicyTestCommands::Generate {
+                        policy_ref,
+                        events,
+                        output,
+                        json,
+                    } => Ok(policy_test::cmd_policy_test_generate(
+                        policy_ref,
+                        resolve,
+                        remote_extends,
+                        policy_test::PolicyTestGenerateOptions {
+                            events,
+                            output,
+                            json,
+                        },
+                        stdout,
+                        stderr,
+                    )
+                    .await),
+                }
+            } else {
+                let Some(test_file) = test_file else {
+                    let _ = writeln!(
+                        stderr,
+                        "Error: missing test file. Use `hush policy test <test.yaml>` or `hush policy test generate <policy-ref>`."
+                    );
+                    return Ok(ExitCode::InvalidArgs);
+                };
+
+                Ok(policy_test::cmd_policy_test(
+                    test_file,
+                    resolve,
+                    remote_extends,
+                    policy_test::PolicyTestRunOptions {
+                        json: json || format == PolicyTestOutputFormat::Json,
+                        coverage: coverage || by_guard,
+                        min_coverage,
+                        format,
+                        output,
+                        snapshots,
+                        update_snapshots,
+                        mutation,
+                    },
+                    stdout,
+                    stderr,
+                )
+                .await)
+            }
+        }
 
         PolicyCommands::Impact {
             old_policy,

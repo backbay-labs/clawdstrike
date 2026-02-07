@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
 
 import type { CustomGuardFactory } from '../custom-registry.js';
 import { CustomGuardRegistry } from '../custom-registry.js';
@@ -32,6 +33,12 @@ export interface PluginLoaderOptions extends PluginResolveOptions {
   allowWasmSandbox?: boolean;
   currentClawdstrikeVersion?: string;
   maxResources?: Partial<PluginResourceLimits>;
+  wasmBridge?: WasmExecutionBridgeOptions;
+}
+
+export interface WasmExecutionBridgeOptions {
+  command?: string[];
+  timeoutMs?: number;
 }
 
 export interface PluginInspectResult {
@@ -46,6 +53,7 @@ export class PluginLoader {
   > & {
     fromDir: string;
     maxResources: Partial<PluginResourceLimits>;
+    wasmBridge: Required<WasmExecutionBridgeOptions>;
   };
   private readonly inspected = new Map<string, PluginInspectResult>();
 
@@ -56,6 +64,13 @@ export class PluginLoader {
       allowWasmSandbox: options.allowWasmSandbox ?? false,
       currentClawdstrikeVersion: options.currentClawdstrikeVersion ?? DEFAULT_CURRENT_VERSION,
       maxResources: options.maxResources ?? {},
+      wasmBridge: {
+        command:
+          options.wasmBridge?.command && options.wasmBridge.command.length > 0
+            ? [...options.wasmBridge.command]
+            : [process.env.HUSH_PATH ?? 'hush'],
+        timeoutMs: options.wasmBridge?.timeoutMs ?? 15_000,
+      },
     };
   }
 
@@ -94,11 +109,14 @@ export class PluginLoader {
   ): Promise<PluginLoadResult> {
     const inspected = await this.inspect(pluginRef);
 
-    // WASM path is intentionally scaffolded and guarded until sandbox runtime lands.
     if (inspected.executionMode === 'wasm') {
-      throw new Error(
-        `WASM plugin loading scaffold is present but runtime is not implemented yet: ${inspected.manifest.name}`,
-      );
+      const registered = this.loadWasmIntoRegistry(inspected, registry);
+      return {
+        root: inspected.root,
+        manifest: inspected.manifest,
+        registered,
+        executionMode: inspected.executionMode,
+      };
     }
 
     const registered: string[] = [];
@@ -200,6 +218,54 @@ export class PluginLoader {
       );
     }
   }
+
+  private loadWasmIntoRegistry(
+    inspected: PluginInspectResult,
+    registry: CustomGuardRegistry,
+  ): string[] {
+    const registered: string[] = [];
+
+    for (const g of inspected.manifest.guards) {
+      const wasmPath = path.resolve(inspected.root, g.entrypoint);
+      if (!fs.existsSync(wasmPath)) {
+        throw new Error(`missing wasm guard entrypoint for ${g.name}: ${wasmPath}`);
+      }
+
+      const handles = new Set<string>(Array.isArray(g.handles) ? g.handles : []);
+      const pluginCapabilities = inspected.manifest.capabilities;
+      const pluginResources = inspected.manifest.resources;
+
+      registry.register({
+        id: g.name,
+        build: (config) => ({
+          name: g.name,
+          handles: (event) => {
+            if (handles.size === 0) return true;
+            const action = mapPolicyEventToGuardHandle(event?.eventType);
+            return handles.has(action);
+          },
+          check: async (event) => {
+            const bridge = await invokeWasmBridge({
+              command: this.options.wasmBridge.command,
+              timeoutMs: this.options.wasmBridge.timeoutMs,
+              entrypoint: wasmPath,
+              guard: g.name,
+              payload: event,
+              actionType: mapPolicyEventToGuardHandle(event?.eventType),
+              config,
+              capabilities: pluginCapabilities,
+              resources: pluginResources,
+            });
+            return bridge;
+          },
+        }),
+      });
+
+      registered.push(g.name);
+    }
+
+    return registered;
+  }
 }
 
 export async function loadTrustedPluginIntoRegistry(
@@ -207,7 +273,7 @@ export async function loadTrustedPluginIntoRegistry(
   registry: CustomGuardRegistry,
   options: PluginLoaderOptions = {},
 ): Promise<PluginLoadResult> {
-  const loader = new PluginLoader({ ...options, trustedOnly: true, allowWasmSandbox: false });
+  const loader = new PluginLoader({ ...options, trustedOnly: true });
   return loader.loadIntoRegistry(pluginRef, registry);
 }
 
@@ -241,6 +307,208 @@ function extractFactory(mod: any): CustomGuardFactory {
 
 function isFactory(value: any): value is CustomGuardFactory {
   return Boolean(value) && typeof value === 'object' && typeof value.id === 'string' && typeof value.build === 'function';
+}
+
+type BridgeInvocation = {
+  command: string[];
+  timeoutMs: number;
+  entrypoint: string;
+  guard: string;
+  payload: unknown;
+  actionType?: string;
+  config: Record<string, unknown>;
+  capabilities: PluginCapabilities;
+  resources: PluginResourceLimits;
+};
+
+async function invokeWasmBridge(args: BridgeInvocation): Promise<{
+  allowed: boolean;
+  guard: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  message: string;
+  details?: Record<string, unknown>;
+}> {
+  const [bin, ...prefix] = args.command;
+  if (!bin) {
+    throw new Error('invalid wasm bridge command: missing executable');
+  }
+
+  const procArgs: string[] = [
+    ...prefix,
+    'guard',
+    'wasm-check',
+    '--entrypoint',
+    args.entrypoint,
+    '--guard',
+    args.guard,
+    '--input-json',
+    '-',
+    '--config-json',
+    JSON.stringify(args.config ?? {}),
+    '--max-memory-mb',
+    String(args.resources.maxMemoryMb),
+    '--max-cpu-ms',
+    String(args.resources.maxCpuMs),
+    '--max-timeout-ms',
+    String(args.resources.maxTimeoutMs),
+    '--json',
+  ];
+
+  if (args.actionType) {
+    procArgs.push('--action-type', args.actionType);
+  }
+  if (args.capabilities.network) {
+    procArgs.push('--allow-network');
+  }
+  if (args.capabilities.subprocess) {
+    procArgs.push('--allow-subprocess');
+  }
+  if (Array.isArray(args.capabilities.filesystem?.read) && args.capabilities.filesystem.read.length > 0) {
+    procArgs.push('--allow-fs-read');
+  }
+  if (args.capabilities.filesystem?.write) {
+    procArgs.push('--allow-fs-write');
+  }
+  if (args.capabilities.secrets?.access) {
+    procArgs.push('--allow-secrets');
+  }
+
+  const payloadText = JSON.stringify(args.payload ?? {});
+  const output = await runChildJson(bin, procArgs, payloadText, args.timeoutMs);
+  const result = normalizeBridgeResult(output, args.guard);
+  return result;
+}
+
+async function runChildJson(
+  command: string,
+  args: string[],
+  stdinPayload: string,
+  timeoutMs: number,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: process.env,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      reject(new Error(`wasm bridge timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (signal) {
+        reject(new Error(`wasm bridge terminated with signal ${signal}: ${stderr || stdout}`));
+        return;
+      }
+      if (code === null || code > 2) {
+        reject(new Error(`wasm bridge failed with exit code ${String(code)}: ${stderr || stdout}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (error) {
+        reject(new Error(`wasm bridge returned non-JSON output: ${stdout || stderr || String(error)}`));
+      }
+    });
+
+    child.stdin.write(stdinPayload);
+    child.stdin.end();
+  });
+}
+
+function normalizeBridgeResult(
+  output: unknown,
+  guardFallback: string,
+): {
+  allowed: boolean;
+  guard: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  message: string;
+  details?: Record<string, unknown>;
+} {
+  if (!isPlainObject(output)) {
+    throw new Error('wasm bridge returned invalid payload');
+  }
+  if (isPlainObject(output.error)) {
+    const message = typeof output.error.message === 'string'
+      ? output.error.message
+      : 'wasm bridge error';
+    throw new Error(message);
+  }
+  if (!isPlainObject(output.result)) {
+    throw new Error('wasm bridge returned payload without result');
+  }
+
+  const r = output.result as Record<string, unknown>;
+  const allowed = typeof r.allowed === 'boolean' ? r.allowed : false;
+  const guard = typeof r.guard === 'string' && r.guard.length > 0 ? r.guard : guardFallback;
+  const message = typeof r.message === 'string' && r.message.length > 0
+    ? r.message
+    : allowed ? 'Allowed' : 'Denied';
+  const severity = toCanonicalSeverity(r.severity, allowed);
+  const details = isPlainObject(r.details) ? (r.details as Record<string, unknown>) : undefined;
+
+  return { allowed, guard, severity, message, details };
+}
+
+function toCanonicalSeverity(
+  value: unknown,
+  allowed: boolean,
+): 'low' | 'medium' | 'high' | 'critical' {
+  const raw = typeof value === 'string' ? value.toLowerCase() : '';
+  if (raw === 'critical') return 'critical';
+  if (raw === 'high' || raw === 'error') return 'high';
+  if (raw === 'medium' || raw === 'warning' || raw === 'warn') return 'medium';
+  if (raw === 'low' || raw === 'info') return 'low';
+  return allowed ? 'low' : 'high';
+}
+
+function mapPolicyEventToGuardHandle(eventType: unknown): string {
+  switch (String(eventType ?? '')) {
+    case 'file_read':
+      return 'file_read';
+    case 'file_write':
+      return 'file_write';
+    case 'command_exec':
+      return 'command_exec';
+    case 'network_egress':
+      return 'network_egress';
+    case 'tool_call':
+      return 'tool_call';
+    case 'patch_apply':
+      return 'patch_apply';
+    case 'secret_access':
+      return 'secret_access';
+    default:
+      return 'custom';
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 type Semver = [number, number, number];

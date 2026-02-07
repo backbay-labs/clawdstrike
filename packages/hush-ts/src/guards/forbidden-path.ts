@@ -34,6 +34,7 @@ const DEFAULT_FORBIDDEN_PATTERNS = [
 ];
 
 export interface ForbiddenPathConfig {
+  enabled?: boolean;
   patterns?: string[];
   exceptions?: string[];
 }
@@ -43,19 +44,24 @@ export interface ForbiddenPathConfig {
  */
 export class ForbiddenPathGuard implements Guard {
   readonly name = "forbidden_path";
+  private enabled: boolean;
   private patterns: string[];
   private exceptions: string[];
 
   constructor(config: ForbiddenPathConfig = {}) {
+    this.enabled = config.enabled ?? true;
     this.patterns = config.patterns ?? DEFAULT_FORBIDDEN_PATTERNS;
     this.exceptions = config.exceptions ?? [];
   }
 
   handles(action: GuardAction): boolean {
-    return ["file_access", "file_write", "patch"].includes(action.actionType);
+    return this.enabled && ["file_access", "file_write", "patch"].includes(action.actionType);
   }
 
   check(action: GuardAction, _context: GuardContext): GuardResult {
+    if (!this.enabled) {
+      return GuardResult.allow(this.name);
+    }
     if (!this.handles(action)) {
       return GuardResult.allow(this.name);
     }
