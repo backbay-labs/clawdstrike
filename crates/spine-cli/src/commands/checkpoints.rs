@@ -106,9 +106,9 @@ pub async fn verify(nats_url: &str, hash: &str, is_json: bool) -> Result<()> {
     let js = spine::nats_transport::jetstream(client);
 
     let kv = js
-        .get_key_value("CLAWDSTRIKE_CHECKPOINTS_KV")
+        .get_key_value("CLAWDSTRIKE_CHECKPOINTS")
         .await
-        .context("failed to get CLAWDSTRIKE_CHECKPOINTS_KV bucket")?;
+        .context("failed to get CLAWDSTRIKE_CHECKPOINTS bucket")?;
 
     let entry = kv
         .get(&normalized)
