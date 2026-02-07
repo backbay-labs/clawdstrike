@@ -67,6 +67,31 @@ describe("Clawdstrike", () => {
     await expect(Clawdstrike.fromPolicy("this-is-not-a-policy")).rejects.toThrow("expected an object");
   });
 
+  it("fromPolicy honors enabled:false and skips disabled guards", async () => {
+    const policy = `
+version: "1.2.0"
+name: "enabled flag regression"
+guards:
+  forbidden_path:
+    enabled: false
+  egress_allowlist:
+    enabled: true
+    allow:
+      - "api.example.com"
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+
+    // forbidden_path is disabled, so a path that strict rulesets usually deny should pass.
+    const fileDecision = await cs.check("file_access", { path: "/etc/passwd" });
+    expect(fileDecision.status).toBe("allow");
+
+    // enabled egress_allowlist still enforces.
+    const egressDecision = await cs.check("network_egress", { host: "bad.example.com", port: 443 });
+    expect(egressDecision.status).toBe("deny");
+    expect(egressDecision.guard).toBe("egress_allowlist");
+  });
+
   it("fromDaemon evaluates remotely and fails closed on transport errors", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {

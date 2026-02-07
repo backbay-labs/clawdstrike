@@ -622,6 +622,13 @@ function toMcpToolConfig(value: unknown): McpToolConfig | undefined {
   };
 }
 
+function isGuardEnabled(value: unknown): boolean {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return value.enabled !== false;
+}
+
 function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
   const guards: Guard[] = [];
   const guardConfigs = policy.guards;
@@ -630,22 +637,30 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
     return guards;
   }
 
-  const forbiddenPathConfig = toForbiddenPathConfig(guardConfigs.forbidden_path);
+  const forbiddenPathConfig = isGuardEnabled(guardConfigs.forbidden_path)
+    ? toForbiddenPathConfig(guardConfigs.forbidden_path)
+    : undefined;
   if (forbiddenPathConfig) {
     guards.push(new ForbiddenPathGuard(forbiddenPathConfig));
   }
 
-  const egressAllowlistConfig = toEgressAllowlistConfig(guardConfigs.egress_allowlist);
+  const egressAllowlistConfig = isGuardEnabled(guardConfigs.egress_allowlist)
+    ? toEgressAllowlistConfig(guardConfigs.egress_allowlist)
+    : undefined;
   if (egressAllowlistConfig) {
     guards.push(new EgressAllowlistGuard(egressAllowlistConfig));
   }
 
-  const patchIntegrityConfig = toPatchIntegrityConfig(guardConfigs.patch_integrity);
+  const patchIntegrityConfig = isGuardEnabled(guardConfigs.patch_integrity)
+    ? toPatchIntegrityConfig(guardConfigs.patch_integrity)
+    : undefined;
   if (patchIntegrityConfig) {
     guards.push(new PatchIntegrityGuard(patchIntegrityConfig));
   }
 
-  const mcpToolConfig = toMcpToolConfig(guardConfigs.mcp_tool);
+  const mcpToolConfig = isGuardEnabled(guardConfigs.mcp_tool)
+    ? toMcpToolConfig(guardConfigs.mcp_tool)
+    : undefined;
   if (mcpToolConfig) {
     guards.push(new McpToolGuard(mcpToolConfig));
   }
