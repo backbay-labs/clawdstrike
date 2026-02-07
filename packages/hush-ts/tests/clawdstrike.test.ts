@@ -136,6 +136,30 @@ guards:
     expect(decision.guard).toBe("secret_leak");
   });
 
+  it("fromPolicy supports non-blocking secret_leak info patterns", async () => {
+    const policy = `
+version: "1.2.0"
+name: "secret leak info severity"
+guards:
+  secret_leak:
+    enabled: true
+    patterns:
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{10}"
+        severity: info
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const decision = await cs.check("custom", {
+      customType: "output",
+      customData: { content: "token sk-ABC123DEF4 exposed" },
+    });
+
+    expect(decision.status).toBe("allow");
+    expect(decision.guard).toBeUndefined();
+    expect(decision.severity).toBe(Severity.INFO);
+  });
+
   it("fromDaemon evaluates remotely and fails closed on transport errors", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {

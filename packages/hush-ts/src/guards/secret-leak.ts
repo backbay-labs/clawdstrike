@@ -77,11 +77,8 @@ export class SecretLeakGuard implements Guard {
     for (const entry of this.patterns) {
       if (entry.regex.test(text)) {
         const hint = entry.name ?? entry.regex.source.slice(0, 24);
-        return GuardResult.block(
-          this.name,
-          entry.severity,
-          "Secret pattern matched in output"
-        ).withDetails({
+        const baseResult = this.patternResult(entry.severity, "Secret pattern matched in output");
+        return baseResult.withDetails({
           secret_hint: hint,
           action_type: action.customType,
         });
@@ -93,6 +90,8 @@ export class SecretLeakGuard implements Guard {
 
   private parseSeverity(value?: string): Severity {
     switch (value) {
+      case "info":
+        return Severity.INFO;
       case "warning":
         return Severity.WARNING;
       case "error":
@@ -102,6 +101,15 @@ export class SecretLeakGuard implements Guard {
       default:
         return Severity.CRITICAL;
     }
+  }
+
+  private patternResult(severity: Severity, message: string): GuardResult {
+    if (severity === Severity.ERROR || severity === Severity.CRITICAL) {
+      return GuardResult.block(this.name, severity, message);
+    }
+
+    // Info/warning patterns are non-blocking findings.
+    return new GuardResult(true, this.name, severity, message);
   }
 
   private extractText(data?: Record<string, unknown>): string {
