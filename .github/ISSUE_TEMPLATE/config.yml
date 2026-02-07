@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/backbay-labs/clawdstrike/security/advisories/new
+    about: Report security vulnerabilities via private disclosure
+  - name: Question / Discussion
+    url: https://github.com/backbay-labs/clawdstrike/discussions/new
+    about: Ask questions or start a discussion
