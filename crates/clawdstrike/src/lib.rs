@@ -64,7 +64,10 @@ pub mod posture;
 pub mod spine_bridge;
 pub mod watermarking;
 
-pub use curator_config::{CuratorConfigFile, CuratorTrustSet};
+pub use curator_config::{
+    default_config_path, CuratorConfig, CuratorConfigFile, CuratorEntry, CuratorTrustSet,
+    RichCuratorConfigFile, TrustLevel, ValidatedCurator,
+};
 pub use engine::{GuardReport, HushEngine, PostureAwareReport};
 pub use error::{Error, Result};
 pub use guards::{

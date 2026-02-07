@@ -601,6 +601,7 @@ dependencies = [
  "chrono",
  "criterion",
  "dashmap",
+ "dirs",
  "futures",
  "glob",
  "globset",

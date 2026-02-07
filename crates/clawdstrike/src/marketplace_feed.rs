@@ -4,6 +4,7 @@ use hush_core::canonical::canonicalize;
 use hush_core::{Keypair, PublicKey, Signature};
 use serde::{Deserialize, Serialize};
 
+use crate::curator_config::{CuratorConfig, ValidatedCurator};
 use crate::error::{Error, Result};
 
 pub const MARKETPLACE_FEED_SCHEMA_VERSION: &str = "clawdstrike-marketplace-feed-v1";
@@ -72,6 +73,9 @@ pub struct MarketplaceEntry {
     /// Optional provenance info (e.g., Notary/EAS attestation pointers).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<MarketplaceProvenance>,
+    /// Optional curator public key that added this entry (hex-encoded).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub curator_public_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -165,6 +169,21 @@ impl SignedMarketplaceFeed {
             "Marketplace feed signature verification failed (no trusted key matched)".to_string(),
         ))
     }
+
+    /// Verify against a curator config, returning the matching curator entry.
+    ///
+    /// This combines feed-scoped key filtering with signature verification and
+    /// returns the full [`ValidatedCurator`] so the caller knows the trust level.
+    pub fn verify_with_config<'a>(
+        &self,
+        config: &'a CuratorConfig,
+    ) -> Result<&'a ValidatedCurator> {
+        let feed_keys = config.public_keys_for_feed(&self.feed.feed_id);
+        let matching_key = self.verify_trusted(&feed_keys)?;
+        config.find_curator(&matching_key).ok_or_else(|| {
+            Error::ConfigError("Verified key not found in curator config".to_string())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -192,6 +211,7 @@ mod tests {
                 created_at: None,
                 updated_at: None,
                 provenance: None,
+                curator_public_key: None,
             }],
             metadata: None,
         };
@@ -276,6 +296,7 @@ mod tests {
                 created_at: None,
                 updated_at: None,
                 provenance: None,
+                curator_public_key: None,
             }],
             metadata: Some(serde_json::json!({ "b": 1, "a": 2 })),
         };
@@ -320,5 +341,99 @@ mod tests {
             .verify_trusted(&[keypair.public_key()])
             .expect("should verify with trusted key");
         assert_eq!(verified, keypair.public_key());
+    }
+
+    #[test]
+    fn verify_feed_with_curator_config() {
+        use crate::curator_config::{CuratorConfig, TrustLevel};
+
+        let kp = Keypair::generate();
+        let config_toml = format!(
+            r#"
+[[curator]]
+name = "test"
+public_key = "{}"
+trust_level = "full"
+feed_ids = ["test-feed"]
+"#,
+            kp.public_key().to_hex()
+        );
+        let config = CuratorConfig::parse(&config_toml).unwrap();
+
+        let feed = MarketplaceFeed {
+            version: MARKETPLACE_FEED_SCHEMA_VERSION.to_string(),
+            feed_id: "test-feed".to_string(),
+            published_at: "2026-01-01T00:00:00Z".to_string(),
+            seq: 1,
+            entries: Vec::new(),
+            metadata: None,
+        };
+        let signed = SignedMarketplaceFeed::sign(feed, &kp).unwrap();
+        let curator = signed.verify_with_config(&config).unwrap();
+        assert_eq!(curator.name, "test");
+        assert_eq!(curator.trust_level, TrustLevel::Full);
+    }
+
+    #[test]
+    fn verify_with_config_feed_id_mismatch() {
+        use crate::curator_config::CuratorConfig;
+
+        let kp = Keypair::generate();
+        let config_toml = format!(
+            r#"
+[[curator]]
+name = "scoped"
+public_key = "{}"
+trust_level = "full"
+feed_ids = ["feed-a"]
+"#,
+            kp.public_key().to_hex()
+        );
+        let config = CuratorConfig::parse(&config_toml).unwrap();
+
+        let feed = MarketplaceFeed {
+            version: MARKETPLACE_FEED_SCHEMA_VERSION.to_string(),
+            feed_id: "feed-b".to_string(),
+            published_at: "2026-01-01T00:00:00Z".to_string(),
+            seq: 1,
+            entries: Vec::new(),
+            metadata: None,
+        };
+        let signed = SignedMarketplaceFeed::sign(feed, &kp).unwrap();
+        let err = signed
+            .verify_with_config(&config)
+            .expect_err("should fail for wrong feed id");
+        assert!(err
+            .to_string()
+            .contains("No trusted marketplace feed keys configured"));
+    }
+
+    #[test]
+    fn verify_with_config_trust_level_propagation() {
+        use crate::curator_config::{CuratorConfig, TrustLevel};
+
+        let kp = Keypair::generate();
+        let config_toml = format!(
+            r#"
+[[curator]]
+name = "auditor"
+public_key = "{}"
+trust_level = "audit-only"
+"#,
+            kp.public_key().to_hex()
+        );
+        let config = CuratorConfig::parse(&config_toml).unwrap();
+
+        let feed = MarketplaceFeed {
+            version: MARKETPLACE_FEED_SCHEMA_VERSION.to_string(),
+            feed_id: "any-feed".to_string(),
+            published_at: "2026-01-01T00:00:00Z".to_string(),
+            seq: 1,
+            entries: Vec::new(),
+            metadata: None,
+        };
+        let signed = SignedMarketplaceFeed::sign(feed, &kp).unwrap();
+        let curator = signed.verify_with_config(&config).unwrap();
+        assert_eq!(curator.trust_level, TrustLevel::AuditOnly);
     }
 }

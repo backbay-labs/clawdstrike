@@ -20,6 +20,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 toml.workspace = true
+dirs.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 regex.workspace = true

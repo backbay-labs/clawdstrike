@@ -180,6 +180,7 @@ fn build_entries(
             created_at: None,
             updated_at: None,
             provenance: None,
+            curator_public_key: None,
         });
     }
 
