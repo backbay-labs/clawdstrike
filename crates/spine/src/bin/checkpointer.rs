@@ -242,8 +242,11 @@ async fn ensure_log_append(
     }
 
     // Use Nats-Msg-Id = envelope_hash to make the publish idempotent.
-    // If publish succeeds but the KV put below fails, a retry will be
+    // If publish succeeds but the KV create below fails, a retry will be
     // de-duplicated by the JetStream server within its dedup window.
+    // The index write uses create() (CAS) instead of put() so that if two
+    // checkpointers race, only the first create succeeds and the second
+    // gets AlreadyExists (which we log and skip).
     let ack_future = js
         .send_publish(
             log_subject.to_string(),
@@ -256,10 +259,19 @@ async fn ensure_log_append(
     let ack = ack_future.await.context("failed to ack log append")?;
 
     let seq = ack.sequence;
-    index_kv
-        .put(envelope_hash_hex, seq.to_string().into_bytes().into())
+    match index_kv
+        .create(envelope_hash_hex, seq.to_string().into_bytes().into())
         .await
-        .context("failed to update log index KV")?;
+    {
+        Ok(_) => {}
+        Err(err) if err.kind() == async_nats::jetstream::kv::CreateErrorKind::AlreadyExists => {
+            debug!(
+                envelope_hash = %envelope_hash_hex,
+                "log index entry already exists (concurrent checkpointer), skipping"
+            );
+        }
+        Err(err) => return Err(err).context("failed to create log index KV entry"),
+    }
 
     Ok(seq)
 }

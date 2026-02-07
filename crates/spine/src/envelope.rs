@@ -51,7 +51,7 @@ pub fn compute_envelope_hash_hex(envelope_without_hash_and_sig: &Value) -> Resul
     Ok(sha256_hex(&bytes))
 }
 
-/// Compute the SHA-256 [`Hash`] of an unsigned envelope.
+/// Compute the SHA-256 Hash of an unsigned envelope.
 pub fn compute_envelope_hash(envelope_without_hash_and_sig: &Value) -> Result<Hash> {
     let bytes = envelope_signing_bytes(envelope_without_hash_and_sig)?;
     Ok(sha256(&bytes))
@@ -112,10 +112,11 @@ pub fn extract_envelope_hash(payload: &[u8]) -> Result<String> {
     Ok(hash.to_string())
 }
 
-/// Verify an envelope signature.
+/// Verify an envelope signature and hash integrity.
 ///
 /// Strips `envelope_hash` and `signature` from the value, recomputes the
-/// canonical bytes, and checks the Ed25519 signature against the issuer key.
+/// canonical bytes, verifies that the embedded `envelope_hash` matches the
+/// computed hash, and checks the Ed25519 signature against the issuer key.
 pub fn verify_envelope(envelope: &Value) -> Result<bool> {
     let issuer = envelope
         .get("issuer")
@@ -125,6 +126,10 @@ pub fn verify_envelope(envelope: &Value) -> Result<bool> {
         .get("signature")
         .and_then(|v| v.as_str())
         .ok_or(Error::MissingField("signature"))?;
+    let claimed_hash = envelope
+        .get("envelope_hash")
+        .and_then(|v| v.as_str())
+        .ok_or(Error::MissingField("envelope_hash"))?;
 
     let pubkey_hex = parse_issuer_pubkey_hex(issuer)?;
     let pubkey = hush_core::PublicKey::from_hex(&pubkey_hex)?;
@@ -138,6 +143,13 @@ pub fn verify_envelope(envelope: &Value) -> Result<bool> {
     }
 
     let bytes = envelope_signing_bytes(&unsigned)?;
+
+    // Verify that the embedded envelope_hash matches the computed hash.
+    let computed_hash = sha256_hex(&bytes);
+    if computed_hash != claimed_hash {
+        return Ok(false);
+    }
+
     Ok(pubkey.verify(&bytes, &signature))
 }
 
