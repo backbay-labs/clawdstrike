@@ -273,7 +273,7 @@ export async function loadTrustedPluginIntoRegistry(
   registry: CustomGuardRegistry,
   options: PluginLoaderOptions = {},
 ): Promise<PluginLoadResult> {
-  const loader = new PluginLoader({ ...options, trustedOnly: true, allowWasmSandbox: false });
+  const loader = new PluginLoader({ ...options, trustedOnly: true });
   return loader.loadIntoRegistry(pluginRef, registry);
 }
 
