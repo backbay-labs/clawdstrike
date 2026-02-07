@@ -1,7 +1,6 @@
 {
   "name": "@clawdstrike/langchain",
   "version": "0.1.0",
-  "private": true,
   "description": "Minimal Clawdstrike tool wrappers for LangChain tools",
   "type": "module",
   "main": "dist/index.js",
@@ -19,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core"
+    "@clawdstrike/adapter-core": "^0.1.0"
   },
   "peerDependencies": {
     "@langchain/core": ">=0.1.0"
@@ -38,7 +37,25 @@
     "dist",
     "README.md"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/clawdstrike-langchain"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "keywords": [
+    "clawdstrike",
+    "security",
+    "ai-agent",
+    "langchain"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   }

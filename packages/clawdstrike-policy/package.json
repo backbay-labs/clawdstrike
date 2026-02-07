@@ -1,7 +1,6 @@
 {
   "name": "@clawdstrike/policy",
   "version": "0.1.0",
-  "private": true,
   "description": "Canonical policy loader and engine (async guards + threat intel)",
   "type": "module",
   "main": "dist/index.js",
@@ -23,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core",
+    "@clawdstrike/adapter-core": "^0.1.0",
     "js-yaml": "^4.1.0",
     "lru-cache": "^11.2.2"
   },
@@ -35,9 +34,28 @@
   },
   "files": [
     "dist",
-    "schemas"
+    "schemas",
+    "README.md"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/clawdstrike-policy"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "keywords": [
+    "clawdstrike",
+    "security",
+    "ai-agent",
+    "policy"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   }

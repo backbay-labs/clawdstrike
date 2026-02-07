@@ -24,9 +24,28 @@
     "vitest": "^4.0.18"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/clawdstrike-adapter-core"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "keywords": [
+    "clawdstrike",
+    "security",
+    "ai-agent",
+    "sdr"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   }

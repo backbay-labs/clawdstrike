@@ -1,7 +1,6 @@
 {
   "name": "@clawdstrike/hush-cli-engine",
   "version": "0.1.0",
-  "private": true,
   "description": "Policy engine adapter that shells out to hush policy eval",
   "type": "module",
   "main": "dist/index.js",
@@ -19,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core"
+    "@clawdstrike/adapter-core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",
@@ -27,9 +26,28 @@
     "vitest": "^4.0.18"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/clawdstrike-hush-cli-engine"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "keywords": [
+    "clawdstrike",
+    "security",
+    "ai-agent",
+    "sdr"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   }

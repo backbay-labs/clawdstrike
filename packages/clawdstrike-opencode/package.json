@@ -1,7 +1,6 @@
 {
   "name": "@clawdstrike/opencode",
   "version": "0.1.0",
-  "private": true,
   "description": "In-process tool boundary hooks for OpenCode-style coding assistants",
   "type": "module",
   "main": "dist/index.js",
@@ -19,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core"
+    "@clawdstrike/adapter-core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",
@@ -30,7 +29,25 @@
     "dist",
     "README.md"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/clawdstrike-opencode"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "keywords": [
+    "clawdstrike",
+    "security",
+    "ai-agent",
+    "opencode"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   }

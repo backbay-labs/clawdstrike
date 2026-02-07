@@ -29,8 +29,8 @@
     "bench:json": "npm run build && OUTPUT_JSON=1 node benchmarks/policy-engine.bench.mjs"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core",
-    "@clawdstrike/policy": "file:../clawdstrike-policy",
+    "@clawdstrike/adapter-core": "^0.1.0",
+    "@clawdstrike/policy": "^0.1.0",
     "chalk": "^5.3.0",
     "commander": "^14.0.3",
     "glob": "^13.0.1",
@@ -52,7 +52,8 @@
   },
   "files": [
     "dist",
-    "rulesets"
+    "rulesets",
+    "README.md"
   ],
   "keywords": [
     "openclaw",
@@ -60,7 +61,19 @@
     "clawdstrike",
     "ai-agent"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/clawdstrike-openclaw"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },

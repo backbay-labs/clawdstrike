@@ -37,14 +37,21 @@
     "receipts"
   ],
   "author": "Clawdstrike Contributors",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/backbay-labs/clawdstrike.git",
     "directory": "packages/hush-ts"
   },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core",
+    "@clawdstrike/adapter-core": "^0.1.0",
     "@noble/ed25519": "^3.0.0",
     "@noble/hashes": "^2.0.1",
     "js-yaml": "^4.1.1"
