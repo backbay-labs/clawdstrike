@@ -1,6 +1,5 @@
 //! Formatting for various types.
 
-mod component_provider;
 pub(crate) mod formattable;
 mod iso8601;
 
@@ -9,12 +8,11 @@ use std::io;
 
 use num_conv::prelude::*;
 
-use self::component_provider::ComponentProvider;
 pub use self::formattable::Formattable;
+use crate::convert::*;
 use crate::ext::DigitCount;
-use crate::format_description::{Component, Period, modifier};
-use crate::internal_macros::try_likely_ok;
-use crate::{Month, Weekday, error};
+use crate::format_description::{Component, modifier};
+use crate::{Date, OffsetDateTime, Time, UtcOffset, error};
 
 const MONTH_NAMES: [&[u8]; 12] = [
     b"January",
@@ -196,119 +194,46 @@ pub(crate) fn format_number_pad_none(
 /// component requires information that it does not provide or if the value cannot be output to the
 /// stream.
 #[inline]
-pub(crate) fn format_component<V>(
+pub(crate) fn format_component(
     output: &mut (impl io::Write + ?Sized),
     component: Component,
-    value: &V,
-    state: &mut V::State,
-) -> Result<usize, error::Format>
-where
-    V: ComponentProvider,
-{
+    date: Option<Date>,
+    time: Option<Time>,
+    offset: Option<UtcOffset>,
+) -> Result<usize, error::Format> {
     use Component::*;
-    Ok(match component {
-        Day(modifier) if V::SUPPLIES_DATE => {
-            try_likely_ok!(fmt_day(output, value.day(state), modifier))
+    Ok(match (component, date, time, offset) {
+        (Day(modifier), Some(date), ..) => fmt_day(output, date, modifier)?,
+        (Month(modifier), Some(date), ..) => fmt_month(output, date, modifier)?,
+        (Ordinal(modifier), Some(date), ..) => fmt_ordinal(output, date, modifier)?,
+        (Weekday(modifier), Some(date), ..) => fmt_weekday(output, date, modifier)?,
+        (WeekNumber(modifier), Some(date), ..) => fmt_week_number(output, date, modifier)?,
+        (Year(modifier), Some(date), ..) => fmt_year(output, date, modifier)?,
+        (Hour(modifier), _, Some(time), _) => fmt_hour(output, time, modifier)?,
+        (Minute(modifier), _, Some(time), _) => fmt_minute(output, time, modifier)?,
+        (Period(modifier), _, Some(time), _) => fmt_period(output, time, modifier)?,
+        (Second(modifier), _, Some(time), _) => fmt_second(output, time, modifier)?,
+        (Subsecond(modifier), _, Some(time), _) => fmt_subsecond(output, time, modifier)?,
+        (OffsetHour(modifier), .., Some(offset)) => fmt_offset_hour(output, offset, modifier)?,
+        (OffsetMinute(modifier), .., Some(offset)) => fmt_offset_minute(output, offset, modifier)?,
+        (OffsetSecond(modifier), .., Some(offset)) => fmt_offset_second(output, offset, modifier)?,
+        (Ignore(_), ..) => 0,
+        (UnixTimestamp(modifier), Some(date), Some(time), Some(offset)) => {
+            fmt_unix_timestamp(output, date, time, offset, modifier)?
         }
-        Month(modifier) if V::SUPPLIES_DATE => {
-            try_likely_ok!(fmt_month(output, value.month(state), modifier))
-        }
-        Ordinal(modifier) if V::SUPPLIES_DATE => {
-            try_likely_ok!(fmt_ordinal(output, value.ordinal(state), modifier))
-        }
-        Weekday(modifier) if V::SUPPLIES_DATE => {
-            try_likely_ok!(fmt_weekday(output, value.weekday(state), modifier))
-        }
-        WeekNumber(modifier) if V::SUPPLIES_DATE => try_likely_ok!(fmt_week_number(
-            output,
-            match modifier.repr {
-                modifier::WeekNumberRepr::Iso => value.iso_week_number(state),
-                modifier::WeekNumberRepr::Sunday => value.sunday_based_week(state),
-                modifier::WeekNumberRepr::Monday => value.monday_based_week(state),
-            },
-            modifier,
-        )),
-        Year(modifier) if V::SUPPLIES_DATE => try_likely_ok!(fmt_year(
-            output,
-            if modifier.iso_week_based {
-                value.iso_year(state)
-            } else {
-                value.calendar_year(state)
-            },
-            modifier,
-        )),
-        Hour(modifier) if V::SUPPLIES_TIME => {
-            try_likely_ok!(fmt_hour(output, value.hour(state), modifier))
-        }
-        Minute(modifier) if V::SUPPLIES_TIME => {
-            try_likely_ok!(fmt_minute(output, value.minute(state), modifier))
-        }
-        Period(modifier) if V::SUPPLIES_TIME => {
-            try_likely_ok!(fmt_period(output, value.period(state), modifier))
-        }
-        Second(modifier) if V::SUPPLIES_TIME => {
-            try_likely_ok!(fmt_second(output, value.second(state), modifier))
-        }
-        Subsecond(modifier) if V::SUPPLIES_TIME => {
-            try_likely_ok!(fmt_subsecond(output, value.nanosecond(state), modifier))
-        }
-        OffsetHour(modifier) if V::SUPPLIES_OFFSET => try_likely_ok!(fmt_offset_hour(
-            output,
-            value.offset_is_negative(state),
-            value.offset_hour(state),
-            modifier,
-        )),
-        OffsetMinute(modifier) if V::SUPPLIES_OFFSET => try_likely_ok!(fmt_offset_minute(
-            output,
-            value.offset_minute(state),
-            modifier
-        )),
-        OffsetSecond(modifier) if V::SUPPLIES_OFFSET => try_likely_ok!(fmt_offset_second(
-            output,
-            value.offset_second(state),
-            modifier
-        )),
-        Ignore(_) => 0,
-        UnixTimestamp(modifier) if V::SUPPLIES_TIMESTAMP => match modifier.precision {
-            modifier::UnixTimestampPrecision::Second => try_likely_ok!(fmt_unix_timestamp_seconds(
-                output,
-                value.unix_timestamp_seconds(state),
-                modifier,
-            )),
-            modifier::UnixTimestampPrecision::Millisecond => {
-                try_likely_ok!(fmt_unix_timestamp_milliseconds(
-                    output,
-                    value.unix_timestamp_milliseconds(state),
-                    modifier,
-                ))
-            }
-            modifier::UnixTimestampPrecision::Microsecond => {
-                try_likely_ok!(fmt_unix_timestamp_microseconds(
-                    output,
-                    value.unix_timestamp_microseconds(state),
-                    modifier,
-                ))
-            }
-            modifier::UnixTimestampPrecision::Nanosecond => {
-                try_likely_ok!(fmt_unix_timestamp_nanoseconds(
-                    output,
-                    value.unix_timestamp_nanoseconds(state),
-                    modifier,
-                ))
-            }
-        },
-        End(modifier::End { trailing_input: _ }) => 0,
+        (End(modifier::End {}), ..) => 0,
 
         // This is functionally the same as a wildcard arm, but it will cause an error if a new
         // component is added. This is to avoid a bug where a new component, the code compiles, and
         // formatting fails.
         // Allow unreachable patterns because some branches may be fully matched above.
         #[allow(unreachable_patterns)]
-        Day(_) | Month(_) | Ordinal(_) | Weekday(_) | WeekNumber(_) | Year(_) | Hour(_)
-        | Minute(_) | Period(_) | Second(_) | Subsecond(_) | OffsetHour(_) | OffsetMinute(_)
-        | OffsetSecond(_) | Ignore(_) | UnixTimestamp(_) | End(_) => {
-            return Err(error::Format::InsufficientTypeInformation);
-        }
+        (
+            Day(_) | Month(_) | Ordinal(_) | Weekday(_) | WeekNumber(_) | Year(_) | Hour(_)
+            | Minute(_) | Period(_) | Second(_) | Subsecond(_) | OffsetHour(_) | OffsetMinute(_)
+            | OffsetSecond(_) | Ignore(_) | UnixTimestamp(_) | End(_),
+            ..,
+        ) => return Err(error::Format::InsufficientTypeInformation),
     })
 }
 
@@ -316,17 +241,17 @@ where
 #[inline]
 fn fmt_day(
     output: &mut (impl io::Write + ?Sized),
-    day: u8,
+    date: Date,
     modifier::Day { padding }: modifier::Day,
 ) -> Result<usize, io::Error> {
-    format_number::<2>(output, day, padding)
+    format_number::<2>(output, date.day(), padding)
 }
 
 /// Format the month into the designated output.
 #[inline]
 fn fmt_month(
     output: &mut (impl io::Write + ?Sized),
-    month: Month,
+    date: Date,
     modifier::Month {
         padding,
         repr,
@@ -334,14 +259,17 @@ fn fmt_month(
     }: modifier::Month,
 ) -> Result<usize, io::Error> {
     match repr {
-        modifier::MonthRepr::Numerical => format_number::<2>(output, u8::from(month), padding),
-        modifier::MonthRepr::Long => {
-            write(output, MONTH_NAMES[u8::from(month).extend::<usize>() - 1])
+        modifier::MonthRepr::Numerical => {
+            format_number::<2>(output, u8::from(date.month()), padding)
         }
-        // Safety: All month names are at least three bytes long.
-        modifier::MonthRepr::Short => write(output, unsafe {
-            MONTH_NAMES[u8::from(month).extend::<usize>() - 1].get_unchecked(..3)
-        }),
+        modifier::MonthRepr::Long => write(
+            output,
+            MONTH_NAMES[u8::from(date.month()).extend::<usize>() - 1],
+        ),
+        modifier::MonthRepr::Short => write(
+            output,
+            &MONTH_NAMES[u8::from(date.month()).extend::<usize>() - 1][..3],
+        ),
     }
 }
 
@@ -349,17 +277,17 @@ fn fmt_month(
 #[inline]
 fn fmt_ordinal(
     output: &mut (impl io::Write + ?Sized),
-    ordinal: u16,
+    date: Date,
     modifier::Ordinal { padding }: modifier::Ordinal,
 ) -> Result<usize, io::Error> {
-    format_number::<3>(output, ordinal, padding)
+    format_number::<3>(output, date.ordinal(), padding)
 }
 
 /// Format the weekday into the designated output.
 #[inline]
 fn fmt_weekday(
     output: &mut (impl io::Write + ?Sized),
-    weekday: Weekday,
+    date: Date,
     modifier::Weekday {
         repr,
         one_indexed,
@@ -367,22 +295,22 @@ fn fmt_weekday(
     }: modifier::Weekday,
 ) -> Result<usize, io::Error> {
     match repr {
-        // Safety: All weekday names are at least three bytes long.
-        modifier::WeekdayRepr::Short => write(output, unsafe {
-            WEEKDAY_NAMES[weekday.number_days_from_monday().extend::<usize>()].get_unchecked(..3)
-        }),
+        modifier::WeekdayRepr::Short => write(
+            output,
+            &WEEKDAY_NAMES[date.weekday().number_days_from_monday().extend::<usize>()][..3],
+        ),
         modifier::WeekdayRepr::Long => write(
             output,
-            WEEKDAY_NAMES[weekday.number_days_from_monday().extend::<usize>()],
+            WEEKDAY_NAMES[date.weekday().number_days_from_monday().extend::<usize>()],
         ),
         modifier::WeekdayRepr::Sunday => format_number::<1>(
             output,
-            weekday.number_days_from_sunday() + u8::from(one_indexed),
+            date.weekday().number_days_from_sunday() + u8::from(one_indexed),
             modifier::Padding::None,
         ),
         modifier::WeekdayRepr::Monday => format_number::<1>(
             output,
-            weekday.number_days_from_monday() + u8::from(one_indexed),
+            date.weekday().number_days_from_monday() + u8::from(one_indexed),
             modifier::Padding::None,
         ),
     }
@@ -392,24 +320,37 @@ fn fmt_weekday(
 #[inline]
 fn fmt_week_number(
     output: &mut (impl io::Write + ?Sized),
-    week_number: u8,
-    modifier::WeekNumber { padding, repr: _ }: modifier::WeekNumber,
+    date: Date,
+    modifier::WeekNumber { padding, repr }: modifier::WeekNumber,
 ) -> Result<usize, io::Error> {
-    format_number::<2>(output, week_number, padding)
+    format_number::<2>(
+        output,
+        match repr {
+            modifier::WeekNumberRepr::Iso => date.iso_week(),
+            modifier::WeekNumberRepr::Sunday => date.sunday_based_week(),
+            modifier::WeekNumberRepr::Monday => date.monday_based_week(),
+        },
+        padding,
+    )
 }
 
 /// Format the year into the designated output.
 fn fmt_year(
     output: &mut (impl io::Write + ?Sized),
-    full_year: i32,
+    date: Date,
     modifier::Year {
         padding,
         repr,
         range,
-        iso_week_based: _,
+        iso_week_based,
         sign_is_mandatory,
     }: modifier::Year,
 ) -> Result<usize, error::Format> {
+    let full_year = if iso_week_based {
+        date.iso_year_week().0
+    } else {
+        date.year()
+    };
     let value = match repr {
         modifier::YearRepr::Full => full_year,
         modifier::YearRepr::Century => full_year / 100,
@@ -454,13 +395,13 @@ fn fmt_year(
 #[inline]
 fn fmt_hour(
     output: &mut (impl io::Write + ?Sized),
-    hour: u8,
+    time: Time,
     modifier::Hour {
         padding,
         is_12_hour_clock,
     }: modifier::Hour,
 ) -> Result<usize, io::Error> {
-    let value = match (hour, is_12_hour_clock) {
+    let value = match (time.hour(), is_12_hour_clock) {
         (hour, false) => hour,
         (0 | 12, true) => 12,
         (hour, true) if hour < 12 => hour,
@@ -473,51 +414,50 @@ fn fmt_hour(
 #[inline]
 fn fmt_minute(
     output: &mut (impl io::Write + ?Sized),
-    minute: u8,
+    time: Time,
     modifier::Minute { padding }: modifier::Minute,
 ) -> Result<usize, io::Error> {
-    format_number::<2>(output, minute, padding)
+    format_number::<2>(output, time.minute(), padding)
 }
 
 /// Format the period into the designated output.
 #[inline]
 fn fmt_period(
     output: &mut (impl io::Write + ?Sized),
-    period: Period,
+    time: Time,
     modifier::Period {
         is_uppercase,
         case_sensitive: _, // no effect on formatting
     }: modifier::Period,
 ) -> Result<usize, io::Error> {
-    write(
-        output,
-        match (period, is_uppercase) {
-            (Period::Am, false) => b"am",
-            (Period::Am, true) => b"AM",
-            (Period::Pm, false) => b"pm",
-            (Period::Pm, true) => b"PM",
-        },
-    )
+    match (time.hour() >= 12, is_uppercase) {
+        (false, false) => write(output, b"am"),
+        (false, true) => write(output, b"AM"),
+        (true, false) => write(output, b"pm"),
+        (true, true) => write(output, b"PM"),
+    }
 }
 
 /// Format the second into the designated output.
 #[inline]
 fn fmt_second(
     output: &mut (impl io::Write + ?Sized),
-    second: u8,
+    time: Time,
     modifier::Second { padding }: modifier::Second,
 ) -> Result<usize, io::Error> {
-    format_number::<2>(output, second, padding)
+    format_number::<2>(output, time.second(), padding)
 }
 
 /// Format the subsecond into the designated output.
 #[inline]
 fn fmt_subsecond(
     output: &mut (impl io::Write + ?Sized),
-    nanos: u32,
+    time: Time,
     modifier::Subsecond { digits }: modifier::Subsecond,
 ) -> Result<usize, io::Error> {
     use modifier::SubsecondDigits::*;
+    let nanos = time.nanosecond();
+
     if digits == Nine || (digits == OneOrMore && !nanos.is_multiple_of(10)) {
         format_number_pad_zero::<9>(output, nanos)
     } else if digits == Eight || (digits == OneOrMore && !(nanos / 10).is_multiple_of(10)) {
@@ -539,35 +479,23 @@ fn fmt_subsecond(
     }
 }
 
-#[inline]
-fn fmt_offset_sign(
-    output: &mut (impl io::Write + ?Sized),
-    is_negative: bool,
-    sign_is_mandatory: bool,
-) -> Result<usize, io::Error> {
-    if is_negative {
-        write(output, b"-")
-    } else if sign_is_mandatory {
-        write(output, b"+")
-    } else {
-        Ok(0)
-    }
-}
-
 /// Format the offset hour into the designated output.
 #[inline]
 fn fmt_offset_hour(
     output: &mut (impl io::Write + ?Sized),
-    is_negative: bool,
-    hour: i8,
+    offset: UtcOffset,
     modifier::OffsetHour {
         padding,
         sign_is_mandatory,
     }: modifier::OffsetHour,
 ) -> Result<usize, io::Error> {
     let mut bytes = 0;
-    bytes += fmt_offset_sign(output, is_negative, sign_is_mandatory)?;
-    bytes += format_number::<2>(output, hour.unsigned_abs(), padding)?;
+    if offset.is_negative() {
+        bytes += write(output, b"-")?;
+    } else if sign_is_mandatory {
+        bytes += write(output, b"+")?;
+    }
+    bytes += format_number::<2>(output, offset.whole_hours().unsigned_abs(), padding)?;
     Ok(bytes)
 }
 
@@ -575,90 +503,58 @@ fn fmt_offset_hour(
 #[inline]
 fn fmt_offset_minute(
     output: &mut (impl io::Write + ?Sized),
-    offset_minute: i8,
+    offset: UtcOffset,
     modifier::OffsetMinute { padding }: modifier::OffsetMinute,
 ) -> Result<usize, io::Error> {
-    format_number::<2>(output, offset_minute.unsigned_abs(), padding)
+    format_number::<2>(output, offset.minutes_past_hour().unsigned_abs(), padding)
 }
 
 /// Format the offset second into the designated output.
 #[inline]
 fn fmt_offset_second(
     output: &mut (impl io::Write + ?Sized),
-    offset_second: i8,
+    offset: UtcOffset,
     modifier::OffsetSecond { padding }: modifier::OffsetSecond,
 ) -> Result<usize, io::Error> {
-    format_number::<2>(output, offset_second.unsigned_abs(), padding)
-}
-
-/// Format the Unix timestamp (in seconds) into the designated output.
-#[inline]
-fn fmt_unix_timestamp_seconds(
-    output: &mut (impl io::Write + ?Sized),
-    timestamp: i64,
-    modifier::UnixTimestamp {
-        precision,
-        sign_is_mandatory,
-    }: modifier::UnixTimestamp,
-) -> Result<usize, io::Error> {
-    debug_assert_eq!(precision, modifier::UnixTimestampPrecision::Second);
-
-    let mut bytes = 0;
-    bytes += fmt_offset_sign(output, timestamp < 0, sign_is_mandatory)?;
-    bytes += format_number_pad_none(output, timestamp.unsigned_abs())?;
-    Ok(bytes)
-}
-
-/// Format the Unix timestamp (in milliseconds) into the designated output.
-#[inline]
-fn fmt_unix_timestamp_milliseconds(
-    output: &mut (impl io::Write + ?Sized),
-    timestamp_millis: i64,
-    modifier::UnixTimestamp {
-        precision,
-        sign_is_mandatory,
-    }: modifier::UnixTimestamp,
-) -> Result<usize, io::Error> {
-    debug_assert_eq!(precision, modifier::UnixTimestampPrecision::Millisecond);
-
-    let mut bytes = 0;
-    bytes += fmt_offset_sign(output, timestamp_millis < 0, sign_is_mandatory)?;
-    bytes += format_number_pad_none(output, timestamp_millis.unsigned_abs())?;
-    Ok(bytes)
+    format_number::<2>(output, offset.seconds_past_minute().unsigned_abs(), padding)
 }
 
 /// Format the Unix timestamp into the designated output.
 #[inline]
-fn fmt_unix_timestamp_microseconds(
+fn fmt_unix_timestamp(
     output: &mut (impl io::Write + ?Sized),
-    timestamp_micros: i128,
+    date: Date,
+    time: Time,
+    offset: UtcOffset,
     modifier::UnixTimestamp {
         precision,
         sign_is_mandatory,
     }: modifier::UnixTimestamp,
 ) -> Result<usize, io::Error> {
-    debug_assert_eq!(precision, modifier::UnixTimestampPrecision::Microsecond);
+    let date_time = OffsetDateTime::new_in_offset(date, time, offset).to_offset(UtcOffset::UTC);
 
-    let mut bytes = 0;
-    bytes += fmt_offset_sign(output, timestamp_micros < 0, sign_is_mandatory)?;
-    bytes += format_number_pad_none(output, timestamp_micros.unsigned_abs())?;
-    Ok(bytes)
-}
+    if date_time < OffsetDateTime::UNIX_EPOCH {
+        write(output, b"-")?;
+    } else if sign_is_mandatory {
+        write(output, b"+")?;
+    }
 
-/// Format the Unix timestamp into the designated output.
-#[inline]
-fn fmt_unix_timestamp_nanoseconds(
-    output: &mut (impl io::Write + ?Sized),
-    timestamp_nanos: i128,
-    modifier::UnixTimestamp {
-        precision,
-        sign_is_mandatory,
-    }: modifier::UnixTimestamp,
-) -> Result<usize, io::Error> {
-    debug_assert_eq!(precision, modifier::UnixTimestampPrecision::Nanosecond);
-
-    let mut bytes = 0;
-    bytes += fmt_offset_sign(output, timestamp_nanos < 0, sign_is_mandatory)?;
-    bytes += format_number_pad_none(output, timestamp_nanos.unsigned_abs())?;
-    Ok(bytes)
+    match precision {
+        modifier::UnixTimestampPrecision::Second => {
+            format_number_pad_none(output, date_time.unix_timestamp().unsigned_abs())
+        }
+        modifier::UnixTimestampPrecision::Millisecond => format_number_pad_none(
+            output,
+            (date_time.unix_timestamp_nanos() / Nanosecond::per_t::<i128>(Millisecond))
+                .unsigned_abs(),
+        ),
+        modifier::UnixTimestampPrecision::Microsecond => format_number_pad_none(
+            output,
+            (date_time.unix_timestamp_nanos() / Nanosecond::per_t::<i128>(Microsecond))
+                .unsigned_abs(),
+        ),
+        modifier::UnixTimestampPrecision::Nanosecond => {
+            format_number_pad_none(output, date_time.unix_timestamp_nanos().unsigned_abs())
+        }
+    }
 }

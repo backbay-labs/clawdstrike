@@ -207,9 +207,7 @@ component_definition! {
         Day = "day" {
             padding = "padding": Option<Padding> => padding,
         },
-        End = "end" {
-            trailing_input = "trailing_input": Option<TrailingInput> => trailing_input,
-        },
+        End = "end" {},
         Hour = "hour" {
             padding = "padding": Option<Padding> => padding,
             base = "repr": Option<HourBase> => is_12_hour_clock,
@@ -382,12 +380,6 @@ modifier! {
         Nine = b"9",
         #[default]
         OneOrMore = b"1+",
-    }
-
-    enum TrailingInput {
-        #[default]
-        Prohibit = b"prohibit",
-        Discard = b"discard",
     }
 
     enum UnixTimestampPrecision {
