@@ -13,7 +13,7 @@ import { Badge } from "@backbay/glia/primitives";
 import { EnvironmentLayer } from "@backbay/glia/primitives";
 import type { Threat, ThreatType } from "@backbay/glia/primitives";
 import { useSpineEvents } from "@/hooks/useSpineEvents";
-import type { SpineConnectionStatus } from "@/types/spine";
+import { SpineStatusIndicator } from "@/components/SpineStatusIndicator";
 
 const SEVERITY_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   critical: "destructive",
@@ -42,23 +42,6 @@ function formatTime(timestamp: string): string {
   const minutes = Math.floor(ms / 60000);
   if (minutes < 1) return "just now";
   return `${minutes}m ago`;
-}
-
-function StatusIndicator({ status }: { status: SpineConnectionStatus }) {
-  const config = {
-    connected: { color: "bg-green-500", label: "Live" },
-    demo: { color: "bg-amber-500", label: "Demo" },
-    connecting: { color: "bg-blue-500 animate-pulse", label: "Connecting" },
-    disconnected: { color: "bg-red-500", label: "Offline" },
-  };
-  const { color, label } = config[status];
-
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-white/60">
-      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
-      {label}
-    </span>
-  );
 }
 
 export function ThreatRadarView() {
@@ -109,7 +92,7 @@ export function ThreatRadarView() {
               {threats.filter((t) => t.active).length} active threats detected
             </p>
           </div>
-          <StatusIndicator status={status} />
+          <SpineStatusIndicator status={status} />
         </div>
 
         {/* Environment Layer */}

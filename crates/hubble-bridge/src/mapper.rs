@@ -34,6 +34,13 @@ impl Severity {
 /// Sensitive namespaces where flow drops raise higher severity.
 const SENSITIVE_NAMESPACES: &[&str] = &["kube-system", "istio-system", "cilium"];
 
+/// TLDs commonly associated with malware, phishing, and C2 infrastructure.
+const SUSPICIOUS_TLDS: &[&str] = &[
+    ".tk", ".ml", ".ga", ".cf", ".gq", // Freenom free TLDs
+    ".top", ".xyz", ".buzz", ".club", ".icu", ".cam", ".rest", ".surf",
+    ".onion", // Tor hidden services
+];
+
 /// Map a `GetFlowsResponse` to a Spine fact JSON value.
 ///
 /// Returns `None` if the response contains no flow.
@@ -255,10 +262,20 @@ fn classify_flow_severity(flow: &Flow) -> Severity {
             if dns.rcode != 0 {
                 return Severity::Medium;
             }
+            // DNS queries to suspicious TLDs.
+            if is_suspicious_tld(&dns.query) {
+                return Severity::Medium;
+            }
         }
     }
 
     Severity::Low
+}
+
+/// Check if a DNS query targets a suspicious TLD.
+fn is_suspicious_tld(query: &str) -> bool {
+    let lower = query.to_ascii_lowercase();
+    SUSPICIOUS_TLDS.iter().any(|tld| lower.ends_with(tld))
 }
 
 /// Check if an endpoint is in a sensitive namespace.
@@ -377,6 +394,46 @@ mod tests {
         assert_eq!(fact["node_name"], "worker-1");
         assert_eq!(fact["source"]["namespace"], "default");
         assert_eq!(fact["destination"]["namespace"], "app");
+    }
+
+    #[test]
+    fn dns_suspicious_tld_is_medium() {
+        let mut flow = make_flow(Verdict::Forwarded, "default", "default");
+        flow.l7 = Some(proto::Layer7 {
+            r#type: proto::Layer7FlowType::Request.into(),
+            latency_ns: 1000,
+            record: Some(proto::layer7::Record::Dns(proto::Dns {
+                query: "c2-callback.evil.tk".to_string(),
+                ips: vec![],
+                ttl: 300,
+                cnames: vec![],
+                observation_source: String::new(),
+                rcode: 0,
+                qtypes: vec!["A".to_string()],
+                rrtypes: vec![],
+            })),
+        });
+        assert_eq!(classify_flow_severity(&flow), Severity::Medium);
+    }
+
+    #[test]
+    fn dns_normal_tld_is_low() {
+        let mut flow = make_flow(Verdict::Forwarded, "default", "default");
+        flow.l7 = Some(proto::Layer7 {
+            r#type: proto::Layer7FlowType::Request.into(),
+            latency_ns: 1000,
+            record: Some(proto::layer7::Record::Dns(proto::Dns {
+                query: "api.github.com".to_string(),
+                ips: vec!["140.82.121.6".to_string()],
+                ttl: 60,
+                cnames: vec![],
+                observation_source: String::new(),
+                rcode: 0,
+                qtypes: vec!["A".to_string()],
+                rrtypes: vec![],
+            })),
+        });
+        assert_eq!(classify_flow_severity(&flow), Severity::Low);
     }
 
     #[test]

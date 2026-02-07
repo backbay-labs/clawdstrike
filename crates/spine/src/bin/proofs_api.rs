@@ -284,6 +284,16 @@ async fn v1_inclusion_proof(
         .map(|h| h.to_hex_prefixed())
         .collect();
 
+    // Verify the proof against the checkpoint's merkle_root.
+    // The tree was built from raw envelope-hash bytes via from_leaves(),
+    // which applies leaf_hash(). So we verify with the raw bytes.
+    let expected_root = Hash::from_hex(merkle_root).ok();
+    let envelope_hash_obj = Hash::from_hex(&envelope_hash_hex).ok();
+    let verified = match (expected_root, envelope_hash_obj) {
+        (Some(root), Some(eh)) => proof.verify(eh.as_bytes(), &root),
+        _ => false,
+    };
+
     Ok(Json(json!({
         "schema": "clawdstrike.spine.proof.inclusion.v1",
         "included": true,
@@ -292,7 +302,9 @@ async fn v1_inclusion_proof(
         "tree_size": tree_size,
         "log_index": log_index,
         "envelope_hash": envelope_hash_hex,
+        "merkle_root": merkle_root,
         "audit_path": audit_path,
+        "verified": verified,
     })))
 }
 

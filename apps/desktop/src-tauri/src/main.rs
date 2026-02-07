@@ -33,6 +33,7 @@ fn main() {
             commands::spine::subscribe_spine_events,
             commands::spine::unsubscribe_spine_events,
             commands::spine::spine_status,
+            commands::spine::get_spine_connection_status,
             commands::workflows::list_workflows,
             commands::workflows::save_workflow,
             commands::workflows::delete_workflow,

@@ -3,7 +3,7 @@
 use std::path::{Component, Path};
 
 use clawdstrike::{CuratorConfigFile, CuratorTrustSet, SignedMarketplaceFeed, SignedPolicyBundle};
-use hush_core::PublicKey;
+use hush_core::{Hash, MerkleProof, PublicKey};
 use reqwest::header::LOCATION;
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
@@ -591,6 +591,8 @@ pub struct SpineProofResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_index: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_verified: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -648,12 +650,41 @@ pub async fn marketplace_verify_spine_proof(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    // Local proof verification if audit_path is present
+    let proof_verified = (|| -> Option<bool> {
+        let audit_path_json = value.get("audit_path")?.as_array()?;
+        let ts = value.get("tree_size")?.as_u64()? as usize;
+        let li = value.get("log_index")?.as_u64()? as usize;
+        let merkle_root_hex = value.get("merkle_root").and_then(|v| v.as_str())?;
+        let envelope_hash_hex = value.get("envelope_hash").and_then(|v| v.as_str())?;
+
+        let audit_path: Vec<Hash> = audit_path_json
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(|s| Hash::from_hex(s).ok())
+            .collect();
+        if audit_path.len() != audit_path_json.len() {
+            return Some(false);
+        }
+
+        let expected_root = Hash::from_hex(merkle_root_hex).ok()?;
+        let eh = Hash::from_hex(envelope_hash_hex).ok()?;
+
+        let proof = MerkleProof {
+            tree_size: ts,
+            leaf_index: li,
+            audit_path,
+        };
+        Some(proof.verify(eh.as_bytes(), &expected_root))
+    })();
+
     Ok(SpineProofResult {
         included,
         log_id,
         checkpoint_seq,
         tree_size,
         log_index,
+        proof_verified,
         error,
     })
 }

@@ -12,7 +12,7 @@ import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
 import type { AttackChain, AttackTechnique } from "@backbay/glia/primitives";
 import { useSpineEvents } from "@/hooks/useSpineEvents";
-import type { SpineConnectionStatus } from "@/types/spine";
+import { SpineStatusIndicator } from "@/components/SpineStatusIndicator";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "destructive",
@@ -34,23 +34,6 @@ const TACTIC_LABELS: Record<string, string> = {
   exfiltration: "Exfiltration",
   impact: "Impact",
 };
-
-function StatusIndicator({ status }: { status: SpineConnectionStatus }) {
-  const config = {
-    connected: { color: "bg-green-500", label: "Live" },
-    demo: { color: "bg-amber-500", label: "Demo" },
-    connecting: { color: "bg-blue-500 animate-pulse", label: "Connecting" },
-    disconnected: { color: "bg-red-500", label: "Offline" },
-  };
-  const { color, label } = config[status];
-
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-white/60">
-      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
-      {label}
-    </span>
-  );
-}
 
 export function AttackGraphView() {
   const [selectedTechnique, setSelectedTechnique] = useState<AttackTechnique | null>(null);
@@ -104,7 +87,7 @@ export function AttackGraphView() {
               {chains.length} attack chains &middot; {stats.totalTechniques} techniques mapped
             </p>
           </div>
-          <StatusIndicator status={status} />
+          <SpineStatusIndicator status={status} />
         </div>
       </div>
 

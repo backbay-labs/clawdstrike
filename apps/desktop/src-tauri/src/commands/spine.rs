@@ -10,14 +10,21 @@
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
+use tokio::sync::RwLock;
 
 use crate::state::AppState;
+
+/// Default NATS URL when none is provided by the frontend.
+pub const DEFAULT_NATS_URL: &str = "nats://localhost:4222";
 
 /// Spine subscription status stored in AppState
 pub struct SpineSubscription {
     pub active: bool,
     pub nats_url: Option<String>,
     pub cancel: Option<tokio::sync::watch::Sender<bool>>,
+    pub event_count: u64,
+    pub last_event_at: Option<String>,
+    pub last_error: Option<String>,
 }
 
 impl Default for SpineSubscription {
@@ -26,6 +33,9 @@ impl Default for SpineSubscription {
             active: false,
             nats_url: None,
             cancel: None,
+            event_count: 0,
+            last_event_at: None,
+            last_error: None,
         }
     }
 }
@@ -34,6 +44,16 @@ impl Default for SpineSubscription {
 pub struct SpineSubscribeResult {
     pub connected: bool,
     pub message: String,
+}
+
+/// Richer connection status returned by `get_spine_connection_status`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SpineConnectionStatusResult {
+    pub connected: bool,
+    pub nats_url: Option<String>,
+    pub event_count: u64,
+    pub last_event_at: Option<String>,
+    pub last_error: Option<String>,
 }
 
 /// Subscribe to spine events via NATS.
@@ -48,9 +68,14 @@ pub struct SpineSubscribeResult {
 #[tauri::command]
 pub async fn subscribe_spine_events<R: Runtime>(
     app: AppHandle<R>,
-    nats_url: String,
+    nats_url: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<SpineSubscribeResult, String> {
+    let nats_url = match nats_url.as_deref() {
+        Some(url) if !url.is_empty() => url.to_string(),
+        _ => DEFAULT_NATS_URL.to_string(),
+    };
+
     let mut sub = state.spine_subscription.write().await;
 
     // If already subscribed to the same URL, return early
@@ -67,20 +92,35 @@ pub async fn subscribe_spine_events<R: Runtime>(
         }
     }
 
+    // Reset counters for new subscription
+    sub.event_count = 0;
+    sub.last_event_at = None;
+    sub.last_error = None;
+
     // Attempt NATS connection before spawning the background task.
     // This lets us report connection errors synchronously.
-    let client = async_nats::connect(&nats_url).await.map_err(|e| {
-        tracing::warn!("Failed to connect to NATS at {}: {}", nats_url, e);
-        format!("NATS connection failed: {e}")
-    })?;
+    let client = match async_nats::connect(&nats_url).await {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!("NATS connection failed: {e}");
+            tracing::warn!("Failed to connect to NATS at {}: {}", nats_url, e);
+            sub.last_error = Some(msg.clone());
+            return Err(msg);
+        }
+    };
 
-    let nats_sub = client
+    let nats_sub = match client
         .subscribe("clawdstrike.spine.envelope.>")
         .await
-        .map_err(|e| {
+    {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("NATS subscribe failed: {e}");
             tracing::warn!("Failed to subscribe to spine envelopes: {}", e);
-            format!("NATS subscribe failed: {e}")
-        })?;
+            sub.last_error = Some(msg.clone());
+            return Err(msg);
+        }
+    };
 
     let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
     sub.active = true;
@@ -91,8 +131,9 @@ pub async fn subscribe_spine_events<R: Runtime>(
 
     // Spawn background task for NATS subscription
     let app_handle = app.clone();
+    let spine_sub = state.spine_subscription.clone();
     tauri::async_runtime::spawn(async move {
-        spine_event_loop(app_handle, nats_sub, cancel_rx).await;
+        spine_event_loop(app_handle, nats_sub, cancel_rx, spine_sub).await;
     });
 
     Ok(SpineSubscribeResult {
@@ -134,6 +175,22 @@ pub async fn spine_status(
     })
 }
 
+/// Get detailed spine connection status including event counts and errors.
+#[tauri::command]
+pub async fn get_spine_connection_status(
+    state: State<'_, AppState>,
+) -> Result<SpineConnectionStatusResult, String> {
+    let sub = state.spine_subscription.read().await;
+
+    Ok(SpineConnectionStatusResult {
+        connected: sub.active,
+        nats_url: sub.nats_url.clone(),
+        event_count: sub.event_count,
+        last_event_at: sub.last_event_at.clone(),
+        last_error: sub.last_error.clone(),
+    })
+}
+
 /// Background event loop that reads NATS messages and emits them to the frontend.
 ///
 /// Each message payload is expected to be a JSON signed envelope. The full
@@ -143,6 +200,7 @@ async fn spine_event_loop<R: Runtime>(
     app: AppHandle<R>,
     mut subscription: async_nats::Subscriber,
     mut cancel: tokio::sync::watch::Receiver<bool>,
+    spine_sub: std::sync::Arc<RwLock<SpineSubscription>>,
 ) {
     tracing::info!("Spine event loop started");
 
@@ -157,6 +215,10 @@ async fn spine_event_loop<R: Runtime>(
             msg = subscription.next() => {
                 let Some(msg) = msg else {
                     tracing::warn!("NATS subscription stream ended");
+                    // Record the stream ending as an error
+                    let mut sub = spine_sub.write().await;
+                    sub.active = false;
+                    sub.last_error = Some("NATS subscription stream ended unexpectedly".to_string());
                     break;
                 };
 
@@ -172,6 +234,13 @@ async fn spine_event_loop<R: Runtime>(
                         continue;
                     }
                 };
+
+                // Update event counters
+                {
+                    let mut sub = spine_sub.write().await;
+                    sub.event_count += 1;
+                    sub.last_event_at = Some(chrono::Utc::now().to_rfc3339());
+                }
 
                 // Extract the `fact` object from the envelope to determine
                 // what kind of event this is, but emit the full envelope so

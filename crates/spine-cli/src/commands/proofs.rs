@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
+use hush_core::{Hash, MerkleProof};
 
 /// Get/verify an inclusion proof for an envelope by calling the proofs API.
 pub async fn inclusion(hash: &str, api_url: &str, is_json: bool) -> Result<()> {
@@ -25,11 +26,45 @@ pub async fn inclusion(hash: &str, api_url: &str, is_json: bool) -> Result<()> {
         .await
         .context("failed to parse proofs API response")?;
 
+    // Client-side proof verification: reconstruct MerkleProof and verify locally
+    let locally_verified = (|| -> Option<bool> {
+        if !status.is_success() {
+            return None;
+        }
+        let audit_path_json = body.get("audit_path")?.as_array()?;
+        let tree_size = body.get("tree_size")?.as_u64()? as usize;
+        let log_index = body.get("log_index")?.as_u64()? as usize;
+        let merkle_root_hex = body.get("merkle_root").and_then(|v| v.as_str())?;
+        let envelope_hash_hex = body.get("envelope_hash").and_then(|v| v.as_str())?;
+
+        let audit_path: Vec<Hash> = audit_path_json
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(|s| Hash::from_hex(s).ok())
+            .collect();
+        if audit_path.len() != audit_path_json.len() {
+            return Some(false);
+        }
+
+        let expected_root = Hash::from_hex(merkle_root_hex).ok()?;
+        let envelope_hash = Hash::from_hex(envelope_hash_hex).ok()?;
+
+        let proof = MerkleProof {
+            tree_size,
+            leaf_index: log_index,
+            audit_path,
+        };
+        Some(proof.verify(envelope_hash.as_bytes(), &expected_root))
+    })();
+
     if is_json {
-        let result = serde_json::json!({
+        let mut result = serde_json::json!({
             "status": status.as_u16(),
             "response": body,
         });
+        if let Some(v) = locally_verified {
+            result["locally_verified"] = serde_json::json!(v);
+        }
         println!("{}", serde_json::to_string_pretty(&result)?);
         return Ok(());
     }
@@ -54,15 +89,15 @@ pub async fn inclusion(hash: &str, api_url: &str, is_json: bool) -> Result<()> {
     if let Some(root) = body.get("merkle_root").and_then(|v| v.as_str()) {
         println!("  {} {}", "Merkle Root:".bold(), root);
     }
-    if let Some(index) = body.get("leaf_index").and_then(|v| v.as_u64()) {
-        println!("  {} {}", "Leaf Index:".bold(), index);
+    if let Some(index) = body.get("log_index").and_then(|v| v.as_u64()) {
+        println!("  {} {}", "Log Index:".bold(), index);
     }
     if let Some(size) = body.get("tree_size").and_then(|v| v.as_u64()) {
         println!("  {} {}", "Tree Size:".bold(), size);
     }
-    if let Some(proof) = body.get("proof").and_then(|v| v.as_array()) {
-        println!("  {} ({} nodes)", "Proof Path:".bold(), proof.len());
-        for (i, node) in proof.iter().enumerate() {
+    if let Some(path) = body.get("audit_path").and_then(|v| v.as_array()) {
+        println!("  {} ({} nodes)", "Audit Path:".bold(), path.len());
+        for (i, node) in path.iter().enumerate() {
             if let Some(s) = node.as_str() {
                 println!("    [{}] {}", i, s);
             }
@@ -71,10 +106,16 @@ pub async fn inclusion(hash: &str, api_url: &str, is_json: bool) -> Result<()> {
 
     if let Some(verified) = body.get("verified").and_then(|v| v.as_bool()) {
         if verified {
-            println!("  {} {}", "Verified:".bold(), "YES".green());
+            println!("  {} {}", "Server Verified:".bold(), "YES".green());
         } else {
-            println!("  {} {}", "Verified:".bold(), "NO".red());
+            println!("  {} {}", "Server Verified:".bold(), "NO".red());
         }
+    }
+
+    match locally_verified {
+        Some(true) => println!("  {} {}", "Locally Verified:".bold(), "YES".green()),
+        Some(false) => println!("  {} {}", "Locally Verified:".bold(), "NO".red()),
+        None => {}
     }
 
     Ok(())
