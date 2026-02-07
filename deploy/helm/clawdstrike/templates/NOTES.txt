@@ -1,0 +1,39 @@
+ClawdStrike SDR stack deployed to namespace {{ include "clawdstrike.namespace" . }}.
+
+Components:
+{{- if and .Values.nats.enabled (not .Values.nats.external.enabled) }}
+  NATS JetStream: {{ include "clawdstrike.fullname" . }}-nats:4222
+{{- else if .Values.nats.external.enabled }}
+  NATS (external): {{ .Values.nats.external.url }}
+{{- end }}
+{{- if .Values.spine.enabled }}
+  {{- if .Values.spine.checkpointer.enabled }}
+  Spine Checkpointer: running
+  {{- end }}
+  {{- if .Values.spine.witness.enabled }}
+  Spine Witness: running
+  {{- end }}
+  {{- if .Values.spine.proofsApi.enabled }}
+  Spine Proofs API: {{ include "clawdstrike.fullname" . }}-proofs-api:{{ .Values.spine.proofsApi.service.port }}
+  {{- end }}
+{{- end }}
+{{- if .Values.hushd.enabled }}
+  hushd: {{ include "clawdstrike.fullname" . }}-hushd:{{ .Values.hushd.service.port }}
+{{- end }}
+{{- if .Values.bridges.tetragon.enabled }}
+  Tetragon Bridge: DaemonSet running
+{{- end }}
+{{- if .Values.bridges.hubble.enabled }}
+  Hubble Bridge: DaemonSet running
+{{- end }}
+
+To verify:
+  kubectl -n {{ include "clawdstrike.namespace" . }} get pods
+{{- if .Values.hushd.enabled }}
+  kubectl -n {{ include "clawdstrike.namespace" . }} port-forward svc/{{ include "clawdstrike.fullname" . }}-hushd {{ .Values.hushd.port }}:{{ .Values.hushd.port }}
+  curl http://localhost:{{ .Values.hushd.port }}/health
+{{- end }}
+{{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+  kubectl -n {{ include "clawdstrike.namespace" . }} port-forward svc/{{ include "clawdstrike.fullname" . }}-proofs-api {{ .Values.spine.proofsApi.port }}:{{ .Values.spine.proofsApi.port }}
+  curl http://localhost:{{ .Values.spine.proofsApi.port }}/healthz
+{{- end }}

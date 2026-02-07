@@ -1,0 +1,81 @@
+{{- if and .Values.nats.enabled (not .Values.nats.external.enabled) }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-nats
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "nats") | nindent 4 }}
+spec:
+  serviceName: {{ include "clawdstrike.fullname" . }}-nats
+  replicas: {{ .Values.nats.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "nats") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "nats") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/nats/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      containers:
+        - name: nats
+          image: "{{ .Values.nats.image.repository }}:{{ .Values.nats.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - "--config"
+            - "/etc/nats/nats.conf"
+          ports:
+            - name: client
+              containerPort: 4222
+            {{- if .Values.nats.monitoring.enabled }}
+            - name: monitoring
+              containerPort: {{ .Values.nats.monitoring.port }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nats
+            {{- if .Values.nats.jetstream.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+          {{- if .Values.nats.monitoring.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- end }}
+          resources:
+            {{- toYaml .Values.nats.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "clawdstrike.fullname" . }}-nats
+  {{- if .Values.nats.jetstream.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.nats.jetstream.storage.storageClassName }}
+        storageClassName: {{ .Values.nats.jetstream.storage.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.nats.jetstream.storage.size }}
+  {{- end }}
+{{- end }}

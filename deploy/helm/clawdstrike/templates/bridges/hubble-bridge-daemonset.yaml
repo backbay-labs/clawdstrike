@@ -1,0 +1,49 @@
+{{- if .Values.bridges.hubble.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hubble-bridge
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: hubble-bridge
+          image: "{{ .Values.bridges.hubble.image.repository }}:{{ .Values.bridges.hubble.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: NATS_URL
+              value: {{ include "clawdstrike.natsUrl" . | quote }}
+            - name: HUBBLE_GRPC
+              value: {{ .Values.bridges.hubble.grpcEndpoint | quote }}
+            - name: RUST_LOG
+              value: {{ .Values.bridges.hubble.env.RUST_LOG | quote }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.bridges.hubble.resources | nindent 12 }}
+      {{- with .Values.bridges.hubble.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bridges.hubble.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

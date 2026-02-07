@@ -1,0 +1,21 @@
+{{- if and .Values.nats.enabled (not .Values.nats.external.enabled) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-nats
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "nats") | nindent 4 }}
+data:
+  nats.conf: |
+    listen: 0.0.0.0:4222
+    {{- if .Values.nats.monitoring.enabled }}
+    http: 0.0.0.0:{{ .Values.nats.monitoring.port }}
+    {{- end }}
+    {{- if .Values.nats.jetstream.enabled }}
+    jetstream {
+      store_dir: /data
+      max_mem: 0
+    }
+    {{- end }}
+{{- end }}

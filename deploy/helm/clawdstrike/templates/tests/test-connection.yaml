@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-test
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Testing ClawdStrike SDR stack..."
+          FAIL=0
+          {{- if and .Values.nats.enabled (not .Values.nats.external.enabled) }}
+          echo "Checking NATS connectivity..."
+          if wget -q --spider http://{{ include "clawdstrike.fullname" . }}-nats:{{ .Values.nats.monitoring.port }}/healthz 2>/dev/null; then
+            echo "  NATS: OK"
+          else
+            echo "  NATS: FAILED"
+            FAIL=1
+          fi
+          {{- end }}
+          {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+          echo "Checking Proofs API health..."
+          if wget -q --spider http://{{ include "clawdstrike.fullname" . }}-proofs-api:{{ .Values.spine.proofsApi.service.port }}/healthz 2>/dev/null; then
+            echo "  Proofs API: OK"
+          else
+            echo "  Proofs API: FAILED"
+            FAIL=1
+          fi
+          {{- end }}
+          {{- if .Values.hushd.enabled }}
+          echo "Checking hushd health..."
+          if wget -q --spider http://{{ include "clawdstrike.fullname" . }}-hushd:{{ .Values.hushd.service.port }}/health 2>/dev/null; then
+            echo "  hushd: OK"
+          else
+            echo "  hushd: FAILED"
+            FAIL=1
+          fi
+          {{- end }}
+          exit $FAIL

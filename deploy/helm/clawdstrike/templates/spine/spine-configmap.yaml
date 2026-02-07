@@ -1,0 +1,12 @@
+{{- if .Values.spine.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-spine
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "spine") | nindent 4 }}
+data:
+  NATS_URL: {{ include "clawdstrike.natsUrl" . | quote }}
+  RUST_LOG: {{ .Values.spine.env.RUST_LOG | quote }}
+{{- end }}

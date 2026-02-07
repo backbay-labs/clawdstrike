@@ -1,0 +1,74 @@
+{{- if .Values.hushd.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hushd
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
+spec:
+  replicas: {{ .Values.hushd.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "hushd") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/hushd/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: hushd
+          image: "{{ .Values.hushd.image.repository }}:{{ .Values.hushd.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["--config", "/etc/hushd/config.yaml"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.hushd.port }}
+          {{- if .Values.hushd.auth.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.hushd.auth.existingSecret | default (printf "%s-hushd" (include "clawdstrike.fullname" .)) }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/hushd/config.yaml
+              subPath: config.yaml
+            {{- if .Values.hushd.persistence.enabled }}
+            - name: data
+              mountPath: /var/lib/hushd
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.hushd.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "clawdstrike.fullname" . }}-hushd
+        {{- if .Values.hushd.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "clawdstrike.fullname" . }}-hushd
+        {{- end }}
+{{- end }}

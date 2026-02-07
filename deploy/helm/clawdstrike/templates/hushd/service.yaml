@@ -1,0 +1,17 @@
+{{- if .Values.hushd.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hushd
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
+spec:
+  type: {{ .Values.hushd.service.type }}
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.hushd.service.port }}
+      targetPort: http
+{{- end }}

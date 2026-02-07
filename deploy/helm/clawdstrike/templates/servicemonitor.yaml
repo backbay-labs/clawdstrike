@@ -1,0 +1,32 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: clawdstrike
+  endpoints:
+    {{- if and .Values.nats.enabled .Values.nats.monitoring.enabled (not .Values.nats.external.enabled) }}
+    - port: monitoring
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: /varz
+    {{- end }}
+    {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+    - port: http
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: /metrics
+    {{- end }}
+    {{- if .Values.hushd.enabled }}
+    - port: http
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: /metrics
+    {{- end }}
+{{- end }}
