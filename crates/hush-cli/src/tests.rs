@@ -1918,6 +1918,7 @@ mod policy_event_contract {
 
 #[cfg(test)]
 mod policy_pac_contract {
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1931,6 +1932,27 @@ mod policy_pac_contract {
             .expect("time")
             .as_nanos();
         std::env::temp_dir().join(format!("hush_cli_{name}_{nanos}"))
+    }
+
+    fn fixture_events_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/policy-events/v1/events.jsonl")
+    }
+
+    fn fixture_event_ids(path: &PathBuf) -> BTreeSet<String> {
+        std::fs::read_to_string(path)
+            .expect("read fixture events")
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let v: serde_json::Value =
+                    serde_json::from_str(line).expect("valid fixture event JSON");
+                v.get("eventId")
+                    .and_then(|x| x.as_str())
+                    .expect("fixture eventId")
+                    .to_string()
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -2010,8 +2032,8 @@ mod policy_pac_contract {
         let mut err = Vec::new();
         let remote = RemoteExtendsConfig::disabled();
 
-        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let fixtures_path = fixture_events_path();
+        let expected_ids = fixture_event_ids(&fixtures_path);
 
         let code = cmd_policy_simulate(
             "default".to_string(),
@@ -2047,9 +2069,13 @@ mod policy_pac_contract {
             .get("results")
             .and_then(|v| v.as_array())
             .expect("results array");
-        assert_eq!(results.len(), 6, "expected one result per fixture line");
+        assert_eq!(
+            results.len(),
+            expected_ids.len(),
+            "expected one result per fixture line"
+        );
 
-        let ids: std::collections::BTreeSet<String> = results
+        let ids: BTreeSet<String> = results
             .iter()
             .filter_map(|r| {
                 r.get("eventId")
@@ -2058,10 +2084,8 @@ mod policy_pac_contract {
             })
             .collect();
 
-        for id in [
-            "evt-0001", "evt-0002", "evt-0003", "evt-0004", "evt-0005", "evt-0006",
-        ] {
-            assert!(ids.contains(id), "missing eventId {id}");
+        for id in expected_ids {
+            assert!(ids.contains(&id), "missing eventId {id}");
         }
 
         let first = &results[0];
@@ -2076,8 +2100,8 @@ mod policy_pac_contract {
 
     #[tokio::test]
     async fn policy_simulate_jsonl_streams_one_json_object_per_event() {
-        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let fixtures_path = fixture_events_path();
+        let expected_count = fixture_event_ids(&fixtures_path).len();
 
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -2105,7 +2129,11 @@ mod policy_pac_contract {
 
         let stdout = String::from_utf8(out).expect("utf8");
         let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
-        assert_eq!(lines.len(), 6, "expected one JSON line per event");
+        assert_eq!(
+            lines.len(),
+            expected_count,
+            "expected one JSON line per event"
+        );
 
         for line in &lines {
             let v: serde_json::Value = serde_json::from_str(line).expect("valid json line");
@@ -2117,8 +2145,8 @@ mod policy_pac_contract {
 
     #[tokio::test]
     async fn policy_simulate_json_summary_only_omits_results_but_preserves_counts() {
-        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let fixtures_path = fixture_events_path();
+        let expected_count = fixture_event_ids(&fixtures_path).len();
 
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -2149,7 +2177,7 @@ mod policy_pac_contract {
             v.get("summary")
                 .and_then(|v| v.get("total"))
                 .and_then(|v| v.as_i64()),
-            Some(6)
+            Some(expected_count as i64)
         );
         assert_eq!(
             v.get("results").and_then(|v| v.as_array()).map(|a| a.len()),
@@ -2159,8 +2187,7 @@ mod policy_pac_contract {
 
     #[tokio::test]
     async fn policy_simulate_no_fail_on_deny_exit_code_ok() {
-        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let fixtures_path = fixture_events_path();
 
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -2187,18 +2214,20 @@ mod policy_pac_contract {
         assert_eq!(code, ExitCode::Ok);
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
         assert_eq!(v.get("exit_code").and_then(|v| v.as_i64()), Some(0));
-        assert_eq!(
-            v.get("summary")
-                .and_then(|v| v.get("blocked"))
-                .and_then(|v| v.as_i64()),
-            Some(2)
+        let blocked = v
+            .get("summary")
+            .and_then(|v| v.get("blocked"))
+            .and_then(|v| v.as_i64())
+            .expect("summary.blocked");
+        assert!(
+            blocked > 0,
+            "fixture corpus should include blocked decisions"
         );
     }
 
     #[tokio::test]
     async fn policy_simulate_matches_expected_decisions_fixture_default_ruleset() {
-        let fixtures_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/policy-events/v1/events.jsonl");
+        let fixtures_path = fixture_events_path();
         let expected_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/policy-events/v1/expected/default.decisions.json");
 
@@ -2220,7 +2249,10 @@ mod policy_pac_contract {
                 })
                 .collect();
 
-        assert_eq!(expected_by_id.len(), 6, "expected one decision per fixture");
+        assert!(
+            !expected_by_id.is_empty(),
+            "expected one decision per fixture"
+        );
 
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -2253,7 +2285,11 @@ mod policy_pac_contract {
             .get("results")
             .and_then(|v| v.as_array())
             .expect("results array");
-        assert_eq!(results.len(), 6, "expected one result per fixture line");
+        assert_eq!(
+            results.len(),
+            expected_by_id.len(),
+            "expected one result per fixture line"
+        );
 
         for r in results {
             let id = r

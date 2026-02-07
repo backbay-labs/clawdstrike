@@ -1,6 +1,6 @@
 # Policy Events Fixtures (v1)
 
-This directory contains a small, representative corpus of **policy evaluation inputs** to support cross-SDK parity work (Rust + TypeScript).
+This directory contains a representative **policy parity corpus** for cross-SDK validation (Rust + TypeScript), including allow/deny coverage across core built-in guards.
 
 ## Files
 

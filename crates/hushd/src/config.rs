@@ -1503,15 +1503,15 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, MutexGuard, OnceLock};
+    use std::sync::OnceLock;
 
     use super::*;
 
-    fn auth_pepper_env_lock() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+    async fn auth_pepper_env_lock() -> tokio::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .await
     }
 
     struct AuthPepperEnvGuard {
@@ -1619,7 +1619,7 @@ scopes = ["*"]
 
     #[tokio::test]
     async fn test_load_auth_store() -> anyhow::Result<()> {
-        let _lock = auth_pepper_env_lock();
+        let _lock = auth_pepper_env_lock().await;
         let _pepper = AuthPepperEnvGuard::set(Some("test-pepper"));
 
         let toml = r#"
@@ -1646,7 +1646,7 @@ scopes = ["check"]
 
     #[tokio::test]
     async fn test_load_auth_store_default_scopes() -> anyhow::Result<()> {
-        let _lock = auth_pepper_env_lock();
+        let _lock = auth_pepper_env_lock().await;
         let _pepper = AuthPepperEnvGuard::set(Some("test-pepper"));
 
         let toml = r#"
@@ -1673,7 +1673,7 @@ scopes = []
 
     #[tokio::test]
     async fn test_load_auth_store_expands_env_refs() -> anyhow::Result<()> {
-        let _lock = auth_pepper_env_lock();
+        let _lock = auth_pepper_env_lock().await;
         let _pepper = AuthPepperEnvGuard::set(Some("test-pepper"));
         std::env::set_var("CLAWDSTRIKE_TEST_API_KEY", "secret-from-env");
 
@@ -1697,7 +1697,7 @@ auth:
     #[tokio::test]
     async fn test_load_auth_store_allows_auth_enabled_without_api_keys_and_without_pepper(
     ) -> anyhow::Result<()> {
-        let _lock = auth_pepper_env_lock();
+        let _lock = auth_pepper_env_lock().await;
         let _pepper = AuthPepperEnvGuard::set(None);
 
         let toml = r#"
@@ -1714,7 +1714,7 @@ enabled = true
 
     #[tokio::test]
     async fn test_load_auth_store_requires_pepper_when_api_keys_are_configured() {
-        let _lock = auth_pepper_env_lock();
+        let _lock = auth_pepper_env_lock().await;
         let _pepper = AuthPepperEnvGuard::set(None);
 
         let toml = r#"

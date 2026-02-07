@@ -175,6 +175,41 @@ interface DaemonCheckResponse {
 
 type BuiltinPolicyId = 'default' | 'strict' | 'ai-agent' | 'cicd' | 'permissive';
 
+const DEFAULT_POLICY_SECRET_LEAK_PATTERNS: Array<{
+  name: string;
+  pattern: string;
+  severity: "info" | "warning" | "error" | "critical";
+}> = [
+  { name: "aws_access_key", pattern: "AKIA[0-9A-Z]{16}", severity: "critical" },
+  {
+    name: "aws_secret_key",
+    pattern:
+      "(?i)aws[_\\-]?secret[_\\-]?access[_\\-]?key['\"]?\\s*[:=]\\s*['\"]?[A-Za-z0-9/+=]{40}",
+    severity: "critical",
+  },
+  { name: "github_token", pattern: "gh[ps]_[A-Za-z0-9]{36}", severity: "critical" },
+  { name: "github_pat", pattern: "github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}", severity: "critical" },
+  { name: "openai_key", pattern: "sk-[A-Za-z0-9]{48}", severity: "critical" },
+  { name: "anthropic_key", pattern: "sk-ant-[A-Za-z0-9\\-]{95}", severity: "critical" },
+  { name: "private_key", pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----", severity: "critical" },
+  { name: "npm_token", pattern: "npm_[A-Za-z0-9]{36}", severity: "critical" },
+  {
+    name: "slack_token",
+    pattern: "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*",
+    severity: "critical",
+  },
+  {
+    name: "generic_api_key",
+    pattern: "(?i)(api[_\\-]?key|apikey)['\"]?\\s*[:=]\\s*['\"]?[A-Za-z0-9]{32,}",
+    severity: "warning",
+  },
+  {
+    name: "generic_secret",
+    pattern: "(?i)(secret|password|passwd|pwd)['\"]?\\s*[:=]\\s*['\"]?[A-Za-z0-9!@#$%^&*]{8,}",
+    severity: "warning",
+  },
+];
+
 /**
  * Generic tool set type for framework integration.
  */
@@ -643,7 +678,7 @@ function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
     }
     return undefined;
   };
-  const patterns = Array.isArray(value.patterns)
+  let patterns = Array.isArray(value.patterns)
     ? value.patterns
       .filter((entry): entry is Record<string, unknown> => isPlainObject(entry) && typeof entry.pattern === 'string')
       .map((entry) => ({
@@ -653,8 +688,13 @@ function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
       }))
     : undefined;
 
+  const secrets = toStringArray(value.secrets);
+  if (!patterns && !secrets) {
+    patterns = DEFAULT_POLICY_SECRET_LEAK_PATTERNS.map((entry) => ({ ...entry }));
+  }
+
   return {
-    secrets: toStringArray(value.secrets),
+    secrets,
     patterns,
     enabled: toBoolean(value.enabled),
   };

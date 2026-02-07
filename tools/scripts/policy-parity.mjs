@@ -184,7 +184,15 @@ async function evaluateSdkEvent(sdk, event) {
     case 'file_read':
       return sdk.check('file_access', { path: data.path });
     case 'file_write':
-      return sdk.check('file_write', { path: data.path, content: data.content });
+      return sdk.check('file_write', {
+        path: data.path,
+        content:
+          typeof data.content === 'string'
+            ? Buffer.from(data.content, 'utf8')
+            : typeof data.contentBase64 === 'string'
+              ? Buffer.from(data.contentBase64, 'base64')
+              : undefined,
+      });
     case 'network_egress':
       return sdk.check('network_egress', { host: data.host, port: data.port, url: data.url });
     case 'tool_call':
@@ -194,9 +202,9 @@ async function evaluateSdkEvent(sdk, event) {
     case 'custom':
       return sdk.check('custom', {
         customType: data.customType,
-        customData: {
-          text: data.text,
-        },
+        customData: Object.fromEntries(
+          Object.entries(data).filter(([k]) => k !== 'type' && k !== 'customType'),
+        ),
       });
     default:
       return sdk.check('custom', { customType: 'custom', customData: data });

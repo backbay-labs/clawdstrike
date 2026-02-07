@@ -17,19 +17,10 @@ const WASM_GUARD_ABI_VERSION: i32 = 1;
 const ACTION_PTR: usize = 1024;
 const INPUT_PTR: usize = 8192;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WasmGuardRuntimeOptions {
     pub capabilities: PluginCapabilities,
     pub resources: PluginResourceLimits,
-}
-
-impl Default for WasmGuardRuntimeOptions {
-    fn default() -> Self {
-        Self {
-            capabilities: PluginCapabilities::default(),
-            resources: PluginResourceLimits::default(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -466,7 +457,7 @@ fn enforce_memory_limit(module: &Module, max_memory_mb: u32, guard: &str) -> Res
     let mut declared_bytes = 0_u64;
     for export in module.exports() {
         if let ExternType::Memory(memory) = export.ty() {
-            declared_bytes = u64::from(memory.minimum()).saturating_mul(65_536);
+            declared_bytes = memory.minimum().saturating_mul(65_536);
             break;
         }
     }

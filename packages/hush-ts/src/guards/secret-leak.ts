@@ -51,6 +51,9 @@ export class SecretLeakGuard implements Guard {
   }
 
   handles(action: GuardAction): boolean {
+    if (action.actionType === "file_write" || action.actionType === "patch") {
+      return true;
+    }
     if (action.actionType === "custom" && action.customType) {
       return OUTPUT_ACTION_TYPES.has(action.customType);
     }
@@ -67,7 +70,7 @@ export class SecretLeakGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const text = this.extractText(action.customData);
+    const text = this.extractText(action);
     if (!text) {
       return GuardResult.allow(this.name);
     }
@@ -84,7 +87,7 @@ export class SecretLeakGuard implements Guard {
           "Secret value exposed in output"
         ).withDetails({
           secret_hint: hint,
-          action_type: action.customType,
+          action_type: action.customType ?? action.actionType,
         });
       }
     }
@@ -96,7 +99,7 @@ export class SecretLeakGuard implements Guard {
         const baseResult = this.patternResult(entry.severity, "Secret pattern matched in output");
         return baseResult.withDetails({
           secret_hint: hint,
-          action_type: action.customType,
+          action_type: action.customType ?? action.actionType,
         });
       }
     }
@@ -128,7 +131,14 @@ export class SecretLeakGuard implements Guard {
     return new GuardResult(true, this.name, severity, message);
   }
 
-  private extractText(data?: Record<string, unknown>): string {
+  private extractText(action: GuardAction): string {
+    if (action.actionType === "file_write" && action.content) {
+      return Buffer.from(action.content).toString("utf8");
+    }
+    if (action.actionType === "patch" && action.diff) {
+      return action.diff;
+    }
+    const data = action.customData;
     if (!data) return "";
 
     // Check common content field names

@@ -69,7 +69,7 @@ export class JailbreakGuard implements Guard {
     };
 
     if (riskScore >= this.blockThreshold) {
-      const severity = riskScore >= 90 ? Severity.CRITICAL : Severity.ERROR;
+      const severity = riskScore >= 100 ? Severity.CRITICAL : Severity.ERROR;
       return GuardResult.block(this.name, severity, "Jailbreak attempt detected")
         .withDetails(details);
     }

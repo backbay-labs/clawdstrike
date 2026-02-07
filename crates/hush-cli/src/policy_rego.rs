@@ -188,10 +188,7 @@ fn cmd_rego_eval(
     };
 
     let traces = if trace {
-        match engine.take_prints() {
-            Ok(v) => v,
-            Err(_) => Vec::new(),
-        }
+        engine.take_prints().unwrap_or_default()
     } else {
         Vec::new()
     };

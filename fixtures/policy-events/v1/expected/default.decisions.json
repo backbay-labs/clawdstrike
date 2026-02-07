@@ -6,13 +6,13 @@
   },
   "events": {
     "path": "fixtures/policy-events/v1/events.jsonl",
-    "count": 6
+    "count": 12
   },
   "summary": {
-    "total": 6,
-    "allowed": 4,
+    "total": 12,
+    "allowed": 5,
     "warn": 0,
-    "blocked": 2
+    "blocked": 7
   },
   "results": [
     {
@@ -90,6 +90,84 @@
         "guard": "prompt_injection",
         "severity": "critical",
         "message": "Untrusted text contains prompt-injection signals (Critical)",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0007",
+      "outcome": "blocked",
+      "decision": {
+        "allowed": false,
+        "denied": true,
+        "warn": false,
+        "guard": "egress_allowlist",
+        "severity": "high",
+        "message": "Egress to evil.example blocked by policy",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0008",
+      "outcome": "blocked",
+      "decision": {
+        "allowed": false,
+        "denied": true,
+        "warn": false,
+        "guard": "mcp_tool",
+        "severity": "high",
+        "message": "Tool 'shell_exec' is blocked by policy",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0009",
+      "outcome": "allowed",
+      "decision": {
+        "allowed": true,
+        "denied": false,
+        "warn": false,
+        "guard": null,
+        "severity": null,
+        "message": "Allowed",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0010",
+      "outcome": "blocked",
+      "decision": {
+        "allowed": false,
+        "denied": true,
+        "warn": false,
+        "guard": "forbidden_path",
+        "severity": "critical",
+        "message": "Access to forbidden path: /etc/sudoers",
+        "reason": "missing_content_bytes"
+      }
+    },
+    {
+      "eventId": "evt-0011",
+      "outcome": "blocked",
+      "decision": {
+        "allowed": false,
+        "denied": true,
+        "warn": false,
+        "guard": "jailbreak_detection",
+        "severity": "high",
+        "message": "Jailbreak attempt detected",
+        "reason": null
+      }
+    },
+    {
+      "eventId": "evt-0012",
+      "outcome": "blocked",
+      "decision": {
+        "allowed": false,
+        "denied": true,
+        "warn": false,
+        "guard": "secret_leak",
+        "severity": "critical",
+        "message": "Potential secrets detected: openai_key",
         "reason": null
       }
     }
