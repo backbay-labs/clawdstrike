@@ -1,12 +1,14 @@
 /**
  * ReceiptPanel - Detailed view of an audit event with receipt
  */
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { GlowButton } from "@backbay/glia/primitives";
 import type { AuditEvent } from "@/types/events";
+import { verifyReceipt } from "@/services/tauri";
+import type { ReceiptVerificationResult } from "@/services/tauri";
 
 interface ReceiptPanelProps {
   event: AuditEvent;
@@ -15,6 +17,48 @@ interface ReceiptPanelProps {
 
 export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
   const [activeTab, setActiveTab] = useState<"details" | "json">("details");
+  const [verification, setVerification] = useState<ReceiptVerificationResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setVerifying(true);
+    setVerifyError(null);
+    setVerification(null);
+
+    verifyReceipt(event)
+      .then((result) => {
+        if (!cancelled) setVerification(result);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setVerifyError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setVerifying(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [event]);
+
+  const handleCopyJson = useCallback(async () => {
+    const json = JSON.stringify(event, null, 2);
+    await navigator.clipboard.writeText(json);
+    setCopyFeedback(true);
+    setTimeout(() => setCopyFeedback(false), 1500);
+  }, [event]);
+
+  const handleExport = useCallback(() => {
+    const json = JSON.stringify(event, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `clawdstrike-event-${event.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [event]);
 
   return (
     <GlassPanel className="w-96 border-l border-sdr-border flex flex-col">
@@ -46,7 +90,7 @@ export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === "details" ? (
-          <DetailsTab event={event} />
+          <DetailsTab event={event} verification={verification} verifying={verifying} verifyError={verifyError} />
         ) : (
           <JsonTab event={event} />
         )}
@@ -54,10 +98,10 @@ export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
 
       {/* Footer actions */}
       <div className="flex items-center gap-2 px-4 py-3 border-t border-sdr-border">
-        <GlowButton variant="secondary" className="flex-1">
-          Copy JSON
+        <GlowButton variant="secondary" className="flex-1" onClick={handleCopyJson}>
+          {copyFeedback ? "Copied!" : "Copy JSON"}
         </GlowButton>
-        <GlowButton variant="secondary" className="flex-1">
+        <GlowButton variant="secondary" className="flex-1" onClick={handleExport}>
           Export
         </GlowButton>
       </div>
@@ -65,7 +109,14 @@ export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
   );
 }
 
-function DetailsTab({ event }: { event: AuditEvent }) {
+interface DetailsTabProps {
+  event: AuditEvent;
+  verification: ReceiptVerificationResult | null;
+  verifying: boolean;
+  verifyError: string | null;
+}
+
+function DetailsTab({ event, verification, verifying, verifyError }: DetailsTabProps) {
   const time = new Date(event.timestamp);
 
   return (
@@ -140,16 +191,98 @@ function DetailsTab({ event }: { event: AuditEvent }) {
         </Section>
       )}
 
-      {/* Verification placeholder */}
+      {/* Verification */}
       <Section title="Verification">
-        <div className="flex items-center gap-2 text-sm">
-          <VerifiedIcon className="w-4 h-4 text-sdr-accent-amber" />
-          <span className="text-sdr-text-secondary">
-            Signature verification unavailable in streamed event payloads
-          </span>
-        </div>
+        <VerificationStatus verification={verification} verifying={verifying} error={verifyError} />
       </Section>
     </div>
+  );
+}
+
+function VerificationStatus({
+  verification,
+  verifying,
+  error,
+}: {
+  verification: ReceiptVerificationResult | null;
+  verifying: boolean;
+  error: string | null;
+}) {
+  if (verifying) {
+    return (
+      <div className="flex items-center gap-2 text-sm">
+        <VerifiedIcon className="w-4 h-4 text-sdr-text-muted animate-pulse" />
+        <span className="text-sdr-text-muted">Verifying signature...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-sm">
+        <VerifiedIcon className="w-4 h-4 text-severity-error" />
+        <span className="text-sdr-text-secondary">Verification failed: {error}</span>
+      </div>
+    );
+  }
+
+  if (!verification) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm">
+        <VerifiedIcon
+          className={clsx(
+            "w-4 h-4",
+            verification.valid ? "text-verdict-allowed" : "text-severity-error"
+          )}
+        />
+        <span
+          className={clsx(
+            "font-medium",
+            verification.valid ? "text-verdict-allowed" : "text-severity-error"
+          )}
+        >
+          {verification.valid ? "Valid" : "Invalid"}
+        </span>
+      </div>
+      <div className="space-y-1 text-xs text-sdr-text-secondary">
+        <div className="flex items-center gap-1.5">
+          <StatusDot valid={verification.signature_valid} />
+          <span>Signature {verification.signature_valid ? "valid" : "invalid"}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <StatusDot valid={verification.timestamp_valid} />
+          <span>Timestamp {verification.timestamp_valid ? "valid" : "invalid"}</span>
+        </div>
+        {verification.merkle_valid != null && (
+          <div className="flex items-center gap-1.5">
+            <StatusDot valid={verification.merkle_valid} />
+            <span>Merkle proof {verification.merkle_valid ? "valid" : "invalid"}</span>
+          </div>
+        )}
+      </div>
+      {verification.errors.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {verification.errors.map((err, i) => (
+            <p key={i} className="text-xs text-severity-error">{err}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusDot({ valid }: { valid: boolean }) {
+  return (
+    <span
+      className={clsx(
+        "inline-block w-2 h-2 rounded-full",
+        valid ? "bg-verdict-allowed" : "bg-severity-error"
+      )}
+    />
   );
 }
 

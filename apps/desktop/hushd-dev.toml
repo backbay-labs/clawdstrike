@@ -1,0 +1,2 @@
+# Development config for hushd with CORS enabled for desktop app dev mode
+cors_enabled = true

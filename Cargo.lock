@@ -1764,6 +1764,7 @@ dependencies = [
  "hex",
  "hush-certification",
  "hush-core",
+ "hush-multi-agent",
  "hush-proxy",
  "jsonwebtoken",
  "openssl",

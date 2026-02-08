@@ -2,6 +2,7 @@
  * ConnectionContext - Hushd daemon connection state management
  */
 import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from "react";
+import { testDaemonConnection } from "@/services/tauri";
 
 export type ConnectionMode = "local" | "remote" | "embedded";
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -85,16 +86,11 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
 
   const testConnection = useCallback(async (url?: string): Promise<DaemonInfo> => {
     const targetUrl = url ?? state.daemonUrl;
-    const response = await fetch(`${targetUrl}/health`);
-    if (!response.ok) {
-      throw new Error(`Connection failed: ${response.status}`);
-    }
-    const data = await response.json();
+    const result = await testDaemonConnection(targetUrl);
     return {
-      version: data.version ?? "unknown",
-      policy_hash: data.policy_hash,
-      policy_name: data.policy_name,
-      uptime_secs: data.uptime_secs,
+      version: result.version ?? "unknown",
+      policy_hash: result.policy_hash,
+      uptime_secs: result.uptime_secs,
     };
   }, [state.daemonUrl]);
 

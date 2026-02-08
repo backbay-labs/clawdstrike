@@ -1,5 +1,6 @@
 //! HTTP API for hushd daemon
 
+pub mod agents;
 pub mod audit;
 pub mod certification;
 pub mod check;
@@ -261,6 +262,8 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
+        .route("/api/v1/agents", get(agents::list_agents))
+        .route("/api/v1/delegations", get(agents::list_delegations))
         .route("/api/v1/events", get(events::stream_events))
         .route("/api/v1/siem/exporters", get(siem::exporters))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));

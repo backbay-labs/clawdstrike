@@ -6,14 +6,6 @@ use tauri::State;
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CheckRequest {
-    pub policy_ref: String,
-    pub action_type: String,
-    pub target: String,
-    pub content: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct CheckResponse {
     pub allowed: bool,
     pub guard: Option<String>,

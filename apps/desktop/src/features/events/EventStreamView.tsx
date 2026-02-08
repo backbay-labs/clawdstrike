@@ -7,6 +7,7 @@ import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { GlowButton } from "@backbay/glia/primitives";
 import { useConnection } from "@/context/ConnectionContext";
 import { useEventStream } from "@/services/eventStream";
+import { useSessionState } from "@/shell/sessions";
 import type { AuditEvent, ActionType, Decision, Severity, DaemonEvent } from "@/types/events";
 import { EventRow } from "./components/EventRow";
 import { EventFilters } from "./components/EventFilters";
@@ -23,7 +24,7 @@ export interface EventFilter {
 export function EventStreamView() {
   const { status, daemonUrl } = useConnection();
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
-  const [filter, setFilter] = useState<EventFilter>({});
+  const [filter, setFilter] = useSessionState<EventFilter>("events:filter", {});
 
   const { events, isConnected, isLive, toggleLive, clearEvents } = useEventStream({
     baseUrl: daemonUrl,

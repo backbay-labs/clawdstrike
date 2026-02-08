@@ -28,6 +28,7 @@ hush-core.workspace = true
 hush-proxy.workspace = true
 clawdstrike.workspace = true
 hush-certification.workspace = true
+hush-multi-agent.workspace = true
 clap.workspace = true
 tokio.workspace = true
 async-trait.workspace = true

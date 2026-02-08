@@ -4,3 +4,4 @@ export * from "./tauri";
 export * from "./marketplaceSettings";
 export * from "./marketplaceDiscoverySettings";
 export * from "./marketplaceProvenanceSettings";
+export * from "./socDataService";

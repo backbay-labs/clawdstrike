@@ -20,6 +20,8 @@ pub struct Workflow {
     pub last_run: Option<String>,
     pub run_count: u64,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,7 +119,7 @@ fn get_workflows() -> &'static RwLock<HashMap<String, Workflow>> {
 
 fn get_workflows_file_path() -> PathBuf {
     let app_data = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    app_data.join("sdr-desktop").join("workflows.json")
+    app_data.join("clawdstrike").join("workflows.json")
 }
 
 fn load_workflows_from_file() -> Option<HashMap<String, Workflow>> {
@@ -582,7 +584,8 @@ pub async fn list_workflows() -> Result<Vec<Workflow>, String> {
 
 /// Save a workflow (create or update)
 #[tauri::command]
-pub async fn save_workflow(workflow: Workflow) -> Result<(), String> {
+pub async fn save_workflow(mut workflow: Workflow) -> Result<(), String> {
+    workflow.updated_at = Some(chrono::Utc::now().to_rfc3339());
     let mut workflows = get_workflows().write().await;
     workflows.insert(workflow.id.clone(), workflow);
     save_workflows_to_file(&workflows)

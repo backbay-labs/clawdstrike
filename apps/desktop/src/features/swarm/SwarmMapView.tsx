@@ -3,6 +3,7 @@
  */
 import { Suspense, useState, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
+import { Canvas3DErrorBoundary } from "@/components/Canvas3DErrorBoundary";
 import { OrbitControls, Environment } from "@react-three/drei";
 import { EnvironmentLayer } from "@backbay/glia/primitives";
 import { GlowButton } from "@backbay/glia/primitives";
@@ -36,44 +37,48 @@ export function SwarmMapView() {
       {/* 3D Canvas */}
       <div className="absolute inset-0">
         <EnvironmentLayer preset="cyberpunk-city" intensity={0.2} />
-        <Canvas
-          camera={{ position: [0, 5, 12], fov: 50 }}
-          style={{ background: "#0a0a0f" }}
-        >
-          <Suspense fallback={null}>
-            {/* Lighting */}
-            <ambientLight intensity={0.4} />
-            <pointLight position={[10, 10, 10]} intensity={0.8} />
-            <pointLight position={[-10, -10, -10]} intensity={0.4} color="#3b82f6" />
+        <Canvas3DErrorBoundary>
+          <Canvas
+            camera={{ position: [0, 5, 12], fov: 50 }}
+            dpr={[1, 2]}
+            gl={{ antialias: true, powerPreference: "high-performance" }}
+            style={{ background: "#0a0a0f" }}
+          >
+            <Suspense fallback={null}>
+              {/* Lighting */}
+              <ambientLight intensity={0.4} />
+              <pointLight position={[10, 10, 10]} intensity={0.8} />
+              <pointLight position={[-10, -10, -10]} intensity={0.4} color="#3b82f6" />
 
-            {/* Environment for reflections */}
-            <Environment preset="night" />
+              {/* Environment for reflections */}
+              <Environment preset="night" />
 
-            {/* Grid helper */}
-            <gridHelper args={[20, 20, "#1f1f2a", "#1f1f2a"]} position={[0, -2, 0]} />
+              {/* Grid helper */}
+              <gridHelper args={[20, 20, "#1f1f2a", "#1f1f2a"]} position={[0, -2, 0]} />
 
-            {/* Agent nodes */}
-            <AgentNodes
-              agents={agents}
-              selectedId={selectedAgent?.id}
-              onSelect={(id) => selectAgent(id)}
-            />
+              {/* Agent nodes */}
+              <AgentNodes
+                agents={agents}
+                selectedId={selectedAgent?.id}
+                onSelect={(id) => selectAgent(id)}
+              />
 
-            {/* Delegation edges */}
-            <DelegationEdges edges={delegations} agents={agents} />
+              {/* Delegation edges */}
+              <DelegationEdges edges={delegations} agents={agents} />
 
-            {/* Camera controls */}
-            <OrbitControls
-              enablePan
-              enableZoom
-              enableRotate
-              minDistance={5}
-              maxDistance={30}
-              autoRotate={agents.length > 0 && !selectedAgent}
-              autoRotateSpeed={0.5}
-            />
-          </Suspense>
-        </Canvas>
+              {/* Camera controls */}
+              <OrbitControls
+                enablePan
+                enableZoom
+                enableRotate
+                minDistance={5}
+                maxDistance={30}
+                autoRotate={agents.length > 0 && !selectedAgent}
+                autoRotateSpeed={0.5}
+              />
+            </Suspense>
+          </Canvas>
+        </Canvas3DErrorBoundary>
       </div>
 
       {/* Header overlay */}

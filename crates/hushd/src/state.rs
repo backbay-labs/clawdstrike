@@ -36,6 +36,7 @@ use crate::siem::manager::{
 };
 use crate::siem::threat_intel::guard::ThreatIntelGuard;
 use crate::siem::threat_intel::service::{ThreatIntelService, ThreatIntelState};
+use hush_multi_agent::{IdentityRegistry, InMemoryIdentityRegistry, SignedDelegationToken};
 use crate::siem::types::{SecurityEvent, SecurityEventContext};
 use crate::v1_rate_limit::V1RateLimitState;
 
@@ -113,6 +114,10 @@ pub struct AppState {
     pub siem_manager: Arc<Mutex<Option<ExporterManager>>>,
     /// Shutdown notifier (used for API-triggered shutdown)
     pub shutdown: Arc<Notify>,
+    /// Agent identity registry (multi-agent orchestration)
+    pub agent_registry: Arc<dyn IdentityRegistry>,
+    /// Active delegation tokens (multi-agent orchestration)
+    pub delegation_tokens: Arc<RwLock<Vec<SignedDelegationToken>>>,
 }
 
 #[derive(Clone)]
@@ -474,6 +479,8 @@ impl AppState {
             siem_exporters: Arc::new(RwLock::new(siem_exporters)),
             siem_manager: Arc::new(Mutex::new(siem_manager)),
             shutdown: Arc::new(Notify::new()),
+            agent_registry: Arc::new(InMemoryIdentityRegistry::default()),
+            delegation_tokens: Arc::new(RwLock::new(Vec::new())),
         };
 
         // Record session start (after forwarder is initialized).

@@ -5,6 +5,48 @@
    (e.g. backdrop-blur-[var(--glass-blur,24px)]) */
 @source "../node_modules/@backbay/glia/dist/**/*.js";
 
+/* SDR Desktop theme (Tailwind v4 CSS-first config) */
+@theme {
+  /* SDR color scheme */
+  --color-sdr-bg-primary: #0a0a0f;
+  --color-sdr-bg-secondary: #12121a;
+  --color-sdr-bg-tertiary: #1a1a24;
+  --color-sdr-border: #2a2a3a;
+  --color-sdr-border-subtle: #1f1f2a;
+  --color-sdr-text-primary: #f0f0f5;
+  --color-sdr-text-secondary: #9090a0;
+  --color-sdr-text-muted: #606070;
+  --color-sdr-accent-blue: #3b82f6;
+  --color-sdr-accent-green: #22c55e;
+  --color-sdr-accent-amber: #f59e0b;
+  --color-sdr-accent-orange: #f97316;
+  --color-sdr-accent-red: #ef4444;
+  --color-sdr-accent-purple: #a855f7;
+
+  /* Trust level colors */
+  --color-trust-system: #22c55e;
+  --color-trust-high: #3b82f6;
+  --color-trust-medium: #f59e0b;
+  --color-trust-low: #f97316;
+  --color-trust-untrusted: #ef4444;
+
+  /* Verdict colors */
+  --color-verdict-allowed: #22c55e;
+  --color-verdict-blocked: #ef4444;
+  --color-verdict-warn: #f59e0b;
+
+  /* Severity colors */
+  --color-severity-info: #3b82f6;
+  --color-severity-warning: #f59e0b;
+  --color-severity-error: #f97316;
+  --color-severity-critical: #ef4444;
+
+  /* Fonts */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+}
+
 /* SDR Desktop global styles */
 
 :root {

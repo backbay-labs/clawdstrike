@@ -26,8 +26,17 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {
-    target: ["es2021", "chrome105", "safari13"],
+    target: ["es2021", "chrome105", "safari15"],
     minify: process.env.TAURI_DEBUG ? false : "esbuild",
     sourcemap: !!process.env.TAURI_DEBUG,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-three": ["three", "@react-three/fiber", "@react-three/drei"],
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-glia": ["@backbay/glia"],
+        },
+      },
+    },
   },
 });

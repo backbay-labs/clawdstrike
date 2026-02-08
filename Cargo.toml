@@ -114,6 +114,7 @@ hush-core = { path = "crates/hush-core", version = "0.1.0" }
 hush-proxy = { path = "crates/hush-proxy", version = "0.1.0" }
 clawdstrike = { path = "crates/clawdstrike", version = "0.1.0" }
 hush-certification = { path = "crates/hush-certification", version = "0.1.0" }
+hush-multi-agent = { path = "crates/hush-multi-agent", version = "0.1.0" }
 
 [profile.release]
 lto = true

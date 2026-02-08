@@ -8,6 +8,7 @@ import type {
   ActionType,
 } from "@/types/events";
 import type { PolicyBundle, ValidationResult } from "@/types/policies";
+import type { AgentIdentity, DelegationEdge } from "@/types/agents";
 
 export interface CheckRequest {
   action_type: ActionType;
@@ -204,12 +205,18 @@ export class HushdClient {
 
   // === Agents ===
 
-  async getAgents(): Promise<{ agents: unknown[] }> {
-    return { agents: [] };
+  async getAgents(): Promise<{ agents: AgentIdentity[] }> {
+    const response = await this.fetch<{ agents: AgentIdentity[] } | ApiResponse<{ agents: AgentIdentity[] }>>(
+      "/api/v1/agents"
+    );
+    return this.unwrapData(response);
   }
 
-  async getDelegations(): Promise<{ delegations: unknown[] }> {
-    return { delegations: [] };
+  async getDelegations(): Promise<{ delegations: DelegationEdge[] }> {
+    const response = await this.fetch<{ delegations: DelegationEdge[] } | ApiResponse<{ delegations: DelegationEdge[] }>>(
+      "/api/v1/delegations"
+    );
+    return this.unwrapData(response);
   }
 }
 

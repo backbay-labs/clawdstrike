@@ -2,10 +2,18 @@
  * NavRail - Left sidebar navigation for SDR views
  */
 import { clsx } from "clsx";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { GlitchText } from "@backbay/glia/primitives";
 import type { AppId, PluginIcon } from "../plugins/types";
 import { getPlugins } from "../plugins";
+import {
+  useSessions,
+  useActiveSession,
+  useSessionActions,
+  useActiveApp,
+} from "../sessions";
+import type { Session } from "../sessions";
 
 interface NavRailProps {
   activeAppId: AppId;
@@ -14,9 +22,32 @@ interface NavRailProps {
 
 export function NavRail({ activeAppId, onSelectApp }: NavRailProps) {
   const plugins = getPlugins();
+  const navigate = useNavigate();
+  const sessions = useSessions({ archived: false });
+  const activeSession = useActiveSession();
+  const currentAppId = useActiveApp();
+  const { createSession, setActiveSession, togglePin, archiveSession, deleteSession } =
+    useSessionActions();
+
+  const [sessionsExpanded, setSessionsExpanded] = useState(false);
+
+  const handleSessionClick = useCallback(
+    (session: Session) => {
+      setActiveSession(session.id);
+      navigate(`/${session.appId}/${session.id}`);
+    },
+    [setActiveSession, navigate]
+  );
+
+  const handleNewSession = useCallback(() => {
+    const appId = currentAppId ?? activeAppId;
+    const session = createSession(appId);
+    navigate(`/${appId}/${session.id}`);
+  }, [currentAppId, activeAppId, createSession, navigate]);
 
   return (
     <nav className="relative z-10 flex flex-col w-16 h-full bg-sdr-bg-secondary border-r border-sdr-border py-4">
+      {/* App navigation */}
       <div className="flex flex-col gap-1 px-2">
         {plugins.map((plugin) => (
           <NavButton
@@ -31,6 +62,77 @@ export function NavRail({ activeAppId, onSelectApp }: NavRailProps) {
 
       <div className="flex-1" />
 
+      {/* Sessions section */}
+      <div className="px-2 mb-2">
+        {/* Sessions toggle */}
+        <button
+          onClick={() => setSessionsExpanded(!sessionsExpanded)}
+          title="Sessions"
+          className={clsx(
+            "flex items-center justify-center w-12 h-8 rounded-lg transition-colors mb-1",
+            sessionsExpanded
+              ? "bg-sdr-accent-blue/20 text-sdr-accent-blue"
+              : "text-sdr-text-secondary hover:bg-sdr-bg-tertiary hover:text-sdr-text-primary"
+          )}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <rect
+              x="3"
+              y="3"
+              width="18"
+              height="7"
+              rx="2"
+              stroke="currentColor"
+              strokeWidth="2"
+              fill="none"
+            />
+            <rect
+              x="3"
+              y="14"
+              width="18"
+              height="7"
+              rx="2"
+              stroke="currentColor"
+              strokeWidth="2"
+              fill="none"
+            />
+          </svg>
+        </button>
+
+        {/* Session pills */}
+        {sessionsExpanded && (
+          <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+            {sessions.map((session) => (
+              <SessionPill
+                key={session.id}
+                session={session}
+                isActive={activeSession?.id === session.id}
+                onClick={() => handleSessionClick(session)}
+                onPin={() => togglePin(session.id)}
+                onArchive={() => archiveSession(session.id)}
+                onDelete={() => deleteSession(session.id)}
+              />
+            ))}
+
+            {/* New session button */}
+            <button
+              onClick={handleNewSession}
+              title="New Session"
+              className="flex items-center justify-center w-12 h-8 rounded-lg text-sdr-text-muted hover:bg-sdr-bg-tertiary hover:text-sdr-text-primary transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 5v14M5 12h14"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Connection status indicator */}
       <div className="px-2">
         <div className="flex items-center justify-center w-12 h-12 rounded-lg">
@@ -38,6 +140,129 @@ export function NavRail({ activeAppId, onSelectApp }: NavRailProps) {
         </div>
       </div>
     </nav>
+  );
+}
+
+interface SessionPillProps {
+  session: Session;
+  isActive: boolean;
+  onClick: () => void;
+  onPin: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}
+
+function SessionPill({ session, isActive, onClick, onPin, onArchive, onDelete }: SessionPillProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setMenuOpen(true);
+  };
+
+  const initial = session.title.charAt(0).toUpperCase();
+  const statusColor =
+    session.status === "running"
+      ? "bg-sdr-accent-green"
+      : session.status === "error"
+        ? "bg-sdr-accent-red"
+        : "bg-sdr-text-muted";
+
+  return (
+    <div className="relative">
+      <button
+        onClick={onClick}
+        onContextMenu={handleContextMenu}
+        title={session.title}
+        className={clsx(
+          "flex items-center justify-center w-12 h-8 rounded-lg transition-colors relative",
+          isActive
+            ? "bg-sdr-accent-blue/20 text-sdr-accent-blue"
+            : "text-sdr-text-secondary hover:bg-sdr-bg-tertiary hover:text-sdr-text-primary"
+        )}
+      >
+        <span className="text-xs font-mono font-semibold">{initial}</span>
+        {/* Status dot */}
+        <span
+          className={clsx("absolute top-1 right-1 w-1.5 h-1.5 rounded-full", statusColor)}
+        />
+        {/* Pin indicator */}
+        {session.pinned && (
+          <span className="absolute top-1 left-1 w-1.5 h-1.5 text-sdr-accent-amber">
+            <svg width="6" height="6" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+          </span>
+        )}
+      </button>
+
+      {/* Context menu */}
+      {menuOpen && (
+        <div
+          ref={menuRef}
+          className="absolute left-14 top-0 z-50 min-w-[120px] py-1 bg-sdr-bg-tertiary border border-sdr-border rounded-lg shadow-lg"
+        >
+          <ContextMenuItem
+            label={session.pinned ? "Unpin" : "Pin"}
+            onClick={() => {
+              onPin();
+              setMenuOpen(false);
+            }}
+          />
+          <ContextMenuItem
+            label="Archive"
+            onClick={() => {
+              onArchive();
+              setMenuOpen(false);
+            }}
+          />
+          <ContextMenuItem
+            label="Delete"
+            destructive
+            onClick={() => {
+              onDelete();
+              setMenuOpen(false);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContextMenuItem({
+  label,
+  destructive,
+  onClick,
+}: {
+  label: string;
+  destructive?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "block w-full text-left px-3 py-1.5 text-xs transition-colors",
+        destructive
+          ? "text-sdr-accent-red hover:bg-sdr-accent-red/10"
+          : "text-sdr-text-secondary hover:bg-sdr-bg-secondary hover:text-sdr-text-primary"
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
