@@ -38,7 +38,7 @@ wasmtime = { version = "41.0.3", optional = true, default-features = false, feat
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 proptest = "1.10"
 tokio-test = "0.4"
-tempfile = "3.24"
+tempfile = "3.25"
 axum.workspace = true
 criterion = { version = "0.5", features = ["html_reports"] }
 wat = "1.241.2"
