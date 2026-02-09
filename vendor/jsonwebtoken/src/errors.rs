@@ -3,8 +3,9 @@ use std::fmt;
 use std::result;
 use std::sync::Arc;
 
-/// A crate private constructor for `Error`.
-pub(crate) fn new_error(kind: ErrorKind) -> Error {
+/// A constructor for `Error`.
+/// Intended for use in custom crypto providers.
+pub fn new_error(kind: ErrorKind) -> Error {
     Error(Box::new(kind))
 }
 
@@ -41,10 +42,14 @@ pub enum ErrorKind {
     InvalidSignature,
     /// When the secret given is not a valid ECDSA key
     InvalidEcdsaKey,
+    /// When the secret given is not a valid EdDSA key
+    InvalidEddsaKey,
     /// When the secret given is not a valid RSA key
     InvalidRsaKey(String),
     /// We could not sign with the given key
     RsaFailedSigning,
+    /// Signing failed
+    Signing(String),
     /// When the algorithm from string doesn't match the one passed to `from_str`
     InvalidAlgorithmName,
     /// When a key is provided with an invalid format
@@ -53,6 +58,8 @@ pub enum ErrorKind {
     // Validation errors
     /// When a claim required by the validation is not present
     MissingRequiredClaim(String),
+    /// When a claim has an invalid format (eg string instead of integer)
+    InvalidClaimFormat(String),
     /// When a token’s `exp` claim indicates that it has expired
     ExpiredSignature,
     /// When a token’s `iss` claim does not match the expected issuer
@@ -76,8 +83,8 @@ pub enum ErrorKind {
     Json(Arc<serde_json::Error>),
     /// Some of the text was invalid UTF-8
     Utf8(::std::string::FromUtf8Error),
-    /// Something unspecified went wrong with crypto
-    Crypto(::ring::error::Unspecified),
+    /// An error happened in a custom provider
+    Provider(String),
 }
 
 impl StdError for Error {
@@ -86,11 +93,14 @@ impl StdError for Error {
             ErrorKind::InvalidToken => None,
             ErrorKind::InvalidSignature => None,
             ErrorKind::InvalidEcdsaKey => None,
+            ErrorKind::InvalidEddsaKey => None,
             ErrorKind::RsaFailedSigning => None,
+            ErrorKind::Signing(_) => None,
             ErrorKind::InvalidRsaKey(_) => None,
             ErrorKind::ExpiredSignature => None,
             ErrorKind::MissingAlgorithm => None,
             ErrorKind::MissingRequiredClaim(_) => None,
+            ErrorKind::InvalidClaimFormat(_) => None,
             ErrorKind::InvalidIssuer => None,
             ErrorKind::InvalidAudience => None,
             ErrorKind::InvalidSubject => None,
@@ -101,7 +111,7 @@ impl StdError for Error {
             ErrorKind::Base64(err) => Some(err),
             ErrorKind::Json(err) => Some(err.as_ref()),
             ErrorKind::Utf8(err) => Some(err),
-            ErrorKind::Crypto(err) => Some(err),
+            ErrorKind::Provider(_) => None,
         }
     }
 }
@@ -121,13 +131,16 @@ impl fmt::Display for Error {
             | ErrorKind::ImmatureSignature
             | ErrorKind::InvalidAlgorithm
             | ErrorKind::InvalidKeyFormat
+            | ErrorKind::InvalidEddsaKey
             | ErrorKind::InvalidAlgorithmName => write!(f, "{:?}", self.0),
             ErrorKind::MissingRequiredClaim(c) => write!(f, "Missing required claim: {}", c),
+            ErrorKind::InvalidClaimFormat(c) => write!(f, "Invalid format for claim: {}", c),
             ErrorKind::InvalidRsaKey(msg) => write!(f, "RSA key invalid: {}", msg),
+            ErrorKind::Signing(msg) => write!(f, "Signing failed: {}", msg),
             ErrorKind::Json(err) => write!(f, "JSON error: {}", err),
             ErrorKind::Utf8(err) => write!(f, "UTF-8 error: {}", err),
-            ErrorKind::Crypto(err) => write!(f, "Crypto error: {}", err),
             ErrorKind::Base64(err) => write!(f, "Base64 error: {}", err),
+            ErrorKind::Provider(msg) => write!(f, "Custom provider error: {}", msg),
         }
     }
 }
@@ -159,21 +172,15 @@ impl From<::std::string::FromUtf8Error> for Error {
     }
 }
 
-impl From<::ring::error::Unspecified> for Error {
-    fn from(err: ::ring::error::Unspecified) -> Error {
-        new_error(ErrorKind::Crypto(err))
-    }
-}
-
-impl From<::ring::error::KeyRejected> for Error {
-    fn from(_err: ::ring::error::KeyRejected) -> Error {
-        new_error(ErrorKind::InvalidEcdsaKey)
-    }
-}
-
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Error {
         new_error(kind)
+    }
+}
+
+impl From<signature::Error> for Error {
+    fn from(err: signature::Error) -> Error {
+        new_error(ErrorKind::Signing(err.to_string()))
     }
 }
 

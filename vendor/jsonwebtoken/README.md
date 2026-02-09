@@ -8,11 +8,17 @@ See [JSON Web Tokens](https://en.wikipedia.org/wiki/JSON_Web_Token) for more inf
 Add the following to Cargo.toml:
 
 ```toml
-jsonwebtoken = "9"
+# You will have to select either `aws_lc_rs` or `rust_crypto` as backend if you're not using your own
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 # If you do not need pem decoding, you can disable the default feature `use_pem` that way:
-# jsonwebtoken = {version = "9", default-features = false }
+# jsonwebtoken = {version = "10", default-features = false, features = ["aws_lc_rs"] }
 serde = {version = "1.0", features = ["derive"] }
 ```
+
+Two crypto backends are available via features, `aws_lc_rs` and `rust_crypto`, at most one of which must be enabled. If you select neither feature, you need to provide your own `CryptoProvider`.
+
+For examples of how to implement a `CryptoProvider`, see
+- [arckoor/jsonwebtoken-botan](https://github.com/arckoor/jsonwebtoken-botan)
 
 The minimum required Rust version (MSRV) is specified in the `rust-version` field in this project's [Cargo.toml](Cargo.toml).
 
@@ -79,6 +85,11 @@ If you want to set the `kid` parameter or change the algorithm for example:
 ```rust
 let mut header = Header::new(Algorithm::HS512);
 header.kid = Some("blabla".to_owned());
+
+let mut extras = HashMap::with_capacity(1);
+extras.insert("custom".to_string(), "header".to_string());
+header.extras = Some(extras);
+
 let token = encode(&header, &my_claims, &EncodingKey::from_secret("secret".as_ref()))?;
 ```
 Look at `examples/custom_header.rs` for a full working example.
@@ -102,6 +113,30 @@ RSA/EC, the key should always be the content of the private key in PEM or DER fo
 
 If your key is in PEM format, it is better performance wise to generate the `EncodingKey` once in a `lazy_static` or
 something similar and reuse it.
+
+### Encoding and decoding JWS
+
+JWS is handled the same way as JWT, but using `jsonwebtoken::jws::encode` and `jsonwebtoken::jws::decode`:
+
+```rust
+use jsonwebtoken::jws::{encode, decode};
+
+let encoded = encode(&Header::default(), &my_claims, &EncodingKey::from_secret("secret".as_ref()))?;
+my_claims = decode(&encoded, &DecodingKey::from_secret("secret".as_ref()), &Validation::default())?.claims;
+```
+
+`jsonwebtoken::jws::encode` returns a `Jws<C>` struct which can be placed in other structs or serialized/deserialized from JSON directly.
+
+The generic parameter in `Jws<C>` indicates the claims type and prevents accidentally encoding or decoding the wrong claims type
+when the Jws is nested in another struct.
+
+### JWK Thumbprints
+
+If you have a JWK object, you can generate a thumbprint like
+
+```
+let tp = my_jwk.thumbprint(&jsonwebtoken::DIGEST_SHA256);
+```
 
 ### Decoding
 
