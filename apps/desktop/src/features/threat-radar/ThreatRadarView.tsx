@@ -5,12 +5,12 @@ import { Suspense, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Canvas3DErrorBoundary } from "@/components/Canvas3DErrorBoundary";
 import { OrbitControls } from "@react-three/drei";
-import { ThreatRadar } from "@backbay/glia/primitives";
+import { ThreatRadar } from "@backbay/glia-three/three";
 import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
-import { EnvironmentLayer } from "@backbay/glia/primitives";
+import { EnvironmentLayer } from "@backbay/glia-three/environment";
 import { useSessionState } from "@/shell/sessions";
-import type { Threat, ThreatType } from "@backbay/glia/primitives";
+import type { Threat, ThreatType } from "@backbay/glia-three/three";
 import { useSocData } from "@/services/socDataService";
 import { useConnection } from "@/context/ConnectionContext";
 
@@ -70,7 +70,12 @@ export function ThreatRadarView() {
       {/* 3D Canvas */}
       <div className="flex-1 relative">
         <Canvas3DErrorBoundary>
-          <Canvas camera={{ position: [0, 8, 12], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, powerPreference: "high-performance" }}>
+          <Canvas
+            camera={{ position: [0, 8, 12], fov: 50 }}
+            dpr={[1, 1.5]}
+            performance={{ min: 0.6 }}
+            gl={{ antialias: true, powerPreference: "high-performance" }}
+          >
             <Suspense fallback={null}>
               <ambientLight intensity={0.3} />
               <pointLight position={[10, 10, 10]} intensity={0.6} />
@@ -90,7 +95,7 @@ export function ThreatRadarView() {
                 enableRotate
                 minDistance={6}
                 maxDistance={25}
-                autoRotate={!selectedThreat}
+                autoRotate={false}
                 autoRotateSpeed={0.3}
               />
             </Suspense>
@@ -140,12 +145,12 @@ export function ThreatRadarView() {
           {[...displayThreats].sort((a, b) => b.severity - a.severity).map((threat, index) => {
             const level = getSeverityLabel(threat.severity);
             return (
-              <button
-                key={threat.id}
-                onClick={() => setSelectedThreat(threat)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedThreat?.id === threat.id
-                    ? "border-cyan-500/40 bg-cyan-500/10"
+                <button
+                  key={threat.id}
+                  onClick={() => setSelectedThreat(threat)}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedThreat?.id === threat.id
+                    ? "border-[color:color-mix(in_srgb,var(--origin-gold)_60%,transparent)] bg-[color:color-mix(in_srgb,var(--origin-gold)_12%,transparent)]"
                     : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
                 }`}
               >

@@ -3,7 +3,7 @@
  *
  * Routes:
  * - /:appId - Direct app access
- * - / - Redirects to Event Stream (default)
+ * - / - Redirects to Cyber Nexus (default)
  */
 import { Suspense } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -28,10 +28,10 @@ export function ShellApp() {
             <Routes>
               {/* Main shell with navigation */}
               <Route path="/" element={<ShellLayout />}>
-                {/* Default redirect to events view */}
+                {/* Default redirect to first plugin (Cyber Nexus) */}
                 <Route
                   index
-                  element={<Navigate to={`/${plugins[0]?.id ?? "events"}`} replace />}
+                  element={<Navigate to={`/${plugins[0]?.id ?? "cyber-nexus"}`} replace />}
                 />
 
                 {/* Dynamic plugin routes */}

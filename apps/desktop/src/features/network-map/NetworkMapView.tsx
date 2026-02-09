@@ -5,10 +5,10 @@ import { Suspense, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Canvas3DErrorBoundary } from "@/components/Canvas3DErrorBoundary";
 import { OrbitControls } from "@react-three/drei";
-import { NetworkTopology } from "@backbay/glia/primitives";
+import { NetworkTopology } from "@backbay/glia-three/three";
 import { GlassPanel } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
-import type { NetworkNode } from "@backbay/glia/primitives";
+import type { NetworkNode } from "@backbay/glia-three/three";
 import { useSocData } from "@/services/socDataService";
 import { useConnection } from "@/context/ConnectionContext";
 
@@ -53,7 +53,12 @@ export function NetworkMapView() {
       {/* 3D Canvas */}
       <div className="absolute inset-0">
         <Canvas3DErrorBoundary>
-          <Canvas camera={{ position: [0, 6, 14], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, powerPreference: "high-performance" }}>
+          <Canvas
+            camera={{ position: [0, 6, 14], fov: 50 }}
+            dpr={[1, 1.5]}
+            performance={{ min: 0.6 }}
+            gl={{ antialias: true, powerPreference: "high-performance" }}
+          >
             <Suspense fallback={null}>
               <ambientLight intensity={0.3} />
               <pointLight position={[10, 10, 10]} intensity={0.6} />
@@ -74,7 +79,7 @@ export function NetworkMapView() {
                 enableRotate
                 minDistance={5}
                 maxDistance={30}
-                autoRotate={!selectedNode}
+                autoRotate={false}
                 autoRotateSpeed={0.3}
               />
             </Suspense>

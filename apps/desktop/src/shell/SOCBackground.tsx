@@ -3,10 +3,8 @@
  */
 import { Canvas } from "@react-three/fiber";
 import { Canvas3DErrorBoundary } from "@/components/Canvas3DErrorBoundary";
-import { ThreatRadar } from "@backbay/glia/primitives";
-import { SecurityShield } from "@backbay/glia/primitives";
-import { NetworkTopology } from "@backbay/glia/primitives";
-import { EnvironmentLayer } from "@backbay/glia/primitives";
+import { ThreatRadar, SecurityShield, NetworkTopology } from "@backbay/glia-three/three";
+import { EnvironmentLayer } from "@backbay/glia-three/environment";
 import { useSocData } from "@/services/socDataService";
 
 export function SOCBackground() {

@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Canvas3DErrorBoundary } from "@/components/Canvas3DErrorBoundary";
 import { OrbitControls } from "@react-three/drei";
-import { SecurityDashboard } from "@backbay/glia/primitives";
+import { SecurityDashboard } from "@backbay/glia-three/three";
 import { KPIStat } from "@backbay/glia/primitives";
 import { HUDProgressRing } from "@backbay/glia/primitives";
 import { GlassPanel } from "@backbay/glia/primitives";
@@ -69,7 +69,12 @@ export function SecurityOverviewView() {
         {/* 3D Canvas */}
         <div className="flex-1 relative">
           <Canvas3DErrorBoundary>
-            <Canvas camera={{ position: [0, 5, 14], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, powerPreference: "high-performance" }}>
+            <Canvas
+              camera={{ position: [0, 5, 14], fov: 50 }}
+              dpr={[1, 1.5]}
+              performance={{ min: 0.6 }}
+              gl={{ antialias: true, powerPreference: "high-performance" }}
+            >
               <Suspense fallback={null}>
                 <ambientLight intensity={0.3} />
                 <pointLight position={[10, 10, 10]} intensity={0.6} />

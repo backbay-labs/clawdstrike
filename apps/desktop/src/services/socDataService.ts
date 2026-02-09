@@ -17,7 +17,7 @@ import type {
   ShieldStatus,
   DashboardThreat,
   DashboardAuditEvent,
-} from "@backbay/glia/primitives";
+} from "@backbay/glia-three/three";
 
 // ---------------------------------------------------------------------------
 // SecurityKPIs

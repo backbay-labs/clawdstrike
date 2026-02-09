@@ -8,6 +8,9 @@ import type { AppPlugin, AppId } from "./types";
 const EventStreamView = React.lazy(() =>
   import("@/features/events/EventStreamView").then((m) => ({ default: m.EventStreamView }))
 );
+const CyberNexusView = React.lazy(() =>
+  import("@/features/cyber-nexus/CyberNexusView").then((m) => ({ default: m.CyberNexusView }))
+);
 const PolicyViewerView = React.lazy(() =>
   import("@/features/policies/PolicyViewerView").then((m) => ({ default: m.PolicyViewerView }))
 );
@@ -38,15 +41,26 @@ const NetworkMapView = React.lazy(() =>
 const SecurityOverviewView = React.lazy(() =>
   import("@/features/security-overview/SecurityOverviewView").then((m) => ({ default: m.SecurityOverviewView }))
 );
+const ForensicsRiverView = React.lazy(() =>
+  import("@/features/forensics-river/ForensicsRiverView").then((m) => ({ default: m.ForensicsRiverView }))
+);
 
 // Plugin definitions
 const plugins: AppPlugin[] = [
+  {
+    id: "cyber-nexus",
+    name: "Cyber Nexus",
+    icon: "nexus",
+    description: "Unified strikecell command surface",
+    order: 1,
+    routes: [{ path: "", element: <CyberNexusView />, index: true }],
+  },
   {
     id: "events",
     name: "Event Stream",
     icon: "activity",
     description: "Real-time policy decisions and audit log",
-    order: 1,
+    order: 2,
     routes: [{ path: "", element: <EventStreamView />, index: true }],
   },
   {
@@ -54,7 +68,7 @@ const plugins: AppPlugin[] = [
     name: "Policy Viewer",
     icon: "shield",
     description: "Browse and validate policies",
-    order: 2,
+    order: 3,
     routes: [{ path: "", element: <PolicyViewerView />, index: true }],
   },
   {
@@ -62,7 +76,7 @@ const plugins: AppPlugin[] = [
     name: "Policy Tester",
     icon: "beaker",
     description: "Simulate policy checks",
-    order: 3,
+    order: 4,
     routes: [{ path: "", element: <PolicyTesterView />, index: true }],
   },
   {
@@ -70,7 +84,7 @@ const plugins: AppPlugin[] = [
     name: "Swarm Map",
     icon: "network",
     description: "3D visualization of agent identities",
-    order: 4,
+    order: 5,
     routes: [{ path: "", element: <SwarmMapView />, index: true }],
   },
   {
@@ -78,7 +92,7 @@ const plugins: AppPlugin[] = [
     name: "Marketplace",
     icon: "store",
     description: "Discover and share community policies",
-    order: 5,
+    order: 6,
     routes: [{ path: "", element: <MarketplaceView />, index: true }],
   },
   {
@@ -86,7 +100,7 @@ const plugins: AppPlugin[] = [
     name: "Workflows",
     icon: "workflow",
     description: "Automated response chains",
-    order: 6,
+    order: 7,
     routes: [{ path: "", element: <WorkflowsView />, index: true }],
   },
   {
@@ -94,7 +108,7 @@ const plugins: AppPlugin[] = [
     name: "Settings",
     icon: "settings",
     description: "Daemon connection and preferences",
-    order: 7,
+    order: 8,
     routes: [{ path: "", element: <SettingsView />, index: true }],
   },
   {
@@ -102,7 +116,7 @@ const plugins: AppPlugin[] = [
     name: "Threat Radar",
     icon: "radar",
     description: "Live 3D threat detection radar",
-    order: 8,
+    order: 9,
     routes: [{ path: "", element: <ThreatRadarView />, index: true }],
   },
   {
@@ -110,7 +124,7 @@ const plugins: AppPlugin[] = [
     name: "Attack Graph",
     icon: "graph",
     description: "MITRE ATT&CK chain visualization",
-    order: 9,
+    order: 10,
     routes: [{ path: "", element: <AttackGraphView />, index: true }],
   },
   {
@@ -118,7 +132,7 @@ const plugins: AppPlugin[] = [
     name: "Network Map",
     icon: "topology",
     description: "3D network infrastructure map",
-    order: 10,
+    order: 11,
     routes: [{ path: "", element: <NetworkMapView />, index: true }],
   },
   {
@@ -126,8 +140,16 @@ const plugins: AppPlugin[] = [
     name: "Security Overview",
     icon: "dashboard",
     description: "Composite security monitoring",
-    order: 11,
+    order: 12,
     routes: [{ path: "", element: <SecurityOverviewView />, index: true }],
+  },
+  {
+    id: "forensics-river",
+    name: "Forensics River",
+    icon: "river",
+    description: "3D forensic action-river timeline",
+    order: 13,
+    routes: [{ path: "", element: <ForensicsRiverView />, index: true }],
   },
 ];
 

@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@backbay/glia": "^0.2.0-alpha.2",
+    "@backbay/glia": "0.2.0-alpha.7",
+    "@backbay/glia-three": "0.2.0-alpha.5",
     "@react-three/drei": "10.7.7",
     "@react-three/fiber": "9.4.2",
     "@tauri-apps/api": "^2.0.0",

@@ -5,7 +5,7 @@ import { Suspense, useState, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Canvas3DErrorBoundary } from "@/components/Canvas3DErrorBoundary";
 import { OrbitControls, Environment } from "@react-three/drei";
-import { EnvironmentLayer } from "@backbay/glia/primitives";
+import { EnvironmentLayer } from "@backbay/glia-three/environment";
 import { GlowButton } from "@backbay/glia/primitives";
 import { useSwarm, useSelectedAgent } from "@/context/SwarmContext";
 import { useConnection } from "@/context/ConnectionContext";
@@ -40,7 +40,8 @@ export function SwarmMapView() {
         <Canvas3DErrorBoundary>
           <Canvas
             camera={{ position: [0, 5, 12], fov: 50 }}
-            dpr={[1, 2]}
+            dpr={[1, 1.5]}
+            performance={{ min: 0.6 }}
             gl={{ antialias: true, powerPreference: "high-performance" }}
             style={{ background: "#0a0a0f" }}
           >
@@ -73,7 +74,7 @@ export function SwarmMapView() {
                 enableRotate
                 minDistance={5}
                 maxDistance={30}
-                autoRotate={agents.length > 0 && !selectedAgent}
+                autoRotate={false}
                 autoRotateSpeed={0.5}
               />
             </Suspense>

@@ -5,10 +5,10 @@ import { Suspense, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Canvas3DErrorBoundary } from "@/components/Canvas3DErrorBoundary";
 import { OrbitControls } from "@react-three/drei";
-import { AttackGraph } from "@backbay/glia/primitives";
+import { AttackGraph } from "@backbay/glia-three/three";
 import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
-import type { AttackTechnique } from "@backbay/glia/primitives";
+import type { AttackTechnique } from "@backbay/glia-three/three";
 import { useSocData } from "@/services/socDataService";
 import { useConnection } from "@/context/ConnectionContext";
 
@@ -58,7 +58,12 @@ export function AttackGraphView() {
       {/* 3D Canvas */}
       <div className="flex-1 relative">
         <Canvas3DErrorBoundary>
-          <Canvas camera={{ position: [0, 3, 10], fov: 55 }} dpr={[1, 2]} gl={{ antialias: true, powerPreference: "high-performance" }}>
+          <Canvas
+            camera={{ position: [0, 3, 10], fov: 55 }}
+            dpr={[1, 1.5]}
+            performance={{ min: 0.6 }}
+            gl={{ antialias: true, powerPreference: "high-performance" }}
+          >
             <Suspense fallback={null}>
               <ambientLight intensity={0.35} />
               <pointLight position={[10, 8, 5]} intensity={0.7} />
@@ -81,7 +86,7 @@ export function AttackGraphView() {
                 enableRotate
                 minDistance={5}
                 maxDistance={25}
-                autoRotate={!selectedTechnique}
+                autoRotate={false}
                 autoRotateSpeed={0.2}
               />
             </Suspense>
@@ -117,7 +122,9 @@ export function AttackGraphView() {
           <div className="p-4 space-y-4">
             <div>
               <div className="text-xs text-white/40 font-mono mb-1">MITRE ID</div>
-              <div className="text-sm text-cyan-400 font-mono font-semibold">{selectedTechnique.id}</div>
+              <div className="text-sm text-[color:var(--origin-gold)] font-mono font-semibold">
+                {selectedTechnique.id}
+              </div>
             </div>
 
             <div>
