@@ -10,7 +10,7 @@
 - `rulesets/`: pre-configured YAML policies used by examples and tooling
 - `docs/`: mdBook source (`docs/src/**`)
 - `examples/`, `fixtures/`, `scripts/`, `tools/`, `fuzz/`
-- `vendor/`: vendored Rust dependencies for offline builds (avoid hand-editing)
+- `infra/vendor/`: vendored Rust dependencies for offline builds (avoid hand-editing)
 
 ## Build, Test, and Development Commands
 

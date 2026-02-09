@@ -17,7 +17,7 @@ Production Helm chart for the ClawdStrike SDR (Swarm Detection & Response) stack
 ## Quick Start
 
 ```bash
-helm install clawdstrike ./deploy/helm/clawdstrike
+helm install clawdstrike ./infra/deploy/helm/clawdstrike
 ```
 
 ## Configuration
@@ -102,7 +102,7 @@ helm install clawdstrike ./deploy/helm/clawdstrike
 To use an existing NATS cluster instead of deploying one:
 
 ```bash
-helm install clawdstrike ./deploy/helm/clawdstrike \
+helm install clawdstrike ./infra/deploy/helm/clawdstrike \
   --set nats.enabled=false \
   --set nats.external.enabled=true \
   --set nats.external.url=nats://my-nats:4222
@@ -114,15 +114,15 @@ Deploy only specific components:
 
 ```bash
 # Spine only
-helm install clawdstrike ./deploy/helm/clawdstrike \
+helm install clawdstrike ./infra/deploy/helm/clawdstrike \
   --set hushd.enabled=false
 
 # hushd only
-helm install clawdstrike ./deploy/helm/clawdstrike \
+helm install clawdstrike ./infra/deploy/helm/clawdstrike \
   --set spine.enabled=false
 
 # With bridges
-helm install clawdstrike ./deploy/helm/clawdstrike \
+helm install clawdstrike ./infra/deploy/helm/clawdstrike \
   --set bridges.tetragon.enabled=true \
   --set bridges.hubble.enabled=true
 ```
@@ -131,12 +131,12 @@ helm install clawdstrike ./deploy/helm/clawdstrike \
 
 ```bash
 # Lint
-helm lint deploy/helm/clawdstrike
+helm lint infra/deploy/helm/clawdstrike
 
 # Template rendering
-helm template test deploy/helm/clawdstrike
+helm template test infra/deploy/helm/clawdstrike
 
 # Install and test
-helm install cs deploy/helm/clawdstrike --wait
+helm install cs infra/deploy/helm/clawdstrike --wait
 helm test cs
 ```

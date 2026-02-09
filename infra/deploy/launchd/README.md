@@ -19,10 +19,10 @@ For production servers where hushd should start automatically:
 sudo mkdir -p /usr/local/etc/hushd /usr/local/var/lib/hushd /usr/local/var/log/hushd
 
 # Install configuration
-sudo cp deploy/config.yaml /usr/local/etc/hushd/config.yaml
+sudo cp infra/deploy/config.yaml /usr/local/etc/hushd/config.yaml
 
 # Install plist
-sudo cp deploy/launchd/dev.clawdstrike.hushd.plist /Library/LaunchDaemons/
+sudo cp infra/deploy/launchd/dev.clawdstrike.hushd.plist /Library/LaunchDaemons/
 
 # Load and start
 sudo launchctl load /Library/LaunchDaemons/dev.clawdstrike.hushd.plist
@@ -40,7 +40,7 @@ mkdir -p ~/Library/Logs/hushd ~/.config/hushd ~/.local/share/hushd
 # (edit the plist or use the Homebrew formula which handles this)
 
 # Install plist
-cp deploy/launchd/dev.clawdstrike.hushd.plist ~/Library/LaunchAgents/
+cp infra/deploy/launchd/dev.clawdstrike.hushd.plist ~/Library/LaunchAgents/
 
 # Load and start
 launchctl load ~/Library/LaunchAgents/dev.clawdstrike.hushd.plist
@@ -171,7 +171,7 @@ chmod 755 ~/.config/hushd ~/.local/share/hushd ~/Library/Logs/hushd
 Validate plist syntax:
 
 ```bash
-plutil -lint deploy/launchd/dev.clawdstrike.hushd.plist
+plutil -lint infra/deploy/launchd/dev.clawdstrike.hushd.plist
 ```
 
 ### Reload after plist changes

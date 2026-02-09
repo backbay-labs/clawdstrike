@@ -79,8 +79,8 @@ npm run tauri dev
 #### Helm Chart
 
 ```bash
-helm lint deploy/helm/clawdstrike/
-helm template test deploy/helm/clawdstrike/
+helm lint infra/deploy/helm/clawdstrike/
+helm template test infra/deploy/helm/clawdstrike/
 ```
 
 ### Branch Naming
@@ -95,29 +95,23 @@ git checkout -b fix/issue-description
 ```
 clawdstrike/
 ├── crates/
-│   ├── hush-core/          # Ed25519, SHA-256, Keccak-256, Merkle trees, RFC 8785
-│   ├── clawdstrike/        # Policy engine, 7 built-in guards, receipts, marketplace
-│   ├── spine/              # Signed envelopes, checkpoints, NATS transport, proofs API
-│   ├── tetragon-bridge/    # Tetragon gRPC -> Spine envelopes
-│   ├── hubble-bridge/      # Hubble gRPC -> Spine envelopes
-│   ├── hushd/              # HTTP enforcement daemon (experimental)
-│   ├── hush-cli/           # CLI binary
-│   ├── hush-proxy/         # Network proxy utilities
-│   ├── hush-wasm/          # WebAssembly bindings
-│   ├── hush-multi-agent/   # Delegation tokens, agent identity
-│   └── hush-certification/ # Compliance templates
+│   ├── libs/               # Reusable Rust libraries
+│   ├── services/           # Deployable Rust services/CLIs
+│   ├── bridges/            # Event-source bridge binaries
+│   └── tests/              # Cross-crate integration test crates
 ├── packages/
-│   ├── hush-ts/            # TypeScript SDK (@clawdstrike/sdk)
-│   ├── hush-py/            # Python SDK
-│   ├── clawdstrike-policy/ # Canonical policy engine (TS)
-│   └── clawdstrike-*/      # Framework adapters (Claude Code, Vercel AI, etc.)
+│   ├── sdk/                # TypeScript + Python SDKs
+│   ├── policy/             # Canonical TypeScript policy engine
+│   └── adapters/           # Framework adapters (Claude Code, Vercel AI, etc.)
 ├── apps/
-│   └── desktop/            # Tauri desktop SOC app
-├── deploy/
-│   ├── helm/               # Production Helm chart
-│   ├── tetragon-policies/  # Tetragon TracingPolicy CRDs
-│   ├── cilium-policies/    # CiliumNetworkPolicy manifests
-│   └── kubernetes/         # Kustomize manifests
+│   ├── desktop/            # Tauri desktop SOC app
+│   ├── agent/              # Tauri agent app
+│   └── cloud-dashboard/    # Web dashboard app
+├── infra/
+│   ├── deploy/             # Helm/Kustomize/systemd/launchd assets
+│   ├── docker/             # Dockerfiles and compose
+│   ├── packaging/          # Homebrew formula
+│   └── vendor/             # Vendored Rust crates for offline builds
 ├── rulesets/               # Built-in security policies (YAML)
 └── docs/                   # mdBook documentation + specs
 ```

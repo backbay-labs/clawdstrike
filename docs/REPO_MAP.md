@@ -13,9 +13,9 @@ This document is the newcomer index for the monorepo layout.
 | `packages/` | TypeScript and Python SDKs/adapters/policy packages. |
 | `integrations/` | External transport/runtime integrations (for example Reticulum). |
 | `infra/` | Packaging and infrastructure assets (for example Homebrew formula). |
-| `deploy/` | Deployment manifests and policy assets (phase-3 move target: `infra/deploy`). |
-| `docker/` | Container build assets (phase-3 move target: `infra/docker`). |
-| `vendor/` | Vendored Rust dependencies for offline builds (phase-3 move target: `infra/vendor`). |
+| `infra/deploy/` | Deployment manifests and policy assets. |
+| `infra/docker/` | Container build assets. |
+| `infra/vendor/` | Vendored Rust dependencies for offline builds. |
 | `docs/` | Public docs, plans, specs, and research. |
 | `examples/` | End-to-end and SDK examples. |
 | `fixtures/` | Golden fixtures and test vectors. |
@@ -54,3 +54,11 @@ These old locations are kept as redirect stubs for one release cycle:
 1. `packages/cloud-dashboard` -> `apps/cloud-dashboard`
 2. `spine/reticulum` -> `integrations/transports/reticulum`
 3. `HomebrewFormula` -> `infra/packaging/HomebrewFormula`
+
+## Phase-3 Path Moves (Compatibility Window)
+
+These old locations are kept as redirect stubs for one release cycle:
+
+1. `deploy` -> `infra/deploy`
+2. `docker` -> `infra/docker`
+3. `vendor` -> `infra/vendor`

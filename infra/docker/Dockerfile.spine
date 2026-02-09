@@ -4,9 +4,9 @@
 #   spine-checkpointer, spine-witness, spine-proofs-api
 #
 # Build:
-#   docker build -f docker/Dockerfile.spine --build-arg BIN=spine-checkpointer -t spine-checkpointer .
-#   docker build -f docker/Dockerfile.spine --build-arg BIN=spine-witness -t spine-witness .
-#   docker build -f docker/Dockerfile.spine --build-arg BIN=spine-proofs-api -t spine-proofs-api .
+#   docker build -f infra/docker/Dockerfile.spine --build-arg BIN=spine-checkpointer -t spine-checkpointer .
+#   docker build -f infra/docker/Dockerfile.spine --build-arg BIN=spine-witness -t spine-witness .
+#   docker build -f infra/docker/Dockerfile.spine --build-arg BIN=spine-proofs-api -t spine-proofs-api .
 
 ARG BIN=spine-checkpointer
 
@@ -20,7 +20,7 @@ WORKDIR /build
 
 # Copy minimal workspace manifest (only spine crates) and lockfile.
 # This avoids pulling in desktop app, wasm, python, and other heavy deps.
-COPY docker/workspace-spine.toml Cargo.toml
+COPY infra/docker/workspace-spine.toml Cargo.toml
 COPY Cargo.lock ./
 
 # Copy only the crates we need.
@@ -53,7 +53,7 @@ RUN groupadd -g 1000 spine && \
 COPY --from=builder /usr/local/bin/spine-checkpointer /usr/local/bin/
 COPY --from=builder /usr/local/bin/spine-witness /usr/local/bin/
 COPY --from=builder /usr/local/bin/spine-proofs-api /usr/local/bin/
-COPY docker/entrypoint-spine.sh /usr/local/bin/entrypoint-spine.sh
+COPY infra/docker/entrypoint-spine.sh /usr/local/bin/entrypoint-spine.sh
 
 USER spine
 WORKDIR /var/lib/spine

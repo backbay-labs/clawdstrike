@@ -38,7 +38,7 @@ sudo install -m 755 target/release/hushd /usr/local/bin/
 ### 4. Install configuration
 
 ```bash
-sudo cp deploy/config.yaml /etc/hushd/config.yaml
+sudo cp infra/deploy/config.yaml /etc/hushd/config.yaml
 sudo chmod 640 /etc/hushd/config.yaml
 sudo chown root:hushd /etc/hushd/config.yaml
 ```
@@ -58,7 +58,7 @@ sudo chown hushd:hushd /etc/hushd/environment
 ### 6. Install and enable service
 
 ```bash
-sudo cp deploy/systemd/hushd.service /etc/systemd/system/
+sudo cp infra/deploy/systemd/hushd.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable hushd
 sudo systemctl start hushd
@@ -96,8 +96,8 @@ sudo chown hushd:hushd /var/lib/hushd/staging /var/log/hushd/staging
 
 ```bash
 # Copy and customize for each instance
-sudo cp deploy/config.yaml /etc/hushd/prod/config.yaml
-sudo cp deploy/config.yaml /etc/hushd/staging/config.yaml
+sudo cp infra/deploy/config.yaml /etc/hushd/prod/config.yaml
+sudo cp infra/deploy/config.yaml /etc/hushd/staging/config.yaml
 
 # Edit to use different ports
 sudo sed -i 's/listen: .*/listen: "0.0.0.0:9876"/' /etc/hushd/prod/config.yaml
@@ -107,7 +107,7 @@ sudo sed -i 's/listen: .*/listen: "0.0.0.0:9877"/' /etc/hushd/staging/config.yam
 ### 3. Install template and start instances
 
 ```bash
-sudo cp deploy/systemd/hushd@.service /etc/systemd/system/
+sudo cp infra/deploy/systemd/hushd@.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable hushd@prod hushd@staging
 sudo systemctl start hushd@prod hushd@staging

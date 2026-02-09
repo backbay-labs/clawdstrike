@@ -4,10 +4,7 @@ Infrastructure and packaging assets that support build, release, and deployment 
 
 Current:
 
-1. `packaging/HomebrewFormula` - Homebrew formula for `hush`.
-
-Planned in a later phase:
-
-1. Move `deploy/` to `infra/deploy/`.
-2. Move `docker/` to `infra/docker/`.
-3. Move `vendor/` to `infra/vendor/`.
+1. `infra/packaging/HomebrewFormula/` - Homebrew formula for `hush`.
+2. `infra/deploy/` - deployment manifests and runtime policy assets.
+3. `infra/docker/` - container build definitions and compose files.
+4. `infra/vendor/` - vendored Rust crates for offline workflows.

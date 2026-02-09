@@ -67,7 +67,7 @@ For confirmed vulnerabilities:
 
 ### Enforcement Boundary
 
-ClawdStrike enforces policy at the **agent/tool boundary**. It is **not** an OS sandbox and does not intercept syscalls. The SDR stack adds kernel-level enforcement via Tetragon eBPF policies (see `deploy/tetragon-policies/`).
+ClawdStrike enforces policy at the **agent/tool boundary**. It is **not** an OS sandbox and does not intercept syscalls. The SDR stack adds kernel-level enforcement via Tetragon eBPF policies (see `infra/deploy/tetragon-policies/`).
 
 ### Built-in Guards
 

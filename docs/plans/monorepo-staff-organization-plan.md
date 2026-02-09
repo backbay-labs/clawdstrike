@@ -4,7 +4,7 @@ Status: Proposed
 Author: Codex (second-pass architecture audit)  
 Last updated: 2026-02-09
 
-Execution status: Phase 0 and Phase 1 are committed; Phase 2 is in progress in the working tree.
+Execution status: Phase 0 and Phase 1 are committed; Phase 2 is committed; Phase 3 is in progress in the working tree.
 
 ## Executive Summary
 

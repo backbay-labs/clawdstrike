@@ -57,7 +57,7 @@ Significant design decisions are documented as RFCs in `docs/rfcs/`:
 | Python SDK        | `packages/sdk/hush-py/`       | Community maintainer |
 | Rulesets          | `rulesets/`               | Any maintainer       |
 | Documentation     | `docs/`                   | Any maintainer       |
-| Helm chart        | `deploy/helm/`            | Bridges maintainer   |
+| Helm chart        | `infra/deploy/helm/`      | Bridges maintainer   |
 
 ### Becoming a Maintainer
 

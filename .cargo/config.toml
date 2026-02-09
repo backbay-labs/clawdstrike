@@ -1,2 +1,2 @@
 [source.vendored-sources]
-directory = "vendor"
+directory = "infra/vendor"

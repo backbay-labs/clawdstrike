@@ -1,7 +1,7 @@
 # Build and push Docker images to GitHub Container Registry.
 #
 # Triggers:
-# - Push to main branch (crates/docker/Cargo changes)
+# - Push to main branch (infra/docker/Cargo changes)
 # - Manual workflow dispatch
 #
 # Images: ghcr.io/backbay-labs/clawdstrike/<service>:<tag>
@@ -13,7 +13,7 @@ on:
     branches: [main]
     paths:
       - "crates/**"
-      - "docker/**"
+      - "infra/docker/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/docker.yml"
@@ -55,7 +55,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.spine
+          file: infra/docker/Dockerfile.spine
           build-args: BIN=${{ matrix.bin }}
           push: true
           tags: |
@@ -92,7 +92,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.tetragon-bridge
+          file: infra/docker/Dockerfile.tetragon-bridge
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/tetragon-bridge:latest
@@ -128,7 +128,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.hubble-bridge
+          file: infra/docker/Dockerfile.hubble-bridge
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/hubble-bridge:latest

@@ -17,6 +17,6 @@
 /rulesets/** @connor
 /scripts/** @connor
 /tools/** @connor
-/deploy/** @connor
-/docker/** @connor
-/vendor/** @connor
+/infra/deploy/** @connor
+/infra/docker/** @connor
+/infra/vendor/** @connor

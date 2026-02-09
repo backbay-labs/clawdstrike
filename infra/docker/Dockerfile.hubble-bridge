@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 #
-# Dockerfile for tetragon-bridge
+# Dockerfile for hubble-bridge
 #
 # Build:
-#   docker build -f docker/Dockerfile.tetragon-bridge -t tetragon-bridge .
+#   docker build -f infra/docker/Dockerfile.hubble-bridge -t hubble-bridge .
 
 # ---------------------------------------------------------------------------
 # Builder
@@ -16,18 +16,18 @@ RUN apt-get update && \
 
 WORKDIR /build
 
-# Copy minimal workspace manifest (only tetragon-bridge crates) and lockfile.
-COPY docker/workspace-tetragon.toml Cargo.toml
+# Copy minimal workspace manifest (only hubble-bridge crates) and lockfile.
+COPY infra/docker/workspace-hubble.toml Cargo.toml
 COPY Cargo.lock ./
 
 COPY crates/libs/hush-core crates/libs/hush-core
 COPY crates/libs/spine crates/libs/spine
-COPY crates/bridges/tetragon-bridge crates/bridges/tetragon-bridge
+COPY crates/bridges/hubble-bridge crates/bridges/hubble-bridge
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    cargo build --release --bin tetragon-bridge && \
-    cp /build/target/release/tetragon-bridge /usr/local/bin/
+    cargo build --release --bin hubble-bridge && \
+    cp /build/target/release/hubble-bridge /usr/local/bin/
 
 # ---------------------------------------------------------------------------
 # Runtime
@@ -41,9 +41,9 @@ RUN apt-get update && \
 RUN groupadd -g 1000 bridge && \
     useradd -u 1000 -g bridge -d /var/lib/bridge -m bridge
 
-COPY --from=builder /usr/local/bin/tetragon-bridge /usr/local/bin/
+COPY --from=builder /usr/local/bin/hubble-bridge /usr/local/bin/
 
 USER bridge
 WORKDIR /var/lib/bridge
 
-ENTRYPOINT ["/usr/bin/tini", "--", "tetragon-bridge"]
+ENTRYPOINT ["/usr/bin/tini", "--", "hubble-bridge"]

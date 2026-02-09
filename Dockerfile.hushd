@@ -26,7 +26,7 @@ RUN mkdir -p /etc/hushd /var/lib/hushd /var/log/hushd && \
 COPY --from=builder /build/target/release/hushd /usr/local/bin/
 
 # Copy default config
-COPY deploy/config.yaml /etc/hushd/config.yaml
+COPY infra/deploy/config.yaml /etc/hushd/config.yaml
 
 USER hushd
 WORKDIR /var/lib/hushd
