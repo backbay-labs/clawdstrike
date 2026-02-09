@@ -30,7 +30,7 @@ tempfile = "3.24"
 getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
-proptest = "1.9"
+proptest = "1.10"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]

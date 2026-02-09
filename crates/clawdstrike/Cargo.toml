@@ -36,7 +36,7 @@ wasmtime = { version = "41.0.3", optional = true, default-features = false, feat
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-proptest = "1.9"
+proptest = "1.10"
 tokio-test = "0.4"
 tempfile = "3.24"
 axum.workspace = true
