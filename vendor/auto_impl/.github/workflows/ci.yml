@@ -1,0 +1,26 @@
+name: CI
+
+on: [pull_request, push]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: --deny warnings
+
+jobs:
+  check:
+    name: 'Build & test'
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        rust-version: ['stable', 'beta', 'nightly', '1.56']
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        components: rustfmt, clippy
+    - uses: Swatinem/rust-cache@v1
+
+    - run: cargo fmt --all -- --check
+    - run: cargo clippy --workspace --all-features -- -D warnings
+    - run: cargo test --workspace

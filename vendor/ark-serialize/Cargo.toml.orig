@@ -1,0 +1,37 @@
+[package]
+name = "ark-serialize"
+description = "A library for serializing types in the arkworks ecosystem"
+documentation = "https://docs.rs/ark-serialize/"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+include.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+metadata.docs.rs.workspace = true
+package.metadata.release.workspace = true
+keywords = ["cryptography", "serialization" ]
+
+[dependencies]
+ark-serialize-derive = { workspace = true, optional = true }
+ark-std.workspace = true
+arrayvec.workspace = true
+digest.workspace = true
+num-bigint.workspace = true
+rayon = { workspace = true, optional = true }
+
+# [dev-dependencies]
+# sha2.workspace = true
+# sha3.workspace = true
+# blake2.workspace = true
+# ark-test-curves = { workspace = true, default-features = false, features = [ "bls12_381_curve"] }
+
+
+[features]
+default = []
+parallel = [ "rayon" ]
+std = [ "ark-std/std" ]
+derive = [ "ark-serialize-derive" ]

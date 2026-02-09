@@ -1,0 +1,37 @@
+[package]
+name = "wasmtimer"
+edition = "2021"
+description = "Time utils from std::time, tokio::time and tokio_util::time on WASM targets"
+version = "0.4.3"
+authors = ["WhizSid <whizsid@aol.com>", "Pierre Krieger <pierre.krieger1708@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/whizsid/wasmtimer-rs"
+keywords = ["timer", "wasm", "tokio", "browser", "delay-queue"]
+
+[dependencies]
+futures = {version= "^0.3", optional = true}
+parking_lot = {version= "^0.12", optional = true }
+pin-utils = {version = "^0.1", optional = true }
+js-sys = "^0.3"
+wasm-bindgen = "^0.2"
+slab = { version = "^0.4", optional = true }
+serde_crate = { package = "serde" , version = "^1.0", optional = true, default-features = false }
+
+[features]
+default = ["tokio", "tokio-util"]
+tokio-test-util = ["tokio"]
+tokio-util = ["slab", "tokio"]
+tokio = ["futures", "parking_lot", "pin-utils"]
+serde = ["serde_crate"]
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.0"
+wasm-bindgen-futures = "0.4"
+serde_json = "^1.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[workspace]
+members = ["examples/nodejs-example"]
+resolver = "2"

@@ -1,0 +1,49 @@
+[package]
+name = "primitive-types"
+version = "0.12.2"
+authors = ["Parity Technologies <admin@parity.io>"]
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/paritytech/parity-common"
+description = "Primitive types shared by Ethereum and Substrate"
+edition = "2021"
+rust-version = "1.60.0"
+
+[dependencies]
+fixed-hash = { version = "0.8", path = "../fixed-hash", default-features = false }
+uint = { version = "0.9.5", path = "../uint", default-features = false }
+impl-serde = { version = "0.4.0", path = "impls/serde", default-features = false, optional = true }
+impl-codec = { version = "0.6.0", path = "impls/codec", default-features = false, optional = true }
+impl-num-traits = { version = "0.1.0", path = "impls/num-traits", default-features = false, optional = true }
+impl-rlp = { version = "0.3", path = "impls/rlp", default-features = false, optional = true }
+scale-info-crate = { package = "scale-info", version = ">=0.9, <3", features = ["derive"], default-features = false, optional = true }
+schemars = { version = ">=0.8.12", default-features = true, optional = true }
+
+[dev-dependencies]
+num-traits = "0.2"
+
+[features]
+default = ["std"]
+std = ["uint/std", "fixed-hash/std", "impl-codec?/std"]
+byteorder = ["fixed-hash/byteorder"]
+rustc-hex = ["fixed-hash/rustc-hex"]
+serde = ["std", "impl-serde", "impl-serde/std"]
+json-schema = ["dep:schemars"]
+serde_no_std = ["impl-serde"]
+codec = ["impl-codec"]
+scale-info = ["codec", "scale-info-crate"]
+rlp = ["impl-rlp"]
+arbitrary = ["fixed-hash/arbitrary", "uint/arbitrary"]
+fp-conversion = ["std"]
+num-traits = ["impl-num-traits"]
+
+[[test]]
+name = "scale_info"
+required-features = ["scale-info"]
+
+[[test]]
+name = "fp_conversion"
+required-features = ["fp-conversion"]
+
+[[test]]
+name = "num_traits"
+required-features = ["num-traits"]

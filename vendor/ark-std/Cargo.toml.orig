@@ -1,0 +1,48 @@
+[package]
+name = "ark-std"
+version = "0.5.0"
+authors = [ "arkworks contributors" ]
+description = "A library for no_std compatibility"
+homepage = "https://arkworks.rs"
+repository = "https://github.com/arkworks-rs/std"
+documentation = "https://docs.rs/ark-std/"
+keywords = [ "no_std" ]
+categories = ["cryptography"]
+include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
+license = "MIT/Apache-2.0"
+edition = "2021"
+
+[dependencies]
+rand = { version = "0.8", default-features = false, features = ["std_rng"]}
+rayon = { version = "1", optional = true }
+colored = { version = "2", optional = true }
+num-traits = { version = "0.2", default-features = false }
+
+[dev-dependencies]
+rand = { version = "0.8", features = ["std"]}
+
+
+[features]
+default = [ "std" ]
+std = []
+parallel = [ "rayon", "std" ]
+print-trace = [ "std", "colored" ]
+getrandom = ["rand/std"]
+
+[profile.bench]
+opt-level = 3
+debug = false
+rpath = false
+lto = "thin"
+incremental = true
+debug-assertions = false
+
+[profile.dev]
+opt-level = 0
+
+[profile.test]
+opt-level = 3
+lto = "thin"
+incremental = true
+debug-assertions = true
+debug = true

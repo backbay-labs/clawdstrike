@@ -21,7 +21,7 @@ pub fn router() -> Router<AppState> {
 /// Verify a Stripe webhook signature (v1 scheme) using HMAC-SHA256.
 ///
 /// The `Stripe-Signature` header has the format:
-///   t=<timestamp>,v1=<signature>[,v1=<signature>...]
+/// `t=<timestamp>,v1=<signature>[,v1=<signature>...]`
 fn verify_stripe_signature(payload: &str, sig_header: &str, secret: &str) -> Result<(), ApiError> {
     let mut timestamp: Option<&str> = None;
     let mut signatures: Vec<&str> = Vec::new();

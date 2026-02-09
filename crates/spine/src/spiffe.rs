@@ -34,8 +34,8 @@ pub fn read_spiffe_id(svid_path: impl AsRef<Path>) -> Result<String> {
 
 /// Extract SPIFFE ID from PEM-encoded certificate data (in-memory).
 pub fn extract_spiffe_id_from_pem(pem_str: &str) -> Result<String> {
-    let pem_block = pem::parse(pem_str)
-        .map_err(|e| Error::Io(format!("failed to parse PEM: {e}")))?;
+    let pem_block =
+        pem::parse(pem_str).map_err(|e| Error::Io(format!("failed to parse PEM: {e}")))?;
 
     let (_, cert) = x509_parser::parse_x509_certificate(pem_block.contents())
         .map_err(|e| Error::Io(format!("failed to parse X.509 certificate: {e}")))?;
@@ -80,8 +80,8 @@ pub fn svid_cert_hash(svid_path: impl AsRef<Path>) -> Result<String> {
 ///
 /// Returns the hash as a `0x`-prefixed lowercase hex string.
 pub fn svid_cert_hash_from_pem(pem_str: &str) -> Result<String> {
-    let pem_block = pem::parse(pem_str)
-        .map_err(|e| Error::Io(format!("failed to parse PEM: {e}")))?;
+    let pem_block =
+        pem::parse(pem_str).map_err(|e| Error::Io(format!("failed to parse PEM: {e}")))?;
 
     let der_bytes = pem_block.contents();
     Ok(hush_core::sha256_hex(der_bytes))
@@ -140,10 +140,7 @@ kJvMwKxzgP7QnhZqbY2L4HVK3LtIDAHfPHpDQ==\n\
             }
             Err(e) => {
                 let msg = format!("{e}");
-                assert!(
-                    msg.contains("parse"),
-                    "unexpected error: {msg}"
-                );
+                assert!(msg.contains("parse"), "unexpected error: {msg}");
             }
         }
     }

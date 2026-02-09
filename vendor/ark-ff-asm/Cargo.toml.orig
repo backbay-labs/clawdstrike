@@ -1,0 +1,23 @@
+[package]
+name = "ark-ff-asm"
+description = "A library for generating x86-64 assembly for finite field multiplication"
+documentation = "https://docs.rs/ark-ff-asm/"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+include.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+metadata.docs.rs.workspace = true
+package.metadata.release.workspace = true
+keywords = ["cryptography", "finite-fields", "assembly" ]
+
+[dependencies]
+quote.workspace = true
+syn = { workspace = true, features = ["full", "parsing", "extra-traits"]}
+
+[lib]
+proc-macro = true

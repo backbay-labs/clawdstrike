@@ -10,8 +10,8 @@ use hush_core::Keypair;
 use serde_json::json;
 use spine::{
     build_signed_envelope, now_rfc3339, verify_envelope, CheckpointRef, FeedEntryFact,
-    HeadAnnouncement, SyncRequest, SyncResponse, FEED_ENTRY_FACT_SCHEMA,
-    HEAD_ANNOUNCEMENT_SCHEMA, MAX_SYNC_RANGE,
+    HeadAnnouncement, SyncRequest, SyncResponse, FEED_ENTRY_FACT_SCHEMA, HEAD_ANNOUNCEMENT_SCHEMA,
+    MAX_SYNC_RANGE,
 };
 
 fn sample_feed_entry(seq: u64) -> FeedEntryFact {
@@ -223,14 +223,9 @@ async fn test_sync_response_with_envelopes() {
     let mut envelopes = Vec::new();
     for seq in 1..=3 {
         let fe = sample_feed_entry(seq);
-        let envelope = build_signed_envelope(
-            &kp,
-            seq,
-            None,
-            fe.to_fact_value().unwrap(),
-            now_rfc3339(),
-        )
-        .unwrap();
+        let envelope =
+            build_signed_envelope(&kp, seq, None, fe.to_fact_value().unwrap(), now_rfc3339())
+                .unwrap();
         envelopes.push(envelope);
     }
 

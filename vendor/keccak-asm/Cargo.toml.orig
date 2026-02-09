@@ -1,0 +1,43 @@
+[workspace]
+members = ["sha3-asm"]
+
+[workspace.package]
+version = "0.1.5"
+edition = "2021"
+rust-version = "1.64"
+authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
+license = "BSD-3-Clause"
+exclude = [".gitmodules", "tests"]
+repository = "https://github.com/danipopes/keccak-asm"
+keywords = ["primitives", "sha3", "keccak256", "assembly", "asm"]
+
+[package]
+name = "keccak-asm"
+description = "Simple wrappers for SHA-3 algorithms written in assembly"
+homepage = "https://github.com/danipopes/keccak-asm"
+categories = ["algorithms", "cryptography", "api-bindings"]
+
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+exclude.workspace = true
+keywords.workspace = true
+
+[dependencies]
+digest = "0.10"
+sha3-asm = { version = "0.1.5", path = "sha3-asm" }
+zeroize = { version = "1.6.0", default-features = false, optional = true }
+
+[dev-dependencies]
+digest = { version = "0.10", features = ["dev"] }
+hex = { package = "const-hex", version = "1.10" }
+
+[features]
+default = ["std"]
+std = ["digest/std"]
+
+oid = ["digest/oid"]
+zeroize = ["dep:zeroize"]

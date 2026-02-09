@@ -145,22 +145,55 @@ async fn test_attestation_and_revocation_chain() {
 
     // First: curator attestation
     let pa = sample_policy_attestation();
-    let e1 = build_signed_envelope(&kp, 1, None, pa.to_fact_value().unwrap(), now_rfc3339()).unwrap();
+    let e1 =
+        build_signed_envelope(&kp, 1, None, pa.to_fact_value().unwrap(), now_rfc3339()).unwrap();
     assert!(verify_envelope(&e1).unwrap());
-    let h1 = e1.get("envelope_hash").and_then(|v| v.as_str()).unwrap().to_string();
+    let h1 = e1
+        .get("envelope_hash")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
     // Second: community review, chained
     let ra = sample_review_attestation();
-    let e2 = build_signed_envelope(&kp, 2, Some(h1.clone()), ra.to_fact_value().unwrap(), now_rfc3339()).unwrap();
+    let e2 = build_signed_envelope(
+        &kp,
+        2,
+        Some(h1.clone()),
+        ra.to_fact_value().unwrap(),
+        now_rfc3339(),
+    )
+    .unwrap();
     assert!(verify_envelope(&e2).unwrap());
-    let h2 = e2.get("envelope_hash").and_then(|v| v.as_str()).unwrap().to_string();
+    let h2 = e2
+        .get("envelope_hash")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
     // Third: revocation, chained
     let pr = sample_policy_revocation();
-    let e3 = build_signed_envelope(&kp, 3, Some(h2.clone()), pr.to_fact_value().unwrap(), now_rfc3339()).unwrap();
+    let e3 = build_signed_envelope(
+        &kp,
+        3,
+        Some(h2.clone()),
+        pr.to_fact_value().unwrap(),
+        now_rfc3339(),
+    )
+    .unwrap();
     assert!(verify_envelope(&e3).unwrap());
 
     // Verify chain links
-    assert_eq!(e2.get("prev_envelope_hash").and_then(|v| v.as_str()).unwrap(), h1);
-    assert_eq!(e3.get("prev_envelope_hash").and_then(|v| v.as_str()).unwrap(), h2);
+    assert_eq!(
+        e2.get("prev_envelope_hash")
+            .and_then(|v| v.as_str())
+            .unwrap(),
+        h1
+    );
+    assert_eq!(
+        e3.get("prev_envelope_hash")
+            .and_then(|v| v.as_str())
+            .unwrap(),
+        h2
+    );
 }

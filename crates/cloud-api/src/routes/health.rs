@@ -26,7 +26,11 @@ async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
     // Check NATS connectivity
     let nats_ok = state.nats.connection_state() == async_nats::connection::State::Connected;
 
-    let status = if db_ok && nats_ok { "ready" } else { "degraded" };
+    let status = if db_ok && nats_ok {
+        "ready"
+    } else {
+        "degraded"
+    };
     let code = if db_ok && nats_ok {
         StatusCode::OK
     } else {

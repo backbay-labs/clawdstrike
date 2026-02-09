@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.18"
+version = "0.7.0"
 dependencies = [
  "bitflags",
  "loom",

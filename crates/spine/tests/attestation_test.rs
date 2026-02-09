@@ -19,9 +19,7 @@ fn sample_node_attestation(node_id: &str) -> NodeAttestation {
         fact_id: "na_integration_001".to_string(),
         node_id: node_id.to_string(),
         system_attestation: SystemAttestation {
-            spiffe_id: Some(
-                "spiffe://aegis.local/ns/clawdstrike/sa/checkpointer".to_string(),
-            ),
+            spiffe_id: Some("spiffe://aegis.local/ns/clawdstrike/sa/checkpointer".to_string()),
             svid_cert_hash: Some(
                 "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_string(),
             ),
@@ -31,9 +29,7 @@ fn sample_node_attestation(node_id: &str) -> NodeAttestation {
                 pod: Some("checkpointer-0".to_string()),
                 node: Some("ip-10-0-1-42.ec2.internal".to_string()),
                 service_account: Some("checkpointer".to_string()),
-                container_image: Some(
-                    "ghcr.io/backbay-labs/spine-checkpointer:v0.1.0".to_string(),
-                ),
+                container_image: Some("ghcr.io/backbay-labs/spine-checkpointer:v0.1.0".to_string()),
                 container_image_digest: Some("sha256:abcdef1234567890".to_string()),
             }),
             binary: Some("/usr/local/bin/spine-checkpointer".to_string()),
@@ -138,10 +134,7 @@ async fn test_runtime_proof_roundtrip() {
     assert_eq!(restored.execution.binary, "/usr/bin/curl");
     assert_eq!(restored.execution.pid, 12345);
     assert_eq!(restored.identity.spiffe_id, rp.identity.spiffe_id);
-    assert_eq!(
-        restored.attestation_chain.tetragon_exec_id,
-        "abc123def456"
-    );
+    assert_eq!(restored.attestation_chain.tetragon_exec_id, "abc123def456");
 }
 
 #[tokio::test]

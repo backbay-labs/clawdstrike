@@ -41,7 +41,9 @@ pub async fn require_auth(
 
     // Try API key header
     if let Some(api_key_header) = headers.get("x-api-key") {
-        let raw_key = api_key_header.to_str().map_err(|_| ApiError::Unauthorized)?;
+        let raw_key = api_key_header
+            .to_str()
+            .map_err(|_| ApiError::Unauthorized)?;
         let tenant = api_key::validate_key(raw_key, &state).await?;
         request.extensions_mut().insert(tenant);
         return Ok(next.run(request).await);

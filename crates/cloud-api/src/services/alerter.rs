@@ -126,7 +126,11 @@ impl AlerterService {
         Ok(())
     }
 
-    async fn send_slack(&self, config: &AlertConfig, event: &SecurityEvent) -> Result<(), AlertError> {
+    async fn send_slack(
+        &self,
+        config: &AlertConfig,
+        event: &SecurityEvent,
+    ) -> Result<(), AlertError> {
         let webhook_url = config.config["webhook_url"]
             .as_str()
             .ok_or(AlertError::MissingConfig("webhook_url"))?;

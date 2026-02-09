@@ -1,0 +1,20 @@
+[package]
+name = "sha3-asm"
+description = "Raw bindings for SHA-3 algorithms written in assembly"
+homepage = "https://github.com/danipopes/keccak-asm/tree/master/sha3-asm"
+categories = ["algorithms", "cryptography", "external-ffi-bindings"]
+
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+exclude.workspace = true
+keywords.workspace = true
+
+[dependencies]
+cfg-if = "1.0"
+
+[build-dependencies]
+cc = "1.0.83"

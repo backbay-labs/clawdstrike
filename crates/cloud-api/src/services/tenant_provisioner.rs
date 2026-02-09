@@ -24,7 +24,11 @@ impl TenantProvisioner {
     }
 
     /// Provision NATS account and streams for a new tenant.
-    pub async fn provision_tenant(&self, tenant_id: Uuid, slug: &str) -> Result<String, ProvisionerError> {
+    pub async fn provision_tenant(
+        &self,
+        tenant_id: Uuid,
+        slug: &str,
+    ) -> Result<String, ProvisionerError> {
         let nats_account_id = format!("tenant-{slug}");
 
         sqlx::query::query("UPDATE tenants SET nats_account_id = $1 WHERE id = $2")

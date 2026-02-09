@@ -81,8 +81,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .ok();
+    tokio::signal::ctrl_c().await.ok();
     tracing::info!("Received shutdown signal");
 }

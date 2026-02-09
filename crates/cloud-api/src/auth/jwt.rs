@@ -18,12 +18,15 @@ pub struct Claims {
 }
 
 /// Validate a JWT token and return the authenticated tenant context.
-pub async fn validate_token(token: &str, state: &AppState) -> Result<AuthenticatedTenant, ApiError> {
+pub async fn validate_token(
+    token: &str,
+    state: &AppState,
+) -> Result<AuthenticatedTenant, ApiError> {
     let key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
     let validation = Validation::default();
 
-    let token_data =
-        jsonwebtoken::decode::<Claims>(token, &key, &validation).map_err(|_| ApiError::Unauthorized)?;
+    let token_data = jsonwebtoken::decode::<Claims>(token, &key, &validation)
+        .map_err(|_| ApiError::Unauthorized)?;
 
     let claims = token_data.claims;
     if claims.exp < Utc::now().timestamp() {

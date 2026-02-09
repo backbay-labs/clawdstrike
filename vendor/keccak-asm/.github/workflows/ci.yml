@@ -1,0 +1,205 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # https://github.com/zff-team/zffmount/blob/master/.github/workflows/publish_binaries.yml
+  LLVM_MINGW: llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64
+
+jobs:
+  test:
+    name: ${{ matrix.test && 'test' || 'build' }} ${{ matrix.target }}
+    runs-on: ${{ matrix.host }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            test: true
+          - host: ubuntu-latest
+            target: arm-unknown-linux-gnueabi
+            test: true
+          - host: ubuntu-latest
+            target: armv5te-unknown-linux-gnueabi
+            test: true
+          - host: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            test: true
+          - host: ubuntu-latest
+            target: armv7-linux-androideabi
+            test: true
+          - host: ubuntu-latest
+            target: powerpc-unknown-linux-gnu
+            test: true
+          - host: ubuntu-latest
+            target: powerpc64-unknown-linux-gnu
+            test: true
+          # TODO: Linker error `ABI version 1 is not compatible with ABI version 2 output`
+          # - host: ubuntu-latest
+          #   target: powerpc64le-unknown-linux-gnu
+          #   test: true
+          - host: ubuntu-latest
+            target: mips-unknown-linux-gnu
+            test: true
+            tier3: true
+          - host: ubuntu-latest
+            target: mipsel-unknown-linux-gnu
+            test: true
+            tier3: true
+          # TODO: 'unrecognized opcode `sllw`' after last update (#7)
+          # - host: ubuntu-latest
+          #   target: riscv32gc-unknown-linux-gnu
+          #   test: true
+          #   tier3: true
+          - host: ubuntu-latest
+            target: riscv64gc-unknown-linux-gnu
+            test: true
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            test: true
+          # TODO: x86-patch
+          # - host: ubuntu-latest
+          #   target: i586-unknown-linux-gnu
+          #   test: true
+          # - host: ubuntu-latest
+          #   target: i686-unknown-linux-gnu
+          #   test: true
+
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            test: true
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            test: true
+          # TODO: x86-patch
+          # - host: macos-latest
+          #   target: i686-apple-darwin
+          #   test: false
+
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            test: true
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+            test: false
+          - host: windows-latest
+            target: x86_64-pc-windows-gnu
+            test: true
+          - host: ubuntu-latest
+            target: aarch64-pc-windows-gnullvm
+            test: false
+          # TODO: x86-patch
+          # - host: windows-latest
+          #   target: i686-pc-windows-gnullvm
+          #   test: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      # Need nightly for `-Zbuild-std` on tier3 targets.
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.tier3 }}
+        with:
+          target: ${{ matrix.target }}
+      - uses: dtolnay/rust-toolchain@nightly
+        if: ${{ matrix.tier3 }}
+      - uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+      - name: Install LLVM MinGW toolchain (Windows aarch64)
+        if: ${{ matrix.target == 'aarch64-pc-windows-gnullvm' }}
+        run: |
+          curl -L -o ${{ env.LLVM_MINGW }}.tar.xz https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/${{ env.LLVM_MINGW }}.tar.xz
+          tar -xf ${{ env.LLVM_MINGW }}.tar.xz
+          echo "$GITHUB_WORKSPACE/${{ env.LLVM_MINGW }}/bin" >> $GITHUB_PATH
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: build
+        if: ${{ !matrix.test }}
+        shell: bash
+        run: |
+          FLAGS=()
+          [ "${{ matrix.tier3 }}" == true ] && FLAGS+=(-Zbuild-std)
+          [[ "${{ matrix.target }}" == mips* ]] && FLAGS+=(--release)
+          cargo build --workspace --target ${{ matrix.target }} -vv "${FLAGS[@]}"
+          cargo build --workspace --target ${{ matrix.target }} --all-targets -vv "${FLAGS[@]}"
+      - name: test
+        if: ${{ matrix.test }}
+        shell: bash
+        run: |
+          FLAGS=()
+          [ -n "${{ matrix.tier3 }}" ] && FLAGS+=(-Zbuild-std)
+          [[ "${{ matrix.target }}" == mips* ]] && FLAGS+=(--release)
+          cargo test --workspace --target ${{ matrix.target }} -vv "${FLAGS[@]}"
+
+  msrv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.64" # MSRV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: cargo build --workspace
+        env:
+          RUSTFLAGS: -Dwarnings
+
+  clippy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: cargo clippy --workspace --all-targets
+        env:
+          RUSTFLAGS: -Dwarnings
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: cargo doc --workspace --all-features --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings --show-type-layout --generate-link-to-definition --enable-index-page -Zunstable-options
+
+  fmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check

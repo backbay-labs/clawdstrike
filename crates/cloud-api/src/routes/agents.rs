@@ -89,13 +89,12 @@ async fn list_agents(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
 ) -> Result<Json<Vec<Agent>>, ApiError> {
-    let rows = sqlx::query::query(
-        "SELECT * FROM agents WHERE tenant_id = $1 ORDER BY created_at DESC",
-    )
-    .bind(auth.tenant_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(ApiError::Database)?;
+    let rows =
+        sqlx::query::query("SELECT * FROM agents WHERE tenant_id = $1 ORDER BY created_at DESC")
+            .bind(auth.tenant_id)
+            .fetch_all(&state.db)
+            .await
+            .map_err(ApiError::Database)?;
 
     let agents: Vec<Agent> = rows
         .into_iter()
@@ -111,15 +110,13 @@ async fn get_agent(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Agent>, ApiError> {
-    let row = sqlx::query::query(
-        "SELECT * FROM agents WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(id)
-    .bind(auth.tenant_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(ApiError::Database)?
-    .ok_or(ApiError::NotFound)?;
+    let row = sqlx::query::query("SELECT * FROM agents WHERE id = $1 AND tenant_id = $2")
+        .bind(id)
+        .bind(auth.tenant_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::NotFound)?;
 
     let agent = Agent::from_row(row).map_err(ApiError::Database)?;
     Ok(Json(agent))

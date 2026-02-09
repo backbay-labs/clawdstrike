@@ -1,0 +1,90 @@
+[package]
+name = "const-hex"
+version = "1.17.0"
+authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
+description = "Fast byte array to hex string conversion"
+edition = "2021"
+rust-version = "1.64"
+license = "MIT OR Apache-2.0"
+categories = ["value-formatting", "no-std"]
+keywords = ["hex", "bytes", "fmt"]
+documentation = "https://docs.rs/const-hex"
+homepage = "https://github.com/danipopes/const-hex"
+repository = "https://github.com/danipopes/const-hex"
+exclude = [".github/", "benches/", "fuzz/", "tests/"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+cfg-if = "1"
+serde_core = { version = "1.0", optional = true, default-features = false }
+
+proptest = { version = "1.4", optional = true, default-features = false }
+
+[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
+cpufeatures = "0.2"
+
+[dev-dependencies]
+faster-hex = { version = "0.10.0", default-features = false, features = [
+    "alloc",
+] }
+hex = { version = "~0.4.2", default-features = false, features = ["alloc"] }
+rustc-hex = "2.1"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+
+divan = { package = "codspeed-divan-compat", version = "3" }
+
+[features]
+default = ["std"]
+std = ["serde_core?/std", "proptest?/std", "alloc"]
+alloc = ["serde_core?/alloc", "proptest?/alloc"]
+
+# Enables `core::error::Error` implementations always instead of conditionally through `std`.
+# Requires Rust 1.81 or newer.
+core-error = []
+
+# Serde support. Use with `#[serde(with = "const_hex")]`.
+serde = ["dep:serde_core"]
+
+# Deprecated. Does nothing.
+hex = []
+
+# Forces generic implementation, overriding any specialized implementation (e.g. x86 or aarch64).
+force-generic = []
+
+# Support for the `portable-simd` nightly feature.
+# Note that `-Zbuild-std` may be necessary to unlock similar or better
+# performance than the specialized implementations.
+portable-simd = []
+
+# Enables nightly-only features for better performance.
+nightly = []
+
+# Internal features.
+__fuzzing = ["dep:proptest", "std"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+debug = false
+strip = "debuginfo" # "symbols" for less binary size but no backtraces
+panic = "abort"
+codegen-units = 16
+
+# Use the `--profile profiling` flag to show symbols in release mode.
+# e.g. `cargo build --profile profiling`
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+
+[profile.bench]
+inherits = "profiling"
+
+[[bench]]
+path = "benches/bench/main.rs"
+name = "bench"
+harness = false

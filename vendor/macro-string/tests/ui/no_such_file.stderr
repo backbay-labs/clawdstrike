@@ -1,0 +1,5 @@
+error: No such file or directory (os error 2) $DIR/target/tests/trybuild/macro-string/nonexist.ent
+ --> tests/ui/no_such_file.rs:3:23
+  |
+3 | const _: &str = eval!(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/nonexist.ent")));
+  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

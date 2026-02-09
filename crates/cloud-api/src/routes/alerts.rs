@@ -94,15 +94,13 @@ async fn get_alert(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<AlertConfig>, ApiError> {
-    let row = sqlx::query::query(
-        "SELECT * FROM alert_configs WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(id)
-    .bind(auth.tenant_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(ApiError::Database)?
-    .ok_or(ApiError::NotFound)?;
+    let row = sqlx::query::query("SELECT * FROM alert_configs WHERE id = $1 AND tenant_id = $2")
+        .bind(id)
+        .bind(auth.tenant_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::NotFound)?;
 
     let config = AlertConfig::from_row(row).map_err(ApiError::Database)?;
     Ok(Json(config))

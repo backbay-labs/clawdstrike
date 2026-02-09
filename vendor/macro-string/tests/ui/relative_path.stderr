@@ -1,0 +1,5 @@
+error: a relative path is not supported here; use `include_str!(concat!(env!("CARGO_MANIFEST_DIR"), ...))`
+ --> tests/ui/relative_path.rs:3:23
+  |
+3 | const _: &str = eval!(include_str!("relative/path.rs"));
+  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

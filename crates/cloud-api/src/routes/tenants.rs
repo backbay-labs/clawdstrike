@@ -42,7 +42,11 @@ async fn create_tenant(
     let tenant = Tenant::from_row(row).map_err(ApiError::Database)?;
 
     // Provision NATS account for the new tenant
-    if let Err(e) = state.provisioner.provision_tenant(tenant.id, &tenant.slug).await {
+    if let Err(e) = state
+        .provisioner
+        .provision_tenant(tenant.id, &tenant.slug)
+        .await
+    {
         tracing::error!(tenant_id = %tenant.id, error = %e, "Failed to provision NATS account");
     }
 

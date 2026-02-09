@@ -164,10 +164,10 @@ mod tests {
             feed_seq: 10,
             entry_id: "strict-security-v2".to_string(),
             bundle_uri: "ipfs://QmTestHash".to_string(),
-            bundle_hash:
-                "0xaabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233".to_string(),
-            policy_hash:
-                "0x1122334455667788112233445566778811223344556677881122334455667788".to_string(),
+            bundle_hash: "0xaabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233"
+                .to_string(),
+            policy_hash: "0x1122334455667788112233445566778811223344556677881122334455667788"
+                .to_string(),
             title: Some("Strict Security Policy".to_string()),
             description: Some("A strict security policy for production".to_string()),
             category: Some("security".to_string()),
@@ -193,9 +193,8 @@ mod tests {
                     "aegis:ed25519:1122334455667788112233445566778811223344556677881122334455667788"
                         .to_string(),
                 checkpoint_seq: 42,
-                envelope_hash:
-                    "0xcafebabe00112233cafebabe00112233cafebabe00112233cafebabe00112233"
-                        .to_string(),
+                envelope_hash: "0xcafebabe00112233cafebabe00112233cafebabe00112233cafebabe00112233"
+                    .to_string(),
             }),
         }
     }

@@ -207,17 +207,24 @@ mod tests {
         NodeAttestation {
             schema: NODE_ATTESTATION_SCHEMA.to_string(),
             fact_id: "na_test_001".to_string(),
-            node_id: "aegis:ed25519:aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233".to_string(),
+            node_id:
+                "aegis:ed25519:aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233"
+                    .to_string(),
             system_attestation: SystemAttestation {
                 spiffe_id: Some("spiffe://aegis.local/ns/clawdstrike/sa/checkpointer".to_string()),
-                svid_cert_hash: Some("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_string()),
+                svid_cert_hash: Some(
+                    "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                        .to_string(),
+                ),
                 trust_domain: Some("aegis.local".to_string()),
                 kubernetes: Some(KubernetesMetadata {
                     namespace: "clawdstrike".to_string(),
                     pod: Some("checkpointer-0".to_string()),
                     node: Some("ip-10-0-1-42.ec2.internal".to_string()),
                     service_account: Some("checkpointer".to_string()),
-                    container_image: Some("ghcr.io/backbay-labs/spine-checkpointer:v0.1.0".to_string()),
+                    container_image: Some(
+                        "ghcr.io/backbay-labs/spine-checkpointer:v0.1.0".to_string(),
+                    ),
                     container_image_digest: Some("sha256:abcdef1234567890".to_string()),
                 }),
                 binary: Some("/usr/local/bin/spine-checkpointer".to_string()),
@@ -339,7 +346,9 @@ mod tests {
         let na = NodeAttestation {
             schema: NODE_ATTESTATION_SCHEMA.to_string(),
             fact_id: "na_minimal".to_string(),
-            node_id: "aegis:ed25519:aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233".to_string(),
+            node_id:
+                "aegis:ed25519:aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233"
+                    .to_string(),
             system_attestation: SystemAttestation {
                 spiffe_id: None,
                 svid_cert_hash: None,

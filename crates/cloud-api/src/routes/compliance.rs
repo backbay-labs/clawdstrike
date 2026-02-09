@@ -147,13 +147,11 @@ async fn get_retention(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
 ) -> Result<Json<RetentionSettings>, ApiError> {
-    let row = sqlx::query::query(
-        "SELECT id, retention_days, plan FROM tenants WHERE id = $1",
-    )
-    .bind(auth.tenant_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(ApiError::Database)?;
+    let row = sqlx::query::query("SELECT id, retention_days, plan FROM tenants WHERE id = $1")
+        .bind(auth.tenant_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(ApiError::Database)?;
 
     Ok(Json(RetentionSettings {
         tenant_id: row.try_get("id").map_err(ApiError::Database)?,

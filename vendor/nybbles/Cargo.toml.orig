@@ -1,0 +1,68 @@
+[package]
+name = "nybbles"
+version = "0.4.8"
+authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
+description = "Efficient nibble-sized (4-bit) byte sequence data structure"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+categories = ["data-structures", "no-std"]
+keywords = ["nibbles", "vector", "ethereum"]
+homepage = "https://github.com/alloy-rs/nybbles"
+repository = "https://github.com/alloy-rs/nybbles"
+exclude = [".github/", "deny.toml", "release.toml", "rustfmt.toml"]
+
+[dependencies]
+smallvec = { version = "1.0", default-features = false, features = [
+    "const_new",
+    "union",
+] }
+ruint = { version = "1.17.0", default-features = false, features = ["alloc"] }
+cfg-if = "1.0"
+
+# serde
+serde = { version = "1.0", default-features = false, optional = true, features = [
+    "derive",
+] }
+
+# rlp
+alloy-rlp = { version = "0.3", default-features = false, optional = true }
+
+# arbitrary
+arbitrary = { version = "1.3", default-features = false, optional = true, features = [
+    "derive",
+] }
+proptest = { version = "1.4", default-features = false, optional = true, features = [
+    "alloc",
+] }
+
+[dev-dependencies]
+hex-literal = "1"
+criterion = { version = "4.3", package = "codspeed-criterion-compat" }
+serde_json = "1.0"
+
+[features]
+default = ["std"]
+std = ["serde?/std", "alloy-rlp?/std", "proptest?/std", "ruint/std"]
+nightly = ["smallvec/specialization", "smallvec/may_dangle"]
+serde = ["dep:serde", "ruint/serde", "smallvec/serde"]
+rlp = ["dep:alloy-rlp"]
+arbitrary = [
+    "dep:arbitrary",
+    "dep:proptest",
+    "ruint/arbitrary",
+    "smallvec/arbitrary",
+    "std",
+]
+
+[[bench]]
+name = "bench"
+harness = false
+required-features = ["arbitrary"]
+
+# Use the `--profile profiling` flag to show symbols in release mode.
+# e.g. `cargo build --profile profiling`
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"

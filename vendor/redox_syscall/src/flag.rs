@@ -55,20 +55,12 @@ pub const F_GETFD: usize = 1;
 pub const F_SETFD: usize = 2;
 pub const F_GETFL: usize = 3;
 pub const F_SETFL: usize = 4;
+pub const F_DUPFD_CLOEXEC: usize = 1030;
 
 pub const FUTEX_WAIT: usize = 0;
 pub const FUTEX_WAKE: usize = 1;
 pub const FUTEX_REQUEUE: usize = 2;
 pub const FUTEX_WAIT64: usize = 3;
-
-// packet.c = fd
-pub const SKMSG_FRETURNFD: usize = 0;
-
-// packet.uid:packet.gid = offset, packet.c = base address, packet.d = page count
-pub const SKMSG_PROVIDE_MMAP: usize = 1;
-
-// packet.id provides state, packet.c = dest fd or pointer to dest fd, packet.d = flags
-pub const SKMSG_FOBTAINFD: usize = 2;
 
 // TODO: Split SendFdFlags into caller flags and flags that the scheme receives?
 bitflags::bitflags! {
@@ -101,6 +93,9 @@ bitflags::bitflags! {
         /// If set, the file descriptors received will be placed into the *upper* file table.
         const UPPER_TBL = 4;
 
+        /// If set, the received file descriptors are marked as close-on-exec.
+        const CLOEXEC = 8;
+
         // No, cloexec won't be stored in the kernel in the future, when the stable ABI is moved to
         // relibc, so no flag for that!
     }
@@ -115,6 +110,9 @@ bitflags::bitflags! {
 
         /// If set, the file descriptors received will be placed into the *upper* file table.
         const UPPER_TBL = 2;
+
+        /// If set, the received file descriptors are marked as close-on-exec.
+        const CLOEXEC = 4;
     }
 }
 bitflags::bitflags! {
@@ -203,6 +201,10 @@ pub const O_STAT: usize = 0x2000_0000;
 pub const O_SYMLINK: usize = 0x4000_0000;
 pub const O_NOFOLLOW: usize = 0x8000_0000;
 pub const O_ACCMODE: usize = O_RDONLY | O_WRONLY | O_RDWR;
+pub const O_FCNTL_MASK: usize = O_NONBLOCK | O_APPEND | O_ASYNC | O_FSYNC;
+
+/// Remove directory instead of unlinking file.
+pub const AT_REMOVEDIR: usize = 0x200;
 
 // The top 48 bits of PTRACE_* are reserved, for now
 
@@ -399,6 +401,7 @@ bitflags! {
         const FD_EXCLUSIVE = 1 << 12;
         const FD_CLONE = 1 << 13;
         const FD_UPPER = 1 << 14;
+        const FD_CLOEXEC = 1 << 15;
     }
 }
 

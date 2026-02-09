@@ -38,14 +38,22 @@ impl IntoResponse for ApiError {
             ApiError::AgentLimitReached => (StatusCode::CONFLICT, self.to_string()),
             ApiError::InvalidPublicKey => (StatusCode::BAD_REQUEST, self.to_string()),
             ApiError::InvalidSignature => (StatusCode::UNAUTHORIZED, self.to_string()),
-            ApiError::PlanUpgradeRequired(feature) => {
-                (StatusCode::PAYMENT_REQUIRED, format!("plan upgrade required for: {feature}"))
-            }
-            ApiError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "database error".to_string()),
-            ApiError::Nats(_) => (StatusCode::INTERNAL_SERVER_ERROR, "messaging error".to_string()),
-            ApiError::Internal(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string())
-            }
+            ApiError::PlanUpgradeRequired(feature) => (
+                StatusCode::PAYMENT_REQUIRED,
+                format!("plan upgrade required for: {feature}"),
+            ),
+            ApiError::Database(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "database error".to_string(),
+            ),
+            ApiError::Nats(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "messaging error".to_string(),
+            ),
+            ApiError::Internal(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error".to_string(),
+            ),
         };
 
         let body = serde_json::json!({ "error": message });

@@ -26,11 +26,12 @@ impl Config {
             .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
             .parse::<SocketAddr>()?;
 
-        let database_url =
-            std::env::var("DATABASE_URL").map_err(|_| ConfigError::MissingVar("DATABASE_URL".into()))?;
-        let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
-        let jwt_secret =
-            std::env::var("JWT_SECRET").map_err(|_| ConfigError::MissingVar("JWT_SECRET".into()))?;
+        let database_url = std::env::var("DATABASE_URL")
+            .map_err(|_| ConfigError::MissingVar("DATABASE_URL".into()))?;
+        let nats_url =
+            std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .map_err(|_| ConfigError::MissingVar("JWT_SECRET".into()))?;
         let stripe_secret_key = std::env::var("STRIPE_SECRET_KEY")
             .map_err(|_| ConfigError::MissingVar("STRIPE_SECRET_KEY".into()))?;
         let stripe_webhook_secret = std::env::var("STRIPE_WEBHOOK_SECRET")

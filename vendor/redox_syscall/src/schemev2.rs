@@ -6,6 +6,17 @@ use core::{
 
 use bitflags::bitflags;
 
+pub struct CallerCtx {
+    pub pid: usize,
+    pub uid: u32,
+    pub gid: u32,
+}
+
+pub enum OpenResult {
+    ThisScheme { number: usize },
+    OtherScheme { fd: usize },
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Sqe {
@@ -99,9 +110,6 @@ impl CqeOpcode {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub enum Opcode {
-    Open = 0,    // path_ptr, path_len (utf8), flags
-    Rmdir = 1,   // path_ptr, path_len (utf8)
-    Unlink = 2,  // path_ptr, path_len (utf8)
     Close = 3,   // fd
     Dup = 4,     // old fd, buf_ptr, buf_len
     Read = 5,    // fd, buf_ptr, buf_len, TODO offset, TODO flags, _
@@ -134,8 +142,9 @@ pub enum Opcode {
 
     OpenAt = 29, // fd, buf_ptr, buf_len, flags
     Flink = 30,
-
     Recvfd = 31,
+
+    UnlinkAt = 32, // fd, path_ptr, path_len (utf8), flags
 }
 
 impl Opcode {
@@ -144,9 +153,6 @@ impl Opcode {
 
         // TODO: Use a library where this match can be automated.
         Some(match raw {
-            0 => Open,
-            1 => Rmdir,
-            2 => Unlink,
             3 => Close,
             4 => Dup,
             5 => Read,
@@ -178,8 +184,9 @@ impl Opcode {
 
             29 => OpenAt,
             30 => Flink,
-
             31 => Recvfd,
+
+            32 => UnlinkAt,
 
             _ => return None,
         })

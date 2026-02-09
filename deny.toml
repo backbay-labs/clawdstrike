@@ -47,6 +47,9 @@ ignore = [
     # `rustls-pemfile` is unmaintained — transitive dep via `async-nats`.
     # Upstream migration to `rustls-pki-types` PemObject is tracked.
     "RUSTSEC-2025-0134",
+    # `paste` is pulled transitively through the Alloy stack.
+    # No maintained drop-in is available yet; track upstream replacement.
+    "RUSTSEC-2024-0436",
 ]
 
 [sources]

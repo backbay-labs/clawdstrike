@@ -6,7 +6,10 @@ use crate::error::ApiError;
 use crate::state::AppState;
 
 /// Validate a raw API key by hashing it and comparing against the stored hash.
-pub async fn validate_key(raw_key: &str, state: &AppState) -> Result<AuthenticatedTenant, ApiError> {
+pub async fn validate_key(
+    raw_key: &str,
+    state: &AppState,
+) -> Result<AuthenticatedTenant, ApiError> {
     let key_hash = hash_api_key(raw_key);
 
     let row = sqlx::query::query(

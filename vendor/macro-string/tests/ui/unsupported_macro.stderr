@@ -1,0 +1,5 @@
+error: unsupported macro, expected one of: `concat!`, `env!`, `include!`, `include_str!`, `stringify!`
+ --> tests/ui/unsupported_macro.rs:3:23
+  |
+3 | const _: &str = eval!(include_bytes!("..."));
+  |                       ^^^^^^^^^^^^^^

@@ -1,0 +1,21 @@
+[package]
+name = "futures-utils-wasm"
+version = "0.1.0"
+authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
+edition = "2018"
+description = "Simple utilities for futures Send bounds"
+rust-version = "1.36"
+license = "MIT OR Apache-2.0"
+categories = ["value-formatting", "no-std"]
+keywords = ["hex", "bytes", "fmt"]
+documentation = "https://docs.rs/futures-utils-wasm"
+homepage = "https://github.com/danipopes/futures-utils-wasm"
+repository = "https://github.com/danipopes/futures-utils-wasm"
+exclude = [".github/", "benches/", "fuzz/", "tests/"]
+
+[features]
+default = ["alloc"]
+# Enables `BoxFuture`.
+alloc = []
+# Currently does nothing.
+std = ["alloc"]

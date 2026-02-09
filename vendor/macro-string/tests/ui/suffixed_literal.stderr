@@ -1,0 +1,23 @@
+error: unexpected suffix on string literal
+ --> tests/ui/suffixed_literal.rs:3:31
+  |
+3 | const _: &str = eval!(concat!("ru"i32, "st"));
+  |                               ^^^^^^^
+
+error: unexpected suffix on char literal
+ --> tests/ui/suffixed_literal.rs:5:31
+  |
+5 | const _: &str = eval!(concat!(' 'i32));
+  |                               ^^^^^^
+
+error: unexpected suffix on integer literal
+ --> tests/ui/suffixed_literal.rs:7:31
+  |
+7 | const _: &str = eval!(concat!(1i256));
+  |                               ^^^^^
+
+error: unexpected suffix on float literal
+ --> tests/ui/suffixed_literal.rs:9:31
+  |
+9 | const _: &str = eval!(concat!(1.0f256));
+  |                               ^^^^^^^

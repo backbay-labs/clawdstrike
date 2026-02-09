@@ -741,9 +741,7 @@ async fn maybe_index_fact(
             };
             let exec_id_hash = sha256_hex(exec_id.as_bytes());
             // sha256_hex returns 0x-prefixed; strip prefix for safe token
-            let hash_token = exec_id_hash
-                .strip_prefix("0x")
-                .unwrap_or(&exec_id_hash);
+            let hash_token = exec_id_hash.strip_prefix("0x").unwrap_or(&exec_id_hash);
             if !is_safe_index_key_token(hash_token, 128) {
                 return Ok(());
             }

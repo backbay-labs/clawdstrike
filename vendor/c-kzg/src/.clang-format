@@ -1,0 +1,14 @@
+BasedOnStyle: llvm
+IndentWidth: 4
+AllowAllParametersOfDeclarationOnNextLine: True
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: OnlyFirstIf
+AlignAfterOpenBracket: BlockIndent
+AlignEscapedNewlines: DontAlign
+AlwaysBreakAfterDefinitionReturnType: None
+BinPackArguments: False
+BinPackParameters: OnePerLine
+PenaltyReturnTypeOnItsOwnLine: 1000
+PenaltyBreakAssignment: 100
+ColumnLimit: 100
+InsertNewlineAtEOF: true
