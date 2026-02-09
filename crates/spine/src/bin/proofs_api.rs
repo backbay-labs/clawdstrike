@@ -80,7 +80,7 @@ struct AppState {
     envelope_kv: async_nats::jetstream::kv::Store,
     fact_index_kv: async_nats::jetstream::kv::Store,
     max_keys_scan: usize,
-    /// Cache: tree_size -> Vec<Vec<u8>> leaves (avoids re-scanning KV for repeated proofs).
+    /// Cache: tree_size -> `Vec<Vec<u8>>` leaves (avoids re-scanning KV for repeated proofs).
     leaves_cache: Arc<Mutex<HashMap<u64, Vec<Vec<u8>>>>>,
 }
 

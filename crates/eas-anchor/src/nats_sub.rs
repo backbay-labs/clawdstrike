@@ -186,7 +186,9 @@ mod tests {
             "schema": "aegis.spine.envelope.v1"
         });
         let bytes = serde_json::to_vec(&payload).unwrap_or_else(|e| panic!("json: {e}"));
-        let err = parse_checkpoint_envelope(&bytes).expect_err("should fail without fact");
+        let Err(err) = parse_checkpoint_envelope(&bytes) else {
+            panic!("should fail without fact");
+        };
         assert!(err.to_string().contains("fact"));
     }
 
@@ -201,8 +203,9 @@ mod tests {
             }
         });
         let bytes = serde_json::to_vec(&payload).unwrap_or_else(|e| panic!("json: {e}"));
-        let err =
-            parse_checkpoint_envelope(&bytes).expect_err("should fail without checkpoint_hash");
+        let Err(err) = parse_checkpoint_envelope(&bytes) else {
+            panic!("should fail without checkpoint_hash");
+        };
         assert!(err.to_string().contains("checkpoint_hash"));
     }
 
@@ -218,7 +221,9 @@ mod tests {
             }
         });
         let bytes = serde_json::to_vec(&payload).unwrap_or_else(|e| panic!("json: {e}"));
-        let err = parse_checkpoint_envelope(&bytes).expect_err("should fail with invalid hex");
+        let Err(err) = parse_checkpoint_envelope(&bytes) else {
+            panic!("should fail with invalid hex");
+        };
         assert!(err.to_string().contains("hex"));
     }
 
@@ -234,7 +239,9 @@ mod tests {
             }
         });
         let bytes = serde_json::to_vec(&payload).unwrap_or_else(|e| panic!("json: {e}"));
-        let err = parse_checkpoint_envelope(&bytes).expect_err("should fail with wrong length");
+        let Err(err) = parse_checkpoint_envelope(&bytes) else {
+            panic!("should fail with wrong length");
+        };
         assert!(err.to_string().contains("32 bytes"));
     }
 
@@ -256,7 +263,9 @@ mod tests {
 
     #[test]
     fn parse_invalid_json_payload() {
-        let err = parse_checkpoint_envelope(b"not json").expect_err("should fail");
+        let Err(err) = parse_checkpoint_envelope(b"not json") else {
+            panic!("should fail");
+        };
         assert!(err.to_string().contains("JSON"));
     }
 }

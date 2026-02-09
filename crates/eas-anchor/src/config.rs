@@ -210,28 +210,36 @@ key_rotation_uid = "0x789abc"
     #[test]
     fn reject_empty_rpc_url() {
         let toml = VALID_TOML.replace("https://mainnet.base.org", "");
-        let err = AnchorConfig::parse(&toml).expect_err("should reject empty rpc_url");
+        let Err(err) = AnchorConfig::parse(&toml) else {
+            panic!("should reject empty rpc_url");
+        };
         assert!(err.to_string().contains("rpc_url"));
     }
 
     #[test]
     fn reject_zero_batch_size() {
         let toml = VALID_TOML.replace("max_batch_size = 50", "max_batch_size = 0");
-        let err = AnchorConfig::parse(&toml).expect_err("should reject zero batch size");
+        let Err(err) = AnchorConfig::parse(&toml) else {
+            panic!("should reject zero batch size");
+        };
         assert!(err.to_string().contains("max_batch_size"));
     }
 
     #[test]
     fn reject_no_signer() {
         let toml = VALID_TOML.replace("private_key_env = \"EAS_SIGNER_PRIVATE_KEY\"", "");
-        let err = AnchorConfig::parse(&toml).expect_err("should reject missing signer");
+        let Err(err) = AnchorConfig::parse(&toml) else {
+            panic!("should reject missing signer");
+        };
         assert!(err.to_string().contains("signer"));
     }
 
     #[test]
     fn reject_unknown_fields() {
         let toml = format!("{VALID_TOML}\nunknown_field = true\n");
-        let err = AnchorConfig::parse(&toml).expect_err("should reject unknown fields");
+        let Err(err) = AnchorConfig::parse(&toml) else {
+            panic!("should reject unknown fields");
+        };
         assert!(err.to_string().contains("unknown"));
     }
 
