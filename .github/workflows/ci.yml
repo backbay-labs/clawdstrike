@@ -50,6 +50,9 @@ jobs:
       - name: Smoke test TS file dependency workflows
         run: bash scripts/smoke-ts-file-deps.sh
 
+      - name: Validate Docker Compose topology
+        run: docker compose -f infra/docker/docker-compose.services.yaml config > /dev/null
+
       - name: Lint moved paths
         run: bash scripts/path-lint.sh
 
