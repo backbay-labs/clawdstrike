@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.88"
 name = "alloy-serde"
-version = "1.6.1"
+version = "1.6.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [

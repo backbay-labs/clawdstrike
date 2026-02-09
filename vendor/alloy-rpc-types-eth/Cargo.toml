@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.88"
 name = "alloy-rpc-types-eth"
-version = "1.6.1"
+version = "1.6.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -96,19 +96,19 @@ name = "alloy_rpc_types_eth"
 path = "src/lib.rs"
 
 [dependencies.alloy-consensus]
-version = "1.6.1"
+version = "1.6.3"
 default-features = false
 
 [dependencies.alloy-consensus-any]
-version = "1.6.1"
+version = "1.6.3"
 default-features = false
 
 [dependencies.alloy-eips]
-version = "1.6.1"
+version = "1.6.3"
 default-features = false
 
 [dependencies.alloy-network-primitives]
-version = "1.6.1"
+version = "1.6.3"
 default-features = false
 
 [dependencies.alloy-primitives]
@@ -128,7 +128,7 @@ features = [
 default-features = false
 
 [dependencies.alloy-serde]
-version = "1.6.1"
+version = "1.6.3"
 optional = true
 default-features = false
 
@@ -176,7 +176,7 @@ version = "2.0"
 default-features = false
 
 [dev-dependencies.alloy-consensus]
-version = "1.6.1"
+version = "1.6.3"
 features = [
     "std",
     "arbitrary",
@@ -184,7 +184,7 @@ features = [
 default-features = false
 
 [dev-dependencies.alloy-eips]
-version = "1.6.1"
+version = "1.6.3"
 features = [
     "arbitrary",
     "k256",

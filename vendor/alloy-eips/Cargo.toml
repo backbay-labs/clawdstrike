@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.88"
 name = "alloy-eips"
-version = "1.6.1"
+version = "1.6.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -140,7 +140,7 @@ features = ["derive"]
 default-features = false
 
 [dependencies.alloy-serde]
-version = "1.6.1"
+version = "1.6.3"
 optional = true
 default-features = false
 

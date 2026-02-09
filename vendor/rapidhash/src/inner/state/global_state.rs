@@ -1,4 +1,5 @@
 use core::hash::BuildHasher;
+use core::fmt::Formatter;
 use crate::inner::RapidHasher;
 use crate::inner::seeding::secrets::GlobalSecrets;
 
@@ -50,6 +51,12 @@ impl<const AVALANCHE: bool, const SPONGE: bool, const COMPACT: bool, const PROTE
     }
 }
 
+impl<const AVALANCHE: bool, const SPONGE: bool, const COMPACT: bool, const PROTECTED: bool> core::fmt::Debug for GlobalState<AVALANCHE, SPONGE, COMPACT, PROTECTED> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("GlobalState").finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use core::hash::BuildHasher;
@@ -69,5 +76,13 @@ mod tests {
 
         assert_eq!(finish1a, finish1b);
         assert_eq!(finish1a, finish2a);
+    }
+
+    #[test]
+    fn test_debug() {
+        extern crate alloc;
+        let state = GlobalState::new();
+        let debug_str = alloc::format!("{:?}", state);
+        assert_eq!(debug_str, "GlobalState { .. }");
     }
 }

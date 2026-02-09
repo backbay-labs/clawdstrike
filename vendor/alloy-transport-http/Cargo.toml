@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.88"
 name = "alloy-transport-http"
-version = "1.6.1"
+version = "1.6.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -91,12 +91,16 @@ name = "alloy_transport_http"
 path = "src/lib.rs"
 
 [dependencies.alloy-json-rpc]
-version = "1.6.1"
+version = "1.6.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-transport]
-version = "1.6.1"
+version = "1.6.3"
+default-features = false
+
+[dependencies.itertools]
+version = ">=0.13, <=0.14"
 default-features = false
 
 [dependencies.reqwest]
@@ -124,7 +128,7 @@ optional = true
 version = "2.5"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies.alloy-rpc-types-engine]
-version = "1.6.1"
+version = "1.6.3"
 optional = true
 default-features = false
 

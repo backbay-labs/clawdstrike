@@ -1,9 +1,9 @@
 [package]
 name = "rapidhash"
-version = "4.2.2"
+version = "4.3.0"
 edition = "2021"
 publish = true
-rust-version = "1.71.0"  # const split_at and read_unaligned is our limitation
+rust-version = "1.71.0"  # const split_at and read_unaligned are our limitations
 authors = ["Liam Gray <gmail@liamg.me>"]
 description = "An extremely fast, high quality, platform-independent hashing algorithm."
 repository = "https://github.com/hoxxep/rapidhash"

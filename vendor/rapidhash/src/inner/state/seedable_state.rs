@@ -1,4 +1,5 @@
 use core::hash::BuildHasher;
+use core::fmt::Formatter;
 use crate::inner::RapidHasher;
 use crate::inner::seeding::secrets::GlobalSecrets;
 
@@ -24,7 +25,7 @@ use crate::inner::seeding::secrets::GlobalSecrets;
 /// let mut map = HashMap::with_hasher(SeedableState::default());
 /// map.insert(42, "the answer");
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct SeedableState<'s, const AVALANCHE: bool, const SPONGE: bool, const COMPACT: bool = false, const PROTECTED: bool = false> {
     seed: u64,
     secrets: &'s [u64; 7],
@@ -150,6 +151,12 @@ impl<'s, const AVALANCHE: bool, const SPONGE: bool, const COMPACT: bool, const P
     }
 }
 
+impl<'s, const AVALANCHE: bool, const SPONGE: bool, const COMPACT: bool, const PROTECTED: bool> core::fmt::Debug for SeedableState<'s, AVALANCHE, SPONGE, COMPACT, PROTECTED> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SeedableState").finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use core::hash::BuildHasher;
@@ -184,5 +191,13 @@ mod tests {
 
         assert_eq!(finish1a, finish1b);
         assert_eq!(finish1a, finish2a);
+    }
+
+    #[test]
+    fn test_debug() {
+        extern crate alloc;
+        let state = SeedableState::random();
+        let debug_str = alloc::format!("{:?}", state);
+        assert_eq!(debug_str, "SeedableState { .. }");
     }
 }
