@@ -182,7 +182,6 @@ class ReticulumAdapter:
         peer_destination: Any = None,
     ) -> None:
         """Send an envelope to a specific peer or broadcast to all."""
-        priority = priority_for_envelope(envelope)
         encoded = encode_envelope_cbor(envelope)
         size_bytes = len(encoded)
 

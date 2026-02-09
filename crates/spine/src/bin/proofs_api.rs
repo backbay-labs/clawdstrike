@@ -128,6 +128,22 @@ fn policy_index_key_param(policy_hash: &str) -> Result<String, ApiError> {
     hash::policy_index_key(policy_hash).ok_or_else(|| ApiError::bad_request("invalid policy_hash"))
 }
 
+fn normalize_issuer_pubkey_hex(issuer_hex: &str) -> Result<String, ApiError> {
+    let trimmed = issuer_hex.trim();
+    if trimmed.len() == 64 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(trimmed.to_ascii_lowercase());
+    }
+
+    spine::parse_issuer_pubkey_hex(trimmed)
+        .map(|key| key.to_ascii_lowercase())
+        .map_err(|_| ApiError::bad_request("invalid issuer format"))
+}
+
+fn issuer_attestation_index_key_param(issuer_hex: &str) -> Result<String, ApiError> {
+    let normalized = normalize_issuer_pubkey_hex(issuer_hex)?;
+    Ok(format!("node_attestation.{normalized}"))
+}
+
 fn receipt_verification_prefix_param(
     target_envelope_hash: &str,
 ) -> Result<(String, String), ApiError> {
@@ -332,10 +348,16 @@ async fn v1_inclusion_proof(
         (Some(root), Some(eh)) => proof.verify(eh.as_bytes(), &root),
         _ => false,
     };
+    if !verified {
+        warn!(
+            "inclusion proof verification failed (log_id={}, checkpoint_seq={}, envelope_hash={})",
+            log_id, checkpoint_seq, envelope_hash_hex
+        );
+    }
 
     Ok(Json(json!({
         "schema": "clawdstrike.spine.proof.inclusion.v1",
-        "included": true,
+        "included": verified,
         "log_id": log_id,
         "checkpoint_seq": checkpoint_seq,
         "tree_size": tree_size,
@@ -432,8 +454,7 @@ async fn v1_node_attestation_by_issuer(
     State(state): State<Arc<AppState>>,
     Path(issuer_hex): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let normalized = normalize_hash_param("issuer_hex", &issuer_hex)?;
-    let key = format!("node_attestation.{normalized}");
+    let key = issuer_attestation_index_key_param(&issuer_hex)?;
     let Some(envelope_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
         return Err(ApiError::not_found("no node attestation for issuer"));
     };
@@ -723,6 +744,21 @@ mod tests {
             key,
             "policy.0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
         );
+    }
+
+    #[test]
+    fn issuer_attestation_index_key_param_normalizes() {
+        let prefixed_issuer =
+            "aegis:ed25519:AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let key = issuer_attestation_index_key_param(prefixed_issuer).unwrap();
+        assert_eq!(
+            key,
+            "node_attestation.aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
+        );
+
+        let bare_hex = "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00";
+        let key2 = issuer_attestation_index_key_param(bare_hex).unwrap();
+        assert_eq!(key2, key);
     }
 
     #[test]
