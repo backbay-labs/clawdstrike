@@ -2,7 +2,6 @@
 //!
 //! Axum HTTP server exposing checkpoint and inclusion-proof endpoints.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,7 +17,7 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
-use futures::TryStreamExt;
+use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::trace::TraceLayer;
@@ -39,6 +38,10 @@ struct Args {
     /// KV bucket mapping envelope_hash -> log sequence number
     #[arg(long, default_value = "CLAWDSTRIKE_LOG_INDEX")]
     index_bucket: String,
+
+    /// JetStream stream containing ordered log leaves (raw envelope-hash bytes)
+    #[arg(long, default_value = "CLAWDSTRIKE_SPINE_LOG")]
+    log_stream: String,
 
     /// KV bucket storing checkpoints (keys: `latest`, `checkpoint/<seq>`)
     #[arg(long, default_value = "CLAWDSTRIKE_CHECKPOINTS")]
@@ -75,13 +78,21 @@ struct Args {
 
 #[derive(Clone)]
 struct AppState {
+    js: async_nats::jetstream::Context,
+    log_stream: String,
     index_kv: async_nats::jetstream::kv::Store,
     checkpoint_kv: async_nats::jetstream::kv::Store,
     envelope_kv: async_nats::jetstream::kv::Store,
     fact_index_kv: async_nats::jetstream::kv::Store,
     max_keys_scan: usize,
-    /// Cache: tree_size -> `Vec<Vec<u8>>` leaves (avoids re-scanning KV for repeated proofs).
-    leaves_cache: Arc<Mutex<HashMap<u64, Vec<Vec<u8>>>>>,
+    /// Cache only the most recently loaded tree leaves to avoid unbounded growth.
+    leaves_cache: Arc<Mutex<Option<CachedLeaves>>>,
+}
+
+#[derive(Clone)]
+struct CachedLeaves {
+    tree_size: u64,
+    leaves: Arc<Vec<Vec<u8>>>,
 }
 
 #[derive(Debug)]
@@ -152,6 +163,45 @@ fn receipt_verification_prefix_param(
     Ok((target, prefix))
 }
 
+#[cfg(test)]
+fn cached_leaves_for_tree_size(
+    leaves_cache: &Option<CachedLeaves>,
+    tree_size: u64,
+) -> Option<Arc<Vec<Vec<u8>>>> {
+    leaves_cache
+        .as_ref()
+        .filter(|entry| entry.tree_size == tree_size)
+        .map(|entry| entry.leaves.clone())
+}
+
+fn store_latest_leaves(
+    leaves_cache: &mut Option<CachedLeaves>,
+    tree_size: u64,
+    leaves: Arc<Vec<Vec<u8>>>,
+) {
+    *leaves_cache = Some(CachedLeaves { tree_size, leaves });
+}
+
+fn push_prefixed_key_with_scan_cap(
+    matching_keys: &mut Vec<String>,
+    key: String,
+    prefix: &str,
+    max_matching_keys: usize,
+) -> bool {
+    if !key.starts_with(prefix) {
+        return false;
+    }
+    if matching_keys.len() >= max_matching_keys {
+        return true;
+    }
+    matching_keys.push(key);
+    false
+}
+
+fn tree_size_to_usize(tree_size: u64) -> Result<usize, ApiError> {
+    usize::try_from(tree_size).map_err(|_| ApiError::internal("requested tree_size too large"))
+}
+
 async fn get_checkpoint_value(state: &AppState, key: &str) -> Result<Value, ApiError> {
     let bytes = state
         .checkpoint_kv
@@ -176,58 +226,63 @@ fn extract_checkpoint_fact(envelope: &Value) -> Result<&Value, ApiError> {
 }
 
 async fn load_leaves_for_tree_size(
-    index_kv: &async_nats::jetstream::kv::Store,
+    js: &async_nats::jetstream::Context,
+    log_stream: &str,
     tree_size: u64,
 ) -> Result<Vec<Vec<u8>>, ApiError> {
-    let keys = index_kv
-        .keys()
-        .await
-        .map_err(|_| ApiError::internal("failed to list log index keys"))?
-        .try_collect::<Vec<String>>()
-        .await
-        .map_err(|_| ApiError::internal("failed to collect log index keys"))?;
-    let mut pairs: Vec<(u64, Vec<u8>)> = Vec::new();
+    load_leaves_for_tree_range(js, log_stream, 1, tree_size).await
+}
 
-    for key in keys {
-        let Some(value) = index_kv
-            .get(&key)
-            .await
-            .map_err(|_| ApiError::internal("failed to read log index"))?
-        else {
-            continue;
-        };
-
-        let seq_str = std::str::from_utf8(&value)
-            .map_err(|_| ApiError::internal("log index entry is not valid UTF-8"))?
-            .trim();
-        let seq: u64 = match seq_str.parse() {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        if seq == 0 || seq > tree_size {
-            continue;
-        }
-        let h = Hash::from_hex(&key)
-            .map_err(|_| ApiError::internal("invalid envelope_hash in index"))?;
-        pairs.push((seq, h.as_bytes().to_vec()));
+async fn load_leaves_for_tree_range(
+    js: &async_nats::jetstream::Context,
+    log_stream: &str,
+    start_seq: u64,
+    end_seq: u64,
+) -> Result<Vec<Vec<u8>>, ApiError> {
+    if start_seq == 0 || end_seq < start_seq {
+        return Err(ApiError::internal("invalid log leaf range"));
     }
 
-    pairs.sort_by_key(|(seq, _)| *seq);
-    if pairs.len() as u64 != tree_size {
+    let expected = end_seq - start_seq + 1;
+    let max_messages = tree_size_to_usize(expected)?;
+
+    let stream = js
+        .get_stream(log_stream)
+        .await
+        .map_err(|_| ApiError::internal("failed to get spine log stream"))?;
+    let consumer = stream
+        .create_consumer(async_nats::jetstream::consumer::pull::Config {
+            deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
+                start_sequence: start_seq,
+            },
+            ..Default::default()
+        })
+        .await
+        .map_err(|_| ApiError::internal("failed to create spine log consumer"))?;
+
+    let mut messages = consumer
+        .fetch()
+        .max_messages(max_messages)
+        .messages()
+        .await
+        .map_err(|_| ApiError::internal("failed to fetch spine log leaves"))?;
+
+    let mut leaves = Vec::with_capacity(max_messages);
+    while let Some(msg) = messages.next().await {
+        let msg = msg.map_err(|_| ApiError::internal("failed to read spine log leaf"))?;
+        if msg.payload.len() != 32 {
+            return Err(ApiError::internal("invalid spine log leaf payload length"));
+        }
+        leaves.push(msg.payload.to_vec());
+    }
+
+    if leaves.len() != max_messages {
         return Err(ApiError::internal(
-            "log index incomplete for requested tree_size",
+            "spine log incomplete for requested tree_size",
         ));
     }
-    for i in 1..pairs.len() {
-        if pairs[i].0 != pairs[i - 1].0 + 1 {
-            return Err(ApiError::internal(format!(
-                "log index has gap: seq {} followed by {}",
-                pairs[i - 1].0,
-                pairs[i].0
-            )));
-        }
-    }
-    Ok(pairs.into_iter().map(|(_, b)| b).collect())
+
+    Ok(leaves)
 }
 
 async fn healthz() -> &'static str {
@@ -305,22 +360,42 @@ async fn v1_inclusion_proof(
     let log_index = log_seq - 1;
 
     let leaves = {
-        let cached = state
-            .leaves_cache
-            .lock()
-            .ok()
-            .and_then(|c| c.get(&tree_size).cloned());
-        if let Some(l) = cached {
-            l
-        } else {
-            let l = load_leaves_for_tree_size(&state.index_kv, tree_size).await?;
-            if let Ok(mut c) = state.leaves_cache.lock() {
-                c.insert(tree_size, l.clone());
+        let cached = state.leaves_cache.lock().ok().and_then(|c| c.clone());
+        match cached {
+            Some(entry) if entry.tree_size == tree_size => entry.leaves,
+            Some(entry) if entry.tree_size > tree_size => {
+                let prefix_len = tree_size_to_usize(tree_size)?;
+                Arc::new(entry.leaves[..prefix_len].to_vec())
             }
-            l
+            Some(entry) => {
+                let delta = load_leaves_for_tree_range(
+                    &state.js,
+                    &state.log_stream,
+                    entry.tree_size + 1,
+                    tree_size,
+                )
+                .await?;
+                let mut combined = Vec::with_capacity(tree_size_to_usize(tree_size)?);
+                combined.extend(entry.leaves.iter().cloned());
+                combined.extend(delta);
+                let leaves = Arc::new(combined);
+                if let Ok(mut c) = state.leaves_cache.lock() {
+                    store_latest_leaves(&mut c, tree_size, leaves.clone());
+                }
+                leaves
+            }
+            None => {
+                let leaves = Arc::new(
+                    load_leaves_for_tree_size(&state.js, &state.log_stream, tree_size).await?,
+                );
+                if let Ok(mut c) = state.leaves_cache.lock() {
+                    store_latest_leaves(&mut c, tree_size, leaves.clone());
+                }
+                leaves
+            }
         }
     };
-    let tree = MerkleTree::from_leaves(&leaves)
+    let tree = MerkleTree::from_leaves(leaves.as_ref())
         .map_err(|_| ApiError::internal("failed to build merkle tree"))?;
     let proof = tree
         .inclusion_proof(log_index as usize)
@@ -516,30 +591,32 @@ async fn v1_receipt_verifications_by_target(
 ) -> Result<Json<Value>, ApiError> {
     let (target, prefix) = receipt_verification_prefix_param(&target_envelope_hash)?;
 
-    let keys = state
+    let mut key_stream = state
         .fact_index_kv
         .keys()
         .await
-        .map_err(|_| ApiError::internal("failed to list fact index keys"))?
-        .try_collect::<Vec<String>>()
-        .await
-        .map_err(|_| ApiError::internal("failed to collect fact index keys"))?;
+        .map_err(|_| ApiError::internal("failed to list fact index keys"))?;
 
     let max_keys = state.max_keys_scan;
-    let mut out: Vec<Value> = Vec::new();
-    let mut scanned: usize = 0;
-    for key in keys {
-        scanned += 1;
-        if scanned > max_keys {
+    let mut matching_keys: Vec<String> = Vec::new();
+    let mut truncated = false;
+    while let Some(key) = key_stream
+        .try_next()
+        .await
+        .map_err(|_| ApiError::internal("failed to scan fact index keys"))?
+    {
+        if push_prefixed_key_with_scan_cap(&mut matching_keys, key, &prefix, max_keys) {
+            truncated = true;
             warn!(
-                "receipt verifications scan capped at {} keys for target={}",
+                "receipt verifications scan capped at {} matching keys for target={}",
                 max_keys, target
             );
             break;
         }
-        if !key.starts_with(&prefix) {
-            continue;
-        }
+    }
+
+    let mut out: Vec<Value> = Vec::new();
+    for key in matching_keys {
         let verifier_pubkey_hex = key.strip_prefix(&prefix).unwrap_or("").to_string();
         let Some(env_hash) = kv_get_utf8(&state.fact_index_kv, &key).await? else {
             continue;
@@ -562,6 +639,7 @@ async fn v1_receipt_verifications_by_target(
     Ok(Json(json!({
         "schema": "clawdstrike.spine.query.receipt_verifications.v1",
         "target_envelope_hash": target,
+        "truncated": truncated,
         "verifications": out,
     })))
 }
@@ -604,14 +682,19 @@ async fn main() -> Result<()> {
     let checkpoint_kv = nats::ensure_kv(&js, &args.checkpoint_bucket, replicas).await?;
     let envelope_kv = nats::ensure_kv(&js, &args.envelope_bucket, replicas).await?;
     let fact_index_kv = nats::ensure_kv(&js, &args.fact_index_bucket, replicas).await?;
+    js.get_stream(&args.log_stream)
+        .await
+        .context("failed to get spine log stream")?;
 
     let state = Arc::new(AppState {
+        js: js.clone(),
+        log_stream: args.log_stream.clone(),
         index_kv,
         checkpoint_kv,
         envelope_kv,
         fact_index_kv,
         max_keys_scan: args.max_keys_scan,
-        leaves_cache: Arc::new(Mutex::new(HashMap::new())),
+        leaves_cache: Arc::new(Mutex::new(None)),
     });
 
     // Build the /v1/* router with auth and rate limiting middleware.
@@ -770,5 +853,72 @@ mod tests {
             "0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
         );
         assert_eq!(prefix, format!("receipt_verification.{target}."));
+    }
+
+    #[test]
+    fn leaves_cache_only_keeps_latest_tree_size() {
+        let mut cache: Option<CachedLeaves> = None;
+        store_latest_leaves(&mut cache, 2, Arc::new(vec![vec![1_u8], vec![2_u8]]));
+
+        assert!(cached_leaves_for_tree_size(&cache, 1).is_none());
+        assert_eq!(
+            cached_leaves_for_tree_size(&cache, 2)
+                .unwrap()
+                .as_ref()
+                .clone(),
+            vec![vec![1_u8], vec![2_u8]],
+        );
+
+        store_latest_leaves(&mut cache, 3, Arc::new(vec![vec![9_u8]]));
+        assert!(cached_leaves_for_tree_size(&cache, 2).is_none());
+        assert_eq!(
+            cached_leaves_for_tree_size(&cache, 3)
+                .unwrap()
+                .as_ref()
+                .clone(),
+            vec![vec![9_u8]],
+        );
+    }
+
+    #[test]
+    fn prefixed_keys_with_scan_cap_counts_only_matching_keys() {
+        let prefix = "receipt_verification.target.";
+        let keys = vec![
+            "receipt_verification.other.one".to_string(),
+            format!("{prefix}one"),
+            "policy.abc".to_string(),
+            format!("{prefix}two"),
+            format!("{prefix}three"),
+        ];
+
+        let mut selected = Vec::new();
+        let mut truncated = false;
+        for key in keys {
+            if push_prefixed_key_with_scan_cap(&mut selected, key, prefix, 2) {
+                truncated = true;
+                break;
+            }
+        }
+        assert!(truncated);
+        assert_eq!(
+            selected,
+            vec![format!("{prefix}one"), format!("{prefix}two")]
+        );
+    }
+
+    #[test]
+    fn prefixed_keys_with_scan_cap_handles_no_matches() {
+        let prefix = "receipt_verification.target.";
+        let keys = vec!["policy.1".to_string(), "run_receipt.2".to_string()];
+        let mut selected = Vec::new();
+        let mut truncated = false;
+        for key in keys {
+            if push_prefixed_key_with_scan_cap(&mut selected, key, prefix, 1) {
+                truncated = true;
+                break;
+            }
+        }
+        assert!(!truncated);
+        assert!(selected.is_empty());
     }
 }

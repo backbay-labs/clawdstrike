@@ -5,6 +5,10 @@ use std::io::Read;
 
 /// List recent envelopes from the CLAWDSTRIKE_ENVELOPES JetStream stream.
 pub async fn list(nats_url: &str, limit: u64, is_json: bool, verbose: bool) -> Result<()> {
+    if limit == 0 {
+        anyhow::bail!("limit must be >= 1");
+    }
+
     let client = spine::nats_transport::connect(nats_url).await?;
     let js = spine::nats_transport::jetstream(client);
 

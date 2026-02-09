@@ -45,7 +45,7 @@ struct Args {
     #[arg(long, default_value = "CLAWDSTRIKE_LOG_INDEX")]
     index_bucket: String,
 
-    /// KV bucket storing checkpoints (keys: `latest`, `checkpoint/<seq>`)
+    /// KV bucket storing checkpoints (keys: `latest`, `checkpoint/<seq>`, `checkpoint_hash/<hash>`)
     #[arg(long, default_value = "CLAWDSTRIKE_CHECKPOINTS")]
     checkpoint_bucket: String,
 
@@ -185,6 +185,68 @@ fn build_checkpoint_statement_from_fact(fact: &Value) -> Result<Value> {
         tree_size,
         issued_at.to_string(),
     ))
+}
+
+async fn backfill_checkpoint_hash_index(
+    checkpoint_kv: &async_nats::jetstream::kv::Store,
+) -> Result<(usize, usize)> {
+    let keys = checkpoint_kv
+        .keys()
+        .await?
+        .try_collect::<Vec<String>>()
+        .await?;
+    let mut scanned: usize = 0;
+    let mut added: usize = 0;
+
+    for key in keys {
+        if !key.starts_with("checkpoint/") {
+            continue;
+        }
+        scanned += 1;
+
+        let Some(bytes) = checkpoint_kv.get(&key).await? else {
+            continue;
+        };
+
+        let envelope: Value = match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(err) => {
+                warn!(checkpoint_key = %key, "invalid checkpoint JSON in KV: {err}");
+                continue;
+            }
+        };
+        let Some(fact) = envelope.get("fact") else {
+            warn!(checkpoint_key = %key, "checkpoint envelope missing fact");
+            continue;
+        };
+        let statement = match build_checkpoint_statement_from_fact(fact) {
+            Ok(v) => v,
+            Err(err) => {
+                warn!(checkpoint_key = %key, "invalid checkpoint fact: {err:#}");
+                continue;
+            }
+        };
+        let checkpoint_hash = match checkpoint::checkpoint_hash(&statement) {
+            Ok(v) => v.to_hex_prefixed(),
+            Err(err) => {
+                warn!(checkpoint_key = %key, "failed to compute checkpoint hash: {err:#}");
+                continue;
+            }
+        };
+
+        let hash_index_key = format!("checkpoint_hash/{checkpoint_hash}");
+        if checkpoint_kv.get(&hash_index_key).await?.is_some() {
+            continue;
+        }
+
+        if let Err(err) = checkpoint_kv.put(&hash_index_key, bytes.clone()).await {
+            warn!(checkpoint_key = %key, hash_index_key = %hash_index_key, "failed to backfill checkpoint hash index: {err}");
+            continue;
+        }
+        added += 1;
+    }
+
+    Ok((scanned, added))
 }
 
 /// Load all leaves from the index KV bucket.
@@ -515,6 +577,18 @@ async fn maybe_checkpoint(
         .map(|s| s.to_string());
 
     let cp_hash = checkpoint::checkpoint_hash(&statement)?.to_hex_prefixed();
+    if let Err(e) = checkpoint_kv
+        .put(
+            format!("checkpoint_hash/{cp_hash}"),
+            envelope_bytes.clone().into(),
+        )
+        .await
+    {
+        warn!(
+            checkpoint_hash = %cp_hash,
+            "failed to store checkpoint hash index: {e}"
+        );
+    }
     *last_checkpoint_hash = Some(cp_hash);
 
     info!(
@@ -804,6 +878,17 @@ async fn main() -> Result<()> {
     let checkpoint_kv = nats::ensure_kv(&js, &args.checkpoint_bucket, args.replicas).await?;
     let envelope_kv = nats::ensure_kv(&js, &args.envelope_bucket, args.replicas).await?;
     let fact_index_kv = nats::ensure_kv(&js, &args.fact_index_bucket, args.replicas).await?;
+    match backfill_checkpoint_hash_index(&checkpoint_kv).await {
+        Ok((scanned, added)) => {
+            info!(
+                "checkpoint hash index backfill complete scanned={} added={}",
+                scanned, added
+            );
+        }
+        Err(err) => {
+            warn!("checkpoint hash index backfill failed: {err:#}");
+        }
+    }
 
     // Initialize checkpoint state from KV (if present).
     let mut last_checkpoint_tree_size: u64 = 0;
