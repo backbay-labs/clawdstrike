@@ -241,7 +241,7 @@ clawdstrike/
 | AegisNet witness | `aegis/services/aegisnet/witness` | `spine/nats/witness/` | Rust |
 | AegisNet proofs-api | `aegis/services/aegisnet/proofs-api` | `spine/nats/proofs-api/` | Rust |
 | AegisNet observability | `aegis/services/aegisnet/observability` | `desktop/` (dashboards) + `spine/metrics/` | Mixed |
-| Reticulum adapter | `platform/docs/specs/` (spec only) | `spine/reticulum/` | Python |
+| Reticulum adapter | `platform/docs/specs/` (spec only) | `integrations/transports/reticulum/` | Python |
 | tetragon-nats-bridge | New | `bridges/tetragon/` | Rust |
 | hubble-flow-bridge | New | `bridges/hubble/` | Rust |
 
@@ -268,7 +268,7 @@ clawdstrike/
 
 | Spec | Target | Notes |
 |------|--------|-------|
-| `cyntra-aegis-spine-reticulum.md` | `docs/src/spine/reticulum.md` | Transport profile spec |
+| `cyntra-aegis-spine-reticulum.md` | `docs/src/integrations/transports/reticulum.md` | Transport profile spec |
 | `cyntra-aegis-spine.md` | `docs/src/spine/protocol.md` | Core Spine protocol spec |
 | `cyntra-aegis-net-design-axioms.md` | `docs/src/architecture/design-axioms.md` | Design invariants |
 | `cyntra-aegis-trust-infrastructure.md` | `docs/src/architecture/trust-infrastructure.md` | Trust model |
@@ -869,7 +869,7 @@ Each challenge runs in a sandboxed environment with ClawdStrike deployed. Soluti
 | Copy AegisNet checkpointer/witness/proofs-api into spine/nats/ | Core team | 1 week | Phase 0 |
 | Adapt Spine services to build within ClawdStrike workspace | Core team | 1 week | Copy |
 | Copy Aegis Spine protocol types into spine/src/ | Core team | 1 week | Phase 0 |
-| Implement Reticulum adapter scaffold (spine/reticulum/) | Reticulum lead | 2 weeks | Spine types |
+| Implement Reticulum adapter scaffold (integrations/transports/reticulum/) | Reticulum lead | 2 weeks | Spine types |
 | Write mdBook docs for Spine protocol | Docs lead | 2 weeks | Spine types |
 | Helm chart for deploying Spine services (deploy/helm/) | Infra lead | 1 week | Spine build |
 

@@ -313,7 +313,7 @@ jobs:
         id: sha
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          URL="https://github.com/backbay-labs/hushclaw/archive/refs/tags/v${VERSION}.tar.gz"
+          URL="https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${VERSION}.tar.gz"
           echo "Downloading from: $URL"
           SHA=$(curl -sL "$URL" | shasum -a 256 | cut -d' ' -f1)
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
@@ -323,17 +323,17 @@ jobs:
       - name: Update formula
         run: |
           # Update URL with new version
-          sed -i 's|url "https://github.com/backbay-labs/hushclaw/archive/refs/tags/v[^"]*"|url "https://github.com/backbay-labs/hushclaw/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' HomebrewFormula/hush.rb
+          sed -i 's|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[^"]*"|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' infra/packaging/HomebrewFormula/hush.rb
           # Update SHA256
-          sed -i 's|sha256 "[^"]*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' HomebrewFormula/hush.rb
+          sed -i 's|sha256 "[^"]*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' infra/packaging/HomebrewFormula/hush.rb
 
           echo "Updated formula:"
-          cat HomebrewFormula/hush.rb
+          cat infra/packaging/HomebrewFormula/hush.rb
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add HomebrewFormula/hush.rb
+          git add infra/packaging/HomebrewFormula/hush.rb
           git diff --cached --quiet || git commit -m "chore: update Homebrew formula for v${{ steps.sha.outputs.version }}"
           git push origin main

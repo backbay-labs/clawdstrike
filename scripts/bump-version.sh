@@ -79,9 +79,16 @@ if [[ -f "crates/hush-wasm/package.json" ]]; then
     fi
 fi
 
-if [[ -f "HomebrewFormula/hush.rb" ]]; then
-    echo "  Updating HomebrewFormula/hush.rb tag URL..."
-    $SED_INPLACE "s#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v$VERSION.tar.gz#" HomebrewFormula/hush.rb
+FORMULA_PATH=""
+if [[ -f "infra/packaging/HomebrewFormula/hush.rb" ]]; then
+    FORMULA_PATH="infra/packaging/HomebrewFormula/hush.rb"
+elif [[ -f "HomebrewFormula/hush.rb" ]]; then
+    FORMULA_PATH="HomebrewFormula/hush.rb"
+fi
+
+if [[ -n "$FORMULA_PATH" ]]; then
+    echo "  Updating ${FORMULA_PATH} tag URL..."
+    $SED_INPLACE "s#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v$VERSION.tar.gz#" "$FORMULA_PATH"
 fi
 
 # Update pyproject.toml if it exists
@@ -90,9 +97,16 @@ if [[ -f "packages/hush-py/pyproject.toml" ]]; then
     $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" packages/hush-py/pyproject.toml
 fi
 
-if [[ -f "packages/hush-py/src/hush/__init__.py" ]]; then
-    echo "  Updating packages/hush-py/src/hush/__init__.py __version__..."
-    $SED_INPLACE "s/^__version__ = \"[^\"]*\"/__version__ = \"$VERSION\"/" packages/hush-py/src/hush/__init__.py
+PY_INIT_PATH=""
+if [[ -f "packages/hush-py/src/clawdstrike/__init__.py" ]]; then
+    PY_INIT_PATH="packages/hush-py/src/clawdstrike/__init__.py"
+elif [[ -f "packages/hush-py/src/hush/__init__.py" ]]; then
+    PY_INIT_PATH="packages/hush-py/src/hush/__init__.py"
+fi
+
+if [[ -n "$PY_INIT_PATH" ]]; then
+    echo "  Updating ${PY_INIT_PATH} __version__..."
+    $SED_INPLACE "s/^__version__ = \"[^\"]*\"/__version__ = \"$VERSION\"/" "$PY_INIT_PATH"
 fi
 
 echo ""

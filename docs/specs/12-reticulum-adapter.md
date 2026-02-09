@@ -136,10 +136,10 @@ A working **Python sidecar** (`spine-reticulum-adapter`) that:
 
 #### Step 1: Project Scaffold
 
-Create `spine/reticulum/` as a Python package:
+Create `integrations/transports/reticulum/` as a Python package:
 
 ```
-spine/reticulum/
+integrations/transports/reticulum/
 ├── pyproject.toml          # uv/pip project with rns, lxmf, cbor2, nats-py deps
 ├── src/
 │   └── spine_reticulum/
@@ -1041,38 +1041,38 @@ pi-gateway/
 
 | Path | Description | Est. LOC |
 |---|---|---|
-| `spine/reticulum/pyproject.toml` | Python project config | 40 |
-| `spine/reticulum/src/spine_reticulum/__init__.py` | Package init | 10 |
-| `spine/reticulum/src/spine_reticulum/adapter.py` | Main adapter class | 300 |
-| `spine/reticulum/src/spine_reticulum/config.py` | YAML config parsing | 80 |
-| `spine/reticulum/src/spine_reticulum/envelope.py` | Envelope encode/decode/verify | 150 |
-| `spine/reticulum/src/spine_reticulum/store.py` | SQLite envelope store | 180 |
-| `spine/reticulum/src/spine_reticulum/priority.py` | Priority queue + BW scheduler | 150 |
-| `spine/reticulum/src/spine_reticulum/gateway.py` | NATS bridge | 200 |
-| `spine/reticulum/src/spine_reticulum/identity.py` | Identity binding | 80 |
-| `spine/reticulum/src/spine_reticulum/audit.py` | Hash-chained audit log | 100 |
-| `spine/reticulum/src/spine_reticulum/encoding.py` | CBOR + fragmentation | 120 |
-| `spine/reticulum/src/spine_reticulum/cli.py` | CLI entry points | 150 |
-| `spine/reticulum/tests/test_envelope.py` | Envelope tests | 100 |
-| `spine/reticulum/tests/test_store.py` | Store tests | 120 |
-| `spine/reticulum/tests/test_priority.py` | Priority/scheduler tests | 100 |
-| `spine/reticulum/tests/test_gateway.py` | Gateway tests | 100 |
-| `spine/reticulum/tests/test_encoding.py` | CBOR/fragment tests | 80 |
-| `spine/reticulum/tests/test_audit.py` | Audit log tests | 60 |
-| `spine/reticulum/tests/fixtures/` | Cross-language test fixtures | -- |
-| `spine/reticulum/pi-gateway/Dockerfile` | Pi gateway container | 30 |
-| `spine/reticulum/pi-gateway/docker-compose.yml` | Pi gateway compose | 25 |
-| `spine/reticulum/pi-gateway/config/reticulum.conf` | RNode config | 25 |
-| `spine/reticulum/pi-gateway/config/adapter.yaml` | Adapter config | 30 |
-| `spine/reticulum/pi-gateway/config/disclosure.yaml` | Disclosure policy | 25 |
-| `spine/reticulum/README.md` | Adapter documentation | 100 |
+| `integrations/transports/reticulum/pyproject.toml` | Python project config | 40 |
+| `integrations/transports/reticulum/src/spine_reticulum/__init__.py` | Package init | 10 |
+| `integrations/transports/reticulum/src/spine_reticulum/adapter.py` | Main adapter class | 300 |
+| `integrations/transports/reticulum/src/spine_reticulum/config.py` | YAML config parsing | 80 |
+| `integrations/transports/reticulum/src/spine_reticulum/envelope.py` | Envelope encode/decode/verify | 150 |
+| `integrations/transports/reticulum/src/spine_reticulum/store.py` | SQLite envelope store | 180 |
+| `integrations/transports/reticulum/src/spine_reticulum/priority.py` | Priority queue + BW scheduler | 150 |
+| `integrations/transports/reticulum/src/spine_reticulum/gateway.py` | NATS bridge | 200 |
+| `integrations/transports/reticulum/src/spine_reticulum/identity.py` | Identity binding | 80 |
+| `integrations/transports/reticulum/src/spine_reticulum/audit.py` | Hash-chained audit log | 100 |
+| `integrations/transports/reticulum/src/spine_reticulum/encoding.py` | CBOR + fragmentation | 120 |
+| `integrations/transports/reticulum/src/spine_reticulum/cli.py` | CLI entry points | 150 |
+| `integrations/transports/reticulum/tests/test_envelope.py` | Envelope tests | 100 |
+| `integrations/transports/reticulum/tests/test_store.py` | Store tests | 120 |
+| `integrations/transports/reticulum/tests/test_priority.py` | Priority/scheduler tests | 100 |
+| `integrations/transports/reticulum/tests/test_gateway.py` | Gateway tests | 100 |
+| `integrations/transports/reticulum/tests/test_encoding.py` | CBOR/fragment tests | 80 |
+| `integrations/transports/reticulum/tests/test_audit.py` | Audit log tests | 60 |
+| `integrations/transports/reticulum/tests/fixtures/` | Cross-language test fixtures | -- |
+| `integrations/transports/reticulum/pi-gateway/Dockerfile` | Pi gateway container | 30 |
+| `integrations/transports/reticulum/pi-gateway/docker-compose.yml` | Pi gateway compose | 25 |
+| `integrations/transports/reticulum/pi-gateway/config/reticulum.conf` | RNode config | 25 |
+| `integrations/transports/reticulum/pi-gateway/config/adapter.yaml` | Adapter config | 30 |
+| `integrations/transports/reticulum/pi-gateway/config/disclosure.yaml` | Disclosure policy | 25 |
+| `integrations/transports/reticulum/README.md` | Adapter documentation | 100 |
 | **Total estimated** | | **~2,255** |
 
 ### Modified Files
 
 | Path | Change | Description |
 |---|---|---|
-| `Cargo.toml` (workspace) | Add comment | Note the Python sidecar in `spine/reticulum/` |
+| `Cargo.toml` (workspace) | Add comment | Note the Python sidecar in `integrations/transports/reticulum/` |
 | `crates/spine/src/envelope.rs` | Add test | `generate_test_envelope` fixture generator for cross-language tests |
 
 ---
@@ -1131,7 +1131,7 @@ The Reticulum adapter is a **new Python sidecar** with zero coupling to
 existing Rust crates at runtime. Rollback is trivial:
 
 1. Stop the `spine-reticulum` process
-2. Remove the `spine/reticulum/` directory
+2. Remove the `integrations/transports/reticulum/` directory
 3. No Cargo.toml changes are needed (no Rust dependency added)
 4. No changes to existing NATS subjects, streams, or hushd behavior
 
@@ -1227,7 +1227,7 @@ transports are unaffected.
 
 - [Reticulum SDR Transport Research](../research/reticulum-sdr-transport.md) -- Primary reference
 - [Architecture Vision](../research/architecture-vision.md) -- Multi-plane transport architecture (Section 2.4)
-- [Open Source Strategy](../research/open-source-strategy.md) -- Target monorepo structure (`spine/reticulum/`)
+- [Open Source Strategy](../research/open-source-strategy.md) -- Target monorepo structure (`integrations/transports/reticulum/`)
 - `crates/spine/src/envelope.rs` -- Envelope format (current implementation)
 - `crates/spine/src/nats_transport.rs` -- NATS transport patterns
 - `crates/spine/src/trust.rs` -- Trust bundle constraints

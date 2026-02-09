@@ -1,6 +1,6 @@
 # Homebrew formula for hush CLI
 # Install: brew install clawdstrike/tap/hush
-# Or from local: brew install --build-from-source ./HomebrewFormula/hush.rb
+# Or from local: brew install --build-from-source ./infra/packaging/HomebrewFormula/hush.rb
 #
 # SHA256 is automatically updated by the release workflow.
 # To calculate SHA256 manually:
@@ -11,7 +11,7 @@ class Hush < Formula
   homepage "https://github.com/backbay-labs/clawdstrike"
   url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "PLACEHOLDER_SHA256_WILL_BE_UPDATED_ON_RELEASE"
-  license "MIT"
+  license "Apache-2.0"
   head "https://github.com/backbay-labs/clawdstrike.git", branch: "main"
 
   depends_on "rust" => :build

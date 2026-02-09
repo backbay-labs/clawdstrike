@@ -494,12 +494,12 @@ pub async fn register_agent(
 
 ### Step 4: Web Dashboard (React SPA)
 
-**New package: `packages/cloud-dashboard/`**
+**New app: `apps/cloud-dashboard/`**
 
 The dashboard mirrors the Tauri desktop features but runs as a web SPA:
 
 ```
-packages/cloud-dashboard/
+apps/cloud-dashboard/
 ├── package.json
 ├── vite.config.ts
 ├── src/
@@ -956,21 +956,21 @@ impl AlerterService {
 | `crates/cloud-api/src/models/agent.rs` | Agent model | 50 |
 | `crates/cloud-api/src/models/api_key.rs` | API key model | 50 |
 | `crates/cloud-api/migrations/001_init.sql` | Initial DB migration | 80 |
-| `packages/cloud-dashboard/package.json` | Dashboard package config | 30 |
-| `packages/cloud-dashboard/vite.config.ts` | Vite config | 20 |
-| `packages/cloud-dashboard/src/App.tsx` | Root component | 50 |
-| `packages/cloud-dashboard/src/main.tsx` | Entry point | 15 |
-| `packages/cloud-dashboard/src/pages/Dashboard.tsx` | Overview page | 150 |
-| `packages/cloud-dashboard/src/pages/Agents.tsx` | Agent fleet page | 200 |
-| `packages/cloud-dashboard/src/pages/Events.tsx` | Event stream page | 150 |
-| `packages/cloud-dashboard/src/pages/Policies.tsx` | Policy management | 150 |
-| `packages/cloud-dashboard/src/pages/Alerts.tsx` | Alert configuration | 120 |
-| `packages/cloud-dashboard/src/pages/Compliance.tsx` | Compliance page | 150 |
-| `packages/cloud-dashboard/src/pages/Settings.tsx` | Settings page | 200 |
-| `packages/cloud-dashboard/src/pages/Login.tsx` | Auth flow | 100 |
-| `packages/cloud-dashboard/src/hooks/useAuth.ts` | Auth hook | 60 |
-| `packages/cloud-dashboard/src/hooks/useSSE.ts` | SSE subscription | 50 |
-| `packages/cloud-dashboard/src/api/client.ts` | API client | 80 |
+| `apps/cloud-dashboard/package.json` | Dashboard package config | 30 |
+| `apps/cloud-dashboard/vite.config.ts` | Vite config | 20 |
+| `apps/cloud-dashboard/src/App.tsx` | Root component | 50 |
+| `apps/cloud-dashboard/src/main.tsx` | Entry point | 15 |
+| `apps/cloud-dashboard/src/pages/Dashboard.tsx` | Overview page | 150 |
+| `apps/cloud-dashboard/src/pages/Agents.tsx` | Agent fleet page | 200 |
+| `apps/cloud-dashboard/src/pages/Events.tsx` | Event stream page | 150 |
+| `apps/cloud-dashboard/src/pages/Policies.tsx` | Policy management | 150 |
+| `apps/cloud-dashboard/src/pages/Alerts.tsx` | Alert configuration | 120 |
+| `apps/cloud-dashboard/src/pages/Compliance.tsx` | Compliance page | 150 |
+| `apps/cloud-dashboard/src/pages/Settings.tsx` | Settings page | 200 |
+| `apps/cloud-dashboard/src/pages/Login.tsx` | Auth flow | 100 |
+| `apps/cloud-dashboard/src/hooks/useAuth.ts` | Auth hook | 60 |
+| `apps/cloud-dashboard/src/hooks/useSSE.ts` | SSE subscription | 50 |
+| `apps/cloud-dashboard/src/api/client.ts` | API client | 80 |
 | **Total estimated** | | **~3,950** |
 
 ### Modified Files
@@ -1035,7 +1035,7 @@ project:
 1. **Cloud API (`crates/cloud-api/`):** Independent service. Can be shut
    down without affecting hushd, the desktop app, or any open source
    functionality.
-2. **Dashboard (`packages/cloud-dashboard/`):** Static SPA served from
+2. **Dashboard (`apps/cloud-dashboard/`):** Static SPA served from
    CDN. Can be taken offline independently.
 3. **Database:** PostgreSQL contains only cloud-specific data (tenants,
    users, API keys). No shared state with open source components.

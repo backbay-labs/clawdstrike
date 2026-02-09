@@ -1,5 +1,5 @@
 # Moved
 
-The Reticulum transport integration moved to `integrations/transports/reticulum`.
+This app moved to `apps/cloud-dashboard`.
 
 This directory is a temporary redirect stub kept for one release cycle.

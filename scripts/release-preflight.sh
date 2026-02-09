@@ -68,9 +68,18 @@ pyproject = read_toml("packages/hush-py/pyproject.toml")
 py_version = pyproject.get("project", {}).get("version")
 errors.append(check("packages/hush-py/pyproject.toml [project].version", py_version))
 
-hush_init = (repo_root / "packages/hush-py/src/hush/__init__.py").read_text(encoding="utf-8")
-match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', hush_init, flags=re.M)
-errors.append(check("packages/hush-py/src/hush/__init__.py __version__", match.group(1) if match else None))
+py_init_rel = None
+for rel in ("packages/hush-py/src/clawdstrike/__init__.py", "packages/hush-py/src/hush/__init__.py"):
+    if (repo_root / rel).exists():
+        py_init_rel = rel
+        break
+
+if py_init_rel is None:
+    errors.append("packages/hush-py __version__: missing __init__.py")
+else:
+    py_init = (repo_root / py_init_rel).read_text(encoding="utf-8")
+    match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', py_init, flags=re.M)
+    errors.append(check(f"{py_init_rel} __version__", match.group(1) if match else None))
 
 for pkg in [
     "packages/hush-ts/package.json",
@@ -79,13 +88,22 @@ for pkg in [
 ]:
     errors.append(check(pkg, read_json(pkg).get("version")))
 
-formula = (repo_root / "HomebrewFormula/hush.rb").read_text(encoding="utf-8")
-match = re.search(
-    r'^\s*url\s+"https://github\.com/backbay-labs/clawdstrike/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
-    formula,
-    flags=re.M,
-)
-errors.append(check("HomebrewFormula/hush.rb url tag", match.group(1) if match else None))
+formula_rel = None
+for rel in ("infra/packaging/HomebrewFormula/hush.rb", "HomebrewFormula/hush.rb"):
+    if (repo_root / rel).exists():
+        formula_rel = rel
+        break
+
+if formula_rel is None:
+    errors.append("Homebrew formula path: expected infra/packaging/HomebrewFormula/hush.rb")
+else:
+    formula = (repo_root / formula_rel).read_text(encoding="utf-8")
+    match = re.search(
+        r'^\s*url\s+"https://github\.com/backbay-labs/clawdstrike/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
+        formula,
+        flags=re.M,
+    )
+    errors.append(check(f"{formula_rel} url tag", match.group(1) if match else None))
 
 errors = [e for e in errors if e is not None]
 if errors:

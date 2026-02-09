@@ -12,6 +12,6 @@
     "packages/clawdstrike-opencode",
     "packages/clawdstrike-hush-cli-engine",
     "packages/clawdstrike-hushd-engine",
-    "packages/cloud-dashboard"
+    "apps/cloud-dashboard"
   ]
 }
