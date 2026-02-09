@@ -1,12 +1,14 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::Result;
 
+#[inline]
 pub(crate) fn b64_encode<T: AsRef<[u8]>>(input: T) -> String {
     URL_SAFE_NO_PAD.encode(input)
 }
 
+#[inline]
 pub(crate) fn b64_decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>> {
     URL_SAFE_NO_PAD.decode(input).map_err(|e| e.into())
 }

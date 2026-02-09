@@ -1,5 +1,26 @@
 # Changelog
 
+## 10.3.0 (2026-01-27)
+
+- Export everything needed to define your own CryptoProvider
+- Fix type confusion with exp/nbf when not required
+
+## 10.2.0 (2025-11-06)
+
+- Remove `Clone` bound from decode functions
+
+## 10.1.0 (2025-10-18)
+
+- add `dangerous::insecure_decode`
+- Implement TryFrom &Jwk for DecodingKey
+
+## 10.0.0 (2025-09-29)
+
+- BREAKING: now using traits for crypto backends, you have to choose between `aws_lc_rs` and `rust_crypto`
+- Add `Clone` bound to `decode`
+- Support decoding byte slices
+- Support JWS
+
 ## 9.3.1 (2024-02-06)
 
 - Update base64

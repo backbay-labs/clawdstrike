@@ -107,7 +107,7 @@ flate2 = "1.1"
 url = "2.5"
 
 # JWT (OIDC)
-jsonwebtoken = "10"
+jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto", "use_pem"] }
 
 # Internal crates
 hush-core = { path = "crates/hush-core", version = "0.1.0" }

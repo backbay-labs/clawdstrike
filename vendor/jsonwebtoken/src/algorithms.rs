@@ -1,13 +1,39 @@
-use crate::errors::{Error, ErrorKind, Result};
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
+
+use crate::errors::{Error, ErrorKind, Result};
+
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Serialize, Deserialize)]
-pub(crate) enum AlgorithmFamily {
+/// Supported families of algorithms.
+pub enum AlgorithmFamily {
+    /// HMAC shared secret family.
     Hmac,
+    /// RSA-based public key family.
     Rsa,
+    /// Edwards curve public key family.
     Ec,
+    /// Elliptic curve public key family.
     Ed,
+}
+
+impl AlgorithmFamily {
+    /// A list of all possible Algorithms that are part of the family.
+    pub fn algorithms(&self) -> &[Algorithm] {
+        match self {
+            Self::Hmac => &[Algorithm::HS256, Algorithm::HS384, Algorithm::HS512],
+            Self::Rsa => &[
+                Algorithm::RS256,
+                Algorithm::RS384,
+                Algorithm::RS512,
+                Algorithm::PS256,
+                Algorithm::PS384,
+                Algorithm::PS512,
+            ],
+            Self::Ec => &[Algorithm::ES256, Algorithm::ES384],
+            Self::Ed => &[Algorithm::EdDSA],
+        }
+    }
 }
 
 /// The algorithms supported for signing/verifying JWTs

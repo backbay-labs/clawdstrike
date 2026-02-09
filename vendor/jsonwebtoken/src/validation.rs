@@ -7,7 +7,7 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use crate::algorithms::Algorithm;
-use crate::errors::{new_error, ErrorKind, Result};
+use crate::errors::{ErrorKind, Result, new_error};
 
 /// Contains the various validations that are applied after decoding a JWT.
 ///
@@ -156,6 +156,10 @@ impl Validation {
     /// Whether to validate the JWT cryptographic signature.
     /// Disabling validation is dangerous, only do it if you know what you're doing.
     /// With validation disabled you should not trust any of the values of the claims.
+    #[deprecated(
+        since = "10.1.0",
+        note = "Use `jsonwebtoken::dangerous::insecure_decode` if you require this functionality."
+    )]
     pub fn insecure_disable_signature_validation(&mut self) {
         self.validate_signature = false;
     }
@@ -195,12 +199,15 @@ pub(crate) struct ClaimsForValidation<'a> {
     #[serde(borrow)]
     aud: TryParse<Audience<'a>>,
 }
-#[derive(Debug)]
+
+#[derive(Default, Debug)]
 enum TryParse<T> {
     Parsed(T),
     FailedToParse,
+    #[default]
     NotPresent,
 }
+
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for TryParse<T> {
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D,
@@ -210,11 +217,6 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for TryParse<T> {
             Ok(None) => TryParse::NotPresent,
             Err(_) => TryParse::FailedToParse,
         })
-    }
-}
-impl<T> Default for TryParse<T> {
-    fn default() -> Self {
-        Self::NotPresent
     }
 }
 
@@ -237,6 +239,7 @@ enum Issuer<'a> {
 /// We use this struct in this case.
 #[derive(Deserialize, PartialEq, Eq, Hash)]
 struct BorrowedCowIfPossible<'a>(#[serde(borrow)] Cow<'a, str>);
+
 impl std::borrow::Borrow<str> for BorrowedCowIfPossible<'_> {
     fn borrow(&self) -> &str {
         &self.0
@@ -270,6 +273,19 @@ pub(crate) fn validate(claims: ClaimsForValidation, options: &Validation) -> Res
 
     if options.validate_exp || options.validate_nbf {
         let now = get_current_timestamp();
+
+        // Reject malformed exp/nbf claim when validation is enabled
+        if options.validate_exp && matches!(claims.exp, TryParse::FailedToParse) {
+            return Err(new_error(ErrorKind::InvalidClaimFormat("exp".to_string())));
+        }
+        if options.validate_nbf && matches!(claims.nbf, TryParse::FailedToParse) {
+            return Err(new_error(ErrorKind::InvalidClaimFormat("nbf".to_string())));
+        }
+
+        if matches!(claims.exp, TryParse::Parsed(exp) if exp < options.reject_tokens_expiring_in_less_than)
+        {
+            return Err(new_error(ErrorKind::InvalidToken));
+        }
 
         if matches!(claims.exp, TryParse::Parsed(exp) if options.validate_exp
             && exp - options.reject_tokens_expiring_in_less_than < now - options.leeway )
@@ -312,6 +328,11 @@ pub(crate) fn validate(claims: ClaimsForValidation, options: &Validation) -> Res
         // processing the claim does not identify itself with a value in the
         // "aud" claim when this claim is present, then the JWT MUST be
         //  rejected.
+        (TryParse::Parsed(Audience::Multiple(aud)), None) => {
+            if !aud.is_empty() {
+                return Err(new_error(ErrorKind::InvalidAudience));
+            }
+        }
         (TryParse::Parsed(_), None) => {
             return Err(new_error(ErrorKind::InvalidAudience));
         }
@@ -337,11 +358,18 @@ where
 {
     struct NumericType(PhantomData<fn() -> TryParse<u64>>);
 
-    impl<'de> Visitor<'de> for NumericType {
+    impl Visitor<'_> for NumericType {
         type Value = TryParse<u64>;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter.write_str("A NumericType that can be reasonably coerced into a u64")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(TryParse::Parsed(value))
         }
 
         fn visit_f64<E>(self, value: f64) -> std::result::Result<Self::Value, E>
@@ -354,13 +382,6 @@ where
                 Err(serde::de::Error::custom("NumericType must be representable as a u64"))
             }
         }
-
-        fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(TryParse::Parsed(value))
-        }
     }
 
     match deserializer.deserialize_any(NumericType(PhantomData)) {
@@ -371,16 +392,17 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use serde_json::json;
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use super::{get_current_timestamp, validate, ClaimsForValidation, Validation};
-
-    use crate::errors::ErrorKind;
     use crate::Algorithm;
-    use std::collections::HashSet;
+    use crate::errors::ErrorKind;
 
-    fn deserialize_claims(claims: &serde_json::Value) -> ClaimsForValidation {
+    use super::{ClaimsForValidation, Validation, get_current_timestamp, validate};
+
+    fn deserialize_claims(claims: &serde_json::Value) -> ClaimsForValidation<'_> {
         serde::Deserialize::deserialize(claims).unwrap()
     }
 
@@ -816,5 +838,18 @@ mod tests {
 
         let res = validate(deserialize_claims(&claims), &validation);
         assert!(res.is_ok());
+    }
+
+    // https://github.com/Keats/jsonwebtoken/issues/388
+    #[test]
+    #[wasm_bindgen_test]
+    fn doesnt_panic_with_leeway_overflow() {
+        let claims = json!({ "exp": 1 });
+
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.reject_tokens_expiring_in_less_than = 100;
+
+        let res = validate(deserialize_claims(&claims), &validation);
+        assert!(res.is_err());
     }
 }

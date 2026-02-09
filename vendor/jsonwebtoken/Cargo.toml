@@ -10,10 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.73.0"
+edition = "2024"
+rust-version = "1.85.0"
 name = "jsonwebtoken"
-version = "9.3.1"
+version = "10.3.0"
 authors = ["Vincent Prouillet <hello@vincentprouillet.com>"]
 build = false
 include = [
@@ -24,6 +24,7 @@ include = [
     "README.md",
     "CHANGELOG.md",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -40,9 +41,36 @@ keywords = [
 license = "MIT"
 repository = "https://github.com/Keats/jsonwebtoken"
 
+[package.metadata.docs.rs]
+features = ["rust_crypto"]
+
+[badges.maintenance]
+status = "passively-maintained"
+
+[features]
+aws_lc_rs = ["aws-lc-rs"]
+default = ["use_pem"]
+rust_crypto = [
+    "ed25519-dalek",
+    "hmac",
+    "p256",
+    "p384",
+    "rand",
+    "rsa",
+    "sha2",
+]
+use_pem = [
+    "pem",
+    "simple_asn1",
+]
+
 [lib]
 name = "jsonwebtoken"
 path = "src/lib.rs"
+
+[[test]]
+name = "dangerous"
+path = "tests/dangerous.rs"
 
 [[test]]
 name = "hmac"
@@ -57,36 +85,86 @@ name = "jwt"
 path = "benches/jwt.rs"
 harness = false
 
+[dependencies.aws-lc-rs]
+version = "1.15.0"
+optional = true
+
 [dependencies.base64]
 version = "0.22"
+
+[dependencies.ed25519-dalek]
+version = "2.1.1"
+features = ["pkcs8"]
+optional = true
+
+[dependencies.hmac]
+version = "0.12.1"
+optional = true
+
+[dependencies.p256]
+version = "0.13.2"
+features = ["ecdsa"]
+optional = true
+
+[dependencies.p384]
+version = "0.13.0"
+features = ["ecdsa"]
+optional = true
 
 [dependencies.pem]
 version = "3"
 optional = true
 
+[dependencies.rand]
+version = "0.8.5"
+features = ["std"]
+optional = true
+default-features = false
+
+[dependencies.rsa]
+version = "0.9.6"
+optional = true
+
 [dependencies.serde]
-version = "1.0"
+version = "1.0.228"
 features = ["derive"]
 
 [dependencies.serde_json]
 version = "1.0"
 
+[dependencies.sha2]
+version = "0.10.7"
+features = ["oid"]
+optional = true
+
+[dependencies.signature]
+version = "2.2.0"
+features = ["std"]
+
 [dependencies.simple_asn1]
 version = "0.6"
 optional = true
 
+[dev-dependencies.ed25519-dalek]
+version = "2.1.1"
+features = [
+    "pkcs8",
+    "rand_core",
+]
+
+[dev-dependencies.rand]
+version = "0.8.5"
+features = ["std"]
+default-features = false
+
+[dev-dependencies.rand_core]
+version = "0.6.4"
+
 [dev-dependencies.wasm-bindgen-test]
 version = "0.3.1"
 
-[features]
-default = ["use_pem"]
-use_pem = [
-    "pem",
-    "simple_asn1",
-]
-
 [target.'cfg(all(target_arch = "wasm32", not(any(target_os = "emscripten", target_os = "wasi"))))'.dev-dependencies.criterion]
-version = "0.4"
+version = "0.8"
 default-features = false
 
 [target.'cfg(all(target_arch = "wasm32", not(any(target_os = "emscripten", target_os = "wasi"))))'.dev-dependencies.time]
@@ -94,24 +172,13 @@ version = "0.3"
 features = ["wasm-bindgen"]
 
 [target.'cfg(not(all(target_arch = "wasm32", not(any(target_os = "emscripten", target_os = "wasi")))))'.dev-dependencies.criterion]
-version = "0.4"
+version = "0.8"
 
 [target.'cfg(not(all(target_arch = "wasm32", not(any(target_os = "emscripten", target_os = "wasi")))))'.dev-dependencies.time]
 version = "0.3"
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies.ring]
-version = "0.17.4"
-features = ["std"]
+[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom]
+version = "0.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.js-sys]
 version = "0.3"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies.ring]
-version = "0.17.4"
-features = [
-    "std",
-    "wasm32_unknown_unknown_js",
-]
-
-[badges.maintenance]
-status = "passively-maintained"

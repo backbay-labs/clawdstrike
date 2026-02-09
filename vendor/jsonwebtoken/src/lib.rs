@@ -1,7 +1,21 @@
 //! Create and parses JWT (JSON Web Tokens)
 //!
-//! Documentation:  [stable](https://docs.rs/jsonwebtoken/)
+//! Documentation:  [stable](https://docs.rs/jsonwebtoken)
+//!
+
 #![deny(missing_docs)]
+
+pub use algorithms::{Algorithm, AlgorithmFamily};
+pub use decoding::{DecodingKey, DecodingKeyKind, TokenData, decode, decode_header};
+pub use encoding::{EncodingKey, encode};
+pub use header::Header;
+pub use signature;
+pub use validation::{Validation, get_current_timestamp};
+
+/// Dangerous decoding functions that should be audited and used with extreme care.
+pub mod dangerous {
+    pub use super::decoding::insecure_decode;
+}
 
 mod algorithms;
 /// Lower level functions, if you want to do something other than JWTs
@@ -12,13 +26,8 @@ mod encoding;
 pub mod errors;
 mod header;
 pub mod jwk;
+pub mod jws;
 #[cfg(feature = "use_pem")]
 mod pem;
 mod serialization;
 mod validation;
-
-pub use algorithms::Algorithm;
-pub use decoding::{decode, decode_header, DecodingKey, TokenData};
-pub use encoding::{encode, EncodingKey};
-pub use header::Header;
-pub use validation::{get_current_timestamp, Validation};
