@@ -13,3 +13,5 @@ See `docs/plans/decisions/` for individual decision records.
 ## Featured plans
 
 - `docs/plans/monorepo-staff-organization-plan.md` - staff/principal monorepo reorganization audit and migration plan.
+
+Related point-in-time audit reports live in `docs/audits/`.

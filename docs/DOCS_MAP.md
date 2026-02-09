@@ -14,6 +14,7 @@ This page defines where documentation lives and which source is canonical when d
 | `docs/specs/**` | Formal feature/specification docs. | Yes for accepted normative spec details. |
 | `docs/research/**` | Exploratory/non-normative analysis. | No (context only). |
 | `docs/roadmaps/**` | Time-based planning docs. | No (planning context only). |
+| `docs/audits/**` | Point-in-time repository and quality audits. | No (operational guidance/context). |
 
 ## Conflict Resolution Order
 
@@ -33,6 +34,7 @@ If documents disagree, interpret sources in this order:
 3. Execution plans and migration guides: `docs/plans/`
 4. Formal specs and schema-level details: `docs/specs/`
 5. Open-ended exploratory writing: `docs/research/`
+6. Point-in-time audit reports: `docs/audits/`
 
 ## Maintenance Rules
 
