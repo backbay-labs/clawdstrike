@@ -47,18 +47,13 @@ Ownership is codified in `.github/CODEOWNERS`.
 
 Short-term bootstrap owner for all domains is `@connor`; this should be replaced by dedicated org teams as domains mature.
 
-## Phase-1 Path Moves (Compatibility Window)
-
-These old locations are kept as redirect stubs for one release cycle:
+## Historical Path Moves
 
 1. `packages/cloud-dashboard` -> `apps/cloud-dashboard`
 2. `spine/reticulum` -> `integrations/transports/reticulum`
 3. `HomebrewFormula` -> `infra/packaging/HomebrewFormula`
+4. `deploy` -> `infra/deploy`
+5. `docker` -> `infra/docker`
+6. `vendor` -> `infra/vendor`
 
-## Phase-3 Path Moves (Compatibility Window)
-
-These old locations are kept as redirect stubs for one release cycle:
-
-1. `deploy` -> `infra/deploy`
-2. `docker` -> `infra/docker`
-3. `vendor` -> `infra/vendor`
+Compatibility stubs for these paths were removed in Phase 4 cleanup.

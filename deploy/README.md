@@ -1,5 +1,0 @@
-# Moved
-
-This directory moved to `infra/deploy`.
-
-Update scripts, workflows, and docs to use the new path.

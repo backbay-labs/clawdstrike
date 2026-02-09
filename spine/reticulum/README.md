@@ -1,5 +1,0 @@
-# Moved
-
-The Reticulum transport integration moved to `integrations/transports/reticulum`.
-
-This directory is a temporary redirect stub kept for one release cycle.

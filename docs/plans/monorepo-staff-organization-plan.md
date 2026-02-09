@@ -4,7 +4,7 @@ Status: Proposed
 Author: Codex (second-pass architecture audit)  
 Last updated: 2026-02-09
 
-Execution status: Phase 0 and Phase 1 are committed; Phase 2 is committed; Phase 3 is committed; Phase 4 hardening is in progress.
+Execution status: Phase 0 and Phase 1 are committed; Phase 2 is committed; Phase 3 is committed; Phase 4 cleanup and hardening are committed.
 
 ## Executive Summary
 
