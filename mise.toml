@@ -35,6 +35,44 @@ run = "cargo deny check"
 description = "Build documentation"
 run = "cargo doc --no-deps --all-features"
 
+[tasks."test:rust"]
+description = "Rust workspace tests and app crate checks"
+run = """
+cargo test --workspace
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+"""
+
+[tasks."test:apps"]
+description = "App checks for cloud dashboard and Tauri backends"
+run = """
+npm --prefix apps/cloud-dashboard ci
+npm --prefix apps/cloud-dashboard run typecheck
+npm --prefix apps/cloud-dashboard run build
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+"""
+
+[tasks."test:packages:ts"]
+description = "TypeScript package smoke checks"
+run = "bash scripts/smoke-ts-file-deps.sh"
+
+[tasks."test:packages:py"]
+description = "Python SDK tests"
+run = """
+VENV_DIR="${VENV_DIR:-/tmp/hushpy-venv}"
+if [[ ! -d "$VENV_DIR" ]]; then
+  python3 -m venv "$VENV_DIR"
+  "$VENV_DIR/bin/python" -m pip install -U pip
+fi
+"$VENV_DIR/bin/python" -m pip install -e "packages/sdk/hush-py[dev]"
+"$VENV_DIR/bin/python" -m pytest -q packages/sdk/hush-py
+"""
+
+[tasks."ci:changed"]
+description = "Run path-aware checks for changed files versus main"
+run = "bash scripts/ci-changed.sh"
+
 [tasks.ci]
 description = "Run full CI checks locally"
 run = """
@@ -43,4 +81,6 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+bash scripts/path-lint.sh
+bash scripts/move-validation.sh
 """

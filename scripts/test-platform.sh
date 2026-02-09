@@ -30,6 +30,9 @@ run_pkg() {
 bold "Path lint"
 bash scripts/path-lint.sh
 
+bold "Move validation"
+bash scripts/move-validation.sh
+
 bold "Rust workspace"
 cargo test --workspace
 

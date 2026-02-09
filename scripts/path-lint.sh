@@ -64,6 +64,7 @@ EXCLUDE_GLOBS=(
   "--glob" "!**/.venv/**"
   "--glob" "!**/__pycache__/**"
   "--glob" "!scripts/path-lint.sh"
+  "--glob" "!scripts/move-validation.sh"
   "--glob" "!scripts/bump-version.sh"
   "--glob" "!scripts/release-preflight.sh"
   "--glob" "!docs/REPO_MAP.md"

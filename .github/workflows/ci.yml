@@ -56,6 +56,9 @@ jobs:
       - name: Lint moved paths
         run: bash scripts/path-lint.sh
 
+      - name: Validate moved path targets
+        run: bash scripts/move-validation.sh
+
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
