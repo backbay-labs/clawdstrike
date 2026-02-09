@@ -1,0 +1,22 @@
+# Monorepo ownership map (bootstrap)
+# Replace @connor with org teams as they are formalized.
+
+* @connor
+
+# Core product domains
+/apps/** @connor
+/crates/** @connor
+/packages/** @connor
+/integrations/** @connor
+/infra/** @connor
+
+# Supporting domains
+/docs/** @connor
+/examples/** @connor
+/fixtures/** @connor
+/rulesets/** @connor
+/scripts/** @connor
+/tools/** @connor
+/deploy/** @connor
+/docker/** @connor
+/vendor/** @connor

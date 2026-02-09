@@ -1,0 +1,56 @@
+# Repository Map
+
+Last updated: 2026-02-09
+
+This document is the newcomer index for the monorepo layout.
+
+## Top-Level Layout
+
+| Path | Purpose |
+| --- | --- |
+| `apps/` | User-facing products (desktop, agent, cloud dashboard). |
+| `crates/` | Rust libraries, services, and runtime components. |
+| `packages/` | TypeScript and Python SDKs/adapters/policy packages. |
+| `integrations/` | External transport/runtime integrations (for example Reticulum). |
+| `infra/` | Packaging and infrastructure assets (for example Homebrew formula). |
+| `deploy/` | Deployment manifests and policy assets (phase-3 move target: `infra/deploy`). |
+| `docker/` | Container build assets (phase-3 move target: `infra/docker`). |
+| `vendor/` | Vendored Rust dependencies for offline builds (phase-3 move target: `infra/vendor`). |
+| `docs/` | Public docs, plans, specs, and research. |
+| `examples/` | End-to-end and SDK examples. |
+| `fixtures/` | Golden fixtures and test vectors. |
+| `rulesets/` | Preconfigured policy rulesets. |
+| `scripts/` | Operator-facing scripts. |
+| `tools/` | Repo tooling and validators. |
+
+## Component Maturity
+
+| Component | Path | Maturity | Notes |
+| --- | --- | --- | --- |
+| Core runtime libraries | `crates/hush-core`, `crates/hush-proxy`, `crates/clawdstrike` | alpha | APIs may still evolve. |
+| CLI + daemon | `crates/hush-cli`, `crates/hushd` | alpha | Primary local/runtime entrypoints. |
+| Spine protocol services | `crates/spine`, `crates/spine-cli` | alpha | Active protocol iteration and performance work. |
+| Cloud API | `crates/cloud-api` | alpha | Early-stage service surface. |
+| EAS anchoring | `crates/eas-anchor` | alpha | Functional but still under active hardening. |
+| Bridge services | `crates/tetragon-bridge`, `crates/hubble-bridge` | alpha | Integration-focused components. |
+| Desktop app | `apps/desktop` | alpha | Product UX and architecture still moving. |
+| Agent app | `apps/agent` | alpha | Product UX and runtime still moving. |
+| Cloud dashboard | `apps/cloud-dashboard` | alpha | Recently moved from `packages/cloud-dashboard`. |
+| TS SDK | `packages/hush-ts` | alpha | Public SDK APIs may evolve. |
+| Python SDK | `packages/hush-py` | alpha | Public SDK APIs may evolve. |
+| TS adapters | `packages/clawdstrike-*` | alpha | Adapter contracts still being refined. |
+| Reticulum transport | `integrations/transports/reticulum` | experimental | Recently moved from `spine/reticulum`. |
+
+## Ownership
+
+Ownership is codified in `.github/CODEOWNERS`.
+
+Short-term bootstrap owner for all domains is `@connor`; this should be replaced by dedicated org teams as domains mature.
+
+## Phase-1 Path Moves (Compatibility Window)
+
+These old locations are kept as redirect stubs for one release cycle:
+
+1. `packages/cloud-dashboard` -> `apps/cloud-dashboard`
+2. `spine/reticulum` -> `integrations/transports/reticulum`
+3. `HomebrewFormula` -> `infra/packaging/HomebrewFormula`

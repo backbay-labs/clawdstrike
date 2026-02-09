@@ -4,7 +4,9 @@
 
 - `crates/`: Rust workspace crates (core engine, guards, CLI, daemon, WASM bindings)
 - `packages/`: TypeScript SDK + framework adapters, plus Python SDK in `packages/hush-py/`
-- `apps/desktop/`: Tauri + Vite desktop app
+- `apps/`: user-facing apps (`desktop/`, `agent/`, `cloud-dashboard/`)
+- `integrations/`: transport/runtime integrations (e.g. `integrations/transports/reticulum/`)
+- `infra/`: packaging assets (e.g. `infra/packaging/HomebrewFormula/`)
 - `rulesets/`: pre-configured YAML policies used by examples and tooling
 - `docs/`: mdBook source (`docs/src/**`)
 - `examples/`, `fixtures/`, `scripts/`, `tools/`, `fuzz/`
