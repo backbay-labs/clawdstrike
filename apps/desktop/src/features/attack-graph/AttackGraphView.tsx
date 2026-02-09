@@ -7,10 +7,9 @@
 import { Suspense, useState, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { AttackGraph } from "@backbay/glia/primitives";
+import { AttackGraph, type AttackTechnique } from "@backbay/glia-three/three";
 import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
-import type { AttackChain, AttackTechnique } from "@backbay/glia/primitives";
 import { useSpineEvents } from "@/hooks/useSpineEvents";
 import { SpineStatusIndicator } from "@/components/SpineStatusIndicator";
 

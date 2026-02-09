@@ -38,4 +38,3 @@ pub async fn marketplace_discovery_announce(
 ) -> Result<(), String> {
     state.marketplace_discovery.announce(announcement).await
 }
-

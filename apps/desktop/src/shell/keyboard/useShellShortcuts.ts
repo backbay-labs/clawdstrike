@@ -2,7 +2,7 @@
  * useShellShortcuts - Global keyboard shortcuts for shell navigation
  *
  * Shortcuts:
- * - Cmd+1-6: Navigate to view by index
+ * - Cmd+1-9: Navigate to view by index
  * - Cmd+,: Settings
  * - Cmd+K: Command palette
  * - Cmd+F: Focus search
@@ -15,12 +15,15 @@ import type { AppId } from "../plugins/types";
 
 // View mapping for quick number key navigation
 const VIEW_KEYS: Record<string, AppId> = {
-  "1": "events",
-  "2": "policies",
-  "3": "policy-tester",
-  "4": "swarm",
-  "5": "marketplace",
-  "6": "workflows",
+  "1": "cyber-nexus",
+  "2": "security-overview",
+  "3": "threat-radar",
+  "4": "attack-graph",
+  "5": "network-map",
+  "6": "forensics-river",
+  "7": "openclaw",
+  "8": "marketplace",
+  "9": "events",
 };
 
 export interface ShellShortcutHandlers {
@@ -82,7 +85,7 @@ export function useShellShortcuts(handlers: ShellShortcutHandlers) {
         return;
       }
 
-      // Cmd+1-6: Select view by index
+      // Cmd+1-9: Select view by index
       if (isMeta && VIEW_KEYS[key] && handlers.onSelectApp) {
         e.preventDefault();
         handlers.onSelectApp(VIEW_KEYS[key]);

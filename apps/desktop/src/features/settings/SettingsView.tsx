@@ -208,11 +208,8 @@ export function SettingsView() {
     const trustedAttesters = parseMarketplaceTrustedAttestersInput(trustedAttestersInput);
     const url = notaryUrl.trim() ? notaryUrl.trim() : null;
 
-    saveMarketplaceProvenanceSettings({
-      notaryUrl: url,
-      trustedAttesters,
-      requireVerified: requireVerifiedAttestation,
-    });
+    const current = loadMarketplaceProvenanceSettings();
+    saveMarketplaceProvenanceSettings({ ...current, notaryUrl: url, trustedAttesters, requireVerified: requireVerifiedAttestation });
 
     setProvenanceSaved("Saved");
     setTimeout(() => setProvenanceSaved(null), 2000);

@@ -2,7 +2,9 @@
 
 use std::path::{Component, Path};
 
-use clawdstrike::{CuratorConfigFile, CuratorTrustSet, SignedMarketplaceFeed, SignedPolicyBundle, ContentIds};
+use clawdstrike::{
+    ContentIds, CuratorConfigFile, CuratorTrustSet, SignedMarketplaceFeed, SignedPolicyBundle,
+};
 use hush_core::{sha256, Hash, MerkleProof, PublicKey};
 use reqwest::header::LOCATION;
 use serde::{Deserialize, Serialize};
@@ -90,7 +92,9 @@ pub async fn marketplace_list_policies(
                         break;
                     }
                     Err(e) => {
-                        attempts.push(format!("{source}: marketplace feed verification failed: {e}"));
+                        attempts.push(format!(
+                            "{source}: marketplace feed verification failed: {e}"
+                        ));
                         continue;
                     }
                 }
@@ -103,7 +107,10 @@ pub async fn marketplace_list_policies(
         if attempts.is_empty() {
             "No marketplace feed sources configured".to_string()
         } else {
-            format!("Failed to load marketplace feed:\n- {}", attempts.join("\n- "))
+            format!(
+                "Failed to load marketplace feed:\n- {}",
+                attempts.join("\n- ")
+            )
         }
     })?;
 
@@ -286,7 +293,8 @@ pub async fn marketplace_verify_attestation(
         segments.push(uid);
     }
 
-    let bytes = fetch_http_bytes_limited(&state.http_client, url.as_str(), MAX_NOTARY_BYTES).await?;
+    let bytes =
+        fetch_http_bytes_limited(&state.http_client, url.as_str(), MAX_NOTARY_BYTES).await?;
     let value: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|e| format!("Invalid notary JSON: {e}"))?;
 
@@ -341,14 +349,6 @@ async fn load_signed_feed(
     load_uri_bytes(client, source, MAX_FEED_BYTES).await
 }
 
-async fn load_bundle_bytes(
-    app: &AppHandle,
-    client: &reqwest::Client,
-    uri: &str,
-) -> Result<Vec<u8>, String> {
-    load_bundle_bytes_with_hints(app, client, uri, &[], None).await
-}
-
 async fn load_bundle_bytes_with_hints(
     app: &AppHandle,
     client: &reqwest::Client,
@@ -379,7 +379,11 @@ async fn load_bundle_bytes_with_hints(
     Ok(bytes)
 }
 
-fn read_resource_bytes(app: &AppHandle, rel_path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+fn read_resource_bytes(
+    app: &AppHandle,
+    rel_path: &str,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
     let path = app
         .path()
         .resolve(rel_path, BaseDirectory::Resource)
@@ -418,14 +422,13 @@ async fn load_uri_bytes_with_hints(
                 Err(e) => errs.push(format!("{url}: {e}")),
             }
         }
-        return Err(format!("Failed to fetch from IPFS gateways:\n- {}", errs.join("\n- ")));
+        return Err(format!(
+            "Failed to fetch from IPFS gateways:\n- {}",
+            errs.join("\n- ")
+        ));
     }
 
     fetch_http_bytes_limited(client, uri, max_bytes).await
-}
-
-fn ipfs_gateway_urls(ipfs_path: &str) -> Result<Vec<String>, String> {
-    ipfs_gateway_urls_with_hints(ipfs_path, &[])
 }
 
 fn ipfs_gateway_urls_with_hints(
@@ -512,12 +515,19 @@ async fn fetch_http_bytes_limited(
 
         if let Some(len) = resp.content_length() {
             if len > (max_bytes as u64) {
-                return Err(format!("Response exceeds size limit ({} > {})", len, max_bytes));
+                return Err(format!(
+                    "Response exceeds size limit ({} > {})",
+                    len, max_bytes
+                ));
             }
         }
 
         let mut bytes = Vec::new();
-        while let Some(chunk) = resp.chunk().await.map_err(|e| format!("Read failed: {e}"))? {
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| format!("Read failed: {e}"))?
+        {
             if bytes.len().saturating_add(chunk.len()) > max_bytes {
                 return Err(format!(
                     "Response exceeds size limit (>{} bytes)",
@@ -560,7 +570,10 @@ fn is_allowed_dev_http(url: &reqwest::Url) -> bool {
 
 fn is_localhost(url: &reqwest::Url) -> bool {
     let host = url.host_str().unwrap_or("");
-    matches!(normalize_host(host).as_str(), "localhost" | "127.0.0.1" | "::1")
+    matches!(
+        normalize_host(host).as_str(),
+        "localhost" | "127.0.0.1" | "::1"
+    )
 }
 
 fn normalize_host(host: &str) -> String {
@@ -602,8 +615,8 @@ pub async fn marketplace_add_curator(hex_key: String) -> Result<(), String> {
     // Validate the key is parseable
     PublicKey::from_hex(&hex_key).map_err(|e| format!("Invalid public key: {e}"))?;
 
-    let config_path = curator_config_path()
-        .ok_or_else(|| "Cannot determine config directory".to_string())?;
+    let config_path =
+        curator_config_path().ok_or_else(|| "Cannot determine config directory".to_string())?;
 
     let mut config = CuratorConfigFile::load(&config_path)
         .map_err(|e| format!("Failed to load config: {e}"))?
@@ -624,8 +637,8 @@ pub async fn marketplace_add_curator(hex_key: String) -> Result<(), String> {
 pub async fn marketplace_remove_curator(hex_key: String) -> Result<(), String> {
     let hex_key = hex_key.trim().to_string();
 
-    let config_path = curator_config_path()
-        .ok_or_else(|| "Cannot determine config directory".to_string())?;
+    let config_path =
+        curator_config_path().ok_or_else(|| "Cannot determine config directory".to_string())?;
 
     let mut config = CuratorConfigFile::load(&config_path)
         .map_err(|e| format!("Failed to load config: {e}"))?
@@ -687,10 +700,7 @@ pub async fn marketplace_verify_spine_proof(
         .get("included")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let has_audit_path = value
-        .get("audit_path")
-        .and_then(|v| v.as_array())
-        .is_some();
+    let has_audit_path = value.get("audit_path").and_then(|v| v.as_array()).is_some();
     let included = has_included_flag || has_audit_path;
 
     let log_id = value
@@ -698,17 +708,11 @@ pub async fn marketplace_verify_spine_proof(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let checkpoint_seq = value
-        .get("checkpoint_seq")
-        .and_then(|v| v.as_u64());
+    let checkpoint_seq = value.get("checkpoint_seq").and_then(|v| v.as_u64());
 
-    let tree_size = value
-        .get("tree_size")
-        .and_then(|v| v.as_u64());
+    let tree_size = value.get("tree_size").and_then(|v| v.as_u64());
 
-    let log_index = value
-        .get("log_index")
-        .and_then(|v| v.as_u64());
+    let log_index = value.get("log_index").and_then(|v| v.as_u64());
 
     let error = value
         .get("error")

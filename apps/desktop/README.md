@@ -16,6 +16,8 @@ SDR Desktop provides a visual interface for security engineers and developers to
 | **Policy Viewer** | Browse active policy YAML and run policy checks |
 | **Policy Tester** | Simulate policy checks against the active policy |
 | **Swarm Map** | 3D visualization shell for agent topology (daemon agent/delegation APIs are not yet exposed) |
+| **OpenClaw Fleet** | OpenClaw Gateway control plane for nodes, presence, approvals, and device pairing |
+| **Forensics River** | Live/replay OpenClaw session telemetry (work-in-progress) |
 | **Marketplace** | Discover and install community policies |
 | **Workflows** | Workflow management UI (execution/verification remains backend-dependent) |
 | **Settings** | Daemon connection and preferences |
@@ -24,7 +26,7 @@ SDR Desktop provides a visual interface for security engineers and developers to
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+1-6` | Navigate to view by index |
+| `Cmd+1-8` | Navigate to view by index |
 | `Cmd+,` | Settings |
 | `Cmd+K` | Command palette |
 | `Cmd+[/]` | Previous/next view |
@@ -41,8 +43,8 @@ SDR Desktop provides a visual interface for security engineers and developers to
 
 ### Prerequisites
 
-- Node.js 20+
-- Rust 1.80+
+- Node.js 24+
+- Rust 1.93+
 - Tauri CLI (`cargo install tauri-cli`)
 
 ### Setup
@@ -72,6 +74,46 @@ npm run tauri:build
 
 ```bash
 npm run typecheck
+```
+
+### Tests + Lint
+
+```bash
+npm run lint
+npm run typecheck
+npm test -- --run
+
+# Tauri backend (Rust) tests
+CARGO_NET_OFFLINE=true cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+### OpenClaw Gateway
+
+- Operator UI: **OpenClaw Fleet**
+- Tailnet discovery/probe requires Tauri + the local `openclaw` CLI
+- Dev scenarios + test mapping: `docs/openclaw-gateway-testing.md`
+- Gateway URL input normalizes `http(s)://...` to `ws(s)://...` on save
+
+#### Quick start (local gateway ↔ desktop ↔ node)
+
+```bash
+# Run a local gateway (token auth recommended)
+openclaw gateway run --force --token "dev-token"
+
+# If the gateway rejects the app origin, allow Vite + Tauri origins and restart
+openclaw config set --json gateway.controlUi.allowedOrigins \
+  '["http://localhost:1420","tauri://localhost"]'
+openclaw gateway restart
+
+# Start the SDR Desktop app (Tauri)
+npm run tauri:dev
+```
+
+Optional (populate `node.list` + enable `system.run`):
+
+```bash
+openclaw node install
+openclaw node restart
 ```
 
 ## Project Structure

@@ -34,7 +34,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # Directories
-dirs = "5"
+dirs = "6"
 
 # Logging
 tracing = "0.1"

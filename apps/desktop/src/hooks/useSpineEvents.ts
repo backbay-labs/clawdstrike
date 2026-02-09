@@ -13,9 +13,16 @@ import type {
   LiveAttackChain,
   LiveTechnique,
 } from "@/types/spine";
-import type { Threat, ThreatType } from "@backbay/glia/primitives";
-import type { AttackChain, AttackTechnique, AttackTactic } from "@backbay/glia/primitives";
-import type { NetworkNode, NetworkEdge, NetworkEdgeProtocol } from "@backbay/glia/primitives";
+import type {
+  AttackChain,
+  AttackTactic,
+  AttackTechnique,
+  NetworkEdge,
+  NetworkEdgeProtocol,
+  NetworkNode,
+  Threat,
+  ThreatType,
+} from "@backbay/glia-three/three";
 
 // ---------------------------------------------------------------------------
 // Hook options
@@ -262,7 +269,7 @@ function buildNetworkTopology(events: SDREvent[]): { networkNodes: NetworkNode[]
   for (const event of events) {
     if (!event.network) continue;
 
-    const { srcIp, dstIp, srcPort, dstPort, protocol, bytes, verdict } = event.network;
+    const { srcIp, dstIp, dstPort, protocol, bytes, verdict } = event.network;
     if (!srcIp && !dstIp) continue;
 
     // Create/update source node

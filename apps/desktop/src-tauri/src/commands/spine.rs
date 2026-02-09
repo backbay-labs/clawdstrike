@@ -109,10 +109,7 @@ pub async fn subscribe_spine_events<R: Runtime>(
         }
     };
 
-    let nats_sub = match client
-        .subscribe("clawdstrike.spine.envelope.>")
-        .await
-    {
+    let nats_sub = match client.subscribe("clawdstrike.spine.envelope.>").await {
         Ok(s) => s,
         Err(e) => {
             let msg = format!("NATS subscribe failed: {e}");
@@ -127,7 +124,10 @@ pub async fn subscribe_spine_events<R: Runtime>(
     sub.nats_url = Some(nats_url.clone());
     sub.cancel = Some(cancel_tx);
 
-    tracing::info!("Connected to NATS at {}, subscribing to spine envelopes", nats_url);
+    tracing::info!(
+        "Connected to NATS at {}, subscribing to spine envelopes",
+        nats_url
+    );
 
     // Spawn background task for NATS subscription
     let app_handle = app.clone();
@@ -144,9 +144,7 @@ pub async fn subscribe_spine_events<R: Runtime>(
 
 /// Unsubscribe from spine events.
 #[tauri::command]
-pub async fn unsubscribe_spine_events(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn unsubscribe_spine_events(state: State<'_, AppState>) -> Result<(), String> {
     let mut sub = state.spine_subscription.write().await;
 
     if let Some(cancel) = sub.cancel.take() {
@@ -163,15 +161,16 @@ pub async fn unsubscribe_spine_events(
 
 /// Get current spine subscription status.
 #[tauri::command]
-pub async fn spine_status(
-    state: State<'_, AppState>,
-) -> Result<SpineSubscribeResult, String> {
+pub async fn spine_status(state: State<'_, AppState>) -> Result<SpineSubscribeResult, String> {
     let sub = state.spine_subscription.read().await;
 
     Ok(SpineSubscribeResult {
         connected: sub.active,
         message: if sub.active {
-            format!("Connected to {}", sub.nats_url.as_deref().unwrap_or("unknown"))
+            format!(
+                "Connected to {}",
+                sub.nats_url.as_deref().unwrap_or("unknown")
+            )
         } else {
             "Not connected".to_string()
         },
@@ -295,7 +294,10 @@ fn build_frontend_payload(
     envelope: &serde_json::Value,
     subject: &async_nats::Subject,
 ) -> serde_json::Value {
-    let fact = envelope.get("fact").cloned().unwrap_or(serde_json::Value::Null);
+    let fact = envelope
+        .get("fact")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
 
     // Start with the fact object (which contains the actual event data)
     let mut payload = if let serde_json::Value::Object(map) = fact {

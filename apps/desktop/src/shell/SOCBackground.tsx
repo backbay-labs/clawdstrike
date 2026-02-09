@@ -2,12 +2,15 @@
  * SOCBackground - Persistent ambient 3D scene behind all SOC content
  */
 import { Canvas } from "@react-three/fiber";
-import { ThreatRadar } from "@backbay/glia/primitives";
-import { SecurityShield } from "@backbay/glia/primitives";
-import { NetworkTopology } from "@backbay/glia/primitives";
-import { EnvironmentLayer } from "@backbay/glia/primitives";
-import type { Threat } from "@backbay/glia/primitives";
-import type { NetworkNode, NetworkEdge } from "@backbay/glia/primitives";
+import {
+  NetworkTopology,
+  SecurityShield,
+  ThreatRadar,
+  type NetworkEdge,
+  type NetworkNode,
+  type Threat,
+} from "@backbay/glia-three/three";
+import { EnvironmentLayer } from "@backbay/glia-three/environment";
 
 const MOCK_THREATS: Threat[] = [
   { id: "t1", angle: 0.8, distance: 0.7, severity: 0.9, type: "malware", active: true, label: "TROJAN-X42" },

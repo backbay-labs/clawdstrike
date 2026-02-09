@@ -4,12 +4,15 @@
 import type { ReactNode } from "react";
 
 export type AppId =
+  | "cyber-nexus"
   | "events"
   | "policies"
   | "policy-tester"
   | "swarm"
+  | "openclaw"
   | "marketplace"
   | "workflows"
+  | "forensics-river"
   | "settings"
   | "threat-radar"
   | "attack-graph"
@@ -40,6 +43,7 @@ export interface AppPlugin {
 }
 
 export type PluginIcon =
+  | "nexus"
   | "activity"
   | "shield"
   | "beaker"
@@ -50,7 +54,8 @@ export type PluginIcon =
   | "radar"
   | "graph"
   | "topology"
-  | "dashboard";
+  | "dashboard"
+  | "river";
 
 export interface PluginRegistry {
   getPlugins: () => AppPlugin[];
@@ -59,6 +64,7 @@ export interface PluginRegistry {
 
 // Icon mapping for the nav rail
 export const PLUGIN_ICONS: Record<PluginIcon, string> = {
+  nexus: "M12 2l3 5h6l-3 5 3 5h-6l-3 5-3-5H3l3-5-3-5h6z",
   activity: "M22 12h-4l-3 9L9 3l-3 9H2",
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   beaker: "M9 3h6v5l4 8H5l4-8V3M8 22h8",
@@ -70,4 +76,5 @@ export const PLUGIN_ICONS: Record<PluginIcon, string> = {
   graph: "M4 6a2 2 0 100-4 2 2 0 000 4zM12 14a2 2 0 100-4 2 2 0 000 4zM20 6a2 2 0 100-4 2 2 0 000 4zM12 22a2 2 0 100-4 2 2 0 000 4zM5.6 5l5 5.2M18.4 5l-5 5.2M12 14v6",
   topology: "M12 2a2 2 0 100 4 2 2 0 000-4zM4 8a2 2 0 100 4 2 2 0 000-4zM20 8a2 2 0 100 4 2 2 0 000-4zM4 18a2 2 0 100 4 2 2 0 000-4zM20 18a2 2 0 100 4 2 2 0 000-4zM12 6v0l-7 4M12 6l7 4M5 12l-1 6M19 12l1 6M6 20h12",
   dashboard: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7zM5 5v3h3V5zM16 5v3h3V5zM5 16v3h3v-3zM16 16v3h3v-3z",
+  river: "M2 12c2-3 4-3 6 0s4 3 6 0 4-3 6 0M2 17c2-3 4-3 6 0s4 3 6 0 4-3 6 0M2 7c2-3 4-3 6 0s4 3 6 0 4-3 6 0",
 };

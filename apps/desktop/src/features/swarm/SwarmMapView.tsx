@@ -4,7 +4,7 @@
 import { Suspense, useState, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
-import { EnvironmentLayer } from "@backbay/glia/primitives";
+import { EnvironmentLayer } from "@backbay/glia-three/environment";
 import { GlowButton } from "@backbay/glia/primitives";
 import { useSwarm, useSelectedAgent } from "@/context/SwarmContext";
 import { useConnection } from "@/context/ConnectionContext";

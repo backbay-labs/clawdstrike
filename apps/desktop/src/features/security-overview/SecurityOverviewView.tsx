@@ -4,11 +4,15 @@
 import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { SecurityDashboard } from "@backbay/glia/primitives";
+import {
+  SecurityDashboard,
+  type DashboardAuditEvent,
+  type DashboardThreat,
+  type ShieldConfig,
+} from "@backbay/glia-three/three";
 import { KPIStat } from "@backbay/glia/primitives";
 import { HUDProgressRing } from "@backbay/glia/primitives";
 import { GlassPanel } from "@backbay/glia/primitives";
-import type { ShieldConfig, DashboardThreat, DashboardAuditEvent } from "@backbay/glia/primitives";
 
 const SHIELD_DATA: ShieldConfig = {
   level: 0.85,

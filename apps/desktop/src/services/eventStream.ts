@@ -18,7 +18,7 @@ export interface EventStreamOptions {
 export class EventStream {
   private eventSource: EventSource | null = null;
   private reconnectAttempts = 0;
-  private reconnectTimer: number | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isManualClose = false;
 
   constructor(
@@ -75,8 +75,13 @@ export class EventStream {
   }
 
   private emitIncomingEvent(eventType: string, payload: string): void {
+    const trimmed = payload?.trim();
+    // Some SSE servers emit `data: undefined` (or empty frames) for keepalives/errors.
+    // Treat those as no-ops to avoid spamming the console and breaking derived views.
+    if (!trimmed || trimmed === "undefined") return;
+
     try {
-      const parsed = JSON.parse(payload) as unknown;
+      const parsed = JSON.parse(trimmed) as unknown;
       if (
         parsed &&
         typeof parsed === "object" &&
@@ -88,13 +93,22 @@ export class EventStream {
         return;
       }
 
+      // Non-canonical event payload: wrap so the UI still shows something useful.
+      const data =
+        parsed && typeof parsed === "object"
+          ? (parsed as DaemonEvent["data"])
+          : ({ message: String(parsed) } as DaemonEvent["data"]);
+
+      this.options.onEvent({ type: eventType, timestamp: new Date().toISOString(), data });
+    } catch (e) {
+      // Best-effort: if the server sends plain text, preserve it.
       this.options.onEvent({
         type: eventType,
         timestamp: new Date().toISOString(),
-        data: (parsed ?? {}) as DaemonEvent["data"],
+        data: { message: trimmed } as DaemonEvent["data"],
       });
-    } catch (e) {
-      console.error(`[EventStream] Failed to parse ${eventType}:`, e);
+
+      console.warn(`[EventStream] Non-JSON payload for ${eventType}:`, e);
     }
   }
 
@@ -115,7 +129,7 @@ export class EventStream {
     const delay = this.options.reconnectDelay ?? 3000;
     const backoff = Math.min(delay * Math.pow(1.5, this.reconnectAttempts), 30000);
 
-    this.reconnectTimer = window.setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
       this.reconnectAttempts++;
       this.createConnection();
     }, backoff);
@@ -126,7 +140,7 @@ export class EventStream {
       this.eventSource.close();
       this.eventSource = null;
     }
-    if (this.reconnectTimer) {
+    if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }

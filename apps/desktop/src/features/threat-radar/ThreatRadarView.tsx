@@ -7,11 +7,10 @@
 import { Suspense, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { ThreatRadar } from "@backbay/glia/primitives";
+import { ThreatRadar, type Threat, type ThreatType } from "@backbay/glia-three/three";
 import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
-import { EnvironmentLayer } from "@backbay/glia/primitives";
-import type { Threat, ThreatType } from "@backbay/glia/primitives";
+import { EnvironmentLayer } from "@backbay/glia-three/environment";
 import { useSpineEvents } from "@/hooks/useSpineEvents";
 import { SpineStatusIndicator } from "@/components/SpineStatusIndicator";
 

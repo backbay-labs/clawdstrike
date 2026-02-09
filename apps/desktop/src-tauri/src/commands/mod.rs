@@ -3,6 +3,7 @@
 pub mod hushd;
 pub mod marketplace;
 pub mod marketplace_discovery;
+pub mod openclaw;
 pub mod policy;
 pub mod receipts;
 pub mod spine;

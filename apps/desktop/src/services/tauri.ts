@@ -316,3 +316,48 @@ export async function announceMarketplaceDiscovery(announcement: MarketplaceDisc
   const invoke = await getTauriInvoke();
   return invoke("marketplace_discovery_announce", { announcement });
 }
+
+// === OpenClaw Commands ===
+
+export type OpenClawGatewayDiscoverResult = {
+  timeoutMs?: number;
+  domains?: string[];
+  count?: number;
+  beacons?: Array<{
+    instanceName?: string;
+    displayName?: string;
+    host?: string;
+    port?: number;
+    domain?: string;
+    wsUrl?: string;
+  }>;
+};
+
+export async function openclawGatewayDiscover(timeoutMs?: number): Promise<OpenClawGatewayDiscoverResult> {
+  if (!isTauri()) {
+    throw new Error("OpenClaw discovery requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("openclaw_gateway_discover", typeof timeoutMs === "number" ? { timeout_ms: timeoutMs } : {});
+}
+
+export type OpenClawGatewayProbeResult = {
+  ok?: boolean;
+  network?: {
+    localLoopbackUrl?: string;
+    localTailnetUrl?: string;
+    tailnetIPv4?: string;
+  };
+  discovery?: {
+    count?: number;
+    beacons?: Array<{ wsUrl?: string; displayName?: string; host?: string; domain?: string }>;
+  };
+};
+
+export async function openclawGatewayProbe(timeoutMs?: number): Promise<OpenClawGatewayProbeResult> {
+  if (!isTauri()) {
+    throw new Error("OpenClaw probe requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("openclaw_gateway_probe", typeof timeoutMs === "number" ? { timeout_ms: timeoutMs } : {});
+}

@@ -16,7 +16,6 @@ import type {
   SDRSeverity,
   SDRMitreMapping,
   SDRNetworkInfo,
-  SDREventOrigin,
   SpineConnectionStatus,
 } from "@/types/spine";
 import { isTauri } from "./tauri";

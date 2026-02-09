@@ -398,12 +398,22 @@ async fn run_discovery<R: Runtime>(
 
     loop {
         tokio::select! {
-            swarm_event = swarm.select_next_some() => match swarm_event {
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    let addr_str = address.to_string();
-                    let mut s = status.write().await;
-                    if !s.listen_addrs.iter().any(|a| a == &addr_str) {
-                        s.listen_addrs.push(addr_str);
+                swarm_event = swarm.select_next_some() => match swarm_event {
+                    SwarmEvent::ListenerError { error, .. } => {
+                        set_fatal_error(&status, format!("Listener error: {error}")).await;
+                        break;
+                    }
+                    SwarmEvent::ListenerClosed { reason, .. } => {
+                        if let Err(e) = reason {
+                            set_fatal_error(&status, format!("Listener closed: {e}")).await;
+                        }
+                        break;
+                    }
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        let addr_str = address.to_string();
+                        let mut s = status.write().await;
+                        if !s.listen_addrs.iter().any(|a| a == &addr_str) {
+                            s.listen_addrs.push(addr_str);
                     }
                 }
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
@@ -567,9 +577,16 @@ mod discovery_manager_tests {
 
         let manager = MarketplaceDiscoveryManager::new();
 
-        // Reserve a port so discovery fails to listen.
-        let listener = TcpListener::bind("0.0.0.0:0").expect("bind");
-        let port = listener.local_addr().expect("local_addr").port();
+        // Prefer reserving a wildcard port to force an "address in use" listen failure.
+        // (libp2p enables `SO_REUSEADDR`, so a loopback-only bind may not always collide.)
+        // If the environment disallows binding sockets (some sandboxes), fall back to
+        // a privileged port to still trigger an immediate listen failure.
+        let listener = TcpListener::bind("0.0.0.0:0").ok();
+        let port = listener
+            .as_ref()
+            .and_then(|l| l.local_addr().ok())
+            .map(|addr| addr.port())
+            .unwrap_or(1);
 
         manager
             .start(
