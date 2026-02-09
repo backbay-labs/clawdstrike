@@ -120,6 +120,31 @@ jobs:
         working-directory: apps/desktop
         run: bun run typecheck
 
+  cloud-dashboard:
+    name: Cloud Dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/cloud-dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/cloud-dashboard
+        run: npm ci
+
+      - name: Type check
+        working-directory: apps/cloud-dashboard
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: apps/cloud-dashboard
+        run: npm run build
+
   sdr-integration-tests:
     name: SDR Integration Tests
     runs-on: ubuntu-latest

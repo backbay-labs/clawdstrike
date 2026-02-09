@@ -59,6 +59,11 @@ run_pkg packages/clawdstrike-openclaw
 bold "TS e2e: openclaw plugin (in-process)"
 npm --prefix packages/clawdstrike-openclaw run e2e
 
+bold "Cloud dashboard app"
+ensure_node_modules apps/cloud-dashboard
+(cd apps/cloud-dashboard && npm run typecheck)
+(cd apps/cloud-dashboard && npm run build)
+
 bold "Python package"
 VENV_DIR="${VENV_DIR:-/tmp/hushpy-venv}"
 if [[ ! -d "$VENV_DIR" ]]; then

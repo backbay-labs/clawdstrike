@@ -25,6 +25,12 @@ docs/book
 **/__pycache__/
 *.pyc
 .pytest_cache/
+**/.pytest_cache/
+**/.venv/
+.tmp-reticulum-venv/
+
+# TypeScript incremental builds
+*.tsbuildinfo
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
