@@ -21,7 +21,7 @@ pub struct AnchorConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChainConfig {
-    /// RPC URL for Base L2 (e.g., "https://mainnet.base.org").
+    /// RPC URL for Base L2 (e.g., <https://mainnet.base.org>).
     pub rpc_url: String,
     /// Chain ID (8453 for Base mainnet, 84532 for Base Sepolia).
     pub chain_id: u64,

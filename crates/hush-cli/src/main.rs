@@ -112,7 +112,7 @@ struct Cli {
     #[arg(long = "remote-extends-max-cache-bytes", default_value_t = 100_000_000)]
     remote_extends_max_cache_bytes: usize,
 
-    /// Allow http:// URLs for remote extends (INSECURE; prefer HTTPS).
+    /// Allow `http://` URLs for remote extends (INSECURE; prefer HTTPS).
     #[arg(long = "remote-extends-allow-http")]
     remote_extends_allow_http: bool,
 
