@@ -10,7 +10,7 @@ packages/
 node_modules/
 
 # Python
-packages/hush-py/
+packages/sdk/hush-py/
 __pycache__/
 *.pyc
 

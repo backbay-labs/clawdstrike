@@ -36,46 +36,46 @@ $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
 # (They inherit from workspace, so we only need to update the root)
 
 # Update package.json files
-if [[ -f "packages/clawdstrike-openclaw/package.json" ]]; then
-    echo "  Updating packages/clawdstrike-openclaw/package.json..."
+if [[ -f "packages/adapters/clawdstrike-openclaw/package.json" ]]; then
+    echo "  Updating packages/adapters/clawdstrike-openclaw/package.json..."
     # Use node/jq if available, otherwise sed
     if command -v node &> /dev/null; then
         node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/clawdstrike-openclaw/package.json', 'utf8'));
+            const pkg = JSON.parse(fs.readFileSync('packages/adapters/clawdstrike-openclaw/package.json', 'utf8'));
             pkg.version = '$VERSION';
-            fs.writeFileSync('packages/clawdstrike-openclaw/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('packages/adapters/clawdstrike-openclaw/package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
     else
-        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/clawdstrike-openclaw/package.json
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/adapters/clawdstrike-openclaw/package.json
     fi
 fi
 
-if [[ -f "packages/hush-ts/package.json" ]]; then
-    echo "  Updating packages/hush-ts/package.json..."
+if [[ -f "packages/sdk/hush-ts/package.json" ]]; then
+    echo "  Updating packages/sdk/hush-ts/package.json..."
     if command -v node &> /dev/null; then
         node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/hush-ts/package.json', 'utf8'));
+            const pkg = JSON.parse(fs.readFileSync('packages/sdk/hush-ts/package.json', 'utf8'));
             pkg.version = '$VERSION';
-            fs.writeFileSync('packages/hush-ts/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('packages/sdk/hush-ts/package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
     else
-        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/hush-ts/package.json
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/sdk/hush-ts/package.json
     fi
 fi
 
-if [[ -f "crates/hush-wasm/package.json" ]]; then
-    echo "  Updating crates/hush-wasm/package.json..."
+if [[ -f "crates/libs/hush-wasm/package.json" ]]; then
+    echo "  Updating crates/libs/hush-wasm/package.json..."
     if command -v node &> /dev/null; then
         node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('crates/hush-wasm/package.json', 'utf8'));
+            const pkg = JSON.parse(fs.readFileSync('crates/libs/hush-wasm/package.json', 'utf8'));
             pkg.version = '$VERSION';
-            fs.writeFileSync('crates/hush-wasm/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('crates/libs/hush-wasm/package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
     else
-        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" crates/hush-wasm/package.json
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" crates/libs/hush-wasm/package.json
     fi
 fi
 
@@ -92,16 +92,16 @@ if [[ -n "$FORMULA_PATH" ]]; then
 fi
 
 # Update pyproject.toml if it exists
-if [[ -f "packages/hush-py/pyproject.toml" ]]; then
-    echo "  Updating packages/hush-py/pyproject.toml..."
-    $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" packages/hush-py/pyproject.toml
+if [[ -f "packages/sdk/hush-py/pyproject.toml" ]]; then
+    echo "  Updating packages/sdk/hush-py/pyproject.toml..."
+    $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" packages/sdk/hush-py/pyproject.toml
 fi
 
 PY_INIT_PATH=""
-if [[ -f "packages/hush-py/src/clawdstrike/__init__.py" ]]; then
-    PY_INIT_PATH="packages/hush-py/src/clawdstrike/__init__.py"
-elif [[ -f "packages/hush-py/src/hush/__init__.py" ]]; then
-    PY_INIT_PATH="packages/hush-py/src/hush/__init__.py"
+if [[ -f "packages/sdk/hush-py/src/clawdstrike/__init__.py" ]]; then
+    PY_INIT_PATH="packages/sdk/hush-py/src/clawdstrike/__init__.py"
+elif [[ -f "packages/sdk/hush-py/src/hush/__init__.py" ]]; then
+    PY_INIT_PATH="packages/sdk/hush-py/src/hush/__init__.py"
 fi
 
 if [[ -n "$PY_INIT_PATH" ]]; then

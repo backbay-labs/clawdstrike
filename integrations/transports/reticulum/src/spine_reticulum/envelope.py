@@ -1,4 +1,4 @@
-"""Spine envelope encode/decode/verify -- Python port of crates/spine/src/envelope.rs.
+"""Spine envelope encode/decode/verify -- Python port of crates/libs/spine/src/envelope.rs.
 
 Uses RFC 8785 canonical JSON (JCS) for deterministic serialization and
 PyNaCl (libsodium) for Ed25519 signature verification.  These choices

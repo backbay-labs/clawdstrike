@@ -50,6 +50,9 @@ jobs:
       - name: Smoke test TS file dependency workflows
         run: bash scripts/smoke-ts-file-deps.sh
 
+      - name: Lint moved paths
+        run: bash scripts/path-lint.sh
+
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -312,12 +315,12 @@ jobs:
 
       - name: Build WASM
         run: |
-          cd crates/hush-wasm
+          cd crates/libs/hush-wasm
           wasm-pack build --target web --release
 
       - name: Check bundle size
         run: |
-          SIZE=$(wc -c < crates/hush-wasm/pkg/hush_wasm_bg.wasm)
+          SIZE=$(wc -c < crates/libs/hush-wasm/pkg/hush_wasm_bg.wasm)
           echo "Bundle size: $SIZE bytes"
           if [ $SIZE -gt 512000 ]; then
             echo "ERROR: Bundle exceeds 500KB limit"
@@ -436,7 +439,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/hush-ts
+        working-directory: packages/sdk/hush-ts
     steps:
       - uses: actions/checkout@v6
 
@@ -446,15 +449,15 @@ jobs:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: |
-            packages/hush-ts/package-lock.json
-            packages/clawdstrike-adapter-core/package-lock.json
+            packages/sdk/hush-ts/package-lock.json
+            packages/adapters/clawdstrike-adapter-core/package-lock.json
 
       - name: Bootstrap file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm ci
 
       - name: Build file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm run build
 
       - name: Install dependencies
@@ -479,7 +482,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/clawdstrike-openclaw
+        working-directory: packages/adapters/clawdstrike-openclaw
     steps:
       - uses: actions/checkout@v6
 
@@ -488,22 +491,22 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: packages/clawdstrike-openclaw/package-lock.json
+          cache-dependency-path: packages/adapters/clawdstrike-openclaw/package-lock.json
 
       - name: Bootstrap file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm ci
 
       - name: Build file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm run build
 
       - name: Bootstrap file deps (policy)
-        working-directory: packages/clawdstrike-policy
+        working-directory: packages/policy/clawdstrike-policy
         run: npm ci
 
       - name: Build file deps (policy)
-        working-directory: packages/clawdstrike-policy
+        working-directory: packages/policy/clawdstrike-policy
         run: npm run build
 
       - name: Install dependencies
@@ -526,7 +529,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/clawdstrike-policy
+        working-directory: packages/policy/clawdstrike-policy
     steps:
       - uses: actions/checkout@v6
 
@@ -551,16 +554,16 @@ jobs:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: |
-            packages/clawdstrike-policy/package-lock.json
-            packages/clawdstrike-adapter-core/package-lock.json
-            packages/hush-ts/package-lock.json
+            packages/policy/clawdstrike-policy/package-lock.json
+            packages/adapters/clawdstrike-adapter-core/package-lock.json
+            packages/sdk/hush-ts/package-lock.json
 
       - name: Bootstrap file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm ci
 
       - name: Build file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm run build
 
       - name: Build hush CLI (for policy parity)
@@ -577,11 +580,11 @@ jobs:
         run: npm run build
 
       - name: Bootstrap file deps (hush-ts)
-        working-directory: packages/hush-ts
+        working-directory: packages/sdk/hush-ts
         run: npm ci
 
       - name: Build file deps (hush-ts)
-        working-directory: packages/hush-ts
+        working-directory: packages/sdk/hush-ts
         run: npm run build
 
       - name: Policy parity (Rust ↔ TS)
@@ -599,36 +602,36 @@ jobs:
       matrix:
         include:
           - name: Adapter Core
-            dir: packages/clawdstrike-adapter-core
+            dir: packages/adapters/clawdstrike-adapter-core
             bootstrap_adapter_core: false
             bootstrap_sdk: false
           - name: Hush CLI Engine
-            dir: packages/clawdstrike-hush-cli-engine
+            dir: packages/adapters/clawdstrike-hush-cli-engine
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: true
           - name: Codex
-            dir: packages/clawdstrike-codex
+            dir: packages/adapters/clawdstrike-codex
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false
           - name: OpenCode
-            dir: packages/clawdstrike-opencode
+            dir: packages/adapters/clawdstrike-opencode
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false
           - name: Claude Code
-            dir: packages/clawdstrike-claude-code
+            dir: packages/adapters/clawdstrike-claude-code
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false
           - name: Vercel AI
-            dir: packages/clawdstrike-vercel-ai
+            dir: packages/adapters/clawdstrike-vercel-ai
             bootstrap_adapter_core: true
             bootstrap_sdk: true
             bootstrap_hush: false
           - name: LangChain
-            dir: packages/clawdstrike-langchain
+            dir: packages/adapters/clawdstrike-langchain
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false
@@ -656,22 +659,22 @@ jobs:
 
       - name: Bootstrap file deps (adapter-core)
         if: ${{ matrix.bootstrap_adapter_core }}
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm ci
 
       - name: Build file deps (adapter-core)
         if: ${{ matrix.bootstrap_adapter_core }}
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm run build
 
       - name: Bootstrap file deps (sdk)
         if: ${{ matrix.bootstrap_sdk }}
-        working-directory: packages/hush-ts
+        working-directory: packages/sdk/hush-ts
         run: npm ci
 
       - name: Build file deps (sdk)
         if: ${{ matrix.bootstrap_sdk }}
-        working-directory: packages/hush-ts
+        working-directory: packages/sdk/hush-ts
         run: npm run build
 
       - name: Install dependencies
@@ -718,15 +721,15 @@ jobs:
           node-version: '24'
 
       - name: Bootstrap file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm ci
 
       - name: Build file deps (adapter-core)
-        working-directory: packages/clawdstrike-adapter-core
+        working-directory: packages/adapters/clawdstrike-adapter-core
         run: npm run build
 
       - name: Install TS parity deps
-        working-directory: packages/clawdstrike-hush-cli-engine
+        working-directory: packages/adapters/clawdstrike-hush-cli-engine
         run: npm ci
 
       - name: Run parity tests
@@ -737,7 +740,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/hush-py
+        working-directory: packages/sdk/hush-py
     steps:
       - uses: actions/checkout@v6
 
@@ -746,7 +749,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: packages/hush-py/pyproject.toml
+          cache-dependency-path: packages/sdk/hush-py/pyproject.toml
 
       - name: Install package (editable)
         run: |

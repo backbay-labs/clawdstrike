@@ -1,22 +1,22 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/hush-core",
-    "crates/hush-proxy",
-    "crates/clawdstrike",
-    "crates/hush-certification",
-    "crates/hush-cli",
-    "crates/hushd",
-    "crates/hush-wasm",
-    "crates/hush-multi-agent",
-    "crates/spine",
-    "crates/spine-cli",
-    "crates/tetragon-bridge",
-    "crates/hubble-bridge",
-    "crates/eas-anchor",
-    "crates/sdr-integration-tests",
-    "crates/cloud-api",
-    "packages/hush-py/hush-native",
+    "crates/libs/hush-core",
+    "crates/libs/hush-proxy",
+    "crates/libs/clawdstrike",
+    "crates/libs/hush-certification",
+    "crates/services/hush-cli",
+    "crates/services/hushd",
+    "crates/libs/hush-wasm",
+    "crates/libs/hush-multi-agent",
+    "crates/libs/spine",
+    "crates/services/spine-cli",
+    "crates/bridges/tetragon-bridge",
+    "crates/bridges/hubble-bridge",
+    "crates/services/eas-anchor",
+    "crates/tests/sdr-integration-tests",
+    "crates/services/cloud-api",
+    "packages/sdk/hush-py/hush-native",
 ]
 exclude = [
     "fuzz",
@@ -119,11 +119,11 @@ url = "2.5"
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 
 # Internal crates
-hush-core = { path = "crates/hush-core", version = "0.1.0" }
-hush-proxy = { path = "crates/hush-proxy", version = "0.1.0" }
-clawdstrike = { path = "crates/clawdstrike", version = "0.1.0" }
-hush-certification = { path = "crates/hush-certification", version = "0.1.0" }
-spine = { path = "crates/spine", version = "0.1.0" }
+hush-core = { path = "crates/libs/hush-core", version = "0.1.0" }
+hush-proxy = { path = "crates/libs/hush-proxy", version = "0.1.0" }
+clawdstrike = { path = "crates/libs/clawdstrike", version = "0.1.0" }
+hush-certification = { path = "crates/libs/hush-certification", version = "0.1.0" }
+spine = { path = "crates/libs/spine", version = "0.1.0" }
 
 [profile.release]
 lto = true

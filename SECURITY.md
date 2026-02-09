@@ -46,14 +46,14 @@ For confirmed vulnerabilities:
 
 | Component | Directory | Critical Assets |
 |-----------|-----------|-----------------|
-| Crypto primitives | `crates/hush-core/` | Key material, Ed25519 signatures, SHA-256/Keccak, Merkle proofs |
-| Guard engine | `crates/clawdstrike/` | Policy evaluation, fail-closed invariant, guard bypass resistance |
-| Spine protocol | `crates/spine/` | Envelope signing, append-only log integrity, checkpoint verification |
-| Bridges | `crates/tetragon-bridge/`, `crates/hubble-bridge/` | Signing key management, event deduplication, NATS transport |
-| Marketplace | `crates/clawdstrike/src/marketplace_feed.rs` | Curator key trust, feed signing, bundle verification, IPFS integrity |
-| hushd daemon | `crates/hushd/` | API authentication, audit log integrity, SSE broadcast |
+| Crypto primitives | `crates/libs/hush-core/` | Key material, Ed25519 signatures, SHA-256/Keccak, Merkle proofs |
+| Guard engine | `crates/libs/clawdstrike/` | Policy evaluation, fail-closed invariant, guard bypass resistance |
+| Spine protocol | `crates/libs/spine/` | Envelope signing, append-only log integrity, checkpoint verification |
+| Bridges | `crates/bridges/tetragon-bridge/`, `crates/bridges/hubble-bridge/` | Signing key management, event deduplication, NATS transport |
+| Marketplace | `crates/libs/clawdstrike/src/marketplace_feed.rs` | Curator key trust, feed signing, bundle verification, IPFS integrity |
+| hushd daemon | `crates/services/hushd/` | API authentication, audit log integrity, SSE broadcast |
 | Desktop app | `apps/desktop/` | Tauri IPC, localStorage trust config, P2P discovery |
-| Multi-agent | `crates/hush-multi-agent/` | Delegation tokens, agent identity, revocation |
+| Multi-agent | `crates/libs/hush-multi-agent/` | Delegation tokens, agent identity, revocation |
 
 ## Security Design Principles
 

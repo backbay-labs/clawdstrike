@@ -8,7 +8,7 @@ Clawdstrike ships as a Rust workspace with a CLI (`clawdstrike`) and libraries (
 
 ```bash
 # From a workspace checkout
-cargo install --path crates/hush-cli
+cargo install --path crates/services/hush-cli
 ```
 
 ### From crates.io (if published)
@@ -30,7 +30,7 @@ clawdstrike --version
 `clawdstriked` is an HTTP daemon that can evaluate checks server-side. It is still evolving, so treat it as optional/WIP.
 
 ```bash
-cargo install --path crates/hushd
+cargo install --path crates/services/hushd
 ```
 
 You can start it via the CLI:

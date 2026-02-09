@@ -31,16 +31,16 @@ cargo doc --no-deps --all-features
 mdbook build docs
 
 # TypeScript packages
-npm install --workspace=packages/hush-ts
-npm run build --workspace=packages/hush-ts
-npm test --workspace=packages/hush-ts
+npm install --workspace=packages/sdk/hush-ts
+npm run build --workspace=packages/sdk/hush-ts
+npm test --workspace=packages/sdk/hush-ts
 
 # Python
-pip install -e packages/hush-py[dev]
-pytest packages/hush-py/tests
+pip install -e packages/sdk/hush-py[dev]
+pytest packages/sdk/hush-py/tests
 
 # CLI
-cargo install --path crates/hush-cli
+cargo install --path crates/services/hush-cli
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 ```
 
@@ -64,7 +64,7 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 - `clawdstrike-adapter-core` - Base adapter interface
 - Framework adapters: `clawdstrike-openclaw`, `clawdstrike-vercel-ai`, `clawdstrike-langchain`, `clawdstrike-claude-code`, `clawdstrike-codex`, `clawdstrike-opencode`
 
-**Python:** `packages/hush-py`
+**Python:** `packages/sdk/hush-py`
 
 ### Core Abstractions
 

@@ -8,8 +8,8 @@ Superseded: 2026-02-04 (API redesign unified on `clawdstrike` as the primary CLI
 
 The repo historically exposed two user-visible CLIs:
 
-- Rust: `hush` (in `crates/hush-cli`)
-- TypeScript/OpenClaw: `clawdstrike` (in `packages/clawdstrike-openclaw`)
+- Rust: `hush` (in `crates/services/hush-cli`)
+- TypeScript/OpenClaw: `clawdstrike` (in `packages/adapters/clawdstrike-openclaw`)
 
 ## Original Decision (now superseded)
 

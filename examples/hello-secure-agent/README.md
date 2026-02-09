@@ -114,7 +114,7 @@ execution:
 
 ## Verification
 
-This example does not generate cryptographic receipts. See `crates/hush-core` and the `hush` CLI docs for receipt signing/verification.
+This example does not generate cryptographic receipts. See `crates/libs/hush-core` and the `hush` CLI docs for receipt signing/verification.
 
 ## Next Steps
 

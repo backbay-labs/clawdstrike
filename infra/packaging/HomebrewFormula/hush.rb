@@ -17,7 +17,7 @@ class Hush < Formula
   depends_on "rust" => :build
 
   def install
-    system "cargo", "install", *std_cargo_args(path: "crates/hush-cli")
+    system "cargo", "install", *std_cargo_args(path: "crates/services/hush-cli")
 
     # Generate shell completions
     generate_completions_from_executable(bin/"hush", "completions")
@@ -30,7 +30,7 @@ class Hush < Formula
       The `hushd` daemon is experimental and is not installed by default.
       If you want to try it anyway, build it from source:
 
-        cargo install --path crates/hushd
+        cargo install --path crates/services/hushd
     EOS
   end
 

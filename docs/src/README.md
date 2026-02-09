@@ -10,7 +10,7 @@ Clawdstrike ships a best-effort process wrapper (`clawdstrike run`) for audit lo
 
 ```bash
 # Install from source (recommended for now)
-cargo install --path crates/hush-cli
+cargo install --path crates/services/hush-cli
 
 # List built-in rulesets
 clawdstrike policy list

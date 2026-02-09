@@ -12,8 +12,8 @@ PR #40 adds the Swarm Detection & Response (SDR) platform to ClawdStrike — a r
 
 ### Key commits (chronological):
 
-1. `2643377e` — **SDR foundation**: `crates/spine/` (signed envelopes, checkpoints, NATS transport, Merkle proofs), `crates/tetragon-bridge/` (Tetragon gRPC → Spine)
-2. `60daed38` — **Wave 2**: `crates/hubble-bridge/` (Cilium Hubble → Spine), `crates/spine/src/bin/` services (checkpointer, proofs API)
+1. `2643377e` — **SDR foundation**: `crates/libs/spine/` (signed envelopes, checkpoints, NATS transport, Merkle proofs), `crates/bridges/tetragon-bridge/` (Tetragon gRPC → Spine)
+2. `60daed38` — **Wave 2**: `crates/bridges/hubble-bridge/` (Cilium Hubble → Spine), `crates/libs/spine/src/bin/` services (checkpointer, proofs API)
 3. `132d240b` — **Wave 3**: Dockerfiles, `spine-cli`, NATS wiring in desktop Tauri app
 4. `b12cf65a` — **Wave 4**: Live data pipeline, proof verification, L7 enrichment
 5. `38187bd7` — **30 bug fixes** from PR review (4 critical, 8 high, 10 medium, 8 low)
@@ -203,9 +203,9 @@ cargo test -p tetragon-bridge
 cargo test -p hubble-bridge
 
 # TypeScript
-npm install --workspace=packages/hush-ts
-npm run build --workspace=packages/hush-ts
-npm test --workspace=packages/hush-ts
+npm install --workspace=packages/sdk/hush-ts
+npm run build --workspace=packages/sdk/hush-ts
+npm test --workspace=packages/sdk/hush-ts
 ```
 
 **Note:** `cargo test --workspace` compiles heavy wasmtime deps and needs ~20GB disk. If space is tight, test individual crates.

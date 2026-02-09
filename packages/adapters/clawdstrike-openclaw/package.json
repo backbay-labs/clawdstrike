@@ -1,0 +1,85 @@
+{
+  "name": "@clawdstrike/clawdstrike-security",
+  "version": "0.1.0",
+  "description": "Clawdstrike security plugin for OpenClaw",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli/index.js",
+      "types": "./dist/cli/index.d.ts"
+    }
+  },
+  "bin": {
+    "clawdstrike": "./dist/cli/bin.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "e2e": "npm run build && node dist/e2e/openclaw-e2e.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "npm run typecheck",
+    "typecheck": "tsc --noEmit",
+    "bench": "npm run build && node benchmarks/policy-engine.bench.mjs",
+    "bench:json": "npm run build && OUTPUT_JSON=1 node benchmarks/policy-engine.bench.mjs"
+  },
+  "dependencies": {
+    "@clawdstrike/adapter-core": "^0.1.0",
+    "@clawdstrike/policy": "^0.1.0",
+    "chalk": "^5.3.0",
+    "commander": "^14.0.3",
+    "glob": "^13.0.1",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "openclaw": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "files": [
+    "dist",
+    "rulesets",
+    "README.md"
+  ],
+  "keywords": [
+    "openclaw",
+    "security",
+    "clawdstrike",
+    "ai-agent"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/adapters/clawdstrike-openclaw"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/plugin.js"
+    ]
+  }
+}

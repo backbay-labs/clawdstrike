@@ -24,8 +24,8 @@ COPY docker/workspace-spine.toml Cargo.toml
 COPY Cargo.lock ./
 
 # Copy only the crates we need.
-COPY crates/hush-core crates/hush-core
-COPY crates/spine crates/spine
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/spine crates/libs/spine
 
 # Build all three spine binaries in one layer for cache efficiency.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

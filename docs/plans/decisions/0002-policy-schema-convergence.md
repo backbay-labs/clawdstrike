@@ -7,7 +7,7 @@ Date: 2026-02-03
 
 There are (at least) two incompatible policy schemas in active use:
 
-- **Rust policy schema** (`crates/clawdstrike`): `version: "1.1.0"` with a guard-centric shape under `guards.*` (plus `settings.*`). Parsing is strict (`deny_unknown_fields`) and should fail closed.
+- **Rust policy schema** (`crates/libs/clawdstrike`): `version: "1.1.0"` with a guard-centric shape under `guards.*` (plus `settings.*`). Parsing is strict (`deny_unknown_fields`) and should fail closed.
 - **TS/OpenClaw policy schema** (`@clawdstrike/openclaw`): `version: "clawdstrike-v1.0"` with an action-category shape (`egress`, `filesystem`, `execution`, `tools`, `limits`, `on_violation`, …).
 
 Docs/plans assume the guard-centric schema for P0/P1 work (custom guards, compositions), but many integration docs/examples show the OpenClaw schema.

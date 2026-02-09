@@ -37,5 +37,5 @@ clawdstrike check --action-type egress --policy ./policy.yaml api.github.com:443
 
 ## Next
 
-- If you use OpenClaw, see the experimental plugin under `packages/clawdstrike-openclaw`.
+- If you use OpenClaw, see the experimental plugin under `packages/adapters/clawdstrike-openclaw`.
 - Otherwise, build a small adapter in your Claude Code tool layer that calls `clawdstrike::HushEngine` before executing actions.

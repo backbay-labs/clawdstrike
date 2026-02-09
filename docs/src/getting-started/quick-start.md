@@ -5,7 +5,7 @@ Evaluate actions against policies in a few minutes.
 ## Step 1: Install
 
 ```bash
-cargo install --path crates/hush-cli
+cargo install --path crates/services/hush-cli
 ```
 
 ## Step 2: Pick a ruleset

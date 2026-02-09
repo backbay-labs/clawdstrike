@@ -27,7 +27,7 @@ updates:
 
   # npm dependencies (@clawdstrike/openclaw plugin)
   - package-ecosystem: "npm"
-    directory: "/packages/clawdstrike-openclaw"
+    directory: "/packages/adapters/clawdstrike-openclaw"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -45,7 +45,7 @@ updates:
 
   # Python dependencies (hush-py SDK)
   - package-ecosystem: "pip"
-    directory: "/packages/hush-py"
+    directory: "/packages/sdk/hush-py"
     schedule:
       interval: "weekly"
       day: "monday"

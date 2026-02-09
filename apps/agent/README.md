@@ -14,7 +14,7 @@ A lightweight system tray application that provides security policy enforcement 
 ## Prerequisites
 
 - macOS 10.15+ (Linux support planned)
-- [hushd](../../crates/hushd) daemon binary installed
+- [hushd](../../crates/services/hushd) daemon binary installed
 - For Claude Code: Claude Code CLI installed
 
 ## Installation

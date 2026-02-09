@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 - `crates/`: Rust workspace crates (core engine, guards, CLI, daemon, WASM bindings)
-- `packages/`: TypeScript SDK + framework adapters, plus Python SDK in `packages/hush-py/`
+- `packages/`: TypeScript SDK + framework adapters, plus Python SDK in `packages/sdk/hush-py/`
 - `apps/`: user-facing apps (`desktop/`, `agent/`, `cloud-dashboard/`)
 - `integrations/`: transport/runtime integrations (e.g. `integrations/transports/reticulum/`)
 - `infra/`: packaging assets (e.g. `infra/packaging/HomebrewFormula/`)
@@ -23,7 +23,7 @@ Toolchains are pinned in `mise.toml` (Rust `1.93`, Node `24`, Python `3.12`).
 - Offline (vendored) Rust tests: `CARGO_NET_OFFLINE=true scripts/cargo-offline.sh test --workspace --all-targets`
 
 TypeScript packages are built/tested per-package (no root JS workspace):
-- Example: `npm --prefix packages/hush-ts ci && npm --prefix packages/hush-ts test`
+- Example: `npm --prefix packages/sdk/hush-ts ci && npm --prefix packages/sdk/hush-ts test`
 - Desktop: `npm --prefix apps/desktop ci && npm --prefix apps/desktop run tauri:dev`
 
 Docs:
@@ -33,13 +33,13 @@ Docs:
 
 - Rust: `rustfmt` is authoritative. Clippy denies `unwrap()`/`expect()` at the workspace level—prefer `?` + typed errors.
 - TypeScript: 2-space indentation, ESM modules. Keep public exports stable; run `npm run typecheck` in touched packages.
-- Python (`packages/hush-py`): 4-space indentation, `ruff` (line length 100) + `mypy --strict`.
+- Python (`packages/sdk/hush-py`): 4-space indentation, `ruff` (line length 100) + `mypy --strict`.
 
 ## Testing Guidelines
 
 - Rust: `cargo test -p <crate>`; add unit/integration tests for guard/policy changes (property tests may use `proptest`).
 - TypeScript: `vitest` with `*.test.ts` / `*.e2e.test.ts` naming; run `npm test` in affected packages.
-- Python: `pytest` under `packages/hush-py/tests/` (`test_*.py`).
+- Python: `pytest` under `packages/sdk/hush-py/tests/` (`test_*.py`).
 
 ## Commit & Pull Request Guidelines
 

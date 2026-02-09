@@ -33,12 +33,12 @@ Reference implementations and deployment kits added in-tree:
 
 | Capability | Status | Where |
 |---|---:|---|
-| Guard-centric policy schema (`version: "1.1.0"`) + merge/extends | ✅ | `crates/clawdstrike/src/policy.rs`, `rulesets/*.yaml` |
-| Tool-boundary policy evaluation (`HushEngine`) | ✅ | `crates/clawdstrike/src/engine.rs` |
-| Built-in guards (path/egress/secrets/patch/mcp/prompt/jailbreak) | ✅ | `crates/clawdstrike/src/guards/`, `crates/clawdstrike/src/jailbreak.rs` |
-| Signed receipts + cryptographic primitives | ✅ | `crates/hush-core/src/receipt.rs`, `crates/hush-core/src/signing.rs` |
-| IRM router + sandbox wrapper (policy for host-calls) | ✅ (policy-only) | `crates/clawdstrike/src/irm/` |
-| Central HTTP daemon for checks/audit (`hushd`) | 🟡 (WIP) | `crates/hushd/` |
+| Guard-centric policy schema (`version: "1.1.0"`) + merge/extends | ✅ | `crates/libs/clawdstrike/src/policy.rs`, `rulesets/*.yaml` |
+| Tool-boundary policy evaluation (`HushEngine`) | ✅ | `crates/libs/clawdstrike/src/engine.rs` |
+| Built-in guards (path/egress/secrets/patch/mcp/prompt/jailbreak) | ✅ | `crates/libs/clawdstrike/src/guards/`, `crates/libs/clawdstrike/src/jailbreak.rs` |
+| Signed receipts + cryptographic primitives | ✅ | `crates/libs/hush-core/src/receipt.rs`, `crates/libs/hush-core/src/signing.rs` |
+| IRM router + sandbox wrapper (policy for host-calls) | ✅ (policy-only) | `crates/libs/clawdstrike/src/irm/` |
+| Central HTTP daemon for checks/audit (`hushd`) | 🟡 (WIP) | `crates/services/hushd/` |
 | TS adapters + framework integrations | ✅ | `packages/clawdstrike-*/` |
 | Agentic EDR-style example loop (simulated) | ✅ | `examples/bb-edr/` |
 | Deployment packaging (systemd/launchd + docker image) | 🟡 | `deploy/`, `Dockerfile.hushd`, `examples/docker-compose/` |
@@ -51,7 +51,7 @@ These show up in 3+ architectures and should be treated as platform workstreams:
 
 1. **Audit/telemetry sink interface**
    - Targets: JSONL/stdout, webhook, OTLP, Splunk HEC, Elastic, Kafka/NATS.
-   - Repo landing zone: `crates/hushd/` (server-side sinks) + `packages/clawdstrike-adapter-core/` (client-side logger interface).
+   - Repo landing zone: `crates/services/hushd/` (server-side sinks) + `packages/adapters/clawdstrike-adapter-core/` (client-side logger interface).
 2. **Canonical event model parity**
    - Keep Rust + TS decisions identical on the same `PolicyEvent` corpus.
    - Expand fixtures in `fixtures/policy-events/v1/` and add cross-SDK parity tests.
@@ -121,7 +121,7 @@ Use these milestones as the “spine”; each reference architecture becomes an 
 
 **Goal:** provide a reference pattern for running autonomous agents in isolated compute (container/WASM), with Clawdstrike providing *policy + audit* at the tool boundary and IRM host-call boundary.
 
-**Already in repo:** IRM router + `Sandbox` wrapper (`crates/clawdstrike/src/irm/sandbox.rs`).
+**Already in repo:** IRM router + `Sandbox` wrapper (`crates/libs/clawdstrike/src/irm/sandbox.rs`).
 
 **Gaps to close (roadmap):**
 - Define a first-class “capability template” model for sandboxes (read/write/net/exec/secret/tool) and enforce it via policy.
@@ -199,7 +199,7 @@ Use these milestones as the “spine”; each reference architecture becomes an 
 
 **Goal:** make `hushd` and related components easy to run in Kubernetes/serverless environments with cloud-native observability.
 
-**Already in repo:** container build (`Dockerfile.hushd`) + proxy utilities (`crates/hush-proxy/`).
+**Already in repo:** container build (`Dockerfile.hushd`) + proxy utilities (`crates/libs/hush-proxy/`).
 
 **Gaps to close (roadmap):**
 - Helm chart + manifests for `hushd` (TLS, auth, config, persistence).

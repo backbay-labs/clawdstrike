@@ -1,6 +1,6 @@
 # Python API Reference
 
-The Python SDK lives under `packages/hush-py` and is published as `clawdstrike` on PyPI.
+The Python SDK lives under `packages/sdk/hush-py` and is published as `clawdstrike` on PyPI.
 
 It provides:
 

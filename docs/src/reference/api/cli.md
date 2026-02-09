@@ -5,7 +5,7 @@ The `clawdstrike` CLI is provided by the `hush-cli` crate.
 ## Installation
 
 ```bash
-cargo install --path crates/hush-cli
+cargo install --path crates/services/hush-cli
 ```
 
 ## `clawdstrike check`
@@ -105,7 +105,7 @@ clawdstrike guard validate ./plugins/my-guard --strict --json
 The CLI can start/inspect a `clawdstriked` daemon, but `clawdstriked` must be installed separately.
 
 ```bash
-cargo install --path crates/hushd
+cargo install --path crates/services/hushd
 clawdstrike daemon start
 clawdstrike daemon status
 clawdstrike daemon stop

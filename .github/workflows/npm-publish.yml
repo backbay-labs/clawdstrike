@@ -23,31 +23,31 @@ jobs:
 
       # Publish in topological order
       - name: Publish @clawdstrike/adapter-core
-        run: npm publish -w packages/clawdstrike-adapter-core --provenance
+        run: npm publish -w packages/adapters/clawdstrike-adapter-core --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @clawdstrike/sdk
-        run: npm publish -w packages/hush-ts --provenance
+        run: npm publish -w packages/sdk/hush-ts --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @clawdstrike/policy
-        run: npm publish -w packages/clawdstrike-policy --provenance
+        run: npm publish -w packages/policy/clawdstrike-policy --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish remaining packages
         run: |
           for pkg in \
-            packages/clawdstrike-claude-code \
-            packages/clawdstrike-codex \
-            packages/clawdstrike-vercel-ai \
-            packages/clawdstrike-langchain \
-            packages/clawdstrike-openclaw \
-            packages/clawdstrike-opencode \
-            packages/clawdstrike-hush-cli-engine \
-            packages/clawdstrike-hushd-engine; do
+            packages/adapters/clawdstrike-claude-code \
+            packages/adapters/clawdstrike-codex \
+            packages/adapters/clawdstrike-vercel-ai \
+            packages/adapters/clawdstrike-langchain \
+            packages/adapters/clawdstrike-openclaw \
+            packages/adapters/clawdstrike-opencode \
+            packages/adapters/clawdstrike-hush-cli-engine \
+            packages/adapters/clawdstrike-hushd-engine; do
             npm publish -w "$pkg" --provenance || true
           done
         env:

@@ -7,7 +7,7 @@ Packaging/deployment (Docker/Kubernetes/Helm) is not provided in this repository
 ## Install
 
 ```bash
-cargo install --path crates/hushd
+cargo install --path crates/services/hushd
 ```
 
 ## Run

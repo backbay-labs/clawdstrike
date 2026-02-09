@@ -10,7 +10,7 @@ cargo build -p hush-cli
 export HUSH_PATH="$REPO_ROOT/target/debug/hush"
 export HUSH_E2E=1
 
-cd "$REPO_ROOT/packages/clawdstrike-hush-cli-engine"
+cd "$REPO_ROOT/packages/adapters/clawdstrike-hush-cli-engine"
 if [[ ! -d node_modules ]]; then
   npm install
 fi

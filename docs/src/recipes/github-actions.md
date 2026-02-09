@@ -23,7 +23,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install clawdstrike CLI
-        run: cargo install --path crates/hush-cli
+        run: cargo install --path crates/services/hush-cli
 
       - name: Validate policy
         run: clawdstrike policy validate --resolve .hush/policy.yaml

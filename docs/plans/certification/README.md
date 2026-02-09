@@ -11,11 +11,11 @@ Certification & Compliance program:
 
 ## Code mapping (intended)
 
-- Server/API: `crates/hushd/`
-- Policy/guards: `crates/clawdstrike/`
-- Crypto primitives (JCS, Ed25519, Merkle): `crates/hush-core/`
-- TypeScript SDK: `packages/hush-ts/` (`@clawdstrike/sdk`)
-- Python SDK: `packages/hush-py/`
+- Server/API: `crates/services/hushd/`
+- Policy/guards: `crates/libs/clawdstrike/`
+- Crypto primitives (JCS, Ed25519, Merkle): `crates/libs/hush-core/`
+- TypeScript SDK: `packages/sdk/hush-ts/` (`@clawdstrike/sdk`)
+- Python SDK: `packages/sdk/hush-py/`
 
 ## Notes
 

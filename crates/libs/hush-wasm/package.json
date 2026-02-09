@@ -1,0 +1,34 @@
+{
+  "name": "@clawdstrike/wasm",
+  "version": "0.1.0",
+  "description": "WebAssembly bindings for clawdstrike cryptographic verification",
+  "main": "hush_wasm.js",
+  "types": "hush_wasm.d.ts",
+  "files": [
+    "hush_wasm_bg.wasm",
+    "hush_wasm.js",
+    "hush_wasm.d.ts",
+    "hush_wasm_bg.wasm.d.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "crates/libs/hush-wasm"
+  },
+  "keywords": [
+    "wasm",
+    "webassembly",
+    "cryptography",
+    "verification",
+    "attestation",
+    "ed25519",
+    "merkle",
+    "clawdstrike"
+  ],
+  "author": "Clawdstrike Contributors",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "homepage": "https://clawdstrike.dev"
+}

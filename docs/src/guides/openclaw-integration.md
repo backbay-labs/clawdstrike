@@ -1,6 +1,6 @@
 # OpenClaw Integration
 
-This repository contains an OpenClaw plugin under `packages/clawdstrike-openclaw`.
+This repository contains an OpenClaw plugin under `packages/adapters/clawdstrike-openclaw`.
 
 ## Enforcement boundaries (read this)
 
@@ -17,7 +17,7 @@ This is **not** an OS sandbox and does not intercept syscalls. If an agent/runti
 
 ```bash
 # Link the local package
-openclaw plugins install --link /path/to/clawdstrike/packages/clawdstrike-openclaw
+openclaw plugins install --link /path/to/clawdstrike/packages/adapters/clawdstrike-openclaw
 
 # Enable the plugin
 openclaw plugins enable clawdstrike-security
@@ -124,6 +124,6 @@ openclaw clawdstrike check <action> <resource>
 
 ## Where to look
 
-- OpenClaw plugin docs: `packages/clawdstrike-openclaw/docs/`
-- OpenClaw plugin code: `packages/clawdstrike-openclaw/src/`
-- Example (minimal wiring): `packages/clawdstrike-openclaw/examples/hello-secure-agent/`
+- OpenClaw plugin docs: `packages/adapters/clawdstrike-openclaw/docs/`
+- OpenClaw plugin code: `packages/adapters/clawdstrike-openclaw/src/`
+- Example (minimal wiring): `packages/adapters/clawdstrike-openclaw/examples/hello-secure-agent/`

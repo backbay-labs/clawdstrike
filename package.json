@@ -1,17 +1,17 @@
 {
   "private": true,
   "workspaces": [
-    "packages/clawdstrike-adapter-core",
-    "packages/hush-ts",
-    "packages/clawdstrike-policy",
-    "packages/clawdstrike-claude-code",
-    "packages/clawdstrike-codex",
-    "packages/clawdstrike-vercel-ai",
-    "packages/clawdstrike-langchain",
-    "packages/clawdstrike-openclaw",
-    "packages/clawdstrike-opencode",
-    "packages/clawdstrike-hush-cli-engine",
-    "packages/clawdstrike-hushd-engine",
+    "packages/adapters/clawdstrike-adapter-core",
+    "packages/sdk/hush-ts",
+    "packages/policy/clawdstrike-policy",
+    "packages/adapters/clawdstrike-claude-code",
+    "packages/adapters/clawdstrike-codex",
+    "packages/adapters/clawdstrike-vercel-ai",
+    "packages/adapters/clawdstrike-langchain",
+    "packages/adapters/clawdstrike-openclaw",
+    "packages/adapters/clawdstrike-opencode",
+    "packages/adapters/clawdstrike-hush-cli-engine",
+    "packages/adapters/clawdstrike-hushd-engine",
     "apps/cloud-dashboard"
   ]
 }

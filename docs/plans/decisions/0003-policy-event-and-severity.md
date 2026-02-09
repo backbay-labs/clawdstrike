@@ -48,7 +48,7 @@ Severity is distinct from the **decision/action** (`allow` / `warn` / `deny`).
 
 **Severity mapping**
 
-| Canonical | TS/OpenClaw (`@clawdstrike/openclaw`) | Rust (`crates/clawdstrike`) |
+| Canonical | TS/OpenClaw (`@clawdstrike/openclaw`) | Rust (`crates/libs/clawdstrike`) |
 |---|---|---|
 | low | low | info |
 | medium | medium | warning |

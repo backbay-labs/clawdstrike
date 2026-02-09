@@ -67,7 +67,7 @@ The intended integration is at the **tool boundary** (your agent runtime calls C
 
 | Package | Description |
 |---------|-------------|
-| `clawdstrike` | Pure Python SDK (repo: `packages/hush-py`) |
+| `clawdstrike` | Pure Python SDK (repo: `packages/sdk/hush-py`) |
 
 ## Data flow (typical integration)
 

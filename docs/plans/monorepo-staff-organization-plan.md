@@ -4,7 +4,7 @@ Status: Proposed
 Author: Codex (second-pass architecture audit)  
 Last updated: 2026-02-09
 
-Execution status: Phase 0 and Phase 1 are implemented in the working tree for review.
+Execution status: Phase 0 and Phase 1 are committed; Phase 2 is in progress in the working tree.
 
 ## Executive Summary
 
@@ -370,5 +370,5 @@ Exit criteria:
 
 ## Recommendation
 
-Start with **Phase 0 and Phase 1** only.  
-Do not begin Phase 2 (major workspace path moves) until one full release cycle is green and stable after Phase 1.
+Default recommendation: start with **Phase 0 and Phase 1** only.  
+Do not begin Phase 2 (major workspace path moves) until one full release cycle is green and stable after Phase 1, unless explicitly approved by maintainers.

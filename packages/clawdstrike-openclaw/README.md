@@ -1,7 +1,5 @@
-# @clawdstrike/clawdstrike-security
+# Moved
 
-Clawdstrike security plugin for OpenClaw.
+This package moved to packages/adapters/clawdstrike-openclaw.
 
-## Getting started
-
-See `packages/clawdstrike-openclaw/docs/getting-started.md`.
+Update scripts and docs to use the new path.

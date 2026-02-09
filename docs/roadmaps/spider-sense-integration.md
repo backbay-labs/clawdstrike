@@ -283,7 +283,7 @@ event_tx.send(DaemonEvent {
 Create `clawdstrike-spider-sense` as an async guard for HAS Level 2 deep analysis:
 
 ```rust
-// crates/clawdstrike-spider-sense/src/lib.rs
+// crates/libs/clawdstrike-spider-sense/src/lib.rs
 
 pub struct SpiderSenseDeepAnalysis {
     config: SpiderSenseConfig,
@@ -732,7 +732,7 @@ Four attack types get **entirely new coverage** that ClawdStrike currently lacks
 
 **Goal:** Ship Spider-Sense as custom guards with no schema changes.
 
-1. **Create `crates/clawdstrike-spider-sense/`** — new crate in workspace
+1. **Create `crates/libs/clawdstrike-spider-sense/`** — new crate in workspace
 2. **Implement vector DB abstraction** — trait for cosine similarity lookup, in-memory + file-backed implementations
 3. **Port S2Bench attack patterns** — convert Spider-Sense's `HAS_db/` vector databases to our format
 4. **Implement four stage guards** — `QuerySenseGuard`, `PlanSenseGuard`, `ActionSenseGuard`, `ObservationSenseGuard` as `CustomGuardFactory` implementations

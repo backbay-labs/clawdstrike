@@ -56,16 +56,16 @@ cargo fmt --all -- --check
 #### TypeScript (SDK + adapters)
 
 ```bash
-npm install --workspace=packages/hush-ts
-npm run build --workspace=packages/hush-ts
-npm test --workspace=packages/hush-ts
+npm install --workspace=packages/sdk/hush-ts
+npm run build --workspace=packages/sdk/hush-ts
+npm test --workspace=packages/sdk/hush-ts
 ```
 
 #### Python
 
 ```bash
-pip install -e packages/hush-py[dev]
-pytest packages/hush-py/tests
+pip install -e packages/sdk/hush-py[dev]
+pytest packages/sdk/hush-py/tests
 ```
 
 #### Desktop (Tauri)
@@ -158,7 +158,7 @@ Add integrations for new AI frameworks in `packages/`.
 
 ### Level 4: Compliance Templates
 
-Add industry-specific compliance templates in `crates/hush-certification/`.
+Add industry-specific compliance templates in `crates/libs/hush-certification/`.
 
 ### Level 5: Custom Guards (Rust)
 
@@ -205,10 +205,10 @@ test(core): add property tests for Merkle proofs
 
 Changes to the following areas require review from **two maintainers**:
 
-- `crates/hush-core/` -- cryptographic primitives
-- Guard implementations in `crates/clawdstrike/src/guards/`
-- Spine protocol in `crates/spine/`
-- Authentication and authorization logic in `crates/hushd/`
+- `crates/libs/hush-core/` -- cryptographic primitives
+- Guard implementations in `crates/libs/clawdstrike/src/guards/`
+- Spine protocol in `crates/libs/spine/`
+- Authentication and authorization logic in `crates/services/hushd/`
 - Signing and verification paths
 
 See [GOVERNANCE.md](GOVERNANCE.md) for the full decision process.

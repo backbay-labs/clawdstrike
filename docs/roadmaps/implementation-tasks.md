@@ -18,7 +18,7 @@ This document tracks **only genuinely new work** for v1.2.0. Existing infrastruc
 These systems are **production-grade and already exist on `main`**. Spider-Sense and Dynamic Policies extend them — they don't replace them.
 
 ### Guard Pipeline (fully operational)
-- **7 built-in sync guards** in `crates/clawdstrike/src/guards/`: `ForbiddenPathGuard`, `EgressAllowlistGuard`, `SecretLeakGuard`, `PatchIntegrityGuard`, `McpToolGuard`, `PromptInjectionGuard`, `JailbreakGuard`
+- **7 built-in sync guards** in `crates/libs/clawdstrike/src/guards/`: `ForbiddenPathGuard`, `EgressAllowlistGuard`, `SecretLeakGuard`, `PatchIntegrityGuard`, `McpToolGuard`, `PromptInjectionGuard`, `JailbreakGuard`
 - **`CustomGuardRegistry`** + **`CustomGuardFactory` trait** in `guards/custom.rs` — register new guards by ID, instantiate from policy YAML config. **This is the primary extension point for Spider-Sense stage guards.**
 - **`GuardAction::Custom(&str, &Value)`** in `guards/mod.rs` — extensible action type for arbitrary payloads. Already used by `PromptInjectionGuard` and `JailbreakGuard`. **This is the hook for `risk_signal.*` actions.**
 - **Engine pipeline** in `engine.rs`: BuiltIn → Custom (via registry) → Extra (runtime) → Async, with `fail_fast`, `#[must_use]` on `GuardResult`, fail-closed on config error
@@ -31,24 +31,24 @@ These systems are **production-grade and already exist on `main`**. Spider-Sense
 - **Registry** in `async_guards/registry.rs` — closed set of 3 packages via `match` on `spec.package`; adding a new one = one match arm + one `validate_custom_guards` entry
 
 ### Session Management (fully operational)
-- **`SessionManager`** in `crates/hushd/src/session/mod.rs` (725 lines) — `SessionStore` trait, `InMemorySessionStore`, `SqliteSessionStore`
+- **`SessionManager`** in `crates/services/hushd/src/session/mod.rs` (725 lines) — `SessionStore` trait, `InMemorySessionStore`, `SqliteSessionStore`
 - **`SessionUpdates.state: Option<HashMap<String, serde_json::Value>>`** — generic key/value state map. **Posture and Spider-Sense session state go here.**
 - REST API: `POST /session`, `GET /session/{id}`, `DELETE /session/{id}`, session binding, rotation, RBAC
 - SQLite persistence with atomic operations
 
 ### Receipts (fully operational)
-- **`Receipt`** in `crates/hush-core/src/receipt.rs` — `metadata: Option<JsonValue>` generic field. **Posture snapshots go under `metadata.clawdstrike.posture`.**
+- **`Receipt`** in `crates/libs/hush-core/src/receipt.rs` — `metadata: Option<JsonValue>` generic field. **Posture snapshots go under `metadata.clawdstrike.posture`.**
 - Signing (`SignedReceipt`), cosigning, verification, canonical JSON (JCS)
 - Receipt schema v1.0.0 with strict validation
 
 ### SSE Events (fully operational)
-- **`GET /api/v1/events`** in `crates/hushd/src/api/events.rs` — SSE endpoint with auth/RBAC gating
+- **`GET /api/v1/events`** in `crates/services/hushd/src/api/events.rs` — SSE endpoint with auth/RBAC gating
 - **`DaemonEvent { event_type: String, data: Value }`** broadcast via `tokio::sync::broadcast` (capacity 1024)
 - Already emits events from check, eval, webhooks, SAML, policy scoping
 - **Adding Spider-Sense events = calling `state.broadcast(DaemonEvent { event_type: "spider_sense.*", ... })`**
 
 ### SIEM Exporters (fully operational, comprehensive)
-- **24 files** in `crates/hushd/src/siem/` — `SecurityEvent` type, `Exporter` trait, `ExporterManager` with fanout
+- **24 files** in `crates/services/hushd/src/siem/` — `SecurityEvent` type, `Exporter` trait, `ExporterManager` with fanout
 - **6 exporters**: Splunk, Elastic, Datadog, Sumo Logic, Webhooks, Alerting
 - **3 schema transforms**: CEF, ECS, OCSF
 - **Threat intel**: STIX format, TAXII protocol, config, guard, service
@@ -56,18 +56,18 @@ These systems are **production-grade and already exist on `main`**. Spider-Sense
 - **Spider-Sense events flow through automatically once emitted as `SecurityEvent`**
 
 ### Multi-Agent (fully operational)
-- `crates/hush-multi-agent/src/` — `AgentIdentity`, `TrustLevel` (5 levels), `AgentRole` (7 variants), `AgentCapability` (9 variants incl. `Custom { name, params }`)
+- `crates/libs/hush-multi-agent/src/` — `AgentIdentity`, `TrustLevel` (5 levels), `AgentRole` (7 variants), `AgentCapability` (9 variants incl. `Custom { name, params }`)
 - **Delegation tokens** (`SignedDelegationToken`) — JWS-like claims with capability ceiling, attenuation-only, Ed25519 signing over JCS
 - **Signed messages** (`SignedMessage`) — integrity, replay protection via nonce, delegation chain verification
 - **`RevocationStore`** trait + `InMemoryRevocationStore`
 - **`DelegationClaims.ctx`** and **`MessageClaims.ctx`** — open `Value` fields for carrying Spider-Sense metadata
 
 ### TS SDK (partial — SIEM fully mirrors Rust)
-- `packages/clawdstrike-policy/src/policy/schema.ts` — `Policy`, `GuardConfigs`, `CustomGuardSpec`, `PolicySettings`
-- `packages/hush-ts/src/siem/` (10 files) — full Rust SIEM parity: types, event bus, manager, filter, exporters, transforms, threat intel
+- `packages/policy/clawdstrike-policy/src/policy/schema.ts` — `Policy`, `GuardConfigs`, `CustomGuardSpec`, `PolicySettings`
+- `packages/sdk/hush-ts/src/siem/` (10 files) — full Rust SIEM parity: types, event bus, manager, filter, exporters, transforms, threat intel
 
 ### CLI (simulate exists, observe/synth do not)
-- **`hush policy simulate`** in `crates/hush-cli/src/policy_pac.rs` — JSONL input, interactive mode, benchmarking. No posture awareness yet.
+- **`hush policy simulate`** in `crates/services/hush-cli/src/policy_pac.rs` — JSONL input, interactive mode, benchmarking. No posture awareness yet.
 
 ---
 
@@ -101,7 +101,7 @@ New crate with vector DB and four stage guards. Registers into the **existing `C
 
 | ID | Task | Status | Deps | Extends | Ref |
 |----|------|--------|------|---------|-----|
-| SS-1 | **Create `crates/clawdstrike-spider-sense/` crate** | `[ ]` | — | — | [SS §9 P1](./spider-sense-integration.md#phase-1-foundation-23-weeks) |
+| SS-1 | **Create `crates/libs/clawdstrike-spider-sense/` crate** | `[ ]` | — | — | [SS §9 P1](./spider-sense-integration.md#phase-1-foundation-23-weeks) |
 | | Scaffold workspace crate. Match existing lint config (`unwrap_used = "deny"`, `deny_unknown_fields`). | | | | |
 | SS-2 | **`VectorStore` trait + implementations** | `[ ]` | D-2, SS-1 | — | [SS App C.2](./spider-sense-integration.md#c2-has-vectorfeedbacksandbox-implementation) |
 | | `fn query(&self, embedding: &[f32], top_k: usize) -> Result<Vec<Match>>`. In-memory (tests) + file-backed (prod). Cosine similarity. | | | | |

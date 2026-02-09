@@ -20,9 +20,9 @@ WORKDIR /build
 COPY docker/workspace-hubble.toml Cargo.toml
 COPY Cargo.lock ./
 
-COPY crates/hush-core crates/hush-core
-COPY crates/spine crates/spine
-COPY crates/hubble-bridge crates/hubble-bridge
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/spine crates/libs/spine
+COPY crates/bridges/hubble-bridge crates/bridges/hubble-bridge
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \

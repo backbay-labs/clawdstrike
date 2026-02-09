@@ -9,19 +9,19 @@ a Maintainer Council for the initial phase of the project.
 
 The BDFL has final authority on all project decisions.
 
-- **Current BDFL:** Connor (GitHub: @connor)
+- **Current BDFL:** Connor (GitHub: @bb-connor)
 
 ### Maintainer Council
 
 Maintainers have commit access and review authority within their component areas.
 
-| Maintainer | Component Area | GitHub |
-|------------|---------------|--------|
-| (TBD)      | Guards / Policy Engine | |
-| (TBD)      | Spine Protocol | |
-| (TBD)      | Desktop / SDK | |
-| (TBD)      | Bridges / Infrastructure | |
-| (TBD)      | Documentation / Community | |
+| Maintainer | Component Area            | GitHub |
+| ---------- | ------------------------- | ------ |
+| (TBD)      | Guards / Policy Engine    |        |
+| (TBD)      | Spine Protocol            |        |
+| (TBD)      | Desktop / SDK             |        |
+| (TBD)      | Bridges / Infrastructure  |        |
+| (TBD)      | Documentation / Community |        |
 
 ### Decision Process
 
@@ -43,25 +43,26 @@ Significant design decisions are documented as RFCs in `docs/rfcs/`:
 
 ### Component Ownership
 
-| Component | Directory | Owner(s) |
-|-----------|-----------|----------|
-| Crypto primitives | `crates/hush-core/` | Guards maintainer |
-| Guard engine | `crates/clawdstrike/` | Guards maintainer |
-| Spine protocol | `crates/spine/` | Spine maintainer |
-| Tetragon bridge | `crates/tetragon-bridge/` | Bridges maintainer |
-| Hubble bridge | `crates/hubble-bridge/` | Bridges maintainer |
-| hushd daemon | `crates/hushd/` | Guards maintainer |
-| CLI | `crates/hush-cli/` | Guards maintainer |
-| Desktop app | `apps/desktop/` | Desktop maintainer |
-| TypeScript SDK | `packages/hush-ts/` | Desktop maintainer |
-| Python SDK | `packages/hush-py/` | Community maintainer |
-| Rulesets | `rulesets/` | Any maintainer |
-| Documentation | `docs/` | Any maintainer |
-| Helm chart | `deploy/helm/` | Bridges maintainer |
+| Component         | Directory                 | Owner(s)             |
+| ----------------- | ------------------------- | -------------------- |
+| Crypto primitives | `crates/libs/hush-core/`       | Guards maintainer    |
+| Guard engine      | `crates/libs/clawdstrike/`     | Guards maintainer    |
+| Spine protocol    | `crates/libs/spine/`           | Spine maintainer     |
+| Tetragon bridge   | `crates/bridges/tetragon-bridge/` | Bridges maintainer   |
+| Hubble bridge     | `crates/bridges/hubble-bridge/`   | Bridges maintainer   |
+| hushd daemon      | `crates/services/hushd/`           | Guards maintainer    |
+| CLI               | `crates/services/hush-cli/`        | Guards maintainer    |
+| Desktop app       | `apps/desktop/`           | Desktop maintainer   |
+| TypeScript SDK    | `packages/sdk/hush-ts/`       | Desktop maintainer   |
+| Python SDK        | `packages/sdk/hush-py/`       | Community maintainer |
+| Rulesets          | `rulesets/`               | Any maintainer       |
+| Documentation     | `docs/`                   | Any maintainer       |
+| Helm chart        | `deploy/helm/`            | Bridges maintainer   |
 
 ### Becoming a Maintainer
 
 Maintainer candidates are nominated by existing maintainers based on:
+
 - Sustained, high-quality contributions (6+ merged PRs)
 - Demonstrated understanding of the codebase and design philosophy
 - Constructive participation in reviews and discussions
@@ -74,6 +75,7 @@ The BDFL approves all maintainer additions.
 ### Phase 2: Steering Committee (12-24 months)
 
 When the contributor base grows beyond the founding team:
+
 - Transition to a 5-member elected Steering Committee
 - BDFL retains veto on security-critical decisions only
 - Sub-teams form around components with designated leads
@@ -82,6 +84,7 @@ When the contributor base grows beyond the founding team:
 ### Phase 3: CNCF Sandbox (24+ months)
 
 Requirements for CNCF Sandbox application:
+
 - 2+ maintainers from different organizations
 - Apache 2.0 license (completed)
 - Adopt CNCF governance template
@@ -90,9 +93,9 @@ Requirements for CNCF Sandbox application:
 
 ## Community Channels
 
-| Channel | Purpose |
-|---------|---------|
-| [GitHub Discussions](https://github.com/backbay-labs/clawdstrike/discussions) | Q&A, feature ideas, architecture |
-| [Discord](https://discord.gg/clawdstrike) | Real-time chat, contributor coordination |
-| Weekly community call | Demos, roadmap, contributor spotlights |
-| Monthly security office hours | Guard design, threat modeling |
+| Channel                                                                       | Purpose                                  |
+| ----------------------------------------------------------------------------- | ---------------------------------------- |
+| [GitHub Discussions](https://github.com/backbay-labs/clawdstrike/discussions) | Q&A, feature ideas, architecture         |
+| [Discord](https://discord.gg/clawdstrike)                                     | Real-time chat, contributor coordination |
+| Weekly community call                                                         | Demos, roadmap, contributor spotlights   |
+| Monthly security office hours                                                 | Guard design, threat modeling            |

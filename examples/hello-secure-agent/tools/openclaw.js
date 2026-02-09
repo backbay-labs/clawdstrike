@@ -4,7 +4,7 @@ const { execSync, spawnSync } = require('child_process');
 const { pathToFileURL } = require('url');
 
 function packageDir() {
-  return path.resolve(__dirname, '../../../packages/clawdstrike-openclaw');
+  return path.resolve(__dirname, '../../../packages/adapters/clawdstrike-openclaw');
 }
 
 function distPath(rel) {

@@ -195,28 +195,28 @@ This roadmap describes how to evolve Clawdstrike's policy system from **static Y
 
 | Component | File | Key Symbols | Lines (approx) |
 |-----------|------|-------------|----------------|
-| **Policy Schema** | `crates/clawdstrike/src/policy.rs` | `Policy`, `GuardConfigs`, `PolicySettings`, `MergeStrategy`, `POLICY_SCHEMA_VERSION` | 21, 136-174, 383-393 |
-| **Policy Validation** | `crates/clawdstrike/src/policy.rs` | `Policy::validate()`, `validate_policy_version()` | 444-663, 913-925 |
-| **Policy Merge** | `crates/clawdstrike/src/policy.rs` | `Policy::merge()`, `GuardConfigs::merge_with()` | 690-760, 228-272 |
-| **Policy Resolver** | `crates/clawdstrike/src/policy.rs` | `PolicyResolver` trait, `LocalPolicyResolver`, `from_yaml_with_extends_resolver()` | 78-131, 775-826 |
-| **Engine** | `crates/clawdstrike/src/engine.rs` | `HushEngine`, `check_action_report()`, `aggregate_overall()` | 25-57, 274-393, 552-574 |
-| **Guard Trait** | `crates/clawdstrike/src/guards/mod.rs` | `Guard` trait, `GuardResult`, `GuardAction` (line 210), `GuardContext` | 228-238, 64-120, 210-225, 123-145 |
-| **Async Guards** | `crates/clawdstrike/src/async_guards/` | `AsyncGuard` trait, `AsyncGuardRuntime`, `AsyncGuardConfig` | types.rs:86-106, runtime.rs |
-| **Identity & Session** | `crates/clawdstrike/src/identity.rs` | `SessionContext` (line 156), `IdentityPrincipal`, `RequestContext` | 156-174, 28-80, 116-138 |
-| **hushd Check API** | `crates/hushd/src/api/check.rs` | `CheckRequest` (line 65), `CheckResponse` (line 85) | 64-92 |
-| **hushd Session** | `crates/hushd/src/session/mod.rs` | `SessionManager` (line 272), `SessionStore` trait, `StoredSession` | 272-320, 45-50, 31-34 |
-| **Policy Scoping** | `crates/hushd/src/policy_scoping/mod.rs` | `PolicyResolver::resolve_policy()`, `ResolvedPolicy` | 596-676, 177 |
-| **Engine Cache** | `crates/hushd/src/policy_engine_cache.rs` | `PolicyEngineCache`, `CachedEngine` | 1-78 |
-| **Receipt** | `crates/hush-core/src/receipt.rs` | `Receipt`, `SignedReceipt`, `Verdict`, `ViolationRef` | 154-175, 245-253, 59-74, 118-131 |
-| **CLI Policy Cmds** | `crates/hush-cli/src/*.rs` | `cmd_policy_migrate()`, `cmd_policy_eval()`, `cmd_policy_simulate()`, `cmd_policy_impact()` + helpers in `policy_diff.rs` | Various |
-| **TS Policy Schema** | `packages/clawdstrike-policy/src/policy/schema.ts` | `Policy`, `GuardConfigs`, `PolicySettings` | 70-79, 52-62 |
-| **TS Engine** | `packages/clawdstrike-policy/src/engine.ts` | `createPolicyEngineFromPolicy()`, `aggregateOverall()` | 27-68, 177-200 |
+| **Policy Schema** | `crates/libs/clawdstrike/src/policy.rs` | `Policy`, `GuardConfigs`, `PolicySettings`, `MergeStrategy`, `POLICY_SCHEMA_VERSION` | 21, 136-174, 383-393 |
+| **Policy Validation** | `crates/libs/clawdstrike/src/policy.rs` | `Policy::validate()`, `validate_policy_version()` | 444-663, 913-925 |
+| **Policy Merge** | `crates/libs/clawdstrike/src/policy.rs` | `Policy::merge()`, `GuardConfigs::merge_with()` | 690-760, 228-272 |
+| **Policy Resolver** | `crates/libs/clawdstrike/src/policy.rs` | `PolicyResolver` trait, `LocalPolicyResolver`, `from_yaml_with_extends_resolver()` | 78-131, 775-826 |
+| **Engine** | `crates/libs/clawdstrike/src/engine.rs` | `HushEngine`, `check_action_report()`, `aggregate_overall()` | 25-57, 274-393, 552-574 |
+| **Guard Trait** | `crates/libs/clawdstrike/src/guards/mod.rs` | `Guard` trait, `GuardResult`, `GuardAction` (line 210), `GuardContext` | 228-238, 64-120, 210-225, 123-145 |
+| **Async Guards** | `crates/libs/clawdstrike/src/async_guards/` | `AsyncGuard` trait, `AsyncGuardRuntime`, `AsyncGuardConfig` | types.rs:86-106, runtime.rs |
+| **Identity & Session** | `crates/libs/clawdstrike/src/identity.rs` | `SessionContext` (line 156), `IdentityPrincipal`, `RequestContext` | 156-174, 28-80, 116-138 |
+| **hushd Check API** | `crates/services/hushd/src/api/check.rs` | `CheckRequest` (line 65), `CheckResponse` (line 85) | 64-92 |
+| **hushd Session** | `crates/services/hushd/src/session/mod.rs` | `SessionManager` (line 272), `SessionStore` trait, `StoredSession` | 272-320, 45-50, 31-34 |
+| **Policy Scoping** | `crates/services/hushd/src/policy_scoping/mod.rs` | `PolicyResolver::resolve_policy()`, `ResolvedPolicy` | 596-676, 177 |
+| **Engine Cache** | `crates/services/hushd/src/policy_engine_cache.rs` | `PolicyEngineCache`, `CachedEngine` | 1-78 |
+| **Receipt** | `crates/libs/hush-core/src/receipt.rs` | `Receipt`, `SignedReceipt`, `Verdict`, `ViolationRef` | 154-175, 245-253, 59-74, 118-131 |
+| **CLI Policy Cmds** | `crates/services/hush-cli/src/*.rs` | `cmd_policy_migrate()`, `cmd_policy_eval()`, `cmd_policy_simulate()`, `cmd_policy_impact()` + helpers in `policy_diff.rs` | Various |
+| **TS Policy Schema** | `packages/policy/clawdstrike-policy/src/policy/schema.ts` | `Policy`, `GuardConfigs`, `PolicySettings` | 70-79, 52-62 |
+| **TS Engine** | `packages/policy/clawdstrike-policy/src/engine.ts` | `createPolicyEngineFromPolicy()`, `aggregateOverall()` | 27-68, 177-200 |
 
 > **MergeStrategy detail:** In the current Rust implementation, `merge_strategy: merge` is *not* a per-guard/per-field merge. It replaces entire top-level blocks (`guards`, `settings`, `custom_guards`) when the child provides any non-default values. Use `deep_merge` for compositional policy authoring.
 
 ### 2.3 Existing Session State Field
 
-**Key discovery:** `SessionContext` (in `crates/clawdstrike/src/identity.rs:156`) already has a flexible state field:
+**Key discovery:** `SessionContext` (in `crates/libs/clawdstrike/src/identity.rs:156`) already has a flexible state field:
 
 ```rust
 pub struct SessionContext {
@@ -511,7 +511,7 @@ posture:
 
 ### 4.3 Capability Types
 
-Based on `GuardAction` enum in `crates/clawdstrike/src/guards/mod.rs:210`:
+Based on `GuardAction` enum in `crates/libs/clawdstrike/src/guards/mod.rs:210`:
 
 | Capability | Maps to GuardAction | Budget Key | Notes |
 |------------|---------------------|------------|-------|
@@ -794,7 +794,7 @@ settings:
 
 ### 5.1 New Data Structures
 
-#### Rust: `crates/clawdstrike/src/posture.rs` (new file)
+#### Rust: `crates/libs/clawdstrike/src/posture.rs` (new file)
 
 ```rust
 /// Compiled posture configuration (derived from YAML)
@@ -851,7 +851,7 @@ pub enum TransitionRequirement {
 }
 ```
 
-#### Rust: `crates/clawdstrike/src/posture/runtime.rs` (new file)
+#### Rust: `crates/libs/clawdstrike/src/posture/runtime.rs` (new file)
 
 These types are serialized to/from `SessionContext.state["posture"]`:
 
@@ -950,7 +950,7 @@ pub struct RecentEvent {
 
 ### 5.2 Engine Modifications
 
-#### File: `crates/clawdstrike/src/engine.rs`
+#### File: `crates/libs/clawdstrike/src/engine.rs`
 
 The engine gains a new `posture_program: Option<PostureProgram>` field compiled from policy, and new methods for posture-aware evaluation.
 
@@ -1143,7 +1143,7 @@ impl HushEngine {
 }
 ```
 
-#### New Types: `crates/clawdstrike/src/posture/report.rs`
+#### New Types: `crates/libs/clawdstrike/src/posture/report.rs`
 
 ```rust
 #[derive(Clone, Debug, Serialize)]
@@ -1264,7 +1264,7 @@ Result: `observe` inherited, `work` overridden, `elevated` added.
 
 The existing session system already supports arbitrary state storage:
 
-**`crates/clawdstrike/src/identity.rs:156`** - `SessionContext.state`:
+**`crates/libs/clawdstrike/src/identity.rs:156`** - `SessionContext.state`:
 ```rust
 pub struct SessionContext {
     pub session_id: String,
@@ -1276,7 +1276,7 @@ pub struct SessionContext {
 }
 ```
 
-**`crates/hushd/src/session/mod.rs:31`** - `StoredSession`:
+**`crates/services/hushd/src/session/mod.rs:31`** - `StoredSession`:
 ```rust
 pub struct StoredSession {
     pub session: SessionContext,  // Contains the state field
@@ -1284,7 +1284,7 @@ pub struct StoredSession {
 }
 ```
 
-**`crates/hushd/src/session/mod.rs:37`** - `SessionUpdates`:
+**`crates/services/hushd/src/session/mod.rs:37`** - `SessionUpdates`:
 ```rust
 pub struct SessionUpdates {
     // ... other fields ...
@@ -1321,7 +1321,7 @@ pub struct TransitionRecord {
 
 #### Existing Storage Backends (no changes needed)
 
-**`crates/hushd/src/session/mod.rs`**:
+**`crates/services/hushd/src/session/mod.rs`**:
 - `InMemorySessionStore` (line 55) - `Arc<tokio::sync::RwLock<HashMap<String, StoredSession>>>` (primarily used in unit tests)
 - `SqliteSessionStore` (line 145) - Persists to the control-plane SQLite DB (`config.control_db`, or `audit_db` by default)
 
@@ -1543,7 +1543,7 @@ hush policy observe --hushd-url http://localhost:8080 --session my-session --out
 **Implementation:**
 
 ```rust
-// File: crates/hush-cli/src/policy_observe.rs
+// File: crates/services/hush-cli/src/policy_observe.rs
 
 use crate::hush_run;  // Reuse existing run infrastructure
 
@@ -1633,7 +1633,7 @@ hush policy synth events.jsonl --with-posture --out candidate.yaml
 **Implementation:**
 
 ```rust
-// File: crates/hush-cli/src/policy_synth.rs
+// File: crates/services/hush-cli/src/policy_synth.rs
 
 pub struct PolicySynthCommand {
     events: PathBuf,
@@ -1833,8 +1833,8 @@ suites:
 
 | Test File | Tests |
 |-----------|-------|
-| `crates/clawdstrike/src/posture.rs` | `test_posture_parsing`, `test_posture_validation`, `test_invalid_state_names`, `test_missing_initial`, `test_unreachable_states` |
-| `crates/clawdstrike/src/policy.rs` | `test_1_2_0_with_posture`, `test_1_2_0_without_posture`, `test_1_1_0_still_works` |
+| `crates/libs/clawdstrike/src/posture.rs` | `test_posture_parsing`, `test_posture_validation`, `test_invalid_state_names`, `test_missing_initial`, `test_unreachable_states` |
+| `crates/libs/clawdstrike/src/policy.rs` | `test_1_2_0_with_posture`, `test_1_2_0_without_posture`, `test_1_1_0_still_works` |
 
 ```rust
 #[test]
@@ -1872,7 +1872,7 @@ fn test_unknown_capability_rejected() {
 
 | Test File | Tests |
 |-----------|-------|
-| `crates/hush-cli/src/policy_migrate.rs` | `test_1_1_to_1_2_no_posture`, `test_1_1_to_1_2_preserves_guards` |
+| `crates/services/hush-cli/src/policy_migrate.rs` | `test_1_1_to_1_2_no_posture`, `test_1_1_to_1_2_preserves_guards` |
 
 ### 8.2 Engine Tests
 
@@ -2057,9 +2057,9 @@ fn prop_budget_non_negative() {
 - Serde parsing with `deny_unknown_fields`
 
 **Files:**
-- `crates/clawdstrike/src/policy.rs` (modify)
-- `crates/clawdstrike/src/posture.rs` (new)
-- `packages/clawdstrike-policy/src/policy/schema.ts` (modify)
+- `crates/libs/clawdstrike/src/policy.rs` (modify)
+- `crates/libs/clawdstrike/src/posture.rs` (new)
+- `packages/policy/clawdstrike-policy/src/policy/schema.ts` (modify)
 
 **Tests:**
 - `test_1_2_0_parsing`
@@ -2086,9 +2086,9 @@ fn prop_budget_non_negative() {
 - Warn on unreachable states
 
 **Files:**
-- `crates/clawdstrike/src/policy.rs` (extend `validate()`)
-- `crates/clawdstrike/src/posture.rs` (add validation)
-- `crates/hush-cli/src/policy_lint.rs` (extend)
+- `crates/libs/clawdstrike/src/policy.rs` (extend `validate()`)
+- `crates/libs/clawdstrike/src/posture.rs` (add validation)
+- `crates/services/hush-cli/src/policy_lint.rs` (extend)
 
 **Tests:**
 - `test_validation_*` (10+ test cases)
@@ -2110,11 +2110,11 @@ fn prop_budget_non_negative() {
 - Extend policy validation to validate allowlist glob patterns
 
 **Files:**
-- `crates/clawdstrike/src/guards/path_allowlist.rs` (new)
-- `crates/clawdstrike/src/guards/mod.rs` (export)
-- `crates/clawdstrike/src/guards/forbidden_path.rs` (use shared normalization helper)
-- `crates/clawdstrike/src/policy.rs` (add config field + instantiate guard + stable order)
-- `packages/clawdstrike-policy/src/policy/schema.ts` (add schema field)
+- `crates/libs/clawdstrike/src/guards/path_allowlist.rs` (new)
+- `crates/libs/clawdstrike/src/guards/mod.rs` (export)
+- `crates/libs/clawdstrike/src/guards/forbidden_path.rs` (use shared normalization helper)
+- `crates/libs/clawdstrike/src/policy.rs` (add config field + instantiate guard + stable order)
+- `packages/policy/clawdstrike-policy/src/policy/schema.ts` (add schema field)
 
 **Tests:**
 - `test_path_allowlist_allows_in_scope`
@@ -2139,8 +2139,8 @@ fn prop_budget_non_negative() {
 - No budget handling yet (next PR)
 
 **Files:**
-- `crates/clawdstrike/src/engine.rs` (modify)
-- `crates/clawdstrike/src/posture.rs` (add `PostureProgram`)
+- `crates/libs/clawdstrike/src/engine.rs` (modify)
+- `crates/libs/clawdstrike/src/posture.rs` (add `PostureProgram`)
 
 **Tests:**
 - `test_precheck_allows_capability`
@@ -2165,8 +2165,8 @@ fn prop_budget_non_negative() {
 - Reset budgets on state transition
 
 **Files:**
-- `crates/clawdstrike/src/posture/runtime.rs` (new)
-- `crates/clawdstrike/src/engine.rs` (modify)
+- `crates/libs/clawdstrike/src/posture/runtime.rs` (new)
+- `crates/libs/clawdstrike/src/engine.rs` (modify)
 
 **Tests:**
 - `test_budget_consumes`
@@ -2192,8 +2192,8 @@ fn prop_budget_non_negative() {
 - Transition history tracking
 
 **Files:**
-- `crates/clawdstrike/src/engine.rs` (modify)
-- `crates/clawdstrike/src/posture.rs` (add transition logic)
+- `crates/libs/clawdstrike/src/engine.rs` (modify)
+- `crates/libs/clawdstrike/src/posture.rs` (add transition logic)
 
 **Tests:**
 - `test_critical_violation_transition`
@@ -2220,9 +2220,9 @@ fn prop_budget_non_negative() {
 - Make SQLite session updates atomic (single conn lock + transaction) when posture is enabled
 
 **Files:**
-- `crates/hushd/src/session/mod.rs` (modify)
-- `crates/hushd/src/api/check.rs` (modify)
-- `crates/hushd/src/api/session.rs` (modify)
+- `crates/services/hushd/src/session/mod.rs` (modify)
+- `crates/services/hushd/src/api/check.rs` (modify)
+- `crates/services/hushd/src/api/session.rs` (modify)
 
 **Tests:**
 - Integration tests for session posture lifecycle
@@ -2246,8 +2246,8 @@ fn prop_budget_non_negative() {
 - Golden snapshot updates (metadata-only)
 
 **Files:**
-- `crates/hush-core/src/receipt.rs` (modify; merge helper)
-- `crates/hush-cli/src/hush_run.rs` (modify; merge instead of replace metadata)
+- `crates/libs/hush-core/src/receipt.rs` (modify; merge helper)
+- `crates/services/hush-cli/src/hush_run.rs` (modify; merge instead of replace metadata)
 - `tests/golden/receipts/` (add new snapshots)
 
 **Tests:**
@@ -2271,8 +2271,8 @@ fn prop_budget_non_negative() {
 - Works with local engine or hushd
 
 **Files:**
-- `crates/hush-cli/src/policy_observe.rs` (new)
-- `crates/hush-cli/src/main.rs` (add subcommand)
+- `crates/services/hush-cli/src/policy_observe.rs` (new)
+- `crates/services/hush-cli/src/main.rs` (add subcommand)
 
 **Tests:**
 - `test_observe_produces_jsonl`
@@ -2298,8 +2298,8 @@ fn prop_budget_non_negative() {
 - Generate `path_allowlist` patterns from observed file access/write events
 
 **Files:**
-- `crates/hush-cli/src/policy_synth.rs` (new)
-- `crates/hush-cli/src/main.rs` (add subcommand)
+- `crates/services/hush-cli/src/policy_synth.rs` (new)
+- `crates/services/hush-cli/src/main.rs` (add subcommand)
 
 **Tests:**
 - `test_synth_produces_valid_policy`
@@ -2326,9 +2326,9 @@ fn prop_budget_non_negative() {
 - Update `hush policy migrate` for 1.1.0 → 1.2.0
 
 **Files:**
-- `crates/hush-cli/src/policy_pac.rs` (modify)
-- `crates/hush-cli/src/policy_test.rs` (modify)
-- `crates/hush-cli/src/policy_migrate.rs` (modify)
+- `crates/services/hush-cli/src/policy_pac.rs` (modify)
+- `crates/services/hush-cli/src/policy_test.rs` (modify)
+- `crates/services/hush-cli/src/policy_migrate.rs` (modify)
 
 **Tests:**
 - `test_simulate_posture_tracking`
@@ -2378,8 +2378,8 @@ fn prop_budget_non_negative() {
 - No user-facing schema changes
 
 **Files:**
-- `crates/clawdstrike/src/pipeline.rs` (new)
-- `crates/clawdstrike/src/engine.rs` (modify)
+- `crates/libs/clawdstrike/src/pipeline.rs` (new)
+- `crates/libs/clawdstrike/src/engine.rs` (modify)
 
 **Tests:**
 - `test_fast_path_taken`
@@ -2435,8 +2435,8 @@ fn prop_budget_non_negative() {
 ```typescript
 // Canonical input for observe/synth should be the existing PolicyEvent JSONL format
 // emitted/consumed by `hush policy eval|simulate`:
-// - `crates/hush-cli/src/policy_event.rs`
-// - `crates/hushd/src/policy_event.rs`
+// - `crates/services/hush-cli/src/policy_event.rs`
+// - `crates/services/hushd/src/policy_event.rs`
 //
 // Decision results (allow/deny/warn, guard, severity, message) are typically carried in
 // `metadata.decision` when events are produced by an instrumented runtime.

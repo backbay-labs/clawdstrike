@@ -64,27 +64,27 @@ cargo = read_toml("Cargo.toml")
 workspace_version = cargo.get("workspace", {}).get("package", {}).get("version")
 errors.append(check("Cargo.toml [workspace.package].version", workspace_version))
 
-pyproject = read_toml("packages/hush-py/pyproject.toml")
+pyproject = read_toml("packages/sdk/hush-py/pyproject.toml")
 py_version = pyproject.get("project", {}).get("version")
-errors.append(check("packages/hush-py/pyproject.toml [project].version", py_version))
+errors.append(check("packages/sdk/hush-py/pyproject.toml [project].version", py_version))
 
 py_init_rel = None
-for rel in ("packages/hush-py/src/clawdstrike/__init__.py", "packages/hush-py/src/hush/__init__.py"):
+for rel in ("packages/sdk/hush-py/src/clawdstrike/__init__.py", "packages/sdk/hush-py/src/hush/__init__.py"):
     if (repo_root / rel).exists():
         py_init_rel = rel
         break
 
 if py_init_rel is None:
-    errors.append("packages/hush-py __version__: missing __init__.py")
+    errors.append("packages/sdk/hush-py __version__: missing __init__.py")
 else:
     py_init = (repo_root / py_init_rel).read_text(encoding="utf-8")
     match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', py_init, flags=re.M)
     errors.append(check(f"{py_init_rel} __version__", match.group(1) if match else None))
 
 for pkg in [
-    "packages/hush-ts/package.json",
-    "packages/clawdstrike-openclaw/package.json",
-    "crates/hush-wasm/package.json",
+    "packages/sdk/hush-ts/package.json",
+    "packages/adapters/clawdstrike-openclaw/package.json",
+    "crates/libs/hush-wasm/package.json",
 ]:
     errors.append(check(pkg, read_json(pkg).get("version")))
 

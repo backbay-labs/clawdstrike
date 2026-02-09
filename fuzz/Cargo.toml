@@ -10,9 +10,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-hush-core = { path = "../crates/hush-core" }
-hush-proxy = { path = "../crates/hush-proxy" }
-clawdstrike = { path = "../crates/clawdstrike" }
+hush-core = { path = "../crates/libs/hush-core" }
+hush-proxy = { path = "../crates/libs/hush-proxy" }
+clawdstrike = { path = "../crates/libs/clawdstrike" }
 arbitrary = { version = "1.3", features = ["derive"] }
 
 [[bin]]

@@ -27,6 +27,9 @@ run_pkg() {
   (cd "$pkg" && npm run build)
 }
 
+bold "Path lint"
+bash scripts/path-lint.sh
+
 bold "Rust workspace"
 cargo test --workspace
 
@@ -38,26 +41,26 @@ bold "Build hush CLI (for TS e2e)"
 cargo build -p hush-cli --bin hush
 
 bold "TypeScript packages"
-run_pkg packages/clawdstrike-adapter-core
-run_pkg packages/clawdstrike-policy
-run_pkg packages/hush-ts
-run_pkg packages/clawdstrike-hushd-engine
-run_pkg packages/clawdstrike-langchain
+run_pkg packages/adapters/clawdstrike-adapter-core
+run_pkg packages/policy/clawdstrike-policy
+run_pkg packages/sdk/hush-ts
+run_pkg packages/adapters/clawdstrike-hushd-engine
+run_pkg packages/adapters/clawdstrike-langchain
 
-ensure_node_modules packages/clawdstrike-hush-cli-engine
+ensure_node_modules packages/adapters/clawdstrike-hush-cli-engine
 bold "TS e2e: hush-cli-engine (real hush binary)"
-HUSH_E2E=1 HUSH_PATH="$REPO_ROOT/target/debug/hush" npm --prefix packages/clawdstrike-hush-cli-engine test
-(cd packages/clawdstrike-hush-cli-engine && npm run typecheck)
-(cd packages/clawdstrike-hush-cli-engine && npm run build)
+HUSH_E2E=1 HUSH_PATH="$REPO_ROOT/target/debug/hush" npm --prefix packages/adapters/clawdstrike-hush-cli-engine test
+(cd packages/adapters/clawdstrike-hush-cli-engine && npm run typecheck)
+(cd packages/adapters/clawdstrike-hush-cli-engine && npm run build)
 
-run_pkg packages/clawdstrike-codex
-run_pkg packages/clawdstrike-opencode
-run_pkg packages/clawdstrike-claude-code
-run_pkg packages/clawdstrike-vercel-ai
-run_pkg packages/clawdstrike-openclaw
+run_pkg packages/adapters/clawdstrike-codex
+run_pkg packages/adapters/clawdstrike-opencode
+run_pkg packages/adapters/clawdstrike-claude-code
+run_pkg packages/adapters/clawdstrike-vercel-ai
+run_pkg packages/adapters/clawdstrike-openclaw
 
 bold "TS e2e: openclaw plugin (in-process)"
-npm --prefix packages/clawdstrike-openclaw run e2e
+npm --prefix packages/adapters/clawdstrike-openclaw run e2e
 
 bold "Cloud dashboard app"
 ensure_node_modules apps/cloud-dashboard
@@ -70,8 +73,8 @@ if [[ ! -d "$VENV_DIR" ]]; then
   python3 -m venv "$VENV_DIR"
   "$VENV_DIR/bin/python" -m pip install -U pip
 fi
-"$VENV_DIR/bin/python" -m pip install -e "packages/hush-py[dev]"
-"$VENV_DIR/bin/python" -m pytest -q packages/hush-py
+"$VENV_DIR/bin/python" -m pip install -e "packages/sdk/hush-py[dev]"
+"$VENV_DIR/bin/python" -m pytest -q packages/sdk/hush-py
 
 bold "Docs (mdbook)"
 mdbook build docs
