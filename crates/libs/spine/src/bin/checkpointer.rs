@@ -1028,8 +1028,7 @@ mod tests {
     fn normalized_policy_index_entry_normalizes_hash_and_key() {
         let Some((key, hash)) = normalized_policy_index_entry(
             "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00",
-        )
-        else {
+        ) else {
             panic!("expected valid policy hash to normalize");
         };
         assert_eq!(
