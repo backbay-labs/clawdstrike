@@ -1,26 +1,32 @@
-# `@backbay/opencode`
+# @clawdstrike/opencode
 
-In-process tool-boundary hooks for OpenCode-style coding assistants.
+Tool-boundary wrapper utilities for OpenCode-style tool dispatchers.
 
 ## Install
 
 ```bash
-npm install @backbay/opencode @backbay/adapter-core @backbay/hush-cli-engine
+npm install @clawdstrike/opencode @clawdstrike/engine-local
 ```
 
-## Usage
+## Quick start
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { OpenCodeToolBoundary, wrapOpenCodeToolDispatcher } from '@backbay/opencode';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { OpenCodeToolBoundary, wrapOpenCodeToolDispatcher } from '@clawdstrike/opencode';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const boundary = new OpenCodeToolBoundary({ engine });
 
 const dispatchTool = wrapOpenCodeToolDispatcher(boundary, async (toolName, input, runId) => {
-  // ...execute the tool...
   return { toolName, input, runId };
 });
 
 await dispatchTool('write_file', { path: './out.txt', content: 'hi' }, 'run-1');
 ```
+
+## Exports
+
+- `OpenCodeToolBoundary`
+- `wrapOpenCodeToolDispatcher`
+- `OpenCodeAdapter`
+- `ClawdstrikeBlockedError`

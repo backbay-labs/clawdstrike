@@ -1,21 +1,30 @@
-# @backbay/hushd-engine
+# @clawdstrike/engine-remote
 
-Policy engine adapter that calls a running `hushd` daemon for evaluation.
+Remote policy-engine adapter that evaluates policy via the Clawdstrike daemon HTTP API.
 
-This is useful when you want TypeScript tool-boundary enforcement but prefer the Rust policy engine
-for ruleset parsing and evaluation, without spawning the `hush` CLI per request.
+## Install
 
-## Usage
+```bash
+npm install @clawdstrike/engine-remote @clawdstrike/adapter-core
+```
+
+## Quick start
 
 ```ts
-import { createHushdEngine } from "@backbay/hushd-engine";
+import { createHushdEngine } from '@clawdstrike/engine-remote';
 
 const engine = createHushdEngine({
-  baseUrl: "http://127.0.0.1:9876",
-  // token: process.env.HUSHD_CHECK_KEY,
+  baseUrl: 'http://127.0.0.1:9876',
+  // token: process.env.CLAWDSTRIKE_CHECK_KEY,
   timeoutMs: 10_000,
 });
 
 const decision = await engine.evaluate(event);
-if (decision.status === "deny") throw new Error(decision.message ?? "Blocked by policy");
+if (decision.status === 'deny') throw new Error(decision.message ?? 'blocked');
 ```
+
+## Behavior
+
+- POSTs evaluation events to `/api/v1/eval`
+- Optional bearer token auth
+- Fail-closed on timeout, network, and parse errors

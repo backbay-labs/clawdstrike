@@ -1,31 +1,41 @@
-# @backbay/hush-cli-engine
+# @clawdstrike/engine-local
 
-Policy engine adapter that shells out to the `hush` CLI for evaluation.
+Local policy-engine adapter that evaluates policy by invoking the Clawdstrike CLI process.
 
-This is useful when you want TypeScript tool-boundary enforcement but prefer the Rust policy engine for ruleset parsing and evaluation.
+## Install
+
+```bash
+npm install @clawdstrike/engine-local @clawdstrike/adapter-core
+```
 
 ## Prerequisites
 
-- `hush` installed and available on your PATH (or provide a custom `hushPath`).
+- Clawdstrike CLI available on `PATH` (default command is `hush`; you can override via `hushPath`).
 
-## Usage
+## Quick start
 
 ```ts
-import { createHushCliEngine } from "@backbay/hush-cli-engine";
-import type { PolicyEvent } from "@backbay/adapter-core";
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 const engine = createHushCliEngine({
-  policyRef: "default",
-  // hushPath: "/path/to/hush",
+  policyRef: 'default',
+  // hushPath: 'clawdstrike',
+  timeoutMs: 10_000,
 });
 
 const event: PolicyEvent = {
-  eventId: "evt-1",
-  eventType: "tool_call",
+  eventId: 'evt-1',
+  eventType: 'tool_call',
   timestamp: new Date().toISOString(),
-  data: { type: "tool", toolName: "bash", parameters: { cmd: "echo hello" } },
+  data: { type: 'tool', toolName: 'bash', parameters: { cmd: 'echo hello' } },
 };
 
 const decision = await engine.evaluate(event);
-if (decision.status === "deny") throw new Error(decision.message ?? "Blocked by policy");
+if (decision.status === 'deny') throw new Error(decision.message ?? 'blocked');
 ```
+
+## Behavior
+
+- Fail-closed: engine errors return `deny` with `reason: "engine_error"`
+- Supports local policy refs and optional `--resolve`

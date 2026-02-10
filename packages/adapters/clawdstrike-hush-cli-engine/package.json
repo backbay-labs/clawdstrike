@@ -1,7 +1,7 @@
 {
   "name": "@clawdstrike/engine-local",
   "version": "0.1.0",
-  "description": "Policy engine adapter that shells out to hush policy eval",
+  "description": "Local policy-engine adapter that evaluates through the Clawdstrike CLI",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

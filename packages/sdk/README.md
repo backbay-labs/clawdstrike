@@ -1,6 +1,7 @@
 # SDK Packages
 
-Language SDKs live here.
+Language SDKs in this directory:
 
-- `hush-ts`
-- `hush-py`
+- `packages/sdk/hush-ts` -> `@clawdstrike/sdk` (TypeScript)
+- `packages/sdk/clawdstrike` -> `clawdstrike` (unscoped TypeScript convenience package)
+- `packages/sdk/hush-py` -> `clawdstrike` (Python)

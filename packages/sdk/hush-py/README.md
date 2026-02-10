@@ -1,46 +1,38 @@
-# @backbay/python
+# clawdstrike (Python)
 
-Python SDK for Clawdstrike security verification.
+Official Python SDK for Clawdstrike policy evaluation and receipt verification workflows.
 
-## Installation
+## Install
 
 ```bash
 pip install clawdstrike
 ```
 
-## Usage
+## Quick start
 
 ```python
 from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
 
-# Load policy from YAML
 policy = Policy.from_yaml_file("policy.yaml")
 engine = PolicyEngine(policy)
 
-# Check actions
 context = GuardContext(cwd="/app")
-result = engine.is_allowed(
-    GuardAction.file_access("/app/src/main.py"),
-    context,
-)
+result = engine.is_allowed(GuardAction.file_access("/app/src/main.py"), context)
+
+print(result.allowed, result.reason)
 ```
 
-## Features
+## Capabilities
 
-- Pure Python implementation of 5 guards:
-  - ForbiddenPathGuard
-  - EgressAllowlistGuard
-  - SecretLeakGuard
-  - PatchIntegrityGuard
-  - McpToolGuard
-- Policy engine with YAML configuration
-- Receipt signing and verification with Ed25519
-- Experimental native bindings (not yet published)
+- Policy parsing from YAML
+- Built-in guard evaluation helpers
+- Receipt and signature helpers (Ed25519)
+- Typed Python API with strict static-checking support (`py.typed`)
 
-## Native bindings (experimental)
+## Native extension status
 
-This repo includes a Rust/PyO3 module at `packages/sdk/hush-py/hush-native`, but it is not packaged for PyPI yet.
+The repository contains an optional Rust/PyO3 module under `packages/sdk/hush-py/hush-native`. The published PyPI package is currently pure Python.
 
 ## License
 
-MIT
+Apache-2.0

@@ -1,6 +1,6 @@
 # clawdstrike
 
-Unscoped convenience package for the Clawdstrike TypeScript SDK.
+Official unscoped convenience package for the Clawdstrike TypeScript SDK.
 
 ## Install
 
@@ -11,7 +11,10 @@ npm install clawdstrike
 ## Usage
 
 ```ts
-import { Clawdstrike } from "clawdstrike";
+import { Clawdstrike, sha256 } from 'clawdstrike';
 ```
 
-This is the official unscoped SDK package for Clawdstrike.
+## Notes
+
+- This package re-exports the same public API as `@clawdstrike/sdk`.
+- Use `@clawdstrike/sdk` if you prefer scoped package management across organizations.

@@ -1,48 +1,58 @@
-# @backbay/adapter-core
+# @clawdstrike/adapter-core
 
-Framework-agnostic adapter interfaces for Clawdstrike tool-boundary enforcement.
+Framework-agnostic primitives for enforcing Clawdstrike policy decisions at the tool boundary.
 
-## Installation
+## Install
 
 ```bash
-npm install @backbay/adapter-core
+npm install @clawdstrike/adapter-core
 ```
 
-## Usage
+## What this package provides
+
+- Shared decision and event types (`PolicyEvent`, `Decision`, `PolicyEngineLike`)
+- Security context + audit logging helpers
+- Tool interceptors (`BaseToolInterceptor`, `GenericToolBoundary`)
+- Output sanitization interface + default implementation
+
+## Quick start
 
 ```ts
-import { BaseToolInterceptor, createSecurityContext } from "@backbay/adapter-core";
+import {
+  BaseToolInterceptor,
+  createSecurityContext,
+  type PolicyEngineLike,
+} from '@clawdstrike/adapter-core';
 
-// Create an engine for policy evaluation (implementation-specific).
-// For example, use @backbay/hush-cli-engine to shell out to `hush`.
-const engine = /* ... */;
+const engine: PolicyEngineLike = {
+  async evaluate(event) {
+    return { status: 'allow' };
+  },
+};
 
 const interceptor = new BaseToolInterceptor(engine, { blockOnViolation: true });
-const ctx = createSecurityContext({ sessionId: "session-123" });
+const ctx = createSecurityContext({ sessionId: 'run-123' });
 
-const preflight = await interceptor.beforeExecute("bash", { cmd: "echo hello" }, ctx);
-if (!preflight.proceed) throw new Error("Blocked by policy");
+const result = await interceptor.beforeExecute('bash', { cmd: 'echo hello' }, ctx);
+if (!result.proceed) throw new Error(result.decision?.message ?? 'blocked');
 ```
 
-## Generic tool runner wrapper
-
-`@backbay/adapter-core` can also wrap any `(toolName, input, runId) => Promise<output>`
-dispatcher directly:
+## Dispatcher wrapper
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { GenericToolBoundary, wrapGenericToolDispatcher } from '@backbay/adapter-core';
+import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
 const boundary = new GenericToolBoundary({ engine });
 
-const dispatchTool = wrapGenericToolDispatcher(
+const dispatch = wrapGenericToolDispatcher(
   boundary,
-  async (toolName, input, runId) => {
-    return { toolName, input, runId };
-  },
+  async (toolName, input, runId) => ({ toolName, input, runId }),
 );
 
-await dispatchTool('write_file', { path: './out.txt', content: 'hi' }, 'run-1');
-console.log(boundary.getAuditEvents().length);
+await dispatch('write_file', { path: './out.txt', content: 'ok' }, 'run-1');
 ```
+
+## Notes
+
+- `@clawdstrike/adapter-core` is runtime-neutral. It does not force any framework or model SDK.
+- Pair it with an engine adapter such as `@clawdstrike/engine-local` or `@clawdstrike/engine-remote`.
