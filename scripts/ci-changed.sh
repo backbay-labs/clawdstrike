@@ -37,6 +37,7 @@ CHANGED="$(git diff --name-only "${BASE_SHA}"...HEAD || true)"
 bold "Static path guards"
 bash scripts/path-lint.sh
 bash scripts/move-validation.sh
+bash scripts/architecture-guardrails.sh
 
 if [[ -z "$CHANGED" ]]; then
   echo "[ci:changed] no changed files detected beyond base ${BASE_SHA}"
@@ -69,7 +70,7 @@ fi
 if matches "^(docs/|README.md$|CONTRIBUTING.md$|AGENTS.md$)"; then
   run_docs=1
 fi
-if matches "^(infra/|Dockerfile.hushd$|\\.github/workflows/|scripts/(path-lint|move-validation|ci-changed).sh$)"; then
+if matches "^(infra/|Dockerfile.hushd$|\\.github/workflows/|scripts/(path-lint|move-validation|architecture-guardrails|ci-changed).sh$)"; then
   run_infra=1
 fi
 

@@ -22,8 +22,11 @@
 - [ ] `cargo fmt --all -- --check` passes
 - [ ] `cargo clippy --workspace -- -D warnings` passes
 - [ ] `cargo test --workspace` passes
+- [ ] `bash scripts/path-lint.sh`, `bash scripts/move-validation.sh`, and `bash scripts/architecture-guardrails.sh` pass
 - [ ] I have added tests for new functionality
 - [ ] I have updated documentation for public API changes
+- [ ] If this PR changes project structure, I kept structural moves separate from behavior changes
+- [ ] If this PR changes JS package managers/lockfiles, I followed `docs/src/getting-started/package-manager-policy.md`
 - [ ] Security-sensitive changes have been flagged for two-maintainer review
 
 ## Security Impact

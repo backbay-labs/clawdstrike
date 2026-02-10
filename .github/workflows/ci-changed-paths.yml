@@ -63,6 +63,7 @@ jobs:
               - ".github/workflows/**"
               - "scripts/path-lint.sh"
               - "scripts/move-validation.sh"
+              - "scripts/architecture-guardrails.sh"
 
   ci-rust-libs:
     name: ci-rust-libs
@@ -208,6 +209,7 @@ jobs:
         run: |
           bash scripts/path-lint.sh
           bash scripts/move-validation.sh
+          bash scripts/architecture-guardrails.sh
 
       - name: Validate Docker Compose topology
         run: docker compose -f infra/docker/docker-compose.services.yaml config > /dev/null

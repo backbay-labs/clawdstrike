@@ -1,10 +1,10 @@
 # Monorepo Organization Plan (Staff/Principal Engineer Proposal)
 
-Status: Proposed  
+Status: In Execution  
 Author: Codex (second-pass architecture audit)  
-Last updated: 2026-02-09
+Last updated: 2026-02-10
 
-Execution status: Phase 0 and Phase 1 are committed; Phase 2 is committed; Phase 3 is committed; Phase 4 cleanup and hardening are committed.
+Execution status: Phase 0 and Phase 1 are committed; Phase 2 is committed; Phase 3 is committed; Phase 4 cleanup and hardening are committed; Phase 5 guardrails/policy follow-through is committed.
 
 ## Executive Summary
 
@@ -361,12 +361,11 @@ Exit criteria:
 5. **PR-5 (Low-risk move C)**: move `HomebrewFormula` -> `infra/packaging/HomebrewFormula`.
 6. **PR-6 (CI hardening)**: add path-lint + changed-path pipeline decomposition.
 
-## Decisions Needed Before Execution
+## Decisions and Follow-Ups
 
-1. Package manager standard for TS monorepo surface: npm-only or npm + bun split policy.
-2. Branding strategy for `hush` naming in user-facing docs over next two releases.
-3. Whether to physically move Rust crates in one phase or split by crate family.
-4. Whether `cloud-api` and `cloud-dashboard` should be framed as one product domain in docs/navigation.
+1. Package manager policy is now explicitly documented as npm-default with a Bun exception for `apps/desktop` (`docs/src/getting-started/package-manager-policy.md`).
+2. Branding strategy for `hush` naming in user-facing docs remains an open follow-up.
+3. `cloud-api` and `cloud-dashboard` product-domain framing in docs/navigation remains an open follow-up.
 
 ## Recommendation
 

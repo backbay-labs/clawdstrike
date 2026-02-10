@@ -17,6 +17,7 @@
 /rulesets/** @connor
 /scripts/** @connor
 /tools/** @connor
+/fuzz/** @connor
 /infra/deploy/** @connor
 /infra/docker/** @connor
 /infra/vendor/** @connor

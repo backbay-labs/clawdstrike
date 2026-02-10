@@ -5,6 +5,7 @@
 # Getting Started
 
 - [Installation](getting-started/installation.md)
+- [Package Manager Policy](getting-started/package-manager-policy.md)
 - [Quick Start (Rust)](getting-started/quick-start.md)
 - [Quick Start (TypeScript)](getting-started/quick-start-typescript.md)
 - [Quick Start (Python)](getting-started/quick-start-python.md)

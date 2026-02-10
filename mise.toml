@@ -73,6 +73,14 @@ fi
 description = "Run path-aware checks for changed files versus main"
 run = "bash scripts/ci-changed.sh"
 
+[tasks.guardrails]
+description = "Validate path and architecture guardrails"
+run = """
+bash scripts/path-lint.sh
+bash scripts/move-validation.sh
+bash scripts/architecture-guardrails.sh
+"""
+
 [tasks.ci]
 description = "Run full CI checks locally"
 run = """
@@ -83,4 +91,5 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 bash scripts/path-lint.sh
 bash scripts/move-validation.sh
+bash scripts/architecture-guardrails.sh
 """

@@ -1,6 +1,6 @@
 # Repository Map
 
-Last updated: 2026-02-09
+Last updated: 2026-02-10
 
 This document is the newcomer index for the monorepo layout.
 
@@ -22,6 +22,7 @@ This document is the newcomer index for the monorepo layout.
 | `rulesets/` | Preconfigured policy rulesets. |
 | `scripts/` | Operator-facing scripts. |
 | `tools/` | Repo tooling and validators. |
+| `fuzz/` | Rust fuzzing harnesses and targets. |
 
 ## Component Maturity
 
@@ -46,6 +47,8 @@ This document is the newcomer index for the monorepo layout.
 Ownership is codified in `.github/CODEOWNERS`.
 
 Short-term bootstrap owner for all domains is `@connor`; this should be replaced by dedicated org teams as domains mature.
+
+Guardrail enforcement is automated by `scripts/architecture-guardrails.sh` in CI.
 
 ## Historical Path Moves
 

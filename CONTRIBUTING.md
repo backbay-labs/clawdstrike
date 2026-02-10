@@ -61,6 +61,8 @@ npm run build --workspace=packages/sdk/hush-ts
 npm test --workspace=packages/sdk/hush-ts
 ```
 
+Package manager standards are documented in `docs/src/getting-started/package-manager-policy.md`.
+
 #### Python
 
 ```bash
@@ -124,6 +126,19 @@ clawdstrike/
 - **HushEngine** -- Facade orchestrating guards and signing
 - **Spine Envelope** -- Signed fact in the append-only transparency log
 - **Checkpoint** -- Merkle root with witness co-signatures
+
+## Architecture Guardrails
+
+Use these guardrails for monorepo changes:
+
+1. Keep directory moves and behavior changes in separate PRs.
+2. Keep each top-level domain (`apps/`, `crates/`, `packages/`, and peers) self-describing with a `README.md`.
+3. When moving paths, update docs and workflow references in the same PR.
+4. Run guardrail scripts before requesting review:
+   - `bash scripts/path-lint.sh`
+   - `bash scripts/move-validation.sh`
+   - `bash scripts/architecture-guardrails.sh`
+5. For path-aware local verification, use `mise run ci:changed`.
 
 ## Contribution On-Ramps
 
@@ -217,6 +232,7 @@ See [GOVERNANCE.md](GOVERNANCE.md) for the full decision process.
    cargo fmt --all -- --check
    cargo clippy --workspace -- -D warnings
    cargo test --workspace
+   mise run guardrails
    ```
 3. Update documentation for any public API changes
 4. Sign off all commits with `-s`

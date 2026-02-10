@@ -33,6 +33,9 @@ bash scripts/path-lint.sh
 bold "Move validation"
 bash scripts/move-validation.sh
 
+bold "Architecture guardrails"
+bash scripts/architecture-guardrails.sh
+
 bold "Rust workspace"
 cargo test --workspace
 

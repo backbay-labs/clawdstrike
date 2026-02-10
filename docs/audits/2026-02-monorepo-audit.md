@@ -1,10 +1,10 @@
-# Monorepo Audit (2026-02-09)
+# Monorepo Audit (2026-02-10)
 
 ## Scope
 
 Audit focus:
 
-1. Path and ownership coherence after Phase 0-4 monorepo restructuring.
+1. Path and ownership coherence after Phase 0-5 monorepo restructuring.
 2. Build and CI safety for moved crates/packages/infra assets.
 3. Gaps that still reduce newcomer clarity or operational reliability.
 
@@ -33,9 +33,8 @@ Validation performed in this branch:
 
 ### Low
 
-1. **Mixed JS package-manager expectations remain** (`package-lock.json` surfaces plus Bun usage in app workflows).
-   Impact: newcomer confusion about when to use npm vs Bun.
-   Recommendation: add a one-page package-manager policy in `docs/src/getting-started/` and link from `CONTRIBUTING.md`.
+1. **No active low-severity findings in this audit slice**.
+   Notes: previous package-manager ambiguity is now addressed via `docs/src/getting-started/package-manager-policy.md` and linked contributor guidance.
 
 ## Improvements Implemented During This Audit Cycle
 
@@ -46,9 +45,13 @@ Validation performed in this branch:
 5. Added CI Docker Compose topology smoke validation in `.github/workflows/ci.yml`.
 6. Removed all compatibility stubs from legacy paths in Phase 4 cleanup.
 7. Updated operational docs and contributor references to new paths (`docs/REPO_MAP.md`, `CONTRIBUTING.md`, `AGENTS.md`, `SECURITY.md`, `GOVERNANCE.md`).
+8. Added changed-path CI decomposition workflow with domain jobs (`ci-rust-libs`, `ci-rust-services`, `ci-rust-bridges`, `ci-apps`, `ci-packages-ts`, `ci-packages-py`, `ci-docs`, `ci-infra`).
+9. Added move validation and architecture guardrail checks (`scripts/move-validation.sh`, `scripts/architecture-guardrails.sh`) and wired them into CI/local runs.
+10. Added top-level domain READMEs and automated enforcement of README/owner/repo-map consistency.
+11. Added explicit npm/Bun split policy docs and contributor/PR template guardrails.
 
 ## Recommended Next Execution Slice
 
 1. Add non-blocking stale-path informational report job for historical docs domains.
 2. Clean up agent Tauri dead-code warnings or gate unused modules with features.
-3. Add a one-page package-manager policy for npm vs Bun in contributor docs.
+3. Decide whether to fold legacy broad CI jobs into the new changed-path decomposition or keep both permanently.
