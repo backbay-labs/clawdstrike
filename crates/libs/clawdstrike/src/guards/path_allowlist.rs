@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
-use super::path_normalization::normalize_path_for_policy_with_fs;
+use super::path_normalization::{
+    normalize_path_for_policy, normalize_path_for_policy_lexical_absolute,
+    normalize_path_for_policy_with_fs,
+};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for `PathAllowlistGuard`.
@@ -95,28 +98,49 @@ impl PathAllowlistGuard {
         patterns.iter().any(|p| p.matches(path))
     }
 
+    fn matches_allowlist(&self, patterns: &[Pattern], path: &str) -> bool {
+        let lexical_path = normalize_path_for_policy(path);
+        let resolved_path = normalize_path_for_policy_with_fs(path);
+        let lexical_abs_path = normalize_path_for_policy_lexical_absolute(path);
+
+        let resolved_differs_from_lexical_target = lexical_abs_path
+            .as_deref()
+            .map(|abs| abs != resolved_path.as_str())
+            .unwrap_or(resolved_path != lexical_path);
+
+        if resolved_differs_from_lexical_target {
+            // When resolution changes the target (for example, symlink traversal), require the
+            // resolved path to match to prevent lexical-path allowlist bypasses.
+            return Self::matches_any(patterns, &resolved_path);
+        }
+
+        Self::matches_any(patterns, &lexical_path)
+            || Self::matches_any(patterns, &resolved_path)
+            || lexical_abs_path
+                .as_deref()
+                .map(|abs| Self::matches_any(patterns, abs))
+                .unwrap_or(false)
+    }
+
     pub fn is_file_access_allowed(&self, path: &str) -> bool {
         if !self.enabled {
             return true;
         }
-        let normalized = normalize_path_for_policy_with_fs(path);
-        Self::matches_any(&self.file_access_allow, &normalized)
+        self.matches_allowlist(&self.file_access_allow, path)
     }
 
     pub fn is_file_write_allowed(&self, path: &str) -> bool {
         if !self.enabled {
             return true;
         }
-        let normalized = normalize_path_for_policy_with_fs(path);
-        Self::matches_any(&self.file_write_allow, &normalized)
+        self.matches_allowlist(&self.file_write_allow, path)
     }
 
     pub fn is_patch_allowed(&self, path: &str) -> bool {
         if !self.enabled {
             return true;
         }
-        let normalized = normalize_path_for_policy_with_fs(path);
-        Self::matches_any(&self.patch_allow, &normalized)
+        self.matches_allowlist(&self.patch_allow, path)
     }
 }
 
@@ -220,6 +244,36 @@ mod tests {
         });
         assert!(guard.is_patch_allowed("/tmp/repo/src/main.rs"));
         assert!(!guard.is_patch_allowed("/tmp/other/src/main.rs"));
+    }
+
+    #[test]
+    fn relative_allowlist_globs_match_when_target_is_unchanged() {
+        let rel_dir = format!("target/path-allowlist-rel-{}", uuid::Uuid::new_v4());
+        std::fs::create_dir_all(&rel_dir).expect("create rel dir");
+        let rel_file = format!("{rel_dir}/main.rs");
+        std::fs::write(&rel_file, "fn main() {}\n").expect("write file");
+
+        let guard = PathAllowlistGuard::with_config(PathAllowlistConfig {
+            enabled: true,
+            file_access_allow: vec![format!("{rel_dir}/**")],
+            file_write_allow: vec![format!("{rel_dir}/**")],
+            patch_allow: vec![format!("{rel_dir}/**")],
+        });
+
+        assert!(
+            guard.is_file_access_allowed(&rel_file),
+            "relative file-access allowlist glob should match"
+        );
+        assert!(
+            guard.is_file_write_allowed(&rel_file),
+            "relative file-write allowlist glob should match"
+        );
+        assert!(
+            guard.is_patch_allowed(&rel_file),
+            "relative patch allowlist glob should match"
+        );
+
+        let _ = std::fs::remove_dir_all(&rel_dir);
     }
 
     #[cfg(unix)]

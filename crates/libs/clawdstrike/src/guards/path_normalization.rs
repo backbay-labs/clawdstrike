@@ -48,6 +48,21 @@ pub fn normalize_path_for_policy(path: &str) -> String {
     }
 }
 
+/// Normalize a path to an absolute lexical path without resolving symlinks.
+///
+/// - Absolute inputs are normalized as-is.
+/// - Relative inputs are joined against the current working directory.
+pub fn normalize_path_for_policy_lexical_absolute(path: &str) -> Option<String> {
+    let raw = Path::new(path);
+    if raw.is_absolute() {
+        return Some(normalize_path_for_policy(path));
+    }
+
+    let cwd = std::env::current_dir().ok()?;
+    let joined = cwd.join(raw);
+    Some(normalize_path_for_policy(&joined.to_string_lossy()))
+}
+
 /// Normalize a path for policy matching, preferring filesystem-resolved targets when possible.
 ///
 /// - For existing paths, this resolves symlinks via `canonicalize`.
@@ -74,7 +89,10 @@ fn resolve_path_for_policy(path: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_path_for_policy, normalize_path_for_policy_with_fs};
+    use super::{
+        normalize_path_for_policy, normalize_path_for_policy_lexical_absolute,
+        normalize_path_for_policy_with_fs,
+    };
 
     #[test]
     fn normalizes_separators_and_dots() {
@@ -107,5 +125,20 @@ mod tests {
             "normalized path should preserve file name, got {normalized}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn lexical_absolute_normalization_keeps_relative_shape_without_resolving_links() {
+        let relative = format!(
+            "target/path-normalization-{}/file.txt",
+            uuid::Uuid::new_v4()
+        );
+        let expected = {
+            let cwd = std::env::current_dir().expect("cwd");
+            normalize_path_for_policy(&cwd.join(&relative).to_string_lossy())
+        };
+        let actual = normalize_path_for_policy_lexical_absolute(&relative)
+            .expect("lexical absolute normalization should succeed");
+        assert_eq!(actual, expected);
     }
 }

@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
-use super::path_normalization::{normalize_path_for_policy, normalize_path_for_policy_with_fs};
+use super::path_normalization::{
+    normalize_path_for_policy, normalize_path_for_policy_lexical_absolute,
+    normalize_path_for_policy_with_fs,
+};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for ForbiddenPathGuard
@@ -191,16 +194,28 @@ impl ForbiddenPathGuard {
     pub fn is_forbidden(&self, path: &str) -> bool {
         let lexical_path = normalize_path_for_policy(path);
         let resolved_path = normalize_path_for_policy_with_fs(path);
-        let resolved_differs = resolved_path != lexical_path;
+        let lexical_abs_path = normalize_path_for_policy_lexical_absolute(path);
+        let resolved_differs_from_lexical_target = lexical_abs_path
+            .as_deref()
+            .map(|abs| abs != resolved_path.as_str())
+            .unwrap_or(resolved_path != lexical_path);
 
         // Check exceptions first
         for exception in &self.exceptions {
-            let exception_matches = if resolved_differs {
-                // If resolution changed the path (e.g., via symlink/canonical host mount aliases),
-                // require the exception to match the resolved target to avoid lexical bypasses.
-                exception.matches(&resolved_path)
+            let lexical_matches = exception.matches(&lexical_path)
+                || lexical_abs_path
+                    .as_deref()
+                    .map(|abs| exception.matches(abs))
+                    .unwrap_or(false);
+            let resolved_matches = exception.matches(&resolved_path);
+            let exception_matches = if resolved_differs_from_lexical_target {
+                // If resolution changed the actual target (for example via symlink traversal),
+                // require the exception to match the resolved target to prevent lexical bypasses.
+                resolved_matches
             } else {
-                exception.matches(&lexical_path)
+                // If target identity is unchanged (for example relative -> absolute conversion),
+                // allow either lexical or resolved exception forms.
+                resolved_matches || lexical_matches
             };
 
             if exception_matches {
@@ -310,6 +325,29 @@ mod tests {
     }
 
     #[test]
+    fn relative_exception_matches_when_target_is_unchanged() {
+        let rel_dir = format!("target/forbidden-path-rel-{}", uuid::Uuid::new_v4());
+        std::fs::create_dir_all(&rel_dir).expect("create rel dir");
+        let rel_file = format!("{rel_dir}/.env");
+        std::fs::write(&rel_file, "API_KEY=test\n").expect("write file");
+
+        let guard = ForbiddenPathGuard::with_config(ForbiddenPathConfig {
+            enabled: true,
+            patterns: Some(vec!["**/.env".to_string()]),
+            exceptions: vec![rel_file.clone()],
+            additional_patterns: vec![],
+            remove_patterns: vec![],
+        });
+
+        assert!(
+            !guard.is_forbidden(&rel_file),
+            "relative exception should match even when fs normalization produces absolute path"
+        );
+
+        let _ = std::fs::remove_dir_all(&rel_dir);
+    }
+
+    #[test]
     fn test_additional_patterns_field() {
         let yaml = r#"
 patterns:
@@ -394,6 +432,38 @@ remove_patterns:
         assert!(
             guard.is_forbidden(link.to_str().expect("utf-8 path")),
             "symlink target that resolves into forbidden path must be blocked"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lexical_exception_does_not_bypass_forbidden_resolved_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("forbidden-path-{}", uuid::Uuid::new_v4()));
+        let safe_dir = root.join("safe");
+        let forbidden_dir = root.join("forbidden");
+        std::fs::create_dir_all(&safe_dir).expect("create safe dir");
+        std::fs::create_dir_all(&forbidden_dir).expect("create forbidden dir");
+
+        let target = forbidden_dir.join("secret.env");
+        std::fs::write(&target, "secret").expect("write target");
+        let link = safe_dir.join("project.env");
+        symlink(&target, &link).expect("create symlink");
+
+        let guard = ForbiddenPathGuard::with_config(ForbiddenPathConfig {
+            enabled: true,
+            patterns: Some(vec!["**/forbidden/**".to_string()]),
+            exceptions: vec!["**/safe/project.env".to_string()],
+            additional_patterns: vec![],
+            remove_patterns: vec![],
+        });
+
+        assert!(
+            guard.is_forbidden(link.to_str().expect("utf-8 path")),
+            "lexical-only exception should not bypass when resolved target is forbidden"
         );
 
         let _ = std::fs::remove_dir_all(&root);
