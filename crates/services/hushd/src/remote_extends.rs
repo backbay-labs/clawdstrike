@@ -647,6 +647,10 @@ pub fn security_parse_git_remote_host(repo: &str, https_only: bool) -> Result<St
 }
 
 fn parse_scp_like_git_host(repo: &str) -> Option<String> {
+    if repo.contains("://") {
+        return None;
+    }
+
     let (lhs, rhs) = repo.split_once(':')?;
     if rhs.is_empty() {
         return None;
