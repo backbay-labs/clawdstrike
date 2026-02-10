@@ -79,14 +79,8 @@ if [[ -f "crates/libs/hush-wasm/package.json" ]]; then
     fi
 fi
 
-FORMULA_PATH=""
-if [[ -f "infra/packaging/HomebrewFormula/hush.rb" ]]; then
-    FORMULA_PATH="infra/packaging/HomebrewFormula/hush.rb"
-elif [[ -f "HomebrewFormula/hush.rb" ]]; then
-    FORMULA_PATH="HomebrewFormula/hush.rb"
-fi
-
-if [[ -n "$FORMULA_PATH" ]]; then
+FORMULA_PATH="infra/packaging/HomebrewFormula/hush.rb"
+if [[ -f "$FORMULA_PATH" ]]; then
     echo "  Updating ${FORMULA_PATH} tag URL..."
     $SED_INPLACE "s#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[0-9][0-9.]*\\.tar\\.gz#https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v$VERSION.tar.gz#" "$FORMULA_PATH"
 fi

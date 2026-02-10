@@ -6,6 +6,7 @@ cd "$REPO_ROOT"
 
 LEGACY_PATHS=(
   "packages/cloud-dashboard"
+  "spine"
   "spine/reticulum"
   "HomebrewFormula"
   "crates/hush-core"
@@ -90,6 +91,16 @@ ensure_legacy_empty() {
   fi
 }
 
+ensure_legacy_absent_on_disk() {
+  local path="$1"
+  if [[ -e "$path" ]]; then
+    echo "[move-validation] legacy path still exists on disk: $path"
+    echo "  remove it locally to avoid contributor confusion"
+    echo
+    fail=1
+  fi
+}
+
 ensure_target_present() {
   local path="$1"
   local matches
@@ -103,6 +114,7 @@ ensure_target_present() {
 
 for path in "${LEGACY_PATHS[@]}"; do
   ensure_legacy_empty "$path"
+  ensure_legacy_absent_on_disk "$path"
 done
 
 for path in "${TARGET_PATHS[@]}"; do

@@ -88,13 +88,8 @@ for pkg in [
 ]:
     errors.append(check(pkg, read_json(pkg).get("version")))
 
-formula_rel = None
-for rel in ("infra/packaging/HomebrewFormula/hush.rb", "HomebrewFormula/hush.rb"):
-    if (repo_root / rel).exists():
-        formula_rel = rel
-        break
-
-if formula_rel is None:
+formula_rel = "infra/packaging/HomebrewFormula/hush.rb"
+if not (repo_root / formula_rel).exists():
     errors.append("Homebrew formula path: expected infra/packaging/HomebrewFormula/hush.rb")
 else:
     formula = (repo_root / formula_rel).read_text(encoding="utf-8")

@@ -13,3 +13,4 @@ Current policy/structure guardrails:
 1. `scripts/path-lint.sh` - stale legacy path reference detection.
 2. `scripts/move-validation.sh` - verifies moved legacy paths are no longer tracked.
 3. `scripts/architecture-guardrails.sh` - verifies domain README/ownership/repo-map consistency.
+4. `scripts/cleanup-legacy-paths.sh` - removes stale legacy directories from local checkouts.
