@@ -313,3 +313,53 @@ async fn circuit_breaker_opens_on_timeouts() {
         Some("CircuitOpen")
     );
 }
+
+#[tokio::test]
+async fn async_background_guards_enforce_inflight_limit() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let guard: Arc<dyn AsyncGuard> = Arc::new(SleepGuard {
+        name: "background_sleep",
+        cfg: AsyncGuardConfig {
+            execution_mode: AsyncExecutionMode::Background,
+            timeout: Duration::from_secs(1),
+            ..base_async_cfg()
+        },
+        calls: calls.clone(),
+        sleep: Duration::from_millis(250),
+    });
+
+    let runtime = Arc::new(AsyncGuardRuntime::with_background_in_flight_limit(2));
+    let ctx = GuardContext::new();
+
+    for _ in 0..20 {
+        let _ = runtime
+            .evaluate_async_guards(
+                std::slice::from_ref(&guard),
+                &GuardAction::FileAccess("/tmp/a"),
+                &ctx,
+                false,
+            )
+            .await;
+    }
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert!(
+        runtime.background_peak_inflight() <= 2,
+        "background in-flight peak exceeded configured limit: {}",
+        runtime.background_peak_inflight()
+    );
+    assert!(
+        runtime.background_dropped_count() > 0,
+        "burst load should drop background tasks once in-flight limit is saturated"
+    );
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while runtime.background_inflight_count() > 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("background tasks should drain within timeout");
+    assert_eq!(runtime.background_inflight_count(), 0);
+}
