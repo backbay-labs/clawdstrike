@@ -2,8 +2,8 @@ import { useChat } from '@ai-sdk/react';
 import type { ChatInit, UIMessage } from 'ai';
 import { useCallback, useMemo, useState } from 'react';
 
-import { BaseToolInterceptor, createSecurityContext } from '@backbay/adapter-core';
-import type { Decision, PolicyEngineLike, SecurityContext } from '@backbay/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
+import type { Decision, PolicyEngineLike, SecurityContext } from '@clawdstrike/adapter-core';
 
 import { ClawdstrikeBlockedError } from '../errors.js';
 import type { VercelAiClawdstrikeConfig } from '../middleware.js';

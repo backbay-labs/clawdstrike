@@ -1,5 +1,5 @@
 /**
- * @backbay/adapter-core
+ * @clawdstrike/adapter-core
  *
  * Core adapter infrastructure for Clawdstrike security integrations.
  */

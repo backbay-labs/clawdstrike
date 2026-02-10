@@ -1,4 +1,4 @@
-import { BaseToolInterceptor, createSecurityContext } from '@backbay/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   FrameworkAdapter,
@@ -8,7 +8,7 @@ import type {
   ProcessedOutput,
   SecurityContext,
   SessionSummary,
-} from '@backbay/adapter-core';
+} from '@clawdstrike/adapter-core';
 
 import { secureTools } from './tools.js';
 

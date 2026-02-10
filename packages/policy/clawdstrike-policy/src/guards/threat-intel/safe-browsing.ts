@@ -1,4 +1,4 @@
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 import type { AsyncGuard, GuardResult, HttpClient, HttpRequestPolicy } from '../../async/types.js';
 

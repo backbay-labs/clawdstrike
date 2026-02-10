@@ -4,7 +4,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 import { createPolicyEngine } from './engine.js';
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import type { PolicyEngineLike } from '@backbay/adapter-core';
+import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
 
 import { ClawdstrikeBlockedError } from './errors.js';
 import { ClaudeCodeToolBoundary, wrapClaudeCodeToolDispatcher } from './tool-boundary.js';

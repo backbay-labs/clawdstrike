@@ -1,5 +1,5 @@
 {
-  "name": "@backbay/claude-code",
+  "name": "@clawdstrike/claude-code",
   "version": "0.1.0",
   "description": "In-process tool boundary hooks for Claude Code-style assistants",
   "type": "module",
@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@backbay/adapter-core": "^0.1.0"
+    "@clawdstrike/adapter-core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",

@@ -1,5 +1,5 @@
 /**
- * @backbay/openclaw - Egress Guard
+ * @clawdstrike/openclaw - Egress Guard
  *
  * Enforces network egress allowlist/denylist policies.
  */

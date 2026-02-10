@@ -1,5 +1,5 @@
-import { BaseToolInterceptor, createSecurityContext } from '@backbay/adapter-core';
-import type { AdapterConfig, PolicyEngineLike, SecurityContext, ToolInterceptor } from '@backbay/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
+import type { AdapterConfig, PolicyEngineLike, SecurityContext, ToolInterceptor } from '@clawdstrike/adapter-core';
 
 import { ClawdstrikeBlockedError } from './errors.js';
 
@@ -30,8 +30,8 @@ export interface ClawdstrikeLike {
  *
  * @example Using with Clawdstrike instance (recommended)
  * ```typescript
- * import { Clawdstrike } from '@backbay/sdk';
- * import { secureTools } from '@backbay/vercel-ai';
+ * import { Clawdstrike } from '@clawdstrike/sdk';
+ * import { secureTools } from '@clawdstrike/vercel-ai';
  *
  * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
  * const tools = secureTools(myTools, cs);
@@ -39,8 +39,8 @@ export interface ClawdstrikeLike {
  *
  * @example Using with PolicyEngineLike (legacy)
  * ```typescript
- * import { createPolicyEngine } from '@backbay/policy';
- * import { secureTools } from '@backbay/vercel-ai';
+ * import { createPolicyEngine } from '@clawdstrike/policy';
+ * import { secureTools } from '@clawdstrike/vercel-ai';
  *
  * const engine = createPolicyEngine({ policyRef: './policy.yaml' });
  * const tools = secureTools(myTools, engine);

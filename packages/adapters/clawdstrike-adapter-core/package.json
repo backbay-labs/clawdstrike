@@ -1,5 +1,5 @@
 {
-  "name": "@backbay/adapter-core",
+  "name": "@clawdstrike/adapter-core",
   "version": "0.1.0",
   "description": "Framework-agnostic adapter interfaces for Clawdstrike",
   "type": "module",

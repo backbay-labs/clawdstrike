@@ -1,5 +1,5 @@
 import type { Policy, PolicyLintResult } from '../types.js';
-import { validatePolicy as validateCanonicalPolicy } from '@backbay/policy';
+import { validatePolicy as validateCanonicalPolicy } from '@clawdstrike/policy';
 
 export const POLICY_SCHEMA_VERSION = 'clawdstrike-v1.0';
 const SUPPORTED_CANONICAL_VERSIONS = new Set(['1.1.0', '1.2.0']);

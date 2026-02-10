@@ -1,4 +1,4 @@
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 import { GuardCache } from './cache.js';
 import { CircuitBreaker } from './circuit-breaker.js';

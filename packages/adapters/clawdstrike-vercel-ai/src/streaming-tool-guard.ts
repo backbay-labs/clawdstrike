@@ -1,5 +1,5 @@
-import { createSecurityContext } from '@backbay/adapter-core';
-import type { AdapterConfig, SecurityContext, ToolInterceptor } from '@backbay/adapter-core';
+import { createSecurityContext } from '@clawdstrike/adapter-core';
+import type { AdapterConfig, SecurityContext, ToolInterceptor } from '@clawdstrike/adapter-core';
 
 export type StreamChunk = Record<string, unknown> & {
   type?: string;

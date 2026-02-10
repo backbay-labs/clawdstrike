@@ -1,4 +1,4 @@
-import type { Decision, DecisionStatus, PolicyEngineLike, PolicyEvent } from '@backbay/adapter-core';
+import type { Decision, DecisionStatus, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
 
 import { AsyncGuardRuntime } from './async/runtime.js';
 import type { GuardResult, Severity } from './async/types.js';

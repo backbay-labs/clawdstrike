@@ -1,1 +1,1 @@
-module.exports = require("@backbay/sdk");
+module.exports = require("@clawdstrike/sdk");

@@ -24,7 +24,7 @@
     "test": "node -e \"import('./index.js').then(() => console.log('ok'))\""
   },
   "dependencies": {
-    "@backbay/sdk": "^0.1.0"
+    "@clawdstrike/sdk": "^0.1.0"
   },
   "publishConfig": {
     "access": "public"

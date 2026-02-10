@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { describe, it, expect } from 'vitest';
 
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 import { createHushCliEngine } from './hush-cli-engine.js';
 
 const describeE2E = hasRunnableHush(process.env.HUSH_PATH ?? 'hush') ? describe : describe.skip;

@@ -1,5 +1,5 @@
 {
-  "name": "@backbay/policy",
+  "name": "@clawdstrike/policy",
   "version": "0.1.0",
   "description": "Canonical policy loader and engine (async guards + threat intel)",
   "type": "module",
@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@backbay/adapter-core": "^0.1.0",
+    "@clawdstrike/adapter-core": "^0.1.0",
     "js-yaml": "^4.1.0",
     "lru-cache": "^11.2.2"
   },

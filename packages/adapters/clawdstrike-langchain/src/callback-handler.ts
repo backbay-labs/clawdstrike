@@ -1,5 +1,5 @@
-import { createSecurityContext } from '@backbay/adapter-core';
-import type { AuditEvent, PolicyEngineLike, SecurityContext, ToolInterceptor } from '@backbay/adapter-core';
+import { createSecurityContext } from '@clawdstrike/adapter-core';
+import type { AuditEvent, PolicyEngineLike, SecurityContext, ToolInterceptor } from '@clawdstrike/adapter-core';
 
 import { ClawdstrikeViolationError } from './errors.js';
 import { createLangChainInterceptor } from './interceptor.js';

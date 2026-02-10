@@ -1,4 +1,4 @@
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 import type { AsyncExecutionMode, TimeoutBehavior } from '../policy/schema.js';
 

@@ -1,4 +1,4 @@
-import type { Decision, PolicyEngineLike, PolicyEvent } from '@backbay/adapter-core';
+import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
 
 export interface HushdEngineOptions {
   baseUrl: string;

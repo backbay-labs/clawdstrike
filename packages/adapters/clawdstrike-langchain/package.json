@@ -1,5 +1,5 @@
 {
-  "name": "@backbay/langchain",
+  "name": "@clawdstrike/langchain",
   "version": "0.1.0",
   "description": "Minimal Clawdstrike tool wrappers for LangChain tools",
   "type": "module",
@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@backbay/adapter-core": "^0.1.0"
+    "@clawdstrike/adapter-core": "^0.1.0"
   },
   "peerDependencies": {
     "@langchain/core": ">=0.1.0"

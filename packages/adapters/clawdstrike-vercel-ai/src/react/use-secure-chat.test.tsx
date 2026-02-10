@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 import type { UseChatOptions } from '@ai-sdk/react';
-import type { PolicyEngineLike } from '@backbay/adapter-core';
+import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
 
 import { useSecureChat } from './use-secure-chat.js';
 

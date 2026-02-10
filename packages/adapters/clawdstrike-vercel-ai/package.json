@@ -1,5 +1,5 @@
 {
-  "name": "@backbay/vercel-ai",
+  "name": "@clawdstrike/vercel-ai",
   "version": "0.1.0",
   "description": "Minimal Clawdstrike tool wrappers for the Vercel AI SDK",
   "type": "module",
@@ -22,8 +22,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@backbay/adapter-core": "^0.1.0",
-    "@backbay/sdk": "^0.1.0"
+    "@clawdstrike/adapter-core": "^0.1.0",
+    "@clawdstrike/sdk": "^0.1.0"
   },
   "peerDependencies": {
     "@ai-sdk/react": ">=3.0.0",

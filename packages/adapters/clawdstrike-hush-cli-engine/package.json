@@ -1,5 +1,5 @@
 {
-  "name": "@backbay/hush-cli-engine",
+  "name": "@clawdstrike/engine-local",
   "version": "0.1.0",
   "description": "Policy engine adapter that shells out to hush policy eval",
   "type": "module",
@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@backbay/adapter-core": "^0.1.0"
+    "@clawdstrike/adapter-core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",

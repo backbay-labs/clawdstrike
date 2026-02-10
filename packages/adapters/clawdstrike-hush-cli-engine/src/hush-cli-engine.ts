@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-import type { Decision, PolicyEngineLike, PolicyEvent } from '@backbay/adapter-core';
+import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
 
 export interface HushCliEngineOptions {
   hushPath?: string;

@@ -1,5 +1,5 @@
 {
-  "name": "@backbay/wasm",
+  "name": "@clawdstrike/wasm",
   "version": "0.1.0",
   "description": "WebAssembly bindings for clawdstrike cryptographic verification",
   "main": "hush_wasm.js",

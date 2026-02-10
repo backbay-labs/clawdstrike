@@ -1,5 +1,5 @@
 /**
- * @backbay/openclaw - Audit Logger Hook Handler
+ * @clawdstrike/openclaw - Audit Logger Hook Handler
  *
  * Logs security events for audit and compliance.
  */

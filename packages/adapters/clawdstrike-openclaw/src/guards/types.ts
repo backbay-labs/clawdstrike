@@ -1,5 +1,5 @@
 /**
- * @backbay/openclaw - Guard Types
+ * @clawdstrike/openclaw - Guard Types
  *
  * Type definitions for the guard system.
  */
