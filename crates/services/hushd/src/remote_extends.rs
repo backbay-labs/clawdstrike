@@ -351,7 +351,6 @@ impl RemotePolicyResolver {
 
         let repo_host = parse_git_remote_host(repo, self.cfg.https_only)?;
         self.ensure_host_allowed(&repo_host)?;
-        self.ensure_git_host_ip_policy(&repo_host)?;
 
         let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
         let cache_path = self.cache_path_for(&key, "yaml");
@@ -373,6 +372,7 @@ impl RemotePolicyResolver {
             let _ = std::fs::remove_file(&cache_path);
         }
 
+        self.ensure_git_host_ip_policy(&repo_host)?;
         let bytes = self.git_show_file(repo, commit, path)?;
         verify_sha256_pin(&bytes, expected_sha)?;
         self.write_cache(&cache_path, &bytes)?;
@@ -1271,6 +1271,54 @@ mod tests {
         assert!(
             err.to_string().contains("must not start with '-'"),
             "unexpected error: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn git_cached_policy_resolves_without_dns_lookup() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let repo = "https://offline-cache.example.invalid/org/repo.git";
+        let commit = "deadbeef";
+        let path = "policy.yaml";
+        let yaml_bytes = br#"
+version: "1.1.0"
+name: cached
+settings:
+  fail_fast: true
+"#;
+        let expected_sha = sha256(yaml_bytes).to_hex();
+        let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+        let digest = sha256(key.as_bytes()).to_hex();
+        let cache_path = cache_dir.join(format!("{}.yaml", digest));
+        std::fs::write(&cache_path, yaml_bytes).expect("write cached bytes");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["offline-cache.example.invalid".to_string()]
+                .into_iter()
+                .collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: true,
+            allow_private_ips: false,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+        let reference = format!("git+{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+
+        let resolved = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect("cached git policy should resolve without DNS");
+        assert!(
+            resolved.yaml.contains("name: cached"),
+            "expected cached YAML payload"
         );
 
         let _ = std::fs::remove_dir_all(&cache_dir);

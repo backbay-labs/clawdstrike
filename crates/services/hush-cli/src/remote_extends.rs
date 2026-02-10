@@ -375,7 +375,6 @@ impl RemotePolicyResolver {
 
         let repo_host = parse_git_remote_host(repo, self.cfg.https_only)?;
         self.ensure_host_allowed(&repo_host)?;
-        self.ensure_git_host_ip_policy(&repo_host)?;
 
         if !self.cfg.remote_enabled() {
             return Err(Error::ConfigError(
@@ -403,6 +402,7 @@ impl RemotePolicyResolver {
             let _ = std::fs::remove_file(&cache_path);
         }
 
+        self.ensure_git_host_ip_policy(&repo_host)?;
         let bytes = self.git_show_file(repo, commit, path)?;
         verify_sha256_pin(&bytes, expected_sha)?;
         self.write_cache(&cache_path, &bytes)?;
