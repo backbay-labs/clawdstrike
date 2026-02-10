@@ -3053,6 +3053,24 @@ extends: {}#sha256={}
     }
 
     #[test]
+    fn remote_extends_git_userless_scp_host_must_be_allowlisted() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+evil.example:org/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("userless SCP-style disallowed host should be rejected before fetch");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("allowlisted"),
+            "unexpected error for userless SCP remote: {msg}"
+        );
+    }
+
+    #[test]
     fn remote_extends_git_file_scheme_is_rejected() {
         let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
         let resolver = RemotePolicyResolver::new(cfg).expect("resolver");

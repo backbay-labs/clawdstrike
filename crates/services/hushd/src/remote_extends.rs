@@ -601,6 +601,10 @@ fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, Str
 }
 
 fn parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
+    if let Some(host) = parse_scp_like_git_host(repo) {
+        return Ok(host);
+    }
+
     if let Ok(repo_url) = Url::parse(repo) {
         let scheme = repo_url.scheme();
         if !matches!(scheme, "http" | "https" | "ssh" | "git") {
@@ -621,12 +625,10 @@ fn parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
         return Ok(normalize_host(host));
     }
 
-    parse_scp_like_git_host(repo).ok_or_else(|| {
-        Error::ConfigError(format!(
-            "Invalid git remote in remote extends (expected URL or scp-style host:path): {}",
-            repo
-        ))
-    })
+    Err(Error::ConfigError(format!(
+        "Invalid git remote in remote extends (expected URL or scp-style host:path): {}",
+        repo
+    )))
 }
 
 fn parse_scp_like_git_host(repo: &str) -> Option<String> {
@@ -1018,6 +1020,13 @@ mod tests {
     fn parse_git_remote_host_accepts_scp_style() {
         let host = parse_git_remote_host("git@github.com:backbay-labs/clawdstrike.git", true)
             .expect("scp-like git remote should parse");
+        assert_eq!(host, "github.com");
+    }
+
+    #[test]
+    fn parse_git_remote_host_accepts_userless_scp_style() {
+        let host = parse_git_remote_host("github.com:backbay-labs/clawdstrike.git", true)
+            .expect("userless scp-like git remote should parse");
         assert_eq!(host, "github.com");
     }
 
