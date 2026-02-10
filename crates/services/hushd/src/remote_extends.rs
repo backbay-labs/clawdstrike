@@ -100,6 +100,29 @@ impl RemotePolicyResolver {
         Ok(())
     }
 
+    fn ensure_git_host_ip_policy(&self, host: &str) -> Result<()> {
+        if self.cfg.allow_private_ips {
+            return Ok(());
+        }
+
+        let addrs = resolve_host_addrs(host, 9418)?;
+        if addrs.is_empty() {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to no addresses: {}",
+                host
+            )));
+        }
+
+        if addrs.iter().any(|addr| !is_public_ip(addr.ip())) {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to non-public IPs (blocked): {}",
+                host
+            )));
+        }
+
+        Ok(())
+    }
+
     fn validate_and_resolve_http_target(
         &self,
         url: &Url,
@@ -325,8 +348,9 @@ impl RemotePolicyResolver {
             ));
         }
 
-        let repo_host = parse_git_remote_host(repo)?;
+        let repo_host = parse_git_remote_host(repo, self.cfg.https_only)?;
         self.ensure_host_allowed(&repo_host)?;
+        self.ensure_git_host_ip_policy(&repo_host)?;
 
         let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
         let cache_path = self.cache_path_for(&key, "yaml");
@@ -524,12 +548,18 @@ fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, Str
     Ok(parsed)
 }
 
-fn parse_git_remote_host(repo: &str) -> Result<String> {
+fn parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
     if let Ok(repo_url) = Url::parse(repo) {
         let scheme = repo_url.scheme();
         if !matches!(scheme, "http" | "https" | "ssh" | "git") {
             return Err(Error::ConfigError(format!(
                 "Unsupported git remote scheme for remote extends: {}",
+                scheme
+            )));
+        }
+        if https_only && scheme == "http" {
+            return Err(Error::ConfigError(format!(
+                "Remote extends require https:// URLs (got {}://)",
                 scheme
             )));
         }
@@ -563,6 +593,17 @@ fn parse_scp_like_git_host(repo: &str) -> Option<String> {
     } else {
         Some(host)
     }
+}
+
+fn resolve_host_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+
+    (host, port)
+        .to_socket_addrs()
+        .map(|addrs| addrs.collect())
+        .map_err(|e| Error::ConfigError(format!("Failed to resolve host {}: {}", host, e)))
 }
 
 fn join_url(base: &str, reference: &str) -> Result<String> {
@@ -923,9 +964,19 @@ mod tests {
 
     #[test]
     fn parse_git_remote_host_accepts_scp_style() {
-        let host = parse_git_remote_host("git@github.com:backbay-labs/clawdstrike.git")
+        let host = parse_git_remote_host("git@github.com:backbay-labs/clawdstrike.git", true)
             .expect("scp-like git remote should parse");
         assert_eq!(host, "github.com");
+    }
+
+    #[test]
+    fn parse_git_remote_host_rejects_unsupported_scheme() {
+        let err = parse_git_remote_host("file:///tmp/repo.git", true).expect_err("must reject");
+        assert!(
+            err.to_string()
+                .contains("Unsupported git remote scheme for remote extends"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -1084,6 +1135,40 @@ mod tests {
         let err = resolver
             .resolve(&reference, &PolicyLocation::None)
             .expect_err("private IPs should be rejected by default");
+        assert!(
+            err.to_string().contains("non-public IPs"),
+            "expected private-IP rejection, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn private_ip_git_remote_is_blocked_by_default() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: false,
+            allow_private_ips: false,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!(
+            "git+ssh://127.0.0.1/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("private IP git remotes should be rejected by default");
         assert!(
             err.to_string().contains("non-public IPs"),
             "expected private-IP rejection, got: {err}"

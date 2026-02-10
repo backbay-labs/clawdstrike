@@ -11,14 +11,16 @@ use clawdstrike::{GuardContext, HushEngine, Policy};
 use hush_core::sha256;
 use tokio::net::TcpListener;
 
-async fn serve(app: Router) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+async fn serve(app: Router) -> std::io::Result<String> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        if let Err(err) = axum::serve(listener, app).await {
+            eprintln!("threat_intel_guards test server exited with error: {err}");
+        }
     });
 
-    format!("http://{}", addr)
+    Ok(format!("http://{}", addr))
 }
 
 #[tokio::test]
@@ -57,7 +59,16 @@ async fn virustotal_file_hash_denies_and_caches() {
         )
         .with_state(state);
 
-    let base = serve(app).await;
+    let base = match serve(app).await {
+        Ok(base) => base,
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!(
+                "skipping virustotal_file_hash_denies_and_caches: loopback bind denied ({err})"
+            );
+            return;
+        }
+        Err(err) => panic!("failed to start test server: {err}"),
+    };
 
     std::env::set_var("VT_API_KEY_TEST", "dummy");
     std::env::set_var("VT_BASE_URL_TEST", format!("{}/api/v3", base));
@@ -111,7 +122,14 @@ async fn safe_browsing_denies_on_match() {
             )
         }),
     );
-    let base = serve(app).await;
+    let base = match serve(app).await {
+        Ok(base) => base,
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("skipping safe_browsing_denies_on_match: loopback bind denied ({err})");
+            return;
+        }
+        Err(err) => panic!("failed to start test server: {err}"),
+    };
 
     std::env::set_var("GSB_API_KEY_TEST", "dummy");
     std::env::set_var("GSB_CLIENT_ID_TEST", "clawdstrike-test");
@@ -168,7 +186,14 @@ async fn snyk_denies_on_upgradable_vulns() {
             )
         }),
     );
-    let base = serve(app).await;
+    let base = match serve(app).await {
+        Ok(base) => base,
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("skipping snyk_denies_on_upgradable_vulns: loopback bind denied ({err})");
+            return;
+        }
+        Err(err) => panic!("failed to start test server: {err}"),
+    };
 
     std::env::set_var("SNYK_API_TOKEN_TEST", "dummy");
     std::env::set_var("SNYK_ORG_ID_TEST", "org-123");

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
-use super::path_normalization::normalize_path_for_policy;
+use super::path_normalization::{normalize_path_for_policy, normalize_path_for_policy_with_fs};
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for ForbiddenPathGuard
@@ -189,18 +189,28 @@ impl ForbiddenPathGuard {
 
     /// Check if a path is forbidden
     pub fn is_forbidden(&self, path: &str) -> bool {
-        let path = normalize_path_for_policy(path);
+        let lexical_path = normalize_path_for_policy(path);
+        let resolved_path = normalize_path_for_policy_with_fs(path);
+        let resolved_differs = resolved_path != lexical_path;
 
         // Check exceptions first
         for exception in &self.exceptions {
-            if exception.matches(&path) {
+            let exception_matches = if resolved_differs {
+                // If resolution changed the path (e.g., via symlink/canonical host mount aliases),
+                // require the exception to match the resolved target to avoid lexical bypasses.
+                exception.matches(&resolved_path)
+            } else {
+                exception.matches(&lexical_path)
+            };
+
+            if exception_matches {
                 return false;
             }
         }
 
         // Check forbidden patterns
         for pattern in &self.patterns {
-            if pattern.matches(&path) {
+            if pattern.matches(&resolved_path) || pattern.matches(&lexical_path) {
                 return true;
             }
         }
@@ -355,5 +365,37 @@ remove_patterns:
             .check(&GuardAction::FileAccess("/app/src/main.rs"), &context)
             .await;
         assert!(result.allowed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_target_matching_forbidden_pattern_is_forbidden() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("forbidden-path-{}", uuid::Uuid::new_v4()));
+        let safe_dir = root.join("safe");
+        let forbidden_dir = root.join("forbidden");
+        std::fs::create_dir_all(&safe_dir).expect("create safe dir");
+        std::fs::create_dir_all(&forbidden_dir).expect("create forbidden dir");
+
+        let target = forbidden_dir.join("secret.txt");
+        std::fs::write(&target, "secret").expect("write target");
+        let link = safe_dir.join("link.txt");
+        symlink(&target, &link).expect("create symlink");
+
+        let guard = ForbiddenPathGuard::with_config(ForbiddenPathConfig {
+            enabled: true,
+            patterns: Some(vec!["**/forbidden/**".to_string()]),
+            exceptions: vec![],
+            additional_patterns: vec![],
+            remove_patterns: vec![],
+        });
+
+        assert!(
+            guard.is_forbidden(link.to_str().expect("utf-8 path")),
+            "symlink target that resolves into forbidden path must be blocked"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

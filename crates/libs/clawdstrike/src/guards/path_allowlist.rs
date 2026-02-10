@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
-use super::path_normalization::normalize_path_for_policy;
+use super::path_normalization::normalize_path_for_policy_with_fs;
 use super::{Guard, GuardAction, GuardContext, GuardResult, Severity};
 
 /// Configuration for `PathAllowlistGuard`.
@@ -99,7 +99,7 @@ impl PathAllowlistGuard {
         if !self.enabled {
             return true;
         }
-        let normalized = normalize_path_for_policy(path);
+        let normalized = normalize_path_for_policy_with_fs(path);
         Self::matches_any(&self.file_access_allow, &normalized)
     }
 
@@ -107,7 +107,7 @@ impl PathAllowlistGuard {
         if !self.enabled {
             return true;
         }
-        let normalized = normalize_path_for_policy(path);
+        let normalized = normalize_path_for_policy_with_fs(path);
         Self::matches_any(&self.file_write_allow, &normalized)
     }
 
@@ -115,7 +115,7 @@ impl PathAllowlistGuard {
         if !self.enabled {
             return true;
         }
-        let normalized = normalize_path_for_policy(path);
+        let normalized = normalize_path_for_policy_with_fs(path);
         Self::matches_any(&self.patch_allow, &normalized)
     }
 }
@@ -220,5 +220,36 @@ mod tests {
         });
         assert!(guard.is_patch_allowed("/tmp/repo/src/main.rs"));
         assert!(!guard.is_patch_allowed("/tmp/other/src/main.rs"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_escape_outside_allowlist_is_denied() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("path-allowlist-{}", uuid::Uuid::new_v4()));
+        let allowed_dir = root.join("allowed");
+        let outside_dir = root.join("outside");
+        std::fs::create_dir_all(&allowed_dir).expect("create allowed dir");
+        std::fs::create_dir_all(&outside_dir).expect("create outside dir");
+
+        let target = outside_dir.join("secret.txt");
+        std::fs::write(&target, "sensitive").expect("write target");
+        let link = allowed_dir.join("link.txt");
+        symlink(&target, &link).expect("create symlink");
+
+        let guard = PathAllowlistGuard::with_config(PathAllowlistConfig {
+            enabled: true,
+            file_access_allow: vec![format!("{}/allowed/**", root.display())],
+            file_write_allow: vec![format!("{}/allowed/**", root.display())],
+            patch_allow: vec![],
+        });
+
+        assert!(
+            !guard.is_file_access_allowed(link.to_str().expect("utf-8 path")),
+            "symlink target outside allowlist must be denied"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
