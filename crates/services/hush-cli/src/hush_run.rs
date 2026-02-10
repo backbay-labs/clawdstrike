@@ -1,7 +1,8 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
+use std::future::Future;
 use std::io::Write;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -29,6 +30,7 @@ const EVENT_QUEUE_CAPACITY: usize = 1024;
 const PROXY_MAX_IN_FLIGHT_CONNECTIONS: usize = 256;
 const PROXY_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const PROXY_TLS_SNI_TIMEOUT: Duration = Duration::from_secs(3);
+const PROXY_DNS_RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
 const HUSHD_FORWARD_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug)]
@@ -179,6 +181,7 @@ pub struct RunArgs {
     pub signing_key: String,
     pub no_proxy: bool,
     pub proxy_port: u16,
+    pub proxy_allow_private_ips: bool,
     pub sandbox: bool,
     pub hushd_url: Option<String>,
     pub hushd_token: Option<String>,
@@ -198,6 +201,7 @@ pub async fn cmd_run(
         signing_key,
         no_proxy,
         proxy_port,
+        proxy_allow_private_ips,
         sandbox,
         hushd_url,
         hushd_token,
@@ -304,6 +308,7 @@ pub async fn cmd_run(
             outcome.clone(),
             PROXY_MAX_IN_FLIGHT_CONNECTIONS,
             PROXY_HEADER_READ_TIMEOUT,
+            proxy_allow_private_ips,
             stderr,
         )
         .await
@@ -759,6 +764,7 @@ async fn start_connect_proxy(
     outcome: RunOutcome,
     max_in_flight_connections: usize,
     header_read_timeout: Duration,
+    allow_private_ips: bool,
     stderr: &mut dyn Write,
 ) -> anyhow::Result<(String, tokio::task::JoinHandle<()>, Arc<AtomicUsize>)> {
     let listener = TcpListener::bind(("127.0.0.1", port))
@@ -804,6 +810,7 @@ async fn start_connect_proxy(
                     event_emitter,
                     outcome,
                     header_read_timeout,
+                    allow_private_ips,
                 )
                 .await;
             });
@@ -820,6 +827,7 @@ async fn handle_connect_proxy_client(
     event_emitter: EventEmitter,
     outcome: RunOutcome,
     header_read_timeout: Duration,
+    allow_private_ips: bool,
 ) -> anyhow::Result<()> {
     let header =
         match tokio::time::timeout(header_read_timeout, read_http_header(&mut client, 8 * 1024))
@@ -873,6 +881,43 @@ async fn handle_connect_proxy_client(
     }
 
     let connect_ip = connect_host.parse::<IpAddr>().ok();
+    let pinned_target = if let Some(ip) = connect_ip {
+        PinnedConnectTarget::for_ip(ip, connect_port)
+    } else {
+        match resolve_connect_hostname_target(&connect_host, connect_port, allow_private_ips).await
+        {
+            Ok(target) => {
+                let resolution_result = GuardResult::allow("connect_proxy_resolution").with_details(
+                    serde_json::json!({
+                        "host": connect_host.clone(),
+                        "port": connect_port,
+                        "allow_private_ips": allow_private_ips,
+                        "resolved_ips": target.resolved_ips.iter().map(IpAddr::to_string).collect::<Vec<_>>(),
+                        "pinned_ip": target.selected_addr.ip().to_string(),
+                    }),
+                );
+                outcome.observe_guard_result(&resolution_result);
+                event_emitter.emit(network_event(
+                    &context,
+                    connect_host.clone(),
+                    connect_port,
+                    &resolution_result,
+                ));
+                target
+            }
+            Err(result) => {
+                outcome.observe_guard_result(&result);
+                event_emitter.emit(network_event(
+                    &context,
+                    connect_host.clone(),
+                    connect_port,
+                    &result,
+                ));
+                client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
+                return Ok(());
+            }
+        }
+    };
     let mut buffered_tls_record: Option<Vec<u8>> = None;
 
     if let Some(ip) = connect_ip {
@@ -921,9 +966,9 @@ async fn handle_connect_proxy_client(
     }
 
     // Connect to the requested endpoint.
-    let mut upstream = TcpStream::connect((connect_host.as_str(), connect_port))
+    let mut upstream = TcpStream::connect(pinned_target.selected_addr)
         .await
-        .context("connect upstream")?;
+        .with_context(|| format!("connect upstream {}", pinned_target.selected_addr))?;
 
     // If we already answered CONNECT for IP targets, do not send it twice.
     if connect_ip.is_none() {
@@ -950,6 +995,208 @@ async fn sni_host_matches_connect_ip(host: &str, port: u16, connect_ip: IpAddr) 
     };
 
     addrs.into_iter().any(|addr| addr.ip() == connect_ip)
+}
+
+#[derive(Clone, Debug)]
+struct PinnedConnectTarget {
+    selected_addr: SocketAddr,
+    resolved_ips: Vec<IpAddr>,
+}
+
+impl PinnedConnectTarget {
+    fn for_ip(ip: IpAddr, port: u16) -> Self {
+        Self {
+            selected_addr: SocketAddr::new(ip, port),
+            resolved_ips: vec![ip],
+        }
+    }
+}
+
+async fn resolve_connect_hostname_target(
+    host: &str,
+    port: u16,
+    allow_private_ips: bool,
+) -> Result<PinnedConnectTarget, GuardResult> {
+    resolve_connect_hostname_target_with_resolver(
+        host,
+        port,
+        allow_private_ips,
+        |hostname, port| async move { resolve_socket_addrs(&hostname, port).await },
+    )
+    .await
+}
+
+async fn resolve_connect_hostname_target_with_resolver<R, Fut>(
+    host: &str,
+    port: u16,
+    allow_private_ips: bool,
+    mut resolver: R,
+) -> Result<PinnedConnectTarget, GuardResult>
+where
+    R: FnMut(String, u16) -> Fut,
+    Fut: Future<Output = anyhow::Result<Vec<SocketAddr>>>,
+{
+    let resolved_addrs = match resolver(host.to_string(), port).await {
+        Ok(addrs) => addrs,
+        Err(err) => {
+            return Err(connect_resolution_block_result(
+                host,
+                port,
+                format!("CONNECT target DNS resolution failed: {}", err),
+                Vec::new(),
+                allow_private_ips,
+            ));
+        }
+    };
+
+    if resolved_addrs.is_empty() {
+        return Err(connect_resolution_block_result(
+            host,
+            port,
+            "CONNECT target DNS resolution returned no addresses",
+            Vec::new(),
+            allow_private_ips,
+        ));
+    }
+
+    let resolved_ips = collect_unique_ips(&resolved_addrs);
+    let selected_addr = resolved_addrs
+        .iter()
+        .copied()
+        .find(|addr| allow_private_ips || is_public_ip(addr.ip()));
+
+    let Some(selected_addr) = selected_addr else {
+        return Err(connect_resolution_block_result(
+            host,
+            port,
+            "CONNECT target resolved only to non-public IP addresses",
+            resolved_ips,
+            allow_private_ips,
+        ));
+    };
+
+    Ok(PinnedConnectTarget {
+        selected_addr,
+        resolved_ips,
+    })
+}
+
+fn connect_resolution_block_result(
+    host: &str,
+    port: u16,
+    message: impl Into<String>,
+    resolved_ips: Vec<IpAddr>,
+    allow_private_ips: bool,
+) -> GuardResult {
+    GuardResult::block("connect_proxy_resolution", Severity::Error, message).with_details(
+        serde_json::json!({
+            "host": host,
+            "port": port,
+            "allow_private_ips": allow_private_ips,
+            "resolved_ips": resolved_ips.into_iter().map(|ip| ip.to_string()).collect::<Vec<_>>(),
+        }),
+    )
+}
+
+fn collect_unique_ips(addrs: &[SocketAddr]) -> Vec<IpAddr> {
+    let mut ips = Vec::new();
+    for addr in addrs {
+        let ip = addr.ip();
+        if !ips.contains(&ip) {
+            ips.push(ip);
+        }
+    }
+    ips
+}
+
+async fn resolve_socket_addrs(host: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
+    let lookup = tokio::time::timeout(PROXY_DNS_RESOLVE_TIMEOUT, lookup_host((host, port))).await;
+    match lookup {
+        Ok(Ok(addrs)) => Ok(addrs.into_iter().collect()),
+        Ok(Err(err)) => Err(err).with_context(|| format!("lookup host {}:{}", host, port)),
+        Err(_) => anyhow::bail!("lookup host {}:{} timed out", host, port),
+    }
+}
+
+fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_public_ipv4(v4.octets()),
+        IpAddr::V6(v6) => is_public_ipv6(v6),
+    }
+}
+
+fn is_public_ipv4(octets: [u8; 4]) -> bool {
+    let [a, b, c, d] = octets;
+
+    if a == 0 {
+        return false;
+    }
+    if a == 10 {
+        return false;
+    }
+    if a == 100 && (64..=127).contains(&b) {
+        return false;
+    }
+    if a == 127 {
+        return false;
+    }
+    if a == 169 && b == 254 {
+        return false;
+    }
+    if a == 172 && (16..=31).contains(&b) {
+        return false;
+    }
+    if a == 192 && b == 168 {
+        return false;
+    }
+    if (a == 192 && b == 0 && c == 2)
+        || (a == 198 && b == 51 && c == 100)
+        || (a == 203 && b == 0 && c == 113)
+    {
+        return false;
+    }
+    if a == 198 && (18..=19).contains(&b) {
+        return false;
+    }
+    if a >= 224 {
+        return false;
+    }
+    if a == 255 && b == 255 && c == 255 && d == 255 {
+        return false;
+    }
+    true
+}
+
+fn is_public_ipv6(addr: Ipv6Addr) -> bool {
+    if let Some(v4) = addr.to_ipv4() {
+        return is_public_ipv4(v4.octets());
+    }
+
+    let segments = addr.segments();
+    let [s0, s1, s2, s3, _s4, _s5, _s6, _s7] = segments;
+
+    if segments == [0, 0, 0, 0, 0, 0, 0, 0] {
+        return false;
+    }
+    if segments == [0, 0, 0, 0, 0, 0, 0, 1] {
+        return false;
+    }
+    if (s0 & 0xfe00) == 0xfc00 {
+        return false;
+    }
+    if (s0 & 0xffc0) == 0xfe80 {
+        return false;
+    }
+    if (s0 & 0xff00) == 0xff00 {
+        return false;
+    }
+    if s0 == 0x2001 && s1 == 0x0db8 {
+        return false;
+    }
+    if s0 == 0x0100 && s1 == 0 && s2 == 0 && s3 == 0 {
+        return false;
+    }
+    true
 }
 
 async fn read_http_header(stream: &mut TcpStream, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
@@ -1040,6 +1287,7 @@ fn network_event(
                 "guard": result.guard,
                 "severity": severity,
                 "message": result.message,
+                "details": result.details.clone(),
             }
         })),
         context: None,
@@ -1241,6 +1489,7 @@ name: "proxy-limit"
             outcome,
             1,
             Duration::from_secs(2),
+            false,
             &mut stderr,
         )
         .await
@@ -1311,6 +1560,7 @@ guards:
             outcome,
             4,
             Duration::from_secs(2),
+            false,
             &mut stderr,
         )
         .await
@@ -1353,6 +1603,69 @@ guards:
     }
 
     #[tokio::test]
+    async fn connect_proxy_hostname_target_is_ip_pinned_after_policy_check() {
+        let check_phase_addr = SocketAddr::from(([93, 184, 216, 34], 443));
+        let dial_phase_addr = SocketAddr::from(([1, 1, 1, 1], 443));
+        let resolver_calls = Arc::new(AtomicUsize::new(0));
+        let resolver_calls_for_resolver = resolver_calls.clone();
+
+        let pinned = resolve_connect_hostname_target_with_resolver(
+            "example.com",
+            443,
+            true,
+            move |_host, _port| {
+                let resolver_calls = resolver_calls_for_resolver.clone();
+                async move {
+                    let call_idx = resolver_calls.fetch_add(1, Ordering::Relaxed);
+                    if call_idx == 0 {
+                        Ok(vec![check_phase_addr])
+                    } else {
+                        Ok(vec![dial_phase_addr])
+                    }
+                }
+            },
+        )
+        .await
+        .expect("resolve and pin CONNECT hostname target");
+
+        assert_eq!(
+            resolver_calls.load(Ordering::Relaxed),
+            1,
+            "CONNECT hostname resolution must happen exactly once before dialing"
+        );
+        assert_eq!(
+            pinned.selected_addr, check_phase_addr,
+            "dial target must stay pinned to check-phase resolution"
+        );
+        assert_ne!(
+            pinned.selected_addr, dial_phase_addr,
+            "dial target must not switch to a rebind address"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_hostname_target_rejects_non_public_resolution_when_private_disallowed() {
+        let result = resolve_connect_hostname_target_with_resolver(
+            "example.com",
+            443,
+            false,
+            |_host, _port| async { Ok(vec![SocketAddr::from(([127, 0, 0, 1], 443))]) },
+        )
+        .await;
+
+        let denied = result.expect_err("non-public resolution should be denied");
+        assert!(
+            !denied.allowed,
+            "hostname targets resolving only to non-public IPs must be blocked"
+        );
+        assert!(
+            denied.message.contains("non-public"),
+            "deny reason should mention non-public IP policy: {}",
+            denied.message
+        );
+    }
+
+    #[tokio::test]
     async fn proxy_slowloris_does_not_exceed_connection_cap() {
         let policy_yaml = r#"
 version: "1.1.0"
@@ -1374,6 +1687,7 @@ name: "slowloris-cap"
             outcome,
             1,
             Duration::from_millis(150),
+            false,
             &mut stderr,
         )
         .await
