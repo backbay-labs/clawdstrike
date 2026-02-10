@@ -38,18 +38,30 @@ db-path = "target/cargo-deny/advisory-dbs"
 unmaintained = "all"
 yanked = "warn"
 ignore = [
-    # `atty` is pulled in transitively via `rust-xmlsec` (used for SAML).
-    # It's only used for terminal detection, and has no maintained upgrade path.
+    # RUSTSEC-2024-0375 / `atty` unmaintained.
+    # Owner: @security-team, Expiry: 2026-06-30.
+    # Transitively pulled via `rust-xmlsec` (SAML stack); no maintained drop-in path yet.
     "RUSTSEC-2024-0375",
-    # `regorus` currently depends on `bincode` 2.x, which is marked unmaintained.
-    # We feature-gate the Rego runtime and track this upstream for migration.
+    # RUSTSEC-2025-0141 / `bincode` unmaintained.
+    # Owner: @policy-runtime, Expiry: 2026-06-30.
+    # `regorus` currently depends on `bincode` 2.x; migration tracked upstream.
     "RUSTSEC-2025-0141",
-    # `rustls-pemfile` is unmaintained — transitive dep via `async-nats`.
-    # Upstream migration to `rustls-pki-types` PemObject is tracked.
+    # RUSTSEC-2024-0388 / `derivative` unmaintained.
+    # Owner: @deps-maintainers, Expiry: 2026-06-30.
+    # Pulled transitively through Alloy/EAS dependencies.
+    "RUSTSEC-2024-0388",
+    # RUSTSEC-2025-0134 / `rustls-pemfile` unmaintained.
+    # Owner: @messaging-platform, Expiry: 2026-06-30.
+    # Transitive via `async-nats`; migration to `rustls-pki-types` APIs tracked.
     "RUSTSEC-2025-0134",
-    # `paste` is pulled transitively through the Alloy stack.
-    # No maintained drop-in is available yet; track upstream replacement.
+    # RUSTSEC-2024-0436 / `paste` unmaintained.
+    # Owner: @deps-maintainers, Expiry: 2026-06-30.
+    # Pulled transitively through the Alloy stack; no maintained drop-in yet.
     "RUSTSEC-2024-0436",
+    # RUSTSEC-2021-0145 / `atty` unsound unaligned read warning.
+    # Owner: @security-team, Expiry: 2026-06-30.
+    # Same transitive source as above; removed when `atty` is fully eliminated.
+    "RUSTSEC-2021-0145",
 ]
 
 [sources]
