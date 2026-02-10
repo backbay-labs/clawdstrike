@@ -135,9 +135,13 @@ impl FilesystemIrm {
 
     /// Extract path from host call arguments
     fn extract_path(&self, call: &HostCall) -> Option<String> {
+        let allow_bare_string_paths = call.function.contains("path");
+
         for arg in &call.args {
             if let Some(s) = arg.as_str() {
-                if self.looks_like_path(s) {
+                if self.looks_like_path(s)
+                    || (allow_bare_string_paths && self.looks_like_bare_filename(s))
+                {
                     return Some(s.to_string());
                 }
             }
@@ -145,7 +149,10 @@ impl FilesystemIrm {
             if let Some(obj) = arg.as_object() {
                 for key in ["path", "file_path", "target_path"] {
                     if let Some(path) = obj.get(key).and_then(|value| value.as_str()) {
-                        if self.looks_like_path(path) || self.has_parent_traversal(path) {
+                        if self.looks_like_path(path)
+                            || self.has_parent_traversal(path)
+                            || self.looks_like_bare_filename(path)
+                        {
                             return Some(path.to_string());
                         }
                     }
@@ -174,6 +181,31 @@ impl FilesystemIrm {
         }
 
         value.contains('/') && !value.contains("://")
+    }
+
+    fn looks_like_bare_filename(&self, value: &str) -> bool {
+        let value = value.trim();
+        if value.is_empty() {
+            return false;
+        }
+
+        if value.contains("://") {
+            return false;
+        }
+
+        if value == "." || value == ".." {
+            return false;
+        }
+
+        if value.contains('/') || value.contains('\\') {
+            return false;
+        }
+
+        if value.bytes().all(|b| b.is_ascii_digit()) {
+            return false;
+        }
+
+        !value.chars().any(|ch| ch.is_control())
     }
 
     fn has_parent_traversal(&self, path: &str) -> bool {
@@ -346,8 +378,30 @@ mod tests {
             Some("../../etc/passwd".to_string())
         );
 
+        let call = HostCall::new("path_open", vec![serde_json::json!("README.md")]);
+        assert_eq!(irm.extract_path(&call), Some("README.md".to_string()));
+
+        let call = HostCall::new(
+            "fd_write",
+            vec![serde_json::json!({"target_path": "config.json"})],
+        );
+        assert_eq!(irm.extract_path(&call), Some("config.json".to_string()));
+
         let call = HostCall::new("fd_read", vec![serde_json::json!(123)]);
         assert_eq!(irm.extract_path(&call), None);
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_allows_bare_filename_for_path_style_calls() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+        let call = HostCall::new("path_open", vec![serde_json::json!("README.md")]);
+        let decision = irm.evaluate(&call, &policy).await;
+
+        assert!(
+            decision.is_allowed(),
+            "bare filename should be treated as a valid filesystem path in path-style calls"
+        );
     }
 
     #[tokio::test]

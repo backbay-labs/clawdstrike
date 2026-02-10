@@ -3144,6 +3144,46 @@ extends: {}#sha256={}
     }
 
     #[test]
+    fn remote_extends_git_cache_hit_does_not_require_dns_resolution() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hush-cli-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let repo = "https://offline-cache.example.invalid/org/repo.git";
+        let commit = "deadbeef";
+        let path = "policy.yaml";
+        let yaml_bytes = br#"
+version: "1.1.0"
+name: cached
+settings:
+  fail_fast: true
+"#;
+        let expected_sha = sha256(yaml_bytes).to_hex();
+        let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+        let digest = sha256(key.as_bytes()).to_hex();
+        let cache_path = cache_dir.join(format!("{}.yaml", digest));
+        std::fs::write(&cache_path, yaml_bytes).expect("write cached bytes");
+
+        let cfg = RemoteExtendsConfig::new(["offline-cache.example.invalid".to_string()])
+            .with_cache_dir(&cache_dir)
+            .with_allow_private_ips(false);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!("git+{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+
+        let resolved = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect("cached git policy should resolve without DNS");
+        assert!(
+            resolved.yaml.contains("name: cached"),
+            "expected cached YAML payload"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
     fn remote_extends_resolves_relative_urls() {
         let nested = br#"
 version: "1.1.0"
