@@ -178,6 +178,10 @@ enum Commands {
         #[arg(long, default_value_t = 0)]
         proxy_port: u16,
 
+        /// Allow CONNECT hostname targets that resolve to private/non-public IPs.
+        #[arg(long)]
+        proxy_allow_private_ips: bool,
+
         /// Enable best-effort OS sandbox wrapper (macOS: sandbox-exec; Linux: bwrap when available)
         #[arg(long)]
         sandbox: bool,
@@ -961,6 +965,7 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
             signing_key,
             no_proxy,
             proxy_port,
+            proxy_allow_private_ips,
             sandbox,
             hushd_url,
             hushd_token,
@@ -974,6 +979,7 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
                     signing_key,
                     no_proxy,
                     proxy_port,
+                    proxy_allow_private_ips,
                     sandbox,
                     hushd_url,
                     hushd_token,

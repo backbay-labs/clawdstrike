@@ -21,17 +21,18 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version 0.13.1
 
       - name: Run fuzz targets (time-boxed)
         run: |
           cd fuzz
-          # Keep these time-bounded to avoid runaway CI costs.
-          # 60s per target, ~6 minutes total.
-          cargo +nightly fuzz run fuzz_dns_parse -- -max_total_time=60
-          cargo +nightly fuzz run fuzz_sni_parse -- -max_total_time=60
-          cargo +nightly fuzz run fuzz_policy_parse -- -max_total_time=60
-          cargo +nightly fuzz run fuzz_secret_leak -- -max_total_time=60
-          cargo +nightly fuzz run fuzz_sha256 -- -max_total_time=60
-          cargo +nightly fuzz run fuzz_merkle -- -max_total_time=60
-
+          # Nightly deep run: 120s per target (~18m total for 9 targets).
+          cargo +nightly fuzz run fuzz_dns_parse -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_sni_parse -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_policy_parse -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_secret_leak -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_sha256 -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_merkle -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_irm_fs_parse -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_irm_net_parse -- -max_total_time=120
+          cargo +nightly fuzz run fuzz_remote_extends_parse -- -max_total_time=120

@@ -631,6 +631,21 @@ fn parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
     )))
 }
 
+#[doc(hidden)]
+pub fn security_validate_git_commit_ref(token: &str) -> Result<()> {
+    validate_git_commit_ref(token)
+}
+
+#[doc(hidden)]
+pub fn security_parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, String> {
+    parse_remote_url(url, https_only)
+}
+
+#[doc(hidden)]
+pub fn security_parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
+    parse_git_remote_host(repo, https_only)
+}
+
 fn parse_scp_like_git_host(repo: &str) -> Option<String> {
     if repo.contains("://") {
         return None;

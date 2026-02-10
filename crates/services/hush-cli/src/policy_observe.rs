@@ -62,6 +62,7 @@ pub async fn cmd_policy_observe(
             signing_key: "hush.key".to_string(),
             no_proxy: false,
             proxy_port: 0,
+            proxy_allow_private_ips: false,
             sandbox: false,
             hushd_url: None,
             hushd_token: None,
