@@ -151,7 +151,7 @@ async function runTsEngine(env, policyRef, events, engineKind) {
   const byId = new Map();
 
   if (engineKind === 'policy') {
-    const distEntry = path.join(repoRoot, 'packages', 'clawdstrike-policy', 'dist', 'index.js');
+    const distEntry = path.join(repoRoot, 'packages', 'policy', 'clawdstrike-policy', 'dist', 'index.js');
     const mod = await import(pathToFileURL(distEntry).href);
     const engine = mod.createPolicyEngine({ policyRef, resolve: false });
     for (const evt of events) {
@@ -162,7 +162,7 @@ async function runTsEngine(env, policyRef, events, engineKind) {
   }
 
   if (engineKind === 'sdk') {
-    const distEntry = path.join(repoRoot, 'packages', 'hush-ts', 'dist', 'index.js');
+    const distEntry = path.join(repoRoot, 'packages', 'sdk', 'hush-ts', 'dist', 'index.js');
     if (!fs.existsSync(distEntry)) {
       throw new Error(`missing hush-ts dist at ${distEntry}; run npm --prefix packages/sdk/hush-ts run build`);
     }
