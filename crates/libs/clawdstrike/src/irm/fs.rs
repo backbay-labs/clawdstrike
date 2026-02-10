@@ -204,6 +204,10 @@ impl FilesystemIrm {
         if kind.is_empty() || subtype.is_empty() {
             return false;
         }
+        // Preserve common relative file paths such as "image/logo.png".
+        if subtype.contains('.') {
+            return false;
+        }
 
         matches!(
             kind.to_ascii_lowercase().as_str(),
@@ -417,6 +421,9 @@ mod tests {
         let call = HostCall::new("path_open", vec![serde_json::json!("README.md")]);
         assert_eq!(irm.extract_path(&call), Some("README.md".to_string()));
 
+        let call = HostCall::new("fd_read", vec![serde_json::json!("image/logo.png")]);
+        assert_eq!(irm.extract_path(&call), Some("image/logo.png".to_string()));
+
         let call = HostCall::new(
             "fd_write",
             vec![serde_json::json!({"target_path": "config.json"})],
@@ -436,6 +443,7 @@ mod tests {
         );
 
         assert!(!irm.looks_like_path("text/plain"));
+        assert!(irm.looks_like_path("image/logo.png"));
         assert!(irm.looks_like_path("src/main.rs"));
 
         let call = HostCall::new("fd_read", vec![serde_json::json!(123)]);
