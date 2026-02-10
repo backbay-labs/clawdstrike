@@ -1013,10 +1013,8 @@ async fn handle_connect_proxy_client(
         }
     }
 
-    // Connect to the requested endpoint.
-    let mut upstream = TcpStream::connect(pinned_target.selected_addr)
-        .await
-        .with_context(|| format!("connect upstream {}", pinned_target.selected_addr))?;
+    // Connect to one of the policy-approved, pinned resolution candidates.
+    let mut upstream = connect_to_pinned_target(&pinned_target).await?;
 
     // If we already answered CONNECT for IP targets, do not send it twice.
     if connect_ip.is_none() {
@@ -1048,13 +1046,16 @@ async fn sni_host_matches_connect_ip(host: &str, port: u16, connect_ip: IpAddr) 
 #[derive(Clone, Debug)]
 struct PinnedConnectTarget {
     selected_addr: SocketAddr,
+    candidate_addrs: Vec<SocketAddr>,
     resolved_ips: Vec<IpAddr>,
 }
 
 impl PinnedConnectTarget {
     fn for_ip(ip: IpAddr, port: u16) -> Self {
+        let selected_addr = SocketAddr::new(ip, port);
         Self {
-            selected_addr: SocketAddr::new(ip, port),
+            selected_addr,
+            candidate_addrs: vec![selected_addr],
             resolved_ips: vec![ip],
         }
     }
@@ -1108,12 +1109,12 @@ where
     }
 
     let resolved_ips = collect_unique_ips(&resolved_addrs);
-    let selected_addr = resolved_addrs
-        .iter()
-        .copied()
-        .find(|addr| allow_private_ips || is_public_ip(addr.ip()));
+    let candidate_addrs: Vec<SocketAddr> = resolved_addrs
+        .into_iter()
+        .filter(|addr| allow_private_ips || is_public_ip(addr.ip()))
+        .collect();
 
-    let Some(selected_addr) = selected_addr else {
+    let Some(selected_addr) = candidate_addrs.first().copied() else {
         return Err(connect_resolution_block_result(
             host,
             port,
@@ -1125,8 +1126,31 @@ where
 
     Ok(PinnedConnectTarget {
         selected_addr,
+        candidate_addrs,
         resolved_ips,
     })
+}
+
+async fn connect_to_pinned_target(target: &PinnedConnectTarget) -> anyhow::Result<TcpStream> {
+    let mut errors = Vec::new();
+    for addr in &target.candidate_addrs {
+        match TcpStream::connect(*addr).await {
+            Ok(stream) => return Ok(stream),
+            Err(err) => errors.push(format!("{addr}: {err}")),
+        }
+    }
+
+    let attempted = target
+        .candidate_addrs
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    anyhow::bail!(
+        "connect upstream failed for pinned candidates [{}] (attempted: [{}])",
+        errors.join("; "),
+        attempted
+    )
 }
 
 fn connect_resolution_block_result(
@@ -1780,6 +1804,44 @@ guards:
             pinned.selected_addr, dial_phase_addr,
             "dial target must not switch to a rebind address"
         );
+        assert_eq!(
+            pinned.candidate_addrs,
+            vec![check_phase_addr],
+            "pinned candidate set must remain tied to check-phase resolution"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_hostname_target_retries_within_pinned_candidate_set() {
+        let dead_listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind dead listener");
+        let dead_addr = dead_listener.local_addr().expect("dead listener addr");
+        drop(dead_listener);
+
+        let live_listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind live listener");
+        let live_addr = live_listener.local_addr().expect("live listener addr");
+        let accept_task = tokio::spawn(async move { live_listener.accept().await });
+
+        let target = PinnedConnectTarget {
+            selected_addr: dead_addr,
+            candidate_addrs: vec![dead_addr, live_addr],
+            resolved_ips: vec![dead_addr.ip(), live_addr.ip()],
+        };
+
+        let stream = connect_to_pinned_target(&target)
+            .await
+            .expect("should connect to healthy pinned candidate");
+        drop(stream);
+
+        let accepted = tokio::time::timeout(Duration::from_secs(1), accept_task)
+            .await
+            .expect("accept timeout")
+            .expect("accept join")
+            .expect("accept connection");
+        assert_eq!(accepted.1.ip(), IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
     }
 
     #[tokio::test]

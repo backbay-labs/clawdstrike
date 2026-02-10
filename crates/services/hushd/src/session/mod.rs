@@ -410,10 +410,11 @@ impl SessionManager {
     }
 
     fn remove_session_lock_if_idle(&self, session_id: &str) {
-        if let Some(entry) = self.session_locks.get(session_id) {
-            if Arc::strong_count(entry.value()) == 1 {
-                drop(entry);
-                self.session_locks.remove(session_id);
+        if let dashmap::mapref::entry::Entry::Occupied(entry) =
+            self.session_locks.entry(session_id.to_string())
+        {
+            if Arc::strong_count(entry.get()) == 1 {
+                entry.remove();
             }
         }
     }
@@ -1076,6 +1077,33 @@ mod tests {
             manager.session_locks.len(),
             0,
             "session lock table should be fully pruned after terminate churn"
+        );
+    }
+
+    #[test]
+    fn idle_lock_pruning_keeps_entry_while_external_clone_exists() {
+        let store = Arc::new(InMemorySessionStore::new());
+        let manager =
+            SessionManager::new(store, 3600, 86_400, None, SessionHardeningConfig::default());
+        let session = manager
+            .create_session(test_identity(), None)
+            .expect("create");
+
+        let lock = manager.lock_for_session_id(&session.session_id);
+        let cloned = lock.clone();
+
+        manager.remove_session_lock_if_idle(&session.session_id);
+        assert!(
+            manager.session_locks.contains_key(&session.session_id),
+            "lock entry must remain while an external Arc clone is still alive"
+        );
+
+        drop(cloned);
+        drop(lock);
+        manager.remove_session_lock_if_idle(&session.session_id);
+        assert!(
+            !manager.session_locks.contains_key(&session.session_id),
+            "idle lock entry should be removed once only the map-owned Arc remains"
         );
     }
 }
