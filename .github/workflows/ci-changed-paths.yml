@@ -97,7 +97,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Check Rust services
-        run: cargo check -p hush-cli -p hushd -p spine-cli -p cloud-api -p eas-anchor
+        run: cargo check -p hush-cli -p hushd -p spine-cli -p clawdstrike-cloud-api -p eas-anchor
 
   ci-rust-bridges:
     name: ci-rust-bridges
