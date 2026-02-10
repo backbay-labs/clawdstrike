@@ -22,6 +22,7 @@ use crate::posture::{validate_posture_config, PostureConfig};
 /// unsupported versions to prevent silent drift.
 pub const POLICY_SCHEMA_VERSION: &str = "1.2.0";
 pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1.1.0", "1.2.0"];
+const MAX_POLICY_EXTENDS_DEPTH: usize = 32;
 
 fn default_true() -> bool {
     true
@@ -907,6 +908,7 @@ impl Policy {
             location,
             resolver,
             &mut std::collections::HashSet::new(),
+            0,
             PolicyValidationOptions::default(),
         )
     }
@@ -916,8 +918,16 @@ impl Policy {
         location: PolicyLocation,
         resolver: &impl PolicyResolver,
         visited: &mut std::collections::HashSet<String>,
+        depth: usize,
         validation: PolicyValidationOptions,
     ) -> Result<Self> {
+        if depth > MAX_POLICY_EXTENDS_DEPTH {
+            return Err(Error::ConfigError(format!(
+                "Policy extends depth exceeded (limit: {})",
+                MAX_POLICY_EXTENDS_DEPTH
+            )));
+        }
+
         let child = Policy::from_yaml_unvalidated(yaml)?;
 
         if let Some(ref extends) = child.extends {
@@ -937,6 +947,7 @@ impl Policy {
                 resolved.location,
                 resolver,
                 visited,
+                depth + 1,
                 validation,
             )?;
 
@@ -965,6 +976,7 @@ impl Policy {
             location,
             resolver,
             &mut std::collections::HashSet::new(),
+            0,
             validation,
         )
     }

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use dashmap::DashMap;
@@ -13,6 +14,8 @@ use crate::async_guards::types::{
 };
 use crate::guards::{GuardAction, GuardContext, GuardResult, Severity};
 use crate::policy::{AsyncExecutionMode, TimeoutBehavior};
+
+const DEFAULT_BACKGROUND_IN_FLIGHT_LIMIT: usize = 64;
 
 #[derive(Clone, Debug)]
 pub enum OwnedGuardAction {
@@ -94,6 +97,11 @@ pub struct AsyncGuardRuntime {
     caches: DashMap<String, Arc<TtlCache>>,
     limiters: DashMap<String, Arc<TokenBucket>>,
     breakers: DashMap<String, Arc<CircuitBreaker>>,
+    background_slots: Arc<tokio::sync::Semaphore>,
+    background_in_flight_limit: usize,
+    background_running: AtomicUsize,
+    background_peak_running: AtomicUsize,
+    background_dropped: AtomicUsize,
 }
 
 impl Default for AsyncGuardRuntime {
@@ -104,16 +112,42 @@ impl Default for AsyncGuardRuntime {
 
 impl AsyncGuardRuntime {
     pub fn new() -> Self {
+        Self::with_background_in_flight_limit(DEFAULT_BACKGROUND_IN_FLIGHT_LIMIT)
+    }
+
+    pub fn with_background_in_flight_limit(limit: usize) -> Self {
+        let limit = limit.max(1);
         Self {
             http: HttpClient::new(),
             caches: DashMap::new(),
             limiters: DashMap::new(),
             breakers: DashMap::new(),
+            background_slots: Arc::new(tokio::sync::Semaphore::new(limit)),
+            background_in_flight_limit: limit,
+            background_running: AtomicUsize::new(0),
+            background_peak_running: AtomicUsize::new(0),
+            background_dropped: AtomicUsize::new(0),
         }
     }
 
     pub fn http(&self) -> &HttpClient {
         &self.http
+    }
+
+    pub fn background_inflight_limit(&self) -> usize {
+        self.background_in_flight_limit
+    }
+
+    pub fn background_inflight_count(&self) -> usize {
+        self.background_running.load(Ordering::Relaxed)
+    }
+
+    pub fn background_peak_inflight(&self) -> usize {
+        self.background_peak_running.load(Ordering::Relaxed)
+    }
+
+    pub fn background_dropped_count(&self) -> usize {
+        self.background_dropped.load(Ordering::Relaxed)
     }
 
     pub async fn evaluate_async_guards(
@@ -210,13 +244,28 @@ impl AsyncGuardRuntime {
 
             background.sort_by_key(|(idx, _)| *idx);
             for (_idx, g) in background {
-                self.spawn_background(g.clone(), owned_action.clone(), ctx.clone());
-                out.push(
-                    GuardResult::allow(g.name()).with_details(serde_json::json!({
-                        "background": true,
-                        "note": "scheduled"
-                    })),
-                );
+                if self.spawn_background(g.clone(), owned_action.clone(), ctx.clone()) {
+                    out.push(
+                        GuardResult::allow(g.name()).with_details(serde_json::json!({
+                            "background": true,
+                            "note": "scheduled",
+                            "in_flight_limit": self.background_inflight_limit()
+                        })),
+                    );
+                } else {
+                    out.push(
+                        GuardResult::warn(
+                            g.name(),
+                            "background guard dropped due to in-flight limit",
+                        )
+                        .with_details(serde_json::json!({
+                            "background": true,
+                            "note": "dropped",
+                            "in_flight_limit": self.background_inflight_limit(),
+                            "dropped_total": self.background_dropped_count()
+                        })),
+                    );
+                }
             }
         }
 
@@ -228,9 +277,20 @@ impl AsyncGuardRuntime {
         guard: Arc<dyn AsyncGuard>,
         action: OwnedGuardAction,
         context: GuardContext,
-    ) {
+    ) -> bool {
+        let permit = match self.background_slots.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                self.background_dropped.fetch_add(1, Ordering::Relaxed);
+                return false;
+            }
+        };
+
         let runtime = Arc::clone(self);
         tokio::spawn(async move {
+            let running = runtime.background_running.fetch_add(1, Ordering::Relaxed) + 1;
+            update_max(&runtime.background_peak_running, running);
+
             let borrowed = action.as_guard_action();
             let result = runtime
                 .evaluate_one(guard.clone(), &borrowed, &context)
@@ -245,7 +305,11 @@ impl AsyncGuardRuntime {
                     "background async guard would have denied"
                 );
             }
+
+            runtime.background_running.fetch_sub(1, Ordering::Relaxed);
+            drop(permit);
         });
+        true
     }
 
     async fn evaluate_one(
@@ -387,6 +451,21 @@ impl AsyncGuardRuntime {
             .entry(guard_name.to_string())
             .or_insert_with(|| Arc::new(TtlCache::new(cfg.cache_max_size_bytes.max(1024))))
             .clone()
+    }
+}
+
+fn update_max(target: &AtomicUsize, candidate: usize) {
+    loop {
+        let current = target.load(Ordering::Relaxed);
+        if candidate <= current {
+            return;
+        }
+        if target
+            .compare_exchange(current, candidate, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return;
+        }
     }
 }
 

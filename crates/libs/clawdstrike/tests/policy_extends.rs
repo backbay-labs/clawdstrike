@@ -285,3 +285,60 @@ extends: a
     let err = Policy::from_yaml_with_extends_resolver(a, None, &resolver).unwrap_err();
     assert!(err.to_string().contains("Circular"));
 }
+
+#[test]
+fn policy_extends_depth_limit_enforced() {
+    use std::collections::HashMap;
+
+    #[derive(Clone, Default)]
+    struct MapResolver {
+        policies: HashMap<String, String>,
+    }
+
+    impl PolicyResolver for MapResolver {
+        fn resolve(
+            &self,
+            reference: &str,
+            _from: &PolicyLocation,
+        ) -> clawdstrike::Result<ResolvedPolicySource> {
+            let yaml = self.policies.get(reference).cloned().ok_or_else(|| {
+                clawdstrike::Error::ConfigError(format!("Unknown policy ref: {}", reference))
+            })?;
+            Ok(ResolvedPolicySource {
+                key: format!("url:{}", reference),
+                yaml,
+                location: PolicyLocation::Url(reference.to_string()),
+            })
+        }
+    }
+
+    let mut resolver = MapResolver::default();
+    for i in 0..40 {
+        let extends = if i < 39 {
+            format!("extends: p{}\n", i + 1)
+        } else {
+            String::new()
+        };
+        let yaml = format!(
+            r#"
+version: "1.1.0"
+name: p{}
+{}
+"#,
+            i, extends
+        );
+        resolver.policies.insert(format!("p{}", i), yaml);
+    }
+
+    let root = r#"
+version: "1.1.0"
+name: root
+extends: p0
+"#;
+    let err = Policy::from_yaml_with_extends_resolver(root, None, &resolver)
+        .expect_err("extends chain deeper than limit should fail");
+    assert!(
+        err.to_string().contains("extends depth exceeded"),
+        "unexpected error: {err}"
+    );
+}
