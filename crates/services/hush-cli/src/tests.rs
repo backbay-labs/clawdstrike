@@ -3071,6 +3071,23 @@ extends: {}#sha256={}
     }
 
     #[test]
+    fn remote_extends_rejects_dash_prefixed_commit_ref() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+https://github.com/backbay-labs/clawdstrike.git@-not-a-ref:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("dash-prefixed commit/ref must be rejected before any git invocation");
+        assert!(
+            err.to_string().contains("must not start with '-'"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn remote_extends_git_private_ip_blocked_when_disallowed() {
         let cfg = RemoteExtendsConfig::new(["127.0.0.1".to_string()])
             .with_https_only(false)

@@ -347,6 +347,7 @@ impl RemotePolicyResolver {
                 "Invalid git extends (empty repo/commit/path)".into(),
             ));
         }
+        validate_git_commit_ref(commit)?;
 
         let repo_host = parse_git_remote_host(repo, self.cfg.https_only)?;
         self.ensure_host_allowed(&repo_host)?;
@@ -396,6 +397,7 @@ impl RemotePolicyResolver {
         commit: &str,
         base_path: &str,
     ) -> Result<ResolvedPolicySource> {
+        validate_git_commit_ref(commit)?;
         let (rel_path, expected_sha) = split_sha256_pin(reference)?;
         let joined = normalize_git_join(base_path, rel_path)?;
         let absolute = format!("git+{}@{}:{}#sha256={}", repo, commit, joined, expected_sha);
@@ -407,7 +409,10 @@ impl RemotePolicyResolver {
 
         run_git(&temp.path, &["init"])?;
         run_git(&temp.path, &["remote", "add", "origin", repo])?;
-        run_git(&temp.path, &["fetch", "--depth", "1", "origin", commit])?;
+        run_git(
+            &temp.path,
+            &["fetch", "--depth", "1", "origin", "--", commit],
+        )?;
 
         let output = Command::new("git")
             .arg("-C")
@@ -519,6 +524,53 @@ fn verify_sha256_pin(bytes: &[u8], expected_hex: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn validate_git_commit_ref(token: &str) -> Result<()> {
+    if token.starts_with('-') {
+        return Err(Error::ConfigError(
+            "Invalid git extends commit/ref: token must not start with '-'".to_string(),
+        ));
+    }
+
+    if is_hex_oid(token) || is_valid_git_refname(token) {
+        return Ok(());
+    }
+
+    Err(Error::ConfigError(format!(
+        "Invalid git extends commit/ref: {}",
+        token
+    )))
+}
+
+fn is_hex_oid(token: &str) -> bool {
+    (7..=40).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_valid_git_refname(token: &str) -> bool {
+    if token.is_empty()
+        || token.starts_with('/')
+        || token.ends_with('/')
+        || token.ends_with('.')
+        || token.ends_with(".lock")
+        || token.contains("//")
+        || token.contains("..")
+        || token.contains("@{")
+    {
+        return false;
+    }
+
+    if token.bytes().any(|b| {
+        b.is_ascii_control()
+            || b == b' '
+            || matches!(b, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
+    }) {
+        return false;
+    }
+
+    token
+        .split('/')
+        .all(|seg| !seg.is_empty() && seg != "." && seg != ".." && !seg.starts_with('.'))
 }
 
 fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, String> {
@@ -1172,6 +1224,40 @@ mod tests {
         assert!(
             err.to_string().contains("non-public IPs"),
             "expected private-IP rejection, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn remote_extends_rejects_dash_prefixed_commit_ref() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["github.com".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: true,
+            allow_private_ips: true,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!(
+            "git+https://github.com/backbay-labs/clawdstrike.git@-badref:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("dash-prefixed commit/ref must be rejected before any git invocation");
+        assert!(
+            err.to_string().contains("must not start with '-'"),
+            "unexpected error: {err}"
         );
 
         let _ = std::fs::remove_dir_all(&cache_dir);
