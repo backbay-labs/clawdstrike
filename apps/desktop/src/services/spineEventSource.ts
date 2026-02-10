@@ -156,21 +156,21 @@ export class SpineEventSource {
 // Normalization: raw spine/NATS payload -> SDREvent
 // ---------------------------------------------------------------------------
 
-function normalizeSpinePayload(payload: Record<string, unknown>): SDREvent | null {
+export function normalizeSpinePayload(payload: Record<string, unknown>): SDREvent | null {
   try {
     // Tetragon-style event
     if (payload.process_exec || payload.process_kprobe || payload.process_exit) {
       return normalizeTetragonEvent(payload);
     }
 
-    // Hubble-style flow event (has source/destination/verdict)
-    if (payload.source && payload.destination && payload.verdict) {
-      return normalizeHubbleEvent(payload);
-    }
-
     // Hubble DNS event (has dns_names or l7 layer with DNS type)
     if (payload.source && payload.destination && (payload.dns_names || (payload.l7 as Record<string, unknown>)?.type === "DNS")) {
       return normalizeHubbleDnsEvent(payload);
+    }
+
+    // Hubble-style flow event (has source/destination/verdict)
+    if (payload.source && payload.destination && payload.verdict) {
+      return normalizeHubbleEvent(payload);
     }
 
     // Hushd-style event (guard evaluation result)
