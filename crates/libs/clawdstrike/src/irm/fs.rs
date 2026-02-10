@@ -102,14 +102,12 @@ impl FilesystemIrm {
         // Remove trailing slashes
         let trimmed = expanded.trim_end_matches('/');
 
-        // Resolve .. and . (simple implementation)
+        // Resolve "." but preserve ".." so security checks do not silently change path meaning.
         let mut parts: Vec<&str> = Vec::new();
         for part in trimmed.split('/') {
             match part {
                 "" | "." => {}
-                ".." => {
-                    parts.pop();
-                }
+                ".." => parts.push(".."),
                 other => {
                     parts.push(other);
                 }
@@ -139,7 +137,7 @@ impl FilesystemIrm {
     fn extract_path(&self, call: &HostCall) -> Option<String> {
         for arg in &call.args {
             if let Some(s) = arg.as_str() {
-                if s.starts_with('/') || s.starts_with("~/") || s.starts_with("./") {
+                if self.looks_like_path(s) {
                     return Some(s.to_string());
                 }
             }
@@ -155,6 +153,30 @@ impl FilesystemIrm {
         }
 
         None
+    }
+
+    fn looks_like_path(&self, value: &str) -> bool {
+        if value.is_empty() {
+            return false;
+        }
+
+        if value.starts_with('/') || value.starts_with("~/") || value.starts_with("./") {
+            return true;
+        }
+
+        if value == ".." || value.starts_with("../") {
+            return true;
+        }
+
+        if value.contains('\\') {
+            return true;
+        }
+
+        value.contains('/') && !value.contains("://")
+    }
+
+    fn has_parent_traversal(&self, path: &str) -> bool {
+        path.replace('\\', "/").split('/').any(|seg| seg == "..")
     }
 }
 
@@ -187,6 +209,12 @@ impl Monitor for FilesystemIrm {
         };
 
         debug!("FilesystemIrm checking path: {}", path);
+
+        if self.has_parent_traversal(&path) {
+            return Decision::Deny {
+                reason: format!("Path contains parent traversal segment: {}", path),
+            };
+        }
 
         // Check forbidden paths
         if let Some(pattern) = self.is_forbidden(&path, policy) {
@@ -222,7 +250,7 @@ mod tests {
 
         assert_eq!(irm.normalize_path("/foo/bar"), "/foo/bar");
         assert_eq!(irm.normalize_path("/foo/bar/"), "/foo/bar");
-        assert_eq!(irm.normalize_path("/foo/../bar"), "/bar");
+        assert_eq!(irm.normalize_path("/foo/../bar"), "/foo/../bar");
         assert_eq!(irm.normalize_path("/foo/./bar"), "/foo/bar");
         assert_eq!(irm.normalize_path("~/test"), "/home/user/test");
     }
@@ -307,8 +335,37 @@ mod tests {
         let call = HostCall::new("fd_read", vec![serde_json::json!({"path": "/app/main.rs"})]);
         assert_eq!(irm.extract_path(&call), Some("/app/main.rs".to_string()));
 
+        let call = HostCall::new("fd_read", vec![serde_json::json!("../../etc/passwd")]);
+        assert_eq!(
+            irm.extract_path(&call),
+            Some("../../etc/passwd".to_string())
+        );
+
         let call = HostCall::new("fd_read", vec![serde_json::json!(123)]);
         assert_eq!(irm.extract_path(&call), None);
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_denies_parent_traversal_relative_paths() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+
+        let call = HostCall::new("fd_read", vec![serde_json::json!("../../etc/passwd")]);
+        let decision = irm.evaluate(&call, &policy).await;
+        assert!(
+            !decision.is_allowed(),
+            "string traversal path should be denied"
+        );
+
+        let call = HostCall::new(
+            "fd_write",
+            vec![serde_json::json!({"path": "./../..//etc/passwd"})],
+        );
+        let decision = irm.evaluate(&call, &policy).await;
+        assert!(
+            !decision.is_allowed(),
+            "object traversal path should be denied"
+        );
     }
 
     #[test]

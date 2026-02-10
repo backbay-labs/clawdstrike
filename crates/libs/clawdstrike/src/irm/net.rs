@@ -3,6 +3,7 @@
 //! Monitors network operations and enforces egress control.
 
 use async_trait::async_trait;
+use reqwest::Url;
 use tracing::debug;
 
 use hush_proxy::dns::domain_matches;
@@ -36,14 +37,20 @@ impl NetworkIrm {
                 }
                 // Plain hostname pattern
                 if s.contains('.') && !s.contains('/') {
-                    return Some(s.to_string());
+                    let host = self.normalize_host(s);
+                    if !host.is_empty() {
+                        return Some(host);
+                    }
                 }
             }
 
             // Check object with host field
             if let Some(obj) = arg.as_object() {
                 if let Some(host) = obj.get("host").and_then(|h| h.as_str()) {
-                    return Some(host.to_string());
+                    let host = self.normalize_host(host);
+                    if !host.is_empty() {
+                        return Some(host);
+                    }
                 }
                 if let Some(url) = obj.get("url").and_then(|u| u.as_str()) {
                     return self.extract_host_from_url(url);
@@ -92,15 +99,18 @@ impl NetworkIrm {
 
     /// Extract host from URL
     fn extract_host_from_url(&self, url: &str) -> Option<String> {
-        let without_scheme = url
-            .strip_prefix("https://")
-            .or_else(|| url.strip_prefix("http://"))
-            .unwrap_or(url);
+        let parsed = Url::parse(url).ok()?;
+        let host = parsed.host_str()?;
+        let host = self.normalize_host(host);
+        if host.is_empty() {
+            None
+        } else {
+            Some(host)
+        }
+    }
 
-        let host_part = without_scheme.split('/').next()?;
-        let host = host_part.split(':').next()?;
-
-        Some(host.to_string())
+    fn normalize_host(&self, host: &str) -> String {
+        host.trim().trim_end_matches('.').to_ascii_lowercase()
     }
 
     /// Check if a host matches a pattern
@@ -228,6 +238,10 @@ mod tests {
             irm.extract_host_from_url("http://localhost:8080/api"),
             Some("localhost".to_string())
         );
+        assert_eq!(
+            irm.extract_host_from_url("https://api.openai.com:443@evil.example/path"),
+            Some("evil.example".to_string())
+        );
     }
 
     #[test]
@@ -312,6 +326,34 @@ mod tests {
             vec![serde_json::json!({"host": "api.openai.com", "port": 443})],
         );
         assert_eq!(irm.extract_host(&call), Some("api.openai.com".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_userinfo_spoof_url_uses_actual_host_and_is_denied() {
+        let irm = NetworkIrm::new();
+        let policy = Policy::from_yaml(
+            r#"
+version: "1.1.0"
+name: net-allowlist
+guards:
+  egress_allowlist:
+    allow: ["api.openai.com"]
+    default_action: block
+"#,
+        )
+        .expect("policy");
+
+        let call = HostCall::new(
+            "sock_connect",
+            vec![serde_json::json!(
+                "https://api.openai.com:443@evil.example/path"
+            )],
+        );
+        let decision = irm.evaluate(&call, &policy).await;
+        assert!(
+            !decision.is_allowed(),
+            "spoofed userinfo URL should be denied"
+        );
     }
 
     #[test]
