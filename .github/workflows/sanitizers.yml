@@ -1,0 +1,37 @@
+name: Sanitizers (Scheduled)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 4 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  asan-smoke:
+    name: ASAN Smoke (hush-cli + clawdstrike)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Run ASAN smoke tests
+        env:
+          RUSTFLAGS: -Zsanitizer=address
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
+        run: |
+          cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu -p hush-cli hush_run::tests::connect_proxy_rejects_ip_target_with_allowlisted_sni_mismatch -- --exact
+          cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu -p hush-cli hush_run::tests::connect_proxy_hostname_target_is_ip_pinned_after_policy_check -- --exact
+          cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu -p clawdstrike --test security_regressions security_regression_async_background_guards_enforce_inflight_limit -- --exact

@@ -1,0 +1,39 @@
+name: Miri (Scheduled)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 5 * * 1'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  MIRIFLAGS: -Zmiri-strict-provenance
+
+jobs:
+  miri-curated:
+    name: Miri Curated Security Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust nightly + miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: Set up Miri
+        run: cargo +nightly miri setup
+
+      - name: Run policy depth regression under Miri
+        run: cargo +nightly miri test -p clawdstrike policy_extends_depth_limit_enforced -- --exact
+
+      - name: Run IRM fs traversal regression under Miri
+        run: cargo +nightly miri test -p clawdstrike irm::fs::tests::filesystem_irm_denies_traversal_when_path_is_in_nonfirst_object_arg -- --exact
+
+      - name: Run IRM net spoof regression under Miri
+        run: cargo +nightly miri test -p clawdstrike irm::net::tests::test_userinfo_spoof_url_uses_actual_host_and_is_denied -- --exact
+
+      - name: Run async runtime cap regression under Miri
+        run: cargo +nightly miri test -p clawdstrike --test security_regressions security_regression_async_background_guards_enforce_inflight_limit -- --exact

@@ -1,11 +1,12 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::io::Write;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -26,12 +27,55 @@ use crate::policy_event::{
 use crate::remote_extends;
 use crate::ExitCode;
 
-const EVENT_QUEUE_CAPACITY: usize = 1024;
-const PROXY_MAX_IN_FLIGHT_CONNECTIONS: usize = 256;
-const PROXY_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const EVENT_QUEUE_CAPACITY_DEFAULT: usize = 1024;
+const PROXY_MAX_IN_FLIGHT_CONNECTIONS_DEFAULT: usize = 256;
+const PROXY_HEADER_READ_TIMEOUT_DEFAULT: Duration = Duration::from_secs(5);
 const PROXY_TLS_SNI_TIMEOUT: Duration = Duration::from_secs(3);
-const PROXY_DNS_RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
-const HUSHD_FORWARD_TIMEOUT: Duration = Duration::from_secs(3);
+const PROXY_DNS_RESOLVE_TIMEOUT_DEFAULT: Duration = Duration::from_secs(2);
+const HUSHD_FORWARD_TIMEOUT_DEFAULT: Duration = Duration::from_secs(3);
+
+static TEST_RESOLVER_CALLS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+
+fn parse_test_override_usize(name: &str) -> Option<usize> {
+    let raw = std::env::var(name).ok()?;
+    raw.parse::<usize>().ok()
+}
+
+fn parse_test_override_duration_ms(name: &str) -> Option<Duration> {
+    let raw = std::env::var(name).ok()?;
+    let ms = raw.parse::<u64>().ok()?;
+    Some(Duration::from_millis(ms))
+}
+
+fn event_queue_capacity() -> usize {
+    parse_test_override_usize("HUSH_TEST_EVENT_QUEUE_CAPACITY")
+        .filter(|v| *v > 0)
+        .unwrap_or(EVENT_QUEUE_CAPACITY_DEFAULT)
+}
+
+fn proxy_max_in_flight_connections() -> usize {
+    parse_test_override_usize("HUSH_TEST_PROXY_MAX_IN_FLIGHT")
+        .filter(|v| *v > 0)
+        .unwrap_or(PROXY_MAX_IN_FLIGHT_CONNECTIONS_DEFAULT)
+}
+
+fn proxy_header_read_timeout() -> Duration {
+    parse_test_override_duration_ms("HUSH_TEST_PROXY_HEADER_TIMEOUT_MS")
+        .filter(|v| !v.is_zero())
+        .unwrap_or(PROXY_HEADER_READ_TIMEOUT_DEFAULT)
+}
+
+fn proxy_dns_resolve_timeout() -> Duration {
+    parse_test_override_duration_ms("HUSH_TEST_PROXY_DNS_TIMEOUT_MS")
+        .filter(|v| !v.is_zero())
+        .unwrap_or(PROXY_DNS_RESOLVE_TIMEOUT_DEFAULT)
+}
+
+fn hushd_forward_timeout() -> Duration {
+    parse_test_override_duration_ms("HUSH_TEST_FORWARD_TIMEOUT_MS")
+        .filter(|v| !v.is_zero())
+        .unwrap_or(HUSHD_FORWARD_TIMEOUT_DEFAULT)
+}
 
 #[derive(Clone, Debug)]
 struct RunOutcome {
@@ -104,7 +148,7 @@ struct HushdForwarder {
 impl HushdForwarder {
     fn new(base_url: String, token: Option<String>) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(HUSHD_FORWARD_TIMEOUT)
+            .timeout(hushd_forward_timeout())
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
@@ -132,7 +176,7 @@ impl HushdForwarder {
             .client
             .post(format!("{}/api/v1/eval", self.base_url))
             .json(event)
-            .timeout(HUSHD_FORWARD_TIMEOUT);
+            .timeout(hushd_forward_timeout());
 
         if let Some(token) = self.token.as_ref() {
             req = req.bearer_auth(token);
@@ -254,7 +298,11 @@ pub async fn cmd_run(
     let events_path = PathBuf::from(&events_out);
     let receipt_path = PathBuf::from(&receipt_out);
 
-    let (event_tx, mut event_rx) = mpsc::channel::<PolicyEvent>(EVENT_QUEUE_CAPACITY);
+    let event_queue_capacity = event_queue_capacity();
+    let proxy_max_in_flight_connections = proxy_max_in_flight_connections();
+    let proxy_header_timeout = proxy_header_read_timeout();
+
+    let (event_tx, mut event_rx) = mpsc::channel::<PolicyEvent>(event_queue_capacity);
     let event_emitter = EventEmitter::new(event_tx);
 
     let writer_forwarder = forwarder.clone();
@@ -306,8 +354,8 @@ pub async fn cmd_run(
             base_context.clone(),
             event_emitter.clone(),
             outcome.clone(),
-            PROXY_MAX_IN_FLIGHT_CONNECTIONS,
-            PROXY_HEADER_READ_TIMEOUT,
+            proxy_max_in_flight_connections,
+            proxy_header_timeout,
             proxy_allow_private_ips,
             stderr,
         )
@@ -420,14 +468,14 @@ pub async fn cmd_run(
         let _ = writeln!(
             stderr,
             "Warning: dropped {} policy events because the event queue is full (capacity={})",
-            dropped_events, EVENT_QUEUE_CAPACITY
+            dropped_events, event_queue_capacity
         );
     }
     if rejected_proxy_connections > 0 {
         let _ = writeln!(
             stderr,
             "Warning: rejected {} proxy connections due to in-flight limit ({})",
-            rejected_proxy_connections, PROXY_MAX_IN_FLIGHT_CONNECTIONS
+            rejected_proxy_connections, proxy_max_in_flight_connections
         );
     }
 
@@ -1110,12 +1158,103 @@ fn collect_unique_ips(addrs: &[SocketAddr]) -> Vec<IpAddr> {
 }
 
 async fn resolve_socket_addrs(host: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
-    let lookup = tokio::time::timeout(PROXY_DNS_RESOLVE_TIMEOUT, lookup_host((host, port))).await;
+    if let Some(hook_result) = resolve_socket_addrs_from_test_hook(host, port) {
+        return hook_result;
+    }
+
+    let lookup = tokio::time::timeout(proxy_dns_resolve_timeout(), lookup_host((host, port))).await;
     match lookup {
         Ok(Ok(addrs)) => Ok(addrs.into_iter().collect()),
         Ok(Err(err)) => Err(err).with_context(|| format!("lookup host {}:{}", host, port)),
         Err(_) => anyhow::bail!("lookup host {}:{} timed out", host, port),
     }
+}
+
+fn resolve_socket_addrs_from_test_hook(
+    host: &str,
+    port: u16,
+) -> Option<anyhow::Result<Vec<SocketAddr>>> {
+    let raw = std::env::var("HUSH_TEST_RESOLVER_SEQUENCE").ok()?;
+    let host_lc = host.to_ascii_lowercase();
+    let key_with_port = format!("{}:{}", host_lc, port);
+
+    for entry in raw.split(';').map(str::trim).filter(|e| !e.is_empty()) {
+        let (target, stages) = match entry.split_once('=') {
+            Some(parts) => parts,
+            None => {
+                return Some(Err(anyhow::anyhow!(
+                    "invalid HUSH_TEST_RESOLVER_SEQUENCE entry: {}",
+                    entry
+                )));
+            }
+        };
+
+        let target_lc = target.trim().to_ascii_lowercase();
+        if target_lc != host_lc && target_lc != key_with_port {
+            continue;
+        }
+
+        let stage_list: Vec<&str> = stages
+            .split('|')
+            .map(str::trim)
+            .filter(|stage| !stage.is_empty())
+            .collect();
+        if stage_list.is_empty() {
+            return Some(Err(anyhow::anyhow!(
+                "empty resolver stage list in HUSH_TEST_RESOLVER_SEQUENCE for {}",
+                target
+            )));
+        }
+
+        let calls = TEST_RESOLVER_CALLS.get_or_init(|| Mutex::new(HashMap::new()));
+        let stage_idx = {
+            let mut guard = match calls.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let idx = guard.entry(key_with_port.clone()).or_insert(0);
+            let out = *idx;
+            *idx = idx.saturating_add(1);
+            out
+        };
+
+        let selected_stage = stage_list
+            .get(stage_idx)
+            .copied()
+            .or_else(|| stage_list.last().copied())
+            .unwrap_or("");
+
+        let mut addrs = Vec::new();
+        for item in selected_stage
+            .split(',')
+            .map(str::trim)
+            .filter(|it| !it.is_empty())
+        {
+            if let Ok(addr) = item.parse::<SocketAddr>() {
+                addrs.push(addr);
+                continue;
+            }
+            if let Ok(ip) = item.parse::<IpAddr>() {
+                addrs.push(SocketAddr::new(ip, port));
+                continue;
+            }
+            return Some(Err(anyhow::anyhow!(
+                "invalid resolver address '{}' in HUSH_TEST_RESOLVER_SEQUENCE",
+                item
+            )));
+        }
+
+        if addrs.is_empty() {
+            return Some(Err(anyhow::anyhow!(
+                "resolver stage for {} produced no addresses",
+                target
+            )));
+        }
+
+        return Some(Ok(addrs));
+    }
+
+    None
 }
 
 fn is_public_ip(ip: IpAddr) -> bool {
