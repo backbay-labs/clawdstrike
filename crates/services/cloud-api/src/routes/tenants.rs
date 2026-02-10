@@ -55,9 +55,10 @@ async fn create_tenant(
 
 async fn list_tenants(
     State(state): State<AppState>,
-    _auth: AuthenticatedTenant,
+    auth: AuthenticatedTenant,
 ) -> Result<Json<Vec<Tenant>>, ApiError> {
-    let rows = sqlx::query::query("SELECT * FROM tenants ORDER BY created_at DESC")
+    let rows = sqlx::query::query("SELECT * FROM tenants WHERE id = $1 ORDER BY created_at DESC")
+        .bind(auth.tenant_id)
         .fetch_all(&state.db)
         .await
         .map_err(ApiError::Database)?;
@@ -73,9 +74,11 @@ async fn list_tenants(
 
 async fn get_tenant(
     State(state): State<AppState>,
-    _auth: AuthenticatedTenant,
+    auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Tenant>, ApiError> {
+    ensure_tenant_scope(&auth, id)?;
+
     let row = sqlx::query::query("SELECT * FROM tenants WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.db)
@@ -96,6 +99,7 @@ async fn update_tenant(
     if auth.role != "owner" && auth.role != "admin" {
         return Err(ApiError::Forbidden);
     }
+    ensure_tenant_scope(&auth, id)?;
 
     let row = sqlx::query::query(
         r#"UPDATE tenants
@@ -119,4 +123,46 @@ async fn update_tenant(
 
     let tenant = Tenant::from_row(row).map_err(ApiError::Database)?;
     Ok(Json(tenant))
+}
+
+fn ensure_tenant_scope(auth: &AuthenticatedTenant, tenant_id: Uuid) -> Result<(), ApiError> {
+    if auth.tenant_id != tenant_id {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_auth(tenant_id: Uuid, role: &str) -> AuthenticatedTenant {
+        AuthenticatedTenant {
+            tenant_id,
+            slug: "tenant".to_string(),
+            plan: "team".to_string(),
+            agent_limit: 10,
+            user_id: None,
+            role: role.to_string(),
+        }
+    }
+
+    #[test]
+    fn ensure_tenant_scope_allows_matching_tenant() {
+        let tenant_id = Uuid::new_v4();
+        let auth = make_auth(tenant_id, "owner");
+
+        assert!(ensure_tenant_scope(&auth, tenant_id).is_ok());
+    }
+
+    #[test]
+    fn ensure_tenant_scope_rejects_cross_tenant_access() {
+        let auth = make_auth(Uuid::new_v4(), "admin");
+        let other_tenant = Uuid::new_v4();
+
+        assert!(matches!(
+            ensure_tenant_scope(&auth, other_tenant),
+            Err(ApiError::Forbidden)
+        ));
+    }
 }
