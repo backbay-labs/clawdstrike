@@ -409,6 +409,26 @@ impl SessionManager {
             .clone()
     }
 
+    fn remove_session_lock_if_idle(&self, session_id: &str) {
+        if let Some(entry) = self.session_locks.get(session_id) {
+            if Arc::strong_count(entry.value()) == 1 {
+                drop(entry);
+                self.session_locks.remove(session_id);
+            }
+        }
+    }
+
+    fn prune_idle_session_locks(&self) {
+        let keys: Vec<String> = self
+            .session_locks
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect();
+        for session_id in keys {
+            self.remove_session_lock_if_idle(&session_id);
+        }
+    }
+
     pub async fn acquire_session_lock(&self, session_id: &str) -> tokio::sync::OwnedMutexGuard<()> {
         self.lock_for_session_id(session_id).lock_owned().await
     }
@@ -629,7 +649,11 @@ impl SessionManager {
                 ..Default::default()
             },
         )?;
-        Ok(updated.is_some())
+        let terminated = updated.is_some();
+        if terminated {
+            self.remove_session_lock_if_idle(session_id);
+        }
+        Ok(terminated)
     }
 
     pub fn terminate_sessions_for_user(&self, user_id: &str, reason: Option<&str>) -> Result<u64> {
@@ -640,6 +664,7 @@ impl SessionManager {
                 count = count.saturating_add(1);
             }
         }
+        self.prune_idle_session_locks();
         Ok(count)
     }
 
@@ -991,5 +1016,66 @@ mod tests {
             Some((1, 10))
         );
         assert_eq!(restored.transition_history.len(), 1);
+    }
+
+    #[test]
+    fn terminate_session_removes_idle_lock_entry() {
+        let store = Arc::new(InMemorySessionStore::new());
+        let manager =
+            SessionManager::new(store, 3600, 86_400, None, SessionHardeningConfig::default());
+
+        let session = manager
+            .create_session(test_identity(), None)
+            .expect("create");
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+
+        rt.block_on(async {
+            let _guard = manager.acquire_session_lock(&session.session_id).await;
+        });
+
+        assert!(
+            manager.session_locks.contains_key(&session.session_id),
+            "lock entry should exist after lock acquisition"
+        );
+        assert!(
+            manager
+                .terminate_session(&session.session_id, Some("test"))
+                .expect("terminate"),
+            "session should terminate"
+        );
+        assert!(
+            !manager.session_locks.contains_key(&session.session_id),
+            "idle lock entry should be removed after termination"
+        );
+    }
+
+    #[test]
+    fn lock_table_does_not_grow_under_session_churn() {
+        let store = Arc::new(InMemorySessionStore::new());
+        let manager =
+            SessionManager::new(store, 3600, 86_400, None, SessionHardeningConfig::default());
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+
+        for _ in 0..32 {
+            let session = manager
+                .create_session(test_identity(), None)
+                .expect("create");
+            rt.block_on(async {
+                let _guard = manager.acquire_session_lock(&session.session_id).await;
+            });
+            assert!(
+                manager
+                    .terminate_session(&session.session_id, Some("churn"))
+                    .expect("terminate"),
+                "session should terminate"
+            );
+        }
+
+        manager.prune_idle_session_locks();
+        assert_eq!(
+            manager.session_locks.len(),
+            0,
+            "session lock table should be fully pruned after terminate churn"
+        );
     }
 }

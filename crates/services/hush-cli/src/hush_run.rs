@@ -3,7 +3,7 @@
 use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,6 +24,9 @@ use crate::policy_event::{
 };
 use crate::remote_extends;
 use crate::ExitCode;
+
+const EVENT_QUEUE_CAPACITY: usize = 1024;
+const PROXY_MAX_IN_FLIGHT_CONNECTIONS: usize = 256;
 
 #[derive(Clone, Debug)]
 struct RunOutcome {
@@ -118,6 +121,36 @@ impl HushdForwarder {
 }
 
 #[derive(Clone, Debug)]
+struct EventEmitter {
+    tx: mpsc::Sender<PolicyEvent>,
+    dropped_full: Arc<AtomicUsize>,
+}
+
+impl EventEmitter {
+    fn new(tx: mpsc::Sender<PolicyEvent>) -> Self {
+        Self {
+            tx,
+            dropped_full: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn emit(&self, event: PolicyEvent) {
+        if let Err(err) = self.tx.try_send(event) {
+            match err {
+                mpsc::error::TrySendError::Full(_) => {
+                    self.dropped_full.fetch_add(1, Ordering::Relaxed);
+                }
+                mpsc::error::TrySendError::Closed(_) => {}
+            }
+        }
+    }
+
+    fn dropped_count(&self) -> usize {
+        self.dropped_full.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct RunArgs {
     pub policy: String,
     pub events_out: String,
@@ -196,7 +229,8 @@ pub async fn cmd_run(
     let events_path = PathBuf::from(&events_out);
     let receipt_path = PathBuf::from(&receipt_out);
 
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<PolicyEvent>();
+    let (event_tx, mut event_rx) = mpsc::channel::<PolicyEvent>(EVENT_QUEUE_CAPACITY);
+    let event_emitter = EventEmitter::new(event_tx);
 
     let writer_forwarder = forwarder.clone();
     let writer_handle = tokio::spawn(async move {
@@ -232,11 +266,12 @@ pub async fn cmd_run(
         metadata: None,
         context: None,
     };
-    let _ = event_tx.send(command_event);
+    event_emitter.emit(command_event);
 
     let outcome = RunOutcome::new();
 
     let mut env_proxy_url = None;
+    let mut proxy_rejected_connections: Option<Arc<AtomicUsize>> = None;
     let proxy_handle = if no_proxy {
         None
     } else {
@@ -244,14 +279,16 @@ pub async fn cmd_run(
             proxy_port,
             engine.clone(),
             base_context.clone(),
-            event_tx.clone(),
+            event_emitter.clone(),
             outcome.clone(),
+            PROXY_MAX_IN_FLIGHT_CONNECTIONS,
             stderr,
         )
         .await
         {
-            Ok((listen_url, handle)) => {
+            Ok((listen_url, handle, rejected_connections)) => {
                 env_proxy_url = Some(listen_url);
+                proxy_rejected_connections = Some(rejected_connections);
                 Some(handle)
             }
             Err(e) => {
@@ -281,7 +318,7 @@ pub async fn cmd_run(
         Ok(status) => status,
         Err(e) => {
             let _ = writeln!(stderr, "Error: {}", e);
-            drop(event_tx);
+            drop(event_emitter);
             let _ = writer_handle.await;
             if let Some(h) = proxy_handle {
                 h.abort();
@@ -310,8 +347,21 @@ pub async fn cmd_run(
         "proxy".to_string(),
         serde_json::Value::Bool(env_proxy_url.is_some()),
     );
+    let dropped_events = event_emitter.dropped_count();
+    extra.insert(
+        "droppedEventCount".to_string(),
+        serde_json::Value::Number((dropped_events as u64).into()),
+    );
+    let rejected_proxy_connections = proxy_rejected_connections
+        .as_ref()
+        .map(|count| count.load(Ordering::Relaxed))
+        .unwrap_or(0);
+    extra.insert(
+        "proxyRejectedConnections".to_string(),
+        serde_json::Value::Number((rejected_proxy_connections as u64).into()),
+    );
 
-    let _ = event_tx.send(PolicyEvent {
+    event_emitter.emit(PolicyEvent {
         event_id: Uuid::new_v4().to_string(),
         event_type: PolicyEventType::Custom,
         timestamp: Utc::now(),
@@ -329,7 +379,7 @@ pub async fn cmd_run(
         h.abort();
     }
 
-    drop(event_tx);
+    drop(event_emitter);
     match writer_handle.await {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
@@ -338,6 +388,20 @@ pub async fn cmd_run(
         Err(e) => {
             let _ = writeln!(stderr, "Warning: event writer task failed: {}", e);
         }
+    }
+    if dropped_events > 0 {
+        let _ = writeln!(
+            stderr,
+            "Warning: dropped {} policy events because the event queue is full (capacity={})",
+            dropped_events, EVENT_QUEUE_CAPACITY
+        );
+    }
+    if rejected_proxy_connections > 0 {
+        let _ = writeln!(
+            stderr,
+            "Warning: rejected {} proxy connections due to in-flight limit ({})",
+            rejected_proxy_connections, PROXY_MAX_IN_FLIGHT_CONNECTIONS
+        );
     }
 
     let events_bytes = match tokio::fs::read(&events_out).await {
@@ -668,10 +732,11 @@ async fn start_connect_proxy(
     port: u16,
     engine: Arc<HushEngine>,
     context: GuardContext,
-    event_tx: mpsc::UnboundedSender<PolicyEvent>,
+    event_emitter: EventEmitter,
     outcome: RunOutcome,
+    max_in_flight_connections: usize,
     stderr: &mut dyn Write,
-) -> anyhow::Result<(String, tokio::task::JoinHandle<()>)> {
+) -> anyhow::Result<(String, tokio::task::JoinHandle<()>, Arc<AtomicUsize>)> {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
         .context("bind proxy listener")?;
@@ -680,33 +745,49 @@ async fn start_connect_proxy(
     let url = format!("http://127.0.0.1:{}", local.port());
     let _ = writeln!(stderr, "Proxy listening on {}", url);
 
+    let rejected_connections = Arc::new(AtomicUsize::new(0));
+    let in_flight = Arc::new(tokio::sync::Semaphore::new(max_in_flight_connections));
+    let rejected_connections_for_loop = rejected_connections.clone();
     let handle = tokio::spawn(async move {
         loop {
-            let (socket, _) = match listener.accept().await {
+            let (mut socket, _) = match listener.accept().await {
                 Ok(v) => v,
                 Err(_) => return,
             };
 
+            let permit = match in_flight.clone().try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    rejected_connections_for_loop.fetch_add(1, Ordering::Relaxed);
+                    let _ = socket
+                        .write_all(b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n")
+                        .await;
+                    continue;
+                }
+            };
+
             let engine = engine.clone();
             let context = context.clone();
-            let event_tx = event_tx.clone();
+            let event_emitter = event_emitter.clone();
             let outcome = outcome.clone();
 
             tokio::spawn(async move {
+                let _permit = permit;
                 let _ =
-                    handle_connect_proxy_client(socket, engine, context, event_tx, outcome).await;
+                    handle_connect_proxy_client(socket, engine, context, event_emitter, outcome)
+                        .await;
             });
         }
     });
 
-    Ok((url, handle))
+    Ok((url, handle, rejected_connections))
 }
 
 async fn handle_connect_proxy_client(
     mut client: TcpStream,
     engine: Arc<HushEngine>,
     context: GuardContext,
-    event_tx: mpsc::UnboundedSender<PolicyEvent>,
+    event_emitter: EventEmitter,
     outcome: RunOutcome,
 ) -> anyhow::Result<()> {
     let header = read_http_header(&mut client, 8 * 1024)
@@ -761,7 +842,7 @@ async fn handle_connect_proxy_client(
 
     outcome.observe_guard_result(&result);
 
-    let _ = event_tx.send(network_event(
+    event_emitter.emit(network_event(
         &context,
         host_for_policy.clone(),
         connect_port,
@@ -960,6 +1041,22 @@ fn generate_bwrap_args(workspace: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clawdstrike::Policy;
+
+    fn test_custom_event(id: usize) -> PolicyEvent {
+        PolicyEvent {
+            event_id: format!("event-{id}"),
+            event_type: PolicyEventType::Custom,
+            timestamp: Utc::now(),
+            session_id: Some("session-test".to_string()),
+            data: PolicyEventData::Custom(CustomEventData {
+                custom_type: "test_event".to_string(),
+                extra: serde_json::Map::new(),
+            }),
+            metadata: None,
+            context: None,
+        }
+    }
 
     #[test]
     #[cfg(target_os = "macos")]
@@ -1027,5 +1124,74 @@ guards:
         let joined = args.join(" ");
         assert!(joined.contains("--bind /work/project /work/project"));
         assert!(joined.contains("--tmpfs /tmp"));
+    }
+
+    #[test]
+    fn event_emitter_drops_events_when_queue_is_full() {
+        let (tx, mut rx) = mpsc::channel::<PolicyEvent>(2);
+        let emitter = EventEmitter::new(tx);
+
+        for i in 0..10 {
+            emitter.emit(test_custom_event(i));
+        }
+
+        assert_eq!(emitter.dropped_count(), 8);
+
+        let mut queued = 0usize;
+        while rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, 2, "queue must stay bounded at channel capacity");
+    }
+
+    #[tokio::test]
+    async fn proxy_rejects_connections_when_in_flight_limit_is_reached() {
+        let policy_yaml = r#"
+version: "1.1.0"
+name: "proxy-limit"
+"#;
+        let policy = Policy::from_yaml(policy_yaml).expect("policy");
+        let engine = Arc::new(HushEngine::builder(policy).build().expect("engine"));
+        let context = GuardContext::new().with_session_id("session-1");
+        let (tx, _rx) = mpsc::channel::<PolicyEvent>(32);
+        let emitter = EventEmitter::new(tx);
+        let outcome = RunOutcome::new();
+        let mut stderr = Vec::<u8>::new();
+
+        let (url, handle, rejected_counter) =
+            match start_connect_proxy(0, engine, context, emitter, outcome, 1, &mut stderr).await {
+                Ok(v) => v,
+                Err(err) => {
+                    if err.to_string().contains("Permission denied") {
+                        eprintln!("skipping proxy limit test: {}", err);
+                        return;
+                    }
+                    panic!("failed to start proxy: {err}");
+                }
+            };
+
+        let addr = url.trim_start_matches("http://");
+        let mut first = TcpStream::connect(addr).await.expect("first connect");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let mut second = TcpStream::connect(addr).await.expect("second connect");
+        let mut buf = [0u8; 128];
+        let read_result = tokio::time::timeout(Duration::from_secs(2), second.read(&mut buf))
+            .await
+            .expect("read timeout")
+            .expect("read");
+        let response = String::from_utf8_lossy(&buf[..read_result]).to_string();
+        assert!(
+            response.contains("503 Service Unavailable"),
+            "expected 503 when proxy is saturated, got: {response}"
+        );
+        assert!(
+            rejected_counter.load(Ordering::Relaxed) >= 1,
+            "rejected connection counter must increment when limit is reached"
+        );
+
+        let _ = first.shutdown().await;
+        let _ = second.shutdown().await;
+        handle.abort();
     }
 }

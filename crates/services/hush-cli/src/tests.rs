@@ -2824,6 +2824,7 @@ mod remote_extends_contract {
     use std::thread::JoinHandle;
     use std::time::Duration;
 
+    use clawdstrike::policy::{PolicyLocation, PolicyResolver};
     use clawdstrike::Policy;
     use hush_core::sha256;
 
@@ -3031,6 +3032,60 @@ extends: {}#sha256={}
         assert!(
             msg.contains("allowlisted") || msg.contains("disabled"),
             "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_scp_host_must_be_allowlisted() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+git@evil.example:org/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("SCP-style disallowed host should be rejected before fetch");
+        assert!(
+            err.to_string().contains("allowlisted"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_file_scheme_is_rejected() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+file:///tmp/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("file:// git remote should be rejected");
+        assert!(
+            err.to_string()
+                .contains("Unsupported git remote scheme for remote extends"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_private_ip_blocked_when_disallowed() {
+        let cfg = RemoteExtendsConfig::new(["127.0.0.1".to_string()])
+            .with_https_only(false)
+            .with_allow_private_ips(false);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+ssh://127.0.0.1/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("private IP git remote should be rejected");
+        assert!(
+            err.to_string().contains("non-public IPs"),
+            "unexpected error: {err}"
         );
     }
 

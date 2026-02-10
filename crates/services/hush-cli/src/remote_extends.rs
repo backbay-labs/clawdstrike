@@ -130,6 +130,29 @@ impl RemotePolicyResolver {
         Ok(())
     }
 
+    fn ensure_git_host_ip_policy(&self, host: &str) -> Result<()> {
+        if self.cfg.allow_private_ips {
+            return Ok(());
+        }
+
+        let addrs = resolve_host_addrs(host, 9418)?;
+        if addrs.is_empty() {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to no addresses: {}",
+                host
+            )));
+        }
+
+        if addrs.iter().any(|addr| !is_public_ip(addr.ip())) {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to non-public IPs (blocked): {}",
+                host
+            )));
+        }
+
+        Ok(())
+    }
+
     fn resolve_http(&self, reference: &str, base: Option<&str>) -> Result<ResolvedPolicySource> {
         if !self.cfg.remote_enabled() {
             return Err(Error::ConfigError(
@@ -349,20 +372,9 @@ impl RemotePolicyResolver {
             ));
         }
 
-        if let Ok(repo_url) = Url::parse(repo) {
-            if matches!(repo_url.scheme(), "http" | "https") {
-                if self.cfg.https_only && repo_url.scheme() != "https" {
-                    return Err(Error::ConfigError(format!(
-                        "Remote extends require https:// URLs (got {}://)",
-                        repo_url.scheme()
-                    )));
-                }
-                let host = repo_url.host_str().ok_or_else(|| {
-                    Error::ConfigError(format!("Invalid URL host in remote extends: {}", repo))
-                })?;
-                self.ensure_host_allowed(host)?;
-            }
-        }
+        let repo_host = parse_git_remote_host(repo, self.cfg.https_only)?;
+        self.ensure_host_allowed(&repo_host)?;
+        self.ensure_git_host_ip_policy(&repo_host)?;
 
         if !self.cfg.remote_enabled() {
             return Err(Error::ConfigError(
@@ -564,6 +576,65 @@ fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, Str
     }
 
     Ok(parsed)
+}
+
+fn parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
+    if let Ok(repo_url) = Url::parse(repo) {
+        let scheme = repo_url.scheme();
+        if !matches!(scheme, "http" | "https" | "ssh" | "git") {
+            return Err(Error::ConfigError(format!(
+                "Unsupported git remote scheme for remote extends: {}",
+                scheme
+            )));
+        }
+        if https_only && scheme == "http" {
+            return Err(Error::ConfigError(format!(
+                "Remote extends require https:// URLs (got {}://)",
+                scheme
+            )));
+        }
+
+        let host = repo_url.host_str().ok_or_else(|| {
+            Error::ConfigError(format!("Invalid URL host in remote extends: {}", repo))
+        })?;
+        return Ok(normalize_host(host));
+    }
+
+    parse_scp_like_git_host(repo).ok_or_else(|| {
+        Error::ConfigError(format!(
+            "Invalid git remote in remote extends (expected URL or scp-style host:path): {}",
+            repo
+        ))
+    })
+}
+
+fn parse_scp_like_git_host(repo: &str) -> Option<String> {
+    let (lhs, rhs) = repo.split_once(':')?;
+    if rhs.is_empty() {
+        return None;
+    }
+    if lhs.contains('/') || lhs.contains('\\') {
+        return None;
+    }
+
+    let host = lhs.rsplit_once('@').map(|(_, host)| host).unwrap_or(lhs);
+    let host = normalize_host(host);
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
+}
+
+fn resolve_host_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+
+    (host, port)
+        .to_socket_addrs()
+        .map(|addrs| addrs.collect())
+        .map_err(|e| Error::ConfigError(format!("Failed to resolve host {}: {}", host, e)))
 }
 
 fn join_url(base: &str, reference: &str) -> Result<String> {
