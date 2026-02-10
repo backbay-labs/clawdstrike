@@ -1291,39 +1291,63 @@ fn is_public_ip(ip: IpAddr) -> bool {
 fn is_public_ipv4(octets: [u8; 4]) -> bool {
     let [a, b, c, d] = octets;
 
+    // 0.0.0.0/8 (this host / "current network")
     if a == 0 {
         return false;
     }
+    // 10.0.0.0/8
     if a == 10 {
         return false;
     }
+    // 100.64.0.0/10 (shared address space / CGNAT)
     if a == 100 && (64..=127).contains(&b) {
         return false;
     }
+    // 127.0.0.0/8 (loopback)
     if a == 127 {
         return false;
     }
+    // 169.254.0.0/16 (link-local)
     if a == 169 && b == 254 {
         return false;
     }
+    // 172.16.0.0/12
     if a == 172 && (16..=31).contains(&b) {
         return false;
     }
+    // 192.0.0.0/24 (IETF protocol assignments), except 192.0.0.9/32 and 192.0.0.10/32.
+    if a == 192 && b == 0 && c == 0 && d != 9 && d != 10 {
+        return false;
+    }
+    // 192.0.2.0/24 (TEST-NET-1)
+    if a == 192 && b == 0 && c == 2 {
+        return false;
+    }
+    // 192.88.99.0/24 (deprecated 6to4 relay anycast)
+    if a == 192 && b == 88 && c == 99 {
+        return false;
+    }
+    // 192.168.0.0/16
     if a == 192 && b == 168 {
         return false;
     }
-    if (a == 192 && b == 0 && c == 2)
-        || (a == 198 && b == 51 && c == 100)
-        || (a == 203 && b == 0 && c == 113)
-    {
-        return false;
-    }
+    // 198.18.0.0/15 (benchmarking)
     if a == 198 && (18..=19).contains(&b) {
         return false;
     }
+    // 198.51.100.0/24 (TEST-NET-2)
+    if a == 198 && b == 51 && c == 100 {
+        return false;
+    }
+    // 203.0.113.0/24 (TEST-NET-3)
+    if a == 203 && b == 0 && c == 113 {
+        return false;
+    }
+    // 224.0.0.0/4 (multicast) and 240.0.0.0/4 (reserved)
     if a >= 224 {
         return false;
     }
+    // 255.255.255.255 (limited broadcast)
     if a == 255 && b == 255 && c == 255 && d == 255 {
         return false;
     }
@@ -1338,24 +1362,31 @@ fn is_public_ipv6(addr: Ipv6Addr) -> bool {
     let segments = addr.segments();
     let [s0, s1, s2, s3, _s4, _s5, _s6, _s7] = segments;
 
+    // ::/128 (unspecified)
     if segments == [0, 0, 0, 0, 0, 0, 0, 0] {
         return false;
     }
+    // ::1/128 (loopback)
     if segments == [0, 0, 0, 0, 0, 0, 0, 1] {
         return false;
     }
+    // fc00::/7 (unique local)
     if (s0 & 0xfe00) == 0xfc00 {
         return false;
     }
+    // fe80::/10 (link-local unicast)
     if (s0 & 0xffc0) == 0xfe80 {
         return false;
     }
+    // ff00::/8 (multicast)
     if (s0 & 0xff00) == 0xff00 {
         return false;
     }
+    // 2001:db8::/32 (documentation)
     if s0 == 0x2001 && s1 == 0x0db8 {
         return false;
     }
+    // 100::/64 (discard-only)
     if s0 == 0x0100 && s1 == 0 && s2 == 0 && s3 == 0 {
         return false;
     }
@@ -1858,6 +1889,39 @@ guards:
         assert!(
             !denied.allowed,
             "hostname targets resolving only to non-public IPs must be blocked"
+        );
+        assert!(
+            denied.message.contains("non-public"),
+            "deny reason should mention non-public IP policy: {}",
+            denied.message
+        );
+    }
+
+    #[test]
+    fn is_public_ipv4_classifies_ietf_special_use_ranges() {
+        assert!(!is_public_ipv4([192, 0, 0, 1]));
+        assert!(
+            is_public_ipv4([192, 0, 0, 9]),
+            "192.0.0.9 is a global anycast exception in 192.0.0.0/24"
+        );
+        assert!(!is_public_ipv4([198, 51, 100, 42]));
+        assert!(is_public_ipv4([8, 8, 8, 8]));
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_hostname_target_rejects_192_0_0_1_when_private_disallowed() {
+        let result = resolve_connect_hostname_target_with_resolver(
+            "example.com",
+            443,
+            false,
+            |_host, _port| async { Ok(vec![SocketAddr::from(([192, 0, 0, 1], 443))]) },
+        )
+        .await;
+
+        let denied = result.expect_err("192.0.0.1 must be treated as non-public");
+        assert!(
+            !denied.allowed,
+            "hostname targets resolving to 192.0.0.1 must be blocked when private IPs are disallowed"
         );
         assert!(
             denied.message.contains("non-public"),
