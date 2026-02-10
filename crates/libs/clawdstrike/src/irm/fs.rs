@@ -141,13 +141,14 @@ impl FilesystemIrm {
                     return Some(s.to_string());
                 }
             }
-        }
 
-        // Check for named path argument
-        if let Some(first) = call.args.first() {
-            if let Some(obj) = first.as_object() {
-                if let Some(path) = obj.get("path") {
-                    return path.as_str().map(|s| s.to_string());
+            if let Some(obj) = arg.as_object() {
+                for key in ["path", "file_path", "target_path"] {
+                    if let Some(path) = obj.get(key).and_then(|value| value.as_str()) {
+                        if self.looks_like_path(path) || self.has_parent_traversal(path) {
+                            return Some(path.to_string());
+                        }
+                    }
                 }
             }
         }
@@ -203,8 +204,12 @@ impl Monitor for FilesystemIrm {
         let path = match self.extract_path(call) {
             Some(p) => p,
             None => {
-                debug!("FilesystemIrm: no path found in call {:?}", call.function);
-                return Decision::Allow;
+                let reason = format!(
+                    "Cannot determine filesystem path for call {}",
+                    call.function
+                );
+                debug!("FilesystemIrm: {}", reason);
+                return Decision::Deny { reason };
             }
         };
 
@@ -365,6 +370,43 @@ mod tests {
         assert!(
             !decision.is_allowed(),
             "object traversal path should be denied"
+        );
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_denies_traversal_when_path_is_in_nonfirst_object_arg() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+        let call = HostCall::new(
+            "fd_read",
+            vec![
+                serde_json::json!({"fd": 3}),
+                serde_json::json!({"path": "../../etc/passwd"}),
+            ],
+        );
+
+        let decision = irm.evaluate(&call, &policy).await;
+        match decision {
+            Decision::Deny { reason } => {
+                assert!(
+                    reason.contains("parent traversal"),
+                    "deny reason should explain traversal rejection: {reason}"
+                );
+            }
+            other => panic!("expected deny, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_denies_when_no_path_can_be_extracted() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+        let call = HostCall::new("fd_read", vec![serde_json::json!({"fd": 3})]);
+        let decision = irm.evaluate(&call, &policy).await;
+
+        assert!(
+            !decision.is_allowed(),
+            "filesystem calls without extractable paths must fail closed"
         );
     }
 
