@@ -36,7 +36,7 @@ references.
 
 The marketplace uses four independent systems:
 
-**1. Feed Signing** (`crates/clawdstrike/src/marketplace_feed.rs`):
+**1. Feed Signing** (`crates/libs/clawdstrike/src/marketplace_feed.rs`):
 - `MarketplaceFeed` with `feed_id`, monotonic `seq`, `published_at`, `entries[]`
 - Signed with Ed25519 via `SignedMarketplaceFeed::sign()` over RFC 8785 canonical JSON
 - Verified via `verify_trusted(&[PublicKey])` against a set of trusted curator keys
@@ -60,7 +60,7 @@ The marketplace uses four independent systems:
 
 ### Spine Protocol (Target Trust Infrastructure)
 
-The Spine crate (`crates/spine/src/`) provides:
+The Spine crate (`crates/libs/spine/src/`) provides:
 - `SignedEnvelope` with `issuer`, `seq`, `prev_envelope_hash`, `fact`, `envelope_hash`, `signature`
 - `TrustBundle` with allowlists for log IDs, witness node IDs, receipt signers
 - Checkpoint statements with witness co-signatures
@@ -129,7 +129,7 @@ After this spec is implemented:
 
 ### Step 1: Define Spine Fact Schemas for Marketplace Objects
 
-Create `crates/spine/src/marketplace_spine.rs`:
+Create `crates/libs/spine/src/marketplace_spine.rs`:
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -374,7 +374,7 @@ marketplace envelopes:
    prev_envelope_hash chaining).
 5. Desktop updates its local state and processes new feed entries.
 
-Add to the Proofs API (`crates/spine/src/bin/proofs_api.rs`):
+Add to the Proofs API (`crates/libs/spine/src/bin/proofs_api.rs`):
 
 ```rust
 #[derive(Deserialize)]
@@ -519,14 +519,14 @@ facilities).
 
 | File | Action | Description |
 |------|--------|-------------|
-| `crates/spine/src/marketplace_spine.rs` | **Create** | `FeedEntryFact`, `HeadAnnouncement`, `CheckpointRef`, `SyncRequest`, `SyncResponse` types |
-| `crates/spine/src/lib.rs` | **Modify** | Add `pub mod marketplace_spine;` and re-exports |
-| `crates/clawdstrike/src/bin/marketplace_feed_gen.rs` | **Modify** | Add `--spine-mode`, `--spine-output`, `--head-output`, `--emit-legacy-feed` flags |
+| `crates/libs/spine/src/marketplace_spine.rs` | **Create** | `FeedEntryFact`, `HeadAnnouncement`, `CheckpointRef`, `SyncRequest`, `SyncResponse` types |
+| `crates/libs/spine/src/lib.rs` | **Modify** | Add `pub mod marketplace_spine;` and re-exports |
+| `crates/libs/clawdstrike/src/bin/marketplace_feed_gen.rs` | **Modify** | Add `--spine-mode`, `--spine-output`, `--head-output`, `--emit-legacy-feed` flags |
 | `apps/desktop/src-tauri/src/marketplace_discovery.rs` | **Modify** | Extend `MarketplaceDiscoveryAnnouncement` with `head_hash`, `spine_issuer`, `checkpoint_ref`; bump protocol version to 2 |
 | `apps/desktop/src-tauri/src/commands/marketplace.rs` | **Modify** | Add Spine-mode feed loading path, NATS head subscription, sync logic, dual-mode state machine |
-| `crates/spine/src/bin/proofs_api.rs` | **Modify** | Add `/v1/marketplace/sync` endpoint for envelope range sync |
+| `crates/libs/spine/src/bin/proofs_api.rs` | **Modify** | Add `/v1/marketplace/sync` endpoint for envelope range sync |
 | `apps/desktop/src/services/marketplaceSettings.ts` | **Modify** | Add `natsUrl` and `preferSpineMode` settings |
-| `crates/spine/tests/marketplace_spine_test.rs` | **Create** | Serde roundtrip, envelope wrapping, head announcement, sync tests |
+| `crates/libs/spine/tests/marketplace_spine_test.rs` | **Create** | Serde roundtrip, envelope wrapping, head announcement, sync tests |
 
 ---
 
@@ -665,9 +665,9 @@ This phasing follows the Architecture Vision's recommendation (Section 4.6):
 - Reticulum SDR Transport, Section 4.3: USB sneakernet (portable bundle export)
 - Marketplace Trust Evolution, Section 6: P2P discovery enhancements
   (feed freshness protocol with checkpoint_ref)
-- `crates/clawdstrike/src/marketplace_feed.rs`: `MarketplaceFeed`, `SignedMarketplaceFeed`, `MarketplaceProvenance`
+- `crates/libs/clawdstrike/src/marketplace_feed.rs`: `MarketplaceFeed`, `SignedMarketplaceFeed`, `MarketplaceProvenance`
 - `apps/desktop/src-tauri/src/marketplace_discovery.rs`: `MarketplaceDiscoveryAnnouncement`, P2P gossip
 - `apps/desktop/src-tauri/src/commands/marketplace.rs`: `marketplace_list_policies`, `marketplace_verify_spine_proof`, `marketplace_verify_attestation`
 - `apps/desktop/src/services/marketplaceSettings.ts`: feed source configuration
-- `crates/spine/src/envelope.rs`: `build_signed_envelope()`, `verify_envelope()`, issuer format
-- `crates/spine/src/bin/proofs_api.rs`: existing API endpoints, KV patterns
+- `crates/libs/spine/src/envelope.rs`: `build_signed_envelope()`, `verify_envelope()`, issuer format
+- `crates/libs/spine/src/bin/proofs_api.rs`: existing API endpoints, KV patterns

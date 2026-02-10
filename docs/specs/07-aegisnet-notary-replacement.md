@@ -37,7 +37,7 @@ current centralized notary model:
 3. Expects a JSON response: `{ valid: bool, attester?: string, attested_at?: string }`
 4. Returns a `NotaryVerifyResult` to the frontend
 
-The `MarketplaceProvenance` struct (`crates/clawdstrike/src/marketplace_feed.rs:77-89`)
+The `MarketplaceProvenance` struct (`crates/libs/clawdstrike/src/marketplace_feed.rs:77-89`)
 carries:
 - `attestation_uid: Option<String>` -- opaque UID for the notary
 - `notary_url: Option<String>` -- centralized notary endpoint
@@ -79,7 +79,7 @@ Rather than building new browser-side verification from scratch, this spec shoul
 
 ### Proofs API
 
-The Proofs API (`crates/spine/src/bin/proofs_api.rs`) exposes:
+The Proofs API (`crates/libs/spine/src/bin/proofs_api.rs`) exposes:
 - `GET /v1/proofs/inclusion?envelope_hash=0x...` -- RFC 6962 inclusion proof
 - `GET /v1/checkpoints/latest` -- latest checkpoint envelope
 - `GET /v1/checkpoints/{seq}` -- checkpoint by sequence number
@@ -121,7 +121,7 @@ After this spec is implemented:
 
 ### Step 1: Define `policy_attestation.v1` Fact Schema
 
-Create types in `crates/spine/src/marketplace_facts.rs`:
+Create types in `crates/libs/spine/src/marketplace_facts.rs`:
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -194,7 +194,7 @@ pub struct PolicyRevocation {
 }
 ```
 
-Wire into `crates/spine/src/lib.rs`:
+Wire into `crates/libs/spine/src/lib.rs`:
 ```rust
 pub mod marketplace_facts;
 pub use marketplace_facts::{
@@ -210,7 +210,7 @@ attestation), Section 9 (revocation mechanisms).
 ### Step 2: Curator Attestation Tooling
 
 Extend the `marketplace_feed_gen` binary
-(`crates/clawdstrike/src/bin/marketplace_feed_gen.rs`) with a `--submit-attestation`
+(`crates/libs/clawdstrike/src/bin/marketplace_feed_gen.rs`) with a `--submit-attestation`
 flag. When set, after signing the feed, the tool also:
 
 1. For each feed entry, builds a `PolicyAttestation` fact with the entry's
@@ -245,7 +245,7 @@ marketplace-feed-gen \
 ### Step 3: Extend `MarketplaceProvenance` with Type Discriminator
 
 Modify `MarketplaceProvenance` in
-`crates/clawdstrike/src/marketplace_feed.rs`:
+`crates/libs/clawdstrike/src/marketplace_feed.rs`:
 
 ```rust
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -458,14 +458,14 @@ check for revocations:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `crates/spine/src/marketplace_facts.rs` | **Create** | `PolicyAttestation`, `ReviewAttestation`, `PolicyRevocation` types |
-| `crates/spine/src/lib.rs` | **Modify** | Add `pub mod marketplace_facts;` and re-exports |
-| `crates/clawdstrike/src/marketplace_feed.rs` | **Modify** | Extend `MarketplaceProvenance` with `type`, `log_id`, `checkpoint_seq`, `inclusion_proof` fields; add `InclusionProofBundle`, `WitnessSignatureRef`, `effective_type()` method |
-| `crates/clawdstrike/src/bin/marketplace_feed_gen.rs` | **Modify** | Add `--submit-attestation` and `--attestation-output` flags, attestation envelope submission logic |
+| `crates/libs/spine/src/marketplace_facts.rs` | **Create** | `PolicyAttestation`, `ReviewAttestation`, `PolicyRevocation` types |
+| `crates/libs/spine/src/lib.rs` | **Modify** | Add `pub mod marketplace_facts;` and re-exports |
+| `crates/libs/clawdstrike/src/marketplace_feed.rs` | **Modify** | Extend `MarketplaceProvenance` with `type`, `log_id`, `checkpoint_seq`, `inclusion_proof` fields; add `InclusionProofBundle`, `WitnessSignatureRef`, `effective_type()` method |
+| `crates/libs/clawdstrike/src/bin/marketplace_feed_gen.rs` | **Modify** | Add `--submit-attestation` and `--attestation-output` flags, attestation envelope submission logic |
 | `apps/desktop/src-tauri/src/commands/marketplace.rs` | **Modify** | Add `marketplace_verify_provenance` unified command, witness verification in `marketplace_verify_spine_proof`, revocation checking |
-| `crates/spine/src/bin/proofs_api.rs` | **Modify** | Add `/v1/marketplace/attestation/{bundle_hash}` and `/v1/marketplace/revocation/{bundle_hash}` endpoints |
+| `crates/libs/spine/src/bin/proofs_api.rs` | **Modify** | Add `/v1/marketplace/attestation/{bundle_hash}` and `/v1/marketplace/revocation/{bundle_hash}` endpoints |
 | `apps/desktop/src/services/marketplaceProvenanceSettings.ts` | **Modify** | Add `proofsApiUrl`, `preferSpine`, `trustedWitnessKeys` fields |
-| `crates/spine/tests/marketplace_facts_test.rs` | **Create** | Serde roundtrip and envelope integration tests |
+| `crates/libs/spine/tests/marketplace_facts_test.rs` | **Create** | Serde roundtrip and envelope integration tests |
 | `backbay-sdk/packages/witness/src/fetchers/spine.ts` | **Create** | Spine Proofs API verification backend for `fetchAndVerifyChain()` |
 | `backbay-sdk/packages/witness-react/` | **Reference** | Reuse `VerificationBadge` and `VerificationDetails` for marketplace UI |
 
@@ -527,8 +527,8 @@ Existing feed JSON files remain valid.
 |-----------|--------|-------|
 | `spine` crate | Exists | Envelope signing, checkpoint verification |
 | `hush_core::MerkleProof` | Exists | RFC 6962 proof verification |
-| Proofs API | Exists | `crates/spine/src/bin/proofs_api.rs` |
-| Marketplace feed | Exists | `crates/clawdstrike/src/marketplace_feed.rs` |
+| Proofs API | Exists | `crates/libs/spine/src/bin/proofs_api.rs` |
+| Marketplace feed | Exists | `crates/libs/clawdstrike/src/marketplace_feed.rs` |
 | Desktop marketplace commands | Exists | `apps/desktop/src-tauri/src/commands/marketplace.rs` with `marketplace_verify_spine_proof` already doing local Merkle verification |
 | NATS JetStream | Deployed | Required for attestation envelope submission |
 | Spec 06 (Identity Binding) | Recommended | Attestation envelopes are stronger when issuer identity is bound to SPIFFE SVID, but this spec works without it |
@@ -579,10 +579,10 @@ Existing feed JSON files remain valid.
   (revocation mechanisms, time-bound attestations)
 - Architecture Vision, Section 4.4: decentralized policy marketplace
 - Architecture Vision, Section 4.6: marketplace-to-Spine unification mapping
-- `crates/clawdstrike/src/marketplace_feed.rs`: `MarketplaceProvenance`, `SignedMarketplaceFeed`
+- `crates/libs/clawdstrike/src/marketplace_feed.rs`: `MarketplaceProvenance`, `SignedMarketplaceFeed`
 - `apps/desktop/src-tauri/src/commands/marketplace.rs`:
   `marketplace_verify_attestation` (notary path, lines 253-313),
   `marketplace_verify_spine_proof` (Spine path with local Merkle verification, lines 599-690)
 - `apps/desktop/src/services/marketplaceProvenanceSettings.ts`: provenance settings
-- `crates/spine/src/bin/proofs_api.rs`: existing Proofs API endpoints
-- `crates/spine/src/checkpoint.rs`: `verify_witness_signature()`
+- `crates/libs/spine/src/bin/proofs_api.rs`: existing Proofs API endpoints
+- `crates/libs/spine/src/checkpoint.rs`: `verify_witness_signature()`

@@ -9,7 +9,7 @@
 
 ## Summary / Objective
 
-Create a production-grade Helm chart at `deploy/helm/clawdstrike/` that deploys the full SDR stack: NATS JetStream cluster, three Spine services (checkpointer, witness, proofs-api), two bridge DaemonSets (tetragon-bridge, hubble-bridge), and the hushd enforcement daemon. The chart must support single-command installation (`helm install clawdstrike ./deploy/helm/clawdstrike`) and be publishable as an OCI artifact to GitHub Container Registry.
+Create a production-grade Helm chart at `infra/deploy/helm/clawdstrike/` that deploys the full SDR stack: NATS JetStream cluster, three Spine services (checkpointer, witness, proofs-api), two bridge DaemonSets (tetragon-bridge, hubble-bridge), and the hushd enforcement daemon. The chart must support single-command installation (`helm install clawdstrike ./infra/deploy/helm/clawdstrike`) and be publishable as an OCI artifact to GitHub Container Registry.
 
 ---
 
@@ -23,20 +23,20 @@ Create a production-grade Helm chart at `deploy/helm/clawdstrike/` that deploys 
 - `ghcr.io/backbay-labs/clawdstrike/hubble-bridge:{latest,$SHA}`
 
 Three Dockerfiles exist:
-- `docker/Dockerfile.spine` -- multi-binary image for all three spine services
-- `docker/Dockerfile.tetragon-bridge` -- tetragon-bridge binary
-- `docker/Dockerfile.hubble-bridge` -- hubble-bridge binary
+- `infra/docker/Dockerfile.spine` -- multi-binary image for all three spine services
+- `infra/docker/Dockerfile.tetragon-bridge` -- tetragon-bridge binary
+- `infra/docker/Dockerfile.hubble-bridge` -- hubble-bridge binary
 
 **Kubernetes manifests** exist for hushd and clawdstriked:
-- `deploy/kubernetes/hushd/` -- Kustomize-based: Deployment, Service, ConfigMap, Secret, PVC, Namespace
-- `deploy/kubernetes/clawdstriked/` -- Kustomize-based deployment manifests for the clawdstriked enforcement daemon
+- `infra/deploy/kubernetes/hushd/` -- Kustomize-based: Deployment, Service, ConfigMap, Secret, PVC, Namespace
+- `infra/deploy/kubernetes/clawdstriked/` -- Kustomize-based deployment manifests for the clawdstriked enforcement daemon
 
 **Docker Compose** exists for local development:
-- `docker/docker-compose.services.yaml` -- NATS + 3 Spine services + 2 bridges (profiles)
+- `infra/docker/docker-compose.services.yaml` -- NATS + 3 Spine services + 2 bridges (profiles)
 
 **What is missing:**
 - No Helm chart at all
-- No hushd Docker image in GHCR (only `clawdstrike/hushd:dev` referenced in `deploy/kubernetes/hushd/deployment.yaml`)
+- No hushd Docker image in GHCR (only `clawdstrike/hushd:dev` referenced in `infra/deploy/kubernetes/hushd/deployment.yaml`)
 - No Kubernetes manifests for Spine services or bridges
 - No NATS deployment config for Kubernetes (currently uses the NATS Helm chart separately in the `aegisnet` namespace)
 - No `values.yaml` for environment-specific configuration
@@ -46,7 +46,7 @@ Three Dockerfiles exist:
 
 From `docs/research/open-source-strategy.md` (section 2.1):
 > ```
-> deploy/                      #   Kubernetes deployment manifests
+> infra/deploy/                      #   Kubernetes deployment manifests
 > ├── helm/                    #   Helm chart for hushd + spine + bridges
 > ├── argocd/                  #   ArgoCD Application resources
 > └── tetragon-policies/       #   TracingPolicy CRDs
@@ -61,7 +61,7 @@ From `docs/research/open-source-strategy.md` (section 4.6):
 
 ## Target State
 
-A Helm chart at `deploy/helm/clawdstrike/` that:
+A Helm chart at `infra/deploy/helm/clawdstrike/` that:
 
 1. Deploys all SDR components in a single `helm install` command
 2. Is configurable via `values.yaml` for different environments (dev, staging, production)
@@ -80,7 +80,7 @@ A Helm chart at `deploy/helm/clawdstrike/` that:
 Create the Helm chart directory structure:
 
 ```
-deploy/helm/clawdstrike/
+infra/deploy/helm/clawdstrike/
 ├── Chart.yaml
 ├── values.yaml
 ├── .helmignore
@@ -410,7 +410,7 @@ Key configuration:
 
 ### Step 6: Spine Deployment templates
 
-Three separate Deployments sharing the same image but selecting the binary via the `SPINE_BIN` environment variable (matching `docker/entrypoint-spine.sh`):
+Three separate Deployments sharing the same image but selecting the binary via the `SPINE_BIN` environment variable (matching `infra/docker/entrypoint-spine.sh`):
 
 - `spine-checkpointer`: `SPINE_BIN=spine-checkpointer`, `NATS_URL={{ include "clawdstrike.natsUrl" . }}`
 - `spine-witness`: `SPINE_BIN=spine-witness`, `NATS_URL=...`
@@ -423,13 +423,13 @@ Each Deployment uses:
 
 ### Step 7: hushd Deployment template
 
-Migrates the existing `deploy/kubernetes/hushd/` Kustomize manifests into Helm templates:
+Migrates the existing `infra/deploy/kubernetes/hushd/` Kustomize manifests into Helm templates:
 
 - Deployment with ConfigMap-mounted `config.yaml`
 - Secret for API keys (auto-generated or existing)
 - PVC for audit database
 - Service on port 9876
-- Health probes on `/health` (matching existing `deploy/kubernetes/hushd/deployment.yaml`)
+- Health probes on `/health` (matching existing `infra/deploy/kubernetes/hushd/deployment.yaml`)
 
 Config is rendered from values:
 ```yaml
@@ -513,16 +513,16 @@ spine:
 
 ### Step 13: hushd Dockerfile
 
-Add `docker/Dockerfile.hushd` (currently missing) and add it to the docker CI workflow. This is a prerequisite for the Helm chart to reference a real image.
+Add `infra/docker/Dockerfile.hushd` (currently missing) and add it to the docker CI workflow. This is a prerequisite for the Helm chart to reference a real image.
 
 ```dockerfile
 FROM rust:1.93-bookworm AS builder
 WORKDIR /build
-COPY docker/workspace-hushd.toml Cargo.toml
+COPY infra/docker/workspace-hushd.toml Cargo.toml
 COPY Cargo.lock ./
-COPY crates/hush-core crates/hush-core
-COPY crates/clawdstrike crates/clawdstrike
-COPY crates/hushd crates/hushd
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/clawdstrike crates/libs/clawdstrike
+COPY crates/services/hushd crates/services/hushd
 COPY rulesets rulesets
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
@@ -548,19 +548,19 @@ name: Helm Chart Lint & Test
 on:
   push:
     paths:
-      - "deploy/helm/**"
+      - "infra/deploy/helm/**"
       - ".github/workflows/helm.yml"
   pull_request:
     paths:
-      - "deploy/helm/**"
+      - "infra/deploy/helm/**"
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: azure/setup-helm@v4
-      - run: helm lint deploy/helm/clawdstrike
-      - run: helm template test-release deploy/helm/clawdstrike -f deploy/helm/clawdstrike/ci/test-values.yaml
+      - run: helm lint infra/deploy/helm/clawdstrike
+      - run: helm template test-release infra/deploy/helm/clawdstrike -f infra/deploy/helm/clawdstrike/ci/test-values.yaml
 ```
 
 ### Step 15: OCI publish workflow
@@ -577,7 +577,7 @@ helm-publish:
     - name: Login to GHCR
       run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
     - name: Package chart
-      run: helm package deploy/helm/clawdstrike --version ${{ github.ref_name }}
+      run: helm package infra/deploy/helm/clawdstrike --version ${{ github.ref_name }}
     - name: Push to GHCR
       run: helm push clawdstrike-*.tgz oci://ghcr.io/backbay-labs/clawdstrike/helm
 ```
@@ -588,35 +588,35 @@ helm-publish:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `deploy/helm/clawdstrike/Chart.yaml` | Create | Chart metadata |
-| `deploy/helm/clawdstrike/values.yaml` | Create | Default values |
-| `deploy/helm/clawdstrike/.helmignore` | Create | Ignore patterns |
-| `deploy/helm/clawdstrike/README.md` | Create | Chart documentation |
-| `deploy/helm/clawdstrike/templates/_helpers.tpl` | Create | Template helpers |
-| `deploy/helm/clawdstrike/templates/NOTES.txt` | Create | Post-install notes |
-| `deploy/helm/clawdstrike/templates/namespace.yaml` | Create | Namespace resource |
-| `deploy/helm/clawdstrike/templates/nats/statefulset.yaml` | Create | NATS StatefulSet |
-| `deploy/helm/clawdstrike/templates/nats/service.yaml` | Create | NATS Service |
-| `deploy/helm/clawdstrike/templates/nats/configmap.yaml` | Create | NATS config |
-| `deploy/helm/clawdstrike/templates/spine/checkpointer-deployment.yaml` | Create | Checkpointer Deployment |
-| `deploy/helm/clawdstrike/templates/spine/witness-deployment.yaml` | Create | Witness Deployment |
-| `deploy/helm/clawdstrike/templates/spine/proofs-api-deployment.yaml` | Create | Proofs API Deployment |
-| `deploy/helm/clawdstrike/templates/spine/proofs-api-service.yaml` | Create | Proofs API Service |
-| `deploy/helm/clawdstrike/templates/spine/spine-configmap.yaml` | Create | Spine env config |
-| `deploy/helm/clawdstrike/templates/hushd/deployment.yaml` | Create | hushd Deployment |
-| `deploy/helm/clawdstrike/templates/hushd/service.yaml` | Create | hushd Service |
-| `deploy/helm/clawdstrike/templates/hushd/configmap.yaml` | Create | hushd config |
-| `deploy/helm/clawdstrike/templates/hushd/secret.yaml` | Create | hushd auth secrets |
-| `deploy/helm/clawdstrike/templates/hushd/pvc.yaml` | Create | hushd PVC |
-| `deploy/helm/clawdstrike/templates/bridges/tetragon-bridge-daemonset.yaml` | Create | Tetragon bridge DaemonSet |
-| `deploy/helm/clawdstrike/templates/bridges/hubble-bridge-daemonset.yaml` | Create | Hubble bridge DaemonSet |
-| `deploy/helm/clawdstrike/templates/rbac/serviceaccount.yaml` | Create | ServiceAccount |
-| `deploy/helm/clawdstrike/templates/rbac/role.yaml` | Create | Role |
-| `deploy/helm/clawdstrike/templates/rbac/rolebinding.yaml` | Create | RoleBinding |
-| `deploy/helm/clawdstrike/templates/tests/test-connection.yaml` | Create | Helm test pod |
-| `deploy/helm/clawdstrike/ci/test-values.yaml` | Create | CI test values |
-| `docker/Dockerfile.hushd` | Create | hushd Docker image |
-| `docker/workspace-hushd.toml` | Create | Minimal Cargo workspace for hushd build |
+| `infra/deploy/helm/clawdstrike/Chart.yaml` | Create | Chart metadata |
+| `infra/deploy/helm/clawdstrike/values.yaml` | Create | Default values |
+| `infra/deploy/helm/clawdstrike/.helmignore` | Create | Ignore patterns |
+| `infra/deploy/helm/clawdstrike/README.md` | Create | Chart documentation |
+| `infra/deploy/helm/clawdstrike/templates/_helpers.tpl` | Create | Template helpers |
+| `infra/deploy/helm/clawdstrike/templates/NOTES.txt` | Create | Post-install notes |
+| `infra/deploy/helm/clawdstrike/templates/namespace.yaml` | Create | Namespace resource |
+| `infra/deploy/helm/clawdstrike/templates/nats/statefulset.yaml` | Create | NATS StatefulSet |
+| `infra/deploy/helm/clawdstrike/templates/nats/service.yaml` | Create | NATS Service |
+| `infra/deploy/helm/clawdstrike/templates/nats/configmap.yaml` | Create | NATS config |
+| `infra/deploy/helm/clawdstrike/templates/spine/checkpointer-deployment.yaml` | Create | Checkpointer Deployment |
+| `infra/deploy/helm/clawdstrike/templates/spine/witness-deployment.yaml` | Create | Witness Deployment |
+| `infra/deploy/helm/clawdstrike/templates/spine/proofs-api-deployment.yaml` | Create | Proofs API Deployment |
+| `infra/deploy/helm/clawdstrike/templates/spine/proofs-api-service.yaml` | Create | Proofs API Service |
+| `infra/deploy/helm/clawdstrike/templates/spine/spine-configmap.yaml` | Create | Spine env config |
+| `infra/deploy/helm/clawdstrike/templates/hushd/deployment.yaml` | Create | hushd Deployment |
+| `infra/deploy/helm/clawdstrike/templates/hushd/service.yaml` | Create | hushd Service |
+| `infra/deploy/helm/clawdstrike/templates/hushd/configmap.yaml` | Create | hushd config |
+| `infra/deploy/helm/clawdstrike/templates/hushd/secret.yaml` | Create | hushd auth secrets |
+| `infra/deploy/helm/clawdstrike/templates/hushd/pvc.yaml` | Create | hushd PVC |
+| `infra/deploy/helm/clawdstrike/templates/bridges/tetragon-bridge-daemonset.yaml` | Create | Tetragon bridge DaemonSet |
+| `infra/deploy/helm/clawdstrike/templates/bridges/hubble-bridge-daemonset.yaml` | Create | Hubble bridge DaemonSet |
+| `infra/deploy/helm/clawdstrike/templates/rbac/serviceaccount.yaml` | Create | ServiceAccount |
+| `infra/deploy/helm/clawdstrike/templates/rbac/role.yaml` | Create | Role |
+| `infra/deploy/helm/clawdstrike/templates/rbac/rolebinding.yaml` | Create | RoleBinding |
+| `infra/deploy/helm/clawdstrike/templates/tests/test-connection.yaml` | Create | Helm test pod |
+| `infra/deploy/helm/clawdstrike/ci/test-values.yaml` | Create | CI test values |
+| `infra/docker/Dockerfile.hushd` | Create | hushd Docker image |
+| `infra/docker/workspace-hushd.toml` | Create | Minimal Cargo workspace for hushd build |
 | `.github/workflows/docker.yml` | Modify | Add hushd image build job |
 | `.github/workflows/helm.yml` | Create | Helm lint/test CI |
 | `.github/workflows/release.yml` | Modify | Add OCI publish step |
@@ -629,16 +629,16 @@ helm-publish:
 
 ```bash
 # Lint the chart
-helm lint deploy/helm/clawdstrike
+helm lint infra/deploy/helm/clawdstrike
 
 # Template rendering (all components)
-helm template test deploy/helm/clawdstrike --debug
+helm template test infra/deploy/helm/clawdstrike --debug
 
 # Template rendering (spine only)
-helm template test deploy/helm/clawdstrike --set hushd.enabled=false --set bridges.tetragon.enabled=false
+helm template test infra/deploy/helm/clawdstrike --set hushd.enabled=false --set bridges.tetragon.enabled=false
 
 # Template rendering with external NATS
-helm template test deploy/helm/clawdstrike --set nats.enabled=false --set nats.external.enabled=true --set nats.external.url=nats://my-nats:4222
+helm template test infra/deploy/helm/clawdstrike --set nats.enabled=false --set nats.external.enabled=true --set nats.external.url=nats://my-nats:4222
 ```
 
 ### Integration tests (local cluster)
@@ -648,7 +648,7 @@ helm template test deploy/helm/clawdstrike --set nats.enabled=false --set nats.e
 kind create cluster --name clawdstrike-test
 
 # Install the chart
-helm install cs deploy/helm/clawdstrike -f deploy/helm/clawdstrike/ci/test-values.yaml --wait --timeout 120s
+helm install cs infra/deploy/helm/clawdstrike -f infra/deploy/helm/clawdstrike/ci/test-values.yaml --wait --timeout 120s
 
 # Run Helm tests
 helm test cs
@@ -672,13 +672,13 @@ kind delete cluster --name clawdstrike-test
 ### CI validation
 
 The `.github/workflows/helm.yml` workflow runs:
-1. `helm lint` on every PR touching `deploy/helm/`
+1. `helm lint` on every PR touching `infra/deploy/helm/`
 2. `helm template` with test values to catch rendering errors
 3. (Future) `ct install` with kind for full integration testing
 
 ### Smoke test: docker-compose parity
 
-Verify that `helm template` output produces equivalent resources to the existing `docker/docker-compose.services.yaml` topology (same ports, same env vars, same image references).
+Verify that `helm template` output produces equivalent resources to the existing `infra/docker/docker-compose.services.yaml` topology (same ports, same env vars, same image references).
 
 ---
 
@@ -687,7 +687,7 @@ Verify that `helm template` output produces equivalent resources to the existing
 1. **Helm built-in rollback**: `helm rollback clawdstrike <revision>` restores previous state
 2. **Full uninstall**: `helm uninstall clawdstrike -n clawdstrike-system` removes all resources
 3. **Namespace cleanup**: If namespace was created by the chart, `kubectl delete ns clawdstrike-system`
-4. **Fallback to Kustomize**: The existing `deploy/kubernetes/hushd/` Kustomize manifests remain functional and can be used independently: `kubectl apply -k deploy/kubernetes/hushd/`
+4. **Fallback to Kustomize**: The existing `infra/deploy/kubernetes/hushd/` Kustomize manifests remain functional and can be used independently: `kubectl apply -k infra/deploy/kubernetes/hushd/`
 5. **PVC retention**: PVCs use `Retain` reclaim policy by default; data is preserved across uninstall/reinstall
 
 ---
@@ -707,18 +707,18 @@ Verify that `helm template` output produces equivalent resources to the existing
 
 ## Acceptance Criteria
 
-- [ ] `helm lint deploy/helm/clawdstrike` passes without errors
-- [ ] `helm template test deploy/helm/clawdstrike` renders valid YAML for all components
-- [ ] `helm template test deploy/helm/clawdstrike --set spine.enabled=false` correctly omits Spine resources
-- [ ] `helm template test deploy/helm/clawdstrike --set hushd.enabled=false` correctly omits hushd resources
-- [ ] `helm template test deploy/helm/clawdstrike --set bridges.tetragon.enabled=true` includes tetragon-bridge DaemonSet
-- [ ] `helm template test deploy/helm/clawdstrike --set nats.external.enabled=true --set nats.external.url=nats://ext:4222` omits NATS StatefulSet and uses external URL
+- [ ] `helm lint infra/deploy/helm/clawdstrike` passes without errors
+- [ ] `helm template test infra/deploy/helm/clawdstrike` renders valid YAML for all components
+- [ ] `helm template test infra/deploy/helm/clawdstrike --set spine.enabled=false` correctly omits Spine resources
+- [ ] `helm template test infra/deploy/helm/clawdstrike --set hushd.enabled=false` correctly omits hushd resources
+- [ ] `helm template test infra/deploy/helm/clawdstrike --set bridges.tetragon.enabled=true` includes tetragon-bridge DaemonSet
+- [ ] `helm template test infra/deploy/helm/clawdstrike --set nats.external.enabled=true --set nats.external.url=nats://ext:4222` omits NATS StatefulSet and uses external URL
 - [ ] `helm install` on a kind cluster starts all pods in Running state within 60 seconds
 - [ ] `helm test` passes (NATS connectivity, proofs-api healthz, hushd health)
-- [ ] hushd ConfigMap matches the config structure from `deploy/kubernetes/hushd/configmap.yaml`
+- [ ] hushd ConfigMap matches the config structure from `infra/deploy/kubernetes/hushd/configmap.yaml`
 - [ ] All pods run as non-root (UID 1000) with read-only root filesystem
-- [ ] `docker/Dockerfile.hushd` builds successfully and is added to `.github/workflows/docker.yml`
+- [ ] `infra/docker/Dockerfile.hushd` builds successfully and is added to `.github/workflows/docker.yml`
 - [ ] `.github/workflows/helm.yml` runs `helm lint` and `helm template` on PRs
 - [ ] Chart version in `Chart.yaml` matches workspace version `0.1.0`
 - [ ] NOTES.txt displays correct post-install instructions
-- [ ] Values documentation in `deploy/helm/clawdstrike/README.md` covers all configurable fields
+- [ ] Values documentation in `infra/deploy/helm/clawdstrike/README.md` covers all configurable fields

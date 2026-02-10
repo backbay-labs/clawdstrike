@@ -845,9 +845,9 @@ interacting with a Python library.
 ### ClawdStrike Source
 
 - `apps/desktop/src-tauri/src/marketplace_discovery.rs` -- Existing libp2p gossipsub P2P discovery
-- `crates/clawdstrike/src/marketplace_feed.rs` -- Feed signing and verification
-- `crates/clawdstrike/src/policy_bundle.rs` -- Bundle signing (Ed25519 + SHA-256)
-- `crates/hush-core/` -- Cryptographic primitives (Ed25519, SHA-256, canonical JSON)
+- `crates/libs/clawdstrike/src/marketplace_feed.rs` -- Feed signing and verification
+- `crates/libs/clawdstrike/src/policy_bundle.rs` -- Bundle signing (Ed25519 + SHA-256)
+- `crates/libs/hush-core/` -- Cryptographic primitives (Ed25519, SHA-256, canonical JSON)
 
 ### Reticulum External References
 

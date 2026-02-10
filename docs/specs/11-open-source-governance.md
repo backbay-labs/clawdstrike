@@ -195,19 +195,19 @@ Significant design decisions are documented as RFCs in `docs/rfcs/`:
 
 | Component | Directory | Owner(s) |
 |-----------|-----------|----------|
-| Crypto primitives | `crates/hush-core/` | Guards maintainer |
-| Guard engine | `crates/clawdstrike/` | Guards maintainer |
-| Spine protocol | `crates/spine/` | Spine maintainer |
-| Tetragon bridge | `crates/tetragon-bridge/` | Bridges maintainer |
-| Hubble bridge | `crates/hubble-bridge/` | Bridges maintainer |
-| hushd daemon | `crates/hushd/` | Guards maintainer |
-| CLI | `crates/hush-cli/` | Guards maintainer |
+| Crypto primitives | `crates/libs/hush-core/` | Guards maintainer |
+| Guard engine | `crates/libs/clawdstrike/` | Guards maintainer |
+| Spine protocol | `crates/libs/spine/` | Spine maintainer |
+| Tetragon bridge | `crates/bridges/tetragon-bridge/` | Bridges maintainer |
+| Hubble bridge | `crates/bridges/hubble-bridge/` | Bridges maintainer |
+| hushd daemon | `crates/services/hushd/` | Guards maintainer |
+| CLI | `crates/services/hush-cli/` | Guards maintainer |
 | Desktop app | `apps/desktop/` | Desktop maintainer |
-| TypeScript SDK | `packages/hush-ts/` | Desktop maintainer |
-| Python SDK | `packages/hush-py/` | Community maintainer |
+| TypeScript SDK | `packages/sdk/hush-ts/` | Desktop maintainer |
+| Python SDK | `packages/sdk/hush-py/` | Community maintainer |
 | Rulesets | `rulesets/` | Any maintainer |
 | Documentation | `docs/` | Any maintainer |
-| Helm chart | `deploy/helm/` | Bridges maintainer |
+| Helm chart | `infra/deploy/helm/` | Bridges maintainer |
 
 ### Becoming a Maintainer
 
@@ -271,11 +271,11 @@ Major changes from the current version:
 
 4. **Add multi-language development sections** (with prerequisite versions):
    - Rust 1.93+ (existing, update to include Spine and bridges)
-   - Node.js 24+ / TypeScript (`npm install --workspace=packages/hush-ts && npm test`)
-   - Python 3.10+ (`pip install -e packages/hush-py[dev] && pytest`)
+   - Node.js 24+ / TypeScript (`npm install --workspace=packages/sdk/hush-ts && npm test`)
+   - Python 3.10+ (`pip install -e packages/sdk/hush-py[dev] && pytest`)
    - Desktop (`cd apps/desktop && npm run tauri dev`)
 
-5. **Add security review requirements**: "Changes to cryptographic code (`crates/hush-core/`), guard implementations, or the Spine protocol require review from two maintainers."
+5. **Add security review requirements**: "Changes to cryptographic code (`crates/libs/hush-core/`), guard implementations, or the Spine protocol require review from two maintainers."
 
 6. **Update license reference**: Change "MIT License" to "Apache License 2.0". **This change is conditional on Spec 04 (Apache 2.0 license migration) completing first.** If Spec 04 has not yet landed, use a placeholder: `"See [LICENSE](./LICENSE) for the project's license terms."` to avoid referencing an incorrect license.
 
@@ -386,16 +386,16 @@ body:
       label: Component
       description: Which component is affected?
       options:
-        - "Guards / Policy Engine (crates/clawdstrike)"
-        - "Crypto (crates/hush-core)"
-        - "CLI (crates/hush-cli)"
-        - "Daemon (crates/hushd)"
-        - "Spine Protocol (crates/spine)"
-        - "Tetragon Bridge (crates/tetragon-bridge)"
-        - "Hubble Bridge (crates/hubble-bridge)"
+        - "Guards / Policy Engine (crates/libs/clawdstrike)"
+        - "Crypto (crates/libs/hush-core)"
+        - "CLI (crates/services/hush-cli)"
+        - "Daemon (crates/services/hushd)"
+        - "Spine Protocol (crates/libs/spine)"
+        - "Tetragon Bridge (crates/bridges/tetragon-bridge)"
+        - "Hubble Bridge (crates/bridges/hubble-bridge)"
         - "Desktop App (apps/desktop)"
-        - "TypeScript SDK (packages/hush-ts)"
-        - "Python SDK (packages/hush-py)"
+        - "TypeScript SDK (packages/sdk/hush-ts)"
+        - "Python SDK (packages/sdk/hush-py)"
         - "Rulesets"
         - "Documentation"
         - "Helm Chart / Deployment"

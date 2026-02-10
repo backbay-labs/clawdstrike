@@ -27,33 +27,33 @@ The six policies cover:
 
 ### What exists today
 
-- The `crates/tetragon-bridge/` crate exists and bridges Tetragon gRPC events to signed Spine envelopes on NATS. It depends on `spine` and `hush-core` for envelope signing, and uses `tonic` for gRPC + `async-nats` for NATS publishing (see `crates/tetragon-bridge/Cargo.toml`).
+- The `crates/bridges/tetragon-bridge/` crate exists and bridges Tetragon gRPC events to signed Spine envelopes on NATS. It depends on `spine` and `hush-core` for envelope signing, and uses `tonic` for gRPC + `async-nats` for NATS publishing (see `crates/bridges/tetragon-bridge/Cargo.toml`).
 - The research document at `docs/research/tetragon-integration.md` (Sections 3.1-3.6) provides draft TracingPolicy YAML for all six policies with detailed comments.
-- The Cargo workspace already includes `crates/tetragon-bridge` as a member (Cargo.toml line 14).
-- No `deploy/tetragon-policies/` directory exists yet.
+- The Cargo workspace already includes `crates/bridges/tetragon-bridge` as a member (Cargo.toml line 14).
+- No `infra/deploy/tetragon-policies/` directory exists yet.
 - No TracingPolicy CRD manifests have been committed to the repository.
 - The research doc references NATS subjects like `clawdstrike.spine.envelope.tetragon.process_exec.v1` (Section 4.3) that the bridge publishes to -- the policies must produce events compatible with the bridge's expected Tetragon event types.
 
 ### What the bridge expects
 
-From `crates/tetragon-bridge/Cargo.toml` and the research doc Section 4.2, the bridge:
+From `crates/bridges/tetragon-bridge/Cargo.toml` and the research doc Section 4.2, the bridge:
 1. Subscribes to Tetragon's gRPC `GetEvents` streaming endpoint (port 54321 default)
 2. Receives `GetEventsResponse` protobuf messages
 3. Transforms events into Spine `SignedEnvelope` facts
 4. Publishes to NATS subjects scoped by event type
 
-The bridge currently consumes `process_exec`, `process_exit`, and `process_kprobe` event types (`ProcessExec`, `ProcessExit`, `ProcessKprobe` variants of `TetragonEventKind` in `crates/tetragon-bridge/src/tetragon.rs`). Our TracingPolicies must generate events of these types.
+The bridge currently consumes `process_exec`, `process_exit`, and `process_kprobe` event types (`ProcessExec`, `ProcessExit`, `ProcessKprobe` variants of `TetragonEventKind` in `crates/bridges/tetragon-bridge/src/tetragon.rs`). Our TracingPolicies must generate events of these types.
 
-> **Note:** The FIM policy (02-file-integrity-monitoring.yaml) uses `lsmhooks`, which generates `process_lsm` events. The bridge does **not** currently support this event type. Before deploying the FIM policy, a new `ProcessLsm` variant must be added to the `TetragonEventKind` enum in `crates/tetragon-bridge/src/tetragon.rs` and handled in the bridge's event processing pipeline. Without this change, LSM hook events will be silently dropped by the bridge.
+> **Note:** The FIM policy (02-file-integrity-monitoring.yaml) uses `lsmhooks`, which generates `process_lsm` events. The bridge does **not** currently support this event type. Before deploying the FIM policy, a new `ProcessLsm` variant must be added to the `TetragonEventKind` enum in `crates/bridges/tetragon-bridge/src/tetragon.rs` and handled in the bridge's event processing pipeline. Without this change, LSM hook events will be silently dropped by the bridge.
 
 ---
 
 ## Target State
 
-A `deploy/tetragon-policies/` directory containing six TracingPolicy CRD manifests ready for `kubectl apply`:
+A `infra/deploy/tetragon-policies/` directory containing six TracingPolicy CRD manifests ready for `kubectl apply`:
 
 ```
-deploy/tetragon-policies/
+infra/deploy/tetragon-policies/
   kustomization.yaml
   01-exec-allowlist.yaml
   02-file-integrity-monitoring.yaml
@@ -78,7 +78,7 @@ Each manifest:
 ### Step 1: Create directory structure
 
 ```bash
-mkdir -p deploy/tetragon-policies
+mkdir -p infra/deploy/tetragon-policies
 ```
 
 ### Step 2: Create `01-exec-allowlist.yaml`
@@ -380,10 +380,10 @@ commonLabels:
 
 ```bash
 # Syntax check with kubectl (dry-run against Tetragon CRD)
-kubectl apply -f deploy/tetragon-policies/ --dry-run=server
+kubectl apply -f infra/deploy/tetragon-policies/ --dry-run=server
 
 # If Tetragon is not installed yet, at minimum validate YAML syntax
-for f in deploy/tetragon-policies/*.yaml; do
+for f in infra/deploy/tetragon-policies/*.yaml; do
   python3 -c "import yaml; yaml.safe_load(open('$f'))"
 done
 ```
@@ -394,13 +394,13 @@ done
 
 | File | Action | Description |
 |------|--------|-------------|
-| `deploy/tetragon-policies/kustomization.yaml` | Create | Kustomize manifest aggregating all 6 policies |
-| `deploy/tetragon-policies/01-exec-allowlist.yaml` | Create | Exec allowlist TracingPolicy |
-| `deploy/tetragon-policies/02-file-integrity-monitoring.yaml` | Create | FIM TracingPolicy |
-| `deploy/tetragon-policies/03-network-egress.yaml` | Create | Network egress TracingPolicy |
-| `deploy/tetragon-policies/04-container-escape-detection.yaml` | Create | Container escape TracingPolicy |
-| `deploy/tetragon-policies/05-crypto-mining-detection.yaml` | Create | Crypto mining TracingPolicy |
-| `deploy/tetragon-policies/06-guard-enforcement.yaml` | Create | Guard enforcement TracingPolicy |
+| `infra/deploy/tetragon-policies/kustomization.yaml` | Create | Kustomize manifest aggregating all 6 policies |
+| `infra/deploy/tetragon-policies/01-exec-allowlist.yaml` | Create | Exec allowlist TracingPolicy |
+| `infra/deploy/tetragon-policies/02-file-integrity-monitoring.yaml` | Create | FIM TracingPolicy |
+| `infra/deploy/tetragon-policies/03-network-egress.yaml` | Create | Network egress TracingPolicy |
+| `infra/deploy/tetragon-policies/04-container-escape-detection.yaml` | Create | Container escape TracingPolicy |
+| `infra/deploy/tetragon-policies/05-crypto-mining-detection.yaml` | Create | Crypto mining TracingPolicy |
+| `infra/deploy/tetragon-policies/06-guard-enforcement.yaml` | Create | Guard enforcement TracingPolicy |
 
 ---
 
@@ -423,7 +423,7 @@ done
    - **Crypto mining**: `nc -z 1.2.3.4 4444` from a pod -> expect SIGKILL.
    - **Guard enforcement**: `touch /etc/clawdstrike/evil.yaml` from a non-hushd process -> expect SIGKILL.
 
-4. **Bridge integration test**: Verify that events generated by the TracingPolicies are correctly consumed by `tetragon-bridge` and published to NATS as signed Spine envelopes. This is covered by `crates/sdr-integration-tests/`.
+4. **Bridge integration test**: Verify that events generated by the TracingPolicies are correctly consumed by `tetragon-bridge` and published to NATS as signed Spine envelopes. This is covered by `crates/tests/sdr-integration-tests/`.
 
 5. **Rate limiting validation**: Generate a burst of exec events and verify the `rateLimit: "1m"` on the exec allowlist suppresses duplicate events.
 
@@ -434,7 +434,7 @@ done
 TracingPolicies are Kubernetes CRDs and can be removed instantly:
 
 ```bash
-kubectl delete -f deploy/tetragon-policies/
+kubectl delete -f infra/deploy/tetragon-policies/
 ```
 
 Removing a TracingPolicy immediately stops the eBPF programs associated with it. No process kills or network blocks will occur after deletion. This is fully reversible with zero downtime.
@@ -453,14 +453,14 @@ If a specific policy causes issues (e.g., false-positive SIGKILL):
 | Tetragon installed on cluster | Required | Helm chart: `cilium/tetragon` (see docs/specs/09-helm-chart.md) |
 | Kernel 5.11+ for IMA hashes | Required for FIM | AL2023 ships kernel 6.1+, satisfied |
 | BPF LSM support for `lsmhooks` | Required for FIM | Enabled in AL2023 kernel config |
-| `crates/tetragon-bridge` built and deployed | Recommended | Policies work without bridge (events logged to tetragon.log) |
-| `crates/spine` NATS infrastructure | Recommended | Required for events to flow through Spine |
+| `crates/bridges/tetragon-bridge` built and deployed | Recommended | Policies work without bridge (events logged to tetragon.log) |
+| `crates/libs/spine` NATS infrastructure | Recommended | Required for events to flow through Spine |
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Directory `deploy/tetragon-policies/` exists with 6 YAML files + `kustomization.yaml`
+- [ ] Directory `infra/deploy/tetragon-policies/` exists with 6 YAML files + `kustomization.yaml`
 - [ ] Each YAML file is a valid `cilium.io/v1alpha1` TracingPolicy
 - [ ] All policies include `app.kubernetes.io/part-of: clawdstrike` label
 - [ ] All policies include `clawdstrike.io/mitre-techniques` annotation with relevant MITRE IDs

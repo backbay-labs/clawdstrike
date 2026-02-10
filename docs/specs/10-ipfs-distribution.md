@@ -19,14 +19,14 @@ Evolve ClawdStrike's policy marketplace distribution from HTTPS-only to an IPFS-
 
 The marketplace uses a three-layer signed model implemented in:
 
-**`crates/clawdstrike/src/marketplace_feed.rs`:**
+**`crates/libs/clawdstrike/src/marketplace_feed.rs`:**
 - `MarketplaceFeed` has a `entries: Vec<MarketplaceEntry>` where each entry has a `bundle_uri: String`
 - `bundle_uri` accepts `https://...`, `ipfs://...`, and `builtin://...` schemes (documented in the struct comment on line 52)
 - `MarketplaceProvenance` has optional `attestation_uid`, `notary_url`, and `spine_envelope_hash` fields
 - `SignedMarketplaceFeed::verify_trusted()` already accepts `&[PublicKey]` for multi-curator verification
 - Feed content is canonicalized via RFC 8785 (`hush_core::canonical::canonicalize`) before signing
 
-**`crates/clawdstrike/src/policy_bundle.rs`:**
+**`crates/libs/clawdstrike/src/policy_bundle.rs`:**
 - `PolicyBundle` computes `policy_hash: Hash` as SHA-256 of the canonical JSON of the policy
 - `SignedPolicyBundle` wraps a bundle with an Ed25519 signature
 - `PolicyBundle::hash_sha256()` returns the SHA-256 of the canonical bundle JSON
@@ -108,7 +108,7 @@ From `docs/research/open-source-strategy.md` (section 4.5, Phase 3):
 
 ### Step 1: Extend `MarketplaceEntry` with `content_ids` and `gateway_hints`
 
-**File:** `crates/clawdstrike/src/marketplace_feed.rs`
+**File:** `crates/libs/clawdstrike/src/marketplace_feed.rs`
 
 Add two new optional fields to `MarketplaceEntry`:
 
@@ -141,7 +141,7 @@ Since `MarketplaceEntry` uses `deny_unknown_fields`, this is a schema change. Th
 
 > **Note:** The TypeScript side of IPFS upload should reuse `@backbay/notary`'s existing `ipfs.ts` module (w3up-client wrapper) rather than building a new one. The Rust `IpfsClient` in this step covers the Rust CLI and daemon use case; the desktop app's TypeScript layer should import from `@backbay/notary` or extract its IPFS module into a shared `@backbay/ipfs` package.
 
-**New file:** `crates/clawdstrike/src/ipfs.rs`
+**New file:** `crates/libs/clawdstrike/src/ipfs.rs`
 
 A lightweight IPFS pinning client that supports:
 
@@ -206,13 +206,13 @@ impl IpfsClient {
 }
 ```
 
-Dependencies to add to `crates/clawdstrike/Cargo.toml`:
+Dependencies to add to `crates/libs/clawdstrike/Cargo.toml`:
 - `reqwest` (already in workspace) -- for HTTP calls to Pinata/gateway
 - Feature-gate the IPFS module behind `ipfs` feature flag to keep the core library lean
 
 ### Step 3: CLI `marketplace publish` command
 
-**File:** `crates/hush-cli/src/commands/marketplace.rs` (new subcommand)
+**File:** `crates/services/hush-cli/src/commands/marketplace.rs` (new subcommand)
 
 ```
 clawdstrike marketplace publish \
@@ -372,13 +372,13 @@ No protocol changes needed -- the existing gossipsub format already supports thi
 
 | File | Action | Description |
 |------|--------|-------------|
-| `crates/clawdstrike/src/marketplace_feed.rs` | Modify | Add `ContentIds`, `content_ids`, `gateway_hints` to `MarketplaceEntry` |
-| `crates/clawdstrike/src/ipfs.rs` | Create | IPFS pinning client (Pinata + self-hosted + gateway fetch) |
-| `crates/clawdstrike/src/lib.rs` | Modify | Add `pub mod ipfs;` (feature-gated) |
-| `crates/clawdstrike/Cargo.toml` | Modify | Add `ipfs` feature flag, optional reqwest dep |
-| `crates/hush-cli/src/commands/marketplace.rs` | Create | `marketplace publish`, `marketplace publish-feed`, `marketplace pin-status` subcommands |
-| `crates/hush-cli/src/commands/mod.rs` | Modify | Register `marketplace` subcommand |
-| `crates/hush-cli/Cargo.toml` | Modify | Add `clawdstrike/ipfs` feature dep |
+| `crates/libs/clawdstrike/src/marketplace_feed.rs` | Modify | Add `ContentIds`, `content_ids`, `gateway_hints` to `MarketplaceEntry` |
+| `crates/libs/clawdstrike/src/ipfs.rs` | Create | IPFS pinning client (Pinata + self-hosted + gateway fetch) |
+| `crates/libs/clawdstrike/src/lib.rs` | Modify | Add `pub mod ipfs;` (feature-gated) |
+| `crates/libs/clawdstrike/Cargo.toml` | Modify | Add `ipfs` feature flag, optional reqwest dep |
+| `crates/services/hush-cli/src/commands/marketplace.rs` | Create | `marketplace publish`, `marketplace publish-feed`, `marketplace pin-status` subcommands |
+| `crates/services/hush-cli/src/commands/mod.rs` | Modify | Register `marketplace` subcommand |
+| `crates/services/hush-cli/Cargo.toml` | Modify | Add `clawdstrike/ipfs` feature dep |
 | `apps/desktop/src-tauri/src/commands/marketplace.rs` | Modify | Add IPFS-aware `fetch_bundle` function with gateway fallback chain |
 | `apps/desktop/src/services/marketplaceSettings.ts` | Modify | Add `IpfsGatewaySettings` interface and storage |
 | `apps/desktop/src/services/marketplaceSettings.test.ts` | Modify | Add tests for IPFS gateway settings |

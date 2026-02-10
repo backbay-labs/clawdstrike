@@ -199,7 +199,7 @@ clawdstrike/
 │   ├── cicd.yaml
 │   └── community/               #   Community-contributed rulesets
 │
-├── deploy/                      #   Kubernetes deployment manifests
+├── infra/deploy/                      #   Kubernetes deployment manifests
 │   ├── helm/                    #   Helm chart for hushd + spine + bridges
 │   ├── argocd/                  #   ArgoCD Application resources
 │   └── tetragon-policies/       #   TracingPolicy CRDs
@@ -226,16 +226,16 @@ clawdstrike/
 
 | Crate/Package | Current Location | Target Location | Language |
 |---------------|-----------------|-----------------|----------|
-| `hush-core` | `clawdstrike/crates/hush-core` | `core/` | Rust |
-| `clawdstrike` | `clawdstrike/crates/clawdstrike` | `guards/` | Rust |
-| `hushd` | `clawdstrike/crates/hushd` | `daemon/` | Rust |
-| `hush-cli` | `clawdstrike/crates/hush-cli` | `cli/` | Rust |
-| `hush-proxy` | `clawdstrike/crates/hush-proxy` | `daemon/proxy/` | Rust |
-| `hush-wasm` | `clawdstrike/crates/hush-wasm` | `sdk/wasm/` | Rust |
-| `hush-certification` | `clawdstrike/crates/hush-certification` | `certification/` | Rust |
-| `hush-multi-agent` | `clawdstrike/crates/hush-multi-agent` | `guards/multi-agent/` | Rust |
-| `hush-ts` | `clawdstrike/packages/hush-ts` | `sdk/typescript/` | TypeScript |
-| `hush-py` | `clawdstrike/packages/hush-py` | `sdk/python/` | Python |
+| `hush-core` | `clawdstrike/crates/libs/hush-core` | `core/` | Rust |
+| `clawdstrike` | `clawdstrike/crates/libs/clawdstrike` | `guards/` | Rust |
+| `hushd` | `clawdstrike/crates/services/hushd` | `daemon/` | Rust |
+| `hush-cli` | `clawdstrike/crates/services/hush-cli` | `cli/` | Rust |
+| `hush-proxy` | `clawdstrike/crates/libs/hush-proxy` | `daemon/proxy/` | Rust |
+| `hush-wasm` | `clawdstrike/crates/libs/hush-wasm` | `sdk/wasm/` | Rust |
+| `hush-certification` | `clawdstrike/crates/libs/hush-certification` | `certification/` | Rust |
+| `hush-multi-agent` | `clawdstrike/crates/libs/hush-multi-agent` | `guards/multi-agent/` | Rust |
+| `hush-ts` | `clawdstrike/packages/sdk/hush-ts` | `sdk/typescript/` | TypeScript |
+| `hush-py` | `clawdstrike/packages/sdk/hush-py` | `sdk/python/` | Python |
 | Desktop app | `clawdstrike/apps/desktop` | `desktop/` | TS + Rust |
 | AegisNet checkpointer | `aegis/services/aegisnet/checkpointer` | `spine/nats/checkpointer/` | Rust |
 | AegisNet witness | `aegis/services/aegisnet/witness` | `spine/nats/witness/` | Rust |
@@ -258,7 +258,7 @@ clawdstrike/
 | `services/aegisnet/checkpointer/` | `spine/nats/checkpointer/` | Core Merkle tree builder, checkpoint emitter |
 | `services/aegisnet/witness/` | `spine/nats/witness/` | Independent co-signer |
 | `services/aegisnet/proofs-api/` | `spine/nats/proofs-api/` | HTTP endpoints for inclusion proofs |
-| `services/aegisnet/observability/` | Split: metrics to `spine/metrics/`, dashboards to `desktop/` | Prometheus alerts stay in `deploy/` |
+| `services/aegisnet/observability/` | Split: metrics to `spine/metrics/`, dashboards to `desktop/` | Prometheus alerts stay in `infra/deploy/` |
 | `services/aegisnet/model-registry/` | Stays in Aegis | Not security-specific |
 | `services/aegisnet/smoketest*` | `spine/nats/tests/` | Integration tests |
 | `crates/aegisnet/` | `spine/src/` | Core Spine protocol types |
@@ -277,13 +277,13 @@ clawdstrike/
 
 | Current | Target | Notes |
 |---------|--------|-------|
-| `crates/hush-core` | `core/` | Rename crate directory |
-| `crates/clawdstrike` | `guards/` | Rename crate directory |
-| `crates/hushd` | `daemon/` | Rename crate directory |
-| `crates/hush-cli` | `cli/` | Rename crate directory |
-| `crates/hush-wasm` | `sdk/wasm/` | Move to SDK directory |
-| `packages/hush-ts` | `sdk/typescript/` | Move to SDK directory |
-| `packages/hush-py` | `sdk/python/` | Move to SDK directory |
+| `crates/libs/hush-core` | `core/` | Rename crate directory |
+| `crates/libs/clawdstrike` | `guards/` | Rename crate directory |
+| `crates/services/hushd` | `daemon/` | Rename crate directory |
+| `crates/services/hush-cli` | `cli/` | Rename crate directory |
+| `crates/libs/hush-wasm` | `sdk/wasm/` | Move to SDK directory |
+| `packages/sdk/hush-ts` | `sdk/typescript/` | Move to SDK directory |
+| `packages/sdk/hush-py` | `sdk/python/` | Move to SDK directory |
 | `apps/desktop` | `desktop/` | Move to top level |
 
 **What stays in `platform/infra/` (Kubernetes infrastructure):**
@@ -309,7 +309,7 @@ Phase 3: Implement bridges/ (tetragon-nats-bridge, hubble-flow-bridge)
     │     New code. No migration needed.
     │
 Phase 4: Deploy spine/ services alongside existing AegisNet
-    │     Blue-green deploy: new Helm chart in deploy/, ArgoCD switches over.
+    │     Blue-green deploy: new Helm chart in infra/deploy/, ArgoCD switches over.
     │     Verify checkpointing, witnessing, proofs all work from ClawdStrike repo.
     │
 Phase 5: Deprecate standalone aegis/services/aegisnet/
@@ -871,7 +871,7 @@ Each challenge runs in a sandboxed environment with ClawdStrike deployed. Soluti
 | Copy Aegis Spine protocol types into spine/src/ | Core team | 1 week | Phase 0 |
 | Implement Reticulum adapter scaffold (integrations/transports/reticulum/) | Reticulum lead | 2 weeks | Spine types |
 | Write mdBook docs for Spine protocol | Docs lead | 2 weeks | Spine types |
-| Helm chart for deploying Spine services (deploy/helm/) | Infra lead | 1 week | Spine build |
+| Helm chart for deploying Spine services (infra/deploy/helm/) | Infra lead | 1 week | Spine build |
 
 **Milestone**: `cargo build --workspace` includes Spine services. Spine E2E test passes.
 
@@ -883,7 +883,7 @@ Each challenge runs in a sandboxed environment with ClawdStrike deployed. Soluti
 |------|-------|----------|--------------|
 | Implement tetragon-nats-bridge (bridges/tetragon/) | Bridge team | 3 weeks | Spine integration |
 | Implement hubble-flow-bridge (bridges/hubble/) | Bridge team | 2 weeks | Spine integration |
-| TracingPolicy templates (deploy/tetragon-policies/) | Security team | 1 week | None |
+| TracingPolicy templates (infra/deploy/tetragon-policies/) | Security team | 1 week | None |
 | Integration test: Tetragon event -> Spine -> Merkle proof | QA | 1 week | Both bridges |
 
 **Milestone**: Tetragon events flow through Spine and produce verifiable Merkle inclusion proofs.

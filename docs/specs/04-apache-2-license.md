@@ -34,24 +34,24 @@ From `Cargo.toml` line 31:
 license = "MIT"
 ```
 
-All 14 workspace member crates inherit this via `license.workspace = true` in their individual `Cargo.toml` files (confirmed in `crates/spine/Cargo.toml` line 6, `crates/tetragon-bridge/Cargo.toml` line 6, `crates/hubble-bridge/Cargo.toml` line 6).
+All 14 workspace member crates inherit this via `license.workspace = true` in their individual `Cargo.toml` files (confirmed in `crates/libs/spine/Cargo.toml` line 6, `crates/bridges/tetragon-bridge/Cargo.toml` line 6, `crates/bridges/hubble-bridge/Cargo.toml` line 6).
 
 ### TypeScript packages
 
 All 11 TypeScript packages in `packages/` specify `"license": "MIT"` in their `package.json`:
-- `packages/hush-ts/package.json` line 40
-- `packages/clawdstrike-adapter-core/package.json` line 29
-- `packages/clawdstrike-claude-code/package.json` line 33
-- `packages/clawdstrike-policy/package.json` line 40
+- `packages/sdk/hush-ts/package.json` line 40
+- `packages/adapters/clawdstrike-adapter-core/package.json` line 29
+- `packages/adapters/clawdstrike-claude-code/package.json` line 33
+- `packages/policy/clawdstrike-policy/package.json` line 40
 - And 7 more adapter packages
 
 ### Python package
 
-`packages/hush-py/` likely has a license field in its `pyproject.toml` (to be confirmed during implementation).
+`packages/sdk/hush-py/` likely has a license field in its `pyproject.toml` (to be confirmed during implementation).
 
 ### Vendor directory
 
-`vendor/` contains third-party crate sources with their own licenses (MIT, Apache 2.0, BSD, etc.). These are NOT modified -- they retain their original licenses.
+`infra/vendor/` contains third-party crate sources with their own licenses (MIT, Apache 2.0, BSD, etc.). These are NOT modified -- they retain their original licenses.
 
 ### `deny.toml`
 
@@ -140,21 +140,21 @@ For each of the 11 packages in `packages/*/package.json`, change:
 ```
 
 Files to update:
-1. `packages/hush-ts/package.json`
-2. `packages/clawdstrike-adapter-core/package.json`
-3. `packages/clawdstrike-claude-code/package.json`
-4. `packages/clawdstrike-codex/package.json`
-5. `packages/clawdstrike-hush-cli-engine/package.json`
-6. `packages/clawdstrike-hushd-engine/package.json`
-7. `packages/clawdstrike-langchain/package.json`
-8. `packages/clawdstrike-openclaw/package.json`
-9. `packages/clawdstrike-opencode/package.json`
-10. `packages/clawdstrike-vercel-ai/package.json`
-11. `packages/clawdstrike-policy/package.json`
+1. `packages/sdk/hush-ts/package.json`
+2. `packages/adapters/clawdstrike-adapter-core/package.json`
+3. `packages/adapters/clawdstrike-claude-code/package.json`
+4. `packages/adapters/clawdstrike-codex/package.json`
+5. `packages/adapters/clawdstrike-hush-cli-engine/package.json`
+6. `packages/adapters/clawdstrike-hushd-engine/package.json`
+7. `packages/adapters/clawdstrike-langchain/package.json`
+8. `packages/adapters/clawdstrike-openclaw/package.json`
+9. `packages/adapters/clawdstrike-opencode/package.json`
+10. `packages/adapters/clawdstrike-vercel-ai/package.json`
+11. `packages/policy/clawdstrike-policy/package.json`
 
 ### Step 5: Update Python package (if applicable)
 
-Check `packages/hush-py/pyproject.toml` for a license field and update it. Note that pyproject.toml uses the PEP 639 table format:
+Check `packages/sdk/hush-py/pyproject.toml` for a license field and update it. Note that pyproject.toml uses the PEP 639 table format:
 
 ```toml
 # Before:
@@ -166,7 +166,7 @@ license = { text = "Apache-2.0" }
 
 Also update the Python classifiers from `"License :: OSI Approved :: MIT License"` to `"License :: OSI Approved :: Apache Software License"` in the `[project]` classifiers list.
 
-Also check for a `license` field in `packages/hush-py/hush-native/Cargo.toml` (the PyO3 native extension). **Note:** `hush-native/Cargo.toml` has `license = "MIT"` hardcoded on line 6 -- it does **not** use `license.workspace = true`. This must be manually changed to `license = "Apache-2.0"` since it will not be updated automatically by the workspace license change in Step 3.
+Also check for a `license` field in `packages/sdk/hush-py/hush-native/Cargo.toml` (the PyO3 native extension). **Note:** `hush-native/Cargo.toml` has `license = "MIT"` hardcoded on line 6 -- it does **not** use `license.workspace = true`. This must be manually changed to `license = "Apache-2.0"` since it will not be updated automatically by the workspace license change in Step 3.
 
 ### Step 6: Update deny.toml (if needed)
 
@@ -212,18 +212,18 @@ This ensures all workspace crates now report Apache-2.0 and no license conflicts
 | `LICENSE` | Replace | MIT text -> Apache License 2.0 full text |
 | `NOTICE` | Create | Copyright attribution (required by Apache 2.0 Section 4d) |
 | `Cargo.toml` | Modify | `license = "MIT"` -> `license = "Apache-2.0"` |
-| `packages/hush-ts/package.json` | Modify | `"license": "MIT"` -> `"license": "Apache-2.0"` |
-| `packages/clawdstrike-adapter-core/package.json` | Modify | Same |
-| `packages/clawdstrike-claude-code/package.json` | Modify | Same |
-| `packages/clawdstrike-codex/package.json` | Modify | Same |
-| `packages/clawdstrike-hush-cli-engine/package.json` | Modify | Same |
-| `packages/clawdstrike-hushd-engine/package.json` | Modify | Same |
-| `packages/clawdstrike-langchain/package.json` | Modify | Same |
-| `packages/clawdstrike-openclaw/package.json` | Modify | Same |
-| `packages/clawdstrike-opencode/package.json` | Modify | Same |
-| `packages/clawdstrike-vercel-ai/package.json` | Modify | Same |
-| `packages/clawdstrike-policy/package.json` | Modify | Same |
-| `packages/hush-py/pyproject.toml` | Modify | Update license field (if present) |
+| `packages/sdk/hush-ts/package.json` | Modify | `"license": "MIT"` -> `"license": "Apache-2.0"` |
+| `packages/adapters/clawdstrike-adapter-core/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-claude-code/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-codex/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-hush-cli-engine/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-hushd-engine/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-langchain/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-openclaw/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-opencode/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-vercel-ai/package.json` | Modify | Same |
+| `packages/policy/clawdstrike-policy/package.json` | Modify | Same |
+| `packages/sdk/hush-py/pyproject.toml` | Modify | Update license field (if present) |
 | `deny.toml` | Modify (if needed) | Ensure Apache-2.0 is in allowlist |
 
 Total: ~16 files modified, 1 file created, 1 file replaced.
@@ -245,7 +245,7 @@ Total: ~16 files modified, 1 file created, 1 file replaced.
    grep -rn '"MIT"' --include="*.json" packages/
    grep -rn 'license.*=.*"MIT"' --include="*.toml" crates/
    ```
-   Should return zero results for first-party files (vendor/ excluded).
+   Should return zero results for first-party files (infra/vendor/ excluded).
 
 6. **NOTICE file exists** -- Verify `NOTICE` file is present at the repo root.
 

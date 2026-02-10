@@ -55,7 +55,7 @@ isolation, metering, and SLA guarantees.
 
 ### 2.2 Multi-Agent Identity (Existing Primitives)
 
-From `crates/hush-multi-agent/`, the following primitives are available for
+From `crates/libs/hush-multi-agent/`, the following primitives are available for
 cloud multi-tenancy:
 
 - **`AgentIdentity`** -- Ed25519 public key, role, trust level, capabilities.
@@ -69,7 +69,7 @@ cloud multi-tenancy:
 
 ### 2.3 hushd Daemon
 
-From `crates/hushd/`, the enforcement daemon provides:
+From `crates/services/hushd/`, the enforcement daemon provides:
 
 - HTTP API for guard evaluation
 - SSE event broadcast to connected clients
@@ -328,10 +328,10 @@ accounts:
 
 ### Step 3: Cloud API Service (Rust / Axum)
 
-**New crate: `crates/cloud-api/`**
+**New crate: `crates/services/cloud-api/`**
 
 ```
-crates/cloud-api/
+crates/services/cloud-api/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs               # Service entry point
@@ -397,7 +397,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 **Core API routes:**
 
 ```rust
-// crates/cloud-api/src/routes/mod.rs
+// crates/services/cloud-api/src/routes/mod.rs
 
 use axum::{Router, middleware};
 
@@ -430,7 +430,7 @@ pub fn router(state: AppState) -> Router {
 **Agent registration endpoint:**
 
 ```rust
-// crates/cloud-api/src/routes/agents.rs
+// crates/services/cloud-api/src/routes/agents.rs
 
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
@@ -567,7 +567,7 @@ apps/cloud-dashboard/
 **Rust metering service:**
 
 ```rust
-// crates/cloud-api/src/services/metering.rs
+// crates/services/cloud-api/src/services/metering.rs
 
 pub struct MeteringService {
     db: PgPool,
@@ -626,7 +626,7 @@ impl MeteringService {
 **Stripe webhook handler:**
 
 ```rust
-// crates/cloud-api/src/routes/billing.rs
+// crates/services/cloud-api/src/routes/billing.rs
 
 pub async fn stripe_webhook(
     State(state): State<AppState>,
@@ -667,7 +667,7 @@ pub async fn stripe_webhook(
 ### Step 6: SSE Event Streaming (Per-Tenant)
 
 ```rust
-// crates/cloud-api/src/routes/events.rs
+// crates/services/cloud-api/src/routes/events.rs
 
 use axum::{
     extract::State,
@@ -703,7 +703,7 @@ pub async fn event_stream(
 **Audit export:**
 
 ```rust
-// crates/cloud-api/src/routes/compliance.rs
+// crates/services/cloud-api/src/routes/compliance.rs
 
 #[derive(Deserialize)]
 pub struct AuditExportRequest {
@@ -770,7 +770,7 @@ pub async fn export_audit_log(
 **Retention enforcement:**
 
 ```rust
-// crates/cloud-api/src/services/retention.rs
+// crates/services/cloud-api/src/services/retention.rs
 
 pub struct RetentionService {
     db: PgPool,
@@ -826,7 +826,7 @@ impl RetentionService {
 Enterprise tenants can configure OIDC providers:
 
 ```rust
-// crates/cloud-api/src/auth/oidc.rs
+// crates/services/cloud-api/src/auth/oidc.rs
 
 #[derive(Deserialize)]
 pub struct OidcConfig {
@@ -852,7 +852,7 @@ pub enum OidcProvider {
 ### Step 9: Alerting Service
 
 ```rust
-// crates/cloud-api/src/services/alerter.rs
+// crates/services/cloud-api/src/services/alerter.rs
 
 pub struct AlerterService {
     db: PgPool,
@@ -928,34 +928,34 @@ impl AlerterService {
 
 | Path | Description | Est. LOC |
 |---|---|---|
-| `crates/cloud-api/Cargo.toml` | Cloud API crate config | 35 |
-| `crates/cloud-api/src/main.rs` | Service entry point | 80 |
-| `crates/cloud-api/src/config.rs` | Environment config | 80 |
-| `crates/cloud-api/src/db.rs` | PostgreSQL pool setup | 50 |
-| `crates/cloud-api/src/auth/mod.rs` | Auth middleware | 40 |
-| `crates/cloud-api/src/auth/jwt.rs` | JWT validation | 100 |
-| `crates/cloud-api/src/auth/api_key.rs` | API key auth | 80 |
-| `crates/cloud-api/src/auth/oidc.rs` | OIDC/SAML integration | 150 |
-| `crates/cloud-api/src/routes/mod.rs` | Router setup | 40 |
-| `crates/cloud-api/src/routes/tenants.rs` | Tenant CRUD | 150 |
-| `crates/cloud-api/src/routes/agents.rs` | Agent registration + heartbeat | 200 |
-| `crates/cloud-api/src/routes/policies.rs` | Policy deployment | 150 |
-| `crates/cloud-api/src/routes/events.rs` | SSE event stream | 80 |
-| `crates/cloud-api/src/routes/alerts.rs` | Alert config CRUD | 120 |
-| `crates/cloud-api/src/routes/compliance.rs` | Audit export + retention | 200 |
-| `crates/cloud-api/src/routes/billing.rs` | Stripe webhook | 100 |
-| `crates/cloud-api/src/routes/health.rs` | Health checks | 30 |
-| `crates/cloud-api/src/services/mod.rs` | Service module | 10 |
-| `crates/cloud-api/src/services/tenant_provisioner.rs` | NATS account setup | 150 |
-| `crates/cloud-api/src/services/metering.rs` | Usage metering + Stripe | 150 |
-| `crates/cloud-api/src/services/alerter.rs` | Alert dispatch | 200 |
-| `crates/cloud-api/src/services/retention.rs` | Data retention enforcement | 80 |
-| `crates/cloud-api/src/models/mod.rs` | Model module | 10 |
-| `crates/cloud-api/src/models/tenant.rs` | Tenant model | 60 |
-| `crates/cloud-api/src/models/user.rs` | User model | 50 |
-| `crates/cloud-api/src/models/agent.rs` | Agent model | 50 |
-| `crates/cloud-api/src/models/api_key.rs` | API key model | 50 |
-| `crates/cloud-api/migrations/001_init.sql` | Initial DB migration | 80 |
+| `crates/services/cloud-api/Cargo.toml` | Cloud API crate config | 35 |
+| `crates/services/cloud-api/src/main.rs` | Service entry point | 80 |
+| `crates/services/cloud-api/src/config.rs` | Environment config | 80 |
+| `crates/services/cloud-api/src/db.rs` | PostgreSQL pool setup | 50 |
+| `crates/services/cloud-api/src/auth/mod.rs` | Auth middleware | 40 |
+| `crates/services/cloud-api/src/auth/jwt.rs` | JWT validation | 100 |
+| `crates/services/cloud-api/src/auth/api_key.rs` | API key auth | 80 |
+| `crates/services/cloud-api/src/auth/oidc.rs` | OIDC/SAML integration | 150 |
+| `crates/services/cloud-api/src/routes/mod.rs` | Router setup | 40 |
+| `crates/services/cloud-api/src/routes/tenants.rs` | Tenant CRUD | 150 |
+| `crates/services/cloud-api/src/routes/agents.rs` | Agent registration + heartbeat | 200 |
+| `crates/services/cloud-api/src/routes/policies.rs` | Policy deployment | 150 |
+| `crates/services/cloud-api/src/routes/events.rs` | SSE event stream | 80 |
+| `crates/services/cloud-api/src/routes/alerts.rs` | Alert config CRUD | 120 |
+| `crates/services/cloud-api/src/routes/compliance.rs` | Audit export + retention | 200 |
+| `crates/services/cloud-api/src/routes/billing.rs` | Stripe webhook | 100 |
+| `crates/services/cloud-api/src/routes/health.rs` | Health checks | 30 |
+| `crates/services/cloud-api/src/services/mod.rs` | Service module | 10 |
+| `crates/services/cloud-api/src/services/tenant_provisioner.rs` | NATS account setup | 150 |
+| `crates/services/cloud-api/src/services/metering.rs` | Usage metering + Stripe | 150 |
+| `crates/services/cloud-api/src/services/alerter.rs` | Alert dispatch | 200 |
+| `crates/services/cloud-api/src/services/retention.rs` | Data retention enforcement | 80 |
+| `crates/services/cloud-api/src/models/mod.rs` | Model module | 10 |
+| `crates/services/cloud-api/src/models/tenant.rs` | Tenant model | 60 |
+| `crates/services/cloud-api/src/models/user.rs` | User model | 50 |
+| `crates/services/cloud-api/src/models/agent.rs` | Agent model | 50 |
+| `crates/services/cloud-api/src/models/api_key.rs` | API key model | 50 |
+| `crates/services/cloud-api/migrations/001_init.sql` | Initial DB migration | 80 |
 | `apps/cloud-dashboard/package.json` | Dashboard package config | 30 |
 | `apps/cloud-dashboard/vite.config.ts` | Vite config | 20 |
 | `apps/cloud-dashboard/src/App.tsx` | Root component | 50 |
@@ -1032,7 +1032,7 @@ impl AlerterService {
 ClawdStrike Cloud is a **new deployment** with no impact on the open source
 project:
 
-1. **Cloud API (`crates/cloud-api/`):** Independent service. Can be shut
+1. **Cloud API (`crates/services/cloud-api/`):** Independent service. Can be shut
    down without affecting hushd, the desktop app, or any open source
    functionality.
 2. **Dashboard (`apps/cloud-dashboard/`):** Static SPA served from
@@ -1052,10 +1052,10 @@ Cloud. The commercial service is a pure superset.
 
 | Dependency | Status | Notes |
 |---|---|---|
-| `crates/hush-core/` | **Exists** | Ed25519, SHA-256 for API key hashing |
-| `crates/hush-multi-agent/` | **Exists** | AgentIdentity, DelegationToken, RevocationStore |
-| `crates/hushd/` | **Exists** | Pattern reference for guard evaluation API |
-| `crates/spine/` | **Exists** | Envelope format, NATS transport |
+| `crates/libs/hush-core/` | **Exists** | Ed25519, SHA-256 for API key hashing |
+| `crates/libs/hush-multi-agent/` | **Exists** | AgentIdentity, DelegationToken, RevocationStore |
+| `crates/services/hushd/` | **Exists** | Pattern reference for guard evaluation API |
+| `crates/libs/spine/` | **Exists** | Envelope format, NATS transport |
 | NATS JetStream | **Deployed** | Event backbone (needs multi-account config) |
 | AegisNet services | **Deployed** | Checkpointer, witness, proofs API |
 | PostgreSQL | **New infrastructure** | Cloud control plane database |
@@ -1133,8 +1133,8 @@ Cloud. The commercial service is a pure superset.
 - [Open Source Strategy](../research/open-source-strategy.md) -- Section 5 (Business Model), Section 9 (Timeline)
 - [Architecture Vision](../research/architecture-vision.md) -- Section 2 (Full Stack), Section 5 (Product Positioning)
 - [Marketplace Trust Evolution](../research/marketplace-trust-evolution.md) -- Section 8 (Community Curation for Publisher Program)
-- `crates/hushd/` -- Existing daemon architecture (reference for Cloud API)
-- `crates/hush-multi-agent/src/types.rs` -- AgentIdentity, AgentCapability, TrustLevel
-- `crates/hush-multi-agent/src/token.rs` -- SignedDelegationToken for tenant-scoped auth
-- `crates/spine/src/nats_transport.rs` -- NATS connection patterns
-- `crates/spine/src/trust.rs` -- TrustBundle for tenant-scoped verification
+- `crates/services/hushd/` -- Existing daemon architecture (reference for Cloud API)
+- `crates/libs/hush-multi-agent/src/types.rs` -- AgentIdentity, AgentCapability, TrustLevel
+- `crates/libs/hush-multi-agent/src/token.rs` -- SignedDelegationToken for tenant-scoped auth
+- `crates/libs/spine/src/nats_transport.rs` -- NATS connection patterns
+- `crates/libs/spine/src/trust.rs` -- TrustBundle for tenant-scoped verification

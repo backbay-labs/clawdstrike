@@ -20,7 +20,7 @@ This implements "Phase 1: Multi-Curator + Config" from Section 2 (Approach A) an
 
 ### Marketplace feed signing (`marketplace_feed.rs`)
 
-From `crates/clawdstrike/src/marketplace_feed.rs`:
+From `crates/libs/clawdstrike/src/marketplace_feed.rs`:
 
 - `MarketplaceFeed` is canonicalized via RFC 8785 and signed with Ed25519 (`SignedMarketplaceFeed::sign()`, line 102)
 - `verify_trusted(&self, trusted_public_keys: &[PublicKey])` (line 134) already accepts an array of trusted keys and iterates through them
@@ -32,7 +32,7 @@ From `crates/clawdstrike/src/marketplace_feed.rs`:
 
 ### Existing curator config (`curator_config.rs`)
 
-The file `crates/clawdstrike/src/curator_config.rs` **already exists** and provides basic multi-curator types:
+The file `crates/libs/clawdstrike/src/curator_config.rs` **already exists** and provides basic multi-curator types:
 
 - `CuratorConfigFile` -- a TOML-deserializable struct with `trusted_keys: Vec<String>` for loading curator public keys
 - `CuratorTrustSet` -- a validated set of trusted curator keys parsed from the config file
@@ -84,7 +84,7 @@ trust_level = "audit-only"
 
 ### 2. Rust types for curator config
 
-Extend existing file: `crates/clawdstrike/src/curator_config.rs` (refactor `CuratorConfigFile` and `CuratorTrustSet` to support the richer types below)
+Extend existing file: `crates/libs/clawdstrike/src/curator_config.rs` (refactor `CuratorConfigFile` and `CuratorTrustSet` to support the richer types below)
 
 ```rust
 pub struct CuratorConfig {
@@ -125,7 +125,7 @@ A new convenience method `SignedMarketplaceFeed::verify_with_config(config: &Cur
 
 ### Step 1: Extend `curator_config.rs`
 
-Refactor existing file: `crates/clawdstrike/src/curator_config.rs`. The existing `CuratorConfigFile` (with `trusted_keys: Vec<String>`) and `CuratorTrustSet` types should be extended or replaced with the richer types below. The existing `CLAWDSTRIKE_TRUSTED_CURATORS` env var support should be preserved as a fallback source.
+Refactor existing file: `crates/libs/clawdstrike/src/curator_config.rs`. The existing `CuratorConfigFile` (with `trusted_keys: Vec<String>`) and `CuratorTrustSet` types should be extended or replaced with the richer types below. The existing `CLAWDSTRIKE_TRUSTED_CURATORS` env var support should be preserved as a fallback source.
 
 ```rust
 //! Multi-curator trust configuration.
@@ -275,7 +275,7 @@ impl CuratorConfig {
 
 ### Step 2: Add `curator_config` module to `lib.rs`
 
-In `crates/clawdstrike/src/lib.rs`, add:
+In `crates/libs/clawdstrike/src/lib.rs`, add:
 
 ```rust
 pub mod curator_config;
@@ -283,7 +283,7 @@ pub mod curator_config;
 
 ### Step 3: Add convenience method to `SignedMarketplaceFeed`
 
-In `crates/clawdstrike/src/marketplace_feed.rs`, add:
+In `crates/libs/clawdstrike/src/marketplace_feed.rs`, add:
 
 ```rust
 use crate::curator_config::{CuratorConfig, TrustLevel, ValidatedCurator};
@@ -300,7 +300,7 @@ impl SignedMarketplaceFeed {
 }
 ```
 
-### Step 4: Add `toml` dependency to `crates/clawdstrike/Cargo.toml`
+### Step 4: Add `toml` dependency to `crates/libs/clawdstrike/Cargo.toml`
 
 ```toml
 [dependencies]
@@ -325,7 +325,7 @@ This is backward-compatible because it's `Option` with `skip_serializing_if`.
 
 ### Step 6: Write unit tests
 
-In `crates/clawdstrike/src/curator_config.rs`:
+In `crates/libs/clawdstrike/src/curator_config.rs`:
 
 ```rust
 #[cfg(test)]
@@ -459,7 +459,7 @@ feed_ids = ["test-feed"]
 
 ### Step 8: CLI integration
 
-In `crates/hush-cli/`, add `--curators-config` flag to marketplace-related subcommands:
+In `crates/services/hush-cli/`, add `--curators-config` flag to marketplace-related subcommands:
 
 ```rust
 #[derive(Parser)]
@@ -480,11 +480,11 @@ Create `rulesets/trusted_curators.example.toml` as a template users can copy to 
 
 | File | Action | Description |
 |------|--------|-------------|
-| `crates/clawdstrike/src/curator_config.rs` | Modify | Extend existing `CuratorConfigFile`/`CuratorTrustSet` with `CuratorConfig`, `CuratorEntry`, `TrustLevel`, load/parse/query functions. Preserve `CLAWDSTRIKE_TRUSTED_CURATORS` env var support. |
-| `crates/clawdstrike/src/lib.rs` | Modify | Add `pub mod curator_config;` |
-| `crates/clawdstrike/src/marketplace_feed.rs` | Modify | Add `verify_with_config()` method, add `curator_public_key` to `MarketplaceEntry` |
-| `crates/clawdstrike/Cargo.toml` | Modify | Add `toml` and `dirs` workspace dependencies |
-| `crates/hush-cli/src/*.rs` | Modify | Add `--curators-config` flag to marketplace subcommands |
+| `crates/libs/clawdstrike/src/curator_config.rs` | Modify | Extend existing `CuratorConfigFile`/`CuratorTrustSet` with `CuratorConfig`, `CuratorEntry`, `TrustLevel`, load/parse/query functions. Preserve `CLAWDSTRIKE_TRUSTED_CURATORS` env var support. |
+| `crates/libs/clawdstrike/src/lib.rs` | Modify | Add `pub mod curator_config;` |
+| `crates/libs/clawdstrike/src/marketplace_feed.rs` | Modify | Add `verify_with_config()` method, add `curator_public_key` to `MarketplaceEntry` |
+| `crates/libs/clawdstrike/Cargo.toml` | Modify | Add `toml` and `dirs` workspace dependencies |
+| `crates/services/hush-cli/src/*.rs` | Modify | Add `--curators-config` flag to marketplace subcommands |
 | `rulesets/trusted_curators.example.toml` | Create | Example config file for users |
 
 ---
@@ -539,7 +539,7 @@ To rollback: delete the `curator_config.rs` file and remove the `pub mod curator
 
 ## Acceptance Criteria
 
-- [ ] Existing file `crates/clawdstrike/src/curator_config.rs` is extended with `CuratorConfig`, `CuratorEntry`, `TrustLevel` types (refactored from `CuratorConfigFile`/`CuratorTrustSet`)
+- [ ] Existing file `crates/libs/clawdstrike/src/curator_config.rs` is extended with `CuratorConfig`, `CuratorEntry`, `TrustLevel` types (refactored from `CuratorConfigFile`/`CuratorTrustSet`)
 - [ ] All types use `#[serde(deny_unknown_fields)]` (project convention)
 - [ ] `CuratorConfig::load(path)` reads TOML from disk and validates public keys
 - [ ] `CuratorConfig::load_default()` uses `~/.clawdstrike/trusted_curators.toml` or returns empty config

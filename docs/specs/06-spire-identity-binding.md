@@ -38,7 +38,7 @@ spiffe://aegis.local/ns/<namespace>/sa/<service-account>
 
 ### Spine Crate
 
-The `spine` crate (`crates/spine/src/`) provides:
+The `spine` crate (`crates/libs/spine/src/`) provides:
 
 - **`envelope.rs`**: `build_signed_envelope()` creates envelopes with
   `issuer: "aegis:ed25519:<hex>"`, monotonic `seq`, `prev_envelope_hash`
@@ -89,11 +89,11 @@ After this spec is implemented:
 
 ### Step 1: Define `node_attestation.v1` Fact Schema (Spine crate)
 
-Create a new module `crates/spine/src/attestation.rs` defining the typed
+Create a new module `crates/libs/spine/src/attestation.rs` defining the typed
 fact structure:
 
 ```rust
-// crates/spine/src/attestation.rs
+// crates/libs/spine/src/attestation.rs
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -284,7 +284,7 @@ Vision Section 3.1 Flow 4 (cross-layer identity attestation).
 Add convenience functions to build signed envelopes wrapping these facts:
 
 ```rust
-// In crates/spine/src/attestation.rs
+// In crates/libs/spine/src/attestation.rs
 
 impl NodeAttestation {
     pub fn to_fact_value(&self) -> Result<Value, serde_json::Error> {
@@ -299,7 +299,7 @@ impl RuntimeProof {
 }
 ```
 
-Wire into `crates/spine/src/lib.rs`:
+Wire into `crates/libs/spine/src/lib.rs`:
 
 ```rust
 pub mod attestation;
@@ -312,7 +312,7 @@ pub use attestation::{
 
 ### Step 4: TrustBundle Enhancement
 
-Extend `TrustBundle` in `crates/spine/src/trust.rs` with a new field for
+Extend `TrustBundle` in `crates/libs/spine/src/trust.rs` with a new field for
 attested issuer enforcement:
 
 ```rust
@@ -352,7 +352,7 @@ Vision Section 4.1 (enforcement tier table).
 
 ### Step 5: Proofs API -- Node Attestation Query Endpoint
 
-Add a new endpoint to `crates/spine/src/bin/proofs_api.rs`:
+Add a new endpoint to `crates/libs/spine/src/bin/proofs_api.rs`:
 
 ```
 GET /v1/node-attestations/by-issuer/{issuer_hex}
@@ -389,7 +389,7 @@ Add the route:
 
 ### Step 6: Checkpointer Fact Indexing
 
-The checkpointer (`crates/spine/src/bin/checkpointer.rs` or equivalent) must
+The checkpointer (`crates/libs/spine/src/bin/checkpointer.rs` or equivalent) must
 index `node_attestation.v1` and `runtime_proof.v1` facts. When a new envelope
 arrives with one of these schemas, write to the fact index KV:
 
@@ -413,7 +413,7 @@ lowercase hex. This allows querying runtime proofs by Tetragon exec_id.
 Create a small utility module for reading SPIRE SVIDs from the filesystem
 (the SPIFFE CSI Driver mounts them into pods):
 
-File: `crates/spine/src/spiffe.rs`
+File: `crates/libs/spine/src/spiffe.rs`
 
 ```rust
 use std::path::Path;
@@ -449,7 +449,7 @@ pub fn svid_cert_hash(svid_path: impl AsRef<Path>) -> Result<String> {
 
 This module depends on an X.509 parsing crate. Recommended: `x509-parser`
 (MIT-licensed, already commonly used in the Rust ecosystem). Add to
-`crates/spine/Cargo.toml`:
+`crates/libs/spine/Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -459,7 +459,7 @@ pem = "3"
 
 ### Step 8: Integration Tests
 
-Create `crates/spine/tests/attestation_test.rs`:
+Create `crates/libs/spine/tests/attestation_test.rs`:
 
 1. **`test_node_attestation_roundtrip`**: Build a `NodeAttestation`, wrap it in
    a `SignedEnvelope`, verify the envelope, extract the fact, deserialize back
@@ -483,13 +483,13 @@ Create `crates/spine/tests/attestation_test.rs`:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `crates/spine/src/attestation.rs` | **Create** | `NodeAttestation`, `RuntimeProof`, and related types |
-| `crates/spine/src/spiffe.rs` | **Create** | SVID reading utility (SPIFFE ID extraction, cert hashing) |
-| `crates/spine/src/lib.rs` | **Modify** | Add `pub mod attestation; pub mod spiffe;` and re-exports |
-| `crates/spine/src/trust.rs` | **Modify** | Add `require_attested_issuers` field, enforcement tier constants |
-| `crates/spine/src/bin/proofs_api.rs` | **Modify** | Add `/v1/node-attestations/by-issuer/{issuer_hex}` endpoint |
-| `crates/spine/Cargo.toml` | **Modify** | Add `x509-parser` and `pem` dependencies |
-| `crates/spine/tests/attestation_test.rs` | **Create** | Integration tests for both fact schemas |
+| `crates/libs/spine/src/attestation.rs` | **Create** | `NodeAttestation`, `RuntimeProof`, and related types |
+| `crates/libs/spine/src/spiffe.rs` | **Create** | SVID reading utility (SPIFFE ID extraction, cert hashing) |
+| `crates/libs/spine/src/lib.rs` | **Modify** | Add `pub mod attestation; pub mod spiffe;` and re-exports |
+| `crates/libs/spine/src/trust.rs` | **Modify** | Add `require_attested_issuers` field, enforcement tier constants |
+| `crates/libs/spine/src/bin/proofs_api.rs` | **Modify** | Add `/v1/node-attestations/by-issuer/{issuer_hex}` endpoint |
+| `crates/libs/spine/Cargo.toml` | **Modify** | Add `x509-parser` and `pem` dependencies |
+| `crates/libs/spine/tests/attestation_test.rs` | **Create** | Integration tests for both fact schemas |
 
 ---
 
@@ -538,7 +538,7 @@ Rollback procedure: revert the commit, redeploy. No data migration required.
 
 | Dependency | Status | Notes |
 |-----------|--------|-------|
-| `spine` crate | Exists | `crates/spine/src/` -- envelope, trust, checkpoint |
+| `spine` crate | Exists | `crates/libs/spine/src/` -- envelope, trust, checkpoint |
 | SPIRE 0.13.0 | Deployed | `spire-system` namespace, trustDomain `aegis.local` |
 | NATS JetStream | Deployed | `aegisnet` namespace, 3-replica cluster |
 | Tetragon | Phase A | Required for `runtime_proof.v1` (kernel evidence). `node_attestation.v1` can be implemented without Tetragon. |
@@ -582,7 +582,7 @@ Rollback procedure: revert the commit, redeploy. No data migration required.
 - Tetragon Integration, Section 6.3: enforcement tier model
 - Reticulum SDR Transport, Section 6.2: identity binding Model A (separate keys)
 - Reticulum SDR Transport, Section 6.1: the two identity systems
-- `crates/spine/src/envelope.rs`: issuer format, signing mechanics
-- `crates/spine/src/trust.rs`: TrustBundle with existing kernel-loader fields
-- `crates/spine/src/checkpoint.rs`: checkpoint and witness signature protocol
-- `crates/spine/src/bin/proofs_api.rs`: existing API endpoints and KV patterns
+- `crates/libs/spine/src/envelope.rs`: issuer format, signing mechanics
+- `crates/libs/spine/src/trust.rs`: TrustBundle with existing kernel-loader fields
+- `crates/libs/spine/src/checkpoint.rs`: checkpoint and witness signature protocol
+- `crates/libs/spine/src/bin/proofs_api.rs`: existing API endpoints and KV patterns

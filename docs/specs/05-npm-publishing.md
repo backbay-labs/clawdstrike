@@ -22,17 +22,17 @@ This implements the npm publishing track from Section 4.6 of `docs/research/open
 
 | # | Package Dir | npm Name | Private? | file: Deps | Peer Deps |
 |---|-------------|----------|----------|------------|-----------|
-| 1 | `packages/hush-ts` | `@clawdstrike/sdk` | No | `@clawdstrike/adapter-core` | None |
-| 2 | `packages/clawdstrike-adapter-core` | `@clawdstrike/adapter-core` | No | None | None |
-| 3 | `packages/clawdstrike-policy` | `@clawdstrike/policy` | Yes | `@clawdstrike/adapter-core` | None |
-| 4 | `packages/clawdstrike-claude-code` | `@clawdstrike/claude-code` | Yes | `@clawdstrike/adapter-core` | None |
-| 5 | `packages/clawdstrike-codex` | `@clawdstrike/codex` | Yes | `@clawdstrike/adapter-core` | None |
-| 6 | `packages/clawdstrike-vercel-ai` | `@clawdstrike/vercel-ai` | Yes | `@clawdstrike/adapter-core`, `@clawdstrike/sdk` | `ai`, `@ai-sdk/react`, `react` |
-| 7 | `packages/clawdstrike-langchain` | `@clawdstrike/langchain` | Yes | `@clawdstrike/adapter-core` | `@langchain/core` |
-| 8 | `packages/clawdstrike-openclaw` | `@clawdstrike/clawdstrike-security` | No | `@clawdstrike/adapter-core`, `@clawdstrike/policy` | (to verify) |
-| 9 | `packages/clawdstrike-opencode` | `@clawdstrike/opencode` | Yes | `@clawdstrike/adapter-core` | (to verify) |
-| 10 | `packages/clawdstrike-hush-cli-engine` | `@clawdstrike/hush-cli-engine` | (to verify) | (to verify) | (to verify) |
-| 11 | `packages/clawdstrike-hushd-engine` | `@clawdstrike/hushd-engine` | (to verify) | (to verify) | (to verify) |
+| 1 | `packages/sdk/hush-ts` | `@clawdstrike/sdk` | No | `@clawdstrike/adapter-core` | None |
+| 2 | `packages/adapters/clawdstrike-adapter-core` | `@clawdstrike/adapter-core` | No | None | None |
+| 3 | `packages/policy/clawdstrike-policy` | `@clawdstrike/policy` | Yes | `@clawdstrike/adapter-core` | None |
+| 4 | `packages/adapters/clawdstrike-claude-code` | `@clawdstrike/claude-code` | Yes | `@clawdstrike/adapter-core` | None |
+| 5 | `packages/adapters/clawdstrike-codex` | `@clawdstrike/codex` | Yes | `@clawdstrike/adapter-core` | None |
+| 6 | `packages/adapters/clawdstrike-vercel-ai` | `@clawdstrike/vercel-ai` | Yes | `@clawdstrike/adapter-core`, `@clawdstrike/sdk` | `ai`, `@ai-sdk/react`, `react` |
+| 7 | `packages/adapters/clawdstrike-langchain` | `@clawdstrike/langchain` | Yes | `@clawdstrike/adapter-core` | `@langchain/core` |
+| 8 | `packages/adapters/clawdstrike-openclaw` | `@clawdstrike/clawdstrike-security` | No | `@clawdstrike/adapter-core`, `@clawdstrike/policy` | (to verify) |
+| 9 | `packages/adapters/clawdstrike-opencode` | `@clawdstrike/opencode` | Yes | `@clawdstrike/adapter-core` | (to verify) |
+| 10 | `packages/adapters/clawdstrike-hush-cli-engine` | `@clawdstrike/hush-cli-engine` | (to verify) | (to verify) | (to verify) |
+| 11 | `packages/adapters/clawdstrike-hushd-engine` | `@clawdstrike/hushd-engine` | (to verify) | (to verify) | (to verify) |
 
 A potential 12th package: the desktop app may have a publishable subset, but this is out of scope. The 11 packages listed above plus any additional adapter packages found during implementation constitute the target set.
 
@@ -304,27 +304,27 @@ jobs:
 
       # Publish in topological order
       - name: Publish @clawdstrike/adapter-core
-        run: npm publish -w packages/clawdstrike-adapter-core --provenance
+        run: npm publish -w packages/adapters/clawdstrike-adapter-core --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @clawdstrike/sdk
-        run: npm publish -w packages/hush-ts --provenance
+        run: npm publish -w packages/sdk/hush-ts --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish remaining packages
         run: |
           for pkg in \
-            packages/clawdstrike-policy \
-            packages/clawdstrike-claude-code \
-            packages/clawdstrike-codex \
-            packages/clawdstrike-vercel-ai \
-            packages/clawdstrike-langchain \
-            packages/clawdstrike-openclaw \
-            packages/clawdstrike-opencode \
-            packages/clawdstrike-hush-cli-engine \
-            packages/clawdstrike-hushd-engine; do
+            packages/policy/clawdstrike-policy \
+            packages/adapters/clawdstrike-claude-code \
+            packages/adapters/clawdstrike-codex \
+            packages/adapters/clawdstrike-vercel-ai \
+            packages/adapters/clawdstrike-langchain \
+            packages/adapters/clawdstrike-openclaw \
+            packages/adapters/clawdstrike-opencode \
+            packages/adapters/clawdstrike-hush-cli-engine \
+            packages/adapters/clawdstrike-hushd-engine; do
             npm publish -w "$pkg" --provenance || true
           done
         env:
@@ -338,7 +338,7 @@ The `--provenance` flag generates SLSA provenance attestations for the published
 Before the first real publish, verify each package:
 
 ```bash
-cd packages/clawdstrike-adapter-core
+cd packages/adapters/clawdstrike-adapter-core
 npm pack --dry-run
 # Verify: only dist/ and README.md are included
 # Verify: no file: references in the packed package.json
@@ -362,17 +362,17 @@ git push origin v0.1.0
 
 | File | Action | Description |
 |------|--------|-------------|
-| `packages/clawdstrike-policy/package.json` | Modify | Remove `private`, replace `file:` deps, add metadata |
-| `packages/clawdstrike-claude-code/package.json` | Modify | Same |
-| `packages/clawdstrike-codex/package.json` | Modify | Same |
-| `packages/clawdstrike-vercel-ai/package.json` | Modify | Same |
-| `packages/clawdstrike-langchain/package.json` | Modify | Same |
-| `packages/clawdstrike-openclaw/package.json` | Modify | Same |
-| `packages/clawdstrike-opencode/package.json` | Modify | Same |
-| `packages/clawdstrike-hush-cli-engine/package.json` | Modify | Same |
-| `packages/clawdstrike-hushd-engine/package.json` | Modify | Same |
-| `packages/hush-ts/package.json` | Modify | Replace `file:` dep, add `publishConfig` |
-| `packages/clawdstrike-adapter-core/package.json` | Modify | Add metadata, `publishConfig` |
+| `packages/policy/clawdstrike-policy/package.json` | Modify | Remove `private`, replace `file:` deps, add metadata |
+| `packages/adapters/clawdstrike-claude-code/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-codex/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-vercel-ai/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-langchain/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-openclaw/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-opencode/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-hush-cli-engine/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-hushd-engine/package.json` | Modify | Same |
+| `packages/sdk/hush-ts/package.json` | Modify | Replace `file:` dep, add `publishConfig` |
+| `packages/adapters/clawdstrike-adapter-core/package.json` | Modify | Add metadata, `publishConfig` |
 | `package.json` (root, new) | Create | npm workspaces config (`private: true`) |
 | `.github/workflows/npm-publish.yml` | Create | CI publish workflow |
 | `packages/*/README.md` | Create/Update | Minimal README for each package |
@@ -389,7 +389,7 @@ Total: ~13 package.json files modified, 1 root package.json created, 1 GHA workf
 
 2. **Inspect packed `package.json`** -- Verify no `file:` references remain:
    ```bash
-   npm pack -w packages/clawdstrike-adapter-core
+   npm pack -w packages/adapters/clawdstrike-adapter-core
    tar -xzf clawdstrike-adapter-core-0.1.0.tgz
    cat package/package.json | grep "file:"
    # Should return nothing

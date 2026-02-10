@@ -36,26 +36,26 @@ that already flows through NATS and libp2p. Only the transport differs.
 
 ### 2.1 Spine Envelope Infrastructure
 
-The `crates/spine/` crate already provides the core primitives the adapter
+The `crates/libs/spine/` crate already provides the core primitives the adapter
 will carry:
 
-- **`crates/spine/src/envelope.rs`** -- `SignedEnvelope` build/sign/verify
+- **`crates/libs/spine/src/envelope.rs`** -- `SignedEnvelope` build/sign/verify
   using `hush_core` Ed25519 + RFC 8785 canonical JSON. Key functions:
   `build_signed_envelope()`, `verify_envelope()`, `sign_envelope()`. Envelopes
   contain `schema`, `issuer` (format `aegis:ed25519:<hex_pubkey>`), `seq`,
   `prev_envelope_hash`, `issued_at`, `capability_token`, `fact`,
   `envelope_hash`, and `signature`.
-- **`crates/spine/src/nats_transport.rs`** -- NATS connection with JetStream
+- **`crates/libs/spine/src/nats_transport.rs`** -- NATS connection with JetStream
   helpers: `connect()`, `connect_with_auth()`, `ensure_kv()`, `ensure_stream()`.
   The adapter's NATS bridge will use these same patterns.
-- **`crates/spine/src/trust.rs`** -- `TrustBundle` for mesh-grade verification
+- **`crates/libs/spine/src/trust.rs`** -- `TrustBundle` for mesh-grade verification
   with `allowed_log_ids`, `allowed_witness_node_ids`,
   `allowed_receipt_signer_node_ids`, `witness_quorum`, and enforcement tier
   constraints. The adapter must respect these same trust constraints.
 
 ### 2.2 Multi-Agent Identity
 
-The `crates/hush-multi-agent/` crate provides:
+The `crates/libs/hush-multi-agent/` crate provides:
 
 - `AgentIdentity` with Ed25519 public key, role, trust level, capabilities
 - `SignedDelegationToken` for capability grants with time bounds and
@@ -191,7 +191,7 @@ spine-reticulum = "spine_reticulum.cli:main"
 
 #### Step 2: Envelope Handling (Python Port)
 
-Implement `envelope.py` to mirror the Rust `crates/spine/src/envelope.rs`:
+Implement `envelope.py` to mirror the Rust `crates/libs/spine/src/envelope.rs`:
 
 ```python
 # spine_reticulum/envelope.py
@@ -1073,7 +1073,7 @@ pi-gateway/
 | Path | Change | Description |
 |---|---|---|
 | `Cargo.toml` (workspace) | Add comment | Note the Python sidecar in `integrations/transports/reticulum/` |
-| `crates/spine/src/envelope.rs` | Add test | `generate_test_envelope` fixture generator for cross-language tests |
+| `crates/libs/spine/src/envelope.rs` | Add test | `generate_test_envelope` fixture generator for cross-language tests |
 
 ---
 
@@ -1144,9 +1144,9 @@ transports are unaffected.
 
 | Dependency | Status | Notes |
 |---|---|---|
-| `crates/spine/src/envelope.rs` | **Exists** | Envelope format the adapter carries |
-| `crates/spine/src/nats_transport.rs` | **Exists** | NATS patterns the gateway mirrors |
-| `crates/spine/src/trust.rs` | **Exists** | Trust bundle constraints |
+| `crates/libs/spine/src/envelope.rs` | **Exists** | Envelope format the adapter carries |
+| `crates/libs/spine/src/nats_transport.rs` | **Exists** | NATS patterns the gateway mirrors |
+| `crates/libs/spine/src/trust.rs` | **Exists** | Trust bundle constraints |
 | Spec #8 (Marketplace -> Spine unification) | **Pending** | Adapter benefits from unified Spine but does not require it |
 | Spec #9 (Helm chart) | **In progress** | Pi gateway is standalone, not Helm-deployed |
 | `rns` PyPI package | **External, stable** | Reticulum v0.9.3+, actively maintained |
@@ -1160,7 +1160,7 @@ transports are unaffected.
 
 - [ ] Two adapter instances exchange a signed envelope over Reticulum TCP
       interface and both verify the signature successfully
-- [ ] Envelopes signed by the Rust `crates/spine/src/envelope.rs` verify
+- [ ] Envelopes signed by the Rust `crates/libs/spine/src/envelope.rs` verify
       correctly in the Python adapter (cross-language determinism)
 - [ ] `(issuer, seq)` monotonicity is enforced; duplicate envelopes are
       deduped by `envelope_hash`
@@ -1228,9 +1228,9 @@ transports are unaffected.
 - [Reticulum SDR Transport Research](../research/reticulum-sdr-transport.md) -- Primary reference
 - [Architecture Vision](../research/architecture-vision.md) -- Multi-plane transport architecture (Section 2.4)
 - [Open Source Strategy](../research/open-source-strategy.md) -- Target monorepo structure (`integrations/transports/reticulum/`)
-- `crates/spine/src/envelope.rs` -- Envelope format (current implementation)
-- `crates/spine/src/nats_transport.rs` -- NATS transport patterns
-- `crates/spine/src/trust.rs` -- Trust bundle constraints
+- `crates/libs/spine/src/envelope.rs` -- Envelope format (current implementation)
+- `crates/libs/spine/src/nats_transport.rs` -- NATS transport patterns
+- `crates/libs/spine/src/trust.rs` -- Trust bundle constraints
 - [Reticulum Manual](https://reticulum.network/manual/) -- RNS API documentation
 - [LXMF Protocol](https://github.com/markqvist/LXMF) -- Store-and-forward messaging
 - [RFC 8949 (CBOR)](https://datatracker.ietf.org/doc/html/rfc8949) -- Compact encoding

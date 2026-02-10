@@ -1067,7 +1067,7 @@ TracingPolicies are cluster-scoped CRDs applied via kubectl or GitOps:
 
 ```bash
 # Apply all ClawdStrike/AegisNet policies
-kubectl apply -f deploy/tetragon-policies/
+kubectl apply -f infra/deploy/tetragon-policies/
 
 # Verify policies loaded
 kubectl get tracingpolicies

@@ -29,11 +29,11 @@ From the research document Section 2.1:
 
 ### What exists in the codebase
 
-- `crates/spine/` -- Spine protocol crate with binaries: `spine-checkpointer`, `spine-witness`, `spine-proofs-api` (see `crates/spine/Cargo.toml` lines 39-51)
-- `crates/tetragon-bridge/` -- Binary `tetragon-bridge` that connects to Tetragon gRPC (port 54321) and publishes to NATS
-- `crates/hubble-bridge/` -- Binary `hubble-bridge` that connects to Hubble Relay gRPC (port 4245) and publishes to NATS
-- `crates/hushd/` -- HTTP enforcement daemon with SSE event broadcast and NATS subscriber
-- No `deploy/` directory for Cilium policies exists yet
+- `crates/libs/spine/` -- Spine protocol crate with binaries: `spine-checkpointer`, `spine-witness`, `spine-proofs-api` (see `crates/libs/spine/Cargo.toml` lines 39-51)
+- `crates/bridges/tetragon-bridge/` -- Binary `tetragon-bridge` that connects to Tetragon gRPC (port 54321) and publishes to NATS
+- `crates/bridges/hubble-bridge/` -- Binary `hubble-bridge` that connects to Hubble Relay gRPC (port 4245) and publishes to NATS
+- `crates/services/hushd/` -- HTTP enforcement daemon with SSE event broadcast and NATS subscriber
+- No `infra/deploy/` directory for Cilium policies exists yet
 
 ### Service communication patterns (from research doc and crate dependencies)
 
@@ -58,10 +58,10 @@ From the research document Section 2.1:
 
 ## Target State
 
-A `deploy/cilium-policies/` directory containing CiliumNetworkPolicy manifests:
+A `infra/deploy/cilium-policies/` directory containing CiliumNetworkPolicy manifests:
 
 ```
-deploy/cilium-policies/
+infra/deploy/cilium-policies/
   kustomization.yaml
   00-namespace-isolation.yaml
   01-spine-checkpointer.yaml
@@ -89,7 +89,7 @@ Each policy:
 ### Step 1: Create directory structure
 
 ```bash
-mkdir -p deploy/cilium-policies
+mkdir -p infra/deploy/cilium-policies
 ```
 
 ### Step 2: Define label conventions
@@ -699,17 +699,17 @@ commonLabels:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `deploy/cilium-policies/kustomization.yaml` | Create | Kustomize manifest |
-| `deploy/cilium-policies/00-namespace-isolation.yaml` | Create | Default deny + intra-namespace allow |
-| `deploy/cilium-policies/01-spine-checkpointer.yaml` | Create | Checkpointer egress to NATS |
-| `deploy/cilium-policies/02-spine-witness.yaml` | Create | Witness egress to NATS + AWS STS |
-| `deploy/cilium-policies/03-spine-proofs-api.yaml` | Create | Proofs API L7 ingress + NATS egress |
-| `deploy/cilium-policies/04-tetragon-bridge.yaml` | Create | Bridge gRPC ingress + NATS egress |
-| `deploy/cilium-policies/05-hubble-bridge.yaml` | Create | Bridge Hubble gRPC + NATS egress |
-| `deploy/cilium-policies/06-hushd.yaml` | Create | Daemon L7 API + NATS + proofs-api egress |
-| `deploy/cilium-policies/07-nats-jetstream.yaml` | Create | NATS client + cluster ingress/egress |
-| `deploy/cilium-policies/08-allow-dns.yaml` | Create | DNS resolution for all SDR pods |
-| `deploy/cilium-policies/09-allow-prometheus.yaml` | Create | Prometheus scraping for all SDR pods |
+| `infra/deploy/cilium-policies/kustomization.yaml` | Create | Kustomize manifest |
+| `infra/deploy/cilium-policies/00-namespace-isolation.yaml` | Create | Default deny + intra-namespace allow |
+| `infra/deploy/cilium-policies/01-spine-checkpointer.yaml` | Create | Checkpointer egress to NATS |
+| `infra/deploy/cilium-policies/02-spine-witness.yaml` | Create | Witness egress to NATS + AWS STS |
+| `infra/deploy/cilium-policies/03-spine-proofs-api.yaml` | Create | Proofs API L7 ingress + NATS egress |
+| `infra/deploy/cilium-policies/04-tetragon-bridge.yaml` | Create | Bridge gRPC ingress + NATS egress |
+| `infra/deploy/cilium-policies/05-hubble-bridge.yaml` | Create | Bridge Hubble gRPC + NATS egress |
+| `infra/deploy/cilium-policies/06-hushd.yaml` | Create | Daemon L7 API + NATS + proofs-api egress |
+| `infra/deploy/cilium-policies/07-nats-jetstream.yaml` | Create | NATS client + cluster ingress/egress |
+| `infra/deploy/cilium-policies/08-allow-dns.yaml` | Create | DNS resolution for all SDR pods |
+| `infra/deploy/cilium-policies/09-allow-prometheus.yaml` | Create | Prometheus scraping for all SDR pods |
 
 ---
 
@@ -720,12 +720,12 @@ commonLabels:
 1. Deploy all policies with Cilium in `policy-audit-mode enabled`:
    ```bash
    cilium config set policy-audit-mode enabled
-   kubectl apply -f deploy/cilium-policies/
+   kubectl apply -f infra/deploy/cilium-policies/
    ```
 
 2. Deploy the full SDR stack (Spine services, bridges, hushd, NATS).
 
-3. Run integration tests (`crates/sdr-integration-tests/`) and verify no `AUDIT` verdicts appear for legitimate traffic:
+3. Run integration tests (`crates/tests/sdr-integration-tests/`) and verify no `AUDIT` verdicts appear for legitimate traffic:
    ```bash
    hubble observe --verdict AUDIT --namespace clawdstrike
    ```
@@ -786,7 +786,7 @@ cilium config set policy-audit-mode enabled
 
 Delete all policies:
 ```bash
-kubectl delete -f deploy/cilium-policies/
+kubectl delete -f infra/deploy/cilium-policies/
 ```
 
 Without policies, Cilium defaults to allow-all. Traffic returns to its unrestricted state immediately.
@@ -818,7 +818,7 @@ The other policies continue operating independently.
 
 ## Acceptance Criteria
 
-- [ ] Directory `deploy/cilium-policies/` exists with 10 YAML files + `kustomization.yaml`
+- [ ] Directory `infra/deploy/cilium-policies/` exists with 10 YAML files + `kustomization.yaml`
 - [ ] All policies use `cilium.io/v2` CiliumNetworkPolicy API
 - [ ] Namespace isolation policy (`00-namespace-isolation.yaml`) implements default-deny with intra-namespace allow
 - [ ] All Spine service policies restrict egress to only NATS (port 4222) and DNS (port 53)

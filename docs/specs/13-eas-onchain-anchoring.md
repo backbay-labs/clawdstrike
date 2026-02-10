@@ -72,7 +72,7 @@ entire batch.
 
 ### 2.3 Spine Envelope Format
 
-From `crates/spine/src/envelope.rs`, the `SignedEnvelope` contains:
+From `crates/libs/spine/src/envelope.rs`, the `SignedEnvelope` contains:
 
 - `schema`: `"aegis.spine.envelope.v1"`
 - `issuer`: `"aegis:ed25519:<hex_pubkey>"`
@@ -307,10 +307,10 @@ async function registerSchemas() {
 Implement a batching service that subscribes to AegisNet checkpoints and
 creates on-chain EAS attestations:
 
-**New crate: `crates/eas-anchor/`**
+**New crate: `crates/services/eas-anchor/`**
 
 ```
-crates/eas-anchor/
+crates/services/eas-anchor/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs          # Service entry point
@@ -343,7 +343,7 @@ tracing-subscriber = "0.3"
 **Core batcher logic:**
 
 ```rust
-// crates/eas-anchor/src/batcher.rs
+// crates/services/eas-anchor/src/batcher.rs
 
 use std::time::{Duration, Instant};
 
@@ -393,7 +393,7 @@ impl AttestationBatcher {
 **EAS contract interaction using alloy:**
 
 ```rust
-// crates/eas-anchor/src/eas_client.rs
+// crates/services/eas-anchor/src/eas_client.rs
 
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
@@ -440,7 +440,7 @@ impl EasClient {
 **NATS subscription for checkpoint events:**
 
 ```rust
-// crates/eas-anchor/src/nats_sub.rs
+// crates/services/eas-anchor/src/nats_sub.rs
 
 pub async fn subscribe_checkpoints(
     nats_url: &str,
@@ -680,12 +680,12 @@ Update the provenance type to support EAS:
 
 | Path | Description | Est. LOC |
 |---|---|---|
-| `crates/eas-anchor/Cargo.toml` | Rust crate for EAS anchor service | 25 |
-| `crates/eas-anchor/src/main.rs` | Service entry point | 80 |
-| `crates/eas-anchor/src/config.rs` | TOML config parsing | 60 |
-| `crates/eas-anchor/src/batcher.rs` | Attestation batching logic | 120 |
-| `crates/eas-anchor/src/eas_client.rs` | EAS contract interaction (alloy) | 200 |
-| `crates/eas-anchor/src/nats_sub.rs` | NATS subscription for checkpoints | 100 |
+| `crates/services/eas-anchor/Cargo.toml` | Rust crate for EAS anchor service | 25 |
+| `crates/services/eas-anchor/src/main.rs` | Service entry point | 80 |
+| `crates/services/eas-anchor/src/config.rs` | TOML config parsing | 60 |
+| `crates/services/eas-anchor/src/batcher.rs` | Attestation batching logic | 120 |
+| `crates/services/eas-anchor/src/eas_client.rs` | EAS contract interaction (alloy) | 200 |
+| `crates/services/eas-anchor/src/nats_sub.rs` | NATS subscription for checkpoints | 100 |
 | `backbay-sdk/packages/notary/src/lib/spine-eas.ts` | Spine-specific EAS schema encoders + attestation + revocation | 150 |
 | `backbay-sdk/packages/witness/src/fetchers/spine-eas.ts` | Spine-specific EAS verification for `fetchAndVerifyChain()` | 100 |
 | `backbay-sdk/packages/notary/tests/spine-eas.test.ts` | Schema encoding + attestation tests | 100 |
@@ -698,7 +698,7 @@ Update the provenance type to support EAS:
 | Path | Change | Description |
 |---|---|---|
 | `Cargo.toml` (workspace root) | Add `eas-anchor` to members | Workspace inclusion |
-| `packages/hush-ts/src/index.ts` | Add EAS verification types | Type exports for TS SDK |
+| `packages/sdk/hush-ts/src/index.ts` | Add EAS verification types | Type exports for TS SDK |
 
 ---
 
@@ -747,7 +747,7 @@ All integration tests run against **Base Sepolia** (testnet, chain ID 84532):
 
 EAS anchoring is entirely **additive and optional**:
 
-1. **Remove `crates/eas-anchor/`** -- the anchor service is an independent
+1. **Remove `crates/services/eas-anchor/`** -- the anchor service is an independent
    binary. Stopping it has zero impact on AegisNet or hushd.
 2. **Revert `spine-eas.ts` modules** in `@backbay/notary` and
    `@backbay/witness` -- the desktop app falls back to AegisNet-only
@@ -766,7 +766,7 @@ EAS anchoring is entirely **additive and optional**:
 
 | Dependency | Status | Notes |
 |---|---|---|
-| `crates/spine/src/envelope.rs` | **Exists** | Envelope hash format |
+| `crates/libs/spine/src/envelope.rs` | **Exists** | Envelope hash format |
 | AegisNet Checkpointer | **Deployed** | Produces checkpoint envelopes |
 | AegisNet Proofs API | **Deployed** | Inclusion proof verification |
 | NATS JetStream | **Deployed** | Event backbone |
@@ -839,5 +839,5 @@ EAS anchoring is entirely **additive and optional**:
 - [EAS on Base](https://docs.attest.org/docs/quick--start/contracts) -- Contract addresses
 - [Base L2 Documentation](https://docs.base.org/) -- RPC endpoints, gas pricing
 - [alloy Rust crate](https://alloy.rs/) -- Ethereum interaction library
-- `crates/spine/src/envelope.rs` -- Envelope hash format (current implementation)
-- `crates/spine/src/trust.rs` -- Trust bundle constraints
+- `crates/libs/spine/src/envelope.rs` -- Envelope hash format (current implementation)
+- `crates/libs/spine/src/trust.rs` -- Trust bundle constraints
