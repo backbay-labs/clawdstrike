@@ -155,15 +155,17 @@ fn process_to_json(process: Option<&Process>) -> Value {
 
 /// Classify severity for exec events.
 fn classify_exec_severity(exec: &proto::ProcessExec) -> Severity {
+    let mut severity = Severity::Medium;
+
     if let Some(process) = &exec.process {
-        // Exec in a sensitive namespace = high.
+        // Exec in a sensitive namespace = high baseline.
         if let Some(pod) = &process.pod {
             if let Some(ns) = &pod.namespace {
                 if SENSITIVE_NAMESPACES
                     .iter()
                     .any(|s| ns.value.eq_ignore_ascii_case(s))
                 {
-                    return Severity::High;
+                    severity = Severity::High;
                 }
             }
         }
@@ -177,11 +179,13 @@ fn classify_exec_severity(exec: &proto::ProcessExec) -> Severity {
         }
     }
 
-    Severity::Medium
+    severity
 }
 
 /// Classify severity for kprobe events.
 fn classify_kprobe_severity(kprobe: &proto::ProcessKprobe) -> Severity {
+    let mut saw_socket_arg = false;
+
     // Check for file access to sensitive paths in kprobe args.
     for arg in &kprobe.args {
         if let Some(a) = &arg.arg {
@@ -198,14 +202,18 @@ fn classify_kprobe_severity(kprobe: &proto::ProcessKprobe) -> Severity {
                 }
                 proto::kprobe_argument::Arg::SockArg(_sock) => {
                     // Network connect detected — medium baseline.
-                    return Severity::Medium;
+                    saw_socket_arg = true;
                 }
                 _ => {}
             }
         }
     }
 
-    Severity::Low
+    if saw_socket_arg {
+        Severity::Medium
+    } else {
+        Severity::Low
+    }
 }
 
 /// Convert kprobe arguments to a JSON array for inclusion in facts.
@@ -292,6 +300,16 @@ mod tests {
     }
 
     #[test]
+    fn exec_sensitive_namespace_and_sensitive_binary_is_critical() {
+        let exec = proto::ProcessExec {
+            process: Some(make_process("/etc/shadow", Some("kube-system"))),
+            parent: None,
+            ancestors: String::new(),
+        };
+        assert_eq!(classify_exec_severity(&exec), Severity::Critical);
+    }
+
+    #[test]
     fn normal_exec_is_medium() {
         let exec = proto::ProcessExec {
             process: Some(make_process("/usr/bin/ls", Some("default"))),
@@ -318,6 +336,46 @@ mod tests {
             }],
             action: String::new(),
             policy_name: "file-access".to_string(),
+            message: String::new(),
+            tags: vec![],
+        };
+        assert_eq!(classify_kprobe_severity(&kprobe), Severity::Critical);
+    }
+
+    #[test]
+    fn kprobe_sock_then_sensitive_path_is_critical() {
+        let kprobe = proto::ProcessKprobe {
+            process: None,
+            parent: None,
+            function_name: "security_file_open".to_string(),
+            args: vec![
+                proto::KprobeArgument {
+                    arg: Some(proto::kprobe_argument::Arg::SockArg(proto::KprobeSock {
+                        family: "AF_INET".to_string(),
+                        r#type: "SOCK_STREAM".to_string(),
+                        protocol: "tcp".to_string(),
+                        mark: 0,
+                        priority: 0,
+                        saddr: "10.0.0.10".to_string(),
+                        daddr: "10.0.0.20".to_string(),
+                        sport: 12345,
+                        dport: 443,
+                        cookie: String::new(),
+                        state: String::new(),
+                    })),
+                    label: "sock".to_string(),
+                },
+                proto::KprobeArgument {
+                    arg: Some(proto::kprobe_argument::Arg::PathArg(proto::KprobePath {
+                        mount: String::new(),
+                        path: "/etc/shadow".to_string(),
+                        flags: String::new(),
+                    })),
+                    label: "path".to_string(),
+                },
+            ],
+            action: String::new(),
+            policy_name: "mixed-args".to_string(),
             message: String::new(),
             tags: vec![],
         };
