@@ -63,7 +63,7 @@ async fn virustotal_file_hash_denies_and_caches() {
         Ok(base) => base,
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
             eprintln!(
-                "skipping virustotal_file_hash_denies_and_caches: loopback bind denied ({err})"
+                "SKIPPED: virustotal_file_hash_denies_and_caches: loopback bind denied ({err})"
             );
             return;
         }
@@ -125,7 +125,7 @@ async fn safe_browsing_denies_on_match() {
     let base = match serve(app).await {
         Ok(base) => base,
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("skipping safe_browsing_denies_on_match: loopback bind denied ({err})");
+            eprintln!("SKIPPED: safe_browsing_denies_on_match: loopback bind denied ({err})");
             return;
         }
         Err(err) => panic!("failed to start test server: {err}"),
@@ -189,7 +189,7 @@ async fn snyk_denies_on_upgradable_vulns() {
     let base = match serve(app).await {
         Ok(base) => base,
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("skipping snyk_denies_on_upgradable_vulns: loopback bind denied ({err})");
+            eprintln!("SKIPPED: snyk_denies_on_upgradable_vulns: loopback bind denied ({err})");
             return;
         }
         Err(err) => panic!("failed to start test server: {err}"),
