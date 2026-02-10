@@ -1,6 +1,9 @@
 # Rust Security + Correctness Audit — Wave 2 Remediation (2026-02-10)
 
 This document records remediation for CS-AUDIT2-001 through CS-AUDIT2-007.
+Remediation branch: `audit-fix/2026-02-10-remediation`
+HEAD: `bb66f02bc3d2bb097c3a34c3b2d5777f38f35dd1`
+Merged as: `N/A (not merged yet)`
 
 ## CS-AUDIT2-001 — CONNECT policy target != dial target (SNI vs CONNECT host)
 
@@ -8,7 +11,7 @@ This document records remediation for CS-AUDIT2-001 through CS-AUDIT2-007.
 CONNECT requests targeting an IP could be policy-checked against extracted SNI instead of the dial target, enabling policy bypass when SNI was allowlisted but CONNECT IP was blocked.
 
 ### Fix strategy
-- Enforced policy check on the actual CONNECT target (`connect_host:connect_port`) before any upstream dial.
+- Enforced policy check on the actual CONNECT target (`connect_host:connect_port`) before sending tunnel success and before any upstream dial.
 - For IP CONNECT targets, added SNI consistency enforcement:
   - Evaluate SNI host separately.
   - Require SNI host DNS resolution to include the same CONNECT IP.
@@ -26,7 +29,7 @@ CONNECT requests targeting an IP could be policy-checked against extracted SNI i
 
 ### Proof commands
 - `cargo test -p hush-cli connect_proxy_rejects_ip_target_with_allowlisted_sni_mismatch -- --nocapture`
-- PASS: test passed.
+- Observed: `test result: ok. 1 passed; 0 failed; ...`
 
 ## CS-AUDIT2-002 — hush run resource bounds (slowloris + unbounded events + forward timeout)
 
@@ -54,7 +57,7 @@ Proxy and event-forwarding paths had bounded pieces but lacked complete protecti
 ### Proof commands
 - `cargo test -p hush-cli proxy_slowloris_does_not_exceed_connection_cap -- --nocapture`
 - `cargo test -p hush-cli event_forwarding_backpressure_keeps_memory_bounded -- --nocapture`
-- PASS: both tests passed.
+- Observed: `test result: ok. 1 passed; 0 failed; ...` (for each command)
 
 ## CS-AUDIT2-003 — IRM filesystem traversal bypass via normalization
 
@@ -77,7 +80,7 @@ Filesystem IRM normalization collapsed `..` segments, potentially converting tra
 
 ### Proof commands
 - `cargo test -p clawdstrike filesystem_irm_denies_parent_traversal_relative_paths -- --nocapture`
-- PASS: test passed.
+- Observed: `test result: ok. 1 passed; 0 failed; ...`
 
 ## CS-AUDIT2-004 — IRM URL host parsing spoof (userinfo ambiguity)
 
@@ -85,7 +88,7 @@ Filesystem IRM normalization collapsed `..` segments, potentially converting tra
 Network IRM host extraction used string splitting, allowing spoofing via userinfo forms like `api.openai.com@evil.example`.
 
 ### Fix strategy
-- Replaced split-based extraction with strict URL parsing (`reqwest::Url`).
+- Replaced split-based extraction with strict URL parsing (`reqwest::Url`, backed by `url::Url` semantics).
 - Normalized parsed host for comparisons (lowercase + trailing-dot trim).
 - Ensured policy decisions use parsed authority host.
 
@@ -99,7 +102,7 @@ Network IRM host extraction used string splitting, allowing spoofing via userinf
 
 ### Proof commands
 - `cargo test -p clawdstrike test_userinfo_spoof_url_uses_actual_host_and_is_denied -- --nocapture`
-- PASS: test passed.
+- Observed: `test result: ok. 1 passed; 0 failed; ...`
 
 ## CS-AUDIT2-005 — git commit/ref option injection hardening
 
@@ -112,6 +115,8 @@ Network IRM host extraction used string splitting, allowing spoofing via userinf
   - Allows only short/full OID or strict refname grammar.
 - Applied validation in both absolute and relative git extends resolution flows.
 - Hardened `git fetch` invocation with `--` separator before user-controlled ref token.
+  - `--` is inserted immediately before the user-controlled ref token to prevent option parsing as flags.
+  - Verified behavior with `git fetch --depth 1 origin -- main` in a local temporary repo (exit `0`).
 
 ### Code pointers
 - `crates/services/hush-cli/src/remote_extends.rs`
@@ -126,7 +131,7 @@ Network IRM host extraction used string splitting, allowing spoofing via userinf
 ### Proof commands
 - `cargo test -p hush-cli remote_extends_rejects_dash_prefixed_commit_ref -- --nocapture`
 - `cargo test -p hushd remote_extends_rejects_dash_prefixed_commit_ref -- --nocapture`
-- PASS: both tests passed.
+- Observed: `test result: ok. 1 passed; 0 failed; ...` (for each command)
 
 ## CS-AUDIT2-006 — policy extends recursion depth DoS
 
@@ -135,6 +140,8 @@ Extends resolution was recursively unbounded, enabling deep-chain resource exhau
 
 ### Fix strategy
 - Added explicit max extends depth guard (`MAX_POLICY_EXTENDS_DEPTH`).
+  - Default limit: `32`.
+  - Rationale: prevents runaway recursion / resource exhaustion in deep `extends` chains.
 - Threaded depth counter through recursive resolution calls.
 - Added deterministic user-facing error: `Policy extends depth exceeded (limit: N)`.
 
@@ -148,7 +155,7 @@ Extends resolution was recursively unbounded, enabling deep-chain resource exhau
 
 ### Proof commands
 - `cargo test -p clawdstrike policy_extends_depth_limit_enforced -- --nocapture`
-- PASS: test passed.
+- Observed: `test result: ok. 1 passed; 0 failed; ...`
 
 ## CS-AUDIT2-007 — async guards background mode unbounded inflight
 
@@ -159,6 +166,7 @@ Background async guard execution detached tasks without bounded in-flight contro
 - Added bounded background in-flight semaphore to runtime.
 - Implemented saturation behavior: drop scheduling when full.
 - Added runtime counters for dropped and in-flight/peak visibility.
+- Caller behavior on saturation: `evaluate_async_guards` returns immediately with a warning result (`background: dropped`) and increments drop counters.
 - Returned explicit warning details when background scheduling is dropped.
 
 ### Code pointers
@@ -173,7 +181,7 @@ Background async guard execution detached tasks without bounded in-flight contro
 
 ### Proof commands
 - `cargo test -p clawdstrike async_background_guards_enforce_inflight_limit -- --nocapture`
-- PASS: test passed.
+- Observed: `test result: ok. 1 passed; 0 failed; ...`
 
 ## Required validation gates
 
@@ -188,3 +196,13 @@ Background async guard execution detached tasks without bounded in-flight contro
 
 ### PASS evidence summary
 - All required commands completed successfully with no failing tests and no clippy/fmt violations.
+
+## Regression matrix
+
+- `CS-AUDIT2-001` -> `connect_proxy_rejects_ip_target_with_allowlisted_sni_mismatch`
+- `CS-AUDIT2-002` -> `proxy_slowloris_does_not_exceed_connection_cap`, `event_forwarding_backpressure_keeps_memory_bounded`
+- `CS-AUDIT2-003` -> `filesystem_irm_denies_parent_traversal_relative_paths`
+- `CS-AUDIT2-004` -> `test_userinfo_spoof_url_uses_actual_host_and_is_denied`
+- `CS-AUDIT2-005` -> `remote_extends_rejects_dash_prefixed_commit_ref` (hush-cli, hushd)
+- `CS-AUDIT2-006` -> `policy_extends_depth_limit_enforced`
+- `CS-AUDIT2-007` -> `async_background_guards_enforce_inflight_limit`

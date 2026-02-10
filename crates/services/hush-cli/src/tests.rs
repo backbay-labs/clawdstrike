@@ -3107,6 +3107,25 @@ extends: {}#sha256={}
     }
 
     #[test]
+    fn remote_extends_git_ipv4_mapped_ipv6_private_ip_blocked_when_disallowed() {
+        let cfg = RemoteExtendsConfig::new(["::ffff:7f00:1".to_string()])
+            .with_https_only(false)
+            .with_allow_private_ips(false);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+ssh://[::ffff:127.0.0.1]/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("ipv4-mapped loopback git remote should be rejected");
+        assert!(
+            err.to_string().contains("non-public IPs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn remote_extends_resolves_relative_urls() {
         let nested = br#"
 version: "1.1.0"
