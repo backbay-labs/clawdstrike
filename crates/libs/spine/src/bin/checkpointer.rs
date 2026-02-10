@@ -1026,10 +1026,12 @@ mod tests {
 
     #[test]
     fn normalized_policy_index_entry_normalizes_hash_and_key() {
-        let (key, hash) = normalized_policy_index_entry(
+        let Some((key, hash)) = normalized_policy_index_entry(
             "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00",
         )
-        .unwrap();
+        else {
+            panic!("expected valid policy hash to normalize");
+        };
         assert_eq!(
             key,
             "policy.0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
