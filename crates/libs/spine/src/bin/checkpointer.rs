@@ -618,18 +618,17 @@ async fn maybe_index_fact(
             let Some(policy_hash) = fact.get("policy_hash").and_then(|v| v.as_str()) else {
                 return Ok(());
             };
-            if !is_safe_index_key_token(policy_hash, 128) {
+            let Some((policy_key, normalized_policy_hash)) =
+                normalized_policy_index_entry(policy_hash)
+            else {
                 return Ok(());
-            }
+            };
 
             if let Err(e) = fact_index_kv
-                .put(
-                    &format!("policy.{policy_hash}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
+                .put(&policy_key, envelope_hash.as_bytes().to_vec().into())
                 .await
             {
-                warn!(key = %format!("policy.{policy_hash}"), "failed to index fact: {e}");
+                warn!(key = %policy_key, "failed to index fact: {e}");
             }
 
             if let Some(version) = fact.get("policy_version").and_then(|v| v.as_str()) {
@@ -637,7 +636,7 @@ async fn maybe_index_fact(
                     if let Err(e) = fact_index_kv
                         .put(
                             &format!("policy_version.{version}"),
-                            policy_hash.as_bytes().to_vec().into(),
+                            normalized_policy_hash.as_bytes().to_vec().into(),
                         )
                         .await
                     {
@@ -836,6 +835,12 @@ async fn maybe_index_fact(
     Ok(())
 }
 
+fn normalized_policy_index_entry(policy_hash: &str) -> Option<(String, String)> {
+    let policy_key = spine::policy_index_key(policy_hash)?;
+    let normalized = policy_key.strip_prefix("policy.")?.to_string();
+    Some((policy_key, normalized))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     fmt()
@@ -1013,4 +1018,31 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalized_policy_index_entry_normalizes_hash_and_key() {
+        let (key, hash) = normalized_policy_index_entry(
+            "AABBcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00",
+        )
+        .unwrap();
+        assert_eq!(
+            key,
+            "policy.0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
+        );
+        assert_eq!(
+            hash,
+            "0xaabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00aabbcc00"
+        );
+    }
+
+    #[test]
+    fn normalized_policy_index_entry_rejects_invalid_hash() {
+        assert!(normalized_policy_index_entry("abc").is_none());
+        assert!(normalized_policy_index_entry("0xzz").is_none());
+    }
 }

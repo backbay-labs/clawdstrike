@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use serde_json::Value;
 
 fn checkpoint_fact_view(value: &Value) -> Option<&Value> {
@@ -52,7 +52,21 @@ fn checkpoint_hash_from_value(value: &Value) -> Result<String> {
     Ok(spine::checkpoint_hash(&statement)?.to_hex_prefixed())
 }
 
-/// List recent checkpoints from the CLAWDSTRIKE_CHECKPOINTS JetStream stream.
+fn checkpoint_seq_from_kv_key(key: &str) -> Option<u64> {
+    key.strip_prefix("checkpoint/")?.parse::<u64>().ok()
+}
+
+fn recent_checkpoint_keys(mut keys: Vec<String>, limit: u64) -> Vec<String> {
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    keys.retain(|k| checkpoint_seq_from_kv_key(k).is_some());
+    keys.sort_unstable_by_key(|k| checkpoint_seq_from_kv_key(k).unwrap_or(0));
+    if keys.len() > limit {
+        keys.drain(0..(keys.len() - limit));
+    }
+    keys
+}
+
+/// List recent checkpoints from the CLAWDSTRIKE_CHECKPOINTS KV bucket.
 pub async fn list(nats_url: &str, limit: u64, is_json: bool, verbose: bool) -> Result<()> {
     if limit == 0 {
         anyhow::bail!("limit must be >= 1");
@@ -61,42 +75,34 @@ pub async fn list(nats_url: &str, limit: u64, is_json: bool, verbose: bool) -> R
     let client = spine::nats_transport::connect(nats_url).await?;
     let js = spine::nats_transport::jetstream(client);
 
-    let mut stream = js
-        .get_stream("CLAWDSTRIKE_CHECKPOINTS")
+    let kv = js
+        .get_key_value("CLAWDSTRIKE_CHECKPOINTS")
         .await
-        .context("failed to get CLAWDSTRIKE_CHECKPOINTS stream")?;
+        .context("failed to get CLAWDSTRIKE_CHECKPOINTS bucket")?;
 
-    let info = stream.info().await.context("failed to get stream info")?;
-
-    let last_seq = info.state.last_sequence;
-    let first_seq = info.state.first_sequence;
-
-    let start_seq = if last_seq >= limit {
-        std::cmp::max(first_seq, last_seq - limit + 1)
-    } else {
-        first_seq
-    };
-
-    let consumer = stream
-        .create_consumer(async_nats::jetstream::consumer::pull::Config {
-            deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
-                start_sequence: start_seq,
-            },
-            ..Default::default()
-        })
+    let keys = kv
+        .keys()
         .await
-        .context("failed to create consumer")?;
-
-    let mut messages = consumer
-        .fetch()
-        .max_messages(limit as usize)
-        .messages()
+        .context("failed to list checkpoint keys")?
+        .try_collect::<Vec<String>>()
         .await
-        .context("failed to fetch messages")?;
+        .context("failed to collect checkpoint keys")?;
+
+    let mut key_candidates = recent_checkpoint_keys(keys, limit);
+    if key_candidates.is_empty() {
+        key_candidates.push("latest".to_string());
+    }
 
     let mut checkpoints: Vec<Value> = Vec::new();
-    while let Some(Ok(msg)) = messages.next().await {
-        if let Ok(v) = serde_json::from_slice::<Value>(&msg.payload) {
+    for key in key_candidates {
+        let Some(bytes) = kv
+            .get(&key)
+            .await
+            .with_context(|| format!("failed to get checkpoint key {key}"))?
+        else {
+            continue;
+        };
+        if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
             checkpoints.push(v);
         }
     }
@@ -314,5 +320,27 @@ mod tests {
 
         let actual = checkpoint_hash_from_value(&envelope).unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn checkpoint_seq_from_kv_key_parses_only_checkpoint_entries() {
+        assert_eq!(checkpoint_seq_from_kv_key("checkpoint/42"), Some(42));
+        assert_eq!(checkpoint_seq_from_kv_key("latest"), None);
+        assert_eq!(checkpoint_seq_from_kv_key("checkpoint_hash/0xabc"), None);
+    }
+
+    #[test]
+    fn recent_checkpoint_keys_selects_latest_by_sequence() {
+        let keys = vec![
+            "checkpoint/1".to_string(),
+            "checkpoint/3".to_string(),
+            "checkpoint/2".to_string(),
+            "checkpoint_hash/ignored".to_string(),
+            "latest".to_string(),
+        ];
+        assert_eq!(
+            recent_checkpoint_keys(keys, 2),
+            vec!["checkpoint/2".to_string(), "checkpoint/3".to_string()]
+        );
     }
 }
