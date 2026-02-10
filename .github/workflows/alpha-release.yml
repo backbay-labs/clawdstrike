@@ -214,7 +214,7 @@ jobs:
         run: echo "All npm package versions already exist; skipping npm publish"
 
   publish-wasm-npm:
-    name: Publish @backbay/wasm (alpha)
+    name: Publish @clawdstrike/wasm (alpha)
     runs-on: ubuntu-latest
     needs: publish-npm
     steps:
@@ -252,7 +252,7 @@ jobs:
         if: steps.detect.outputs.none_missing == 'false'
         run: cargo install wasm-pack --locked --version 0.14.0
 
-      - name: Build and publish @backbay/wasm
+      - name: Build and publish @clawdstrike/wasm
         if: steps.detect.outputs.none_missing == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -271,7 +271,7 @@ jobs:
 
       - name: wasm package already published
         if: steps.detect.outputs.none_missing == 'true'
-        run: echo "@backbay/wasm version already exists; skipping wasm publish"
+        run: echo "@clawdstrike/wasm version already exists; skipping wasm publish"
 
   publish-pypi:
     name: Publish PyPI package (alpha)
