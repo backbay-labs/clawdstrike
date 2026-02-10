@@ -135,19 +135,24 @@ impl FilesystemIrm {
 
     /// Extract path from host call arguments
     fn extract_path(&self, call: &HostCall) -> Option<String> {
+        // Prefer explicit object path fields over free-form string args.
         for arg in &call.args {
-            if let Some(s) = arg.as_str() {
-                if self.looks_like_path(s) {
-                    return Some(s.to_string());
+            if let Some(obj) = arg.as_object() {
+                for key in ["path", "file_path", "target_path"] {
+                    if let Some(path) = obj.get(key).and_then(|value| value.as_str()) {
+                        let trimmed = path.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
                 }
             }
         }
 
-        // Check for named path argument
-        if let Some(first) = call.args.first() {
-            if let Some(obj) = first.as_object() {
-                if let Some(path) = obj.get("path") {
-                    return path.as_str().map(|s| s.to_string());
+        for arg in &call.args {
+            if let Some(s) = arg.as_str() {
+                if self.looks_like_path(s) {
+                    return Some(s.to_string());
                 }
             }
         }
@@ -172,7 +177,36 @@ impl FilesystemIrm {
             return true;
         }
 
-        value.contains('/') && !value.contains("://")
+        value.contains('/') && !value.contains("://") && !self.looks_like_mime_type(value)
+    }
+
+    fn looks_like_mime_type(&self, value: &str) -> bool {
+        let mut parts = value.split('/');
+        let Some(kind) = parts.next() else {
+            return false;
+        };
+        let Some(subtype) = parts.next() else {
+            return false;
+        };
+        if parts.next().is_some() {
+            return false;
+        }
+        if kind.is_empty() || subtype.is_empty() {
+            return false;
+        }
+
+        matches!(
+            kind.to_ascii_lowercase().as_str(),
+            "application"
+                | "audio"
+                | "font"
+                | "image"
+                | "message"
+                | "model"
+                | "multipart"
+                | "text"
+                | "video"
+        )
     }
 
     fn has_parent_traversal(&self, path: &str) -> bool {
@@ -341,6 +375,21 @@ mod tests {
             Some("../../etc/passwd".to_string())
         );
 
+        let call = HostCall::new(
+            "fd_read",
+            vec![
+                serde_json::json!("text/plain"),
+                serde_json::json!({"path": "../../etc/passwd"}),
+            ],
+        );
+        assert_eq!(
+            irm.extract_path(&call),
+            Some("../../etc/passwd".to_string())
+        );
+
+        assert!(!irm.looks_like_path("text/plain"));
+        assert!(irm.looks_like_path("src/main.rs"));
+
         let call = HostCall::new("fd_read", vec![serde_json::json!(123)]);
         assert_eq!(irm.extract_path(&call), None);
     }
@@ -365,6 +414,19 @@ mod tests {
         assert!(
             !decision.is_allowed(),
             "object traversal path should be denied"
+        );
+
+        let call = HostCall::new(
+            "fd_read",
+            vec![
+                serde_json::json!("text/plain"),
+                serde_json::json!({"path": "../../etc/passwd"}),
+            ],
+        );
+        let decision = irm.evaluate(&call, &policy).await;
+        assert!(
+            !decision.is_allowed(),
+            "object traversal path must not be bypassed by slash-containing non-path tokens"
         );
     }
 

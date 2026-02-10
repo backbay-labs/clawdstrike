@@ -129,8 +129,7 @@ impl HushdForwarder {
         let mut req = self
             .client
             .post(format!("{}/api/v1/eval", self.base_url))
-            .json(event)
-            .timeout(HUSHD_FORWARD_TIMEOUT);
+            .json(event);
 
         if let Some(token) = self.token.as_ref() {
             req = req.bearer_auth(token);
@@ -1466,6 +1465,43 @@ name: "slowloris-cap"
 
         drop(emitter);
         let _ = tokio::time::timeout(Duration::from_secs(2), writer).await;
+        stalled_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn forwarder_test_timeout_is_respected() {
+        let stalled_listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind stalled target");
+        let stalled_addr = stalled_listener.local_addr().expect("stalled addr");
+        let stalled_handle = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = stalled_listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let _ =
+                        tokio::time::timeout(Duration::from_secs(1), stream.read(&mut buf)).await;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                });
+            }
+        });
+
+        let forwarder = HushdForwarder::new_with_timeout(
+            format!("http://{}", stalled_addr),
+            None,
+            Duration::from_millis(50),
+        );
+        let event = test_custom_event(0);
+
+        let started = tokio::time::Instant::now();
+        tokio::time::timeout(Duration::from_millis(300), forwarder.forward_event(&event))
+            .await
+            .expect("forward_event should honor test timeout");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(300),
+            "forward_event exceeded expected test timeout; elapsed: {elapsed:?}"
+        );
+
         stalled_handle.abort();
     }
 }
