@@ -12,7 +12,7 @@ use chrono::Utc;
 use clawdstrike::{GuardContext, GuardResult, HushEngine, Severity};
 use hush_core::{sha256, Keypair, PublicKey, Receipt, SignedReceipt, Signer, Verdict};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{lookup_host, TcpListener, TcpStream};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -27,6 +27,9 @@ use crate::ExitCode;
 
 const EVENT_QUEUE_CAPACITY: usize = 1024;
 const PROXY_MAX_IN_FLIGHT_CONNECTIONS: usize = 256;
+const PROXY_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const PROXY_TLS_SNI_TIMEOUT: Duration = Duration::from_secs(3);
+const HUSHD_FORWARD_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug)]
 struct RunOutcome {
@@ -98,10 +101,27 @@ struct HushdForwarder {
 
 impl HushdForwarder {
     fn new(base_url: String, token: Option<String>) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(HUSHD_FORWARD_TIMEOUT)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             token,
-            client: reqwest::Client::new(),
+            client,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_timeout(base_url: String, token: Option<String>, timeout: Duration) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            token,
+            client,
         }
     }
 
@@ -109,7 +129,8 @@ impl HushdForwarder {
         let mut req = self
             .client
             .post(format!("{}/api/v1/eval", self.base_url))
-            .json(event);
+            .json(event)
+            .timeout(HUSHD_FORWARD_TIMEOUT);
 
         if let Some(token) = self.token.as_ref() {
             req = req.bearer_auth(token);
@@ -282,6 +303,7 @@ pub async fn cmd_run(
             event_emitter.clone(),
             outcome.clone(),
             PROXY_MAX_IN_FLIGHT_CONNECTIONS,
+            PROXY_HEADER_READ_TIMEOUT,
             stderr,
         )
         .await
@@ -728,6 +750,7 @@ async fn spawn_and_wait_child(
     Ok(status)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn start_connect_proxy(
     port: u16,
     engine: Arc<HushEngine>,
@@ -735,6 +758,7 @@ async fn start_connect_proxy(
     event_emitter: EventEmitter,
     outcome: RunOutcome,
     max_in_flight_connections: usize,
+    header_read_timeout: Duration,
     stderr: &mut dyn Write,
 ) -> anyhow::Result<(String, tokio::task::JoinHandle<()>, Arc<AtomicUsize>)> {
     let listener = TcpListener::bind(("127.0.0.1", port))
@@ -773,9 +797,15 @@ async fn start_connect_proxy(
 
             tokio::spawn(async move {
                 let _permit = permit;
-                let _ =
-                    handle_connect_proxy_client(socket, engine, context, event_emitter, outcome)
-                        .await;
+                let _ = handle_connect_proxy_client(
+                    socket,
+                    engine,
+                    context,
+                    event_emitter,
+                    outcome,
+                    header_read_timeout,
+                )
+                .await;
             });
         }
     });
@@ -789,10 +819,21 @@ async fn handle_connect_proxy_client(
     context: GuardContext,
     event_emitter: EventEmitter,
     outcome: RunOutcome,
+    header_read_timeout: Duration,
 ) -> anyhow::Result<()> {
-    let header = read_http_header(&mut client, 8 * 1024)
-        .await
-        .context("read proxy request header")?;
+    let header =
+        match tokio::time::timeout(header_read_timeout, read_http_header(&mut client, 8 * 1024))
+            .await
+        {
+            Ok(Ok(header)) => header,
+            Ok(Err(err)) => return Err(err).context("read proxy request header"),
+            Err(_) => {
+                let _ = client
+                    .write_all(b"HTTP/1.1 408 Request Timeout\r\nConnection: close\r\n\r\n")
+                    .await;
+                return Ok(());
+            }
+        };
 
     let header_str = std::str::from_utf8(&header).context("proxy request header must be UTF-8")?;
     let mut lines = header_str.split("\r\n");
@@ -812,49 +853,71 @@ async fn handle_connect_proxy_client(
     }
 
     let (connect_host, connect_port) = parse_connect_target(target)?;
+    let connect_result = engine
+        .check_egress(&connect_host, connect_port, &context)
+        .await
+        .context("check egress policy")?;
 
-    // If the CONNECT target is an IP address, try to use TLS SNI as the policy host.
-    let mut sni_buf = Vec::new();
-    let host_for_policy = if connect_host.parse::<IpAddr>().is_ok() {
+    outcome.observe_guard_result(&connect_result);
+
+    event_emitter.emit(network_event(
+        &context,
+        connect_host.clone(),
+        connect_port,
+        &connect_result,
+    ));
+
+    if !connect_result.allowed {
+        client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
+        return Ok(());
+    }
+
+    let connect_ip = connect_host.parse::<IpAddr>().ok();
+    let mut buffered_tls_record: Option<Vec<u8>> = None;
+
+    if let Some(ip) = connect_ip {
         client
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await?;
 
-        // Best-effort: read one TLS record to extract SNI.
-        match tokio::time::timeout(Duration::from_secs(3), read_tls_record(&mut client)).await {
-            Ok(Ok(record)) => {
-                sni_buf = record.clone();
-                match hush_proxy::sni::extract_sni(&record) {
-                    Ok(Some(host)) => host,
-                    _ => connect_host.clone(),
+        // Best-effort: read one TLS record to extract SNI and enforce CONNECT target consistency.
+        if let Ok(Ok(record)) =
+            tokio::time::timeout(PROXY_TLS_SNI_TIMEOUT, read_tls_record(&mut client)).await
+        {
+            buffered_tls_record = Some(record.clone());
+            if let Ok(Some(sni_host)) = hush_proxy::sni::extract_sni(&record) {
+                let sni_result = engine
+                    .check_egress(&sni_host, connect_port, &context)
+                    .await
+                    .context("check egress policy for SNI host")?;
+
+                outcome.observe_guard_result(&sni_result);
+                event_emitter.emit(network_event(
+                    &context,
+                    sni_host.clone(),
+                    connect_port,
+                    &sni_result,
+                ));
+
+                if !sni_result.allowed {
+                    return Ok(());
+                }
+
+                if !sni_host_matches_connect_ip(&sni_host, connect_port, ip).await {
+                    let mismatch = GuardResult::block(
+                        "connect_proxy_sni_consistency",
+                        Severity::Error,
+                        format!(
+                            "CONNECT target {} does not match SNI host {}",
+                            connect_host, sni_host
+                        ),
+                    );
+                    outcome.observe_guard_result(&mismatch);
+                    event_emitter.emit(network_event(&context, sni_host, connect_port, &mismatch));
+                    return Ok(());
                 }
             }
-            _ => connect_host.clone(),
         }
-    } else {
-        connect_host.clone()
-    };
-
-    let result = engine
-        .check_egress(&host_for_policy, connect_port, &context)
-        .await
-        .context("check egress policy")?;
-
-    outcome.observe_guard_result(&result);
-
-    event_emitter.emit(network_event(
-        &context,
-        host_for_policy.clone(),
-        connect_port,
-        &result,
-    ));
-
-    if !result.allowed {
-        // If we already sent 200 (IP + SNI path), we can only close the tunnel.
-        if sni_buf.is_empty() {
-            client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
-        }
-        return Ok(());
     }
 
     // Connect to the requested endpoint.
@@ -862,19 +925,31 @@ async fn handle_connect_proxy_client(
         .await
         .context("connect upstream")?;
 
-    // If we used the SNI path, forward the already-read TLS bytes.
-    if !sni_buf.is_empty() {
-        upstream.write_all(&sni_buf).await?;
-    } else {
+    // If we already answered CONNECT for IP targets, do not send it twice.
+    if connect_ip.is_none() {
         client
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await?;
+    }
+
+    // Forward the already-read TLS bytes, if any.
+    if let Some(sni_buf) = buffered_tls_record {
+        upstream.write_all(&sni_buf).await?;
     }
 
     // Tunnel bytes both ways until EOF.
     let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
 
     Ok(())
+}
+
+async fn sni_host_matches_connect_ip(host: &str, port: u16, connect_ip: IpAddr) -> bool {
+    let lookup = tokio::time::timeout(Duration::from_secs(2), lookup_host((host, port))).await;
+    let Ok(Ok(addrs)) = lookup else {
+        return false;
+    };
+
+    addrs.into_iter().any(|addr| addr.ip() == connect_ip)
 }
 
 async fn read_http_header(stream: &mut TcpStream, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
@@ -1158,17 +1233,27 @@ name: "proxy-limit"
         let outcome = RunOutcome::new();
         let mut stderr = Vec::<u8>::new();
 
-        let (url, handle, rejected_counter) =
-            match start_connect_proxy(0, engine, context, emitter, outcome, 1, &mut stderr).await {
-                Ok(v) => v,
-                Err(err) => {
-                    if err.to_string().contains("Permission denied") {
-                        eprintln!("skipping proxy limit test: {}", err);
-                        return;
-                    }
-                    panic!("failed to start proxy: {err}");
+        let (url, handle, rejected_counter) = match start_connect_proxy(
+            0,
+            engine,
+            context,
+            emitter,
+            outcome,
+            1,
+            Duration::from_secs(2),
+            &mut stderr,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(err) => {
+                if err.to_string().contains("Permission denied") {
+                    eprintln!("skipping proxy limit test: {}", err);
+                    return;
                 }
-            };
+                panic!("failed to start proxy: {err}");
+            }
+        };
 
         let addr = url.trim_start_matches("http://");
         let mut first = TcpStream::connect(addr).await.expect("first connect");
@@ -1193,5 +1278,194 @@ name: "proxy-limit"
         let _ = first.shutdown().await;
         let _ = second.shutdown().await;
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_rejects_ip_target_with_allowlisted_sni_mismatch() {
+        let policy_yaml = r#"
+version: "1.1.0"
+name: "sni-mismatch"
+guards:
+  egress_allowlist:
+    allow: ["example.com"]
+    default_action: block
+"#;
+        let policy = Policy::from_yaml(policy_yaml).expect("policy");
+        let engine = Arc::new(HushEngine::builder(policy).build().expect("engine"));
+        let context = GuardContext::new().with_session_id("session-sni");
+        let (tx, _rx) = mpsc::channel::<PolicyEvent>(32);
+        let emitter = EventEmitter::new(tx);
+        let outcome = RunOutcome::new();
+        let mut stderr = Vec::<u8>::new();
+
+        let upstream = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind upstream");
+        let upstream_port = upstream.local_addr().expect("upstream addr").port();
+
+        let (url, handle, _rejected_counter) = start_connect_proxy(
+            0,
+            engine,
+            context,
+            emitter,
+            outcome,
+            4,
+            Duration::from_secs(2),
+            &mut stderr,
+        )
+        .await
+        .expect("start proxy");
+
+        let addr = url.trim_start_matches("http://");
+        let mut client = TcpStream::connect(addr).await.expect("proxy connect");
+
+        let req = format!(
+            "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+            upstream_port, upstream_port
+        );
+        client
+            .write_all(req.as_bytes())
+            .await
+            .expect("write connect");
+
+        let mut buf = [0u8; 256];
+        let n = tokio::time::timeout(Duration::from_secs(1), client.read(&mut buf))
+            .await
+            .expect("read timeout")
+            .expect("read response");
+        let response = String::from_utf8_lossy(&buf[..n]).to_string();
+        assert!(
+            response.contains("403 Forbidden"),
+            "blocked IP CONNECT target must not be bypassed by allowlisted SNI, got: {response}"
+        );
+
+        let hello = include_bytes!("../../../libs/hush-proxy/testdata/client_hello_example.bin");
+        let _ = client.write_all(hello).await;
+
+        let upstream_accept =
+            tokio::time::timeout(Duration::from_millis(300), upstream.accept()).await;
+        assert!(
+            upstream_accept.is_err(),
+            "proxy must not connect upstream when CONNECT IP target is blocked"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn proxy_slowloris_does_not_exceed_connection_cap() {
+        let policy_yaml = r#"
+version: "1.1.0"
+name: "slowloris-cap"
+"#;
+        let policy = Policy::from_yaml(policy_yaml).expect("policy");
+        let engine = Arc::new(HushEngine::builder(policy).build().expect("engine"));
+        let context = GuardContext::new().with_session_id("session-slowloris");
+        let (tx, _rx) = mpsc::channel::<PolicyEvent>(32);
+        let emitter = EventEmitter::new(tx);
+        let outcome = RunOutcome::new();
+        let mut stderr = Vec::<u8>::new();
+
+        let (url, handle, rejected_counter) = start_connect_proxy(
+            0,
+            engine,
+            context,
+            emitter,
+            outcome,
+            1,
+            Duration::from_millis(150),
+            &mut stderr,
+        )
+        .await
+        .expect("start proxy");
+
+        let addr = url.trim_start_matches("http://");
+        let mut slow = TcpStream::connect(addr).await.expect("slow connect");
+        slow.write_all(b"CON").await.expect("write partial header");
+
+        let mut second = TcpStream::connect(addr).await.expect("second connect");
+        let mut second_buf = [0u8; 128];
+        let second_n = tokio::time::timeout(Duration::from_secs(1), second.read(&mut second_buf))
+            .await
+            .expect("second read timeout")
+            .expect("second read");
+        let second_response = String::from_utf8_lossy(&second_buf[..second_n]).to_string();
+        assert!(
+            second_response.contains("503 Service Unavailable"),
+            "expected 503 while slowloris connection holds the only slot, got: {second_response}"
+        );
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        let mut third = TcpStream::connect(addr).await.expect("third connect");
+        third
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
+            .expect("write full request");
+        let mut third_buf = [0u8; 128];
+        let third_n = tokio::time::timeout(Duration::from_secs(1), third.read(&mut third_buf))
+            .await
+            .expect("third read timeout")
+            .expect("third read");
+        let third_response = String::from_utf8_lossy(&third_buf[..third_n]).to_string();
+        assert!(
+            third_response.contains("501 Not Implemented"),
+            "proxy should remain responsive after slowloris timeout, got: {third_response}"
+        );
+        assert!(
+            rejected_counter.load(Ordering::Relaxed) >= 1,
+            "rejected connection counter should increment under slowloris saturation"
+        );
+
+        let _ = slow.shutdown().await;
+        let _ = second.shutdown().await;
+        let _ = third.shutdown().await;
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn event_forwarding_backpressure_keeps_memory_bounded() {
+        let stalled_listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind stalled target");
+        let stalled_addr = stalled_listener.local_addr().expect("stalled addr");
+        let stalled_handle = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = stalled_listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let _ =
+                        tokio::time::timeout(Duration::from_secs(1), stream.read(&mut buf)).await;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                });
+            }
+        });
+
+        let (tx, mut rx) = mpsc::channel::<PolicyEvent>(4);
+        let emitter = EventEmitter::new(tx);
+        let forwarder = HushdForwarder::new_with_timeout(
+            format!("http://{}", stalled_addr),
+            None,
+            Duration::from_millis(50),
+        );
+
+        let writer = tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                forwarder.forward_event(&event).await;
+            }
+        });
+
+        for i in 0..200 {
+            emitter.emit(test_custom_event(i));
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(
+            emitter.dropped_count() > 0,
+            "bounded queue should drop events under stalled forwarding pressure"
+        );
+
+        drop(emitter);
+        let _ = tokio::time::timeout(Duration::from_secs(2), writer).await;
+        stalled_handle.abort();
     }
 }
