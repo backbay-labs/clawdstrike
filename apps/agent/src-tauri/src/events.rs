@@ -1,102 +1,134 @@
-//! Event streaming from hushd daemon
+//! Event streaming from hushd daemon.
 //!
-//! Subscribes to SSE events from the daemon and dispatches them.
+//! Uses SSE as the primary transport and falls back to audit polling when SSE is unavailable.
 
+use crate::decision::NormalizedDecision;
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
-/// A policy check event from hushd
+/// A policy check event from hushd.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyEvent {
-    /// Event ID
+    /// Event ID.
     pub id: String,
-    /// Timestamp
+    /// Timestamp.
     pub timestamp: String,
-    /// Action type (e.g., "file_access", "network", "exec")
+    /// Action type (e.g., "file_access", "network", "exec").
     pub action_type: String,
-    /// Target (file path, URL, command)
+    /// Target (file path, URL, command).
     pub target: Option<String>,
-    /// Decision (allow, block, warn)
+    /// Decision (allow/allowed, block/blocked, warn).
     pub decision: String,
-    /// Guard that made the decision
+    /// Guard that made the decision.
     pub guard: Option<String>,
-    /// Severity level
+    /// Severity level.
     pub severity: Option<String>,
-    /// Human-readable message
+    /// Human-readable message.
     pub message: Option<String>,
-    /// Additional details
+    /// Additional details.
     #[serde(default)]
     pub details: serde_json::Value,
 }
 
-/// Event subscriber that connects to hushd SSE endpoint
-pub struct EventSubscriber {
+impl PolicyEvent {
+    pub fn normalized_decision(&self) -> NormalizedDecision {
+        NormalizedDecision::from_str(&self.decision)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct EventDeduper {
+    order: VecDeque<String>,
+    set: HashSet<String>,
+    max: usize,
+}
+
+impl EventDeduper {
+    fn new(max: usize) -> Self {
+        Self {
+            order: VecDeque::new(),
+            set: HashSet::new(),
+            max,
+        }
+    }
+
+    fn insert_if_new(&mut self, id: &str) -> bool {
+        if self.set.contains(id) {
+            return false;
+        }
+
+        self.order.push_back(id.to_string());
+        self.set.insert(id.to_string());
+
+        while self.order.len() > self.max {
+            if let Some(old) = self.order.pop_front() {
+                self.set.remove(&old);
+            }
+        }
+
+        true
+    }
+}
+
+/// Unified event manager that prefers SSE and falls back to polling.
+pub struct EventManager {
     daemon_url: String,
     api_key: Option<String>,
     events_tx: broadcast::Sender<PolicyEvent>,
     recent_events: Arc<RwLock<Vec<PolicyEvent>>>,
-    max_recent: usize,
+    deduper: Arc<Mutex<EventDeduper>>,
 }
 
-impl EventSubscriber {
-    /// Create a new event subscriber
+impl EventManager {
     pub fn new(daemon_url: String, api_key: Option<String>) -> Self {
-        let (events_tx, _) = broadcast::channel(100);
+        let (events_tx, _) = broadcast::channel(200);
 
         Self {
             daemon_url,
             api_key,
             events_tx,
             recent_events: Arc::new(RwLock::new(Vec::new())),
-            max_recent: 100,
+            deduper: Arc::new(Mutex::new(EventDeduper::new(2_000))),
         }
     }
 
-    /// Subscribe to events
+    /// Subscribe to events.
     pub fn subscribe(&self) -> broadcast::Receiver<PolicyEvent> {
         self.events_tx.subscribe()
     }
 
-    /// Get recent events
-    pub async fn recent_events(&self) -> Vec<PolicyEvent> {
-        self.recent_events.read().await.clone()
-    }
-
-    /// Start the event subscription loop
+    /// Start event collection.
     pub async fn start(&self, mut shutdown_rx: broadcast::Receiver<()>) {
         loop {
-            tokio::select! {
-                _ = shutdown_rx.recv() => {
-                    tracing::info!("Event subscriber received shutdown signal");
+            match self.stream_sse_until_error(&mut shutdown_rx).await {
+                Ok(()) => {
+                    tracing::info!("Event manager shutdown (SSE loop)");
                     break;
                 }
-                result = self.connect_and_stream() => {
-                    match result {
-                        Ok(_) => {
-                            tracing::info!("SSE stream ended normally");
-                        }
-                        Err(e) => {
-                            tracing::warn!("SSE connection error: {}", e);
-                        }
+                Err(err) => {
+                    tracing::warn!(error = %err, "SSE unavailable; entering polling fallback");
+                    if self.poll_fallback_window(&mut shutdown_rx).await {
+                        break;
                     }
-                    // Reconnect after a delay
-                    tokio::time::sleep(Duration::from_secs(5)).await;
                 }
             }
         }
     }
 
-    async fn connect_and_stream(&self) -> Result<()> {
+    async fn stream_sse_until_error(
+        &self,
+        shutdown_rx: &mut broadcast::Receiver<()>,
+    ) -> Result<()> {
         let url = format!("{}/api/v1/events", self.daemon_url);
-        tracing::info!("Connecting to SSE endpoint: {}", url);
+        tracing::info!(%url, "Connecting to hushd SSE endpoint");
 
         let mut builder = reqwest::Client::new().get(&url);
-
         if let Some(ref key) = self.api_key {
             builder = builder.header("Authorization", format!("Bearer {}", key));
         }
@@ -104,129 +136,69 @@ impl EventSubscriber {
         let mut es = EventSource::new(builder)
             .with_context(|| format!("Failed to create EventSource for {}", url))?;
 
-        while let Some(event) = es.next().await {
-            match event {
-                Ok(Event::Open) => {
-                    tracing::info!("SSE connection opened");
-                }
-                Ok(Event::Message(msg)) => {
-                    if let Err(e) = self.handle_message(&msg.data).await {
-                        tracing::warn!("Failed to handle SSE message: {}", e);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("SSE error: {}", e);
-                    es.close();
-                    return Err(anyhow::anyhow!("SSE error: {}", e));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn handle_message(&self, data: &str) -> Result<()> {
-        // Skip empty messages or heartbeats
-        if data.is_empty() || data == "ping" {
-            return Ok(());
-        }
-
-        // Parse the event
-        let event: PolicyEvent = serde_json::from_str(data)
-            .with_context(|| format!("Failed to parse event: {}", data))?;
-
-        tracing::debug!("Received event: {:?}", event);
-
-        // Store in recent events
-        {
-            let mut recent = self.recent_events.write().await;
-            recent.insert(0, event.clone());
-            if recent.len() > self.max_recent {
-                recent.truncate(self.max_recent);
-            }
-        }
-
-        // Broadcast to subscribers
-        let _ = self.events_tx.send(event);
-
-        Ok(())
-    }
-}
-
-/// Poll-based event fetcher for when SSE is not available
-pub struct EventPoller {
-    daemon_url: String,
-    api_key: Option<String>,
-    http_client: reqwest::Client,
-    events_tx: broadcast::Sender<PolicyEvent>,
-    recent_events: Arc<RwLock<Vec<PolicyEvent>>>,
-    last_event_id: Arc<RwLock<Option<String>>>,
-    max_recent: usize,
-}
-
-impl EventPoller {
-    /// Create a new event poller
-    pub fn new(daemon_url: String, api_key: Option<String>) -> Self {
-        let (events_tx, _) = broadcast::channel(100);
-
-        Self {
-            daemon_url,
-            api_key,
-            http_client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .unwrap_or_default(),
-            events_tx,
-            recent_events: Arc::new(RwLock::new(Vec::new())),
-            last_event_id: Arc::new(RwLock::new(None)),
-            max_recent: 100,
-        }
-    }
-
-    /// Subscribe to events
-    pub fn subscribe(&self) -> broadcast::Receiver<PolicyEvent> {
-        self.events_tx.subscribe()
-    }
-
-    /// Get recent events
-    pub async fn recent_events(&self) -> Vec<PolicyEvent> {
-        self.recent_events.read().await.clone()
-    }
-
-    /// Start the polling loop
-    pub async fn start(&self, mut shutdown_rx: broadcast::Receiver<()>) {
-        let poll_interval = Duration::from_secs(2);
-
         loop {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
-                    tracing::info!("Event poller received shutdown signal");
-                    break;
+                    es.close();
+                    return Ok(());
                 }
-                _ = tokio::time::sleep(poll_interval) => {
-                    if let Err(e) = self.poll_events().await {
-                        tracing::debug!("Event poll failed: {}", e);
+                evt = es.next() => {
+                    match evt {
+                        Some(Ok(Event::Open)) => {
+                            tracing::info!("hushd SSE connection opened");
+                        }
+                        Some(Ok(Event::Message(msg))) => {
+                            if let Err(err) = self.handle_raw_event(&msg.data).await {
+                                tracing::warn!(error = %err, "Failed to parse SSE event payload");
+                            }
+                        }
+                        Some(Err(err)) => {
+                            es.close();
+                            return Err(anyhow::anyhow!("SSE stream error: {}", err));
+                        }
+                        None => {
+                            es.close();
+                            return Err(anyhow::anyhow!("SSE stream ended unexpectedly"));
+                        }
                     }
                 }
             }
         }
     }
 
-    async fn poll_events(&self) -> Result<()> {
-        let url = format!("{}/api/v1/audit", self.daemon_url);
+    /// Poll fallback is bounded, then we retry SSE.
+    async fn poll_fallback_window(&self, shutdown_rx: &mut broadcast::Receiver<()>) -> bool {
+        let poll_interval = Duration::from_secs(2);
+        let attempts = 15;
 
-        let mut request = self.http_client.get(&url);
+        for _ in 0..attempts {
+            tokio::select! {
+                _ = shutdown_rx.recv() => return true,
+                _ = tokio::time::sleep(poll_interval) => {
+                    if let Err(err) = self.poll_once().await {
+                        tracing::debug!(error = %err, "Audit poll fallback failed");
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    async fn poll_once(&self) -> Result<()> {
+        #[derive(Deserialize)]
+        struct AuditResponse {
+            events: Vec<PolicyEvent>,
+        }
+
+        let url = format!("{}/api/v1/audit", self.daemon_url);
+        let mut request = reqwest::Client::new()
+            .get(&url)
+            .query(&[("limit", "50"), ("offset", "0")]);
 
         if let Some(ref key) = self.api_key {
             request = request.header("Authorization", format!("Bearer {}", key));
         }
-
-        // Add pagination params
-        let last_id = self.last_event_id.read().await.clone();
-        if let Some(ref id) = last_id {
-            request = request.query(&[("after", id)]);
-        }
-        request = request.query(&[("limit", "50")]);
 
         let response = request
             .send()
@@ -237,94 +209,50 @@ impl EventPoller {
             anyhow::bail!("Audit API returned status: {}", response.status());
         }
 
-        #[derive(Deserialize)]
-        struct AuditResponse {
-            events: Vec<PolicyEvent>,
-        }
-
-        let audit: AuditResponse = response
+        let mut audit: AuditResponse = response
             .json()
             .await
             .with_context(|| "Failed to parse audit response")?;
 
-        // Process new events
+        // Audit endpoint is newest-first; emit oldest-first for stable UI ordering.
+        audit.events.reverse();
         for event in audit.events {
-            // Update last event ID
-            *self.last_event_id.write().await = Some(event.id.clone());
-
-            // Store in recent events
-            {
-                let mut recent = self.recent_events.write().await;
-                recent.insert(0, event.clone());
-                if recent.len() > self.max_recent {
-                    recent.truncate(self.max_recent);
-                }
-            }
-
-            // Broadcast to subscribers
-            let _ = self.events_tx.send(event);
+            self.publish_event_if_new(event).await;
         }
 
         Ok(())
     }
-}
 
-/// Unified event manager that tries SSE first, falls back to polling
-pub struct EventManager {
-    daemon_url: String,
-    api_key: Option<String>,
-    events_tx: broadcast::Sender<PolicyEvent>,
-    recent_events: Arc<RwLock<Vec<PolicyEvent>>>,
-}
-
-impl EventManager {
-    pub fn new(daemon_url: String, api_key: Option<String>) -> Self {
-        let (events_tx, _) = broadcast::channel(100);
-
-        Self {
-            daemon_url,
-            api_key,
-            events_tx,
-            recent_events: Arc::new(RwLock::new(Vec::new())),
+    async fn handle_raw_event(&self, data: &str) -> Result<()> {
+        // Skip heartbeats.
+        if data.is_empty() || data == "ping" {
+            return Ok(());
         }
+
+        let event: PolicyEvent = serde_json::from_str(data)
+            .with_context(|| format!("Failed to parse SSE event payload: {}", data))?;
+
+        self.publish_event_if_new(event).await;
+        Ok(())
     }
 
-    /// Subscribe to events
-    pub fn subscribe(&self) -> broadcast::Receiver<PolicyEvent> {
-        self.events_tx.subscribe()
-    }
-
-    /// Get recent events
-    pub async fn recent_events(&self) -> Vec<PolicyEvent> {
-        self.recent_events.read().await.clone()
-    }
-
-    /// Start event collection
-    pub async fn start(&self, shutdown_rx: broadcast::Receiver<()>) {
-        // Use polling since hushd may not have SSE endpoint
-        let poller = EventPoller::new(self.daemon_url.clone(), self.api_key.clone());
-
-        // Forward events from poller to our channel
-        let events_tx = self.events_tx.clone();
-        let recent_events = Arc::clone(&self.recent_events);
-        let mut rx = poller.subscribe();
-
-        tokio::spawn(async move {
-            while let Ok(event) = rx.recv().await {
-                // Store in our recent events
-                {
-                    let mut recent = recent_events.write().await;
-                    recent.insert(0, event.clone());
-                    if recent.len() > 100 {
-                        recent.truncate(100);
-                    }
-                }
-                // Forward
-                let _ = events_tx.send(event);
+    async fn publish_event_if_new(&self, event: PolicyEvent) {
+        {
+            let mut deduper = self.deduper.lock().await;
+            if !deduper.insert_if_new(&event.id) {
+                return;
             }
-        });
+        }
 
-        poller.start(shutdown_rx).await;
+        {
+            let mut recent = self.recent_events.write().await;
+            recent.insert(0, event.clone());
+            if recent.len() > 100 {
+                recent.truncate(100);
+            }
+        }
+
+        let _ = self.events_tx.send(event);
     }
 }
 
@@ -339,13 +267,28 @@ mod tests {
             "timestamp": "2024-01-01T00:00:00Z",
             "action_type": "file_access",
             "target": "/etc/passwd",
-            "decision": "block",
+            "decision": "blocked",
             "guard": "fs_blocklist",
             "severity": "high"
         }"#;
 
-        let event: PolicyEvent = serde_json::from_str(json).unwrap();
+        let event: PolicyEvent = match serde_json::from_str(json) {
+            Ok(value) => value,
+            Err(err) => panic!("failed to parse event fixture: {err}"),
+        };
         assert_eq!(event.id, "123");
-        assert_eq!(event.decision, "block");
+        assert!(event.normalized_decision().is_blocked());
+    }
+
+    #[test]
+    fn deduper_drops_replays() {
+        let mut deduper = EventDeduper::new(3);
+        assert!(deduper.insert_if_new("a"));
+        assert!(!deduper.insert_if_new("a"));
+        assert!(deduper.insert_if_new("b"));
+        assert!(deduper.insert_if_new("c"));
+        assert!(deduper.insert_if_new("d"));
+        // "a" falls out of the dedupe window and can re-appear if needed.
+        assert!(deduper.insert_if_new("a"));
     }
 }

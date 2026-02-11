@@ -1,30 +1,34 @@
-# OpenClaw Gateway ↔ SDR Desktop testing
+# OpenClaw Gateway ↔ Agent ↔ SDR Desktop testing
 
-This doc captures end-to-end scenarios for the SDR Desktop “agent” (operator UI) and its bridge to the OpenClaw Gateway:
+This doc captures end-to-end scenarios for the SDR Desktop operator UI, the local Clawdstrike Agent API, and the OpenClaw Gateway:
 
-- WebSocket control plane client: `apps/desktop/src/services/openclaw/gatewayClient.ts`
-- UI state + multi-gateway wiring: `apps/desktop/src/context/OpenClawContext.tsx`
+- Desktop agent client bridge: `apps/desktop/src/services/agentOpenClawClient.ts`
+- UI state + multi-gateway wiring: `apps/desktop/src/context/OpenClawAgentProvider.tsx`
 - Operator UI: `apps/desktop/src/features/openclaw/OpenClawFleetView.tsx`
-- Native (Tauri) discovery/probe helpers: `apps/desktop/src-tauri/src/commands/openclaw.rs` + `apps/desktop/src/services/tauri.ts`
+- Agent runtime OpenClaw owner: `apps/agent/src-tauri/src/openclaw/manager.rs`
+- Agent local API: `apps/agent/src-tauri/src/api_server.rs`
+- Tauri compatibility bridge: `apps/desktop/src-tauri/src/commands/openclaw.rs` + `apps/desktop/src/services/tauri.ts`
 
 ## Architecture snapshot
 
-- The UI talks to the gateway **directly over WebSocket** (no proxy).
-- `OpenClawGatewayClient` implements:
-  - `connect` handshake (including optional `connect.challenge`)
-  - request/response RPC (`type: "req"` / `type: "res"`)
-  - event fan-out (`type: "event"`)
-- `OpenClawContext` owns:
-  - local gateway config storage (multi-gateway)
-  - per-gateway runtime state (status/error/presence/nodes/devices/approvals)
-  - high-level actions used by views (`connect`, `request`, `resolveExecApproval`, pairing)
-- Discovery/probe uses the local `openclaw` CLI via Tauri IPC so the webview can remain a native WS client.
+- Production mode path:
+  - Desktop -> agent local API (`127.0.0.1:<agent_api_port>`)
+  - Agent owns gateway WebSocket sessions and reconnect logic
+  - Desktop consumes gateway state/events from agent API + SSE
+- Agent handles:
+  - gateway connect handshake (including optional `connect.challenge`)
+  - request/response RPC relay
+  - event fan-out and runtime snapshots
+  - secure secret storage (keyring; memory fallback)
+- Desktop direct WS mode is now dev-only emergency fallback:
+  - `VITE_OPENCLAW_DIRECT_MODE=1` (frontend)
+  - `SDR_OPENCLAW_DIRECT_MODE=1` or `VITE_OPENCLAW_DIRECT_MODE=1` (Tauri bridge compatibility)
 
 ## Manual scenarios (back-and-forth)
 
 ### Quick start (local loopback)
 
-This is the shortest path to “desktop ↔ gateway ↔ node” back-and-forth testing.
+This is the shortest path to “desktop ↔ agent ↔ gateway ↔ node” back-and-forth testing.
 
 #### 1) Start the gateway
 
@@ -86,7 +90,7 @@ Goal: verify the WS connect handshake and a simple RPC works end-to-end.
 2. In SDR Desktop, open **OpenClaw Fleet** and set the Gateway URL (e.g. `ws://127.0.0.1:18789`) and token (if required).
 3. Click **Connect**.
 4. Expected:
-   - status goes `connecting → connected`
+   - status goes `connecting -> connected`
    - `presence` list populates after refresh (or immediately if the gateway emits events)
 
 Failure modes to validate:
@@ -96,7 +100,7 @@ Failure modes to validate:
 
 #### Scenario 2: Reconnect after gateway restart
 
-Goal: make sure the UI reliably recovers when the gateway restarts mid-session.
+Goal: make sure agent-owned sessions reliably recover when the gateway restarts mid-session.
 
 1. Connect successfully in **OpenClaw Fleet**.
 2. Restart the gateway while the UI is connected.
@@ -148,24 +152,27 @@ Goal: validate the UI ↔ Tauri IPC ↔ `openclaw` CLI bridge.
    - new gateways are added when `openclaw gateway probe/discover --json` returns beacons
    - errors show up as **Discovery error** with actionable messages (missing CLI, non-zero exit, invalid JSON)
 
-## Automated coverage (Vitest)
+## Automated coverage (Vitest + Rust)
 
 These unit tests mirror key back-and-forth flows without requiring a live gateway:
 
 - `apps/desktop/src/services/openclaw/gatewayProtocol.test.ts`:
   - frame parsing and request ID generation
 - `apps/desktop/src/services/openclaw/gatewayClient.test.ts`:
-  - connect + `connect.challenge`
-  - connect idempotency + cancel on manual disconnect
-  - RPC request/response success/error
-  - pending request rejection on disconnect
-  - request timeouts
+  - direct-mode WS client behavior (dev fallback path)
+- `apps/desktop/src/services/agentOpenClawClient.test.ts`:
+  - agent API endpoint mapping + auth headers
+  - import-desktop-gateways payload mapping
+  - SSE subscription token query and event parsing
 - `apps/desktop/src/services/tauri.openclaw.test.ts`:
-  - discover/probe IPC wiring (Tauri-only)
+  - discover/probe/auth IPC wiring (Tauri-only)
 - `apps/desktop/src/context/OpenClawContext.test.ts`:
   - pure event application logic (presence + approvals)
 - `apps/desktop/src/features/openclaw/openclawFleetUtils.test.ts`:
   - command parsing for `system.run` + gateway URL normalization
+- `apps/agent/src-tauri/src/openclaw/manager.rs` (Rust tests):
+  - mock gateway handshake + request relay lifecycle
+  - gateway JSON parse/error helpers
 
 Run with:
 
@@ -175,13 +182,17 @@ npm --prefix apps/desktop run lint
 npm --prefix apps/desktop run typecheck
 ```
 
-Rust (Tauri backend) unit tests cover best-effort JSON extraction from `openclaw --json` output:
+Rust agent checks:
 
 ```bash
-cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo test --manifest-path apps/agent/src-tauri/Cargo.toml
+cargo clippy --manifest-path apps/agent/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+```
 
-# Optional: run offline if deps are already cached
-CARGO_NET_OFFLINE=true cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+Repository smoke harness:
+
+```bash
+scripts/openclaw-agent-smoke.sh --gateway-url ws://127.0.0.1:18789 --gateway-token dev-token
 ```
 
 ## Troubleshooting
@@ -220,6 +231,5 @@ CARGO_NET_OFFLINE=true cargo test --manifest-path apps/desktop/src-tauri/Cargo.t
 
 ## Next steps
 
-- Add a small “fake gateway” test harness to exercise real WS framing (connect, reconnect, event flood) without a live OpenClaw process.
-- Expand `applyGatewayEventFrame` to handle pairing + node state events when the gateway emits them.
-- Add an E2E smoke script that starts `openclaw gateway` + `openclaw node` and validates “Connect → node.list → system.run → approval resolve”.
+- Expand smoke automation with optional `openclaw node` lifecycle orchestration and approval-resolution checks.
+- Add CI job wrappers that run smoke checks against a pinned OpenClaw test fixture environment.

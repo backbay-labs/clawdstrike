@@ -1,4 +1,4 @@
-//! Daemon management for hushd process
+//! Daemon management for hushd process.
 //!
 //! Handles spawning, monitoring, and restarting the hushd daemon.
 
@@ -6,13 +6,14 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, RwLock};
 
-/// Health response from hushd /health endpoint
+/// Health response from hushd `/health` endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthResponse {
     pub status: String,
@@ -22,18 +23,18 @@ pub struct HealthResponse {
     pub audit_count: Option<usize>,
 }
 
-/// Current state of the daemon
+/// Current state of the daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonState {
-    /// Daemon is not running
+    /// Daemon is not running.
     Stopped,
-    /// Daemon is starting up
+    /// Daemon is starting up.
     Starting,
-    /// Daemon is running and healthy
+    /// Daemon is running and healthy.
     Running,
-    /// Daemon is running but health check failed
+    /// Daemon is running but health check failed.
     Unhealthy,
-    /// Daemon crashed and will restart
+    /// Daemon crashed and will restart.
     Restarting,
 }
 
@@ -49,7 +50,7 @@ impl DaemonState {
     }
 }
 
-/// Daemon status with health info
+/// Daemon status with health info.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonStatus {
     pub state: String,
@@ -59,19 +60,15 @@ pub struct DaemonStatus {
     pub restart_count: u32,
 }
 
-/// Configuration for the daemon manager
+/// Configuration for the daemon manager.
 #[derive(Debug, Clone)]
 pub struct DaemonConfig {
-    /// Path to hushd binary
+    /// Path to hushd binary.
     pub binary_path: PathBuf,
-    /// Port to bind to
+    /// Port to bind to.
     pub port: u16,
-    /// Path to policy file
+    /// Path to policy file.
     pub policy_path: PathBuf,
-    /// Path to audit database
-    pub audit_db_path: PathBuf,
-    /// API key for authentication (optional)
-    pub api_key: Option<String>,
 }
 
 impl DaemonConfig {
@@ -80,7 +77,7 @@ impl DaemonConfig {
     }
 }
 
-/// Manages the hushd daemon lifecycle
+/// Manages the hushd daemon lifecycle.
 pub struct DaemonManager {
     config: DaemonConfig,
     state: Arc<RwLock<DaemonState>>,
@@ -89,13 +86,14 @@ pub struct DaemonManager {
     http_client: reqwest::Client,
     state_tx: broadcast::Sender<DaemonState>,
     shutdown_tx: broadcast::Sender<()>,
+    monitor_started: Arc<AtomicBool>,
 }
 
 impl DaemonManager {
-    /// Create a new daemon manager
+    /// Create a new daemon manager.
     pub fn new(config: DaemonConfig) -> Self {
         let (state_tx, _) = broadcast::channel(16);
-        let (shutdown_tx, _) = broadcast::channel(1);
+        let (shutdown_tx, _) = broadcast::channel(4);
 
         Self {
             config,
@@ -105,28 +103,23 @@ impl DaemonManager {
             http_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()
-                .unwrap_or_default(),
+                .unwrap_or_else(|_| reqwest::Client::new()),
             state_tx,
             shutdown_tx,
+            monitor_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Subscribe to state changes
+    /// Subscribe to state changes.
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonState> {
         self.state_tx.subscribe()
     }
 
-    /// Get current state
-    pub async fn state(&self) -> DaemonState {
-        self.state.read().await.clone()
-    }
-
-    /// Get current status with health info
+    /// Get current status with health info.
     pub async fn status(&self) -> DaemonStatus {
         let state = self.state.read().await.clone();
         let restart_count = *self.restart_count.read().await;
 
-        // Try to get health info if running
         let (version, uptime_secs, audit_count) = if state == DaemonState::Running {
             match self.health_check().await {
                 Ok(health) => (health.version, health.uptime_secs, health.audit_count),
@@ -145,61 +138,38 @@ impl DaemonManager {
         }
     }
 
-    /// Start the daemon
+    /// Start the daemon.
     pub async fn start(&self) -> Result<()> {
-        // Check if already running
-        let current_state = self.state.read().await.clone();
-        if current_state == DaemonState::Running || current_state == DaemonState::Starting {
+        let current = self.state.read().await.clone();
+        if current == DaemonState::Running || current == DaemonState::Starting {
             return Ok(());
         }
 
         self.set_state(DaemonState::Starting).await;
-
-        // Spawn the daemon process
-        self.spawn_daemon().await?;
-
-        // Start health monitoring
+        self.spawn_and_wait_ready().await?;
+        self.set_state(DaemonState::Running).await;
         self.start_health_monitor();
-
+        tracing::info!("hushd daemon started on port {}", self.config.port);
         Ok(())
     }
 
-    /// Stop the daemon
+    /// Stop the daemon.
     pub async fn stop(&self) -> Result<()> {
-        // Signal shutdown
         let _ = self.shutdown_tx.send(());
-
-        // Kill the child process
-        let mut child_guard = self.child.write().await;
-        if let Some(ref mut child) = *child_guard {
-            // Try graceful shutdown first
-            #[cfg(unix)]
-            if let Some(pid) = child.id() {
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGTERM);
-                }
-            }
-
-            // Wait briefly for graceful shutdown
-            tokio::time::sleep(Duration::from_millis(500)).await;
-
-            // Force kill if still running
-            let _ = child.kill().await;
-        }
-        *child_guard = None;
-
+        self.terminate_child("stop requested").await;
         self.set_state(DaemonState::Stopped).await;
+        self.monitor_started.store(false, Ordering::SeqCst);
         Ok(())
     }
 
-    /// Restart the daemon
+    /// Restart the daemon.
     pub async fn restart(&self) -> Result<()> {
         self.stop().await?;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
         self.start().await
     }
 
-    /// Perform a health check
+    /// Perform a health check.
     pub async fn health_check(&self) -> Result<HealthResponse> {
         let url = self.config.health_url();
         let response = self
@@ -209,6 +179,10 @@ impl DaemonManager {
             .await
             .with_context(|| format!("Failed to connect to daemon at {}", url))?;
 
+        if !response.status().is_success() {
+            anyhow::bail!("health endpoint returned {}", response.status());
+        }
+
         let health: HealthResponse = response
             .json()
             .await
@@ -217,184 +191,140 @@ impl DaemonManager {
         Ok(health)
     }
 
-    async fn spawn_daemon(&self) -> Result<()> {
-        let binary_path = &self.config.binary_path;
+    async fn spawn_and_wait_ready(&self) -> Result<()> {
+        spawn_child_into_slot(&self.config, &self.child).await?;
 
-        // Check if binary exists
-        if !binary_path.exists() {
-            anyhow::bail!("hushd binary not found at {:?}", binary_path);
+        if let Err(err) = wait_for_ready_with_client(&self.config, &self.http_client).await {
+            self.terminate_child("startup readiness check failed").await;
+            return Err(err);
         }
-
-        // Build command arguments
-        let mut cmd = Command::new(binary_path);
-        cmd.arg("start")
-            .arg("--port")
-            .arg(self.config.port.to_string())
-            .arg("--bind")
-            .arg("127.0.0.1");
-
-        // Add policy path if exists
-        if self.config.policy_path.exists() {
-            cmd.arg("--ruleset").arg(&self.config.policy_path);
-        }
-
-        // Configure stdio
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .stdin(Stdio::null());
-
-        // Spawn the process
-        let mut child = cmd
-            .spawn()
-            .with_context(|| format!("Failed to spawn hushd from {:?}", binary_path))?;
-
-        // Capture and log stdout/stderr
-        if let Some(stdout) = child.stdout.take() {
-            let reader = BufReader::new(stdout);
-            tokio::spawn(async move {
-                let mut lines = reader.lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::info!(target: "hushd", "{}", line);
-                }
-            });
-        }
-
-        if let Some(stderr) = child.stderr.take() {
-            let reader = BufReader::new(stderr);
-            tokio::spawn(async move {
-                let mut lines = reader.lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::warn!(target: "hushd", "{}", line);
-                }
-            });
-        }
-
-        // Store the child process
-        *self.child.write().await = Some(child);
-
-        // Wait for daemon to be ready
-        self.wait_for_ready().await?;
-
-        self.set_state(DaemonState::Running).await;
-        tracing::info!("hushd daemon started on port {}", self.config.port);
 
         Ok(())
     }
 
-    async fn wait_for_ready(&self) -> Result<()> {
-        let max_attempts = 30;
-        let delay = Duration::from_millis(100);
+    async fn terminate_child(&self, reason: &str) {
+        let mut guard = self.child.write().await;
+        let mut maybe_child = guard.take();
+        drop(guard);
+        if let Some(ref mut child) = maybe_child {
+            tracing::info!(reason, "Terminating hushd process");
 
-        for attempt in 0..max_attempts {
-            match self.health_check().await {
-                Ok(health) if health.status == "healthy" => {
-                    tracing::debug!("Daemon ready after {} attempts", attempt + 1);
-                    return Ok(());
-                }
-                Ok(_) => {
-                    tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
-                }
-                Err(e) => {
-                    tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, e);
+            #[cfg(unix)]
+            if let Some(pid) = child.id() {
+                // Best-effort graceful stop before force kill.
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGTERM);
                 }
             }
-            tokio::time::sleep(delay).await;
-        }
 
-        anyhow::bail!("Daemon failed to become ready after {} attempts", max_attempts)
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
     }
 
     fn start_health_monitor(&self) {
+        if self.monitor_started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
         let state = Arc::clone(&self.state);
         let child = Arc::clone(&self.child);
         let restart_count = Arc::clone(&self.restart_count);
         let config = self.config.clone();
         let http_client = self.http_client.clone();
         let state_tx = self.state_tx.clone();
+        let monitor_started = Arc::clone(&self.monitor_started);
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
             let check_interval = Duration::from_secs(5);
-            let max_retries = 3;
-            let mut consecutive_failures = 0;
+            let max_health_failures = 3u32;
+            let stable_window = Duration::from_secs(90);
+            let mut consecutive_health_failures = 0u32;
+            let mut restart_streak = 0u32;
+            let mut running_since = Instant::now();
 
             loop {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
                         tracing::debug!("Health monitor received shutdown signal");
+                        monitor_started.store(false, Ordering::SeqCst);
                         break;
                     }
                     _ = tokio::time::sleep(check_interval) => {
-                        // Check if process is still running
-                        let mut child_guard = child.write().await;
-                        if let Some(ref mut proc) = *child_guard {
-                            match proc.try_wait() {
-                                Ok(Some(status)) => {
-                                    // Process exited
-                                    tracing::warn!("hushd exited with status: {:?}", status);
-                                    *child_guard = None;
-                                    drop(child_guard);
-
-                                    // Update state and restart
-                                    *state.write().await = DaemonState::Restarting;
-                                    let _ = state_tx.send(DaemonState::Restarting);
-
-                                    *restart_count.write().await += 1;
-                                    consecutive_failures = 0;
-
-                                    // Exponential backoff for restarts
-                                    let backoff = Duration::from_secs(
-                                        2u64.pow((*restart_count.read().await).min(5))
-                                    );
-                                    tokio::time::sleep(backoff).await;
-
-                                    // Try to restart (simplified - in production would call spawn_daemon)
-                                    continue;
-                                }
-                                Ok(None) => {
-                                    // Still running, check health
-                                    drop(child_guard);
-                                }
-                                Err(e) => {
-                                    tracing::error!("Failed to check process status: {}", e);
-                                    drop(child_guard);
-                                }
-                            }
-                        } else {
-                            // No child process
-                            *state.write().await = DaemonState::Stopped;
-                            let _ = state_tx.send(DaemonState::Stopped);
+                        let current_state = state.read().await.clone();
+                        if current_state == DaemonState::Stopped {
                             continue;
                         }
 
-                        // Perform health check
-                        let url = config.health_url();
-                        match http_client.get(&url).send().await {
-                            Ok(response) => {
-                                if response.status().is_success() {
-                                    consecutive_failures = 0;
-                                    let current = state.read().await.clone();
-                                    if current != DaemonState::Running {
-                                        *state.write().await = DaemonState::Running;
-                                        let _ = state_tx.send(DaemonState::Running);
+                        if let Some(reason) = check_process_exit(&child).await {
+                            tracing::warn!(%reason, "hushd exited unexpectedly");
+                            let next_restart_count = {
+                                let mut value = restart_count.write().await;
+                                *value = value.saturating_add(1);
+                                *value
+                            };
+
+                            if running_since.elapsed() >= stable_window {
+                                restart_streak = 0;
+                            }
+                            restart_streak = restart_streak.saturating_add(1);
+
+                            set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
+
+                            let backoff = compute_backoff(restart_streak, next_restart_count);
+                            tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
+                            tokio::time::sleep(backoff).await;
+
+                            match spawn_child_into_slot(&config, &child).await {
+                                Ok(()) => {
+                                    match wait_for_ready_with_client(&config, &http_client).await {
+                                        Ok(()) => {
+                                            consecutive_health_failures = 0;
+                                            restart_streak = 0;
+                                            running_since = Instant::now();
+                                            set_shared_state(&state, &state_tx, DaemonState::Running).await;
+                                            tracing::info!("hushd restart complete");
+                                        }
+                                        Err(err) => {
+                                            tracing::error!(error = %err, "hushd restart failed readiness check");
+                                            terminate_child_slot(&child).await;
+                                            set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                        }
                                     }
-                                } else {
-                                    consecutive_failures += 1;
-                                    tracing::warn!("Health check returned non-success: {}", response.status());
+                                }
+                                Err(err) => {
+                                    tracing::error!(error = %err, "Failed to respawn hushd");
+                                    set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
                                 }
                             }
-                            Err(e) => {
-                                consecutive_failures += 1;
-                                tracing::warn!("Health check failed: {}", e);
+
+                            continue;
+                        }
+
+                        match health_check_with_client(&config, &http_client).await {
+                            Ok(health) if health.status == "healthy" => {
+                                consecutive_health_failures = 0;
+                                let current = state.read().await.clone();
+                                if current != DaemonState::Running {
+                                    set_shared_state(&state, &state_tx, DaemonState::Running).await;
+                                }
+                            }
+                            Ok(health) => {
+                                consecutive_health_failures = consecutive_health_failures.saturating_add(1);
+                                tracing::warn!(status = %health.status, "hushd health status is not healthy");
+                            }
+                            Err(err) => {
+                                consecutive_health_failures = consecutive_health_failures.saturating_add(1);
+                                tracing::warn!(error = %err, "hushd health check failed");
                             }
                         }
 
-                        // Update state if unhealthy
-                        if consecutive_failures >= max_retries {
+                        if consecutive_health_failures >= max_health_failures {
                             let current = state.read().await.clone();
                             if current == DaemonState::Running {
-                                *state.write().await = DaemonState::Unhealthy;
-                                let _ = state_tx.send(DaemonState::Unhealthy);
+                                set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
                             }
                         }
                     }
@@ -409,38 +339,192 @@ impl DaemonManager {
     }
 }
 
-/// Find the hushd binary
+async fn spawn_child_into_slot(
+    config: &DaemonConfig,
+    child_slot: &Arc<RwLock<Option<Child>>>,
+) -> Result<()> {
+    let mut child = spawn_daemon_process(config).await?;
+    attach_child_logs(&mut child);
+    *child_slot.write().await = Some(child);
+    Ok(())
+}
+
+async fn terminate_child_slot(child_slot: &Arc<RwLock<Option<Child>>>) {
+    let mut guard = child_slot.write().await;
+    let mut maybe_child = guard.take();
+    drop(guard);
+    if let Some(ref mut child) = maybe_child {
+        #[cfg(unix)]
+        if let Some(pid) = child.id() {
+            // Best-effort graceful shutdown before force kill.
+            unsafe {
+                libc::kill(pid as i32, libc::SIGTERM);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+}
+
+async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
+    if !config.binary_path.exists() {
+        anyhow::bail!("hushd binary not found at {:?}", config.binary_path);
+    }
+
+    let mut cmd = Command::new(&config.binary_path);
+    cmd.arg("start")
+        .arg("--port")
+        .arg(config.port.to_string())
+        .arg("--bind")
+        .arg("127.0.0.1");
+
+    if config.policy_path.exists() {
+        cmd.arg("--ruleset").arg(&config.policy_path);
+    }
+
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::null());
+
+    let child = cmd
+        .spawn()
+        .with_context(|| format!("Failed to spawn hushd from {:?}", config.binary_path))?;
+
+    Ok(child)
+}
+
+fn attach_child_logs(child: &mut Child) {
+    if let Some(stdout) = child.stdout.take() {
+        let reader = BufReader::new(stdout);
+        tokio::spawn(async move {
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::info!(target: "hushd", "{}", line);
+            }
+        });
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        let reader = BufReader::new(stderr);
+        tokio::spawn(async move {
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::warn!(target: "hushd", "{}", line);
+            }
+        });
+    }
+}
+
+async fn wait_for_ready_with_client(
+    config: &DaemonConfig,
+    http_client: &reqwest::Client,
+) -> Result<()> {
+    let max_attempts = 40;
+    let delay = Duration::from_millis(150);
+    for attempt in 0..max_attempts {
+        match health_check_with_client(config, http_client).await {
+            Ok(health) if health.status == "healthy" => {
+                tracing::debug!("Daemon ready after {} attempts", attempt + 1);
+                return Ok(());
+            }
+            Ok(_) => {
+                tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
+            }
+            Err(err) => {
+                tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
+            }
+        }
+        tokio::time::sleep(delay).await;
+    }
+
+    anyhow::bail!(
+        "Daemon failed to become ready after {} attempts",
+        max_attempts
+    )
+}
+
+async fn health_check_with_client(
+    config: &DaemonConfig,
+    http_client: &reqwest::Client,
+) -> Result<HealthResponse> {
+    let url = config.health_url();
+    let response = http_client
+        .get(&url)
+        .send()
+        .await
+        .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("health endpoint returned {}", response.status());
+    }
+
+    let health: HealthResponse = response
+        .json()
+        .await
+        .with_context(|| "Failed to parse health response")?;
+    Ok(health)
+}
+
+async fn check_process_exit(child_slot: &Arc<RwLock<Option<Child>>>) -> Option<String> {
+    let mut guard = child_slot.write().await;
+    if let Some(ref mut proc) = *guard {
+        match proc.try_wait() {
+            Ok(Some(status)) => {
+                *guard = None;
+                Some(format!("process exited with status {}", status))
+            }
+            Ok(None) => None,
+            Err(err) => {
+                *guard = None;
+                Some(format!("failed to check process status: {}", err))
+            }
+        }
+    } else {
+        Some("process handle missing".to_string())
+    }
+}
+
+async fn set_shared_state(
+    state: &Arc<RwLock<DaemonState>>,
+    state_tx: &broadcast::Sender<DaemonState>,
+    new_state: DaemonState,
+) {
+    *state.write().await = new_state.clone();
+    let _ = state_tx.send(new_state);
+}
+
+fn compute_backoff(restart_streak: u32, restart_count: u32) -> Duration {
+    let exponent = restart_streak.saturating_sub(1).min(6);
+    let base_ms = 500u64.saturating_mul(2u64.saturating_pow(exponent));
+    let capped_ms = base_ms.min(20_000);
+    let jitter_ms = (restart_count as u64).saturating_mul(113) % 250;
+    Duration::from_millis(capped_ms.saturating_add(jitter_ms))
+}
+
+/// Find the hushd binary.
 pub fn find_hushd_binary() -> Option<PathBuf> {
-    // Check common locations
     let candidates = [
-        // In PATH
         which::which("hushd").ok(),
-        // Relative to agent binary (bundled)
         std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.join("hushd"))),
-        // Cargo target directory (development)
         std::env::var("CARGO_MANIFEST_DIR")
             .ok()
             .map(|p| PathBuf::from(p).join("../../target/release/hushd")),
         std::env::var("CARGO_MANIFEST_DIR")
             .ok()
             .map(|p| PathBuf::from(p).join("../../target/debug/hushd")),
-        // Common install locations
         Some(PathBuf::from("/usr/local/bin/hushd")),
         Some(PathBuf::from("/opt/clawdstrike/bin/hushd")),
-        // Home directory
         dirs::home_dir().map(|p| p.join(".local/bin/hushd")),
         dirs::home_dir().map(|p| p.join(".cargo/bin/hushd")),
     ];
 
-    for candidate in candidates.into_iter().flatten() {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    None
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| candidate.exists())
 }
 
 #[cfg(test)]
@@ -448,8 +532,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_daemon_state_as_str() {
+    fn daemon_state_as_str() {
         assert_eq!(DaemonState::Running.as_str(), "running");
         assert_eq!(DaemonState::Stopped.as_str(), "stopped");
+    }
+
+    #[test]
+    fn backoff_is_bounded() {
+        let backoff = compute_backoff(10, 10);
+        assert!(backoff <= Duration::from_millis(20_500));
     }
 }

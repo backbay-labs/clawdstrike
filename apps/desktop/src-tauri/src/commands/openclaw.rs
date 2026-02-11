@@ -4,6 +4,132 @@
 //! client and still access OS-level tailnet/discovery data via Tauri IPC.
 
 use serde_json::Value;
+use std::path::PathBuf;
+
+fn clawdstrike_config_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("clawdstrike")
+}
+
+fn read_agent_api_port() -> u16 {
+    let settings_path = clawdstrike_config_dir().join("agent.json");
+    let Ok(raw) = std::fs::read_to_string(settings_path) else {
+        return 9878;
+    };
+    let Ok(json) = serde_json::from_str::<Value>(&raw) else {
+        return 9878;
+    };
+    json.get("agent_api_port")
+        .and_then(Value::as_u64)
+        .and_then(|v| u16::try_from(v).ok())
+        .unwrap_or(9878)
+}
+
+fn read_agent_api_token() -> Result<String, String> {
+    let token_path = clawdstrike_config_dir().join("agent-local-token");
+    let raw = std::fs::read_to_string(&token_path)
+        .map_err(|e| format!("Failed to read {:?}: {}", token_path, e))?;
+    let token = raw.trim().to_string();
+    if token.is_empty() {
+        return Err(format!("Agent token file {:?} is empty", token_path));
+    }
+    Ok(token)
+}
+
+fn direct_mode_enabled() -> bool {
+    cfg!(debug_assertions)
+        && (std::env::var("SDR_OPENCLAW_DIRECT_MODE").ok().as_deref() == Some("1")
+            || std::env::var("VITE_OPENCLAW_DIRECT_MODE").ok().as_deref() == Some("1"))
+}
+
+fn agent_base_url() -> String {
+    format!("http://127.0.0.1:{}", read_agent_api_port())
+}
+
+fn is_allowed_agent_path(path: &str) -> bool {
+    path == "/api/v1/agent/settings"
+        || path == "/api/v1/openclaw/gateways"
+        || path.starts_with("/api/v1/openclaw/gateways/")
+        || path == "/api/v1/openclaw/discover"
+        || path == "/api/v1/openclaw/probe"
+        || path == "/api/v1/openclaw/request"
+        || path == "/api/v1/openclaw/import-desktop-gateways"
+}
+
+fn parse_request_method(method: &str) -> Result<reqwest::Method, String> {
+    match method.to_ascii_uppercase().as_str() {
+        "GET" => Ok(reqwest::Method::GET),
+        "POST" => Ok(reqwest::Method::POST),
+        "PATCH" => Ok(reqwest::Method::PATCH),
+        "PUT" => Ok(reqwest::Method::PUT),
+        "DELETE" => Ok(reqwest::Method::DELETE),
+        _ => Err(format!("Unsupported method: {}", method)),
+    }
+}
+
+async fn call_agent_endpoint(
+    method: reqwest::Method,
+    path: &str,
+    body: Option<&Value>,
+) -> Result<Value, String> {
+    if !is_allowed_agent_path(path) {
+        return Err(format!("Disallowed agent API path: {}", path));
+    }
+
+    let token = read_agent_api_token()?;
+    let url = format!("{}{}", agent_base_url(), path);
+
+    let client = reqwest::Client::new();
+    let mut request = client
+        .request(method, &url)
+        .header("Authorization", format!("Bearer {}", token));
+
+    if let Some(payload) = body {
+        request = request.json(payload);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Agent OpenClaw request failed for {}: {}", path, e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Agent OpenClaw endpoint {} returned {}: {}",
+            path, status, body
+        ));
+    }
+
+    response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read OpenClaw response for {}: {}", path, e))
+        .and_then(|raw| {
+            if raw.trim().is_empty() {
+                Ok(Value::Null)
+            } else {
+                serde_json::from_str::<Value>(&raw)
+                    .map_err(|e| format!("Failed to parse OpenClaw response for {}: {}", path, e))
+            }
+        })
+}
+
+async fn call_agent_openclaw_endpoint(
+    path: &str,
+    timeout_ms: Option<u64>,
+) -> Result<Value, String> {
+    call_agent_endpoint(
+        reqwest::Method::POST,
+        path,
+        Some(&serde_json::json!({
+            "timeout_ms": timeout_ms
+        })),
+    )
+    .await
+}
 
 fn extract_json_payload(output: &str) -> Result<Value, String> {
     let mut saw_candidate = false;
@@ -85,6 +211,10 @@ async fn run_openclaw_json(args: Vec<String>) -> Result<Value, String> {
 
 #[tauri::command]
 pub async fn openclaw_gateway_discover(timeout_ms: Option<u64>) -> Result<Value, String> {
+    if !direct_mode_enabled() {
+        return call_agent_openclaw_endpoint("/api/v1/openclaw/discover", timeout_ms).await;
+    }
+
     let mut args = vec![
         "gateway".to_string(),
         "discover".to_string(),
@@ -101,6 +231,10 @@ pub async fn openclaw_gateway_discover(timeout_ms: Option<u64>) -> Result<Value,
 
 #[tauri::command]
 pub async fn openclaw_gateway_probe(timeout_ms: Option<u64>) -> Result<Value, String> {
+    if !direct_mode_enabled() {
+        return call_agent_openclaw_endpoint("/api/v1/openclaw/probe", timeout_ms).await;
+    }
+
     let mut args = vec![
         "gateway".to_string(),
         "probe".to_string(),
@@ -115,9 +249,19 @@ pub async fn openclaw_gateway_probe(timeout_ms: Option<u64>) -> Result<Value, St
     run_openclaw_json(args).await
 }
 
+#[tauri::command]
+pub async fn openclaw_agent_request(
+    method: String,
+    path: String,
+    body: Option<Value>,
+) -> Result<Value, String> {
+    let parsed_method = parse_request_method(&method)?;
+    call_agent_endpoint(parsed_method, &path, body.as_ref()).await
+}
+
 #[cfg(test)]
 mod tests {
-    use super::extract_json_payload;
+    use super::{extract_json_payload, is_allowed_agent_path, parse_request_method};
     use serde_json::json;
 
     #[test]
@@ -149,5 +293,27 @@ mod tests {
     fn errors_when_no_json_payload_present() {
         let err = extract_json_payload("nothing to see here").expect_err("should error");
         assert!(err.contains("no JSON payload"));
+    }
+
+    #[test]
+    fn allows_only_expected_agent_api_paths() {
+        assert!(is_allowed_agent_path("/api/v1/openclaw/gateways"));
+        assert!(is_allowed_agent_path(
+            "/api/v1/openclaw/gateways/demo/connect"
+        ));
+        assert!(is_allowed_agent_path("/api/v1/openclaw/request"));
+        assert!(is_allowed_agent_path("/api/v1/agent/settings"));
+        assert!(!is_allowed_agent_path("/api/v1/agent/health"));
+        assert!(!is_allowed_agent_path("/api/v1/daemon/restart"));
+    }
+
+    #[test]
+    fn parses_supported_http_methods() {
+        assert!(parse_request_method("get").is_ok());
+        assert!(parse_request_method("POST").is_ok());
+        assert!(parse_request_method("patch").is_ok());
+        assert!(parse_request_method("put").is_ok());
+        assert!(parse_request_method("delete").is_ok());
+        assert!(parse_request_method("trace").is_err());
     }
 }

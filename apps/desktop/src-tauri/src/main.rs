@@ -32,6 +32,7 @@ fn main() {
             commands::marketplace_discovery::marketplace_discovery_announce,
             commands::openclaw::openclaw_gateway_discover,
             commands::openclaw::openclaw_gateway_probe,
+            commands::openclaw::openclaw_agent_request,
             commands::spine::subscribe_spine_events,
             commands::spine::unsubscribe_spine_events,
             commands::spine::spine_status,

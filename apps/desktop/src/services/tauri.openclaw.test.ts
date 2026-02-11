@@ -6,7 +6,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
 }));
 
-import { openclawGatewayDiscover, openclawGatewayProbe } from "./tauri";
+import { openclawAgentRequest, openclawGatewayDiscover, openclawGatewayProbe } from "./tauri";
 
 describe("tauri openclaw helpers", () => {
   const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -36,6 +36,9 @@ describe("tauri openclaw helpers", () => {
   it("throws when not running in Tauri", async () => {
     await expect(openclawGatewayDiscover()).rejects.toThrow("OpenClaw discovery requires Tauri");
     await expect(openclawGatewayProbe()).rejects.toThrow("OpenClaw probe requires Tauri");
+    await expect(openclawAgentRequest("GET", "/api/v1/openclaw/gateways")).rejects.toThrow(
+      "OpenClaw agent request requires Tauri"
+    );
   });
 
   it("invokes openclaw gateway commands when in Tauri", async () => {
@@ -54,5 +57,17 @@ describe("tauri openclaw helpers", () => {
     invokeMock.mockResolvedValueOnce({ ok: true });
     await expect(openclawGatewayProbe()).resolves.toEqual({ ok: true });
     expect(invokeMock).toHaveBeenLastCalledWith("openclaw_gateway_probe", {});
+
+    invokeMock.mockResolvedValueOnce({ gateways: [], active_gateway_id: null, secret_store_mode: "keyring" });
+    await expect(openclawAgentRequest("GET", "/api/v1/openclaw/gateways")).resolves.toEqual({
+      gateways: [],
+      active_gateway_id: null,
+      secret_store_mode: "keyring",
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith("openclaw_agent_request", {
+      method: "GET",
+      path: "/api/v1/openclaw/gateways",
+      body: null,
+    });
   });
 });

@@ -9,6 +9,8 @@ A lightweight system tray application that provides security policy enforcement 
 - **Desktop Notifications**: Alerts when actions are blocked
 - **Claude Code Integration**: Auto-installs hooks for policy checking
 - **MCP Server**: Exposes policy_check tool for Cursor/Cline
+- **OpenClaw Session Manager**: Agent-owned gateway transport with reconnect logic
+- **Local Authenticated API**: Loopback API used by desktop OpenClaw client
 - **Policy Management**: Quick access to policy reload and settings
 
 ## Prerequisites
@@ -71,6 +73,18 @@ The agent runs an MCP server on port 9877 that exposes the `policy_check` tool. 
 }
 ```
 
+### Local Agent API (Desktop + Hooks)
+
+The agent also runs a local authenticated API (default `127.0.0.1:9878`) for:
+
+- hook policy checks (`/api/v1/agent/policy-check`)
+- desktop OpenClaw operations (`/api/v1/openclaw/*`)
+- health/settings control (`/api/v1/agent/*`)
+
+Auth token file:
+
+- `~/.config/clawdstrike/agent-local-token`
+
 ## Configuration
 
 Settings are stored in `~/.config/clawdstrike/agent.json`:
@@ -80,10 +94,15 @@ Settings are stored in `~/.config/clawdstrike/agent.json`:
   "policy_path": "~/.config/clawdstrike/policy.yaml",
   "daemon_port": 9876,
   "mcp_port": 9877,
+  "agent_api_port": 9878,
   "enabled": true,
   "auto_start": true,
   "notifications_enabled": true,
-  "notification_severity": "block"
+  "notification_severity": "block",
+  "openclaw": {
+    "gateways": [],
+    "active_gateway_id": null
+  }
 }
 ```
 
@@ -125,6 +144,15 @@ The agent bundles a default policy at `resources/default-policy.yaml` that will 
      -d '{"action_type":"file_access","target":"/etc/passwd"}'
    ```
 3. **Verify Claude Code hook**: Test with Claude Code, should see policy checks in events
+4. **Run OpenClaw smoke harness**:
+   ```bash
+   scripts/openclaw-agent-smoke.sh --gateway-url ws://127.0.0.1:18789 --gateway-token dev-token
+   ```
+
+## Operations Runbook
+
+- Full runbook: `docs/src/guides/agent-openclaw-operations.md`
+- Desktop scenario reference: `apps/desktop/docs/openclaw-gateway-testing.md`
 
 ## Troubleshooting
 
@@ -141,6 +169,14 @@ The agent bundles a default policy at `resources/default-policy.yaml` that will 
 ### No notifications
 - Check macOS notification permissions for the app
 - Verify `notifications_enabled: true` in settings
+
+### Desktop cannot call local API
+- Confirm `~/.config/clawdstrike/agent-local-token` exists and is non-empty
+- Confirm API port in `~/.config/clawdstrike/agent.json` matches desktop expectation
+- Confirm health endpoint:
+  ```bash
+  curl -fsS "http://127.0.0.1:9878/api/v1/agent/health" | jq .
+  ```
 
 ## License
 

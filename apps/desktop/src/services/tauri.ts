@@ -333,6 +333,22 @@ export type OpenClawGatewayDiscoverResult = {
   }>;
 };
 
+export async function openclawAgentRequest<TPayload = unknown>(
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown
+): Promise<TPayload> {
+  if (!isTauri()) {
+    throw new Error("OpenClaw agent request requires Tauri");
+  }
+  const invoke = await getTauriInvoke();
+  return invoke("openclaw_agent_request", {
+    method,
+    path,
+    body: body ?? null,
+  });
+}
+
 export async function openclawGatewayDiscover(timeoutMs?: number): Promise<OpenClawGatewayDiscoverResult> {
   if (!isTauri()) {
     throw new Error("OpenClaw discovery requires Tauri");

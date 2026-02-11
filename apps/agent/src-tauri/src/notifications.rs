@@ -1,15 +1,14 @@
-//! Desktop notifications for Clawdstrike Agent
-//!
-//! Shows notifications when policy events occur.
+//! Desktop notifications for Clawdstrike Agent.
 
+use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
 use crate::settings::Settings;
 use std::sync::Arc;
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_notification::NotificationExt;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::RwLock;
 
-/// Severity levels for notifications
+/// Severity levels for notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
     Info = 0,
@@ -19,69 +18,52 @@ pub enum Severity {
 
 impl Severity {
     pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "block" | "high" | "critical" => Severity::Block,
-            "warn" | "warning" | "medium" => Severity::Warn,
-            _ => Severity::Info,
+        match s.to_ascii_lowercase().as_str() {
+            "block" | "high" | "critical" => Self::Block,
+            "warn" | "warning" | "medium" => Self::Warn,
+            _ => Self::Info,
         }
     }
 
     pub fn from_decision(decision: &str) -> Self {
-        match decision.to_lowercase().as_str() {
-            "block" => Severity::Block,
-            "warn" => Severity::Warn,
-            _ => Severity::Info,
+        match NormalizedDecision::from_str(decision) {
+            NormalizedDecision::Blocked => Self::Block,
+            NormalizedDecision::Warn => Self::Warn,
+            _ => Self::Info,
         }
     }
 }
 
-/// Notification manager
+/// Notification manager.
 pub struct NotificationManager<R: Runtime> {
     app: AppHandle<R>,
     settings: Arc<RwLock<Settings>>,
-    min_severity: Arc<RwLock<Severity>>,
 }
 
 impl<R: Runtime> NotificationManager<R> {
-    /// Create a new notification manager
+    /// Create a new notification manager.
     pub fn new(app: AppHandle<R>, settings: Arc<RwLock<Settings>>) -> Self {
-        Self {
-            app,
-            settings,
-            min_severity: Arc::new(RwLock::new(Severity::Block)),
-        }
+        Self { app, settings }
     }
 
-    /// Update settings
-    pub async fn update_settings(&self, settings: &Settings) {
-        let severity = Severity::from_str(&settings.notification_severity);
-        *self.min_severity.write().await = severity;
-    }
-
-    /// Show notification for a policy event
+    /// Show notification for a policy event.
     pub async fn notify(&self, event: &PolicyEvent) {
         let settings = self.settings.read().await;
 
-        // Check if notifications are enabled
         if !settings.notifications_enabled {
             return;
         }
 
-        // Check severity threshold
+        let min_severity = Severity::from_str(&settings.notification_severity);
         let event_severity = Severity::from_decision(&event.decision);
-        let min_severity = *self.min_severity.read().await;
-
         if event_severity < min_severity {
             return;
         }
 
         drop(settings);
 
-        // Build notification
         let (title, body) = format_notification(event);
-
-        // Send via Tauri notification plugin
-        if let Err(e) = self
+        if let Err(err) = self
             .app
             .notification()
             .builder()
@@ -89,23 +71,16 @@ impl<R: Runtime> NotificationManager<R> {
             .body(&body)
             .show()
         {
-            tracing::error!("Failed to show notification: {}", e);
-        }
-    }
-
-    /// Start listening for events and showing notifications
-    pub async fn start(&self, mut events_rx: broadcast::Receiver<PolicyEvent>) {
-        while let Ok(event) = events_rx.recv().await {
-            self.notify(&event).await;
+            tracing::error!(error = %err, "Failed to show notification");
         }
     }
 }
 
-/// Format a policy event into notification title and body
+/// Format a policy event into notification title and body.
 fn format_notification(event: &PolicyEvent) -> (String, String) {
-    let icon = match event.decision.to_lowercase().as_str() {
-        "block" => "🚫",
-        "warn" => "⚠️",
+    let icon = match NormalizedDecision::from_str(&event.decision) {
+        NormalizedDecision::Blocked => "🚫",
+        NormalizedDecision::Warn => "⚠️",
         _ => "ℹ️",
     };
 
@@ -116,15 +91,12 @@ fn format_notification(event: &PolicyEvent) -> (String, String) {
         event.action_type
     );
 
-    let target = event
-        .target
-        .as_deref()
-        .unwrap_or("unknown target");
+    let target = event.target.as_deref().unwrap_or("unknown target");
 
     let body = if let Some(ref message) = event.message {
         format!("{}\n{}", target, message)
     } else if let Some(ref guard) = event.guard {
-        format!("{}\nBlocked by: {}", target, guard)
+        format!("{}\nGuard: {}", target, guard)
     } else {
         target.to_string()
     };
@@ -132,14 +104,14 @@ fn format_notification(event: &PolicyEvent) -> (String, String) {
     (title, body)
 }
 
-/// Simple notification helper for one-off notifications
+/// Simple notification helper for one-off notifications.
 pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
-    if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        tracing::error!("Failed to show notification: {}", e);
+    if let Err(err) = app.notification().builder().title(title).body(body).show() {
+        tracing::error!(error = %err, "Failed to show notification");
     }
 }
 
-/// Show a notification that the agent has started
+/// Show a notification that the agent has started.
 pub fn show_startup_notification<R: Runtime>(app: &AppHandle<R>) {
     show_notification(
         app,
@@ -148,7 +120,7 @@ pub fn show_startup_notification<R: Runtime>(app: &AppHandle<R>) {
     );
 }
 
-/// Show a notification that enforcement was toggled
+/// Show a notification that enforcement was toggled.
 pub fn show_toggle_notification<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
     let (title, body) = if enabled {
         (
@@ -164,7 +136,7 @@ pub fn show_toggle_notification<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
     show_notification(app, title, body);
 }
 
-/// Show a notification for policy reload
+/// Show a notification for policy reload.
 pub fn show_policy_reload_notification<R: Runtime>(app: &AppHandle<R>, success: bool) {
     let (title, body) = if success {
         ("Policy Reloaded", "Security policy has been updated")
@@ -177,7 +149,7 @@ pub fn show_policy_reload_notification<R: Runtime>(app: &AppHandle<R>, success: 
     show_notification(app, title, body);
 }
 
-/// Show a notification for Claude Code hooks installation
+/// Show a notification for Claude Code hooks installation.
 pub fn show_hooks_installed_notification<R: Runtime>(app: &AppHandle<R>, success: bool) {
     let (title, body) = if success {
         (
@@ -196,6 +168,7 @@ pub fn show_hooks_installed_notification<R: Runtime>(app: &AppHandle<R>, success
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::PolicyEvent;
 
     #[test]
     fn test_severity_from_str() {
@@ -218,7 +191,7 @@ mod tests {
             timestamp: "2024-01-01T00:00:00Z".to_string(),
             action_type: "file_access".to_string(),
             target: Some("/etc/passwd".to_string()),
-            decision: "block".to_string(),
+            decision: "blocked".to_string(),
             guard: Some("fs_blocklist".to_string()),
             severity: Some("high".to_string()),
             message: None,
@@ -226,7 +199,7 @@ mod tests {
         };
 
         let (title, body) = format_notification(&event);
-        assert!(title.contains("BLOCK"));
+        assert!(title.contains("BLOCKED"));
         assert!(title.contains("file_access"));
         assert!(body.contains("/etc/passwd"));
     }
