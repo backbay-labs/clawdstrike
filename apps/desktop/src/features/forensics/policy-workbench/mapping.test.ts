@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPolicyTestEvent } from "./mapping";
+import { buildPolicyTestEvent, getPolicyTestTargetPlaceholder } from "./mapping";
 
 describe("buildPolicyTestEvent", () => {
   it("maps file_read requests", () => {
@@ -108,5 +108,13 @@ describe("buildPolicyTestEvent", () => {
         extra: "[1,2,3]",
       })
     ).toThrow("extra must be a JSON object");
+  });
+
+  it("provides shared target placeholders across policy test views", () => {
+    expect(getPolicyTestTargetPlaceholder("file_read")).toBe("/workspace/file.txt");
+    expect(getPolicyTestTargetPlaceholder("network_egress")).toBe(
+      "https://api.openai.com/v1/models"
+    );
+    expect(getPolicyTestTargetPlaceholder("tool_call")).toBe("mcp__fs__read_file");
   });
 });

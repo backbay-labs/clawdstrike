@@ -93,4 +93,34 @@ describe("policyWorkbenchReducer", () => {
     });
     expect(preserved.loadError).toBeUndefined();
   });
+
+  it("refreshes loadedVersion on save success paths", () => {
+    const loaded = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_success",
+      yaml: 'version: "1.2.0"\nname: demo',
+      hash: "h1",
+      version: "1.2.0",
+    });
+
+    const saved = policyWorkbenchReducer(loaded, {
+      type: "save_success",
+      yaml: 'version: "1.3.0"\nname: demo',
+      hash: "h2",
+      version: "1.3.0",
+    });
+    expect(saved.loadedVersion).toBe("1.3.0");
+
+    const edited = policyWorkbenchReducer(saved, {
+      type: "edit",
+      yaml: 'version: "1.4.0"\nname: demo',
+    });
+    const saving = policyWorkbenchReducer(edited, { type: "save_start" });
+    const preserved = policyWorkbenchReducer(saving, {
+      type: "save_success_preserve_draft",
+      loadedYaml: 'version: "1.4.0"\nname: demo',
+      hash: "h3",
+      version: "1.4.0",
+    });
+    expect(preserved.loadedVersion).toBe("1.4.0");
+  });
 });
