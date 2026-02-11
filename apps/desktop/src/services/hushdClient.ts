@@ -178,7 +178,7 @@ export class HushdClient {
   async eval(event: Record<string, unknown>): Promise<PolicyEvalResponse> {
     const response = await this.fetch<PolicyEvalResponse | ApiResponse<PolicyEvalResponse>>("/api/v1/eval", {
       method: "POST",
-      body: JSON.stringify(event),
+      body: JSON.stringify({ event }),
     });
     return this.unwrapData(response);
   }
