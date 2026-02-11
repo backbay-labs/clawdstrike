@@ -380,12 +380,28 @@ pub async fn validate_policy(
     let base_path = state.config.policy_path.as_deref();
 
     match Policy::from_yaml_with_extends_resolver(&request.yaml, base_path, &resolver) {
-        Ok(policy) => Ok(Json(ValidatePolicyResponse {
-            valid: true,
-            errors: Vec::new(),
-            warnings: Vec::new(),
-            normalized_version: Some(policy.version),
-        })),
+        Ok(policy) => {
+            let normalized_version = policy.version.clone();
+            if let Err(err) = HushEngine::builder(policy).build() {
+                return Ok(Json(ValidatePolicyResponse {
+                    valid: false,
+                    errors: vec![ValidationIssue {
+                        path: "policy".to_string(),
+                        code: "policy_engine_invalid".to_string(),
+                        message: err.to_string(),
+                    }],
+                    warnings: Vec::new(),
+                    normalized_version: Some(normalized_version),
+                }));
+            }
+
+            Ok(Json(ValidatePolicyResponse {
+                valid: true,
+                errors: Vec::new(),
+                warnings: Vec::new(),
+                normalized_version: Some(normalized_version),
+            }))
+        }
         Err(err) => Ok(Json(ValidatePolicyResponse {
             valid: false,
             errors: validation_issues_from_policy_error(&err),
