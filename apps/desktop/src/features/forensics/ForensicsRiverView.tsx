@@ -9,6 +9,9 @@
 import * as React from "react";
 import { RiverView as River } from "@backbay/glia-three/three";
 import { useOpenClaw } from "@/context/OpenClawContext";
+import { useConnection } from "@/context/ConnectionContext";
+import { PolicyWorkbenchPanel } from "./policy-workbench/PolicyWorkbenchPanel";
+import { isPolicyWorkbenchEnabled } from "./policy-workbench/featureFlags";
 
 type Agent = { id: string; label: string; color?: string };
 type RiverAction = River.RiverAction;
@@ -278,6 +281,11 @@ function deriveActionsFromPreview(args: {
 
 export function ForensicsRiverView() {
   const oc = useOpenClaw();
+  const { status: daemonStatus, daemonUrl } = useConnection();
+  const policyWorkbenchEnabled = React.useMemo(
+    () => isPolicyWorkbenchEnabled(),
+    []
+  );
   const rt = oc.runtimeByGatewayId[oc.activeGatewayId];
 
   const [mode, setMode] = React.useState<"live" | "replay">("live");
@@ -479,71 +487,80 @@ export function ForensicsRiverView() {
   }, [getClock, mode, oc, oc.activeGatewayId, rt?.status, rt?.execApprovalQueue, selectedSessionKey, sessions, windowMs]);
 
   return (
-    <div className="relative h-full w-full" style={{ background: "#050510" }}>
-      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-[#0a0a0f] to-transparent pointer-events-none">
-        <div>
-          <h1 className="text-lg font-semibold text-white">Forensics River</h1>
-          <p className="text-sm text-white/50">
-            {activeDataset.actions.length} actions · {activeDataset.agents.length} agents · {activeDataset.signals.length} signals · {activeDataset.incidents.length} incidents
-          </p>
+    <div className="flex h-full w-full" style={{ background: "#050510" }}>
+      <div className="relative min-w-0 flex-1">
+        <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-[#0a0a0f] to-transparent pointer-events-none">
+          <div>
+            <h1 className="text-lg font-semibold text-white">Forensics River</h1>
+            <p className="text-sm text-white/50">
+              {activeDataset.actions.length} actions · {activeDataset.agents.length} agents · {activeDataset.signals.length} signals · {activeDataset.incidents.length} incidents
+            </p>
+          </div>
+
+          <div className="pointer-events-auto flex items-center gap-2">
+            <button
+              onClick={() => setMode("live")}
+              className={cls("LIVE", mode === "live")}
+            >
+              LIVE
+            </button>
+            <button
+              onClick={() => setMode("replay")}
+              className={cls("REPLAY", mode === "replay")}
+            >
+              REPLAY
+            </button>
+            <div className="ml-2 text-xs font-mono text-white/35">{statusLabel}</div>
+            <select
+              value={selectedSessionKey}
+              onChange={(e) => setSelectedSessionKey(e.target.value)}
+              className="ml-3 px-2 py-1 text-xs font-mono rounded border border-white/10 bg-black/30 text-white/70 outline-none"
+              title="Session"
+            >
+              <option value="__all__">ALL (top 3)</option>
+              {sessions.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={String(windowMs)}
+              onChange={(e) => setWindowMs(Number(e.target.value) || 120_000)}
+              className="px-2 py-1 text-xs font-mono rounded border border-white/10 bg-black/30 text-white/70 outline-none"
+              title="Live window"
+            >
+              <option value="60000">60s</option>
+              <option value="120000">2m</option>
+              <option value="300000">5m</option>
+            </select>
+          </div>
         </div>
 
-        <div className="pointer-events-auto flex items-center gap-2">
-          <button
-            onClick={() => setMode("live")}
-            className={cls("LIVE", mode === "live")}
-          >
-            LIVE
-          </button>
-          <button
-            onClick={() => setMode("replay")}
-            className={cls("REPLAY", mode === "replay")}
-          >
-            REPLAY
-          </button>
-          <div className="ml-2 text-xs font-mono text-white/35">{statusLabel}</div>
-          <select
-            value={selectedSessionKey}
-            onChange={(e) => setSelectedSessionKey(e.target.value)}
-            className="ml-3 px-2 py-1 text-xs font-mono rounded border border-white/10 bg-black/30 text-white/70 outline-none"
-            title="Session"
-          >
-            <option value="__all__">ALL (top 3)</option>
-            {sessions.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={String(windowMs)}
-            onChange={(e) => setWindowMs(Number(e.target.value) || 120_000)}
-            className="px-2 py-1 text-xs font-mono rounded border border-white/10 bg-black/30 text-white/70 outline-none"
-            title="Live window"
-          >
-            <option value="60000">60s</option>
-            <option value="120000">2m</option>
-            <option value="300000">5m</option>
-          </select>
-        </div>
+        <River.RiverView
+          actions={activeDataset.actions}
+          agents={activeDataset.agents}
+          policies={activeDataset.policies}
+          signals={activeDataset.signals}
+          incidents={activeDataset.incidents}
+          detectors={activeDataset.detectors}
+          causalLinks={activeDataset.causalLinks}
+          timeRange={activeDataset.timeRange}
+          autoPlay={mode === "live"}
+          showPolicyRails
+          showCausalThreads
+          showSignals
+          showDetectors
+          showIncidents={activeDataset.incidents.length > 0}
+        />
       </div>
 
-      <River.RiverView
-        actions={activeDataset.actions}
-        agents={activeDataset.agents}
-        policies={activeDataset.policies}
-        signals={activeDataset.signals}
-        incidents={activeDataset.incidents}
-        detectors={activeDataset.detectors}
-        causalLinks={activeDataset.causalLinks}
-        timeRange={activeDataset.timeRange}
-        autoPlay={mode === "live"}
-        showPolicyRails
-        showCausalThreads
-        showSignals
-        showDetectors
-        showIncidents={activeDataset.incidents.length > 0}
-      />
+      {policyWorkbenchEnabled && (
+        <PolicyWorkbenchPanel
+          daemonUrl={daemonUrl}
+          connected={daemonStatus === "connected"}
+        />
+      )}
     </div>
   );
 }

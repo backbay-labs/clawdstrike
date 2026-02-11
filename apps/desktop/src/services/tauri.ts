@@ -64,6 +64,46 @@ export interface PolicyCheckResult {
   suggestion?: string;
 }
 
+export interface TauriPolicySourceInfo {
+  kind: string;
+  path?: string;
+  path_exists?: boolean;
+}
+
+export interface TauriPolicySchemaInfo {
+  current: string;
+  supported: string[];
+}
+
+export interface PolicyLoadResult {
+  name: string;
+  version: string;
+  description: string;
+  policy_hash: string;
+  yaml: string;
+  source?: TauriPolicySourceInfo;
+  schema?: TauriPolicySchemaInfo;
+}
+
+export interface PolicyValidationIssue {
+  path: string;
+  code: string;
+  message: string;
+}
+
+export interface PolicyValidationResult {
+  valid: boolean;
+  errors: PolicyValidationIssue[];
+  warnings: PolicyValidationIssue[];
+  normalized_version?: string;
+}
+
+export interface PolicySaveResult {
+  success: boolean;
+  message: string;
+  policy_hash?: string;
+}
+
 export async function policyCheck(request: PolicyCheckRequest): Promise<PolicyCheckResult> {
   if (!isTauri()) {
     throw new Error("policyCheck requires Tauri");
@@ -71,6 +111,42 @@ export async function policyCheck(request: PolicyCheckRequest): Promise<PolicyCh
 
   const invoke = await getTauriInvoke();
   return invoke("policy_check", request as unknown as Record<string, unknown>);
+}
+
+export async function policyLoad(): Promise<PolicyLoadResult> {
+  if (!isTauri()) {
+    throw new Error("policyLoad requires Tauri");
+  }
+
+  const invoke = await getTauriInvoke();
+  return invoke("policy_load");
+}
+
+export async function policyValidate(yaml: string): Promise<PolicyValidationResult> {
+  if (!isTauri()) {
+    throw new Error("policyValidate requires Tauri");
+  }
+
+  const invoke = await getTauriInvoke();
+  return invoke("policy_validate", { yaml });
+}
+
+export async function policyEvalEvent(event: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!isTauri()) {
+    throw new Error("policyEvalEvent requires Tauri");
+  }
+
+  const invoke = await getTauriInvoke();
+  return invoke("policy_eval_event", { event });
+}
+
+export async function policySave(yaml: string): Promise<PolicySaveResult> {
+  if (!isTauri()) {
+    throw new Error("policySave requires Tauri");
+  }
+
+  const invoke = await getTauriInvoke();
+  return invoke("policy_save", { yaml });
 }
 
 // === Workflow Commands ===

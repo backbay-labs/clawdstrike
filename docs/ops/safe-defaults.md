@@ -51,6 +51,16 @@ Where supported, prefer deny-by-default for:
 - Filesystem path controls
 - Unknown/ambiguous IRM parsing cases
 
+### Desktop policy authoring safety valve
+
+Default:
+
+- Policy Workbench enabled (`VITE_POLICY_WORKBENCH` unset or `1`)
+
+Operational safeguard:
+
+- Keep the feature flag override available in desktop deployment profiles so UI-only regressions can be rolled back immediately without changing daemon policy enforcement.
+
 ## If You Do Only 3 Things
 
 1. Keep remote extends host allowlist explicit and minimal.
@@ -71,3 +81,4 @@ For development convenience, do not carry insecure flags to production profiles:
 - `THREAT_MODEL.md`
 - `NON_GOALS.md`
 - `docs/ops/operational-limits.md`
+- `docs/ops/policy-workbench-rollout.md`

@@ -13,6 +13,10 @@ import type { AppId } from "./plugins/types";
 import { dispatchCyberNexusCommand } from "@/features/cyber-nexus/events";
 import { SHELL_OPEN_COMMAND_PALETTE_EVENT } from "./events";
 import { DockProvider, DockSystem } from "./dock";
+import {
+  POLICY_WORKBENCH_DIRTY_EVENT,
+  type PolicyWorkbenchDirtyEventDetail,
+} from "@/features/forensics/policy-workbench/events";
 
 export function ShellLayout() {
   const navigate = useNavigate();
@@ -37,10 +41,22 @@ export function ShellLayout() {
   const { createSession, setActiveApp } = useSessionActions();
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [hasPolicyWorkbenchDirtyDraft, setHasPolicyWorkbenchDirtyDraft] = useState(false);
   useEffect(() => {
     const open = () => setIsCommandPaletteOpen(true);
     window.addEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
     return () => window.removeEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
+  }, []);
+
+  useEffect(() => {
+    const onDirtyEvent = (event: Event) => {
+      const custom = event as CustomEvent<PolicyWorkbenchDirtyEventDetail>;
+      setHasPolicyWorkbenchDirtyDraft(Boolean(custom.detail?.dirty));
+    };
+
+    window.addEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirtyEvent as EventListener);
+    return () =>
+      window.removeEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirtyEvent as EventListener);
   }, []);
 
   const showAmbientBackground = useMemo(() => {
@@ -201,10 +217,20 @@ export function ShellLayout() {
 
   const handleSelectApp = useCallback(
     (appId: AppId) => {
+      if (
+        activeAppId === "forensics-river" &&
+        appId !== "forensics-river" &&
+        hasPolicyWorkbenchDirtyDraft
+      ) {
+        const proceed = globalThis.confirm?.(
+          "You have unsaved policy changes. Leave Forensics River anyway?"
+        );
+        if (!proceed) return;
+      }
       setActiveApp(appId);
       navigate(`/${appId}`);
     },
-    [navigate, setActiveApp]
+    [activeAppId, hasPolicyWorkbenchDirtyDraft, navigate, setActiveApp]
   );
 
   const handleNewSession = useCallback(() => {

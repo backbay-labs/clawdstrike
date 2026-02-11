@@ -122,6 +122,71 @@ async fn test_get_policy() {
     assert!(policy["name"].is_string());
     assert!(policy["yaml"].is_string());
     assert!(policy["policy_hash"].is_string());
+    assert!(policy["source"]["kind"].is_string());
+    assert!(policy["schema"]["current"].is_string());
+    assert!(policy["schema"]["supported"].is_array());
+}
+
+#[tokio::test]
+async fn test_validate_policy_valid_yaml() {
+    let (client, url) = test_setup();
+    let resp = client
+        .post(format!("{}/api/v1/policy/validate", url))
+        .json(&serde_json::json!({
+            "yaml": r#"
+version: "1.2.0"
+name: "validate-ok"
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/**"
+"#,
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+
+    let payload: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(payload["valid"], true);
+    assert!(payload["errors"].as_array().unwrap().is_empty());
+    assert_eq!(payload["normalized_version"], "1.2.0");
+}
+
+#[tokio::test]
+async fn test_validate_policy_invalid_yaml() {
+    let (client, url) = test_setup();
+    let resp = client
+        .post(format!("{}/api/v1/policy/validate", url))
+        .json(&serde_json::json!({
+            "yaml": r#"
+version: "9.9.9"
+name: "validate-bad"
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/**"
+"#,
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+
+    let payload: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(payload["valid"], false);
+    let errors = payload["errors"].as_array().unwrap();
+    assert!(!errors.is_empty());
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["code"] == "policy_schema_unsupported"),
+        "expected schema version error"
+    );
 }
 
 #[tokio::test]
@@ -342,6 +407,110 @@ async fn test_eval_policy_event() {
     assert_eq!(json["decision"]["denied"], false);
     assert_eq!(json["decision"]["warn"], false);
     assert_eq!(json["report"]["overall"]["allowed"], true);
+}
+
+#[tokio::test]
+async fn test_eval_policy_event_regression_blocks_path_traversal_target() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-regression-path-traversal",
+                "eventType": "file_read",
+                "timestamp": "2026-02-11T00:00:21Z",
+                "sessionId": "sess-eval-regression-path-traversal",
+                "data": {
+                    "type": "file",
+                    "path": "/tmp/safe/../../etc/passwd",
+                    "operation": "read"
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["decision"]["allowed"], false);
+    assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["guard"], "forbidden_path");
+    assert_eq!(json["decision"]["severity"], "critical");
+    assert_eq!(json["report"]["overall"]["guard"], "forbidden_path");
+    assert_eq!(json["report"]["overall"]["allowed"], false);
+}
+
+#[tokio::test]
+async fn test_eval_policy_event_regression_blocks_userinfo_spoofed_egress_host() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-regression-userinfo-spoof",
+                "eventType": "network_egress",
+                "timestamp": "2026-02-11T00:00:22Z",
+                "sessionId": "sess-eval-regression-userinfo-spoof",
+                "data": {
+                    "type": "network",
+                    "host": "api.openai.com@evil.example",
+                    "port": 443,
+                    "url": "https://api.openai.com:443@evil.example/path"
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["decision"]["allowed"], false);
+    assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["guard"], "egress_allowlist");
+    assert_eq!(json["decision"]["severity"], "high");
+    assert_eq!(json["report"]["overall"]["guard"], "egress_allowlist");
+    assert_eq!(
+        json["report"]["overall"]["details"]["host"],
+        "api.openai.com@evil.example"
+    );
+}
+
+#[tokio::test]
+async fn test_eval_policy_event_regression_blocks_private_ip_egress() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-regression-private-ip",
+                "eventType": "network_egress",
+                "timestamp": "2026-02-11T00:00:23Z",
+                "sessionId": "sess-eval-regression-private-ip",
+                "data": {
+                    "type": "network",
+                    "host": "127.0.0.1",
+                    "port": 443,
+                    "url": "http://127.0.0.1:443/internal"
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["decision"]["allowed"], false);
+    assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["guard"], "egress_allowlist");
+    assert_eq!(json["report"]["overall"]["guard"], "egress_allowlist");
+    assert_eq!(json["report"]["overall"]["details"]["host"], "127.0.0.1");
+    assert_eq!(json["report"]["overall"]["details"]["is_default"], true);
 }
 
 #[tokio::test]

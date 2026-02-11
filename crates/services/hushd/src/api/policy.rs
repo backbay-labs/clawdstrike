@@ -3,6 +3,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
+use clawdstrike::error::{Error as PolicyError, PolicyValidationError};
 use clawdstrike::{HushEngine, Policy, PolicyBundle, SignedPolicyBundle};
 use hush_core::canonical::canonicalize;
 use hush_core::{sha256, Keypair};
@@ -21,6 +22,8 @@ pub struct PolicyResponse {
     pub description: String,
     pub policy_hash: String,
     pub yaml: String,
+    pub source: PolicySource,
+    pub schema: PolicySchemaInfo,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -33,6 +36,44 @@ pub struct UpdatePolicyRequest {
 pub struct UpdatePolicyResponse {
     pub success: bool,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PolicySource {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_exists: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PolicySchemaInfo {
+    pub current: String,
+    pub supported: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ValidatePolicyRequest {
+    pub yaml: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidationIssue {
+    pub path: String,
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidatePolicyResponse {
+    pub valid: bool,
+    pub errors: Vec<ValidationIssue>,
+    pub warnings: Vec<ValidationIssue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normalized_version: Option<String>,
 }
 
 fn actor_string(actor: Option<&AuthenticatedActor>) -> String {
@@ -42,6 +83,77 @@ fn actor_string(actor: Option<&AuthenticatedActor>) -> String {
             format!("user:{}:{}", principal.issuer, principal.id)
         }
         None => "system".to_string(),
+    }
+}
+
+fn policy_source_from_state(state: &AppState) -> PolicySource {
+    if let Some(path) = state.config.policy_path.as_ref() {
+        return PolicySource {
+            kind: "file".to_string(),
+            path: Some(path.display().to_string()),
+            path_exists: Some(path.exists()),
+        };
+    }
+
+    PolicySource {
+        kind: format!("ruleset:{}", state.config.ruleset),
+        path: None,
+        path_exists: None,
+    }
+}
+
+fn policy_schema_info() -> PolicySchemaInfo {
+    PolicySchemaInfo {
+        current: clawdstrike::policy::POLICY_SCHEMA_VERSION.to_string(),
+        supported: clawdstrike::policy::POLICY_SUPPORTED_SCHEMA_VERSIONS
+            .iter()
+            .map(|v| v.to_string())
+            .collect(),
+    }
+}
+
+fn validation_issues_from_policy_error(err: &PolicyError) -> Vec<ValidationIssue> {
+    match err {
+        PolicyError::PolicyValidation(PolicyValidationError { errors }) => errors
+            .iter()
+            .map(|e| ValidationIssue {
+                path: e.path.clone(),
+                code: "validation_error".to_string(),
+                message: e.message.clone(),
+            })
+            .collect(),
+        PolicyError::UnsupportedPolicyVersion { found, supported } => vec![ValidationIssue {
+            path: "version".to_string(),
+            code: "policy_schema_unsupported".to_string(),
+            message: format!("unsupported policy version: {found} (supported: {supported})"),
+        }],
+        PolicyError::InvalidPolicyVersion { version } => vec![ValidationIssue {
+            path: "version".to_string(),
+            code: "policy_schema_invalid".to_string(),
+            message: format!("invalid policy version: {version}"),
+        }],
+        PolicyError::YamlError(err) => vec![ValidationIssue {
+            path: "yaml".to_string(),
+            code: "policy_yaml_invalid".to_string(),
+            message: err.to_string(),
+        }],
+        PolicyError::ConfigError(message) => {
+            let code = if message.contains("file not found") || message.contains("No such file") {
+                "policy_path_missing"
+            } else {
+                "policy_config_invalid"
+            };
+            vec![ValidationIssue {
+                path: "policy".to_string(),
+                code: code.to_string(),
+                message: message.clone(),
+            }]
+        }
+        other => vec![ValidationIssue {
+            path: "policy".to_string(),
+            code: "policy_validation_failed".to_string(),
+            message: other.to_string(),
+        }],
     }
 }
 
@@ -200,6 +312,7 @@ pub async fn update_policy_bundle(
     Ok(Json(UpdatePolicyResponse {
         success: true,
         message: "Policy updated successfully".to_string(),
+        policy_hash: Some(signed.bundle.policy_hash.to_hex()),
     }))
 }
 
@@ -241,7 +354,45 @@ pub async fn get_policy(
         description,
         policy_hash,
         yaml,
+        source: policy_source_from_state(&state),
+        schema: policy_schema_info(),
     }))
+}
+
+/// POST /api/v1/policy/validate
+pub async fn validate_policy(
+    State(state): State<AppState>,
+    actor: Option<axum::extract::Extension<AuthenticatedActor>>,
+    Json(request): Json<ValidatePolicyRequest>,
+) -> Result<Json<ValidatePolicyResponse>, (StatusCode, String)> {
+    require_api_key_scope_or_user_permission(
+        actor.as_ref().map(|e| &e.0),
+        &state.rbac,
+        Scope::Admin,
+        ResourceType::Policy,
+        Action::Update,
+    )?;
+
+    let resolver = RemotePolicyResolver::new(RemoteExtendsResolverConfig::from_config(
+        &state.config.remote_extends,
+    ))
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let base_path = state.config.policy_path.as_deref();
+
+    match Policy::from_yaml_with_extends_resolver(&request.yaml, base_path, &resolver) {
+        Ok(policy) => Ok(Json(ValidatePolicyResponse {
+            valid: true,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            normalized_version: Some(policy.version),
+        })),
+        Err(err) => Ok(Json(ValidatePolicyResponse {
+            valid: false,
+            errors: validation_issues_from_policy_error(&err),
+            warnings: Vec::new(),
+            normalized_version: None,
+        })),
+    }
 }
 
 /// PUT /api/v1/policy
@@ -329,6 +480,7 @@ pub async fn update_policy(
     Ok(Json(UpdatePolicyResponse {
         success: true,
         message: "Policy updated successfully".to_string(),
+        policy_hash: Some(after_hash),
     }))
 }
 
@@ -381,5 +533,6 @@ pub async fn reload_policy(
     Ok(Json(UpdatePolicyResponse {
         success: true,
         message: "Policy reloaded from file".to_string(),
+        policy_hash: Some(after_hash),
     }))
 }

@@ -36,7 +36,10 @@ pub use check::{CheckRequest, CheckResponse};
 pub use health::HealthResponse;
 pub use me::MeResponse;
 pub use metrics as metrics_api;
-pub use policy::{PolicyResponse, UpdatePolicyRequest, UpdatePolicyResponse};
+pub use policy::{
+    PolicyResponse, UpdatePolicyRequest, UpdatePolicyResponse, ValidatePolicyRequest,
+    ValidatePolicyResponse, ValidationIssue,
+};
 pub use policy_scoping::{
     CreateAssignmentRequest, CreateScopedPolicyRequest, ListAssignmentsResponse,
     ListScopedPoliciesResponse, ResolvePolicyResponse, UpdateScopedPolicyRequest,
@@ -268,6 +271,7 @@ pub fn create_router(state: AppState) -> Router {
     // Admin routes - require auth + admin scope
     let admin_routes = Router::new()
         .route("/api/v1/policy", put(policy::update_policy))
+        .route("/api/v1/policy/validate", post(policy::validate_policy))
         .route("/api/v1/policy/bundle", put(policy::update_policy_bundle))
         .route("/api/v1/policy/reload", post(policy::reload_policy))
         .route("/api/v1/rbac/roles", post(rbac::create_role))

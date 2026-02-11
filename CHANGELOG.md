@@ -11,6 +11,12 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 ### Added
 
+#### Desktop Policy Workbench Rollout (Forensics River)
+
+- Forensics River now supports an integrated Policy Workbench with in-place policy editing, validation, save/revert flow, and canonical `PolicyEvent` test execution.
+- Desktop now supports policy bridge commands for `load policy`, `validate policy`, `evaluate test event`, and `save policy` against `hushd`.
+- Added desktop rollout controls for the Policy Workbench: `VITE_POLICY_WORKBENCH`/`VITE_ENABLE_POLICY_WORKBENCH` plus local override key `sdr:feature:policy-workbench`.
+
 #### Core Cryptographic Primitives (`hush-core`)
 
 - Ed25519 keypair generation and digital signatures via `ed25519-dalek`
@@ -143,5 +149,6 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - Clippy pedantic lints enabled
 - Release builds with LTO
 - Dependabot configured for automated security updates
+- Added hushd eval-surface regression coverage for path traversal targets, userinfo-spoofed egress host inputs, and private-IP egress attempts.
 
 [Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/main...HEAD

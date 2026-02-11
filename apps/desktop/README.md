@@ -17,7 +17,7 @@ SDR Desktop provides a visual interface for security engineers and developers to
 | **Policy Tester** | Simulate policy checks against the active policy |
 | **Swarm Map** | 3D visualization shell for agent topology (daemon agent/delegation APIs are not yet exposed) |
 | **OpenClaw Fleet** | OpenClaw Gateway control plane for nodes, presence, approvals, and device pairing |
-| **Forensics River** | Live/replay OpenClaw session telemetry (work-in-progress) |
+| **Forensics River** | Live/replay OpenClaw session telemetry with integrated Policy Workbench (editor + tester) |
 | **Marketplace** | Discover and install community policies |
 | **Workflows** | Workflow management UI (execution/verification remains backend-dependent) |
 | **Settings** | Daemon connection and preferences |
@@ -153,19 +153,38 @@ By default, SDR Desktop connects to `http://localhost:9876`. Configure this in S
 VITE_HUSHD_URL=http://localhost:9876
 ```
 
+Policy Workbench rollout flag (enabled by default):
+
+```bash
+# disable the integrated Forensics River policy editor/tester panel
+VITE_POLICY_WORKBENCH=0
+```
+
+Local dev/session override (persists in browser storage):
+
+```js
+localStorage.setItem("sdr:feature:policy-workbench", "0"); // force disable
+localStorage.setItem("sdr:feature:policy-workbench", "1"); // force enable
+localStorage.removeItem("sdr:feature:policy-workbench");   // fall back to env/default
+```
+
+Rollout/rollback guide: `../../docs/ops/policy-workbench-rollout.md`
+
 ## API Integration
 
 The desktop app communicates with the hushd daemon via REST API:
 
 - `GET /health` - Health check
 - `GET /api/v1/policy` - Fetch current policy
+- `POST /api/v1/policy/validate` - Validate draft policy YAML
+- `PUT /api/v1/policy` - Save/activate updated policy YAML
 - `POST /api/v1/check` - Check action against policy
+- `POST /api/v1/eval` - Evaluate canonical `PolicyEvent`
 - `GET /api/v1/audit` - Query audit log
 - `GET /api/v1/events` - SSE event stream
 
 Current daemon API does **not** expose:
 
-- `POST /api/v1/policy/validate`
 - `GET /api/v1/agents`
 - `GET /api/v1/delegations`
 

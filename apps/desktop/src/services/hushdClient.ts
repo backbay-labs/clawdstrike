@@ -7,7 +7,7 @@ import type {
   AuditStats,
   ActionType,
 } from "@/types/events";
-import type { PolicyBundle, ValidationResult } from "@/types/policies";
+import type { ValidationResult } from "@/types/policies";
 
 export interface CheckRequest {
   action_type: ActionType;
@@ -50,6 +50,27 @@ export interface GuardEvalResult {
   severity: string;
   message: string;
   details?: Record<string, unknown>;
+}
+
+export interface PolicySourceInfo {
+  kind: string;
+  path?: string;
+  path_exists?: boolean;
+}
+
+export interface PolicySchemaInfo {
+  current: string;
+  supported: string[];
+}
+
+export interface DaemonPolicyResponse {
+  name: string;
+  version: string;
+  description: string;
+  policy_hash: string;
+  yaml: string;
+  source?: PolicySourceInfo;
+  schema?: PolicySchemaInfo;
 }
 
 export interface ApiResponse<T> {
@@ -117,24 +138,27 @@ export class HushdClient {
 
   // === Policy ===
 
-  async getPolicy(): Promise<PolicyBundle> {
-    const response = await this.fetch<PolicyBundle | ApiResponse<PolicyBundle>>("/api/v1/policy");
+  async getPolicy(): Promise<DaemonPolicyResponse> {
+    const response = await this.fetch<DaemonPolicyResponse | ApiResponse<DaemonPolicyResponse>>("/api/v1/policy");
     return this.unwrapData(response);
   }
 
   async validatePolicy(yaml: string): Promise<ValidationResult> {
-    void yaml;
-    return {
-      valid: false,
-      errors: [
-        {
-          path: "policy",
-          code: "unsupported_endpoint",
-          message: "Daemon does not expose /api/v1/policy/validate",
-        },
-      ],
-      warnings: [],
-    };
+    const response = await this.fetch<ValidationResult | ApiResponse<ValidationResult>>("/api/v1/policy/validate", {
+      method: "POST",
+      body: JSON.stringify({ yaml }),
+    });
+    return this.unwrapData(response);
+  }
+
+  async updatePolicy(yaml: string): Promise<{ success: boolean; message: string; policy_hash?: string }> {
+    const response = await this.fetch<
+      { success: boolean; message: string; policy_hash?: string } | ApiResponse<{ success: boolean; message: string; policy_hash?: string }>
+    >("/api/v1/policy", {
+      method: "PUT",
+      body: JSON.stringify({ yaml }),
+    });
+    return this.unwrapData(response);
   }
 
   async reloadPolicy(): Promise<void> {

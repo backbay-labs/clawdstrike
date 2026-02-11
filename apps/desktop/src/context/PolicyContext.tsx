@@ -3,6 +3,7 @@
  */
 import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from "react";
 import type { Policy, PolicyBundle, ValidationResult } from "@/types/policies";
+import { HushdClient } from "@/services/hushdClient";
 import { useConnection } from "./ConnectionContext";
 
 interface PolicyState {
@@ -11,14 +12,6 @@ interface PolicyState {
   isLoading: boolean;
   error?: string;
   lastFetched?: number;
-}
-
-interface DaemonPolicyResponse {
-  name: string;
-  version: string;
-  description?: string;
-  policy_hash: string;
-  yaml?: string;
 }
 
 interface PolicyContextValue extends PolicyState {
@@ -41,11 +34,8 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
 
     setState((s) => ({ ...s, isLoading: true, error: undefined }));
     try {
-      const response = await fetch(`${daemonUrl}/api/v1/policy`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch policy: ${response.status}`);
-      }
-      const data = (await response.json()) as DaemonPolicyResponse;
+      const client = new HushdClient(daemonUrl);
+      const data = await client.getPolicy();
       const normalizedPolicy: Policy = {
         version: data.version,
         name: data.name,
@@ -70,29 +60,15 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
 
   const validatePolicy = useCallback(
     async (yaml: string): Promise<ValidationResult> => {
-      void yaml;
-      return {
-        valid: false,
-        errors: [
-          {
-            path: "policy",
-            code: "unsupported_endpoint",
-            message: "Daemon does not expose /api/v1/policy/validate",
-          },
-        ],
-        warnings: [],
-      };
+      const client = new HushdClient(daemonUrl);
+      return client.validatePolicy(yaml);
     },
-    []
+    [daemonUrl]
   );
 
   const reloadPolicy = useCallback(async () => {
-    const response = await fetch(`${daemonUrl}/api/v1/policy/reload`, {
-      method: "POST",
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to reload policy: ${response.status}`);
-    }
+    const client = new HushdClient(daemonUrl);
+    await client.reloadPolicy();
     await fetchPolicy();
   }, [daemonUrl, fetchPolicy]);
 

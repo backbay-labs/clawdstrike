@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -651,12 +651,12 @@ dependencies = [
  "hex",
  "hush-core",
  "hush-proxy",
+ "hush-spine",
  "regex",
  "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
- "spine",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.11+spec-1.1.0",
@@ -984,7 +984,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -2058,7 +2058,7 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
 name = "hush-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -2077,11 +2077,26 @@ dependencies = [
 
 [[package]]
 name = "hush-proxy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "globset",
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "hush-spine"
+version = "0.1.1"
+dependencies = [
+ "async-nats",
+ "chrono",
+ "hush-core",
+ "pem",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "x509-parser 0.16.0",
 ]
 
 [[package]]
@@ -4768,11 +4783,11 @@ dependencies = [
  "dirs",
  "futures",
  "hush-core",
+ "hush-spine",
  "libp2p",
  "reqwest",
  "serde",
  "serde_json",
- "spine",
  "tauri",
  "tauri-build",
  "tauri-plugin-shell",
@@ -5230,21 +5245,6 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
-]
-
-[[package]]
-name = "spine"
-version = "0.1.0"
-dependencies = [
- "async-nats",
- "chrono",
- "hush-core",
- "pem",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "x509-parser 0.16.0",
 ]
 
 [[package]]
@@ -5711,9 +5711,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.24.0"
+version = "3.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "655da9c7eb6305c55742045d5a8d2037996d61d8de95806335c7c86ce0f82e9c"
+checksum = "0136791f7c95b1f6dd99f9cc786b91bb81c3800b639b3478e561ddb7be95e5f1"
 dependencies = [
  "fastrand",
  "getrandom 0.3.4",
