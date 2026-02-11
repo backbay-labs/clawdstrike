@@ -44,10 +44,6 @@ type AgentAuthInfo = {
   token: string;
 };
 
-type AgentSettingsResponse = {
-  openclaw_active_gateway_id?: string | null;
-};
-
 type ClientMode =
   | { kind: "tauri" }
   | { kind: "http"; auth: AgentAuthInfo };
@@ -249,10 +245,10 @@ export class AgentOpenClawClient {
   }
 
   async updateActiveGateway(activeGatewayId: string | null): Promise<void> {
-    await this.request<AgentSettingsResponse>("/api/v1/agent/settings", {
+    await this.request("/api/v1/openclaw/active-gateway", {
       method: "PUT",
       bodyJson: {
-        openclaw_active_gateway_id: activeGatewayId,
+        active_gateway_id: activeGatewayId,
       },
     });
   }

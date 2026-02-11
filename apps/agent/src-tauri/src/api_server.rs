@@ -12,7 +12,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
-use axum::routing::{get, patch, post};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -83,6 +83,7 @@ impl AgentApiServer {
                 "/api/v1/openclaw/gateways/:id/disconnect",
                 post(disconnect_gateway),
             )
+            .route("/api/v1/openclaw/active-gateway", put(set_active_gateway))
             .route("/api/v1/openclaw/discover", post(discover_gateways))
             .route("/api/v1/openclaw/probe", post(probe_gateway))
             .route("/api/v1/openclaw/request", post(gateway_request))
@@ -148,6 +149,11 @@ struct GatewayPatchInput {
     gateway_url: Option<String>,
     token: Option<String>,
     device_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ActiveGatewayUpdateInput {
+    active_gateway_id: Option<String>,
 }
 
 async fn agent_health(
@@ -324,6 +330,23 @@ async fn disconnect_gateway(
         .await
         .map_err(internal_error)?;
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+async fn set_active_gateway(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<ActiveGatewayUpdateInput>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    state
+        .openclaw
+        .set_active_gateway(input.active_gateway_id.clone())
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "active_gateway_id": input.active_gateway_id,
+    })))
 }
 
 async fn discover_gateways(

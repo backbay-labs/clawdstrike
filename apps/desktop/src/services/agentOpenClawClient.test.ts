@@ -95,6 +95,22 @@ describe("AgentOpenClawClient", () => {
     );
   });
 
+  it("updates active gateway through scoped OpenClaw endpoint", async () => {
+    openclawAgentRequestMock.mockResolvedValue({ ok: true, active_gateway_id: "gw-2" });
+
+    const { AgentOpenClawClient } = await import("./agentOpenClawClient");
+    const client = await AgentOpenClawClient.create();
+    await client.updateActiveGateway("gw-2");
+
+    expect(openclawAgentRequestMock).toHaveBeenCalledWith(
+      "PUT",
+      "/api/v1/openclaw/active-gateway",
+      {
+        active_gateway_id: "gw-2",
+      }
+    );
+  });
+
   it("polls gateway runtime snapshots and emits status events on change", async () => {
     vi.useFakeTimers();
     openclawAgentRequestMock

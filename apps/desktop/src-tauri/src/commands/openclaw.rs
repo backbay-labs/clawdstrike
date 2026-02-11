@@ -48,9 +48,9 @@ fn agent_base_url() -> String {
 }
 
 fn is_allowed_agent_path(path: &str) -> bool {
-    path == "/api/v1/agent/settings"
-        || path == "/api/v1/openclaw/gateways"
+    path == "/api/v1/openclaw/gateways"
         || path.starts_with("/api/v1/openclaw/gateways/")
+        || path == "/api/v1/openclaw/active-gateway"
         || path == "/api/v1/openclaw/discover"
         || path == "/api/v1/openclaw/probe"
         || path == "/api/v1/openclaw/request"
@@ -302,7 +302,8 @@ mod tests {
             "/api/v1/openclaw/gateways/demo/connect"
         ));
         assert!(is_allowed_agent_path("/api/v1/openclaw/request"));
-        assert!(is_allowed_agent_path("/api/v1/agent/settings"));
+        assert!(is_allowed_agent_path("/api/v1/openclaw/active-gateway"));
+        assert!(!is_allowed_agent_path("/api/v1/agent/settings"));
         assert!(!is_allowed_agent_path("/api/v1/agent/health"));
         assert!(!is_allowed_agent_path("/api/v1/daemon/restart"));
     }

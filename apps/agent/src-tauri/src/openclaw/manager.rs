@@ -236,10 +236,10 @@ impl OpenClawManager {
 
         let mut existing = self.secrets.get(&gateway_id).await;
         if let Some(token) = input.token {
-            existing.token = Some(token);
+            existing.token = normalize_secret_field(token);
         }
         if let Some(device_token) = input.device_token {
-            existing.device_token = Some(device_token);
+            existing.device_token = normalize_secret_field(device_token);
         }
         self.secrets.set(&gateway_id, existing).await?;
 
@@ -433,7 +433,7 @@ impl OpenClawManager {
         let stable_reset = Duration::from_secs(90);
 
         loop {
-            if reconnect_attempt > max_attempts {
+            if reconnect_attempt >= max_attempts {
                 self.set_runtime_status(
                     &gateway_id,
                     GatewayConnectionStatus::Error,
@@ -846,6 +846,14 @@ fn next_reconnect_attempt(current_attempt: u32, was_stable: bool) -> u32 {
     }
 }
 
+fn normalize_secret_field(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 fn extract_json_payload(output: &str) -> Result<Value> {
     let mut saw_candidate = false;
     let mut best: Option<(Value, usize)> = None;
@@ -971,6 +979,16 @@ mod tests {
     fn reconnect_attempt_resets_after_stable_session() {
         assert_eq!(next_reconnect_attempt(7, true), 1);
         assert_eq!(next_reconnect_attempt(7, false), 8);
+    }
+
+    #[test]
+    fn empty_secret_fields_are_cleared() {
+        assert_eq!(normalize_secret_field(String::new()), None);
+        assert_eq!(normalize_secret_field("   ".to_string()), None);
+        assert_eq!(
+            normalize_secret_field("token-value".to_string()),
+            Some("token-value".to_string())
+        );
     }
 
     #[tokio::test]

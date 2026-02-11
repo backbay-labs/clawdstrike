@@ -203,23 +203,8 @@ impl DaemonManager {
     }
 
     async fn terminate_child(&self, reason: &str) {
-        let mut guard = self.child.write().await;
-        let mut maybe_child = guard.take();
-        drop(guard);
-        if let Some(ref mut child) = maybe_child {
-            tracing::info!(reason, "Terminating hushd process");
-
-            #[cfg(unix)]
-            if let Some(pid) = child.id() {
-                // Best-effort graceful stop before force kill.
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGTERM);
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(400)).await;
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+        if terminate_child_slot(&self.child).await {
+            tracing::info!(reason, "Terminated hushd process");
         }
     }
 
@@ -369,22 +354,25 @@ async fn spawn_child_into_slot(
     Ok(())
 }
 
-async fn terminate_child_slot(child_slot: &Arc<RwLock<Option<Child>>>) {
+async fn terminate_child_slot(child_slot: &Arc<RwLock<Option<Child>>>) -> bool {
     let mut guard = child_slot.write().await;
     let mut maybe_child = guard.take();
     drop(guard);
-    if let Some(ref mut child) = maybe_child {
-        #[cfg(unix)]
-        if let Some(pid) = child.id() {
-            // Best-effort graceful shutdown before force kill.
-            unsafe {
-                libc::kill(pid as i32, libc::SIGTERM);
-            }
+    let Some(ref mut child) = maybe_child else {
+        return false;
+    };
+
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        // Best-effort graceful shutdown before force kill.
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
         }
-        tokio::time::sleep(Duration::from_millis(400)).await;
-        let _ = child.kill().await;
-        let _ = child.wait().await;
     }
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    true
 }
 
 async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {

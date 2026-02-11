@@ -255,8 +255,8 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
 
       if (typeof patch.label === "string") nextPatch.label = patch.label;
       if (typeof patch.gatewayUrl === "string") nextPatch.gatewayUrl = patch.gatewayUrl;
-      if (typeof patch.token === "string" && patch.token.trim()) nextPatch.token = patch.token;
-      if (typeof patch.deviceToken === "string" && patch.deviceToken.trim()) {
+      if (typeof patch.token === "string") nextPatch.token = patch.token;
+      if (typeof patch.deviceToken === "string") {
         nextPatch.deviceToken = patch.deviceToken;
       }
 
