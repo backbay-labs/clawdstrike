@@ -243,9 +243,9 @@ impl DaemonManager {
             let stable_window = Duration::from_secs(90);
             let mut consecutive_health_failures = 0u32;
             let mut restart_streak = 0u32;
-            let mut running_since = Instant::now();
+            let mut last_ready_at = Some(Instant::now());
 
-            loop {
+            'monitor: loop {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
                         tracing::debug!("Health monitor received shutdown signal");
@@ -266,26 +266,43 @@ impl DaemonManager {
                                 *value
                             };
 
-                            if running_since.elapsed() >= stable_window {
+                            if last_ready_at.is_some_and(|ready_at| ready_at.elapsed() >= stable_window) {
                                 restart_streak = 0;
                             }
+                            last_ready_at = None;
                             restart_streak = restart_streak.saturating_add(1);
 
                             set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
 
                             let backoff = compute_backoff(restart_streak, next_restart_count);
                             tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
-                            tokio::time::sleep(backoff).await;
+                            if sleep_or_shutdown(&mut shutdown_rx, backoff).await {
+                                tracing::debug!("Shutdown requested while waiting to restart hushd");
+                                monitor_started.store(false, Ordering::SeqCst);
+                                break 'monitor;
+                            }
 
                             match spawn_child_into_slot(&config, &child).await {
                                 Ok(()) => {
-                                    match wait_for_ready_with_client(&config, &http_client).await {
-                                        Ok(()) => {
+                                    match wait_for_ready_with_client_or_shutdown(
+                                        &config,
+                                        &http_client,
+                                        &mut shutdown_rx,
+                                    )
+                                    .await
+                                    {
+                                        Ok(ReadyWaitOutcome::Ready) => {
                                             consecutive_health_failures = 0;
                                             restart_streak = 0;
-                                            running_since = Instant::now();
+                                            last_ready_at = Some(Instant::now());
                                             set_shared_state(&state, &state_tx, DaemonState::Running).await;
                                             tracing::info!("hushd restart complete");
+                                        }
+                                        Ok(ReadyWaitOutcome::Shutdown) => {
+                                            tracing::debug!("Shutdown requested during hushd readiness wait");
+                                            terminate_child_slot(&child).await;
+                                            monitor_started.store(false, Ordering::SeqCst);
+                                            break 'monitor;
                                         }
                                         Err(err) => {
                                             tracing::error!(error = %err, "hushd restart failed readiness check");
@@ -306,6 +323,9 @@ impl DaemonManager {
                         match health_check_with_client(&config, &http_client).await {
                             Ok(health) if health.status == "healthy" => {
                                 consecutive_health_failures = 0;
+                                if last_ready_at.is_none() {
+                                    last_ready_at = Some(Instant::now());
+                                }
                                 let current = state.read().await.clone();
                                 if current != DaemonState::Running {
                                     set_shared_state(&state, &state_tx, DaemonState::Running).await;
@@ -436,6 +456,66 @@ async fn wait_for_ready_with_client(
             }
         }
         tokio::time::sleep(delay).await;
+    }
+
+    anyhow::bail!(
+        "Daemon failed to become ready after {} attempts",
+        max_attempts
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadyWaitOutcome {
+    Ready,
+    Shutdown,
+}
+
+async fn sleep_or_shutdown(shutdown_rx: &mut broadcast::Receiver<()>, duration: Duration) -> bool {
+    tokio::select! {
+        recv = shutdown_rx.recv() => {
+            match recv {
+                Ok(_) | Err(broadcast::error::RecvError::Closed) | Err(broadcast::error::RecvError::Lagged(_)) => true,
+            }
+        }
+        _ = tokio::time::sleep(duration) => false,
+    }
+}
+
+async fn wait_for_ready_with_client_or_shutdown(
+    config: &DaemonConfig,
+    http_client: &reqwest::Client,
+    shutdown_rx: &mut broadcast::Receiver<()>,
+) -> Result<ReadyWaitOutcome> {
+    let max_attempts = 40;
+    let delay = Duration::from_millis(150);
+    for attempt in 0..max_attempts {
+        let health_result = tokio::select! {
+            recv = shutdown_rx.recv() => {
+                match recv {
+                    Ok(_) | Err(broadcast::error::RecvError::Closed) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                        return Ok(ReadyWaitOutcome::Shutdown);
+                    }
+                }
+            }
+            result = health_check_with_client(config, http_client) => result,
+        };
+
+        match health_result {
+            Ok(health) if health.status == "healthy" => {
+                tracing::debug!("Daemon ready after {} attempts", attempt + 1);
+                return Ok(ReadyWaitOutcome::Ready);
+            }
+            Ok(_) => {
+                tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
+            }
+            Err(err) => {
+                tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
+            }
+        }
+
+        if sleep_or_shutdown(shutdown_rx, delay).await {
+            return Ok(ReadyWaitOutcome::Shutdown);
+        }
     }
 
     anyhow::bail!(
