@@ -190,6 +190,46 @@ guards:
 }
 
 #[tokio::test]
+async fn test_validate_policy_rejects_undeployable_custom_guard_policy() {
+    let (client, url) = test_setup();
+    let resp = client
+        .post(format!("{}/api/v1/policy/validate", url))
+        .json(&serde_json::json!({
+            "yaml": r#"
+version: "1.2.0"
+name: "validate-custom-guard"
+custom_guards:
+  - id: "acme.always_warn"
+    enabled: true
+    config: {}
+"#,
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+
+    let payload: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(payload["valid"], false);
+    assert_eq!(payload["normalized_version"], "1.2.0");
+    let errors = payload["errors"].as_array().unwrap();
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["code"] == "policy_engine_invalid"),
+        "expected deployability/engine-build validation error"
+    );
+    assert!(
+        errors.iter().any(|err| err["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("CustomGuardRegistry")),
+        "expected fail-closed custom guard registry message"
+    );
+}
+
+#[tokio::test]
 async fn test_update_policy_returns_canonical_policy_hash() {
     let (client, url) = test_setup();
 
