@@ -2,8 +2,7 @@
  * ShellLayout - Main application layout with navigation
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Outlet, useBlocker, useLocation, useNavigate } from "react-router-dom";
-import type { BlockerFunction } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { NavRail } from "./components/NavRail";
 import { CommandPalette } from "./components/CommandPalette";
 import { SOCBackground } from "./SOCBackground";
@@ -11,7 +10,6 @@ import { getPlugins } from "./plugins";
 import { useActiveApp, useSessionActions } from "./sessions";
 import { useShellShortcuts } from "./keyboard";
 import type { AppId } from "./plugins/types";
-import { shouldBlockDirtyPolicyDraftExit } from "./policyDraftGuard";
 import { dispatchCyberNexusCommand } from "@/features/cyber-nexus/events";
 import { SHELL_OPEN_COMMAND_PALETTE_EVENT } from "./events";
 import { DockProvider, DockSystem } from "./dock";
@@ -44,7 +42,6 @@ export function ShellLayout() {
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [hasPolicyWorkbenchDirtyDraft, setHasPolicyWorkbenchDirtyDraft] = useState(false);
-  const unsavedPolicyWarning = "You have unsaved policy changes. Leave Forensics River anyway?";
   useEffect(() => {
     const open = () => setIsCommandPaletteOpen(true);
     window.addEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
@@ -57,35 +54,10 @@ export function ShellLayout() {
       setHasPolicyWorkbenchDirtyDraft(Boolean(custom.detail?.dirty));
     };
 
-    window.addEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirtyEvent as (event: Event) => void);
+    window.addEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirtyEvent as EventListener);
     return () =>
-      window.removeEventListener(
-        POLICY_WORKBENCH_DIRTY_EVENT,
-        onDirtyEvent as (event: Event) => void
-      );
+      window.removeEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirtyEvent as EventListener);
   }, []);
-
-  const shouldBlockForDirtyPolicyExit = useCallback<BlockerFunction>(
-    ({ currentLocation, nextLocation }) => {
-      return shouldBlockDirtyPolicyDraftExit({
-        hasDirtyDraft: hasPolicyWorkbenchDirtyDraft,
-        currentPathname: currentLocation.pathname,
-        nextPathname: nextLocation.pathname,
-      });
-    },
-    [hasPolicyWorkbenchDirtyDraft]
-  );
-  const blocker = useBlocker(shouldBlockForDirtyPolicyExit);
-
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    const proceed = globalThis.confirm?.(unsavedPolicyWarning);
-    if (proceed) {
-      blocker.proceed();
-      return;
-    }
-    blocker.reset();
-  }, [blocker, unsavedPolicyWarning]);
 
   const showAmbientBackground = useMemo(() => {
     const appId = location.pathname.split("/").filter(Boolean)[0] ?? "";
@@ -243,15 +215,22 @@ export function ShellLayout() {
     ];
   }, [activeAppId]);
 
-  useEffect(() => {
-    setActiveApp(activeAppId);
-  }, [activeAppId, setActiveApp]);
-
   const handleSelectApp = useCallback(
     (appId: AppId) => {
+      if (
+        activeAppId === "forensics-river" &&
+        appId !== "forensics-river" &&
+        hasPolicyWorkbenchDirtyDraft
+      ) {
+        const proceed = globalThis.confirm?.(
+          "You have unsaved policy changes. Leave Forensics River anyway?"
+        );
+        if (!proceed) return;
+      }
+      setActiveApp(appId);
       navigate(`/${appId}`);
     },
-    [navigate]
+    [activeAppId, hasPolicyWorkbenchDirtyDraft, navigate, setActiveApp]
   );
 
   const handleNewSession = useCallback(() => {

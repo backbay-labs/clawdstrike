@@ -203,7 +203,7 @@ pub async fn policy_eval_event(
     let response = state
         .http_client
         .post(format!("{}/api/v1/eval", base_url))
-        .json(&serde_json::json!({ "event": event }))
+        .json(&event)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
