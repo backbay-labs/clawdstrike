@@ -15,7 +15,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use futures::{Stream, StreamExt};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -138,7 +138,8 @@ struct AgentSettingsUpdate {
     auto_start: Option<bool>,
     notifications_enabled: Option<bool>,
     notification_severity: Option<String>,
-    openclaw_active_gateway_id: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_field")]
+    openclaw_active_gateway_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -205,8 +206,8 @@ async fn update_settings(
         if let Some(value) = input.notification_severity {
             settings.notification_severity = value;
         }
-        if input.openclaw_active_gateway_id.is_some() {
-            settings.openclaw.active_gateway_id = input.openclaw_active_gateway_id.clone();
+        if let Some(value) = input.openclaw_active_gateway_id {
+            settings.openclaw.active_gateway_id = value;
         }
 
         settings
@@ -445,6 +446,23 @@ fn internal_error(err: anyhow::Error) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
+fn deserialize_optional_string_field<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match value {
+        None => Ok(Some(None)),
+        Some(serde_json::Value::String(value)) => Ok(Some(Some(value))),
+        Some(other) => Err(serde::de::Error::custom(format!(
+            "expected string or null, got {}",
+            other
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -505,5 +523,34 @@ mod tests {
 
         let result = require_auth(&headers, &state);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn settings_update_distinguishes_absent_vs_null_active_gateway_id() {
+        let absent: AgentSettingsUpdate = match serde_json::from_str("{}") {
+            Ok(value) => value,
+            Err(err) => panic!("failed to parse absent payload: {}", err),
+        };
+        assert!(absent.openclaw_active_gateway_id.is_none());
+
+        let explicit_null: AgentSettingsUpdate =
+            match serde_json::from_str(r#"{"openclaw_active_gateway_id":null}"#) {
+                Ok(value) => value,
+                Err(err) => panic!("failed to parse null payload: {}", err),
+            };
+        assert!(matches!(
+            explicit_null.openclaw_active_gateway_id,
+            Some(None)
+        ));
+
+        let explicit_value: AgentSettingsUpdate =
+            match serde_json::from_str(r#"{"openclaw_active_gateway_id":"gw-1"}"#) {
+                Ok(value) => value,
+                Err(err) => panic!("failed to parse value payload: {}", err),
+            };
+        assert!(matches!(
+            explicit_value.openclaw_active_gateway_id,
+            Some(Some(value)) if value == "gw-1"
+        ));
     }
 }

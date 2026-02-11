@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex};
 
 /// A policy check event from hushd.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +81,6 @@ pub struct EventManager {
     daemon_url: String,
     api_key: Option<String>,
     events_tx: broadcast::Sender<PolicyEvent>,
-    recent_events: Arc<RwLock<Vec<PolicyEvent>>>,
     deduper: Arc<Mutex<EventDeduper>>,
 }
 
@@ -93,7 +92,6 @@ impl EventManager {
             daemon_url,
             api_key,
             events_tx,
-            recent_events: Arc::new(RwLock::new(Vec::new())),
             deduper: Arc::new(Mutex::new(EventDeduper::new(2_000))),
         }
     }
@@ -241,14 +239,6 @@ impl EventManager {
             let mut deduper = self.deduper.lock().await;
             if !deduper.insert_if_new(&event.id) {
                 return;
-            }
-        }
-
-        {
-            let mut recent = self.recent_events.write().await;
-            recent.insert(0, event.clone());
-            if recent.len() > 100 {
-                recent.truncate(100);
             }
         }
 

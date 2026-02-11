@@ -12,6 +12,7 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
@@ -135,6 +136,7 @@ enum SessionCommand {
 #[derive(Clone)]
 struct GatewayHandle {
     tx: mpsc::Sender<SessionCommand>,
+    session_id: u64,
 }
 
 struct PendingResponse {
@@ -150,6 +152,8 @@ pub struct OpenClawManager {
     runtime_by_id: Arc<RwLock<HashMap<String, GatewayRuntimeSnapshot>>>,
     events_tx: broadcast::Sender<OpenClawAgentEvent>,
 }
+
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 impl OpenClawManager {
     pub fn new(settings: Arc<RwLock<Settings>>) -> Self {
@@ -290,18 +294,19 @@ impl OpenClawManager {
         self.set_runtime_status(gateway_id, GatewayConnectionStatus::Connecting, None)
             .await;
 
+        let session_id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel(128);
         self.sessions
             .write()
             .await
-            .insert(gateway_id.to_string(), GatewayHandle { tx: tx.clone() });
+            .insert(gateway_id.to_string(), GatewayHandle { tx, session_id });
 
         let manager = self.clone();
         let gateway_id = gateway_id.to_string();
 
         tokio::spawn(async move {
             manager
-                .run_gateway_session(gateway_id, metadata, secrets, rx)
+                .run_gateway_session(gateway_id, session_id, metadata, secrets, rx)
                 .await;
         });
 
@@ -418,6 +423,7 @@ impl OpenClawManager {
     async fn run_gateway_session(
         &self,
         gateway_id: String,
+        session_id: u64,
         metadata: OpenClawGatewayMetadata,
         secrets: GatewaySecrets,
         mut rx: mpsc::Receiver<SessionCommand>,
@@ -443,6 +449,7 @@ impl OpenClawManager {
             let connect_result = self
                 .run_gateway_connection_once(&gateway_id, &metadata, &secrets, &mut rx)
                 .await;
+            let was_stable = self.connection_was_stable(&gateway_id, stable_reset).await;
 
             match connect_result {
                 Ok(ConnectionExit::ManualDisconnect) => {
@@ -455,7 +462,7 @@ impl OpenClawManager {
                     break;
                 }
                 Ok(ConnectionExit::RemoteClosed(reason)) => {
-                    reconnect_attempt += 1;
+                    reconnect_attempt = next_reconnect_attempt(reconnect_attempt, was_stable);
                     self.set_runtime_status(
                         &gateway_id,
                         GatewayConnectionStatus::Disconnected,
@@ -464,7 +471,7 @@ impl OpenClawManager {
                     .await;
                 }
                 Err(err) => {
-                    reconnect_attempt += 1;
+                    reconnect_attempt = next_reconnect_attempt(reconnect_attempt, was_stable);
                     self.set_runtime_status(
                         &gateway_id,
                         GatewayConnectionStatus::Error,
@@ -482,23 +489,10 @@ impl OpenClawManager {
             if rx.is_closed() {
                 break;
             }
-
-            // If we were stable for long enough, let future failures start with a small delay.
-            if let Some(last_connected) = self
-                .runtime_by_id
-                .read()
-                .await
-                .get(&gateway_id)
-                .and_then(|rt| rt.connected_at_ms)
-            {
-                let now = now_ms();
-                if now.saturating_sub(last_connected) >= stable_reset.as_millis() as u64 {
-                    reconnect_attempt = 0;
-                }
-            }
         }
 
-        self.sessions.write().await.remove(&gateway_id);
+        self.remove_session_if_current(&gateway_id, session_id)
+            .await;
     }
 
     async fn run_gateway_connection_once(
@@ -738,6 +732,27 @@ impl OpenClawManager {
         });
     }
 
+    async fn connection_was_stable(&self, gateway_id: &str, stable_reset: Duration) -> bool {
+        let connected_at = self
+            .runtime_by_id
+            .read()
+            .await
+            .get(gateway_id)
+            .and_then(|rt| rt.connected_at_ms);
+        was_connected_long_enough(connected_at, stable_reset, now_ms())
+    }
+
+    async fn remove_session_if_current(&self, gateway_id: &str, session_id: u64) {
+        let mut sessions = self.sessions.write().await;
+        let should_remove = sessions
+            .get(gateway_id)
+            .is_some_and(|handle| handle.session_id == session_id);
+
+        if should_remove {
+            sessions.remove(gateway_id);
+        }
+    }
+
     async fn apply_gateway_event(&self, gateway_id: &str, frame: GatewayEventFrame) {
         {
             let mut runtimes = self.runtime_by_id.write().await;
@@ -811,6 +826,24 @@ fn normalize_gateway_error(error: Option<GatewayResponseError>, fallback: &str) 
             }
         })
         .unwrap_or_else(|| fallback.to_string())
+}
+
+fn was_connected_long_enough(
+    connected_at_ms: Option<u64>,
+    stable_reset: Duration,
+    now_ms_value: u64,
+) -> bool {
+    connected_at_ms.is_some_and(|connected_at| {
+        now_ms_value.saturating_sub(connected_at) >= stable_reset.as_millis() as u64
+    })
+}
+
+fn next_reconnect_attempt(current_attempt: u32, was_stable: bool) -> u32 {
+    if was_stable {
+        1
+    } else {
+        current_attempt.saturating_add(1)
+    }
 }
 
 fn extract_json_payload(output: &str) -> Result<Value> {
@@ -912,6 +945,65 @@ mod tests {
     #[test]
     fn normalize_gateway_error_uses_fallback() {
         assert_eq!(normalize_gateway_error(None, "fallback"), "fallback");
+    }
+
+    #[test]
+    fn stable_connection_window_detection_works() {
+        let stable_reset = Duration::from_secs(90);
+        assert!(was_connected_long_enough(
+            Some(1000),
+            stable_reset,
+            1000 + 90_000
+        ));
+        assert!(!was_connected_long_enough(
+            Some(1000),
+            stable_reset,
+            1000 + 10_000
+        ));
+        assert!(!was_connected_long_enough(
+            None,
+            stable_reset,
+            1000 + 90_000
+        ));
+    }
+
+    #[test]
+    fn reconnect_attempt_resets_after_stable_session() {
+        assert_eq!(next_reconnect_attempt(7, true), 1);
+        assert_eq!(next_reconnect_attempt(7, false), 8);
+    }
+
+    #[tokio::test]
+    async fn stale_session_exit_does_not_remove_replacement_handle() {
+        let settings = Arc::new(RwLock::new(Settings::default()));
+        let manager = OpenClawManager::new(settings);
+
+        let (old_tx, _old_rx) = mpsc::channel(1);
+        let (new_tx, _new_rx) = mpsc::channel(1);
+
+        manager.sessions.write().await.insert(
+            "gw-1".to_string(),
+            GatewayHandle {
+                tx: old_tx,
+                session_id: 1,
+            },
+        );
+        manager.sessions.write().await.insert(
+            "gw-1".to_string(),
+            GatewayHandle {
+                tx: new_tx,
+                session_id: 2,
+            },
+        );
+
+        manager.remove_session_if_current("gw-1", 1).await;
+
+        let sessions = manager.sessions.read().await;
+        let handle = match sessions.get("gw-1") {
+            Some(value) => value,
+            None => panic!("replacement session should remain present"),
+        };
+        assert_eq!(handle.session_id, 2);
     }
 
     #[tokio::test]
