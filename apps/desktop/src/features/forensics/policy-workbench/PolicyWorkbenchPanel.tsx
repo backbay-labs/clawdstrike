@@ -20,6 +20,7 @@ import {
 } from "@/services/policyWorkbenchClient";
 import {
   buildPolicyTestEvent,
+  getPolicyTestTargetPlaceholder,
   POLICY_TEST_EVENT_TYPES,
   type PolicyTestEventType,
   type PolicyTestForm,
@@ -161,13 +162,18 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
     const saveYaml = state.draftYaml;
     dispatch({ type: "save_start" });
     try {
+      const saveValidationSeq = ++validationSeq.current;
+      dispatch({ type: "validate_start" });
       const validation = await client.validatePolicy(saveYaml);
-      dispatch({
-        type: "validate_success",
-        valid: validation.valid,
-        errors: validation.errors as ValidationIssue[],
-        warnings: validation.warnings as ValidationIssue[],
-      });
+      if (saveValidationSeq === validationSeq.current) {
+        dispatch({
+          type: "validate_success",
+          valid: validation.valid,
+          errors: validation.errors as ValidationIssue[],
+          warnings: validation.warnings as ValidationIssue[],
+        });
+      }
+      const normalizedVersion = validation.normalized_version ?? state.loadedVersion;
 
       if (!validation.valid) {
         dispatch({ type: "save_error", message: "Policy is invalid. Fix validation errors before saving." });
@@ -185,6 +191,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
           type: "save_success_preserve_draft",
           loadedYaml: saveYaml,
           hash: saved.policy_hash,
+          version: normalizedVersion,
         });
         return;
       }
@@ -193,12 +200,13 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
         type: "save_success",
         yaml: saveYaml,
         hash: saved.policy_hash,
+        version: normalizedVersion,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Policy save failed";
       dispatch({ type: "save_error", message });
     }
-  }, [client, state.draftYaml]);
+  }, [client, state.draftYaml, state.loadedVersion]);
 
   const runPolicyTest = React.useCallback(async () => {
     setIsRunningTest(true);
@@ -289,12 +297,12 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   }, [connected, dirty, readPolicy]);
 
   React.useEffect(() => {
-    if (!connected || !state.draftYaml) return;
+    if (!connected || !state.draftYaml || state.isSaving) return;
     const handle = window.setTimeout(() => {
       void validateYaml(state.draftYaml);
     }, 500);
     return () => window.clearTimeout(handle);
-  }, [connected, state.draftYaml, validateYaml]);
+  }, [connected, state.draftYaml, state.isSaving, validateYaml]);
 
   React.useEffect(() => {
     if (!dirty) return;
@@ -313,6 +321,17 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
       })
     );
   }, [dirty]);
+
+  React.useEffect(
+    () => () => {
+      window.dispatchEvent(
+        new CustomEvent<PolicyWorkbenchDirtyEventDetail>(POLICY_WORKBENCH_DIRTY_EVENT, {
+          detail: { dirty: false },
+        })
+      );
+    },
+    []
+  );
 
   return (
     <aside
@@ -418,6 +437,20 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
                 {state.validation.status === "valid" && (
                   <p className="text-emerald-300">Policy is valid.</p>
                 )}
+                {(state.validation.status === "valid" || state.validation.status === "invalid") &&
+                  state.validation.warnings.length > 0 && (
+                    <>
+                      <p className="mb-1 mt-2 text-amber-200">Validation warnings</p>
+                      {state.validation.warnings.map((warning, index) => (
+                        <p
+                          key={`${warning.code}-${warning.path}-${index}`}
+                          className="font-mono text-[11px] text-white/70"
+                        >
+                          {warning.path} [{warning.code}] {warning.message}
+                        </p>
+                      ))}
+                    </>
+                  )}
                 {state.validation.status === "error" && state.validation.message && (
                   <p className="text-red-300">{state.validation.message}</p>
                 )}
@@ -461,7 +494,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
                     data-testid="policy-test-target"
                     value={testForm.target}
                     onChange={(event) => setTestForm((prev) => ({ ...prev, target: event.target.value }))}
-                    placeholder={targetPlaceholder(testForm.eventType)}
+                    placeholder={getPolicyTestTargetPlaceholder(testForm.eventType)}
                     className="w-full font-mono text-xs"
                   />
                 </div>
@@ -642,26 +675,6 @@ function ValidationBadge({ status }: { status: "idle" | "running" | "valid" | "i
   if (status === "invalid") return <Badge variant="destructive">Invalid</Badge>;
   if (status === "error") return <Badge variant="destructive">Validation Error</Badge>;
   return <Badge variant="outline">Idle</Badge>;
-}
-
-function targetPlaceholder(eventType: PolicyTestEventType): string {
-  switch (eventType) {
-    case "file_read":
-    case "file_write":
-      return "/workspace/file.txt";
-    case "command_exec":
-      return "git status --short";
-    case "network_egress":
-      return "https://api.openai.com/v1/models";
-    case "tool_call":
-      return "mcp__fs__read_file";
-    case "patch_apply":
-      return "/workspace/src/main.ts";
-    case "secret_access":
-      return "OPENAI_API_KEY";
-    default:
-      return "target";
-  }
 }
 
 function ResultCard({

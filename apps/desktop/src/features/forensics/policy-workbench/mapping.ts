@@ -26,6 +26,20 @@ export const POLICY_TEST_EVENT_TYPES: PolicyTestEventType[] = [
   "secret_access",
 ];
 
+const POLICY_TEST_TARGET_PLACEHOLDERS: Record<PolicyTestEventType, string> = {
+  file_read: "/workspace/file.txt",
+  file_write: "/workspace/file.txt",
+  command_exec: "git status --short",
+  network_egress: "https://api.openai.com/v1/models",
+  tool_call: "mcp__fs__read_file",
+  patch_apply: "/workspace/src/main.ts",
+  secret_access: "OPENAI_API_KEY",
+};
+
+export function getPolicyTestTargetPlaceholder(eventType: PolicyTestEventType): string {
+  return POLICY_TEST_TARGET_PLACEHOLDERS[eventType] ?? "target";
+}
+
 function splitCommandline(commandline: string): { command: string; args: string[] } {
   const tokens = commandline
     .trim()

@@ -562,4 +562,149 @@ describe("PolicyWorkbenchPanel", () => {
     expect(loadPolicyMock).toHaveBeenCalledTimes(1);
     expect(editor.value).toContain('name: "local-edits-before-load"');
   });
+
+  it("renders validation warnings when policy validates with warnings", async () => {
+    validatePolicyMock.mockResolvedValue({
+      valid: true,
+      errors: [],
+      warnings: [
+        {
+          path: "guards[0]",
+          code: "policy_deprecated_field",
+          message: "deprecated field",
+        },
+      ],
+    });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Validation warnings");
+    expect(container.textContent).toContain("[policy_deprecated_field]");
+  });
+
+  it("emits dirty false when the panel unmounts", async () => {
+    const dirtyEvents: boolean[] = [];
+    const onDirty = (event: Event) => {
+      const custom = event as CustomEvent<PolicyWorkbenchDirtyEventDetail>;
+      dirtyEvents.push(Boolean(custom.detail?.dirty));
+    };
+    window.addEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    const editorValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+    if (!editorValueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "dirty-before-unmount"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(dirtyEvents).toContain(true);
+
+    await act(async () => {
+      root.render(<div />);
+      await Promise.resolve();
+    });
+
+    expect(dirtyEvents[dirtyEvents.length - 1]).toBe(false);
+    window.removeEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty);
+  });
+
+  it("cancels pending debounced validation while save validation is in-flight", async () => {
+    let resolveSave: ((value: { success: boolean; message: string; policy_hash: string }) => void) | undefined;
+    savePolicyMock.mockImplementation(
+      () =>
+        new Promise<{ success: boolean; message: string; policy_hash: string }>((resolve) => {
+          resolveSave = resolve;
+        })
+    );
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    validatePolicyMock.mockClear();
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    const editorValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+    if (!editorValueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "save-race"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const saveButton = container.querySelector(
+      '[data-testid="policy-editor-save"]'
+    ) as HTMLButtonElement;
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(validatePolicyMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(650);
+      await Promise.resolve();
+    });
+
+    expect(validatePolicyMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSave?.({ success: true, message: "saved", policy_hash: "save123" });
+      await Promise.resolve();
+    });
+  });
 });
