@@ -66,6 +66,17 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
     return { host, port };
   }
 
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    const host = trimmed.slice(1, -1);
+    if (!host) throw new Error("network_egress target has empty host");
+    return { host, port: 443 };
+  }
+
+  const colonCount = (trimmed.match(/:/g) ?? []).length;
+  if (colonCount > 1) {
+    return { host: trimmed, port: 443 };
+  }
+
   const idx = trimmed.lastIndexOf(":");
   if (idx > 0 && idx < trimmed.length - 1 && /^\d+$/.test(trimmed.slice(idx + 1))) {
     const host = trimmed.slice(0, idx);

@@ -71,8 +71,15 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   const [history, setHistory] = React.useState<PolicyTestHistoryItem[]>([]);
   const [copyStatus, setCopyStatus] = React.useState<string>();
   const validationSeq = React.useRef(0);
+  const draftYamlRef = React.useRef(state.draftYaml);
+  const hasAutoLoadedRef = React.useRef(false);
+  const wasConnectedRef = React.useRef(connected);
 
   const dirty = isPolicyDraftDirty(state);
+
+  React.useEffect(() => {
+    draftYamlRef.current = state.draftYaml;
+  }, [state.draftYaml]);
 
   const copyJson = React.useCallback(async (value: unknown, label: string) => {
     const text = JSON.stringify(value, null, 2);
@@ -131,9 +138,10 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   );
 
   const handleSave = React.useCallback(async () => {
+    const saveYaml = state.draftYaml;
     dispatch({ type: "save_start" });
     try {
-      const validation = await client.validatePolicy(state.draftYaml);
+      const validation = await client.validatePolicy(saveYaml);
       dispatch({
         type: "validate_success",
         valid: validation.valid,
@@ -146,15 +154,24 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
         return;
       }
 
-      const saved = await client.savePolicy(state.draftYaml);
+      const saved = await client.savePolicy(saveYaml);
       if (!saved.success) {
         dispatch({ type: "save_error", message: saved.message || "Policy save failed" });
         return;
       }
 
+      if (draftYamlRef.current !== saveYaml) {
+        dispatch({
+          type: "save_success_preserve_draft",
+          loadedYaml: saveYaml,
+          hash: saved.policy_hash,
+        });
+        return;
+      }
+
       dispatch({
         type: "save_success",
-        yaml: state.draftYaml,
+        yaml: saveYaml,
         hash: saved.policy_hash,
       });
     } catch (err) {
@@ -230,8 +247,26 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   }, [client, testForm]);
 
   React.useEffect(() => {
+    const wasConnected = wasConnectedRef.current;
+    wasConnectedRef.current = connected;
+
+    if (!connected) return;
+
+    const firstLoad = !hasAutoLoadedRef.current;
+    const reconnected = wasConnected === false;
+    if (!firstLoad && !reconnected) return;
+
+    if (dirty) {
+      if (reconnected && hasAutoLoadedRef.current) {
+        setCopyStatus("Reconnected. Unsaved edits preserved.");
+        window.setTimeout(() => setCopyStatus(undefined), 2200);
+      }
+      return;
+    }
+
+    hasAutoLoadedRef.current = true;
     void readPolicy();
-  }, [readPolicy]);
+  }, [connected, dirty, readPolicy]);
 
   React.useEffect(() => {
     if (!connected || !state.draftYaml) return;
@@ -336,6 +371,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
               <YamlEditor
                 value={state.draftYaml}
                 onChange={(yaml) => dispatch({ type: "edit", yaml })}
+                disabled={state.isSaving}
               />
             </div>
 
@@ -671,9 +707,11 @@ function ResultCard({
 function YamlEditor({
   value,
   onChange,
+  disabled,
 }: {
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="grid h-full min-h-0 grid-rows-2 gap-2">
@@ -687,6 +725,8 @@ function YamlEditor({
             value={value}
             onChange={(event) => onChange(event.target.value)}
             spellCheck={false}
+            readOnly={disabled}
+            aria-readonly={disabled ? true : undefined}
             className="h-full min-h-[210px] w-full resize-none rounded border border-white/15 bg-black/25 p-3 font-mono text-xs leading-5 text-white/90 outline-none focus:border-white/30"
           />
         </div>

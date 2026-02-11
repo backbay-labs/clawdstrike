@@ -46,4 +46,29 @@ describe("policyWorkbenchReducer", () => {
     expect(errored.validation.status).toBe("error");
     expect(errored.validation.message).toBe("network failed");
   });
+
+  it("preserves newer draft when save completes against an older snapshot", () => {
+    const loaded = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_success",
+      yaml: "version: \"1.2.0\"\nname: loaded",
+      hash: "h1",
+      version: "1.2.0",
+    });
+    const edited = policyWorkbenchReducer(loaded, {
+      type: "edit",
+      yaml: "version: \"1.2.0\"\nname: newer",
+    });
+    const saving = policyWorkbenchReducer(edited, { type: "save_start" });
+
+    const saved = policyWorkbenchReducer(saving, {
+      type: "save_success_preserve_draft",
+      loadedYaml: "version: \"1.2.0\"\nname: loaded",
+      hash: "h2",
+    });
+
+    expect(saved.isSaving).toBe(false);
+    expect(saved.loadedHash).toBe("h2");
+    expect(saved.loadedYaml).toContain("name: loaded");
+    expect(saved.draftYaml).toContain("name: newer");
+  });
 });

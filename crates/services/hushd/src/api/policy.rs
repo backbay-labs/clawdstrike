@@ -464,7 +464,10 @@ pub async fn update_policy(
 
     tracing::info!("Policy updated via API");
 
-    let after_hash = hush_core::sha256(request.yaml.as_bytes()).to_hex();
+    let after_hash = engine
+        .policy_hash()
+        .map(|h| h.to_hex())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut audit = AuditEvent::session_start(&state.session_id, None);
     audit.event_type = "policy_updated".to_string();
     audit.action_type = "policy".to_string();

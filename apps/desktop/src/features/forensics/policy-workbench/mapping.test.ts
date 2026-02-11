@@ -68,6 +68,38 @@ describe("buildPolicyTestEvent", () => {
     });
   });
 
+  it("treats bare IPv6 targets as host-only values", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "network_egress",
+        target: "2001:db8::1",
+      },
+      { eventId: "evt-5", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "network",
+      host: "2001:db8::1",
+      port: 443,
+    });
+  });
+
+  it("parses bracketed IPv6 host:port targets", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "network_egress",
+        target: "[2001:db8::1]:8443",
+      },
+      { eventId: "evt-6", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "network",
+      host: "2001:db8::1",
+      port: 8443,
+    });
+  });
+
   it("rejects invalid tool parameter JSON", () => {
     expect(() =>
       buildPolicyTestEvent({
