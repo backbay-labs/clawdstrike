@@ -57,7 +57,7 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
-    needs: [security-regressions, policy-torture]
+    needs: security-regressions
     steps:
       - uses: actions/checkout@v6
 
@@ -595,6 +595,7 @@ jobs:
           path: |
             docs/reports/agent-fail-closed-smoke.json
             docs/reports/agent-fail-closed-smoke.md
+          if-no-files-found: error
 
   openclaw-plugin:
     name: OpenClaw Plugin

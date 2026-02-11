@@ -50,14 +50,19 @@ const wrappedDispatch = wrapClaudeCodeToolDispatcher(
   },
 );
 
+let blockedError = null;
 try {
   await wrappedDispatch('bash', { cmd: 'rm -rf /' }, 'run-blocked');
-  check('blocked command throws ClawdstrikeBlockedError', false, { reason: 'no error thrown' });
 } catch (error) {
-  check('blocked command throws ClawdstrikeBlockedError', error instanceof ClawdstrikeBlockedError, {
-    errorType: error instanceof Error ? error.constructor.name : typeof error,
-  });
+  blockedError = error;
 }
+check(
+  'blocked command throws ClawdstrikeBlockedError',
+  blockedError instanceof ClawdstrikeBlockedError,
+  blockedError instanceof Error
+    ? { errorType: blockedError.constructor.name }
+    : { reason: 'no error thrown' },
+);
 
 check('blocked command does not execute side effect', !fs.existsSync(blockedSideEffectPath), {
   blockedSideEffectPath,
