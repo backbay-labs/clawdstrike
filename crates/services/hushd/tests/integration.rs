@@ -190,6 +190,57 @@ guards:
 }
 
 #[tokio::test]
+async fn test_update_policy_returns_canonical_policy_hash() {
+    let (client, url) = test_setup();
+
+    let before = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(before.status().is_success());
+    let before_json: serde_json::Value = before.json().await.unwrap();
+    let before_hash = before_json["policy_hash"].as_str().unwrap().to_string();
+    let before_yaml = before_json["yaml"].as_str().unwrap();
+
+    let updated_yaml = format!(
+        "# formatting-only update to verify canonical hash\n{}",
+        before_yaml
+    );
+    let update = client
+        .put(format!("{}/api/v1/policy", url))
+        .json(&serde_json::json!({ "yaml": updated_yaml }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(update.status().is_success());
+    let update_json: serde_json::Value = update.json().await.unwrap();
+    let update_hash = update_json["policy_hash"]
+        .as_str()
+        .expect("response policy_hash must be a string");
+
+    let after = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(after.status().is_success());
+    let after_json: serde_json::Value = after.json().await.unwrap();
+    let after_hash = after_json["policy_hash"]
+        .as_str()
+        .expect("policy policy_hash must be a string");
+
+    assert_eq!(
+        update_hash, after_hash,
+        "update response should return the canonical active policy hash"
+    );
+    assert_eq!(
+        before_hash, after_hash,
+        "formatting-only YAML changes should not change canonical policy hash"
+    );
+}
+
+#[tokio::test]
 async fn test_update_policy_bundle_rejects_policy_hash_mismatch() {
     let (client, url) = test_setup();
 

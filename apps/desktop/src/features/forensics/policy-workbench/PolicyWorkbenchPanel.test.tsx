@@ -320,4 +320,128 @@ describe("PolicyWorkbenchPanel", () => {
 
     window.removeEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty);
   });
+
+  it("does not auto-reload over dirty drafts when connection is restored", async () => {
+    loadPolicyMock.mockResolvedValueOnce({
+      name: "default",
+      version: "1.2.0",
+      description: "",
+      policy_hash: "abc123",
+      yaml: 'version: "1.2.0"\nname: "server-a"\n',
+    });
+    loadPolicyMock.mockResolvedValueOnce({
+      name: "default",
+      version: "1.2.0",
+      description: "",
+      policy_hash: "abc999",
+      yaml: 'version: "1.2.0"\nname: "server-b"\n',
+    });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    const editorValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+    if (!editorValueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "local-dirty"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected={false} />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    expect(loadPolicyMock).toHaveBeenCalledTimes(1);
+    expect(editor.value).toContain('name: "local-dirty"');
+  });
+
+  it("preserves newer draft edits when save response returns for an older snapshot", async () => {
+    let resolveSave: ((value: { success: boolean; message: string; policy_hash: string }) => void) | undefined;
+    savePolicyMock.mockImplementation(
+      () =>
+        new Promise<{ success: boolean; message: string; policy_hash: string }>((resolve) => {
+          resolveSave = resolve;
+        })
+    );
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    const editorValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+    if (!editorValueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "save-snapshot"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const saveButton = container.querySelector(
+      '[data-testid="policy-editor-save"]'
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(editor.readOnly).toBe(true);
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "newer-local-edit"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveSave?.({ success: true, message: "saved", policy_hash: "zzz123" });
+      await Promise.resolve();
+    });
+
+    expect(editor.value).toContain('name: "newer-local-edit"');
+  });
 });
