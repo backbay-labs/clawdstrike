@@ -104,5 +104,11 @@ class TestFullWorkflow:
 
 class TestVersionInfo:
     def test_version_available(self) -> None:
+        from importlib.metadata import version
+        import re
+
         import clawdstrike
-        assert clawdstrike.__version__ == "0.1.0"
+
+        # Keep the public module version aligned with installed package metadata.
+        assert clawdstrike.__version__ == version("clawdstrike")
+        assert re.fullmatch(r"\d+\.\d+\.\d+", clawdstrike.__version__) is not None
