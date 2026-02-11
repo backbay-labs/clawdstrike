@@ -26,3 +26,12 @@ const dispatchTool = wrapClaudeCodeToolDispatcher(boundary, async (toolName, inp
 
 await dispatchTool('read_file', { path: './README.md' }, 'run-1');
 ```
+
+## Fail-Closed POC
+
+```bash
+npm --prefix packages/adapters/clawdstrike-claude-code run build
+npm --prefix packages/adapters/clawdstrike-claude-code run poc:fail-closed
+```
+
+This deterministic POC proves blocked tool calls throw `ClawdstrikeBlockedError` and do not execute dispatcher side effects.

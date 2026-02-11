@@ -27,3 +27,12 @@ const dispatchTool = wrapCodexToolDispatcher(boundary, async (toolName, input, r
 
 await dispatchTool('bash', { cmd: 'echo hello' }, 'run-123');
 ```
+
+## Fail-Closed POC
+
+```bash
+npm --prefix packages/adapters/clawdstrike-codex run build
+npm --prefix packages/adapters/clawdstrike-codex run poc:fail-closed
+```
+
+This deterministic POC proves blocked tool calls throw `ClawdstrikeBlockedError` and do not execute dispatcher side effects.

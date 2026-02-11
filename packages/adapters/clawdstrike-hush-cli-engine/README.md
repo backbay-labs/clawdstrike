@@ -29,3 +29,12 @@ const event: PolicyEvent = {
 const decision = await engine.evaluate(event);
 if (decision.status === "deny") throw new Error(decision.message ?? "Blocked by policy");
 ```
+
+## Fail-Closed POC
+
+```bash
+npm --prefix packages/adapters/clawdstrike-hush-cli-engine run build
+npm --prefix packages/adapters/clawdstrike-hush-cli-engine run poc:fail-closed
+```
+
+This deterministic POC proves local transport/spawn errors return fail-closed decisions (`deny` + `engine_error`).

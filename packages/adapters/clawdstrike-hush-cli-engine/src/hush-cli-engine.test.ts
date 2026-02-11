@@ -176,4 +176,18 @@ describe('createHushCliEngine', () => {
       reason: 'engine_error',
     });
   });
+
+  it('fails closed when hush binary cannot be spawned', async () => {
+    spawnMock.mockImplementationOnce(() => {
+      throw new Error('spawn ENOENT');
+    });
+
+    const engine = createHushCliEngine({ policyRef: 'default' });
+    const decision = await engine.evaluate(exampleEvent);
+
+    expect(decision).toMatchObject({
+      status: 'deny',
+      reason: 'engine_error',
+    });
+  });
 });

@@ -90,4 +90,18 @@ describe('createHushdEngine', () => {
       reason: 'engine_error',
     });
   });
+
+  it('fails closed on network transport failure', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const engine = createHushdEngine({ baseUrl: 'http://127.0.0.1:9876' });
+    await expect(engine.evaluate(exampleEvent)).resolves.toMatchObject({
+      status: 'deny',
+      reason: 'engine_error',
+    });
+  });
 });

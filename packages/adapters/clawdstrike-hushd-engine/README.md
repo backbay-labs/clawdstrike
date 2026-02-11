@@ -19,3 +19,12 @@ const engine = createHushdEngine({
 const decision = await engine.evaluate(event);
 if (decision.status === "deny") throw new Error(decision.message ?? "Blocked by policy");
 ```
+
+## Fail-Closed POC
+
+```bash
+npm --prefix packages/adapters/clawdstrike-hushd-engine run build
+npm --prefix packages/adapters/clawdstrike-hushd-engine run poc:fail-closed
+```
+
+This deterministic POC proves daemon transport failures return fail-closed decisions (`deny` + `engine_error`).

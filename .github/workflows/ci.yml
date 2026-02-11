@@ -524,6 +524,53 @@ jobs:
           node -e "const sdk = require('./dist/index.cjs'); console.log('CJS exports:', Object.keys(sdk).slice(0, 10))"
           node --input-type=module -e "import * as sdk from './dist/index.js'; console.log('ESM exports:', Object.keys(sdk).slice(0, 10))"
 
+  agent-fail-closed-smoke:
+    name: Agent Fail-Closed Smoke
+    runs-on: ubuntu-latest
+    needs: security-regressions
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            packages/adapters/clawdstrike-adapter-core/package-lock.json
+            packages/adapters/clawdstrike-codex/package-lock.json
+            packages/adapters/clawdstrike-claude-code/package-lock.json
+            packages/adapters/clawdstrike-hush-cli-engine/package-lock.json
+            packages/adapters/clawdstrike-hushd-engine/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm --prefix packages/adapters/clawdstrike-adapter-core ci
+          npm --prefix packages/adapters/clawdstrike-codex ci
+          npm --prefix packages/adapters/clawdstrike-claude-code ci
+          npm --prefix packages/adapters/clawdstrike-hush-cli-engine ci
+          npm --prefix packages/adapters/clawdstrike-hushd-engine ci
+
+      - name: Build dependencies and adapters
+        run: |
+          npm --prefix packages/adapters/clawdstrike-adapter-core run build
+          npm --prefix packages/adapters/clawdstrike-codex run build
+          npm --prefix packages/adapters/clawdstrike-claude-code run build
+          npm --prefix packages/adapters/clawdstrike-hush-cli-engine run build
+          npm --prefix packages/adapters/clawdstrike-hushd-engine run build
+
+      - name: Run fail-closed smoke POCs
+        run: node tools/scripts/agent-fail-closed-smoke.mjs
+
+      - name: Upload fail-closed smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-fail-closed-smoke-report
+          path: |
+            docs/reports/agent-fail-closed-smoke.json
+            docs/reports/agent-fail-closed-smoke.md
+
   openclaw-plugin:
     name: OpenClaw Plugin
     runs-on: ubuntu-latest

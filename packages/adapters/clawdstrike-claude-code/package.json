@@ -15,7 +15,8 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "poc:fail-closed": "node examples/fail-closed-poc/run.mjs"
   },
   "dependencies": {
     "@clawdstrike/adapter-core": "^0.1.0"
