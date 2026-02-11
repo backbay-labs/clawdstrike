@@ -1,0 +1,31 @@
+version: "1.2.0"
+name: "Policy Torture Posture Escalation"
+description: "Exercises posture transitions, capability gates, and budget exhaustion"
+extends: ./base-core.yaml
+merge_strategy: deep_merge
+
+posture:
+  initial: work
+  states:
+    work:
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - shell
+        - mcp_tool
+        - patch
+        - custom
+      budgets:
+        shell_commands: 1
+    quarantine:
+      capabilities:
+        - file_access
+      budgets: {}
+  transitions:
+    - from: "*"
+      to: quarantine
+      on: any_violation
+    - from: work
+      to: quarantine
+      on: budget_exhausted
