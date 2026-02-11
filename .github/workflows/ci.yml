@@ -203,7 +203,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Spine pipeline tests
-        run: cargo test -p spine --test pipeline_test
+        run: cargo test -p hush-spine --test pipeline_test
 
       - name: Bridge roundtrip tests
         run: cargo test -p sdr-integration-tests --test bridge_roundtrip_test
