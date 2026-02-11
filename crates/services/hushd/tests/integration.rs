@@ -317,6 +317,69 @@ async fn test_update_policy_bundle_rejects_policy_hash_mismatch() {
 }
 
 #[tokio::test]
+async fn test_update_policy_bundle_returns_canonical_policy_hash() {
+    let (client, url) = test_setup();
+
+    let before = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(before.status().is_success());
+    let before_json: serde_json::Value = before.json().await.unwrap();
+    let before_hash = before_json["policy_hash"]
+        .as_str()
+        .expect("policy_hash must be a string")
+        .to_string();
+    let policy_yaml = before_json["yaml"]
+        .as_str()
+        .expect("yaml must be a string")
+        .to_string();
+
+    let policy = clawdstrike::Policy::from_yaml(&policy_yaml).expect("default policy must parse");
+    let bundle = clawdstrike::PolicyBundle::new(policy).expect("bundle build must succeed");
+    let signer = hush_core::Keypair::generate();
+    let signed = clawdstrike::SignedPolicyBundle::sign_with_public_key(bundle, &signer)
+        .expect("bundle signing must succeed");
+
+    let update = client
+        .put(format!("{}/api/v1/policy/bundle", url))
+        .json(&signed)
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(update.status().is_success());
+    let update_json: serde_json::Value = update.json().await.unwrap();
+    let update_hash = update_json["policy_hash"]
+        .as_str()
+        .expect("response policy_hash must be a string");
+
+    let after = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(after.status().is_success());
+    let after_json: serde_json::Value = after.json().await.unwrap();
+    let after_hash = after_json["policy_hash"]
+        .as_str()
+        .expect("policy policy_hash must be a string");
+
+    assert!(
+        !update_hash.starts_with("0x"),
+        "bundle update response hash must be canonical non-prefixed hex"
+    );
+    assert_eq!(
+        update_hash, after_hash,
+        "bundle update response hash should match active policy hash"
+    );
+    assert_eq!(
+        update_hash, before_hash,
+        "re-applying equivalent policy bundle should preserve canonical policy hash"
+    );
+}
+
+#[tokio::test]
 async fn test_audit_query() {
     let (client, url) = test_setup();
 

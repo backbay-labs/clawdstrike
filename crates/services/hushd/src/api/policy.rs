@@ -283,10 +283,15 @@ pub async fn update_policy_bundle(
         None => new_engine.with_generated_keypair(),
     };
     *engine = new_engine;
+    let active_policy_hash = engine
+        .policy_hash()
+        .map(|h| h.to_hex())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    drop(engine);
 
     tracing::info!(
         bundle_id = %signed.bundle.bundle_id,
-        policy_hash = %signed.bundle.policy_hash.to_hex_prefixed(),
+        policy_hash = %active_policy_hash,
         "Policy updated via signed bundle"
     );
 
@@ -304,7 +309,8 @@ pub async fn update_policy_bundle(
         agent_id: None,
         metadata: Some(serde_json::json!({
             "bundle_id": signed.bundle.bundle_id,
-            "policy_hash": signed.bundle.policy_hash.to_hex_prefixed(),
+            "policy_hash": active_policy_hash.clone(),
+            "bundle_policy_hash": signed.bundle.policy_hash.to_hex(),
             "sources": signed.bundle.sources,
         })),
     });
@@ -312,7 +318,7 @@ pub async fn update_policy_bundle(
     Ok(Json(UpdatePolicyResponse {
         success: true,
         message: "Policy updated successfully".to_string(),
-        policy_hash: Some(signed.bundle.policy_hash.to_hex()),
+        policy_hash: Some(active_policy_hash),
     }))
 }
 
