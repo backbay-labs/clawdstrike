@@ -6,6 +6,10 @@
 - Model wrapper (`wrapLanguageModel`) with optional prompt-security checks
 - React hook (`useSecureChat`) for guarding streaming tool calls in `ai/react`
 
+## Enforcement boundaries (read this)
+
+This integration enforces at the **tool boundary**. It is not an OS sandbox; for the full integration contract (and what requires a sandbox/broker), see [Enforcement Tiers & Integration Contract](../concepts/enforcement-tiers.md).
+
 This package does **not** ship a policy engine. You provide one:
 
 - `@backbay/hush-cli-engine` (shells out to the `hush` CLI), or

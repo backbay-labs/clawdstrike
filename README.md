@@ -147,6 +147,7 @@ No external API calls required for core detection. [Full benchmarks →](docs/sr
 ## Documentation
 
 - [Design Philosophy](docs/src/concepts/design-philosophy.md) — Fail-closed, defense in depth
+- [Enforcement Tiers & Integration Contract](docs/src/concepts/enforcement-tiers.md) — What is enforceable at the tool boundary (and what requires a sandbox/broker)
 - [Guards Reference](docs/src/reference/guards/README.md) — All 7 guards documented
 - [Policy Schema](docs/src/reference/policy-schema.md) — YAML configuration
 - [Framework Integrations](docs/src/concepts/multi-language.md) — OpenClaw, Vercel AI, LangChain

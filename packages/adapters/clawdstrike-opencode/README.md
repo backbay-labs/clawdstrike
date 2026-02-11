@@ -2,6 +2,8 @@
 
 In-process tool-boundary hooks for OpenCode-style coding assistants.
 
+See [Enforcement Tiers & Integration Contract](../../../docs/src/concepts/enforcement-tiers.md) for what this does and does not prevent (and what requires a sandbox/broker).
+
 ## Install
 
 ```bash

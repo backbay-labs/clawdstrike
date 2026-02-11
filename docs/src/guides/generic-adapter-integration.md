@@ -6,6 +6,10 @@ The generic wrapper secures any dispatcher shaped like:
 
 `(toolName, input, runId) => Promise<output>`
 
+## Enforcement boundaries (read this)
+
+This approach enforces at the **tool boundary**. It is not an OS sandbox; for the full integration contract (and what requires a sandbox/broker), see [Enforcement Tiers & Integration Contract](../concepts/enforcement-tiers.md).
+
 ## Install
 
 ```bash

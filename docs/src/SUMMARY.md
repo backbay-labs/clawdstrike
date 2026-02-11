@@ -16,6 +16,7 @@
 - [Design Philosophy](concepts/design-philosophy.md)
 - [Multi-Language & Frameworks](concepts/multi-language.md)
 - [Architecture](concepts/architecture.md)
+- [Enforcement Tiers & Integration Contract](concepts/enforcement-tiers.md)
 - [Guards](concepts/guards.md)
 - [Policies](concepts/policies.md)
 - [Postures](concepts/postures.md)

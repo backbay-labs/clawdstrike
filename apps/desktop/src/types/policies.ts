@@ -115,6 +115,7 @@ export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
   warnings: ValidationWarning[];
+  normalized_version?: string;
 }
 
 export interface ValidationError {
@@ -126,6 +127,7 @@ export interface ValidationError {
 export interface ValidationWarning {
   path: string;
   message: string;
+  code?: string;
   suggestion?: string;
 }
 

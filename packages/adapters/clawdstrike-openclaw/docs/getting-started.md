@@ -11,6 +11,8 @@ Clawdstrike enforces policy at the **OpenClaw tool boundary**:
 
 This is **not** an OS sandbox. If an agent/runtime can access the filesystem/network without going through OpenClaw tools, Clawdstrike cannot stop it.
 
+See [Enforcement Tiers & Integration Contract](../../../../docs/src/concepts/enforcement-tiers.md) for what is enforceable at the tool boundary (and what requires a sandbox/broker).
+
 ## Installation
 
 ### From local development (recommended during alpha)

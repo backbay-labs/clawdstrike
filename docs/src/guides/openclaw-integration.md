@@ -6,7 +6,7 @@ For desktop + local agent runtime operations, see [Agent OpenClaw Operations](ag
 
 ## Enforcement boundaries (read this)
 
-The OpenClaw plugin enforces policy at the **tool boundary**:
+The OpenClaw plugin enforces policy at the **tool boundary**. For the full integration contract (and what requires an OS sandbox/broker), see [Enforcement Tiers & Integration Contract](../concepts/enforcement-tiers.md).
 
 - **Preflight** via the `policy_check` tool (agents should call it before risky operations).
 - **Post-action** via the `tool_result_persist` hook (can block/redact what is persisted + record violations).

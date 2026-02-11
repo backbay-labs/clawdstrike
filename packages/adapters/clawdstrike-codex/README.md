@@ -4,6 +4,8 @@ In-process tool-boundary hooks for Codex-style coding assistants.
 
 This package is intentionally **runtime-agnostic**: you wire it into the layer that actually executes tools (file/network/command/etc).
 
+See [Enforcement Tiers & Integration Contract](../../../docs/src/concepts/enforcement-tiers.md) for what this does and does not prevent (and what requires a sandbox/broker).
+
 ## Install
 
 ```bash

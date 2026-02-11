@@ -244,7 +244,13 @@ function ActionTypeButton({
 
 function ResultDisplay({ result }: { result: PolicyEvalResponse }) {
   const decision = result.decision;
-  const verdict = decision.denied ? "DENY" : decision.warn ? "WARN" : "ALLOW";
+  const verdict = decision.denied
+    ? "DENY"
+    : decision.warn
+      ? "WARN"
+      : decision.allowed
+        ? "ALLOW"
+        : "UNKNOWN";
 
   return (
     <div className="space-y-4">
@@ -255,11 +261,22 @@ function ResultDisplay({ result }: { result: PolicyEvalResponse }) {
             ? "bg-verdict-allowed/10 border-verdict-allowed/30"
             : verdict === "WARN"
               ? "bg-severity-warning/10 border-severity-warning/30"
-              : "bg-verdict-blocked/10 border-verdict-blocked/30"
+              : verdict === "DENY"
+                ? "bg-verdict-blocked/10 border-verdict-blocked/30"
+                : "bg-sdr-bg-tertiary border-sdr-border"
         )}
       >
         <div className="flex items-center gap-2">
-          <Badge variant={verdict === "ALLOW" ? "default" : "destructive"} className="text-lg font-semibold">
+          <Badge
+            variant={
+              verdict === "ALLOW"
+                ? "default"
+                : verdict === "DENY"
+                  ? "destructive"
+                  : "outline"
+            }
+            className="text-lg font-semibold"
+          >
             {verdict}
           </Badge>
           <span className="text-xs text-sdr-text-muted">guard: {decision.guard ?? "-"}</span>
