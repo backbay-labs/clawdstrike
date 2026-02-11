@@ -168,22 +168,6 @@ fn main() {
             if let Some(shutdown_tx) = app_handle.try_state::<broadcast::Sender<()>>() {
                 let _ = shutdown_tx.send(());
             }
-
-            if let Some(openclaw_manager) = app_handle.try_state::<OpenClawManager>() {
-                let manager = openclaw_manager.inner().clone();
-                tauri::async_runtime::block_on(async move {
-                    manager.shutdown().await;
-                });
-            }
-
-            if let Some(daemon_manager) = app_handle.try_state::<Arc<DaemonManager>>() {
-                let daemon = daemon_manager.inner().clone();
-                tauri::async_runtime::block_on(async move {
-                    if let Err(err) = daemon.stop().await {
-                        tracing::error!("Error stopping daemon: {}", err);
-                    }
-                });
-            }
         }
     });
 }
