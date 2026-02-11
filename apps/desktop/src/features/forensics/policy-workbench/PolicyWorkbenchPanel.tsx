@@ -161,25 +161,37 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   const handleSave = React.useCallback(async () => {
     const saveYaml = state.draftYaml;
     dispatch({ type: "save_start" });
+    const saveValidationSeq = ++validationSeq.current;
+    dispatch({ type: "validate_start" });
+
+    let validation;
     try {
-      const saveValidationSeq = ++validationSeq.current;
-      dispatch({ type: "validate_start" });
-      const validation = await client.validatePolicy(saveYaml);
+      validation = await client.validatePolicy(saveYaml);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Validation failed";
       if (saveValidationSeq === validationSeq.current) {
-        dispatch({
-          type: "validate_success",
-          valid: validation.valid,
-          errors: validation.errors as ValidationIssue[],
-          warnings: validation.warnings as ValidationIssue[],
-        });
+        dispatch({ type: "validate_error", message });
       }
-      const normalizedVersion = validation.normalized_version ?? state.loadedVersion;
+      dispatch({ type: "save_error", message });
+      return;
+    }
 
-      if (!validation.valid) {
-        dispatch({ type: "save_error", message: "Policy is invalid. Fix validation errors before saving." });
-        return;
-      }
+    if (saveValidationSeq === validationSeq.current) {
+      dispatch({
+        type: "validate_success",
+        valid: validation.valid,
+        errors: validation.errors as ValidationIssue[],
+        warnings: validation.warnings as ValidationIssue[],
+      });
+    }
+    const normalizedVersion = validation.normalized_version ?? state.loadedVersion;
 
+    if (!validation.valid) {
+      dispatch({ type: "save_error", message: "Policy is invalid. Fix validation errors before saving." });
+      return;
+    }
+
+    try {
       const saved = await client.savePolicy(saveYaml);
       if (!saved.success) {
         dispatch({ type: "save_error", message: saved.message || "Policy save failed" });
