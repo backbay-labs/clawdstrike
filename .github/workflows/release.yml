@@ -147,15 +147,18 @@ jobs:
             name="$(node -e "console.log(require('./${pkg}/package.json').name)")"
             version="$(node -e "console.log(require('./${pkg}/package.json').version)")"
 
-            if npm view "${name}@${version}" version >/dev/null 2>&1; then
-              echo "${name}@${version} already published; skipping"
-              return 0
-            fi
-
+            # Always build/test in dependency order so reruns still produce local
+            # workspace artifacts even when a package version is already published.
             echo "Building ${name}@${version}"
             npm run build -w "$pkg"
             echo "Testing ${name}@${version}"
             npm test -w "$pkg"
+
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "${name}@${version} already published; skipping publish"
+              return 0
+            fi
+
             echo "Publishing ${name}@${version}"
             npm publish -w "$pkg" --provenance
           }
