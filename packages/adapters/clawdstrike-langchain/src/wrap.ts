@@ -1,4 +1,4 @@
-import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
+import { createSecurityContext } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   Decision,

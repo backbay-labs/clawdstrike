@@ -10,6 +10,9 @@ keywords = ["security", "attestation", "spine", "clawdstrike"]
 categories = ["cryptography", "authentication"]
 readme = "../../README.md"
 
+[lib]
+name = "spine"
+
 [features]
 bins = ["dep:anyhow", "dep:clap", "dep:axum", "dep:tower-http", "dep:tracing", "dep:tracing-subscriber", "dep:futures", "dep:uuid"]
 
