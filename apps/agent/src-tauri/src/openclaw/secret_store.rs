@@ -45,6 +45,16 @@ impl OpenClawSecretStore {
     }
 
     pub async fn get(&self, gateway_id: &str) -> GatewaySecrets {
+        if self.fallback_active.load(Ordering::Relaxed) {
+            return self
+                .memory
+                .read()
+                .await
+                .get(gateway_id)
+                .cloned()
+                .unwrap_or_default();
+        }
+
         if let Some(value) = self.get_keyring(gateway_id) {
             return value;
         }
@@ -132,6 +142,27 @@ mod tests {
 
         // The backend can be keyring or fallback memory depending on environment;
         // this assertion is backend-agnostic.
+        assert_eq!(loaded.token, secrets.token);
+        assert_eq!(loaded.device_token, secrets.device_token);
+    }
+
+    #[tokio::test]
+    async fn fallback_mode_reads_memory_first() {
+        let store = OpenClawSecretStore::new("clawdstrike-test");
+        let key = "gw-fallback";
+        let secrets = GatewaySecrets {
+            token: Some("fresh-token".to_string()),
+            device_token: Some("fresh-device".to_string()),
+        };
+
+        store
+            .memory
+            .write()
+            .await
+            .insert(key.to_string(), secrets.clone());
+        store.fallback_active.store(true, Ordering::Relaxed);
+
+        let loaded = store.get(key).await;
         assert_eq!(loaded.token, secrets.token);
         assert_eq!(loaded.device_token, secrets.device_token);
     }

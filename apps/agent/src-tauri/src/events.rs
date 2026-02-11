@@ -80,6 +80,7 @@ impl EventDeduper {
 pub struct EventManager {
     daemon_url: String,
     api_key: Option<String>,
+    http_client: reqwest::Client,
     events_tx: broadcast::Sender<PolicyEvent>,
     deduper: Arc<Mutex<EventDeduper>>,
 }
@@ -91,6 +92,10 @@ impl EventManager {
         Self {
             daemon_url,
             api_key,
+            http_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             events_tx,
             deduper: Arc::new(Mutex::new(EventDeduper::new(2_000))),
         }
@@ -173,8 +178,13 @@ impl EventManager {
             tokio::select! {
                 _ = shutdown_rx.recv() => return true,
                 _ = tokio::time::sleep(poll_interval) => {
-                    if let Err(err) = self.poll_once().await {
-                        tracing::debug!(error = %err, "Audit poll fallback failed");
+                    tokio::select! {
+                        _ = shutdown_rx.recv() => return true,
+                        result = self.poll_once() => {
+                            if let Err(err) = result {
+                                tracing::debug!(error = %err, "Audit poll fallback failed");
+                            }
+                        }
                     }
                 }
             }
@@ -190,7 +200,8 @@ impl EventManager {
         }
 
         let url = format!("{}/api/v1/audit", self.daemon_url);
-        let mut request = reqwest::Client::new()
+        let mut request = self
+            .http_client
             .get(&url)
             .query(&[("limit", "50"), ("offset", "0")]);
 

@@ -30,9 +30,11 @@ use notifications::{
 };
 use openclaw::OpenClawManager;
 use settings::{ensure_default_policy, Settings};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Listener, Manager, RunEvent, Runtime};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Notify, RwLock};
 use tray::{setup_tray, TrayManager};
 
 /// Bundled default policy.
@@ -46,6 +48,32 @@ struct AppState {
     openclaw_manager: OpenClawManager,
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
+    shutdown_complete: Arc<ShutdownComplete>,
+}
+
+struct ShutdownComplete {
+    done: AtomicBool,
+    notify: Notify,
+}
+
+impl ShutdownComplete {
+    fn new() -> Self {
+        Self {
+            done: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+
+    fn mark_done(&self) {
+        self.done.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    async fn wait(&self) {
+        while !self.done.load(Ordering::SeqCst) {
+            self.notify.notified().await;
+        }
+    }
 }
 
 fn main() {
@@ -106,6 +134,7 @@ fn main() {
     let event_manager = Arc::new(EventManager::new(daemon_url, daemon_api_key));
     let openclaw_manager = OpenClawManager::new(settings.clone());
     let (shutdown_tx, _) = broadcast::channel::<()>(4);
+    let shutdown_complete = Arc::new(ShutdownComplete::new());
 
     let app_state = AppState {
         settings: settings.clone(),
@@ -114,6 +143,7 @@ fn main() {
         openclaw_manager: openclaw_manager.clone(),
         shutdown_tx: shutdown_tx.clone(),
         agent_api_token,
+        shutdown_complete: shutdown_complete.clone(),
     };
 
     let builder = tauri::Builder::default()
@@ -124,6 +154,7 @@ fn main() {
         .manage(app_state.event_manager.clone())
         .manage(app_state.openclaw_manager.clone())
         .manage(app_state.shutdown_tx.clone())
+        .manage(app_state.shutdown_complete.clone())
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
@@ -137,6 +168,7 @@ fn main() {
             let settings = app_state.settings.clone();
             let shutdown_tx = app_state.shutdown_tx.clone();
             let agent_api_token = app_state.agent_api_token.clone();
+            let shutdown_complete = app_state.shutdown_complete.clone();
 
             tauri::async_runtime::spawn(async move {
                 run_agent(
@@ -148,6 +180,7 @@ fn main() {
                     settings,
                     shutdown_tx,
                     agent_api_token,
+                    shutdown_complete,
                 )
                 .await;
             });
@@ -168,6 +201,12 @@ fn main() {
             if let Some(shutdown_tx) = app_handle.try_state::<broadcast::Sender<()>>() {
                 let _ = shutdown_tx.send(());
             }
+            if let Some(shutdown_complete) = app_handle.try_state::<Arc<ShutdownComplete>>() {
+                let latch = shutdown_complete.inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    let _ = tokio::time::timeout(Duration::from_secs(8), latch.wait()).await;
+                });
+            }
         }
     });
 }
@@ -182,6 +221,7 @@ async fn run_agent<R: Runtime>(
     settings: Arc<RwLock<Settings>>,
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
+    shutdown_complete: Arc<ShutdownComplete>,
 ) {
     tracing::info!("Starting hushd daemon...");
     if let Err(e) = daemon_manager.start().await {
@@ -320,6 +360,7 @@ async fn run_agent<R: Runtime>(
     if let Err(err) = daemon_manager.stop().await {
         tracing::error!("Error during daemon shutdown: {}", err);
     }
+    shutdown_complete.mark_done();
     tracing::info!("Agent shutdown complete");
 }
 
