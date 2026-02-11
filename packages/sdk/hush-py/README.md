@@ -17,9 +17,9 @@ policy = Policy.from_yaml_file("policy.yaml")
 engine = PolicyEngine(policy)
 
 context = GuardContext(cwd="/app")
-result = engine.is_allowed(GuardAction.file_access("/app/src/main.py"), context)
+allowed = engine.is_allowed(GuardAction.file_access("/app/src/main.py"), context)
 
-print(result.allowed, result.reason)
+print(f"Allowed: {allowed}")
 ```
 
 ## Capabilities

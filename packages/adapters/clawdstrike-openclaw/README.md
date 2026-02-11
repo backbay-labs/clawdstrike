@@ -19,18 +19,22 @@ npm install @clawdstrike/openclaw
 ## Quick start
 
 ```ts
-import { PolicyEngine, loadPolicy, policyCheckTool } from '@clawdstrike/openclaw';
+import { checkPolicy, PolicyEngine, policyCheckTool } from '@clawdstrike/openclaw';
 
-const policy = loadPolicy('./policy.yaml');
-const engine = new PolicyEngine(policy);
+const config = { policy: './policy.yaml' };
 
-const result = await policyCheckTool({
-  action: 'file_read',
-  target: '~/.ssh/id_rsa',
-  context: { cwd: process.cwd() },
-}, { engine });
-
+// Direct policy check
+const result = await checkPolicy(config, 'file_read', '~/.ssh/id_rsa');
 console.log(result.allowed, result.message);
+
+// Build an OpenClaw tool definition
+const engine = new PolicyEngine(config);
+const tool = policyCheckTool(engine);
+const toolResult = await tool.execute({
+  action: 'file_read',
+  resource: '~/.ssh/id_rsa',
+});
+console.log(toolResult.allowed, toolResult.message);
 ```
 
 ## Docs

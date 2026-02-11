@@ -17,7 +17,7 @@ await init();
 
 const hash = hash_sha256(new TextEncoder().encode('hello'));
 const isValid = verify_ed25519(publicKeyHex, messageBytes, signatureHex);
-const receiptResult = verify_receipt(receiptJson, signerPubkeyHex, null);
+const receiptResult = verify_receipt(receiptJson, signerPubkeyHex);
 ```
 
 ## Node.js usage
