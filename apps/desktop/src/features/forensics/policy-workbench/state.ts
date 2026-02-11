@@ -120,6 +120,7 @@ export function policyWorkbenchReducer(
         loadedYaml: action.yaml,
         draftYaml: action.yaml,
         loadedHash: action.hash ?? state.loadedHash,
+        loadError: undefined,
       };
     case "save_success_preserve_draft":
       return {
@@ -127,6 +128,7 @@ export function policyWorkbenchReducer(
         isSaving: false,
         loadedYaml: action.loadedYaml,
         loadedHash: action.hash ?? state.loadedHash,
+        loadError: undefined,
       };
     case "save_error":
       return {
