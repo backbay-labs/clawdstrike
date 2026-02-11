@@ -51,6 +51,13 @@ function splitCommandline(commandline: string): { command: string; args: string[
   return { command: tokens[0], args: tokens.slice(1) };
 }
 
+function normalizeNetworkHost(host: string): string {
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return host.slice(1, -1);
+  }
+  return host;
+}
+
 function parseNetworkTarget(target: string): { host: string; port: number; url?: string } {
   const trimmed = target.trim();
   if (!trimmed) throw new Error("network_egress target cannot be empty");
@@ -66,7 +73,7 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
       throw new Error("network_egress target has invalid port");
     }
-    return { host: parsed.hostname, port, url: trimmed };
+    return { host: normalizeNetworkHost(parsed.hostname), port, url: trimmed };
   }
 
   if (trimmed.startsWith("[") && trimmed.includes("]:")) {

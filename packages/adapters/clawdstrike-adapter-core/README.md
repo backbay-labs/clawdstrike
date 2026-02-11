@@ -2,7 +2,7 @@
 
 Framework-agnostic adapter interfaces for Clawdstrike tool-boundary enforcement.
 
-See [Enforcement Tiers & Integration Contract](../../../docs/src/concepts/enforcement-tiers.md) for the integration contract (and what requires a sandbox/broker).
+See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/clawdstrike/blob/main/docs/src/concepts/enforcement-tiers.md) for the integration contract (and what requires a sandbox/broker).
 
 ## Installation
 

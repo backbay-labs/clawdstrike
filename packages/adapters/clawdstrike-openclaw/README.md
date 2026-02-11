@@ -6,4 +6,4 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 
 ## Getting started
 
-See `packages/adapters/clawdstrike-openclaw/docs/getting-started.md`.
+See the [OpenClaw adapter getting-started guide](https://github.com/backbay-labs/clawdstrike/blob/main/packages/adapters/clawdstrike-openclaw/docs/getting-started.md).

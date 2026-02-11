@@ -100,6 +100,23 @@ describe("buildPolicyTestEvent", () => {
     });
   });
 
+  it("normalizes IPv6 URL hosts without brackets", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "network_egress",
+        target: "https://[2001:db8::1]/v1/models",
+      },
+      { eventId: "evt-7", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "network",
+      host: "2001:db8::1",
+      port: 443,
+      url: "https://[2001:db8::1]/v1/models",
+    });
+  });
+
   it("rejects invalid tool parameter JSON", () => {
     expect(() =>
       buildPolicyTestEvent({

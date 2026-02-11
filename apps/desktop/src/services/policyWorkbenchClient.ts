@@ -47,7 +47,10 @@ function toWorkbenchError(err: unknown): PolicyWorkbenchClientError {
   if (message.includes("Invalid policy YAML") || message.includes("policy_yaml_invalid")) {
     return new PolicyWorkbenchClientError("policy_yaml_invalid", message);
   }
-  if (message.includes("unsupported eventType") || message.includes("eventType")) {
+  if (
+    /policy_eval_invalid_event/i.test(message) ||
+    /unsupported\s+event[_\s]?type/i.test(message)
+  ) {
     return new PolicyWorkbenchClientError("policy_eval_invalid_event", message);
   }
   return new PolicyWorkbenchClientError("policy_request_failed", message);
