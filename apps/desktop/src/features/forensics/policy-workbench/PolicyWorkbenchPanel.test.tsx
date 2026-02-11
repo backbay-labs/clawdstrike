@@ -56,6 +56,14 @@ vi.mock("@/services/policyWorkbenchClient", () => {
 });
 
 vi.mock("@backbay/glia/primitives", () => ({
+  GlassPanel: ({
+    children,
+    ...rest
+  }: React.HTMLAttributes<HTMLDivElement>) => <div {...rest}>{children}</div>,
+  GlassHeader: ({
+    children,
+    ...rest
+  }: React.HTMLAttributes<HTMLDivElement>) => <div {...rest}>{children}</div>,
   Badge: ({
     children,
     ...rest
@@ -71,6 +79,92 @@ vi.mock("@backbay/glia/primitives", () => ({
   GlowInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input {...props} />
   ),
+  GlassTextarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
+    <textarea {...props} />
+  ),
+  CodeBlock: ({
+    code,
+    showLineNumbers: _showLineNumbers,
+    maxHeight: _maxHeight,
+    language: _language,
+    copyable: _copyable,
+    ...rest
+  }: {
+    code: string;
+    language?: string;
+    copyable?: boolean;
+    showLineNumbers?: boolean;
+    maxHeight?: string | number;
+  } & React.HTMLAttributes<HTMLPreElement>) => <pre {...rest}>{code}</pre>,
+  Tabs: ({
+    value,
+    onValueChange,
+    children,
+    ...rest
+  }: React.HTMLAttributes<HTMLDivElement> & {
+    value?: string;
+    onValueChange?: (value: string) => void;
+  }) => {
+    const TabsContext = (globalThis as { __policyWorkbenchTabsContext?: React.Context<{
+      value?: string;
+      onValueChange?: (value: string) => void;
+    }> }).__policyWorkbenchTabsContext ??
+      ((globalThis as { __policyWorkbenchTabsContext?: React.Context<{
+        value?: string;
+        onValueChange?: (value: string) => void;
+      }> }).__policyWorkbenchTabsContext = React.createContext<{
+        value?: string;
+        onValueChange?: (value: string) => void;
+      }>({}));
+
+    return (
+      <TabsContext.Provider value={{ value, onValueChange }}>
+        <div {...rest}>{children}</div>
+      </TabsContext.Provider>
+    );
+  },
+  TabsList: ({
+    children,
+    ...rest
+  }: React.HTMLAttributes<HTMLDivElement>) => <div {...rest}>{children}</div>,
+  TabsTrigger: ({
+    value,
+    children,
+    onClick,
+    ...rest
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }) => {
+    const TabsContext = (globalThis as { __policyWorkbenchTabsContext?: React.Context<{
+      value?: string;
+      onValueChange?: (value: string) => void;
+    }> }).__policyWorkbenchTabsContext!;
+    const ctx = React.useContext(TabsContext);
+    const selected = ctx?.value === value;
+    return (
+      <button
+        type="button"
+        data-state={selected ? "active" : "inactive"}
+        {...rest}
+        onClick={(event) => {
+          ctx?.onValueChange?.(value);
+          onClick?.(event);
+        }}
+      >
+        {children}
+      </button>
+    );
+  },
+  TabsContent: ({
+    value,
+    children,
+    ...rest
+  }: React.HTMLAttributes<HTMLDivElement> & { value: string }) => {
+    const TabsContext = (globalThis as { __policyWorkbenchTabsContext?: React.Context<{
+      value?: string;
+    }> }).__policyWorkbenchTabsContext!;
+    const ctx = React.useContext(TabsContext);
+    if (ctx?.value !== value) return null;
+    return <div {...rest}>{children}</div>;
+  },
 }));
 
 describe("PolicyWorkbenchPanel", () => {
@@ -128,7 +222,7 @@ describe("PolicyWorkbenchPanel", () => {
       const custom = event as CustomEvent<PolicyWorkbenchDirtyEventDetail>;
       dirtyEvents.push(Boolean(custom.detail?.dirty));
     };
-    window.addEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty as EventListener);
+    window.addEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty);
 
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -224,6 +318,6 @@ describe("PolicyWorkbenchPanel", () => {
       container.querySelectorAll('[data-testid="policy-test-history-item"]').length
     ).toBeGreaterThan(0);
 
-    window.removeEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty as EventListener);
+    window.removeEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty);
   });
 });

@@ -1,6 +1,18 @@
 import * as React from "react";
 import { clsx } from "clsx";
-import { Badge, GlowButton, GlowInput } from "@backbay/glia/primitives";
+import {
+  Badge,
+  CodeBlock,
+  GlassHeader,
+  GlassPanel,
+  GlassTextarea,
+  GlowButton,
+  GlowInput,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@backbay/glia/primitives";
 
 import {
   PolicyWorkbenchClient,
@@ -256,7 +268,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
       )}
     >
       <div className="flex h-full flex-col text-white/90">
-        <header className="border-b border-white/10 px-4 py-3">
+        <GlassHeader className="border-b border-white/10 px-4 py-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold tracking-wide">Policy Workbench</h2>
             <div className="flex items-center gap-2">
@@ -272,276 +284,299 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
             {state.loadedVersion ? `Schema ${state.loadedVersion}` : "Policy schema unknown"}
             {state.loadedHash ? ` · ${state.loadedHash.slice(0, 12)}…` : ""}
           </p>
-        </header>
+        </GlassHeader>
 
-        <div className="flex border-b border-white/10 px-2 py-2">
-          <TabButton
-            data-testid="policy-workbench-tab-editor"
-            active={tab === "editor"}
-            onClick={() => setTab("editor")}
-          >
-            Editor
-          </TabButton>
-          <TabButton
-            data-testid="policy-workbench-tab-test"
-            active={tab === "test"}
-            onClick={() => setTab("test")}
-          >
-            Test
-          </TabButton>
-        </div>
+        <Tabs
+          value={tab}
+          onValueChange={(next) => setTab((next as WorkbenchTab) ?? "editor")}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <TabsList className="mx-2 mt-2 grid w-auto grid-cols-2 bg-white/8 p-1">
+            <TabsTrigger data-testid="policy-workbench-tab-editor" value="editor">
+              Editor
+            </TabsTrigger>
+            <TabsTrigger data-testid="policy-workbench-tab-test" value="test">
+              Test
+            </TabsTrigger>
+          </TabsList>
 
-        {tab === "editor" ? (
-          <section className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-              <GlowButton
-                data-testid="policy-editor-reload"
-                variant="secondary"
-                onClick={() => void readPolicy()}
-              >
-                Reload
-              </GlowButton>
-              <GlowButton
-                data-testid="policy-editor-revert"
-                variant="secondary"
-                disabled={!dirty}
-                onClick={() => dispatch({ type: "revert" })}
-              >
-                Revert
-              </GlowButton>
-              <GlowButton
-                data-testid="policy-editor-save"
-                disabled={!dirty || state.isSaving}
-                onClick={() => void handleSave()}
-              >
-                {state.isSaving ? "Saving..." : "Save"}
-              </GlowButton>
-              {copyStatus && <span className="text-xs text-white/60">{copyStatus}</span>}
-            </div>
-
-            <YamlEditor
-              value={state.draftYaml}
-              onChange={(yaml) => dispatch({ type: "edit", yaml })}
-            />
-
-            <div className="max-h-44 overflow-y-auto border-t border-white/10 px-3 py-2 text-xs">
-              {state.loadError && <p className="text-red-300">{state.loadError}</p>}
-              {state.saveError && <p className="text-red-300">{state.saveError}</p>}
-              {state.validation.status === "invalid" && (
-                <>
-                  <p className="mb-1 text-amber-300">Validation errors</p>
-                  {state.validation.errors.map((error, index) => (
-                    <p key={`${error.code}-${error.path}-${index}`} className="font-mono text-[11px] text-white/75">
-                      {error.path} [{error.code}] {error.message}
-                    </p>
-                  ))}
-                </>
-              )}
-              {state.validation.status === "valid" && (
-                <p className="text-emerald-300">Policy is valid.</p>
-              )}
-              {state.validation.status === "error" && state.validation.message && (
-                <p className="text-red-300">{state.validation.message}</p>
-              )}
-            </div>
-          </section>
-        ) : (
-          <section className="flex min-h-0 flex-1 flex-col">
-            <div className="space-y-2 border-b border-white/10 px-3 py-3">
-              <div>
-                <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Event Type</label>
-                <select
-                  data-testid="policy-test-event-type"
-                  value={testForm.eventType}
-                  onChange={(event) =>
-                    setTestForm((prev) => ({
-                      ...prev,
-                      eventType: event.target.value as PolicyTestEventType,
-                    }))
-                  }
-                  className="w-full rounded border border-white/20 bg-black/35 px-2 py-1 text-xs"
-                >
-                  {POLICY_TEST_EVENT_TYPES.map((eventType) => (
-                    <option key={eventType} value={eventType}>
-                      {eventType}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Target / Resource</label>
-                <GlowInput
-                  data-testid="policy-test-target"
-                  value={testForm.target}
-                  onChange={(event) => setTestForm((prev) => ({ ...prev, target: event.target.value }))}
-                  placeholder={targetPlaceholder(testForm.eventType)}
-                  className="w-full font-mono text-xs"
-                />
-              </div>
-
-              {(testForm.eventType === "file_write" || testForm.eventType === "patch_apply") && (
-                <div>
-                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Content</label>
-                  <textarea
-                    value={testForm.content}
-                    onChange={(event) => setTestForm((prev) => ({ ...prev, content: event.target.value }))}
-                    className="h-20 w-full resize-none rounded border border-white/20 bg-black/35 px-2 py-1 font-mono text-xs"
-                    placeholder={testForm.eventType === "patch_apply" ? "--- patch diff ---" : "file content"}
-                  />
-                </div>
-              )}
-
-              {(testForm.eventType === "tool_call" || testForm.eventType === "secret_access") && (
-                <div>
-                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">
-                    {testForm.eventType === "tool_call" ? "Tool Parameters JSON" : "Secret Scope"}
-                  </label>
-                  <textarea
-                    value={testForm.extra}
-                    onChange={(event) => setTestForm((prev) => ({ ...prev, extra: event.target.value }))}
-                    className="h-16 w-full resize-none rounded border border-white/20 bg-black/35 px-2 py-1 font-mono text-xs"
-                    placeholder={testForm.eventType === "tool_call" ? "{\"path\":\"/tmp\"}" : "runtime"}
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <GlowInput
-                  value={testForm.sessionId}
-                  onChange={(event) => setTestForm((prev) => ({ ...prev, sessionId: event.target.value }))}
-                  placeholder="sessionId (optional)"
-                  className="font-mono text-xs"
-                />
-                <GlowInput
-                  value={testForm.agentId}
-                  onChange={(event) => setTestForm((prev) => ({ ...prev, agentId: event.target.value }))}
-                  placeholder="agentId (optional)"
-                  className="font-mono text-xs"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
+          <TabsContent value="editor" className="mt-0 flex min-h-0 flex-1 flex-col">
+            <GlassPanel variant="flush" className="mx-2 mt-2 border border-white/10">
+              <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                Editor Actions
+              </GlassHeader>
+              <div className="flex items-center gap-2 px-3 py-2">
                 <GlowButton
-                  data-testid="policy-test-run"
-                  disabled={isRunningTest || !testForm.target.trim()}
-                  onClick={() => void runPolicyTest()}
+                  data-testid="policy-editor-reload"
+                  variant="secondary"
+                  onClick={() => void readPolicy()}
                 >
-                  {isRunningTest ? "Running..." : "Run Test"}
+                  Reload
+                </GlowButton>
+                <GlowButton
+                  data-testid="policy-editor-revert"
+                  variant="secondary"
+                  disabled={!dirty}
+                  onClick={() => dispatch({ type: "revert" })}
+                >
+                  Revert
+                </GlowButton>
+                <GlowButton
+                  data-testid="policy-editor-save"
+                  disabled={!dirty || state.isSaving}
+                  onClick={() => void handleSave()}
+                >
+                  {state.isSaving ? "Saving..." : "Save"}
                 </GlowButton>
                 {copyStatus && <span className="text-xs text-white/60">{copyStatus}</span>}
               </div>
+            </GlassPanel>
+
+            <div className="min-h-0 flex-1 px-2 py-2">
+              <YamlEditor
+                value={state.draftYaml}
+                onChange={(yaml) => dispatch({ type: "edit", yaml })}
+              />
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-              {testError && (
-                <div className="mb-3 rounded border border-red-500/40 bg-red-500/15 px-2 py-2 text-xs text-red-200">
-                  {testError}
-                </div>
-              )}
-
-              {testResult ? (
-                <ResultCard
-                  result={testResult}
-                  onCopy={() => void copyJson(testResult, "Result JSON")}
-                />
-              ) : (
-                <p className="text-xs text-white/50">Run a policy test to see structured decision output.</p>
-              )}
-
-              <div className="mt-4 border-t border-white/10 pt-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-white/55">History</h3>
-                </div>
-                {history.length === 0 ? (
-                  <p className="text-xs text-white/45">No test history yet.</p>
-                ) : (
-                  <ul data-testid="policy-test-history" className="space-y-2">
-                    {history.map((entry) => {
-                      const decision = (entry.response.decision as Record<string, unknown> | undefined) ?? {};
-                      const verdict = decision.denied
-                        ? "deny"
-                        : decision.warn
-                          ? "warn"
-                          : decision.allowed
-                            ? "allow"
-                            : "unknown";
-                      return (
-                        <li
-                          key={entry.id}
-                          data-testid="policy-test-history-item"
-                          className="rounded border border-white/10 bg-black/20 p-2 text-xs"
-                        >
-                          <div className="mb-1 flex items-center justify-between gap-2">
-                            <span className="font-mono text-white/65">{new Date(entry.at).toLocaleTimeString()}</span>
-                            <span
-                              className={clsx(
-                                "rounded px-1.5 py-0.5 uppercase tracking-wide",
-                                verdict === "allow" && "bg-emerald-500/20 text-emerald-300",
-                                verdict === "warn" && "bg-amber-500/20 text-amber-300",
-                                verdict === "deny" && "bg-red-500/20 text-red-300",
-                                verdict === "unknown" && "bg-white/15 text-white/65"
-                              )}
-                            >
-                              {verdict}
-                            </span>
-                          </div>
-                          <p className="truncate font-mono text-white/65">
-                            {String((entry.request.eventType as string | undefined) ?? "event")} ·{" "}
-                            {String(
-                              ((entry.request.data as Record<string, unknown> | undefined)?.path as string | undefined) ??
-                                ((entry.request.data as Record<string, unknown> | undefined)?.host as string | undefined) ??
-                                ((entry.request.data as Record<string, unknown> | undefined)?.toolName as string | undefined) ??
-                                "-"
-                            )}
-                          </p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <button
-                              type="button"
-                              className="rounded border border-white/15 px-2 py-1 text-[11px] text-white/75 hover:text-white"
-                              onClick={() => void copyJson(entry.response, "History JSON")}
-                            >
-                              Copy JSON
-                            </button>
-                            {entry.error && <span className="text-[11px] text-red-300">{entry.error}</span>}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
+            <GlassPanel
+              variant="flush"
+              className="mx-2 mb-2 max-h-44 overflow-y-auto border border-white/10"
+            >
+              <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                Validation
+              </GlassHeader>
+              <div className="px-3 py-2 text-xs">
+                {state.loadError && <p className="text-red-300">{state.loadError}</p>}
+                {state.saveError && <p className="text-red-300">{state.saveError}</p>}
+                {state.validation.status === "invalid" && (
+                  <>
+                    <p className="mb-1 text-amber-300">Validation errors</p>
+                    {state.validation.errors.map((error, index) => (
+                      <p key={`${error.code}-${error.path}-${index}`} className="font-mono text-[11px] text-white/75">
+                        {error.path} [{error.code}] {error.message}
+                      </p>
+                    ))}
+                  </>
+                )}
+                {state.validation.status === "valid" && (
+                  <p className="text-emerald-300">Policy is valid.</p>
+                )}
+                {state.validation.status === "error" && state.validation.message && (
+                  <p className="text-red-300">{state.validation.message}</p>
                 )}
               </div>
+            </GlassPanel>
+          </TabsContent>
+
+          <TabsContent value="test" className="mt-0 flex min-h-0 flex-1 flex-col">
+            <GlassPanel
+              variant="flush"
+              className="mx-2 mt-2 border border-white/10"
+            >
+              <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                Test Input
+              </GlassHeader>
+              <div className="space-y-2 px-3 py-3">
+                <div>
+                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Event Type</label>
+                  <select
+                    data-testid="policy-test-event-type"
+                    value={testForm.eventType}
+                    onChange={(event) =>
+                      setTestForm((prev) => ({
+                        ...prev,
+                        eventType: event.target.value as PolicyTestEventType,
+                      }))
+                    }
+                    className="w-full rounded border border-white/20 bg-black/35 px-2 py-1 text-xs"
+                  >
+                    {POLICY_TEST_EVENT_TYPES.map((eventType) => (
+                      <option key={eventType} value={eventType}>
+                        {eventType}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Target / Resource</label>
+                  <GlowInput
+                    data-testid="policy-test-target"
+                    value={testForm.target}
+                    onChange={(event) => setTestForm((prev) => ({ ...prev, target: event.target.value }))}
+                    placeholder={targetPlaceholder(testForm.eventType)}
+                    className="w-full font-mono text-xs"
+                  />
+                </div>
+
+                {(testForm.eventType === "file_write" || testForm.eventType === "patch_apply") && (
+                  <div>
+                    <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Content</label>
+                    <GlassTextarea
+                      value={testForm.content}
+                      onChange={(event) => setTestForm((prev) => ({ ...prev, content: event.target.value }))}
+                      className="h-20 w-full resize-none font-mono text-xs"
+                      placeholder={testForm.eventType === "patch_apply" ? "--- patch diff ---" : "file content"}
+                    />
+                  </div>
+                )}
+
+                {(testForm.eventType === "tool_call" || testForm.eventType === "secret_access") && (
+                  <div>
+                    <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">
+                      {testForm.eventType === "tool_call" ? "Tool Parameters JSON" : "Secret Scope"}
+                    </label>
+                    <GlassTextarea
+                      value={testForm.extra}
+                      onChange={(event) => setTestForm((prev) => ({ ...prev, extra: event.target.value }))}
+                      className="h-16 w-full resize-none font-mono text-xs"
+                      placeholder={testForm.eventType === "tool_call" ? "{\"path\":\"/tmp\"}" : "runtime"}
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <GlowInput
+                    value={testForm.sessionId}
+                    onChange={(event) => setTestForm((prev) => ({ ...prev, sessionId: event.target.value }))}
+                    placeholder="sessionId (optional)"
+                    className="font-mono text-xs"
+                  />
+                  <GlowInput
+                    value={testForm.agentId}
+                    onChange={(event) => setTestForm((prev) => ({ ...prev, agentId: event.target.value }))}
+                    placeholder="agentId (optional)"
+                    className="font-mono text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <GlowButton
+                    data-testid="policy-test-run"
+                    disabled={isRunningTest || !testForm.target.trim()}
+                    onClick={() => void runPolicyTest()}
+                  >
+                    {isRunningTest ? "Running..." : "Run Test"}
+                  </GlowButton>
+                  {copyStatus && <span className="text-xs text-white/60">{copyStatus}</span>}
+                </div>
+              </div>
+            </GlassPanel>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+              <GlassPanel variant="flush" className="border border-white/10">
+                <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                  Decision Output
+                </GlassHeader>
+                <div className="px-3 py-3">
+                  {testError && (
+                    <div className="mb-3 rounded border border-red-500/40 bg-red-500/15 px-2 py-2 text-xs text-red-200">
+                      {testError}
+                    </div>
+                  )}
+
+                  {testResult ? (
+                    <ResultCard
+                      result={testResult}
+                      onCopy={() => void copyJson(testResult, "Result JSON")}
+                    />
+                  ) : (
+                    <p className="text-xs text-white/50">Run a policy test to see structured decision output.</p>
+                  )}
+                </div>
+              </GlassPanel>
+
+              <GlassPanel variant="flush" className="mt-2 border border-white/10">
+                <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                  History
+                </GlassHeader>
+                <div className="px-3 py-3">
+                  {history.length === 0 ? (
+                    <p className="text-xs text-white/45">No test history yet.</p>
+                  ) : (
+                    <ul data-testid="policy-test-history" className="space-y-2">
+                      {history.map((entry) => {
+                        const decision = (entry.response.decision as Record<string, unknown> | undefined) ?? {};
+                        const verdict = decision.denied
+                          ? "deny"
+                          : decision.warn
+                            ? "warn"
+                            : decision.allowed
+                              ? "allow"
+                              : "unknown";
+                        return (
+                          <li
+                            key={entry.id}
+                            data-testid="policy-test-history-item"
+                            className="rounded border border-white/10 bg-black/20 p-2 text-xs"
+                          >
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <span className="font-mono text-white/65">{new Date(entry.at).toLocaleTimeString()}</span>
+                              <span
+                                className={clsx(
+                                  "rounded px-1.5 py-0.5 uppercase tracking-wide",
+                                  verdict === "allow" && "bg-emerald-500/20 text-emerald-300",
+                                  verdict === "warn" && "bg-amber-500/20 text-amber-300",
+                                  verdict === "deny" && "bg-red-500/20 text-red-300",
+                                  verdict === "unknown" && "bg-white/15 text-white/65"
+                                )}
+                              >
+                                {verdict}
+                              </span>
+                            </div>
+                            <p className="truncate font-mono text-white/65">
+                              {String((entry.request.eventType as string | undefined) ?? "event")} ·{" "}
+                              {String(
+                                ((entry.request.data as Record<string, unknown> | undefined)?.path as string | undefined) ??
+                                  ((entry.request.data as Record<string, unknown> | undefined)?.host as string | undefined) ??
+                                  ((entry.request.data as Record<string, unknown> | undefined)?.toolName as string | undefined) ??
+                                  "-"
+                              )}
+                            </p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="rounded border border-white/15 px-2 py-1 text-[11px] text-white/75 hover:text-white"
+                                onClick={() => void copyJson(entry.response, "History JSON")}
+                              >
+                                Copy JSON
+                              </button>
+                              {entry.error && <span className="text-[11px] text-red-300">{entry.error}</span>}
+                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer text-[11px] uppercase tracking-wide text-white/60">
+                                Details
+                              </summary>
+                              <div className="mt-2 space-y-2">
+                                <CodeBlock
+                                  code={JSON.stringify(entry.request, null, 2)}
+                                  language="json"
+                                  title="request"
+                                  showLineNumbers
+                                  maxHeight={140}
+                                />
+                                <CodeBlock
+                                  code={JSON.stringify(entry.response, null, 2)}
+                                  language="json"
+                                  title="response"
+                                  showLineNumbers
+                                  maxHeight={160}
+                                />
+                              </div>
+                            </details>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </GlassPanel>
             </div>
-          </section>
-        )}
+          </TabsContent>
+        </Tabs>
       </div>
     </aside>
-  );
-}
-
-function TabButton({
-  "data-testid": dataTestId,
-  active,
-  onClick,
-  children,
-}: {
-  "data-testid"?: string;
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid={dataTestId}
-      className={clsx(
-        "mx-1 flex-1 rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wide",
-        active ? "bg-white/15 text-white" : "text-white/60 hover:text-white/85"
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -588,6 +623,7 @@ function ResultCard({
       : decision.allowed
         ? "ALLOW"
         : "UNKNOWN";
+  const rawResultJson = JSON.stringify(result, null, 2);
 
   return (
     <div className="rounded border border-white/12 bg-black/20 p-3 text-xs">
@@ -620,10 +656,14 @@ function ResultCard({
         <dt className="text-white/55">Severity</dt>
         <dd>{String(decision.severity ?? "-")}</dd>
       </dl>
-
-      <pre className="mt-3 max-h-56 overflow-auto rounded border border-white/10 bg-black/30 p-2 text-[11px] text-white/75">
-        {JSON.stringify(result, null, 2)}
-      </pre>
+      <CodeBlock
+        code={rawResultJson}
+        language="json"
+        title="policy_eval.response"
+        showLineNumbers
+        maxHeight={224}
+        className="mt-3"
+      />
     </div>
   );
 }
@@ -635,64 +675,38 @@ function YamlEditor({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const highlighted = React.useMemo(() => highlightYaml(value), [value]);
-  const preRef = React.useRef<HTMLPreElement | null>(null);
-
   return (
-    <div className="relative min-h-0 flex-1">
-      <pre
-        ref={preRef}
-        aria-hidden
-        className="absolute inset-0 overflow-auto whitespace-pre p-3 font-mono text-xs leading-5 text-white/85"
-        dangerouslySetInnerHTML={{ __html: highlighted.length > 0 ? highlighted : "&nbsp;" }}
-      />
-      <textarea
-        data-testid="policy-editor-textarea"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onScroll={(event) => {
-          if (!preRef.current) return;
-          preRef.current.scrollTop = event.currentTarget.scrollTop;
-          preRef.current.scrollLeft = event.currentTarget.scrollLeft;
-        }}
-        spellCheck={false}
-        className="absolute inset-0 resize-none overflow-auto bg-transparent p-3 font-mono text-xs leading-5 text-transparent caret-white outline-none"
-      />
+    <div className="grid h-full min-h-0 grid-rows-2 gap-2">
+      <GlassPanel variant="flush" className="min-h-0 overflow-hidden border border-white/10">
+        <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+          Editable YAML
+        </GlassHeader>
+        <div className="h-[calc(100%-33px)] p-2">
+          <textarea
+            data-testid="policy-editor-textarea"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            spellCheck={false}
+            className="h-full min-h-[210px] w-full resize-none rounded border border-white/15 bg-black/25 p-3 font-mono text-xs leading-5 text-white/90 outline-none focus:border-white/30"
+          />
+        </div>
+      </GlassPanel>
+
+      <GlassPanel variant="flush" className="min-h-0 overflow-hidden border border-white/10">
+        <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+          Read-only Preview
+        </GlassHeader>
+        <div className="h-[calc(100%-33px)] p-2">
+          <CodeBlock
+            code={value}
+            language="yaml"
+            title="policy.yaml"
+            showLineNumbers
+            maxHeight={240}
+            className="h-full"
+          />
+        </div>
+      </GlassPanel>
     </div>
   );
-}
-
-function highlightYaml(input: string): string {
-  const escaped = escapeHtml(input);
-  return escaped
-    .split("\n")
-    .map((line) => {
-      const commentIndex = line.indexOf("#");
-      const head = commentIndex >= 0 ? line.slice(0, commentIndex) : line;
-      const comment = commentIndex >= 0 ? line.slice(commentIndex) : "";
-
-      const keyColored = head.replace(
-        /^(\s*-\s*)?([A-Za-z0-9_."-]+)(\s*:)/,
-        (_m, prefix, key, suffix) =>
-          `${prefix ?? ""}<span style="color:#7dd3fc">${key}</span><span style="color:#d1d5db">${suffix}</span>`
-      );
-
-      const valueColored = keyColored
-        .replace(/\b(true|false|null)\b/g, '<span style="color:#fcd34d">$1</span>')
-        .replace(/(".*?")/g, '<span style="color:#86efac">$1</span>')
-        .replace(/\b([0-9]+)\b/g, '<span style="color:#f9a8d4">$1</span>');
-
-      const commentColored =
-        comment.length > 0 ? `<span style="color:#94a3b8">${comment}</span>` : "";
-
-      return valueColored + commentColored;
-    })
-    .join("\n");
-}
-
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
