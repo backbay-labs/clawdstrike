@@ -27,6 +27,7 @@
 
 - [OpenClaw Integration](guides/openclaw-integration.md)
 - [Agent OpenClaw Operations](guides/agent-openclaw-operations.md)
+- [Helm Confidence Pipeline](guides/helm-confidence-pipeline.md)
 - [Vercel AI Integration](guides/vercel-ai-integration.md)
 - [LangChain Integration](guides/langchain-integration.md)
 - [Generic Adapter Integration](guides/generic-adapter-integration.md)

@@ -1,0 +1,187 @@
+name: Helm Nightly Resilience
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      chart_version:
+        description: "Optional chart version override (defaults to latest stable OCI tag)"
+        required: false
+        type: string
+      run_openclaw_macos:
+        description: "Run optional macOS OpenClaw smoke (requires dedicated runner preconfigured with agent + openclaw)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  EKS_ROLE_ARN: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+  CHART_REF: oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike
+
+jobs:
+  resolve-version:
+    name: Resolve Candidate Chart Version
+    runs-on: ubuntu-latest
+    outputs:
+      chart_version: ${{ steps.version.outputs.chart_version }}
+    steps:
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR (ORAS)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: echo "$GITHUB_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          INPUT_CHART_VERSION: ${{ github.event.inputs.chart_version || '' }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$INPUT_CHART_VERSION" ]]; then
+            chart_version="$INPUT_CHART_VERSION"
+          else
+            mapfile -t stable_tags < <(oras repo tags ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+            if [[ ${#stable_tags[@]} -eq 0 ]]; then
+              echo "No stable chart tags found in GHCR." >&2
+              exit 1
+            fi
+            chart_version="${stable_tags[$((${#stable_tags[@]} - 1))]}"
+          fi
+          echo "chart_version=${chart_version}" >>"$GITHUB_OUTPUT"
+
+  resilience-linux:
+    name: EKS Resilience + Security
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.EKS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl for EKS
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Login to GHCR (helm + oras)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          echo "$GITHUB_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Run resilience/security script
+        env:
+          GHCR_PULL_USERNAME: ${{ github.actor }}
+          GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARTIFACT_DIR="$RUNNER_TEMP/helm-nightly-resilience"
+          NAMESPACE="clawdstrike-resilience-${{ github.run_id }}-${{ github.run_attempt }}"
+          scripts/helm-resilience-security.sh \
+            --chart-ref "$CHART_REF" \
+            --chart-version "${{ needs.resolve-version.outputs.chart_version }}" \
+            --release "clawdstrike-resilience" \
+            --namespace "$NAMESPACE" \
+            --values "infra/deploy/helm/clawdstrike/ci/resilience-values.yaml" \
+            --artifact-dir "$ARTIFACT_DIR"
+
+      - name: Upload resilience artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-nightly-resilience-${{ github.run_id }}
+          path: ${{ runner.temp }}/helm-nightly-resilience
+
+      - name: Append resilience summary
+        if: always()
+        run: |
+          SUMMARY_FILE="$RUNNER_TEMP/helm-nightly-resilience/summary.md"
+          if [[ -f "$SUMMARY_FILE" ]]; then
+            cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No resilience summary produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  openclaw-smoke-skipped:
+    name: macOS OpenClaw Smoke Skipped
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    if: ${{ !(github.event.inputs.run_openclaw_macos == 'true' || vars.ENABLE_MACOS_OPENCLAW_SMOKE == 'true') }}
+    steps:
+      - name: Emit skip reason
+        run: |
+          {
+            echo "## Optional macOS OpenClaw Smoke"
+            echo ""
+            echo "- status: skipped"
+            echo "- reason: enable via workflow input \`run_openclaw_macos=true\` or repository variable \`ENABLE_MACOS_OPENCLAW_SMOKE=true\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  openclaw-smoke-macos:
+    name: macOS OpenClaw Smoke (Optional)
+    runs-on: macos-latest
+    needs: resolve-version
+    if: ${{ github.event.inputs.run_openclaw_macos == 'true' || vars.ENABLE_MACOS_OPENCLAW_SMOKE == 'true' }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run OpenClaw smoke (if prerequisites exist)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="$RUNNER_TEMP/openclaw-nightly"
+          mkdir -p "$ARTIFACT_DIR"
+          if [[ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent-local-token" ]]; then
+            echo "missing ~/.config/clawdstrike/agent-local-token; skipping run" | tee "$ARTIFACT_DIR/summary.txt"
+            exit 0
+          fi
+          if ! command -v openclaw >/dev/null 2>&1; then
+            echo "openclaw CLI not installed; skipping run" | tee "$ARTIFACT_DIR/summary.txt"
+            exit 0
+          fi
+          scripts/openclaw-agent-smoke.sh --start-local-gateway --gateway-token nightly-smoke-token | tee "$ARTIFACT_DIR/output.log"
+          echo "openclaw smoke completed" > "$ARTIFACT_DIR/summary.txt"
+
+      - name: Upload OpenClaw macOS smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openclaw-macos-smoke-${{ github.run_id }}
+          path: ${{ runner.temp }}/openclaw-nightly
+
+      - name: Append macOS smoke summary
+        if: always()
+        run: |
+          SUMMARY_FILE="$RUNNER_TEMP/openclaw-nightly/summary.txt"
+          {
+            echo "## Optional macOS OpenClaw Smoke"
+            if [[ -f "$SUMMARY_FILE" ]]; then
+              echo ""
+              cat "$SUMMARY_FILE"
+            else
+              echo ""
+              echo "no summary produced"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

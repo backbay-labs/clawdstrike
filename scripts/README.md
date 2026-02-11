@@ -16,3 +16,5 @@ Current policy/structure guardrails:
 4. `scripts/cleanup-legacy-paths.sh` - removes stale legacy directories from local checkouts.
 5. `scripts/openclaw-agent-smoke.sh` - validates agent-owned OpenClaw flows (`health -> policy bypass toggle -> gateway connect -> request relay -> optional reconnect`).
 6. `scripts/release-helm-chart.sh` - lints/templates/packages the ClawdStrike Helm chart and optionally pushes it to an OCI registry.
+7. `scripts/helm-e2e-smoke.sh` - OCI install smoke check (`helm upgrade --install`, `helm test`, service health probes, diagnostics bundle).
+8. `scripts/helm-resilience-security.sh` - nightly-style restart/recovery + upgrade/rollback + security checks with machine-readable summary.

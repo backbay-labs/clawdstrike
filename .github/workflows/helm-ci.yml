@@ -6,12 +6,16 @@ on:
     paths:
       - "infra/deploy/helm/clawdstrike/**"
       - ".github/workflows/helm-ci.yml"
+      - "scripts/helm-e2e-smoke.sh"
+      - "scripts/helm-resilience-security.sh"
       - "scripts/release-helm-chart.sh"
   pull_request:
     branches: [main]
     paths:
       - "infra/deploy/helm/clawdstrike/**"
       - ".github/workflows/helm-ci.yml"
+      - "scripts/helm-e2e-smoke.sh"
+      - "scripts/helm-resilience-security.sh"
       - "scripts/release-helm-chart.sh"
 
 jobs:
@@ -29,3 +33,15 @@ jobs:
 
       - name: Render chart templates
         run: helm template test-release infra/deploy/helm/clawdstrike -f infra/deploy/helm/clawdstrike/ci/test-values.yaml > /dev/null
+
+      - name: Package chart (fast gate)
+        run: scripts/release-helm-chart.sh "0.0.0-ci.${{ github.run_number }}"
+
+      - name: Inspect packaged chart metadata
+        run: helm show chart "dist/helm/clawdstrike-0.0.0-ci.${{ github.run_number }}.tgz"
+
+      - name: Upload packaged chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-fast-package-${{ github.run_number }}
+          path: dist/helm/clawdstrike-0.0.0-ci.${{ github.run_number }}.tgz

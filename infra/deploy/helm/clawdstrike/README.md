@@ -178,3 +178,72 @@ Artifact Hub consumes the chart from the OCI repository. Use the following one-t
 2. Copy the repository ID from Artifact Hub settings.
 3. Add `ARTIFACTHUB_REPOSITORY_ID` as a GitHub Actions secret in this repository.
 4. Tag a release (`vX.Y.Z`) or run the Helm release workflow manually; the workflow will publish repository metadata (`artifacthub.io`) via ORAS.
+
+## Confidence Pipeline
+
+The Helm confidence pipeline is split into three layers:
+
+1. **Fast gate (`Helm Chart CI`)** on chart/script changes:
+  - lint + render + package
+  - chart metadata inspection
+  - packaged chart artifact upload
+2. **Real cluster smoke (`Helm Cluster Smoke`)** for merge-candidate PRs:
+  - build/push PR-scoped OCI chart to `oci://ghcr.io/backbay-labs/clawdstrike/helm-ci`
+  - install from OCI only
+  - run `helm test`, pod readiness checks, and health probes
+  - publish diagnostics artifact bundle
+3. **Nightly resilience/security (`Helm Nightly Resilience`)**:
+  - restart + recovery checks
+  - N-1 -> N upgrade safety
+  - intentional bad upgrade + rollback validation
+  - agent policy/OpenClaw Rust security tests
+  - optional macOS OpenClaw smoke publishing separate results
+
+### Local One-Command Smoke
+
+```bash
+scripts/helm-e2e-smoke.sh \
+  --chart-ref oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
+  --chart-version 0.1.2 \
+  --namespace "clawdstrike-smoke-$(date +%s)" \
+  --values infra/deploy/helm/clawdstrike/ci/cluster-smoke-values.yaml \
+  --artifact-dir dist/helm-smoke/local
+```
+
+### Baseline Release Verification Sequence
+
+```bash
+# 1) package and validate chart
+scripts/release-helm-chart.sh 0.1.2
+
+# 2) install from OCI tag
+helm upgrade --install clawdstrike-smoke \
+  oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike \
+  --version 0.1.2 \
+  -n clawdstrike-smoke \
+  -f infra/deploy/helm/clawdstrike/ci/cluster-smoke-values.yaml \
+  --wait --timeout 10m
+
+# 3) run helm test
+helm test clawdstrike-smoke -n clawdstrike-smoke --timeout 5m
+
+# 4) verify pods
+kubectl -n clawdstrike-smoke get pods
+
+# 5) verify health endpoints
+kubectl -n clawdstrike-smoke port-forward svc/clawdstrike-smoke-hushd 9876:9876 &
+curl -fsS http://127.0.0.1:9876/health
+kubectl -n clawdstrike-smoke port-forward svc/clawdstrike-smoke-proofs-api 8080:8080 &
+curl -fsS http://127.0.0.1:8080/healthz
+```
+
+### Required CI Variables / Secrets
+
+- `AWS_OIDC_ROLE_ARN` (secret): IAM role for GitHub OIDC -> EKS access
+- `EKS_CLUSTER_NAME` (variable): target dev EKS cluster name
+- `AWS_REGION` (variable, optional): defaults to `us-east-1`
+- `ENABLE_MACOS_OPENCLAW_SMOKE` (variable, optional): set `true` to run optional macOS OpenClaw smoke job nightly
+
+### Branch Protection
+
+Enable `Helm Cluster Smoke` as a required status check after validating three consecutive successful runs.

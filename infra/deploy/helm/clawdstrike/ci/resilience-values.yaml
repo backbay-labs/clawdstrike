@@ -1,0 +1,31 @@
+# Values for nightly resilience/security validation.
+global:
+  imagePullSecrets:
+    - name: ghcr-pull
+  nodeSelector:
+    kubernetes.io/arch: arm64
+
+nats:
+  replicas: 1
+  jetstream:
+    storage:
+      size: 1Gi
+
+spine:
+  checkpointer:
+    logSeedHex: "1111111111111111111111111111111111111111111111111111111111111111"
+    streamReplicas: 1
+  witness:
+    seedHex: "2222222222222222222222222222222222222222222222222222222222222222"
+
+hushd:
+  auth:
+    enabled: false
+  persistence:
+    enabled: false
+
+bridges:
+  tetragon:
+    enabled: false
+  hubble:
+    enabled: false
