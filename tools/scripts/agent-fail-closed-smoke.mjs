@@ -37,6 +37,34 @@ const startedAt = new Date().toISOString();
 const results = [];
 let failed = 0;
 
+function parseJsonReportFromStdout(stdout) {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Continue with more targeted extraction below.
+  }
+
+  const lines = trimmed.split('\n');
+  for (let start = lines.length - 1; start >= 0; start -= 1) {
+    if (!lines[start].trimStart().startsWith('{')) {
+      continue;
+    }
+    const candidate = lines.slice(start).join('\n').trim();
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Keep searching for the start of the JSON payload.
+    }
+  }
+
+  return null;
+}
+
 for (const scenario of scenarios) {
   process.stdout.write(`\n[agent-fail-closed] ${scenario.id}: ${scenario.name}\n`);
 
@@ -50,13 +78,7 @@ for (const scenario of scenarios) {
   const stdout = proc.stdout ?? '';
   const stderr = proc.stderr ?? '';
 
-  let parsed = null;
-  try {
-    const maybeJson = stdout.trim().split('\n').filter(Boolean).slice(-1)[0];
-    parsed = maybeJson ? JSON.parse(maybeJson) : null;
-  } catch {
-    parsed = null;
-  }
+  const parsed = parseJsonReportFromStdout(stdout);
 
   const pass = proc.status === 0;
   if (!pass) failed += 1;
