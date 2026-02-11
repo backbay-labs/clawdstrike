@@ -707,4 +707,50 @@ describe("PolicyWorkbenchPanel", () => {
       await Promise.resolve();
     });
   });
+
+  it("surfaces validation error state when save-time validation request fails", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    const editorValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+    if (!editorValueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "validate-error"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    validatePolicyMock.mockRejectedValueOnce(new Error("daemon disconnected"));
+
+    const saveButton = container.querySelector(
+      '[data-testid="policy-editor-save"]'
+    ) as HTMLButtonElement;
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(savePolicyMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Validation Error");
+    expect(container.textContent).toContain("daemon disconnected");
+  });
 });

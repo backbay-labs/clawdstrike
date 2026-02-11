@@ -94,6 +94,28 @@ describe("policyWorkbenchReducer", () => {
     expect(preserved.loadError).toBeUndefined();
   });
 
+  it("clears stale saveError on save success paths", () => {
+    const failed = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "save_error",
+      message: "previous save failed",
+    });
+    expect(failed.saveError).toBe("previous save failed");
+
+    const saved = policyWorkbenchReducer(failed, {
+      type: "save_success",
+      yaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(saved.saveError).toBeUndefined();
+
+    const preserved = policyWorkbenchReducer(failed, {
+      type: "save_success_preserve_draft",
+      loadedYaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(preserved.saveError).toBeUndefined();
+  });
+
   it("refreshes loadedVersion on save success paths", () => {
     const loaded = policyWorkbenchReducer(initialPolicyWorkbenchState, {
       type: "load_success",
