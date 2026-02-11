@@ -2,7 +2,7 @@
 
 Minimal, runtime-optional wrappers for Vercel AI SDK-style tools.
 
-See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/clawdstrike/blob/main/docs/src/concepts/enforcement-tiers.md) for what is enforceable at the tool boundary (and what requires a sandbox/broker).
+See [Enforcement Tiers & Integration Contract](../../../docs/src/concepts/enforcement-tiers.md) for what is enforceable at the tool boundary (and what requires a sandbox/broker).
 
 ## Install
 

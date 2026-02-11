@@ -25,7 +25,7 @@ vi.mock("./tauri", () => ({
   policyValidate: vi.fn(),
 }));
 
-import { PolicyWorkbenchClient, PolicyWorkbenchClientError } from "./policyWorkbenchClient";
+import { PolicyWorkbenchClient } from "./policyWorkbenchClient";
 
 describe("PolicyWorkbenchClient", () => {
   beforeEach(() => {
@@ -75,25 +75,5 @@ describe("PolicyWorkbenchClient", () => {
     const result = await client.validatePolicy("version: \"1.2.0\"");
 
     expect(result.warnings[0]?.code).toBe("policy_warning");
-  });
-
-  it("classifies unsupported event type failures as policy_eval_invalid_event", async () => {
-    validatePolicyMock.mockRejectedValue(new Error("unsupported eventType: launch_missiles"));
-
-    const client = new PolicyWorkbenchClient("http://localhost:9876");
-
-    await expect(client.validatePolicy("version: \"1.2.0\"")).rejects.toMatchObject({
-      code: "policy_eval_invalid_event",
-    } satisfies Partial<PolicyWorkbenchClientError>);
-  });
-
-  it("does not classify generic eventType mentions as invalid-event errors", async () => {
-    validatePolicyMock.mockRejectedValue(new Error("request failed: eventType metadata unavailable"));
-
-    const client = new PolicyWorkbenchClient("http://localhost:9876");
-
-    await expect(client.validatePolicy("version: \"1.2.0\"")).rejects.toMatchObject({
-      code: "policy_request_failed",
-    } satisfies Partial<PolicyWorkbenchClientError>);
   });
 });

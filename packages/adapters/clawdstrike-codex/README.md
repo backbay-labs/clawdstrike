@@ -4,7 +4,7 @@ In-process tool-boundary hooks for Codex-style coding assistants.
 
 This package is intentionally **runtime-agnostic**: you wire it into the layer that actually executes tools (file/network/command/etc).
 
-See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/clawdstrike/blob/main/docs/src/concepts/enforcement-tiers.md) for what this does and does not prevent (and what requires a sandbox/broker).
+See [Enforcement Tiers & Integration Contract](../../../docs/src/concepts/enforcement-tiers.md) for what this does and does not prevent (and what requires a sandbox/broker).
 
 ## Install
 
@@ -29,12 +29,3 @@ const dispatchTool = wrapCodexToolDispatcher(boundary, async (toolName, input, r
 
 await dispatchTool('bash', { cmd: 'echo hello' }, 'run-123');
 ```
-
-## Fail-Closed POC
-
-```bash
-npm --prefix packages/adapters/clawdstrike-codex run build
-npm --prefix packages/adapters/clawdstrike-codex run poc:fail-closed
-```
-
-This deterministic POC proves blocked tool calls throw `ClawdstrikeBlockedError` and do not execute dispatcher side effects.
