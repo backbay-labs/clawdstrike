@@ -4,7 +4,7 @@ Policy engine adapter that shells out to the `hush` CLI for evaluation.
 
 This is useful when you want TypeScript tool-boundary enforcement but prefer the Rust policy engine for ruleset parsing and evaluation.
 
-See [Enforcement Tiers & Integration Contract](../../../docs/src/concepts/enforcement-tiers.md) for what is enforceable at the tool boundary (and what requires a sandbox/broker).
+See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/clawdstrike/blob/main/docs/src/concepts/enforcement-tiers.md) for what is enforceable at the tool boundary (and what requires a sandbox/broker).
 
 ## Prerequisites
 
