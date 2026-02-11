@@ -19,6 +19,11 @@ use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
+#[cfg(test)]
+const CONNECT_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(400);
+#[cfg(not(test))]
+const CONNECT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GatewayConnectionStatus {
@@ -550,6 +555,7 @@ impl OpenClawManager {
             .with_context(|| "failed to send connect frame")?;
 
         let mut connected = false;
+        let connect_deadline = Instant::now() + CONNECT_HANDSHAKE_TIMEOUT;
         let mut pending: HashMap<String, PendingResponse> = HashMap::new();
 
         loop {
@@ -559,6 +565,14 @@ impl OpenClawManager {
             tokio::select! {
                 _ = &mut timeout_tick => {
                     let now = Instant::now();
+                    if !connected && now > connect_deadline {
+                        reject_all_pending(&mut pending, "connect timeout");
+                        return Err(anyhow::anyhow!(
+                            "timeout waiting for connect response ({:?})",
+                            CONNECT_HANDSHAKE_TIMEOUT
+                        ));
+                    }
+
                     let expired: Vec<String> = pending
                         .iter()
                         .filter_map(|(id, p)| if now > p.expires_at { Some(id.clone()) } else { None })
@@ -1188,5 +1202,65 @@ mod tests {
         if let Err(err) = server_result {
             panic!("mock gateway task failed: {}", err);
         }
+    }
+
+    #[tokio::test]
+    async fn connect_handshake_times_out_when_gateway_never_replies() {
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(value) => value,
+            Err(err) => panic!("failed to bind timeout test listener: {}", err),
+        };
+        let addr = match listener.local_addr() {
+            Ok(value) => value,
+            Err(err) => panic!("failed to read timeout test listener address: {}", err),
+        };
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = match listener.accept().await {
+                Ok(value) => value,
+                Err(err) => return Err(format!("accept failed: {}", err)),
+            };
+            let mut ws = match accept_async(stream).await {
+                Ok(value) => value,
+                Err(err) => return Err(format!("ws accept failed: {}", err)),
+            };
+
+            // Accept the connect request but never send the response.
+            let _ = ws.next().await;
+            tokio::time::sleep(Duration::from_millis(1_000)).await;
+            Ok::<(), String>(())
+        });
+
+        let manager = OpenClawManager::new(Arc::new(RwLock::new(Settings::default())));
+        let metadata = OpenClawGatewayMetadata {
+            id: "gw-timeout".to_string(),
+            label: "Timeout Gateway".to_string(),
+            gateway_url: format!("ws://{}", addr),
+        };
+        let secrets = GatewaySecrets::default();
+        let (_tx, mut rx) = mpsc::channel(4);
+
+        let started_at = Instant::now();
+        let result = manager
+            .run_gateway_connection_once("gw-timeout", &metadata, &secrets, &mut rx)
+            .await;
+
+        assert!(result.is_err(), "expected handshake timeout error");
+        let err_text = format!(
+            "{}",
+            result
+                .err()
+                .unwrap_or_else(|| anyhow::anyhow!("missing error"))
+        );
+        assert!(
+            err_text.contains("timeout waiting for connect response"),
+            "unexpected error text: {err_text}"
+        );
+        assert!(
+            started_at.elapsed() >= CONNECT_HANDSHAKE_TIMEOUT,
+            "handshake timeout elapsed too quickly"
+        );
+
+        server.abort();
     }
 }
