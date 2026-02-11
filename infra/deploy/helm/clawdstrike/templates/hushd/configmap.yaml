@@ -12,7 +12,6 @@ data:
     ruleset: "{{ .Values.hushd.config.ruleset }}"
     audit_db: "/var/lib/hushd/audit.db"
     log_level: "{{ .Values.hushd.config.logLevel }}"
-    nats_url: "{{ include "clawdstrike.natsUrl" . }}"
     {{- if .Values.hushd.auth.enabled }}
 
     auth:

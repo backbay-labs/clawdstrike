@@ -1,0 +1,92 @@
+name: Helm Chart Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Chart version to publish (for example: 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  HELM_OCI_REPO: oci://ghcr.io/backbay-labs/clawdstrike/helm
+
+jobs:
+  publish-oci:
+    name: Package and Publish OCI Chart
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Resolve release version
+        id: resolve-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build chart package
+        env:
+          VERSION: ${{ steps.resolve-version.outputs.version }}
+        run: scripts/release-helm-chart.sh "$VERSION"
+
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push chart to OCI registry
+        env:
+          VERSION: ${{ steps.resolve-version.outputs.version }}
+        run: helm push "dist/helm/clawdstrike-$VERSION.tgz" "$HELM_OCI_REPO"
+
+      - name: Upload packaged chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawdstrike-chart-${{ steps.resolve-version.outputs.version }}
+          path: dist/helm/clawdstrike-${{ steps.resolve-version.outputs.version }}.tgz
+
+  publish-artifacthub-metadata:
+    name: Publish Artifact Hub Metadata
+    runs-on: ubuntu-latest
+    needs: publish-oci
+    if: ${{ secrets.ARTIFACTHUB_REPOSITORY_ID != '' }}
+    steps:
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR for ORAS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: echo "$GITHUB_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push artifacthub-repo metadata
+        env:
+          ARTIFACTHUB_REPOSITORY_ID: ${{ secrets.ARTIFACTHUB_REPOSITORY_ID }}
+        run: |
+          cat > artifacthub-repo.yml <<EOF
+          repositoryID: ${ARTIFACTHUB_REPOSITORY_ID}
+          EOF
+          oras push ghcr.io/backbay-labs/clawdstrike/helm:artifacthub.io \
+            --config /dev/null:application/vnd.cncf.artifact.config.v1+json \
+            artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml

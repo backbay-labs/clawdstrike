@@ -22,6 +22,7 @@ spec:
         {{- end }}
     spec:
       {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
       serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -29,7 +30,7 @@ spec:
         - name: hushd
           image: "{{ .Values.hushd.image.repository }}:{{ .Values.hushd.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
-          args: ["--config", "/etc/hushd/config.yaml"]
+          args: ["hushd", "--config", "/etc/hushd/config.yaml"]
           ports:
             - name: http
               containerPort: {{ .Values.hushd.port }}
@@ -42,10 +43,8 @@ spec:
             - name: config
               mountPath: /etc/hushd/config.yaml
               subPath: config.yaml
-            {{- if .Values.hushd.persistence.enabled }}
             - name: data
               mountPath: /var/lib/hushd
-            {{- end }}
           readinessProbe:
             httpGet:
               path: /health
@@ -70,5 +69,8 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "clawdstrike.fullname" . }}-hushd
+        {{- else }}
+        - name: data
+          emptyDir: {}
         {{- end }}
 {{- end }}

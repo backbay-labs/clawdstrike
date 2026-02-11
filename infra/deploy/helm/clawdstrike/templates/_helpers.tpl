@@ -109,6 +109,20 @@ imagePullSecrets:
 {{- end }}
 
 {{/*
+Global pod scheduling controls shared by all workloads.
+*/}}
+{{- define "clawdstrike.globalScheduling" -}}
+{{- with .Values.global.nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .Values.global.tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
 Spine image tag - uses the per-component convention or falls back to appVersion.
 */}}
 {{- define "clawdstrike.spineImageTag" -}}

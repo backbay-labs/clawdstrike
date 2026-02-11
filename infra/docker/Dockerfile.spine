@@ -31,6 +31,7 @@ COPY crates/libs/spine crates/libs/spine
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     cargo build --release \
+        --features bins \
         --bin spine-checkpointer \
         --bin spine-witness \
         --bin spine-proofs-api && \

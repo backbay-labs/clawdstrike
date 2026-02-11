@@ -16,3 +16,5 @@ keywords:
   - sdr
   - clawdstrike
   - runtime-enforcement
+annotations:
+  artifacthub.io/license: Apache-2.0

@@ -4,6 +4,10 @@ global:
   imagePullPolicy: IfNotPresent
   # -- Image pull secrets
   imagePullSecrets: []
+  # -- Optional node selector applied to all workloads
+  nodeSelector: {}
+  # -- Optional tolerations applied to all workloads
+  tolerations: []
   # -- Override namespace (defaults to Release.Namespace)
   namespace: ""
 
@@ -62,6 +66,10 @@ spine:
   checkpointer:
     enabled: true
     replicas: 1
+    # -- Hex-encoded 32-byte Ed25519 seed for spine-checkpointer (SPINE_LOG_SEED_HEX)
+    logSeedHex: ""
+    # -- JetStream replication factor to request when creating Spine streams
+    streamReplicas: 1
     resources:
       requests:
         cpu: 50m
@@ -73,6 +81,8 @@ spine:
   witness:
     enabled: true
     replicas: 1
+    # -- Hex-encoded 32-byte Ed25519 seed for spine-witness (SPINE_WITNESS_SEED_HEX)
+    seedHex: ""
     resources:
       requests:
         cpu: 50m

@@ -28,6 +28,8 @@ helm install clawdstrike ./infra/deploy/helm/clawdstrike
 |-----------|-------------|---------|
 | `global.imagePullPolicy` | Image pull policy | `IfNotPresent` |
 | `global.imagePullSecrets` | Image pull secrets | `[]` |
+| `global.nodeSelector` | Node selector applied to all workloads | `{}` |
+| `global.tolerations` | Tolerations applied to all workloads | `[]` |
 | `global.namespace` | Override namespace | `""` |
 | `namespace.create` | Create namespace | `true` |
 | `namespace.name` | Namespace name | `clawdstrike-system` |
@@ -140,3 +142,39 @@ helm template test infra/deploy/helm/clawdstrike
 helm install cs infra/deploy/helm/clawdstrike --wait
 helm test cs
 ```
+
+## Packaging
+
+```bash
+# Build chart package at dist/helm/clawdstrike-<version>.tgz
+scripts/release-helm-chart.sh 0.1.0
+```
+
+## Publish to OCI (GHCR)
+
+```bash
+HELM_REGISTRY_USERNAME="$GITHUB_ACTOR" \
+HELM_REGISTRY_PASSWORD="$GITHUB_TOKEN" \
+scripts/release-helm-chart.sh --version 0.1.0 --push
+```
+
+Published chart reference:
+
+```bash
+oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike:0.1.0
+```
+
+Install from OCI:
+
+```bash
+helm install clawdstrike oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike --version 0.1.0
+```
+
+## Artifact Hub
+
+Artifact Hub consumes the chart from the OCI repository. Use the following one-time setup:
+
+1. Create an Artifact Hub Helm repository pointing to `oci://ghcr.io/backbay-labs/clawdstrike/helm`.
+2. Copy the repository ID from Artifact Hub settings.
+3. Add `ARTIFACTHUB_REPOSITORY_ID` as a GitHub Actions secret in this repository.
+4. Tag a release (`vX.Y.Z`) or run the Helm release workflow manually; the workflow will publish repository metadata (`artifacthub.io`) via ORAS.

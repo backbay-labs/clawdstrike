@@ -23,6 +23,7 @@ spec:
         {{- end }}
     spec:
       {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
       serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
       containers:
         - name: nats

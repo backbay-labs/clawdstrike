@@ -7,6 +7,7 @@ nats:
 
 spine:
   checkpointer:
+    logSeedHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     resources:
       requests:
         cpu: 10m
@@ -15,6 +16,7 @@ spine:
         cpu: 100m
         memory: 128Mi
   witness:
+    seedHex: "f1e1d1c1b1a191817161514131211101f0e0d0c0b0a090807060504030201000"
     resources:
       requests:
         cpu: 10m

@@ -15,3 +15,4 @@ Current policy/structure guardrails:
 3. `scripts/architecture-guardrails.sh` - verifies domain README/ownership/repo-map consistency.
 4. `scripts/cleanup-legacy-paths.sh` - removes stale legacy directories from local checkouts.
 5. `scripts/openclaw-agent-smoke.sh` - validates agent-owned OpenClaw flows (`health -> policy bypass toggle -> gateway connect -> request relay -> optional reconnect`).
+6. `scripts/release-helm-chart.sh` - lints/templates/packages the ClawdStrike Helm chart and optionally pushes it to an OCI registry.

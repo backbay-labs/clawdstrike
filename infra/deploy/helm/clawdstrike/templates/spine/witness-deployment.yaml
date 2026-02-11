@@ -22,6 +22,7 @@ spec:
         {{- end }}
     spec:
       {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
       serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -32,6 +33,8 @@ spec:
           env:
             - name: SPINE_BIN
               value: spine-witness
+            - name: SPINE_WITNESS_SEED_HEX
+              value: {{ required "spine.witness.seedHex is required" .Values.spine.witness.seedHex | quote }}
           envFrom:
             - configMapRef:
                 name: {{ include "clawdstrike.fullname" . }}-spine

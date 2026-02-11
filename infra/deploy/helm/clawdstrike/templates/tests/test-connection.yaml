@@ -9,6 +9,7 @@ metadata:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
+  {{- include "clawdstrike.globalScheduling" . | nindent 2 }}
   restartPolicy: Never
   containers:
     - name: test
@@ -18,9 +19,19 @@ spec:
         - |
           echo "Testing ClawdStrike SDR stack..."
           FAIL=0
+          check_url() {
+            URL="$1"
+            for i in $(seq 1 20); do
+              if wget -q -O- "$URL" >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
           {{- if and .Values.nats.enabled (not .Values.nats.external.enabled) }}
           echo "Checking NATS connectivity..."
-          if wget -q --spider http://{{ include "clawdstrike.fullname" . }}-nats:{{ .Values.nats.monitoring.port }}/healthz 2>/dev/null; then
+          if check_url "http://{{ include "clawdstrike.fullname" . }}-nats:{{ .Values.nats.monitoring.port }}/healthz"; then
             echo "  NATS: OK"
           else
             echo "  NATS: FAILED"
@@ -29,7 +40,7 @@ spec:
           {{- end }}
           {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
           echo "Checking Proofs API health..."
-          if wget -q --spider http://{{ include "clawdstrike.fullname" . }}-proofs-api:{{ .Values.spine.proofsApi.service.port }}/healthz 2>/dev/null; then
+          if check_url "http://{{ include "clawdstrike.fullname" . }}-proofs-api:{{ .Values.spine.proofsApi.service.port }}/healthz"; then
             echo "  Proofs API: OK"
           else
             echo "  Proofs API: FAILED"
@@ -38,7 +49,7 @@ spec:
           {{- end }}
           {{- if .Values.hushd.enabled }}
           echo "Checking hushd health..."
-          if wget -q --spider http://{{ include "clawdstrike.fullname" . }}-hushd:{{ .Values.hushd.service.port }}/health 2>/dev/null; then
+          if check_url "http://{{ include "clawdstrike.fullname" . }}-hushd:{{ .Values.hushd.service.port }}/health"; then
             echo "  hushd: OK"
           else
             echo "  hushd: FAILED"

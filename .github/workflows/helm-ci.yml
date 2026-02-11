@@ -1,0 +1,31 @@
+name: Helm Chart CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/deploy/helm/clawdstrike/**"
+      - ".github/workflows/helm-ci.yml"
+      - "scripts/release-helm-chart.sh"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/deploy/helm/clawdstrike/**"
+      - ".github/workflows/helm-ci.yml"
+      - "scripts/release-helm-chart.sh"
+
+jobs:
+  lint-and-template:
+    name: Helm Lint and Template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint chart
+        run: helm lint infra/deploy/helm/clawdstrike
+
+      - name: Render chart templates
+        run: helm template test-release infra/deploy/helm/clawdstrike -f infra/deploy/helm/clawdstrike/ci/test-values.yaml > /dev/null

@@ -1,29 +1,45 @@
-# Build stage
-FROM rust:1.93-alpine AS builder
+# syntax=docker/dockerfile:1
 
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
+# Build stage
+FROM rust:1.93-bookworm AS builder
 
 WORKDIR /build
-COPY . .
+
+# Copy a minimal workspace manifest and lockfile.
+COPY infra/docker/workspace-hushd.toml Cargo.toml
+COPY Cargo.lock ./
+
+# Copy only crates needed to build hushd.
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/hush-proxy crates/libs/hush-proxy
+COPY crates/libs/spine crates/libs/spine
+COPY crates/libs/clawdstrike crates/libs/clawdstrike
+COPY crates/libs/hush-certification crates/libs/hush-certification
+COPY crates/services/hushd crates/services/hushd
 
 # Build release binary
-RUN cargo build --release -p hushd
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin hushd && \
+    cp /build/target/release/hushd /usr/local/bin/hushd
 
 # Runtime stage
-FROM alpine:3.19
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates tini
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1000 hushd && \
-    adduser -u 1000 -G hushd -D -h /var/lib/hushd hushd
+RUN groupadd -g 1000 hushd && \
+    useradd -u 1000 -g hushd -d /var/lib/hushd -m hushd
 
 # Create directories
 RUN mkdir -p /etc/hushd /var/lib/hushd /var/log/hushd && \
     chown -R hushd:hushd /var/lib/hushd /var/log/hushd
 
 # Copy binary
-COPY --from=builder /build/target/release/hushd /usr/local/bin/
+COPY --from=builder /usr/local/bin/hushd /usr/local/bin/
 
 # Copy default config
 COPY infra/deploy/config.yaml /etc/hushd/config.yaml
@@ -33,5 +49,5 @@ WORKDIR /var/lib/hushd
 
 EXPOSE 9876
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["hushd", "--config", "/etc/hushd/config.yaml"]
