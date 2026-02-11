@@ -21,6 +21,47 @@ describe("buildPolicyTestEvent", () => {
     });
   });
 
+  it("parses command_exec targets with shell-style quoting", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "command_exec",
+        target: `python -c "print(\\"a b\\")"`,
+      },
+      { eventId: "evt-cmd-1", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "command",
+      command: "python",
+      args: ["-c", `print("a b")`],
+    });
+  });
+
+  it("parses command_exec escaped spaces and single-quoted args", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "command_exec",
+        target: `git commit -m 'feat: policy editor' path\\ with\\ spaces.txt`,
+      },
+      { eventId: "evt-cmd-2", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "command",
+      command: "git",
+      args: ["commit", "-m", "feat: policy editor", "path with spaces.txt"],
+    });
+  });
+
+  it("rejects command_exec targets with unclosed quotes", () => {
+    expect(() =>
+      buildPolicyTestEvent({
+        eventType: "command_exec",
+        target: `python -c "print(1)`,
+      })
+    ).toThrow("command_exec target has unclosed quote");
+  });
+
   it("preserves potentially traversal-like file targets for server-side enforcement", () => {
     const event = buildPolicyTestEvent(
       {

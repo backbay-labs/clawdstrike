@@ -41,10 +41,83 @@ export function getPolicyTestTargetPlaceholder(eventType: PolicyTestEventType): 
 }
 
 function splitCommandline(commandline: string): { command: string; args: string[] } {
-  const tokens = commandline
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const input = commandline.trim();
+  const tokens: string[] = [];
+  let current = "";
+  let inQuote: "'" | '"' | null = null;
+  let escaped = false;
+  let tokenStarted = false;
+
+  const pushToken = () => {
+    if (!tokenStarted) return;
+    tokens.push(current);
+    current = "";
+    tokenStarted = false;
+  };
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (escaped) {
+      current += ch;
+      tokenStarted = true;
+      escaped = false;
+      continue;
+    }
+
+    if (inQuote === "'") {
+      if (ch === "'") {
+        inQuote = null;
+        continue;
+      }
+      current += ch;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (inQuote === '"') {
+      if (ch === '"') {
+        inQuote = null;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      current += ch;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = true;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      inQuote = ch;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      pushToken();
+      continue;
+    }
+
+    current += ch;
+    tokenStarted = true;
+  }
+
+  if (escaped) {
+    throw new Error("command_exec target has trailing escape");
+  }
+  if (inQuote) {
+    throw new Error("command_exec target has unclosed quote");
+  }
+  pushToken();
+
   if (tokens.length === 0) {
     throw new Error("command_exec target cannot be empty");
   }
