@@ -9,11 +9,6 @@ import {
   type PolicySaveResult,
 } from "./tauri";
 
-export interface PolicyWorkbenchError {
-  code: string;
-  message: string;
-}
-
 export type PolicyLoadModel = PolicyLoadResult | DaemonPolicyResponse;
 export interface PolicyValidationModel {
   valid: boolean;

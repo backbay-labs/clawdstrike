@@ -71,4 +71,26 @@ describe("policyWorkbenchReducer", () => {
     expect(saved.loadedYaml).toContain("name: loaded");
     expect(saved.draftYaml).toContain("name: newer");
   });
+
+  it("clears stale loadError on save success", () => {
+    const errored = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_error",
+      message: "Failed to load policy",
+    });
+    expect(errored.loadError).toBe("Failed to load policy");
+
+    const saved = policyWorkbenchReducer(errored, {
+      type: "save_success",
+      yaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(saved.loadError).toBeUndefined();
+
+    const preserved = policyWorkbenchReducer(errored, {
+      type: "save_success_preserve_draft",
+      loadedYaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(preserved.loadError).toBeUndefined();
+  });
 });

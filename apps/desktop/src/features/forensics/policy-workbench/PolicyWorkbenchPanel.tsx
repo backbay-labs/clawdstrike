@@ -71,6 +71,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   const [history, setHistory] = React.useState<PolicyTestHistoryItem[]>([]);
   const [copyStatus, setCopyStatus] = React.useState<string>();
   const validationSeq = React.useRef(0);
+  const loadSeq = React.useRef(0);
   const draftYamlRef = React.useRef(state.draftYaml);
   const hasAutoLoadedRef = React.useRef(false);
   const wasConnectedRef = React.useRef(connected);
@@ -95,9 +96,17 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
 
   const readPolicy = React.useCallback(async () => {
     if (!connected) return;
+    const seq = ++loadSeq.current;
+    const draftAtRequest = draftYamlRef.current;
     dispatch({ type: "load_start" });
     try {
       const loaded = await client.loadPolicy();
+      if (seq !== loadSeq.current) return;
+      if (draftYamlRef.current !== draftAtRequest) {
+        setCopyStatus("Reload skipped: local draft changed.");
+        window.setTimeout(() => setCopyStatus(undefined), 2200);
+        return;
+      }
       dispatch({
         type: "load_success",
         yaml: loaded.yaml,
@@ -105,6 +114,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
         version: loaded.version,
       });
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       const message = err instanceof Error ? err.message : "Failed to load policy";
       const code =
         err instanceof PolicyWorkbenchClientError ? ` (${err.code})` : "";
@@ -113,6 +123,16 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
       window.setTimeout(() => setCopyStatus(undefined), 2200);
     }
   }, [client, connected]);
+
+  const handleReload = React.useCallback(() => {
+    if (
+      dirty &&
+      !window.confirm("Discard unsaved policy edits and reload from daemon?")
+    ) {
+      return;
+    }
+    void readPolicy();
+  }, [dirty, readPolicy]);
 
   const validateYaml = React.useCallback(
     async (yaml: string) => {
@@ -344,7 +364,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
                 <GlowButton
                   data-testid="policy-editor-reload"
                   variant="secondary"
-                  onClick={() => void readPolicy()}
+                  onClick={handleReload}
                 >
                   Reload
                 </GlowButton>
