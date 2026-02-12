@@ -25,8 +25,8 @@ This implements the npm publishing track from Section 4.6 of `docs/research/open
 | 1 | `packages/sdk/hush-ts` | `@backbay/sdk` | No | `@backbay/adapter-core` | None |
 | 2 | `packages/adapters/clawdstrike-adapter-core` | `@backbay/adapter-core` | No | None | None |
 | 3 | `packages/policy/clawdstrike-policy` | `@backbay/policy` | Yes | `@backbay/adapter-core` | None |
-| 4 | `packages/adapters/clawdstrike-claude-code` | `@backbay/claude-code` | Yes | `@backbay/adapter-core` | None |
-| 5 | `packages/adapters/clawdstrike-codex` | `@backbay/codex` | Yes | `@backbay/adapter-core` | None |
+| 4 | `packages/adapters/clawdstrike-claude` | `@backbay/claude` | Yes | `@backbay/adapter-core` | None |
+| 5 | `packages/adapters/clawdstrike-openai` | `@backbay/openai` | Yes | `@backbay/adapter-core` | None |
 | 6 | `packages/adapters/clawdstrike-vercel-ai` | `@backbay/vercel-ai` | Yes | `@backbay/adapter-core`, `@backbay/sdk` | `ai`, `@ai-sdk/react`, `react` |
 | 7 | `packages/adapters/clawdstrike-langchain` | `@backbay/langchain` | Yes | `@backbay/adapter-core` | `@langchain/core` |
 | 8 | `packages/adapters/clawdstrike-openclaw` | `@backbay/clawdstrike-security` | No | `@backbay/adapter-core`, `@backbay/policy` | (to verify) |
@@ -74,8 +74,8 @@ When publishing `@backbay/*` packages, consider whether shared crypto utilities 
     |       +-- @backbay/vercel-ai (depends on adapter-core + sdk)
     |
     +-- @backbay/policy (depends on adapter-core)
-    +-- @backbay/claude-code (depends on adapter-core)
-    +-- @backbay/codex (depends on adapter-core)
+    +-- @backbay/claude (depends on adapter-core)
+    +-- @backbay/openai (depends on adapter-core)
     +-- @backbay/langchain (depends on adapter-core)
     +-- @backbay/clawdstrike-security (depends on adapter-core + policy)
     +-- @backbay/opencode (depends on adapter-core)
@@ -96,8 +96,8 @@ All 11+ packages are published to npmjs.com under the `@clawdstrike` scope:
 - `@backbay/adapter-core@0.1.0`
 - `@backbay/sdk@0.1.0`
 - `@backbay/policy@0.1.0`
-- `@backbay/claude-code@0.1.0`
-- `@backbay/codex@0.1.0`
+- `@backbay/claude@0.1.0`
+- `@backbay/openai@0.1.0`
 - `@backbay/vercel-ai@0.1.0`
 - `@backbay/langchain@0.1.0`
 - `@backbay/clawdstrike-security@0.1.0`
@@ -160,8 +160,8 @@ For each package, replace `file:` references with caret ranges:
 |---------|-----------|--------|-------|
 | `@backbay/sdk` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
 | `@backbay/policy` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@backbay/claude-code` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@backbay/codex` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/claude` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/openai` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
 | `@backbay/vercel-ai` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
 | `@backbay/vercel-ai` | `@backbay/sdk` | `file:../hush-ts` | `^0.1.0` |
 | `@backbay/langchain` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
@@ -220,7 +220,7 @@ Verify every package has a `"files"` array limiting published content:
 }
 ```
 
-This excludes source files, tests, and config files from the published tarball. Most packages already have this (confirmed for `hush-ts`, `adapter-core`, `claude-code`, `vercel-ai`, `langchain`, `policy`).
+This excludes source files, tests, and config files from the published tarball. Most packages already have this (confirmed for `hush-ts`, `adapter-core`, `claude`, `vercel-ai`, `langchain`, `policy`).
 
 ### Step 7: Add/update README.md for each package
 
@@ -317,8 +317,8 @@ jobs:
         run: |
           for pkg in \
             packages/policy/clawdstrike-policy \
-            packages/adapters/clawdstrike-claude-code \
-            packages/adapters/clawdstrike-codex \
+            packages/adapters/clawdstrike-claude \
+            packages/adapters/clawdstrike-openai \
             packages/adapters/clawdstrike-vercel-ai \
             packages/adapters/clawdstrike-langchain \
             packages/adapters/clawdstrike-openclaw \
@@ -363,8 +363,8 @@ git push origin v0.1.0
 | File | Action | Description |
 |------|--------|-------------|
 | `packages/policy/clawdstrike-policy/package.json` | Modify | Remove `private`, replace `file:` deps, add metadata |
-| `packages/adapters/clawdstrike-claude-code/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-codex/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-claude/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-openai/package.json` | Modify | Same |
 | `packages/adapters/clawdstrike-vercel-ai/package.json` | Modify | Same |
 | `packages/adapters/clawdstrike-langchain/package.json` | Modify | Same |
 | `packages/adapters/clawdstrike-openclaw/package.json` | Modify | Same |
@@ -416,7 +416,7 @@ Total: ~13 package.json files modified, 1 root package.json created, 1 GHA workf
 
 6. **Fresh install test** -- In a new directory, install published packages and verify they work:
    ```bash
-   npm install @backbay/sdk @backbay/claude-code
+   npm install @backbay/sdk @backbay/claude
    ```
 
 7. **Provenance verification** -- Check that SLSA provenance is attached:

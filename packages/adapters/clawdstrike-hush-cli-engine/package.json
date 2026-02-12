@@ -44,7 +44,7 @@
     "clawdstrike",
     "security",
     "ai-agent",
-    "sdr"
+    "engine"
   ],
   "publishConfig": {
     "access": "public"

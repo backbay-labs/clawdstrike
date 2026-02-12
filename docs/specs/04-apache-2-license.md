@@ -41,7 +41,7 @@ All 14 workspace member crates inherit this via `license.workspace = true` in th
 All 11 TypeScript packages in `packages/` specify `"license": "MIT"` in their `package.json`:
 - `packages/sdk/hush-ts/package.json` line 40
 - `packages/adapters/clawdstrike-adapter-core/package.json` line 29
-- `packages/adapters/clawdstrike-claude-code/package.json` line 33
+- `packages/adapters/clawdstrike-claude/package.json` line 33
 - `packages/policy/clawdstrike-policy/package.json` line 40
 - And 7 more adapter packages
 
@@ -142,8 +142,8 @@ For each of the 11 packages in `packages/*/package.json`, change:
 Files to update:
 1. `packages/sdk/hush-ts/package.json`
 2. `packages/adapters/clawdstrike-adapter-core/package.json`
-3. `packages/adapters/clawdstrike-claude-code/package.json`
-4. `packages/adapters/clawdstrike-codex/package.json`
+3. `packages/adapters/clawdstrike-claude/package.json`
+4. `packages/adapters/clawdstrike-openai/package.json`
 5. `packages/adapters/clawdstrike-hush-cli-engine/package.json`
 6. `packages/adapters/clawdstrike-hushd-engine/package.json`
 7. `packages/adapters/clawdstrike-langchain/package.json`
@@ -214,8 +214,8 @@ This ensures all workspace crates now report Apache-2.0 and no license conflicts
 | `Cargo.toml` | Modify | `license = "MIT"` -> `license = "Apache-2.0"` |
 | `packages/sdk/hush-ts/package.json` | Modify | `"license": "MIT"` -> `"license": "Apache-2.0"` |
 | `packages/adapters/clawdstrike-adapter-core/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-claude-code/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-codex/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-claude/package.json` | Modify | Same |
+| `packages/adapters/clawdstrike-openai/package.json` | Modify | Same |
 | `packages/adapters/clawdstrike-hush-cli-engine/package.json` | Modify | Same |
 | `packages/adapters/clawdstrike-hushd-engine/package.json` | Modify | Same |
 | `packages/adapters/clawdstrike-langchain/package.json` | Modify | Same |

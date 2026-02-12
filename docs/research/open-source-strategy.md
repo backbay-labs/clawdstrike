@@ -185,10 +185,10 @@ clawdstrike/
 │       └── src/
 │
 ├── adapters/                    #   Framework-specific adapters
-│   ├── claude-code/             #   @backbay/claude-code
+│   ├── claude/                  #   @backbay/claude
 │   ├── vercel-ai/               #   @backbay/vercel-ai
 │   ├── langchain/               #   @backbay/langchain
-│   ├── codex/                   #   @backbay/codex
+│   ├── openai/                  #   @backbay/openai
 │   └── opencode/                #   @backbay/opencode
 │
 ├── rulesets/                    #   Community policy templates
@@ -514,7 +514,7 @@ Everything needed to secure AI agents in production is free and open source:
 | **Bridges** | tetragon-nats-bridge, hubble-flow-bridge |
 | **Desktop app** | Full SDR console (ThreatRadar, AttackGraph, NetworkMap, EventStream, Marketplace) |
 | **SDK** | Rust, TypeScript, Python, WebAssembly |
-| **Framework adapters** | Claude Code, Vercel AI, LangChain, Codex, OpenCode |
+| **Framework adapters** | Claude, Vercel AI, LangChain, OpenAI, OpenCode |
 | **Marketplace** | Feed signing, bundle verification, P2P discovery, IPFS distribution |
 | **Rulesets** | All built-in rulesets + community templates |
 | **Compliance templates** | SOC2, HIPAA, EU AI Act, FedRAMP baseline templates |

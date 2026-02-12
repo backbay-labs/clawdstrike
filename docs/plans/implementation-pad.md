@@ -81,7 +81,7 @@ Tier 3: Enterprise readiness (close deals)
   - Jailbreak detection: added session TTL + half-life decay + optional persistence hooks; linear model weights are configurable.
   - Output sanitization: allow/deny lists + streaming-safe sanitizer + optional entity/NER hook; improved patterns (Anthropic key, JWT, internal IPs, etc) and Luhn validation for CC.
   - Vercel AI: `createClawdstrikeMiddleware` supports `config.promptSecurity` to apply hierarchy, jailbreak detection, output sanitization, and watermarking to model calls; stream sanitization is supported for `text-delta`.
-  - Tool-boundary runtime convenience: Codex/OpenCode/Claude Code packages now ship `wrap*ToolDispatcher(...)` helpers for drop-in wiring into a tool dispatcher.
+  - Tool-boundary runtime convenience: OpenAI/OpenCode/Claude packages now ship `wrap*ToolDispatcher(...)` helpers for drop-in wiring into a tool dispatcher.
 - CI/tooling hardening:
   - Offline vendored build fixed by narrowing `.gitignore` patterns so vendored crate sources aren’t accidentally ignored.
   - WASM build fixed by enabling `getrandom`'s `js` feature for wasm32 in `hush-core`.

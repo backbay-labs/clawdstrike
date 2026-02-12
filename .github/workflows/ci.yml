@@ -563,24 +563,24 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             packages/adapters/clawdstrike-adapter-core/package-lock.json
-            packages/adapters/clawdstrike-codex/package-lock.json
-            packages/adapters/clawdstrike-claude-code/package-lock.json
+            packages/adapters/clawdstrike-openai/package-lock.json
+            packages/adapters/clawdstrike-claude/package-lock.json
             packages/adapters/clawdstrike-hush-cli-engine/package-lock.json
             packages/adapters/clawdstrike-hushd-engine/package-lock.json
 
       - name: Install dependencies
         run: |
           npm --prefix packages/adapters/clawdstrike-adapter-core ci
-          npm --prefix packages/adapters/clawdstrike-codex ci
-          npm --prefix packages/adapters/clawdstrike-claude-code ci
+          npm --prefix packages/adapters/clawdstrike-openai ci
+          npm --prefix packages/adapters/clawdstrike-claude ci
           npm --prefix packages/adapters/clawdstrike-hush-cli-engine ci
           npm --prefix packages/adapters/clawdstrike-hushd-engine ci
 
       - name: Build dependencies and adapters
         run: |
           npm --prefix packages/adapters/clawdstrike-adapter-core run build
-          npm --prefix packages/adapters/clawdstrike-codex run build
-          npm --prefix packages/adapters/clawdstrike-claude-code run build
+          npm --prefix packages/adapters/clawdstrike-openai run build
+          npm --prefix packages/adapters/clawdstrike-claude run build
           npm --prefix packages/adapters/clawdstrike-hush-cli-engine run build
           npm --prefix packages/adapters/clawdstrike-hushd-engine run build
 
@@ -730,8 +730,8 @@ jobs:
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: true
-          - name: Codex
-            dir: packages/adapters/clawdstrike-codex
+          - name: OpenAI
+            dir: packages/adapters/clawdstrike-openai
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false
@@ -740,8 +740,8 @@ jobs:
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false
-          - name: Claude Code
-            dir: packages/adapters/clawdstrike-claude-code
+          - name: Claude
+            dir: packages/adapters/clawdstrike-claude
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false
@@ -752,6 +752,11 @@ jobs:
             bootstrap_hush: false
           - name: LangChain
             dir: packages/adapters/clawdstrike-langchain
+            bootstrap_adapter_core: true
+            bootstrap_sdk: false
+            bootstrap_hush: false
+          - name: Hushd Engine
+            dir: packages/adapters/clawdstrike-hushd-engine
             bootstrap_adapter_core: true
             bootstrap_sdk: false
             bootstrap_hush: false

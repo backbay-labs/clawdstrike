@@ -62,7 +62,8 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 - `hush-ts` - Core TypeScript SDK (`@backbay/sdk`)
 - `clawdstrike-policy` - Canonical policy engine (TS)
 - `clawdstrike-adapter-core` - Base adapter interface
-- Framework adapters: `clawdstrike-openclaw`, `clawdstrike-vercel-ai`, `clawdstrike-langchain`, `clawdstrike-claude-code`, `clawdstrike-codex`, `clawdstrike-opencode`
+- Framework adapters: `clawdstrike-openclaw`, `clawdstrike-vercel-ai`, `clawdstrike-langchain`, `clawdstrike-claude`, `clawdstrike-openai`, `clawdstrike-opencode`
+- Engine bridges: `clawdstrike-hush-cli-engine`, `clawdstrike-hushd-engine`
 
 **Python:** `packages/sdk/hush-py`
 

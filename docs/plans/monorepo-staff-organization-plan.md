@@ -124,8 +124,8 @@ packages/
 │   └── hush-py/
 ├── adapters/
 │   ├── clawdstrike-adapter-core/
-│   ├── clawdstrike-claude-code/
-│   ├── clawdstrike-codex/
+│   ├── clawdstrike-claude/
+│   ├── clawdstrike-openai/
 │   ├── clawdstrike-langchain/
 │   ├── clawdstrike-openclaw/
 │   ├── clawdstrike-opencode/
@@ -330,8 +330,8 @@ Exit criteria:
 | `packages/hush-py` | `packages/sdk/hush-py` | 2 |
 | `packages/clawdstrike-policy` | `packages/policy/clawdstrike-policy` | 2 |
 | `packages/clawdstrike-adapter-core` | `packages/adapters/clawdstrike-adapter-core` | 2 |
-| `packages/clawdstrike-claude-code` | `packages/adapters/clawdstrike-claude-code` | 2 |
-| `packages/clawdstrike-codex` | `packages/adapters/clawdstrike-codex` | 2 |
+| `packages/clawdstrike-claude` | `packages/adapters/clawdstrike-claude` | 2 |
+| `packages/clawdstrike-openai` | `packages/adapters/clawdstrike-openai` | 2 |
 | `packages/clawdstrike-langchain` | `packages/adapters/clawdstrike-langchain` | 2 |
 | `packages/clawdstrike-openclaw` | `packages/adapters/clawdstrike-openclaw` | 2 |
 | `packages/clawdstrike-opencode` | `packages/adapters/clawdstrike-opencode` | 2 |

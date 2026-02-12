@@ -189,8 +189,8 @@ jobs:
             packages/sdk/hush-ts
             packages/sdk/clawdstrike
             packages/policy/clawdstrike-policy
-            packages/adapters/clawdstrike-claude-code
-            packages/adapters/clawdstrike-codex
+            packages/adapters/clawdstrike-claude
+            packages/adapters/clawdstrike-openai
             packages/adapters/clawdstrike-vercel-ai
             packages/adapters/clawdstrike-langchain
             packages/adapters/clawdstrike-openclaw
@@ -277,8 +277,8 @@ jobs:
           publish_workspace packages/sdk/hush-ts
           publish_workspace packages/sdk/clawdstrike
           publish_workspace packages/policy/clawdstrike-policy
-          publish_workspace packages/adapters/clawdstrike-claude-code
-          publish_workspace packages/adapters/clawdstrike-codex
+          publish_workspace packages/adapters/clawdstrike-claude
+          publish_workspace packages/adapters/clawdstrike-openai
           publish_workspace packages/adapters/clawdstrike-vercel-ai
           publish_workspace packages/adapters/clawdstrike-langchain
           publish_workspace packages/adapters/clawdstrike-openclaw

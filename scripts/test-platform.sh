@@ -59,9 +59,9 @@ HUSH_E2E=1 HUSH_PATH="$REPO_ROOT/target/debug/hush" npm --prefix packages/adapte
 (cd packages/adapters/clawdstrike-hush-cli-engine && npm run typecheck)
 (cd packages/adapters/clawdstrike-hush-cli-engine && npm run build)
 
-run_pkg packages/adapters/clawdstrike-codex
+run_pkg packages/adapters/clawdstrike-openai
 run_pkg packages/adapters/clawdstrike-opencode
-run_pkg packages/adapters/clawdstrike-claude-code
+run_pkg packages/adapters/clawdstrike-claude
 run_pkg packages/adapters/clawdstrike-vercel-ai
 run_pkg packages/adapters/clawdstrike-openclaw
 
