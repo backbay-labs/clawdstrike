@@ -45,6 +45,8 @@ describe("policyWorkbenchReducer", () => {
     });
     expect(errored.validation.status).toBe("error");
     expect(errored.validation.message).toBe("network failed");
+    expect(errored.validation.errors).toEqual([]);
+    expect(errored.validation.warnings).toEqual([]);
   });
 
   it("preserves newer draft when save completes against an older snapshot", () => {

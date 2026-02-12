@@ -81,7 +81,20 @@ function splitCommandline(commandline: string): { command: string; args: string[
         continue;
       }
       if (ch === "\\") {
-        escaped = true;
+        const next = input[i + 1];
+        // In shell double-quotes, backslash only escapes ", \, $, and `.
+        if (next === '"' || next === "\\" || next === "$" || next === "`") {
+          current += next;
+          tokenStarted = true;
+          i += 1;
+          continue;
+        }
+        if (next === "\n") {
+          i += 1;
+          continue;
+        }
+        current += "\\";
+        tokenStarted = true;
         continue;
       }
       current += ch;
