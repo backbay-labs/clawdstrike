@@ -6,7 +6,6 @@ global:
     - name: ghcr-pull
   nodeSelector:
     kubernetes.io/arch: amd64
-    eks.amazonaws.com/nodegroup: platform-dev-cpu-br-fix
 
 namespace:
   create: true
@@ -39,7 +38,6 @@ bridges:
     dnsPolicy: ClusterFirstWithHostNet
     nodeSelector:
       kubernetes.io/arch: amd64
-      eks.amazonaws.com/nodegroup: platform-dev-cpu-br-fix
   hubble:
     enabled: true
     replicas: 1
@@ -48,7 +46,6 @@ bridges:
     grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
     nodeSelector:
       kubernetes.io/arch: amd64
-      eks.amazonaws.com/nodegroup: platform-dev-cpu-br-fix
 
 ingress:
   enabled: true
