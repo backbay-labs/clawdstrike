@@ -76,6 +76,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   const draftYamlRef = React.useRef(state.draftYaml);
   const hasAutoLoadedRef = React.useRef(false);
   const wasConnectedRef = React.useRef(connected);
+  const previousDaemonUrlRef = React.useRef(daemonUrl);
 
   const dirty = isPolicyDraftDirty(state);
 
@@ -298,16 +299,22 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   React.useEffect(() => {
     const wasConnected = wasConnectedRef.current;
     wasConnectedRef.current = connected;
+    const daemonChanged = previousDaemonUrlRef.current !== daemonUrl;
+    previousDaemonUrlRef.current = daemonUrl;
 
     if (!connected) return;
 
     const firstLoad = !hasAutoLoadedRef.current;
     const reconnected = wasConnected === false;
-    if (!firstLoad && !reconnected) return;
+    if (!firstLoad && !reconnected && !daemonChanged) return;
 
     if (dirty) {
-      if (reconnected && hasAutoLoadedRef.current) {
-        setCopyStatus("Reconnected. Unsaved edits preserved.");
+      if ((reconnected || daemonChanged) && hasAutoLoadedRef.current) {
+        setCopyStatus(
+          daemonChanged
+            ? "Daemon changed. Unsaved edits preserved."
+            : "Reconnected. Unsaved edits preserved."
+        );
         window.setTimeout(() => setCopyStatus(undefined), 2200);
       }
       return;
@@ -315,7 +322,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
 
     hasAutoLoadedRef.current = true;
     void readPolicy();
-  }, [connected, dirty, readPolicy]);
+  }, [connected, daemonUrl, dirty, readPolicy]);
 
   React.useEffect(() => {
     if (!connected || !state.draftYaml || state.isSaving) return;
