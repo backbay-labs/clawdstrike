@@ -125,6 +125,38 @@ describe("buildPolicyTestEvent", () => {
     });
   });
 
+  it("derives ws URL default port as 80", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "network_egress",
+        target: "ws://example.com/socket",
+      },
+      { eventId: "evt-4b", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "network",
+      host: "example.com",
+      port: 80,
+    });
+  });
+
+  it("derives ftp URL default port as 21", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "network_egress",
+        target: "ftp://ftp.example.org/pub",
+      },
+      { eventId: "evt-4c", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "network",
+      host: "ftp.example.org",
+      port: 21,
+    });
+  });
+
   it("treats bare IPv6 targets as host-only values", () => {
     const event = buildPolicyTestEvent(
       {
