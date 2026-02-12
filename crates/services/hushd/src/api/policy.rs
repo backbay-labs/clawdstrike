@@ -282,11 +282,11 @@ pub async fn update_policy_bundle(
         Some(keypair) => new_engine.with_keypair(keypair),
         None => new_engine.with_generated_keypair(),
     };
-    *engine = new_engine;
-    let active_policy_hash = engine
+    let active_policy_hash = new_engine
         .policy_hash()
         .map(|h| h.to_hex())
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    *engine = new_engine;
     drop(engine);
 
     tracing::info!(
@@ -481,15 +481,14 @@ pub async fn update_policy(
         Some(keypair) => new_engine.with_keypair(keypair),
         None => new_engine.with_generated_keypair(),
     };
+    let after_hash = new_engine
+        .policy_hash()
+        .map(|h| h.to_hex())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     *engine = new_engine;
     state.policy_engine_cache.clear();
 
     tracing::info!("Policy updated via API");
-
-    let after_hash = engine
-        .policy_hash()
-        .map(|h| h.to_hex())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut audit = AuditEvent::session_start(&state.session_id, None);
     audit.event_type = "policy_updated".to_string();
     audit.action_type = "policy".to_string();
