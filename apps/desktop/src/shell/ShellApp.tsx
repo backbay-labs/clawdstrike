@@ -1,12 +1,12 @@
 /**
- * ShellApp - Root application with HashRouter for Tauri
+ * ShellApp - Root application with a data router for Tauri
  *
  * Routes:
  * - /:appId - Direct app access
  * - / - Redirects to Cyber Nexus (default)
  */
-import { Suspense } from "react";
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Suspense, useMemo } from "react";
+import { Navigate, RouterProvider, createHashRouter } from "react-router-dom";
 import { UiThemeProvider } from "@backbay/glia/theme";
 import { ShellLayout } from "./ShellLayout";
 import { getPlugins } from "./plugins";
@@ -17,7 +17,34 @@ import { SwarmProvider } from "@/context/SwarmContext";
 import { MarketplaceDiscoveryBootstrap } from "./MarketplaceDiscoveryBootstrap";
 
 export function ShellApp() {
-  const plugins = getPlugins();
+  const router = useMemo(() => {
+    const plugins = getPlugins();
+    const loadingFallback = (
+      <div className="flex h-full items-center justify-center text-sdr-text-secondary">Loading...</div>
+    );
+
+    return createHashRouter([
+      {
+        path: "/",
+        element: <ShellLayout />,
+        children: [
+          {
+            index: true,
+            element: <Navigate to={`/${plugins[0]?.id ?? "cyber-nexus"}`} replace />,
+          },
+          ...plugins.map((plugin) => ({
+            path: plugin.id,
+            children: plugin.routes.map((route, idx) => ({
+              id: `${plugin.id}-${idx}`,
+              index: route.index,
+              path: route.index ? undefined : route.path,
+              element: <Suspense fallback={loadingFallback}>{route.element}</Suspense>,
+            })),
+          })),
+        ],
+      },
+    ]);
+  }, []);
 
   return (
     <UiThemeProvider themeId="nebula">
@@ -26,39 +53,7 @@ export function ShellApp() {
           <PolicyProvider>
             <SwarmProvider>
               <MarketplaceDiscoveryBootstrap />
-              <HashRouter>
-                <Routes>
-                  {/* Main shell with navigation */}
-                  <Route path="/" element={<ShellLayout />}>
-                    {/* Default redirect to first plugin (Cyber Nexus) */}
-                    <Route index element={<Navigate to={`/${plugins[0]?.id ?? "cyber-nexus"}`} replace />} />
-
-                    {/* Dynamic plugin routes */}
-                    {plugins.map((plugin) => (
-                      <Route key={plugin.id} path={plugin.id}>
-                        {plugin.routes.map((route, idx) => (
-                          <Route
-                            key={`${plugin.id}-${idx}`}
-                            index={route.index}
-                            path={route.index ? undefined : route.path}
-                            element={
-                              <Suspense
-                                fallback={
-                                  <div className="flex items-center justify-center h-full text-sdr-text-secondary">
-                                    Loading...
-                                  </div>
-                                }
-                              >
-                                {route.element}
-                              </Suspense>
-                            }
-                          />
-                        ))}
-                      </Route>
-                    ))}
-                  </Route>
-                </Routes>
-              </HashRouter>
+              <RouterProvider router={router} />
             </SwarmProvider>
           </PolicyProvider>
         </OpenClawProvider>

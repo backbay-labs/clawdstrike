@@ -54,7 +54,7 @@ export function policyWorkbenchReducer(
 ): PolicyWorkbenchState {
   switch (action.type) {
     case "load_start":
-      return { ...state, loadError: undefined };
+      return state;
     case "load_success":
       return {
         ...state,

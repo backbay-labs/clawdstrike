@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Clawdstrike Desktop",
+  "productName": "Clawdstrike SDR",
   "version": "0.1.0",
   "identifier": "com.backbaylabs.clawdstrike.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Clawdstrike Desktop",
+        "title": "Clawdstrike SDR",
         "width": 1400,
         "height": 900,
         "minWidth": 800,

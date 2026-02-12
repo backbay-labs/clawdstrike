@@ -96,6 +96,16 @@ describe("policyWorkbenchReducer", () => {
     expect(preserved.loadError).toBeUndefined();
   });
 
+  it("preserves loadError while a new load is in-flight", () => {
+    const errored = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_error",
+      message: "Failed to load policy",
+    });
+
+    const loading = policyWorkbenchReducer(errored, { type: "load_start" });
+    expect(loading.loadError).toBe("Failed to load policy");
+  });
+
   it("clears stale saveError on save success paths", () => {
     const failed = policyWorkbenchReducer(initialPolicyWorkbenchState, {
       type: "save_error",
