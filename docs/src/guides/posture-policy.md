@@ -40,14 +40,14 @@ posture:
 ## 4. Validate
 
 ```bash
-hush policy validate ./policy.yaml
-hush policy lint ./policy.yaml --strict
+clawdstrike policy validate ./policy.yaml
+clawdstrike policy lint ./policy.yaml --strict
 ```
 
 ## 5. Simulate with posture tracking
 
 ```bash
-hush policy simulate ./policy.yaml ./events.jsonl --json --track-posture
+clawdstrike policy simulate ./policy.yaml ./events.jsonl --json --track-posture
 ```
 
 Use `posture.state`, `posture.budgets`, and `posture.transition` in output entries to verify expected behavior.

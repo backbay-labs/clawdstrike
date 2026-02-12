@@ -1,0 +1,16 @@
+{
+  "name": "clawdstrike-generic-adapter-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx sample-app.ts"
+  },
+  "dependencies": {
+    "@clawdstrike/adapter-core": "workspace:*",
+    "@clawdstrike/engine-local": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0"
+  }
+}

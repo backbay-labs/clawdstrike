@@ -71,13 +71,15 @@ export class ForbiddenPathGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    if (this.isForbidden(path)) {
+    const matchedPattern = this.findForbiddenPattern(path);
+    if (matchedPattern) {
       return GuardResult.block(
         this.name,
         Severity.CRITICAL,
         `Access to forbidden path: ${path}`
       ).withDetails({
         path,
+        pattern: matchedPattern,
         reason: "matches_forbidden_pattern",
       });
     }
@@ -85,25 +87,25 @@ export class ForbiddenPathGuard implements Guard {
     return GuardResult.allow(this.name);
   }
 
-  private isForbidden(path: string): boolean {
+  private findForbiddenPattern(path: string): string | null {
     // Normalize path (handle Windows paths)
     const normalized = path.replace(/\\/g, "/");
 
     // Check exceptions first
     for (const exception of this.exceptions) {
       if (matchGlob(normalized, exception)) {
-        return false;
+        return null;
       }
     }
 
     // Check forbidden patterns
     for (const pattern of this.patterns) {
       if (matchGlob(normalized, pattern)) {
-        return true;
+        return pattern;
       }
     }
 
-    return false;
+    return null;
   }
 }
 

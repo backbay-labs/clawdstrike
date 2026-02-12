@@ -32,10 +32,10 @@ if (!preflight.proceed) throw new Error("Blocked by policy");
 dispatcher directly:
 
 ```ts
-import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const boundary = new GenericToolBoundary({ engine });
 
 const dispatchTool = wrapGenericToolDispatcher(

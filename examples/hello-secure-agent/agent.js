@@ -5,7 +5,7 @@
  *
  * A minimal demonstration of clawdstrike policy decisions.
  *
- * This script does NOT run OpenClaw. It uses the @backbay/openclaw policy engine
+ * This script does NOT run OpenClaw. It uses the @clawdstrike/openclaw policy engine
  * to dry-run policy checks locally so you can verify your policy before wiring it
  * into an OpenClaw agent.
  */

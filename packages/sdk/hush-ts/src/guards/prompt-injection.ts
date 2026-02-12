@@ -65,7 +65,7 @@ export class PromptInjectionGuard implements Guard {
   handles(action: GuardAction): boolean {
     return (
       action.actionType === "custom"
-      && (action.customType === "untrusted_text" || action.customType === "hushclaw.untrusted_text")
+      && (action.customType === "untrusted_text" || action.customType === "clawdstrike.untrusted_text" || action.customType === "hushclaw.untrusted_text")
     );
   }
 
@@ -79,9 +79,9 @@ export class PromptInjectionGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const scanned = Buffer.from(text, "utf8");
+    const scanned = new TextEncoder().encode(text);
     const truncated = scanned.length > this.maxScanBytes;
-    const content = truncated ? scanned.subarray(0, this.maxScanBytes).toString("utf8") : text;
+    const content = truncated ? new TextDecoder().decode(scanned.subarray(0, this.maxScanBytes)) : text;
 
     let score = 0;
     const signals: string[] = [];

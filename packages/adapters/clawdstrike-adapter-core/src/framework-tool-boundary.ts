@@ -1,22 +1,19 @@
-import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
-import type {
-  AdapterConfig,
-  AuditEvent,
-  PolicyEngineLike,
-  SecurityContext,
-  ToolInterceptor,
-} from '@clawdstrike/adapter-core';
-
+import type { AdapterConfig } from './adapter.js';
+import type { AuditEvent } from './audit.js';
+import { BaseToolInterceptor } from './base-tool-interceptor.js';
+import { createSecurityContext, type SecurityContext } from './context.js';
+import type { PolicyEngineLike } from './engine.js';
+import type { ToolInterceptor } from './interceptor.js';
 import { ClawdstrikeBlockedError } from './errors.js';
 
-export interface ClaudeCodeToolBoundaryOptions {
+export interface FrameworkToolBoundaryOptions {
   engine?: PolicyEngineLike;
   interceptor?: ToolInterceptor;
   config?: AdapterConfig;
   createContext?: (runId: string) => SecurityContext;
 }
 
-export type ClaudeCodeToolDispatcher<TOutput = unknown> = (
+export type FrameworkToolDispatcher<TOutput = unknown> = (
   toolName: string,
   input: unknown,
   runId: string,
@@ -28,15 +25,17 @@ type PendingRun = {
   context: SecurityContext;
 };
 
-export class ClaudeCodeToolBoundary {
+export class FrameworkToolBoundary {
   private readonly interceptor: ToolInterceptor;
   private readonly config: AdapterConfig;
-  private readonly createContext: (runId: string) => SecurityContext;
+  private readonly createContextFn: (runId: string) => SecurityContext;
+  private readonly framework: string;
 
   private readonly contexts = new Map<string, SecurityContext>();
   private readonly pending = new Map<string, PendingRun>();
 
-  constructor(options: ClaudeCodeToolBoundaryOptions = {}) {
+  constructor(framework: string, options: FrameworkToolBoundaryOptions = {}) {
+    this.framework = framework;
     this.config = options.config ?? {};
 
     if (options.interceptor) {
@@ -44,15 +43,15 @@ export class ClaudeCodeToolBoundary {
     } else if (options.engine) {
       this.interceptor = new BaseToolInterceptor(options.engine, this.config);
     } else {
-      throw new Error('ClaudeCodeToolBoundary requires { interceptor } or { engine }');
+      throw new Error(`${this.constructor.name} requires { interceptor } or { engine }`);
     }
 
-    this.createContext =
+    this.createContextFn =
       options.createContext
       ?? ((runId: string) =>
         createSecurityContext({
           sessionId: runId,
-          metadata: { framework: 'claude-code' },
+          metadata: { framework: this.framework },
         }));
   }
 
@@ -97,22 +96,32 @@ export class ClaudeCodeToolBoundary {
     return Array.from(this.contexts.values()).flatMap(ctx => ctx.auditEvents);
   }
 
+  clearRun(runId: string): void {
+    this.pending.delete(runId);
+    this.contexts.delete(runId);
+  }
+
+  clearAll(): void {
+    this.pending.clear();
+    this.contexts.clear();
+  }
+
   private getContext(runId: string): SecurityContext {
     const existing = this.contexts.get(runId);
     if (existing) {
       return existing;
     }
 
-    const ctx = this.createContext(runId);
+    const ctx = this.createContextFn(runId);
     this.contexts.set(runId, ctx);
     return ctx;
   }
 }
 
-export function wrapClaudeCodeToolDispatcher<TOutput = unknown>(
-  boundary: ClaudeCodeToolBoundary,
-  dispatch: ClaudeCodeToolDispatcher<TOutput>,
-): ClaudeCodeToolDispatcher<TOutput> {
+export function wrapFrameworkToolDispatcher<TOutput = unknown>(
+  boundary: FrameworkToolBoundary,
+  dispatch: FrameworkToolDispatcher<TOutput>,
+): FrameworkToolDispatcher<TOutput> {
   return async (toolName, input, runId) => {
     await boundary.handleToolStart(toolName, input, runId);
     try {

@@ -7,13 +7,13 @@ Use observation to generate a least-privilege starting policy.
 Local command mode:
 
 ```bash
-hush policy observe --out run.events.jsonl -- your-agent-command --arg value
+clawdstrike policy observe --out run.events.jsonl -- your-agent-command --arg value
 ```
 
 hushd session mode:
 
 ```bash
-hush policy observe \
+clawdstrike policy observe \
   --hushd-url http://127.0.0.1:9876 \
   --session <session_id> \
   --out session.events.jsonl
@@ -22,7 +22,7 @@ hush policy observe \
 ## 2. Synthesize a candidate policy
 
 ```bash
-hush policy synth run.events.jsonl \
+clawdstrike policy synth run.events.jsonl \
   --extends clawdstrike:default \
   --out candidate.yaml \
   --diff-out candidate.diff.json \
@@ -41,8 +41,8 @@ See `examples/policies/synthesized-example.yaml` for a representative output sha
 ## 3. Validate and simulate
 
 ```bash
-hush policy validate candidate.yaml
-hush policy simulate candidate.yaml run.events.jsonl --json --track-posture
+clawdstrike policy validate candidate.yaml
+clawdstrike policy simulate candidate.yaml run.events.jsonl --json --track-posture
 ```
 
 ## 4. Tighten manually

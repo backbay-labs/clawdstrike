@@ -13,10 +13,10 @@ npm install @clawdstrike/opencode @clawdstrike/adapter-core @clawdstrike/engine-
 ## Usage
 
 ```ts
-import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 import { OpenCodeToolBoundary, wrapOpenCodeToolDispatcher } from '@clawdstrike/opencode';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const boundary = new OpenCodeToolBoundary({ engine });
 
 const dispatchTool = wrapOpenCodeToolDispatcher(boundary, async (toolName, input, runId) => {

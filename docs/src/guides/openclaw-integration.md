@@ -31,7 +31,7 @@ openclaw plugins list | grep clawdstrike
 ### From npm (when published)
 
 ```bash
-openclaw plugins install @backbay/clawdstrike-security
+openclaw plugins install @clawdstrike/openclaw
 ```
 
 ## Quick verification

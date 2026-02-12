@@ -2,12 +2,12 @@
 
 `OutputSanitizer` is a prompt-security utility that redacts secrets/PII/internal markers from model output before you show it to users, log it, or feed it back into another model.
 
-It is **not** part of the Rust policy schema (`guards.*`). Instead, it’s configured in integrations (for example `@backbay/vercel-ai` `promptSecurity.outputSanitization`) or used directly.
+It is **not** part of the Rust policy schema (`guards.*`). Instead, it’s configured in integrations (for example `@clawdstrike/vercel-ai` `promptSecurity.outputSanitization`) or used directly.
 
-## TypeScript (`@backbay/sdk`)
+## TypeScript (`@clawdstrike/sdk`)
 
 ```typescript
-import { OutputSanitizer } from "@backbay/sdk";
+import { OutputSanitizer } from "@clawdstrike/sdk";
 
 const sanitizer = new OutputSanitizer({
   categories: { secrets: true, pii: true, internal: true },

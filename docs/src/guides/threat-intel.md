@@ -24,7 +24,7 @@ Uses hash-only lookups for files (never uploads file contents). For URLs, uses r
 - `network_egress`: uses `data.url` (preferred) or `https://{host}`
 
 ```yaml
-version: "1.0.0"
+version: "1.2.0"
 name: Threat Intel (VT)
 
 guards:
@@ -47,7 +47,7 @@ guards:
 **Applies to:** `network_egress` (URL reputation)
 
 ```yaml
-version: "1.0.0"
+version: "1.2.0"
 name: Threat Intel (Safe Browsing)
 
 guards:
@@ -57,7 +57,7 @@ guards:
       config:
         api_key: "${GSB_API_KEY}"
         client_id: "${GSB_CLIENT_ID}"
-        # client_version: "1.0.0" # optional
+        # client_version: "1.2.0" # optional
         # base_url: "https://safebrowsing.googleapis.com" # optional
       async:
         timeout_ms: 3000
@@ -77,7 +77,7 @@ MVP scope is intentionally small: **`package.json` file writes only**.
 Recommended default is `execution_mode: background` to avoid blocking developer workflows.
 
 ```yaml
-version: "1.0.0"
+version: "1.2.0"
 name: Threat Intel (Snyk)
 
 guards:

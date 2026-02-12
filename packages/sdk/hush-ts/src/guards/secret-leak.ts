@@ -133,7 +133,7 @@ export class SecretLeakGuard implements Guard {
 
   private extractText(action: GuardAction): string {
     if (action.actionType === "file_write" && action.content) {
-      return Buffer.from(action.content).toString("utf8");
+      return new TextDecoder().decode(action.content);
     }
     if (action.actionType === "patch" && action.diff) {
       return action.diff;

@@ -69,6 +69,6 @@
 
 # Recipes
 
-- [Claude Code Integration](recipes/claude-code.md)
+- [Claude Integration](recipes/claude.md)
 - [GitHub Actions](recipes/github-actions.md)
 - [Self-Hosted Runners](recipes/self-hosted.md)

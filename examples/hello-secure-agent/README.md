@@ -118,6 +118,6 @@ This example does not generate cryptographic receipts. See `crates/libs/hush-cor
 
 ## Next Steps
 
-- [Guard Reference](../../docs/reference/guards/) - Learn about all guards
-- [Policy Schema](../../docs/reference/policy-schema.md) - Full policy options
-- [OpenClaw Integration](../../docs/guides/openclaw-integration.md) - Detailed setup
+- [Guard Reference](../../docs/src/reference/guards/) - Learn about all guards
+- [Policy Schema](../../docs/src/reference/policy-schema.md) - Full policy options
+- [OpenClaw Integration](../../docs/src/guides/openclaw-integration.md) - Detailed setup

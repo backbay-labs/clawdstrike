@@ -37,6 +37,11 @@ export interface AuditLogger {
   prune(olderThan: Date): Promise<number>;
 }
 
+function csvEscape(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
 export class InMemoryAuditLogger implements AuditLogger {
   private events: AuditEvent[] = [];
   private readonly maxEvents: number;
@@ -86,7 +91,7 @@ export class InMemoryAuditLogger implements AuditLogger {
           e.toolName ?? '',
           e.decision?.status ?? 'allow',
         ]);
-        return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        return [headers.map(csvEscape).join(','), ...rows.map(r => r.map(csvEscape).join(','))].join('\n');
       }
     }
   }

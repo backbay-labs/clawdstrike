@@ -64,3 +64,26 @@ export {
   GenericToolCallBlockedError,
   wrapGenericToolDispatcher,
 } from './generic-tool-runner.js';
+
+export { ClawdstrikeBlockedError } from './errors.js';
+
+export type {
+  FrameworkToolBoundaryOptions,
+  FrameworkToolDispatcher,
+} from './framework-tool-boundary.js';
+export {
+  FrameworkToolBoundary,
+  wrapFrameworkToolDispatcher,
+} from './framework-tool-boundary.js';
+
+export { createSessionSummary } from './finalize-context.js';
+
+export { createFrameworkAdapter } from './framework-adapter.js';
+
+export type { PolicyEvalResponseV1 } from './engine-response.js';
+export {
+  failClosed,
+  isRecord,
+  parseDecision,
+  parsePolicyEvalResponse,
+} from './engine-response.js';

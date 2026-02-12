@@ -68,7 +68,7 @@ export class PluginLoader {
         command:
           options.wasmBridge?.command && options.wasmBridge.command.length > 0
             ? [...options.wasmBridge.command]
-            : [process.env.HUSH_PATH ?? 'hush'],
+            : [process.env.CLAWDSTRIKE_PATH ?? process.env.HUSH_PATH ?? 'clawdstrike'],
         timeoutMs: options.wasmBridge?.timeoutMs ?? 15_000,
       },
     };

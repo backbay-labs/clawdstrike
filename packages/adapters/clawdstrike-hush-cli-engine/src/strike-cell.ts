@@ -1,21 +1,16 @@
 import { spawn } from 'node:child_process';
 
 import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
+import { failClosed, parsePolicyEvalResponse } from '@clawdstrike/adapter-core';
 
-export interface HushCliEngineOptions {
+export interface StrikeCellOptions {
   hushPath?: string;
   policyRef: string;
   resolve?: boolean;
   timeoutMs?: number;
 }
 
-type HushPolicyEvalResponseV1 = {
-  version: 1;
-  command: 'policy_eval';
-  decision: Decision;
-};
-
-export function createHushCliEngine(options: HushCliEngineOptions): PolicyEngineLike {
+export function createStrikeCell(options: StrikeCellOptions): PolicyEngineLike {
   const hushPath = options.hushPath ?? 'hush';
   const timeoutMs = options.timeoutMs ?? 10_000;
   const policyRef = options.policyRef;
@@ -30,7 +25,7 @@ export function createHushCliEngine(options: HushCliEngineOptions): PolicyEngine
 
       try {
         const output = await spawnJson(hushPath, args, event, timeoutMs);
-        const response = parsePolicyEvalResponse(output);
+        const response = parsePolicyEvalResponse(output, 'hush');
         return response.decision;
       } catch (error) {
         return failClosed(error);
@@ -121,86 +116,6 @@ async function spawnJson(
       });
     });
   });
-}
-
-function parsePolicyEvalResponse(raw: string): HushPolicyEvalResponseV1 {
-  const parsed = JSON.parse(raw) as unknown;
-  if (!isRecord(parsed)) {
-    throw new Error('Invalid hush JSON: expected object');
-  }
-
-  if (parsed.version !== 1) {
-    throw new Error(`Invalid hush JSON: expected version=1`);
-  }
-
-  if (parsed.command !== 'policy_eval') {
-    throw new Error(`Invalid hush JSON: expected command="policy_eval"`);
-  }
-
-  const decision = parseDecision(parsed.decision);
-  if (!decision) {
-    throw new Error(`Invalid hush JSON: missing/invalid decision`);
-  }
-
-  return {
-    version: 1,
-    command: 'policy_eval',
-    decision,
-  };
-}
-
-function parseDecision(value: unknown): Decision | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const status =
-    value.status === 'allow' || value.status === 'warn' || value.status === 'deny'
-      ? value.status
-      : typeof value.allowed === 'boolean' && typeof value.denied === 'boolean' && typeof value.warn === 'boolean'
-        ? value.denied
-          ? 'deny'
-          : value.warn
-            ? 'warn'
-            : 'allow'
-        : null;
-
-  if (!status) {
-    return null;
-  }
-
-  const decision: Decision = { status };
-
-  if (typeof value.reason === 'string') {
-    decision.reason = value.reason;
-  }
-
-  if (typeof value.guard === 'string') {
-    decision.guard = value.guard;
-  }
-
-  if (typeof value.message === 'string') {
-    decision.message = value.message;
-  }
-
-  if (value.severity === 'low' || value.severity === 'medium' || value.severity === 'high' || value.severity === 'critical') {
-    decision.severity = value.severity;
-  }
-
-  return decision;
-}
-
-function failClosed(error: unknown): Decision {
-  const message = error instanceof Error ? error.message : String(error);
-  return {
-    status: 'deny',
-    reason: 'engine_error',
-    message,
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function formatStderr(chunks: string[]): string {

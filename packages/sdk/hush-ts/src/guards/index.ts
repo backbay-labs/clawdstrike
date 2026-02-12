@@ -4,6 +4,7 @@ export {
   GuardContext,
   GuardAction,
   type Guard,
+  type GuardActionOptions,
   type CanonicalSeverity,
   toCanonicalSeverity,
   fromCanonicalSeverity,

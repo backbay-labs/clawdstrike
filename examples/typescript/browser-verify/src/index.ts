@@ -5,7 +5,7 @@
  * using the TypeScript SDK (pure JS crypto).
  */
 
-import { SignedReceipt, type PublicKeySet } from '@backbay/sdk';
+import { SignedReceipt, type PublicKeySet } from '@clawdstrike/sdk';
 
 // DOM elements
 const fileInput = document.getElementById('receipt-file') as HTMLInputElement;

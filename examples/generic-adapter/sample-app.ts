@@ -1,10 +1,10 @@
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { GenericToolBoundary, wrapGenericToolDispatcher } from '@backbay/adapter-core';
+import { createStrikeCell } from '@clawdstrike/engine-local';
+import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
 type ToolInput = Record<string, unknown>;
 type ToolOutput = { toolName: string; input: ToolInput; runId: string };
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const boundary = new GenericToolBoundary<ToolInput, ToolOutput>({
   engine,
   config: {

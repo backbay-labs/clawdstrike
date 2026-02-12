@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { describe, it, expect } from 'vitest';
 
 import type { PolicyEvent } from '@clawdstrike/adapter-core';
-import { createHushCliEngine } from './hush-cli-engine.js';
+import { createStrikeCell } from './strike-cell.js';
 
 const describeE2E = hasRunnableHush(process.env.HUSH_PATH ?? 'hush') ? describe : describe.skip;
 
@@ -14,7 +14,7 @@ describeE2E('hush-cli-engine (e2e)', () => {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const repoRoot = path.resolve(__dirname, '../../../../');
 
-    const engine = createHushCliEngine({
+    const engine = createStrikeCell({
       hushPath: process.env.HUSH_PATH ?? 'hush',
       policyRef:
         process.env.HUSH_POLICY_REF ?? path.join(repoRoot, 'rulesets/permissive.yaml'),
@@ -38,7 +38,7 @@ describeE2E('hush-cli-engine (e2e)', () => {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const repoRoot = path.resolve(__dirname, '../../../../');
 
-    const engine = createHushCliEngine({
+    const engine = createStrikeCell({
       hushPath: process.env.HUSH_PATH ?? 'hush',
       policyRef: 'default',
       timeoutMs: 10_000,

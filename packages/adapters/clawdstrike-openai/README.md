@@ -1,6 +1,6 @@
-# `@clawdstrike/codex`
+# `@clawdstrike/openai`
 
-In-process tool-boundary hooks for Codex-style coding assistants.
+In-process tool-boundary hooks for the OpenAI Agents SDK.
 
 This package is intentionally **runtime-agnostic**: you wire it into the layer that actually executes tools (file/network/command/etc).
 
@@ -9,20 +9,20 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 ## Install
 
 ```bash
-npm install @clawdstrike/codex @clawdstrike/adapter-core @clawdstrike/engine-local
+npm install @clawdstrike/openai @clawdstrike/adapter-core @clawdstrike/engine-local
 ```
 
 ## Usage
 
 ```ts
-import { createHushCliEngine } from '@clawdstrike/engine-local';
-import { CodexToolBoundary, wrapCodexToolDispatcher } from '@clawdstrike/codex';
+import { createStrikeCell } from '@clawdstrike/engine-local';
+import { OpenAIToolBoundary, wrapOpenAIToolDispatcher } from '@clawdstrike/openai';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
-const boundary = new CodexToolBoundary({ engine });
+const engine = createStrikeCell({ policyRef: 'default' });
+const boundary = new OpenAIToolBoundary({ engine });
 
 // Drop-in wrapper around your real dispatcher:
-const dispatchTool = wrapCodexToolDispatcher(boundary, async (toolName, input, runId) => {
+const dispatchTool = wrapOpenAIToolDispatcher(boundary, async (toolName, input, runId) => {
   // ...execute the tool...
   return { toolName, input, runId };
 });

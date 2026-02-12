@@ -104,7 +104,7 @@ clawdstrike/
 ├── packages/
 │   ├── sdk/                # TypeScript + Python SDKs
 │   ├── policy/             # Canonical TypeScript policy engine
-│   └── adapters/           # Framework adapters (Claude Code, Vercel AI, etc.)
+│   └── adapters/           # Framework adapters (Claude, Vercel AI, OpenAI, etc.)
 ├── apps/
 │   ├── desktop/            # Tauri desktop SOC app
 │   ├── agent/              # Tauri agent app
@@ -148,12 +148,12 @@ Create a new security ruleset in `rulesets/community/`:
 
 ```yaml
 # rulesets/community/my-policy.yaml
-schema_version: "1.1.0"
+version: "1.2.0"
 name: "my-org-baseline"
 extends: "default"
 guards:
-  forbidden_paths:
-    deny:
+  forbidden_path:
+    patterns:
       - "/etc/shadow"
 ```
 
@@ -174,8 +174,11 @@ Add industry-specific compliance templates in `crates/libs/hush-certification/`.
 Implement the `Guard` trait for new security checks:
 
 ```rust
+#[async_trait]
 impl Guard for MyGuard {
-    fn check(&self, action: &Action, policy: &Policy) -> Result<Decision> {
+    fn name(&self) -> &str { "my_guard" }
+    fn handles(&self, action: &GuardAction<'_>) -> bool { true }
+    async fn check(&self, action: &GuardAction<'_>, context: &GuardContext) -> GuardResult {
         // Your detection logic here
     }
 }

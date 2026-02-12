@@ -2,16 +2,16 @@
 
 const path = require('path');
 
-const { importAdapterCore, importHushCliEngine, ensureHushBuilt } = require('./tools/sdk');
+const { importAdapterCore, importStrikeCell, ensureHushBuilt } = require('./tools/sdk');
 
 async function main() {
   const hushPath = ensureHushBuilt();
 
   const { PolicyEventFactory } = await importAdapterCore();
-  const { createHushCliEngine } = await importHushCliEngine();
+  const { createStrikeCell } = await importStrikeCell();
 
   const policyRef = path.join(__dirname, 'policy.yaml');
-  const engine = createHushCliEngine({
+  const engine = createStrikeCell({
     hushPath,
     policyRef,
     resolve: true,

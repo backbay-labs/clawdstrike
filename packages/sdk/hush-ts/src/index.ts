@@ -3,8 +3,9 @@
  * @packageDocumentation
  */
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-export const VERSION: string = require("../package.json").version;
+import { createRequire } from 'node:module';
+const _require = createRequire(import.meta.url);
+export const VERSION: string = (_require("../package.json") as { version: string }).version;
 
 // Main entry point
 export {
@@ -72,6 +73,7 @@ export {
   GuardContext,
   GuardAction,
   type Guard,
+  type GuardActionOptions,
   type CanonicalSeverity,
   toCanonicalSeverity,
   fromCanonicalSeverity,

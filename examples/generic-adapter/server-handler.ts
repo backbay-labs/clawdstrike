@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 import {
   GenericToolBoundary,
   GenericToolCallBlockedError,
   wrapGenericToolDispatcher,
-} from '@backbay/adapter-core';
+} from '@clawdstrike/adapter-core';
 
 type RequestLike = {
   headers?: Record<string, string | undefined>;
@@ -21,7 +21,7 @@ type ResponseLike = {
   json(payload: unknown): void;
 };
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const boundary = new GenericToolBoundary({ engine });
 
 const executeTool = wrapGenericToolDispatcher(

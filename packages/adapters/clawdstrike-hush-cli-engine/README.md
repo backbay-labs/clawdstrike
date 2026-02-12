@@ -13,10 +13,10 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 ## Usage
 
 ```ts
-import { createHushCliEngine } from "@clawdstrike/engine-local";
+import { createStrikeCell } from "@clawdstrike/engine-local";
 import type { PolicyEvent } from "@clawdstrike/adapter-core";
 
-const engine = createHushCliEngine({
+const engine = createStrikeCell({
   policyRef: "default",
   // hushPath: "/path/to/hush",
 });

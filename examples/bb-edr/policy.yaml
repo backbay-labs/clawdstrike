@@ -1,6 +1,6 @@
 # Clawdstrike/OpenClaw policy for the bb-edr example.
 #
-# This file is consumed by the @backbay/openclaw plugin (not the Rust `clawdstrike::Policy` type).
+# This file is consumed by the @clawdstrike/openclaw plugin (not the Rust `clawdstrike::Policy` type).
 # Validate it with:
 #   npx clawdstrike policy lint ./policy.yaml
 

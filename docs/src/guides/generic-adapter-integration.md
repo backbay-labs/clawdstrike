@@ -1,6 +1,6 @@
 # Generic Adapter Integration
 
-Use this when your framework does not have a first-party `@backbay/*` integration yet.
+Use this when your framework does not have a first-party `@clawdstrike/*` integration yet.
 
 The generic wrapper secures any dispatcher shaped like:
 
@@ -13,16 +13,16 @@ This approach enforces at the **tool boundary**. It is not an OS sandbox; for th
 ## Install
 
 ```bash
-npm install @backbay/adapter-core @backbay/hush-cli-engine
+npm install @clawdstrike/adapter-core @clawdstrike/engine-local
 ```
 
 ## Sample app (framework-agnostic)
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { GenericToolBoundary, wrapGenericToolDispatcher } from '@backbay/adapter-core';
+import { createStrikeCell } from '@clawdstrike/engine-local';
+import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const boundary = new GenericToolBoundary({ engine });
 
 const dispatchTool = wrapGenericToolDispatcher(boundary, async (toolName, input, runId) => {
@@ -38,10 +38,10 @@ console.log(boundary.getAuditEvents().length);
 
 ```ts
 import type { Request, Response } from 'express';
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { GenericToolBoundary, wrapGenericToolDispatcher } from '@backbay/adapter-core';
+import { createStrikeCell } from '@clawdstrike/engine-local';
+import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const boundary = new GenericToolBoundary({ engine });
 
 const executeTool = wrapGenericToolDispatcher(

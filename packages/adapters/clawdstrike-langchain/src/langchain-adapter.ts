@@ -1,4 +1,4 @@
-import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
+import { BaseToolInterceptor, createSecurityContext, createSessionSummary } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   FrameworkAdapter,
@@ -15,7 +15,7 @@ import { wrapTool, wrapTools } from './wrap.js';
 
 export class LangChainAdapter implements FrameworkAdapter {
   readonly name = 'langchain';
-  readonly version = '0.1.0';
+  readonly version = '0.1.1'; // TODO: derive from package.json at build time
 
   private readonly engine: PolicyEngineLike;
   private config: AdapterConfig = {};
@@ -54,32 +54,7 @@ export class LangChainAdapter implements FrameworkAdapter {
   }
 
   async finalizeContext(context: SecurityContext): Promise<SessionSummary> {
-    const endTime = new Date();
-    const startTime = context.createdAt;
-    const duration = endTime.getTime() - startTime.getTime();
-
-    const auditEvents = context.auditEvents;
-    const toolsUsed = Array.from(
-      new Set(auditEvents.map(e => e.toolName).filter(Boolean) as string[]),
-    );
-
-    const toolsBlocked = Array.from(context.blockedTools);
-    const warningsIssued = auditEvents.filter(e => e.type === 'tool_call_warning').length;
-
-    return {
-      sessionId: context.sessionId,
-      startTime,
-      endTime,
-      duration,
-      totalToolCalls: context.checkCount,
-      blockedToolCalls: context.violationCount,
-      warningsIssued,
-      toolsUsed,
-      toolsBlocked,
-      auditEvents,
-      policy: this.config.policy ?? '',
-      mode: this.config.mode ?? 'deterministic',
-    };
+    return createSessionSummary(context, this.config);
   }
 
   getEngine(): PolicyEngineLike {
@@ -110,4 +85,3 @@ export class LangChainAdapter implements FrameworkAdapter {
     return wrapTools(tools, this.interceptor, { context });
   }
 }
-

@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 
 import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
 
-import { ClaudeCodeAdapter } from './claude-code-adapter.js';
+import { OpenAIAdapter } from './openai-adapter.js';
 
-describe('ClaudeCodeAdapter', () => {
+describe('OpenAIAdapter', () => {
   it('evaluates tool calls via FrameworkAdapter interface', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
@@ -12,7 +12,7 @@ describe('ClaudeCodeAdapter', () => {
       }),
     };
 
-    const adapter = new ClaudeCodeAdapter(engine, { blockOnViolation: true });
+    const adapter = new OpenAIAdapter(engine, { blockOnViolation: true });
     await adapter.initialize({ blockOnViolation: true });
 
     const context = adapter.createContext();
@@ -28,4 +28,3 @@ describe('ClaudeCodeAdapter', () => {
     expect(result.proceed).toBe(false);
   });
 });
-

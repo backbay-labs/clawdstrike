@@ -127,7 +127,7 @@ export function wrapToolNode<S extends Record<string, unknown>>(
   });
 }
 
-export function sanitizeState(value: unknown, engine: PolicyEngineLike): unknown {
+export function sanitizeState(value: unknown, engine: PolicyEngineLike, seen = new WeakSet<object>()): unknown {
   if (value === null || value === undefined) {
     return value;
   }
@@ -140,14 +140,19 @@ export function sanitizeState(value: unknown, engine: PolicyEngineLike): unknown
     return value;
   }
 
+  if (seen.has(value as object)) {
+    return '[Circular]';
+  }
+  seen.add(value as object);
+
   if (Array.isArray(value)) {
-    return value.map(item => sanitizeState(item, engine));
+    return value.map(item => sanitizeState(item, engine, seen));
   }
 
   const rec = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(rec)) {
-    out[k] = sanitizeState(v, engine);
+    out[k] = sanitizeState(v, engine, seen);
   }
   return out;
 }

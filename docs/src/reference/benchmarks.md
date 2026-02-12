@@ -15,7 +15,7 @@ Clawdstrike is designed for minimal latency overhead at the tool boundary. This 
 
 ## Running Benchmarks
 
-### TypeScript SDK (`@backbay/sdk`)
+### TypeScript SDK (`@clawdstrike/sdk`)
 
 ```bash
 cd packages/sdk/hush-ts
@@ -25,7 +25,7 @@ npm run bench
 npm run bench:json
 ```
 
-### OpenClaw Plugin (`@backbay/clawdstrike-security`)
+### OpenClaw Plugin (`@clawdstrike/openclaw`)
 
 ```bash
 cd packages/adapters/clawdstrike-openclaw

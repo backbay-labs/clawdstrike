@@ -33,7 +33,7 @@ export class JailbreakGuard implements Guard {
   handles(action: GuardAction): boolean {
     return (
       action.actionType === "custom"
-      && (action.customType === "user_input" || action.customType === "hushclaw.user_input")
+      && (action.customType === "user_input" || action.customType === "clawdstrike.user_input" || action.customType === "hushclaw.user_input")
     );
   }
 
@@ -47,9 +47,9 @@ export class JailbreakGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const bytes = Buffer.from(text, "utf8");
+    const bytes = new TextEncoder().encode(text);
     const truncated = bytes.length > this.maxScanBytes;
-    const content = truncated ? bytes.subarray(0, this.maxScanBytes).toString("utf8") : text;
+    const content = truncated ? new TextDecoder().decode(bytes.subarray(0, this.maxScanBytes)) : text;
 
     let riskScore = 0;
     const signals: string[] = [];

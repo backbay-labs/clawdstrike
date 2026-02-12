@@ -34,7 +34,7 @@ The intended integration is at the **tool boundary** (your agent runtime calls C
 ┌─────────────────────────────────────────┼───────────────────────────────────────────┐
 │                              Framework Adapters                                      │
 │  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐ ┌──────┐ ┌──────────┐        │
-│  │ OpenClaw│ │ Vercel AI│ │ LangChain │ │Claude Code│ │ Codex│ │ OpenCode │        │
+│  │ OpenClaw│ │ Vercel AI│ │ LangChain │ │  Claude  │ │OpenAI│ │ OpenCode │        │
 │  └─────────┘ └──────────┘ └───────────┘ └───────────┘ └──────┘ └──────────┘        │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -56,12 +56,16 @@ The intended integration is at the **tool boundary** (your agent runtime calls C
 
 | Package | Description |
 |---------|-------------|
-| `@backbay/sdk` | Crypto/receipts + a subset of guards + prompt-security utilities (no full policy engine) |
-| `@backbay/adapter-core` | Framework-agnostic adapter interfaces |
-| `@backbay/clawdstrike-security` | OpenClaw plugin (plugin id: `clawdstrike-security`) |
-| `@backbay/vercel-ai` | Vercel AI SDK integration |
-| `@backbay/langchain` | LangChain integration |
-| `@backbay/hush-cli-engine` | Node.js bridge to Rust CLI |
+| `@clawdstrike/sdk` | Crypto/receipts + a subset of guards + prompt-security utilities (no full policy engine) |
+| `@clawdstrike/adapter-core` | Framework-agnostic adapter interfaces |
+| `@clawdstrike/openclaw` | OpenClaw plugin (plugin id: `clawdstrike-security`) |
+| `@clawdstrike/vercel-ai` | Vercel AI SDK integration |
+| `@clawdstrike/langchain` | LangChain integration |
+| `@clawdstrike/engine-local` | Node.js bridge to Rust CLI |
+| `@clawdstrike/engine-remote` | Node.js bridge to hushd daemon |
+| `@clawdstrike/claude` | Claude Code and Claude Agent SDK adapter |
+| `@clawdstrike/openai` | OpenAI Agents SDK adapter |
+| `@clawdstrike/opencode` | OpenCode adapter |
 
 ### Python Packages
 

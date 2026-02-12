@@ -45,6 +45,7 @@ export class DefaultSecurityContext implements SecurityContext {
   readonly metadata: Record<string, unknown>;
   readonly auditEvents: AuditEvent[] = [];
   readonly blockedTools = new Set<string>();
+  readonly blockedDecisions = new Map<string, Decision>();
   checkCount = 0;
   violationCount = 0;
 
@@ -61,8 +62,9 @@ export class DefaultSecurityContext implements SecurityContext {
     this.auditEvents.push(event);
   }
 
-  recordBlocked(toolName: string, _decision: Decision): void {
+  recordBlocked(toolName: string, decision: Decision): void {
     this.blockedTools.add(toolName);
+    this.blockedDecisions.set(toolName, decision);
   }
 
   getSummary(): ContextSummary {

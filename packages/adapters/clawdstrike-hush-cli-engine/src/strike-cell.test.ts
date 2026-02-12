@@ -17,7 +17,7 @@ vi.mock('node:child_process', () => ({
   spawn: (...args: unknown[]) => spawnMock(...args),
 }));
 
-import { createHushCliEngine } from './hush-cli-engine.js';
+import { createStrikeCell } from './strike-cell.js';
 
 function createMockChildProcess(): MockChildProcess {
   const child = new EventEmitter() as MockChildProcess;
@@ -35,7 +35,7 @@ const exampleEvent: PolicyEvent = {
   data: { type: 'tool', toolName: 'demo', parameters: { ok: true } },
 };
 
-describe('createHushCliEngine', () => {
+describe('createStrikeCell', () => {
   beforeEach(() => {
     spawnMock.mockReset();
   });
@@ -44,7 +44,7 @@ describe('createHushCliEngine', () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);
 
-    const engine = createHushCliEngine({ policyRef: 'default', resolve: true });
+    const engine = createStrikeCell({ policyRef: 'default', resolve: true });
     const pending = engine.evaluate(exampleEvent);
 
     child.stdout.write(
@@ -69,7 +69,7 @@ describe('createHushCliEngine', () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);
 
-    const engine = createHushCliEngine({ policyRef: 'default' });
+    const engine = createStrikeCell({ policyRef: 'default' });
     const pending = engine.evaluate(exampleEvent);
 
     child.stdout.write(
@@ -88,7 +88,7 @@ describe('createHushCliEngine', () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);
 
-    const engine = createHushCliEngine({ policyRef: 'default' });
+    const engine = createStrikeCell({ policyRef: 'default' });
     const pending = engine.evaluate(exampleEvent);
 
     child.stdout.write(
@@ -107,7 +107,7 @@ describe('createHushCliEngine', () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);
 
-    const engine = createHushCliEngine({ policyRef: 'default' });
+    const engine = createStrikeCell({ policyRef: 'default' });
     const pending = engine.evaluate(exampleEvent);
 
     child.stdout.write(
@@ -126,7 +126,7 @@ describe('createHushCliEngine', () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);
 
-    const engine = createHushCliEngine({ policyRef: 'default' });
+    const engine = createStrikeCell({ policyRef: 'default' });
     const pending = engine.evaluate(exampleEvent);
 
     child.stdout.write(
@@ -145,7 +145,7 @@ describe('createHushCliEngine', () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);
 
-    const engine = createHushCliEngine({ policyRef: 'default' });
+    const engine = createStrikeCell({ policyRef: 'default' });
     const pending = engine.evaluate(exampleEvent);
 
     child.stdout.write(
@@ -164,7 +164,7 @@ describe('createHushCliEngine', () => {
     const child = createMockChildProcess();
     spawnMock.mockReturnValueOnce(child);
 
-    const engine = createHushCliEngine({ policyRef: 'default' });
+    const engine = createStrikeCell({ policyRef: 'default' });
     const pending = engine.evaluate(exampleEvent);
 
     child.stderr.write('bad json');

@@ -22,9 +22,9 @@ async function postCheck(baseUrl, apiKey, payload) {
 
 async function main() {
   const baseUrl = process.env.HUSHD_URL ?? 'http://localhost:8080';
-  const apiKey = process.env.HUSHD_API_KEY;
+  const apiKey = process.env.CLAWDSTRIKE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing HUSHD_API_KEY');
+    throw new Error('Missing CLAWDSTRIKE_API_KEY');
   }
 
   const sessionId = `sess-${Date.now()}`;

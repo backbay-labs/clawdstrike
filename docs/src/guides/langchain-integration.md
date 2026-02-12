@@ -1,6 +1,6 @@
 # LangChain Integration
 
-`@backbay/langchain` is a small, runtime-agnostic wrapper layer for LangChain-style tools.
+`@clawdstrike/langchain` is a small, runtime-agnostic wrapper layer for LangChain-style tools.
 
 - Wrap tools that implement `invoke()` or `_call()`
 - Optional callback handler hooks you can wire into LangChain's callback system
@@ -8,7 +8,7 @@
 
 This package does **not** ship a policy engine. You provide one:
 
-- `@backbay/hush-cli-engine` (shells out to the `hush` CLI), or
+- `@clawdstrike/engine-local` (shells out to the `clawdstrike` CLI), or
 - your own implementation of `PolicyEngineLike`.
 
 ## Enforcement boundaries (read this)
@@ -18,7 +18,7 @@ This integration enforces at the **tool boundary**. It is not an OS sandbox; for
 ## Installation
 
 ```bash
-npm install @backbay/langchain @backbay/hush-cli-engine @backbay/adapter-core
+npm install @clawdstrike/langchain @clawdstrike/engine-local @clawdstrike/adapter-core
 ```
 
 ## Wrap tools (tool boundary)
@@ -26,11 +26,11 @@ npm install @backbay/langchain @backbay/hush-cli-engine @backbay/adapter-core
 Wrap a single tool:
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { BaseToolInterceptor } from '@backbay/adapter-core';
-import { wrapTool } from '@backbay/langchain';
+import { createStrikeCell } from '@clawdstrike/engine-local';
+import { BaseToolInterceptor } from '@clawdstrike/adapter-core';
+import { wrapTool } from '@clawdstrike/langchain';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const interceptor = new BaseToolInterceptor(engine, { blockOnViolation: true });
 
 const tool = {
@@ -47,7 +47,7 @@ await secureTool.invoke({ cmd: 'echo hello' });
 Wrap an array of tools:
 
 ```ts
-import { wrapTools } from '@backbay/langchain';
+import { wrapTools } from '@clawdstrike/langchain';
 
 const secureTools = wrapTools([toolA, toolB], interceptor);
 ```
@@ -57,10 +57,10 @@ const secureTools = wrapTools([toolA, toolB], interceptor);
 If you want the wrapper to create its own interceptor:
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { wrapToolWithConfig } from '@backbay/langchain';
+import { createStrikeCell } from '@clawdstrike/engine-local';
+import { wrapToolWithConfig } from '@clawdstrike/langchain';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const tool = { name: 'bash', async _call() { return 'ok'; } };
 
 const wrapped = wrapToolWithConfig(tool, engine, { blockOnViolation: false });
@@ -72,10 +72,10 @@ const stricter = wrapped.withConfig({ blockOnViolation: true });
 `ClawdstrikeCallbackHandler` exposes explicit hook methods you can call from your runtime’s callback surface.
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { ClawdstrikeCallbackHandler } from '@backbay/langchain';
+import { createStrikeCell } from '@clawdstrike/engine-local';
+import { ClawdstrikeCallbackHandler } from '@clawdstrike/langchain';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const handler = new ClawdstrikeCallbackHandler({ engine });
 
 // Pseudocode: wire these into your callback implementation.
@@ -87,7 +87,7 @@ Audit events are available via `handler.getAuditEvents()`.
 
 ## LangGraph helpers
 
-If you use LangGraph, `@backbay/langchain` also exports helpers like:
+If you use LangGraph, `@clawdstrike/langchain` also exports helpers like:
 
 - `createSecurityCheckpoint`
 - `addSecurityRouting`

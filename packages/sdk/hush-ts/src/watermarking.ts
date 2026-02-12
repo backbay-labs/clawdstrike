@@ -50,7 +50,7 @@ export interface WatermarkExtractionResult {
   errors: string[];
 }
 
-const META_PREFIX = "<!--hushclaw.watermark:v1:";
+const META_PREFIX = "<!--clawdstrike.watermark:v1:";
 const META_SUFFIX = "-->";
 
 function nowMs(): number {

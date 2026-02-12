@@ -7,8 +7,14 @@ function repoRoot() {
   return path.resolve(__dirname, '../../..');
 }
 
+const PKG_DIRS = {
+  'clawdstrike-adapter-core': 'adapters/clawdstrike-adapter-core',
+  'clawdstrike-hush-cli-engine': 'adapters/clawdstrike-hush-cli-engine',
+};
+
 function pkgDir(name) {
-  return path.resolve(repoRoot(), 'packages', name);
+  const sub = PKG_DIRS[name] ?? name;
+  return path.resolve(repoRoot(), 'packages', sub);
 }
 
 function distPath(pkgName, rel) {
@@ -35,7 +41,7 @@ async function importAdapterCore() {
   return import(pathToFileURL(distPath('clawdstrike-adapter-core', 'index.js')).href);
 }
 
-async function importHushCliEngine() {
+async function importStrikeCell() {
   ensureBuilt('clawdstrike-hush-cli-engine');
   return import(pathToFileURL(distPath('clawdstrike-hush-cli-engine', 'index.js')).href);
 }
@@ -58,6 +64,6 @@ function ensureHushBuilt() {
 
 module.exports = {
   importAdapterCore,
-  importHushCliEngine,
+  importStrikeCell,
   ensureHushBuilt,
 };

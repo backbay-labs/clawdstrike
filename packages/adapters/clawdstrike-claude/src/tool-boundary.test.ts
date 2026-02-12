@@ -6,9 +6,9 @@ import { describe, it, expect, vi } from 'vitest';
 import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
 
 import { ClawdstrikeBlockedError } from './errors.js';
-import { CodexToolBoundary, wrapCodexToolDispatcher } from './tool-boundary.js';
+import { ClaudeToolBoundary, wrapClaudeToolDispatcher } from './tool-boundary.js';
 
-describe('CodexToolBoundary', () => {
+describe('ClaudeToolBoundary', () => {
   it('blocks denied tool runs', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
@@ -17,7 +17,7 @@ describe('CodexToolBoundary', () => {
       }),
     };
 
-    const boundary = new CodexToolBoundary({ engine, config: { blockOnViolation: true } });
+    const boundary = new ClaudeToolBoundary({ engine, config: { blockOnViolation: true } });
 
     await expect(boundary.handleToolStart('bash', { cmd: 'rm -rf /' }, 'run-1')).rejects.toBeInstanceOf(
       ClawdstrikeBlockedError,
@@ -26,7 +26,7 @@ describe('CodexToolBoundary', () => {
     expect(boundary.getAuditEvents().some(e => e.type === 'tool_call_blocked')).toBe(true);
   });
 
-  it('wrapCodexToolDispatcher blocks before dispatch', async () => {
+  it('wrapClaudeToolDispatcher blocks before dispatch', async () => {
     const engine: PolicyEngineLike = {
       evaluate: event => ({
         status: event.eventType === 'command_exec' ? 'deny' : 'allow',
@@ -34,9 +34,9 @@ describe('CodexToolBoundary', () => {
       }),
     };
 
-    const boundary = new CodexToolBoundary({ engine, config: { blockOnViolation: true } });
+    const boundary = new ClaudeToolBoundary({ engine, config: { blockOnViolation: true } });
     const dispatch = vi.fn(async () => 'ok');
-    const wrapped = wrapCodexToolDispatcher(boundary, dispatch);
+    const wrapped = wrapClaudeToolDispatcher(boundary, dispatch);
 
     await expect(wrapped('bash', { cmd: 'rm -rf /' }, 'run-1')).rejects.toBeInstanceOf(ClawdstrikeBlockedError);
     expect(dispatch).not.toHaveBeenCalled();
@@ -50,8 +50,8 @@ describe('CodexToolBoundary', () => {
       }),
     };
 
-    const boundary = new CodexToolBoundary({ engine, config: { blockOnViolation: true } });
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-fail-closed-test-'));
+    const boundary = new ClaudeCodeToolBoundary({ engine, config: { blockOnViolation: true } });
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-fail-closed-test-'));
     const sideEffectPath = path.join(tmpDir, 'side-effect.txt');
 
     const dispatch = vi.fn(async () => {
@@ -59,7 +59,7 @@ describe('CodexToolBoundary', () => {
       return 'ok';
     });
 
-    const wrapped = wrapCodexToolDispatcher(boundary, dispatch);
+    const wrapped = wrapClaudeCodeToolDispatcher(boundary, dispatch);
     await expect(wrapped('bash', { cmd: 'rm -rf /' }, 'run-blocked')).rejects.toBeInstanceOf(
       ClawdstrikeBlockedError,
     );

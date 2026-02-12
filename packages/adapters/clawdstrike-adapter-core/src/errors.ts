@@ -1,4 +1,4 @@
-import type { Decision } from '@clawdstrike/adapter-core';
+import type { Decision } from './types.js';
 
 export class ClawdstrikeBlockedError extends Error {
   readonly toolName: string;
@@ -12,4 +12,3 @@ export class ClawdstrikeBlockedError extends Error {
     this.decision = decision;
   }
 }
-

@@ -1,4 +1,4 @@
-# Claude Code Integration (conceptual)
+# Claude Integration (conceptual)
 
 Clawdstrike ships a best-effort `clawdstrike run` process wrapper (audit log + optional proxy/sandbox). For Claude Code, you still get the strongest guarantees by integrating at the **tool boundary** (the layer that performs file/network/tool operations on behalf of the model). See [Enforcement Tiers & Integration Contract](../concepts/enforcement-tiers.md) for what this does and does not prevent.
 

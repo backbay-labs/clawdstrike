@@ -2,7 +2,7 @@
 
 Prompt watermarking embeds a signed provenance marker into a prompt so you can later attribute content to an application/session without storing raw prompts.
 
-This is a prompt-security utility (used by integrations like `@backbay/vercel-ai`), not part of the Rust policy schema (`guards.*`).
+This is a prompt-security utility (used by integrations like `@clawdstrike/vercel-ai`), not part of the Rust policy schema (`guards.*`).
 
 ## Encoding
 
@@ -19,10 +19,10 @@ You are a helpful assistant.
 
 The payload bytes are canonical JSON (RFC 8785 / JCS) and are signed with Ed25519.
 
-## TypeScript (`@backbay/sdk`)
+## TypeScript (`@clawdstrike/sdk`)
 
 ```typescript
-import { PromptWatermarker, WatermarkExtractor } from "@backbay/sdk";
+import { PromptWatermarker, WatermarkExtractor } from "@clawdstrike/sdk";
 
 const watermarker = await PromptWatermarker.create({ generateKeypair: true });
 const payload = watermarker.generatePayload("my-app", crypto.randomUUID());

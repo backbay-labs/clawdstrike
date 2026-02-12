@@ -139,7 +139,7 @@ export class EgressAllowlistGuard implements Guard {
 
     const host = action.host;
     if (!host) {
-      return GuardResult.allow(this.name);
+      return GuardResult.block(this.name, Severity.ERROR, 'No host specified; fail-closed');
     }
 
     // Check block list first (takes precedence)

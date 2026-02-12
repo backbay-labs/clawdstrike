@@ -131,7 +131,7 @@ interface SessionState {
 ### TypeScript
 
 ```typescript
-import { JailbreakDetector } from "@backbay/sdk";
+import { JailbreakDetector } from "@clawdstrike/sdk";
 
 const detector = new JailbreakDetector({
   blockThreshold: 70,

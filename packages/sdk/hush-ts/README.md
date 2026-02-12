@@ -27,7 +27,7 @@ npm install @clawdstrike/sdk
 ```typescript
 import { Clawdstrike } from "@clawdstrike/sdk";
 
-// Built-in ruleset aliases: strict, default, ai-agent, cicd, permissive
+// Built-in ruleset aliases: loose, moderate, strict, enterprise
 const cs = Clawdstrike.withDefaults("strict");
 
 const decision = await cs.checkFile("~/.ssh/id_rsa", "read");
@@ -47,7 +47,7 @@ import { Clawdstrike } from "@clawdstrike/sdk";
 const fromPolicy = Clawdstrike.fromPolicy("./strict.yaml");
 
 // Remote daemon-backed checks (fail-closed on network/parse errors)
-const fromDaemon = Clawdstrike.fromDaemon({ baseUrl: "http://127.0.0.1:9876" });
+const fromDaemon = await Clawdstrike.fromDaemon("http://127.0.0.1:9876");
 ```
 
 Notes:
@@ -186,4 +186,4 @@ const secretGuard = new SecretLeakGuard({
 
 ## License
 
-MIT
+Apache-2.0

@@ -118,22 +118,66 @@ export class GuardContext {
 }
 
 /**
+ * Options object for constructing a GuardAction.
+ */
+export interface GuardActionOptions {
+  actionType: string;
+  path?: string;
+  content?: Uint8Array;
+  host?: string;
+  port?: number;
+  tool?: string;
+  args?: Record<string, unknown>;
+  command?: string;
+  diff?: string;
+  customType?: string;
+  customData?: Record<string, unknown>;
+}
+
+/**
  * Action to be checked by guards.
  */
 export class GuardAction {
-  constructor(
-    public readonly actionType: string,
-    public readonly path?: string,
-    public readonly content?: Uint8Array,
-    public readonly host?: string,
-    public readonly port?: number,
-    public readonly tool?: string,
-    public readonly args?: Record<string, unknown>,
-    public readonly command?: string,
-    public readonly diff?: string,
-    public readonly customType?: string,
-    public readonly customData?: Record<string, unknown>
-  ) {}
+  public readonly actionType: string;
+  public readonly path?: string;
+  public readonly content?: Uint8Array;
+  public readonly host?: string;
+  public readonly port?: number;
+  public readonly tool?: string;
+  public readonly args?: Record<string, unknown>;
+  public readonly command?: string;
+  public readonly diff?: string;
+  public readonly customType?: string;
+  public readonly customData?: Record<string, unknown>;
+
+  constructor(actionTypeOrOptions: string | GuardActionOptions, path?: string, content?: Uint8Array, host?: string, port?: number, tool?: string, args?: Record<string, unknown>, command?: string, diff?: string, customType?: string, customData?: Record<string, unknown>) {
+    if (typeof actionTypeOrOptions === 'object') {
+      const opts = actionTypeOrOptions;
+      this.actionType = opts.actionType;
+      this.path = opts.path;
+      this.content = opts.content;
+      this.host = opts.host;
+      this.port = opts.port;
+      this.tool = opts.tool;
+      this.args = opts.args;
+      this.command = opts.command;
+      this.diff = opts.diff;
+      this.customType = opts.customType;
+      this.customData = opts.customData;
+    } else {
+      this.actionType = actionTypeOrOptions;
+      this.path = path;
+      this.content = content;
+      this.host = host;
+      this.port = port;
+      this.tool = tool;
+      this.args = args;
+      this.command = command;
+      this.diff = diff;
+      this.customType = customType;
+      this.customData = customData;
+    }
+  }
 
   /**
    * Create a file access action.

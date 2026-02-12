@@ -1,6 +1,6 @@
 # Vercel AI SDK Integration
 
-`@backbay/vercel-ai` provides runtime-optional wrappers for the Vercel AI SDK:
+`@clawdstrike/vercel-ai` provides runtime-optional wrappers for the Vercel AI SDK:
 
 - Tool wrapping (block/modify/redact) via a `PolicyEngineLike`
 - Model wrapper (`wrapLanguageModel`) with optional prompt-security checks
@@ -12,13 +12,13 @@ This integration enforces at the **tool boundary**. It is not an OS sandbox; for
 
 This package does **not** ship a policy engine. You provide one:
 
-- `@backbay/hush-cli-engine` (shells out to the `hush` CLI), or
+- `@clawdstrike/engine-local` (shells out to the `clawdstrike` CLI), or
 - your own implementation of `PolicyEngineLike`.
 
 ## Installation
 
 ```bash
-npm install @backbay/vercel-ai @backbay/hush-cli-engine ai
+npm install @clawdstrike/vercel-ai @clawdstrike/engine-local ai
 ```
 
 If you use a provider package:
@@ -29,14 +29,14 @@ npm install @ai-sdk/openai
 
 ## 1) Create an engine (policy evaluation)
 
-The simplest engine is `@backbay/hush-cli-engine`, which calls `hush policy eval` under the hood.
+The simplest engine is `@clawdstrike/engine-local`, which calls `clawdstrike policy eval` under the hood.
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 
-const engine = createHushCliEngine({
+const engine = createStrikeCell({
   policyRef: 'default', // or 'strict', or a policy file path
-  // hushPath: '/path/to/hush',
+  // clawdstrikePath: '/path/to/clawdstrike',
   // resolve: true, // resolve extends for file inputs
 });
 ```
@@ -44,7 +44,7 @@ const engine = createHushCliEngine({
 ## 2) Create middleware and wrap tools/models
 
 ```ts
-import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
+import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
 
 const security = createClawdstrikeMiddleware({
   engine,
@@ -116,13 +116,13 @@ Notes:
 
 Guard tool calls for `ai/react` streaming chats.
 
-Note: `@backbay/hush-cli-engine` shells out to the `hush` binary, so it is **server-only**. In the browser, use an engine that calls a server endpoint (or a `clawdstriked` instance).
+Note: `@clawdstrike/engine-local` shells out to the `clawdstrike` binary, so it is **server-only**. In the browser, use an engine that calls a server endpoint (or a `clawdstriked` instance).
 
 ```tsx
 'use client';
 
-import { useSecureChat } from '@backbay/vercel-ai/react';
-import type { PolicyEngineLike, PolicyEvent, Decision } from '@backbay/adapter-core';
+import { useSecureChat } from '@clawdstrike/vercel-ai/react';
+import type { PolicyEngineLike, PolicyEvent, Decision } from '@clawdstrike/adapter-core';
 
 const engine: PolicyEngineLike = {
   async evaluate(event: PolicyEvent): Promise<Decision> {
@@ -161,10 +161,10 @@ export function Chat() {
 Example server endpoint for `/api/policy/eval` (Next.js route handler):
 
 ```ts
-import type { PolicyEvent } from '@backbay/adapter-core';
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 
 export async function POST(req: Request) {
   const event = (await req.json()) as PolicyEvent;

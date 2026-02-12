@@ -13,10 +13,10 @@ npm install @clawdstrike/vercel-ai @clawdstrike/engine-local ai
 ## Usage (tool wrapping)
 
 ```ts
-import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 import { createVercelAiInterceptor, secureTools } from '@clawdstrike/vercel-ai';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const interceptor = createVercelAiInterceptor(engine, { blockOnViolation: true });
 
 const tools = secureTools(
@@ -36,10 +36,10 @@ await tools.bash.execute({ cmd: 'echo hello' });
 ## Middleware-style API
 
 ```ts
-import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const security = createClawdstrikeMiddleware({
   engine,
   config: { blockOnViolation: true, injectPolicyCheckTool: true },
@@ -64,11 +64,11 @@ Enable prompt-security features (instruction hierarchy, jailbreak detection, out
 for model calls:
 
 ```ts
-import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createStrikeCell } from '@clawdstrike/engine-local';
 import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
 import { openai } from '@ai-sdk/openai';
 
-const engine = createHushCliEngine({ policyRef: 'default' });
+const engine = createStrikeCell({ policyRef: 'default' });
 const security = createClawdstrikeMiddleware({
   engine,
   config: {

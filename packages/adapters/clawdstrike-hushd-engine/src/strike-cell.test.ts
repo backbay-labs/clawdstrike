@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
-import { createHushdEngine } from './hushd-engine.js';
+import { createStrikeCell } from './strike-cell.js';
 
 const exampleEvent: PolicyEvent = {
   eventId: 'evt-test',
@@ -11,7 +11,7 @@ const exampleEvent: PolicyEvent = {
   data: { type: 'tool', toolName: 'demo', parameters: { ok: true } },
 };
 
-describe('createHushdEngine', () => {
+describe('createStrikeCell', () => {
   it('POSTs to /api/v1/eval with wrapped event', async () => {
     const fetchMock = vi.fn(async () => {
       return {
@@ -28,7 +28,7 @@ describe('createHushdEngine', () => {
 
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
-    const engine = createHushdEngine({ baseUrl: 'http://127.0.0.1:9876', timeoutMs: 5000 });
+    const engine = createStrikeCell({ baseUrl: 'http://127.0.0.1:9876', timeoutMs: 5000 });
     const decision = await engine.evaluate(exampleEvent);
 
     expect(decision.status).toBe('allow');
@@ -59,7 +59,7 @@ describe('createHushdEngine', () => {
 
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
-    const engine = createHushdEngine({
+    const engine = createStrikeCell({
       baseUrl: 'http://127.0.0.1:9876',
       token: 'test-token',
     });
@@ -84,7 +84,7 @@ describe('createHushdEngine', () => {
 
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
-    const engine = createHushdEngine({ baseUrl: 'http://127.0.0.1:9876' });
+    const engine = createStrikeCell({ baseUrl: 'http://127.0.0.1:9876' });
     await expect(engine.evaluate(exampleEvent)).resolves.toMatchObject({
       status: 'deny',
       reason: 'engine_error',

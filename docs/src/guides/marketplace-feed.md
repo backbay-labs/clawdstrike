@@ -20,7 +20,7 @@ Create a signing key (32-byte hex seed) and build signed bundle JSON files:
 openssl rand -hex 32 > curator.key
 
 # Example: bundle a ruleset/policy into a SignedPolicyBundle JSON.
-hush policy bundle build rulesets/default.yaml \
+clawdstrike policy bundle build rulesets/default.yaml \
   --resolve \
   --key curator.key \
   --output apps/desktop/src-tauri/resources/marketplace/bundles/default.signed_bundle.json \

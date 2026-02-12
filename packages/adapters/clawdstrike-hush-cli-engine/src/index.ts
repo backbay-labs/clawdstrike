@@ -1,3 +1,3 @@
-export type { HushCliEngineOptions } from './hush-cli-engine.js';
-export { createHushCliEngine } from './hush-cli-engine.js';
+export type { StrikeCellOptions } from './strike-cell.js';
+export { createStrikeCell } from './strike-cell.js';
 

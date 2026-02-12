@@ -471,7 +471,7 @@ async function applyPromptSecurityToParams(
             riskScore: r.riskScore,
             severity: r.severity,
             fingerprint: r.fingerprint,
-            signals: r.signals.map(s => s.id),
+            signals: r.signals.map((s: any) => s.id),
             canonicalization: r.canonicalization,
             session: r.session ? { ...r.session, sessionId: undefined } : undefined,
           },
@@ -544,7 +544,7 @@ function applyInstructionHierarchyToPrompt(
     sessionId: context.sessionId,
     details: {
       valid: result.valid,
-      conflicts: result.conflicts.map(c => ({
+      conflicts: result.conflicts.map((c: any) => ({
         id: c.id,
         ruleId: c.ruleId,
         severity: c.severity,
@@ -559,7 +559,7 @@ function applyInstructionHierarchyToPrompt(
     throw new ClawdstrikePromptSecurityError(
       'instruction_hierarchy',
       'Blocked: instruction hierarchy violation detected',
-      { conflicts: result.conflicts.map(c => ({ ruleId: c.ruleId, severity: c.severity, triggers: c.triggers })) },
+      { conflicts: result.conflicts.map((c: any) => ({ ruleId: c.ruleId, severity: c.severity, triggers: c.triggers })) },
     );
   }
 
@@ -673,7 +673,7 @@ function sanitizeStreamChunkIfNeeded(
         contextId: context.id,
         sessionId: context.sessionId,
         details: {
-          findings: final.findings.map(f => ({ id: f.id, category: f.category, detector: f.detector })),
+          findings: final.findings.map((f: any) => ({ id: f.id, category: f.category, detector: f.detector })),
           redactionsCount: final.redactions.length,
         },
       });
@@ -698,7 +698,7 @@ function sanitizeStreamChunkIfNeeded(
           sessionId: context.sessionId,
           toolName: (chunk as any).toolName,
           details: {
-            findings: r.findings.map(f => ({ id: f.id, category: f.category, detector: f.detector })),
+            findings: r.findings.map((f: any) => ({ id: f.id, category: f.category, detector: f.detector })),
             redactionsCount: r.redactions.length,
           },
         });
@@ -796,7 +796,7 @@ function maybeSanitizeGeneratedText(runtime: PromptSecurityRuntime | null, resul
     contextId: context.id,
     sessionId: context.sessionId,
     details: {
-      findings: r.findings.map(f => ({ id: f.id, category: f.category, detector: f.detector })),
+      findings: r.findings.map((f: any) => ({ id: f.id, category: f.category, detector: f.detector })),
       redactionsCount: r.redactions.length,
     },
   });

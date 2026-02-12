@@ -115,7 +115,7 @@ export interface SessionSummary {
 /**
  * Preset ruleset levels for common use cases.
  */
-export type Ruleset = 'loose' | 'moderate' | 'strict' | 'enterprise';
+export type Ruleset = 'loose' | 'moderate' | 'strict' | 'enterprise' | 'permissive' | 'default' | 'ai-agent' | 'cicd';
 
 /**
  * Configuration for Clawdstrike.
@@ -274,6 +274,10 @@ const RULESET_TO_POLICY: Record<Ruleset, BuiltinPolicyId> = {
   moderate: 'default',
   strict: 'strict',
   enterprise: 'strict',
+  permissive: 'permissive',
+  default: 'default',
+  'ai-agent': 'ai-agent',
+  cicd: 'cicd',
 };
 
 const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
@@ -1259,6 +1263,13 @@ export class ClawdstrikeSession {
   }
 
   /**
+   * Check an MCP tool invocation.
+   */
+  async checkMcpTool(toolName: string, args?: Record<string, unknown>): Promise<Decision> {
+    return this.check('mcp_tool_call', { tool: toolName, args });
+  }
+
+  /**
    * Get session summary.
    */
   getSummary(): SessionSummary {
@@ -1576,6 +1587,22 @@ export class Clawdstrike {
    */
   async checkPatch(path: string, patch: string): Promise<Decision> {
     return this.check('patch', { path, diff: patch });
+  }
+
+  /**
+   * Check an MCP tool invocation.
+   *
+   * @param toolName - MCP tool name
+   * @param args - Optional tool arguments
+   * @returns Decision indicating whether the tool call is allowed
+   *
+   * @example
+   * ```typescript
+   * const decision = await cs.checkMcpTool('shell_exec', { command: 'rm -rf /' });
+   * ```
+   */
+  async checkMcpTool(toolName: string, args?: Record<string, unknown>): Promise<Decision> {
+    return this.check('mcp_tool_call', { tool: toolName, args });
   }
 
   // ============================================================
