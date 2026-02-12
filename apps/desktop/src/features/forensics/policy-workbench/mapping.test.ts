@@ -53,6 +53,22 @@ describe("buildPolicyTestEvent", () => {
     });
   });
 
+  it("preserves literal backslashes inside double-quoted args", () => {
+    const event = buildPolicyTestEvent(
+      {
+        eventType: "command_exec",
+        target: `python -c "print('C:\\tmp')"`,
+      },
+      { eventId: "evt-cmd-3", timestamp: "2026-02-11T00:00:00.000Z" }
+    );
+
+    expect(event.data).toMatchObject({
+      type: "command",
+      command: "python",
+      args: ["-c", `print('C:\\tmp')`],
+    });
+  });
+
   it("rejects command_exec targets with unclosed quotes", () => {
     expect(() =>
       buildPolicyTestEvent({

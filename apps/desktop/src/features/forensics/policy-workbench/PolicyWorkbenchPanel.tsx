@@ -95,15 +95,16 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
     }
   }, []);
 
-  const readPolicy = React.useCallback(async () => {
+  const readPolicy = React.useCallback(async (options?: { forceApply?: boolean }) => {
     if (!connected) return;
+    const forceApply = Boolean(options?.forceApply);
     const seq = ++loadSeq.current;
     const draftAtRequest = draftYamlRef.current;
     dispatch({ type: "load_start" });
     try {
       const loaded = await client.loadPolicy();
       if (seq !== loadSeq.current) return;
-      if (draftYamlRef.current !== draftAtRequest) {
+      if (!forceApply && draftYamlRef.current !== draftAtRequest) {
         setCopyStatus("Reload skipped: local draft changed.");
         window.setTimeout(() => setCopyStatus(undefined), 2200);
         return;
@@ -132,7 +133,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
     ) {
       return;
     }
-    void readPolicy();
+    void readPolicy({ forceApply: true });
   }, [dirty, readPolicy]);
 
   const validateYaml = React.useCallback(

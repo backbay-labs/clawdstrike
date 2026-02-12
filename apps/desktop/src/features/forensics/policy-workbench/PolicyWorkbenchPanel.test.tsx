@@ -506,6 +506,93 @@ describe("PolicyWorkbenchPanel", () => {
     confirmSpy.mockRestore();
   });
 
+  it("applies confirmed reload even if draft changes while reload is in-flight", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    loadPolicyMock.mockResolvedValueOnce({
+      name: "default",
+      version: "1.2.0",
+      description: "",
+      policy_hash: "abc123",
+      yaml: 'version: "1.2.0"\nname: "server-a"\n',
+    });
+
+    let resolveReload:
+      | ((value: {
+        name: string;
+        version: string;
+        description: string;
+        policy_hash: string;
+        yaml: string;
+      }) => void)
+      | undefined;
+    loadPolicyMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveReload = resolve as typeof resolveReload;
+        })
+    );
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    const editorValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+    if (!editorValueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "local-before-reload"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const reloadButton = container.querySelector(
+      '[data-testid="policy-editor-reload"]'
+    ) as HTMLButtonElement;
+    await act(async () => {
+      reloadButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(loadPolicyMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "typed-after-confirm"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveReload?.({
+        name: "default",
+        version: "1.2.0",
+        description: "",
+        policy_hash: "abc999",
+        yaml: 'version: "1.2.0"\nname: "server-b"\n',
+      });
+      await Promise.resolve();
+    });
+
+    expect(editor.value).toContain('name: "server-b"');
+    confirmSpy.mockRestore();
+  });
+
   it("ignores stale load responses that resolve after user starts editing", async () => {
     let resolveLoad:
       | ((value: {
