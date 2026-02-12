@@ -40,6 +40,13 @@ export function getPolicyTestTargetPlaceholder(eventType: PolicyTestEventType): 
   return POLICY_TEST_TARGET_PLACEHOLDERS[eventType] ?? "target";
 }
 
+function normalizeNetworkHost(host: string): string {
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return host.slice(1, -1);
+  }
+  return host;
+}
+
 function splitCommandline(commandline: string): { command: string; args: string[] } {
   const input = commandline.trim();
   const tokens: string[] = [];
@@ -137,13 +144,6 @@ function splitCommandline(commandline: string): { command: string; args: string[
   return { command: tokens[0], args: tokens.slice(1) };
 }
 
-function normalizeNetworkHost(host: string): string {
-  if (host.startsWith("[") && host.endsWith("]")) {
-    return host.slice(1, -1);
-  }
-  return host;
-}
-
 const URL_PROTOCOL_DEFAULT_PORTS: Record<string, number> = {
   "http:": 80,
   "https:": 443,
@@ -179,18 +179,18 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
       throw new Error("network_egress target has invalid port");
     }
-    return { host, port };
+    return { host: normalizeNetworkHost(host), port };
   }
 
   if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
     const host = trimmed.slice(1, -1);
     if (!host) throw new Error("network_egress target has empty host");
-    return { host, port: 443 };
+    return { host: normalizeNetworkHost(host), port: 443 };
   }
 
   const colonCount = (trimmed.match(/:/g) ?? []).length;
   if (colonCount > 1) {
-    return { host: trimmed, port: 443 };
+    return { host: normalizeNetworkHost(trimmed), port: 443 };
   }
 
   const idx = trimmed.lastIndexOf(":");
@@ -200,10 +200,10 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
       throw new Error("network_egress target has invalid port");
     }
-    return { host, port };
+    return { host: normalizeNetworkHost(host), port };
   }
 
-  return { host: trimmed, port: 443 };
+  return { host: normalizeNetworkHost(trimmed), port: 443 };
 }
 
 function safeJsonObject(input?: string): Record<string, unknown> {

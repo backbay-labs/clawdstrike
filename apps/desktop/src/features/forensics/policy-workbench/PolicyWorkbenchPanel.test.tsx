@@ -445,6 +445,58 @@ describe("PolicyWorkbenchPanel", () => {
     expect(editor.value).toContain('name: "newer-local-edit"');
   });
 
+  it("disables save and prevents save requests when disconnected", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    const editorValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+    if (!editorValueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      editorValueSetter.call(editor, 'version: "1.2.0"\nname: "dirty-while-online"\n');
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected={false} />);
+      await Promise.resolve();
+    });
+
+    validatePolicyMock.mockClear();
+    savePolicyMock.mockClear();
+
+    const saveButton = container.querySelector(
+      '[data-testid="policy-editor-save"]'
+    ) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(validatePolicyMock).not.toHaveBeenCalled();
+    expect(savePolicyMock).not.toHaveBeenCalled();
+  });
+
   it("asks for confirmation before reload when draft is dirty", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     loadPolicyMock.mockResolvedValueOnce({

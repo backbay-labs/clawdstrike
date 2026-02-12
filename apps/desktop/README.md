@@ -1,10 +1,10 @@
-# Clawdstrike Desktop
+# Clawdstrike SDR
 
 A Tauri 2.0 desktop application for the **Clawdstrike** security platform.
 
 ## Overview
 
-Clawdstrike Desktop provides a visual interface for security engineers and developers to monitor, debug, and configure AI agent security policies.
+Clawdstrike SDR provides a visual interface for security engineers and developers to monitor, debug, and configure AI agent security policies.
 
 ## Features
 
@@ -122,7 +122,7 @@ openclaw config set --json gateway.controlUi.allowedOrigins \
   '["http://localhost:1420","tauri://localhost"]'
 openclaw gateway restart
 
-# Start the Clawdstrike Desktop app (Tauri)
+# Start the Clawdstrike SDR app (Tauri)
 npm run tauri:dev
 ```
 
@@ -164,7 +164,7 @@ apps/desktop/
 
 ### Daemon Connection
 
-By default, Clawdstrike Desktop connects to `http://localhost:9876`. Configure this in Settings or use the environment variable:
+By default, Clawdstrike SDR connects to `http://localhost:9876`. Configure this in Settings or use the environment variable:
 
 ```bash
 VITE_HUSHD_URL=http://localhost:9876

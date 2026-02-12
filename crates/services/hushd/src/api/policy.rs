@@ -287,6 +287,7 @@ pub async fn update_policy_bundle(
         .map(|h| h.to_hex())
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     *engine = new_engine;
+    state.policy_engine_cache.clear();
     drop(engine);
 
     tracing::info!(
