@@ -181,10 +181,10 @@ impl Bridge {
     }
 
     /// Handle a single Hubble flow: classify, filter, map, sign, publish.
-    async fn handle_flow(&self, resp: &hubble::GetFlowsResponse) -> Result<()> {
+    async fn handle_flow(&self, resp: &hubble::proto::GetFlowsResponse) -> Result<()> {
         // Extract flow to check verdict and namespace.
         let flow = match &resp.response_types {
-            Some(hubble::proto::observer::get_flows_response::ResponseTypes::Flow(f)) => f,
+            Some(hubble::proto::get_flows_response::ResponseTypes::Flow(f)) => f,
             None => {
                 debug!("skipping response with no flow");
                 return Ok(());
@@ -263,8 +263,8 @@ impl Bridge {
     }
 
     /// Check whether a flow's source or destination is in the namespace allowlist.
-    fn flow_matches_namespace(&self, flow: &hubble::Flow) -> bool {
-        let check_ep = |ep: Option<&hubble::proto::flow::Endpoint>| -> bool {
+    fn flow_matches_namespace(&self, flow: &hubble::proto::Flow) -> bool {
+        let check_ep = |ep: Option<&hubble::proto::Endpoint>| -> bool {
             let Some(ep) = ep else {
                 return false;
             };

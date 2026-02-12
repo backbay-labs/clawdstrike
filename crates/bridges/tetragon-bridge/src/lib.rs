@@ -284,7 +284,7 @@ impl Bridge {
             Some(tetragon::proto::get_events_response::Event::ProcessKprobe(e)) => {
                 e.process.as_ref()
             }
-            _ => return false,
+            None => return false,
         };
 
         let Some(process) = process else {
@@ -296,10 +296,14 @@ impl Bridge {
             return false;
         };
 
+        let Some(ns) = &pod.namespace else {
+            return false;
+        };
+
         self.config
             .namespace_allowlist
             .iter()
-            .any(|allowed| allowed.eq_ignore_ascii_case(&pod.namespace))
+            .any(|allowed| allowed.eq_ignore_ascii_case(&ns.value))
     }
 
     /// Get the NATS JetStream context (for testing or advanced usage).

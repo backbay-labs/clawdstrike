@@ -7,17 +7,11 @@ use crate::error::{Error, Result};
 
 /// Re-export generated protobuf types.
 pub mod proto {
-    pub mod flow {
-        tonic::include_proto!("flow");
-    }
-    pub mod observer {
-        tonic::include_proto!("observer");
-    }
+    tonic::include_proto!("flow");
 }
 
-pub use proto::flow::{Flow, FlowFilter, Verdict};
-pub use proto::observer::observer_client::ObserverClient;
-pub use proto::observer::{GetFlowsRequest, GetFlowsResponse};
+pub use proto::observer_client::ObserverClient;
+pub use proto::{Flow, FlowFilter, GetFlowsRequest, GetFlowsResponse, Verdict};
 
 /// Wrapper around the Hubble Relay gRPC Observer client.
 pub struct HubbleClient {
@@ -51,7 +45,6 @@ impl HubbleClient {
     ) -> Result<tonic::Streaming<GetFlowsResponse>> {
         let request = GetFlowsRequest {
             number: 0, // 0 = no limit when following
-            first: false,
             follow,
             whitelist,
             blacklist,

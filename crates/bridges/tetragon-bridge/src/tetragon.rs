@@ -12,8 +12,7 @@ pub mod proto {
 
 pub use proto::fine_guidance_sensors_client::FineGuidanceSensorsClient;
 pub use proto::{
-    EventType, Filter, GetEventsRequest, GetEventsResponse, ProcessExec, ProcessExit,
-    ProcessKprobe,
+    EventType, GetEventsRequest, GetEventsResponse, ProcessExec, ProcessExit, ProcessKprobe,
 };
 
 /// Wrapper around the Tetragon gRPC export client.
@@ -45,27 +44,9 @@ impl TetragonClient {
         allow_list: Vec<EventType>,
         deny_list: Vec<EventType>,
     ) -> Result<tonic::Streaming<GetEventsResponse>> {
-        let allow_filters = if allow_list.is_empty() {
-            Vec::new()
-        } else {
-            vec![Filter {
-                event_set: allow_list.into_iter().map(i32::from).collect(),
-                ..Default::default()
-            }]
-        };
-
-        let deny_filters = if deny_list.is_empty() {
-            Vec::new()
-        } else {
-            vec![Filter {
-                event_set: deny_list.into_iter().map(i32::from).collect(),
-                ..Default::default()
-            }]
-        };
-
         let request = GetEventsRequest {
-            allow_list: allow_filters,
-            deny_list: deny_filters,
+            allow_list: allow_list.into_iter().map(|e| e.into()).collect(),
+            deny_list: deny_list.into_iter().map(|e| e.into()).collect(),
             aggregation_options: None,
             field_filters: vec![],
         };
@@ -107,6 +88,6 @@ pub fn classify_event(resp: &GetEventsResponse) -> TetragonEventKind {
         Some(proto::get_events_response::Event::ProcessKprobe(_)) => {
             TetragonEventKind::ProcessKprobe
         }
-        _ => TetragonEventKind::Unknown,
+        None => TetragonEventKind::Unknown,
     }
 }

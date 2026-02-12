@@ -55,7 +55,7 @@ pub fn map_event(resp: &GetEventsResponse) -> Option<Value> {
         Some(Event::ProcessExec(exec)) => Some(map_process_exec(exec, node_name)),
         Some(Event::ProcessExit(exit)) => Some(map_process_exit(exit, node_name)),
         Some(Event::ProcessKprobe(kprobe)) => Some(map_process_kprobe(kprobe, node_name)),
-        _ => None,
+        None => None,
     }
 }
 
@@ -63,11 +63,6 @@ pub fn map_event(resp: &GetEventsResponse) -> Option<Value> {
 fn map_process_exec(exec: &proto::ProcessExec, node_name: &str) -> Value {
     let process_json = process_to_json(exec.process.as_ref());
     let parent_json = process_to_json(exec.parent.as_ref());
-    let ancestors: Vec<Value> = exec
-        .ancestors
-        .iter()
-        .map(|ancestor| process_to_json(Some(ancestor)))
-        .collect();
     let severity = classify_exec_severity(exec);
 
     json!({
@@ -77,7 +72,7 @@ fn map_process_exec(exec: &proto::ProcessExec, node_name: &str) -> Value {
         "node_name": node_name,
         "process": process_json,
         "parent": parent_json,
-        "ancestors": ancestors,
+        "ancestors": &exec.ancestors,
     })
 }
 
@@ -103,9 +98,6 @@ fn map_process_kprobe(kprobe: &proto::ProcessKprobe, node_name: &str) -> Value {
     let process_json = process_to_json(kprobe.process.as_ref());
     let parent_json = process_to_json(kprobe.parent.as_ref());
     let severity = classify_kprobe_severity(kprobe);
-    let action = proto::KprobeAction::try_from(kprobe.action)
-        .map(|action| action.as_str_name())
-        .unwrap_or("KPROBE_ACTION_UNKNOWN");
 
     json!({
         "schema": FACT_SCHEMA,
@@ -115,7 +107,7 @@ fn map_process_kprobe(kprobe: &proto::ProcessKprobe, node_name: &str) -> Value {
         "process": process_json,
         "parent": parent_json,
         "function_name": &kprobe.function_name,
-        "action": action,
+        "action": &kprobe.action,
         "policy_name": &kprobe.policy_name,
         "message": &kprobe.message,
         "tags": &kprobe.tags,
@@ -131,7 +123,7 @@ fn process_to_json(process: Option<&Process>) -> Value {
 
     let pod_json = p.pod.as_ref().map(|pod| {
         json!({
-            "namespace": &pod.namespace,
+            "namespace": pod.namespace.as_ref().map(|ns| &ns.value),
             "name": &pod.name,
             "container": pod.container.as_ref().map(|c| json!({
                 "id": &c.id,
@@ -142,8 +134,10 @@ fn process_to_json(process: Option<&Process>) -> Value {
                 })),
             })),
             "labels": &pod.pod_labels,
-            "workload": &pod.workload,
-            "workload_kind": &pod.workload_kind,
+            "workload": pod.workload.as_ref().map(|w| json!({
+                "name": &w.name,
+                "kind": &w.kind,
+            })),
         })
     });
 
@@ -166,11 +160,13 @@ fn classify_exec_severity(exec: &proto::ProcessExec) -> Severity {
     if let Some(process) = &exec.process {
         // Exec in a sensitive namespace = high baseline.
         if let Some(pod) = &process.pod {
-            if SENSITIVE_NAMESPACES
-                .iter()
-                .any(|s| pod.namespace.eq_ignore_ascii_case(s))
-            {
-                severity = Severity::High;
+            if let Some(ns) = &pod.namespace {
+                if SENSITIVE_NAMESPACES
+                    .iter()
+                    .any(|s| ns.value.eq_ignore_ascii_case(s))
+                {
+                    severity = Severity::High;
+                }
             }
         }
 
@@ -257,23 +253,29 @@ mod tests {
 
     fn make_process(binary: &str, ns: Option<&str>) -> proto::Process {
         proto::Process {
-            exec_id: "exec-1".to_string(),
+            exec_id: None,
             pid: Some(1234),
             uid: Some(0),
             cwd: "/".to_string(),
             binary: binary.to_string(),
             arguments: "--help".to_string(),
             flags: String::new(),
+            start_time: None,
+            auid: None,
             pod: ns.map(|n| proto::Pod {
-                namespace: n.to_string(),
+                namespace: Some(proto::Namespace {
+                    value: n.to_string(),
+                }),
                 name: "test-pod".to_string(),
                 container: None,
                 pod_labels: Default::default(),
-                workload: "test-workload".to_string(),
-                workload_kind: "Deployment".to_string(),
+                workload: None,
             }),
             docker: String::new(),
-            ..Default::default()
+            parent_exec_id: None,
+            cap: None,
+            ns: None,
+            tid: None,
         }
     }
 
@@ -282,7 +284,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/usr/bin/bash", Some("kube-system"))),
             parent: None,
-            ancestors: vec![],
+            ancestors: String::new(),
         };
         assert_eq!(classify_exec_severity(&exec), Severity::High);
     }
@@ -292,7 +294,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/etc/shadow", None)),
             parent: None,
-            ancestors: vec![],
+            ancestors: String::new(),
         };
         assert_eq!(classify_exec_severity(&exec), Severity::Critical);
     }
@@ -302,7 +304,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/etc/shadow", Some("kube-system"))),
             parent: None,
-            ancestors: vec![],
+            ancestors: String::new(),
         };
         assert_eq!(classify_exec_severity(&exec), Severity::Critical);
     }
@@ -312,7 +314,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/usr/bin/ls", Some("default"))),
             parent: None,
-            ancestors: vec![],
+            ancestors: String::new(),
         };
         assert_eq!(classify_exec_severity(&exec), Severity::Medium);
     }
@@ -332,11 +334,10 @@ mod tests {
                 })),
                 label: "file".to_string(),
             }],
-            action: 0,
+            action: String::new(),
             policy_name: "file-access".to_string(),
             message: String::new(),
             tags: vec![],
-            ..Default::default()
         };
         assert_eq!(classify_kprobe_severity(&kprobe), Severity::Critical);
     }
@@ -359,7 +360,7 @@ mod tests {
                         daddr: "10.0.0.20".to_string(),
                         sport: 12345,
                         dport: 443,
-                        cookie: 0,
+                        cookie: String::new(),
                         state: String::new(),
                     })),
                     label: "sock".to_string(),
@@ -369,16 +370,14 @@ mod tests {
                         mount: String::new(),
                         path: "/etc/shadow".to_string(),
                         flags: String::new(),
-                        permission: String::new(),
                     })),
                     label: "path".to_string(),
                 },
             ],
-            action: 0,
+            action: String::new(),
             policy_name: "mixed-args".to_string(),
             message: String::new(),
             tags: vec![],
-            ..Default::default()
         };
         assert_eq!(classify_kprobe_severity(&kprobe), Severity::Critical);
     }
@@ -388,7 +387,8 @@ mod tests {
         let resp = GetEventsResponse {
             event: None,
             node_name: "node-1".to_string(),
-            ..Default::default()
+            time: None,
+            aggregation_info_count: 0,
         };
         assert!(map_event(&resp).is_none());
     }
@@ -399,10 +399,11 @@ mod tests {
             event: Some(Event::ProcessExec(proto::ProcessExec {
                 process: Some(make_process("/usr/bin/curl", Some("default"))),
                 parent: None,
-                ancestors: vec![],
+                ancestors: String::new(),
             })),
             node_name: "worker-1".to_string(),
-            ..Default::default()
+            time: None,
+            aggregation_info_count: 0,
         };
         let fact = map_event(&resp);
         assert!(fact.is_some());
