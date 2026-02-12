@@ -1,7 +1,7 @@
 {
-  "name": "@clawdstrike/claude-code",
+  "name": "@clawdstrike/claude",
   "version": "0.1.1",
-  "description": "In-process tool boundary hooks for Claude Code-style assistants",
+  "description": "In-process tool boundary hooks for Claude Code and the Claude Agent SDK",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,7 +34,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/backbay-labs/clawdstrike.git",
-    "directory": "packages/adapters/clawdstrike-claude-code"
+    "directory": "packages/adapters/clawdstrike-claude"
   },
   "homepage": "https://github.com/backbay-labs/clawdstrike",
   "bugs": {
@@ -44,7 +44,7 @@
     "clawdstrike",
     "security",
     "ai-agent",
-    "claude-code"
+    "claude"
   ],
   "publishConfig": {
     "access": "public"

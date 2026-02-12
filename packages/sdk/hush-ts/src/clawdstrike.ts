@@ -1266,7 +1266,7 @@ export class ClawdstrikeSession {
    * Check an MCP tool invocation.
    */
   async checkMcpTool(toolName: string, args?: Record<string, unknown>): Promise<Decision> {
-    return this.check('mcp_tool_call', { tool: toolName, args });
+    return this.check('mcp_tool', { tool: toolName, args });
   }
 
   /**
@@ -1602,7 +1602,7 @@ export class Clawdstrike {
    * ```
    */
   async checkMcpTool(toolName: string, args?: Record<string, unknown>): Promise<Decision> {
-    return this.check('mcp_tool_call', { tool: toolName, args });
+    return this.check('mcp_tool', { tool: toolName, args });
   }
 
   // ============================================================
