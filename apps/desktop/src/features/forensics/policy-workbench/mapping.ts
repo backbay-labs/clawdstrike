@@ -144,6 +144,19 @@ function normalizeNetworkHost(host: string): string {
   return host;
 }
 
+const URL_PROTOCOL_DEFAULT_PORTS: Record<string, number> = {
+  "http:": 80,
+  "https:": 443,
+  "ws:": 80,
+  "wss:": 443,
+  "ftp:": 21,
+  "ftps:": 990,
+};
+
+function defaultPortForUrlProtocol(protocol: string): number {
+  return URL_PROTOCOL_DEFAULT_PORTS[protocol] ?? 443;
+}
+
 function parseNetworkTarget(target: string): { host: string; port: number; url?: string } {
   const trimmed = target.trim();
   if (!trimmed) throw new Error("network_egress target cannot be empty");
@@ -151,11 +164,7 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
   if (trimmed.includes("://")) {
     const parsed = new URL(trimmed);
     const port =
-      parsed.port.length > 0
-        ? Number(parsed.port)
-        : parsed.protocol === "http:"
-          ? 80
-          : 443;
+      parsed.port.length > 0 ? Number(parsed.port) : defaultPortForUrlProtocol(parsed.protocol);
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
       throw new Error("network_egress target has invalid port");
     }
