@@ -142,7 +142,7 @@ hushd:
     port: 9876
 
 # ---------------------------------------------------------------------------
-# Bridge DaemonSets
+# Bridge workloads
 # ---------------------------------------------------------------------------
 bridges:
   tetragon:
@@ -150,7 +150,9 @@ bridges:
     image:
       repository: ghcr.io/backbay-labs/clawdstrike/tetragon-bridge
       tag: ""
-    grpcEndpoint: "localhost:54321"
+    grpcEndpoint: "http://localhost:54321"
+    hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
     env:
       RUST_LOG: "info,tetragon_bridge=debug"
     resources:
@@ -166,10 +168,13 @@ bridges:
 
   hubble:
     enabled: false
+    replicas: 1
     image:
       repository: ghcr.io/backbay-labs/clawdstrike/hubble-bridge
       tag: ""
-    grpcEndpoint: "localhost:4245"
+    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
+    hostNetwork: false
+    dnsPolicy: ClusterFirst
     env:
       RUST_LOG: "info,hubble_bridge=debug"
     resources:
@@ -188,19 +193,21 @@ bridges:
 ingress:
   enabled: false
   className: ""
-  annotations: {}
-  hosts:
-    - host: proofs-api.clawdstrike.local
-      paths:
-        - path: /
-          pathType: Prefix
-          service: proofs-api
-    - host: hushd.clawdstrike.local
-      paths:
-        - path: /
-          pathType: Prefix
-          service: hushd
-  tls: []
+  commonAnnotations: {}
+  hushd:
+    enabled: true
+    host: hushd.clawdstrike.local
+    path: /
+    pathType: Prefix
+    annotations: {}
+    tls: []
+  proofsApi:
+    enabled: true
+    host: proofs-api.clawdstrike.local
+    path: /
+    pathType: Prefix
+    annotations: {}
+    tls: []
 
 # ---------------------------------------------------------------------------
 # Monitoring
@@ -209,12 +216,24 @@ serviceMonitor:
   enabled: false
   interval: 30s
   labels: {}
+  endpoints:
+    nats: true
+    hushd: true
+    proofsApi: false
 
 # ---------------------------------------------------------------------------
 # Network Policy
 # ---------------------------------------------------------------------------
 networkPolicy:
   enabled: false
+  allowHubbleRelayEgress: true
+  hubbleRelay:
+    namespace: kube-system
+    podSelector:
+      k8s-app: hubble-relay
+    ports:
+      - 80
+      - 4245
 
 # ---------------------------------------------------------------------------
 # RBAC

@@ -6,7 +6,9 @@
 
 use serde_json::{json, Value};
 
-use crate::hubble::proto::{self, Flow, GetFlowsResponse, Verdict};
+use crate::hubble::proto::flow as flow_proto;
+use crate::hubble::proto::observer as observer_proto;
+use crate::hubble::{Flow, GetFlowsResponse, Verdict};
 
 /// Fact schema for Hubble flow events published on the Spine.
 pub const FACT_SCHEMA: &str = "clawdstrike.sdr.fact.hubble_flow.v1";
@@ -49,7 +51,9 @@ pub fn map_flow(resp: &GetFlowsResponse) -> Option<Value> {
 
     resp.response_types
         .as_ref()
-        .map(|proto::get_flows_response::ResponseTypes::Flow(flow)| flow_to_fact(flow, node_name))
+        .map(|observer_proto::get_flows_response::ResponseTypes::Flow(flow)| {
+            flow_to_fact(flow, node_name)
+        })
 }
 
 /// Convert a single Hubble flow into a Spine fact.
@@ -72,9 +76,9 @@ fn flow_to_fact(flow: &Flow, node_name: &str) -> Value {
         _ => "UNKNOWN",
     };
 
-    let direction_str = match proto::TrafficDirection::try_from(flow.traffic_direction) {
-        Ok(proto::TrafficDirection::Ingress) => "INGRESS",
-        Ok(proto::TrafficDirection::Egress) => "EGRESS",
+    let direction_str = match flow_proto::TrafficDirection::try_from(flow.traffic_direction) {
+        Ok(flow_proto::TrafficDirection::Ingress) => "INGRESS",
+        Ok(flow_proto::TrafficDirection::Egress) => "EGRESS",
         _ => "UNKNOWN",
     };
 
@@ -97,7 +101,7 @@ fn flow_to_fact(flow: &Flow, node_name: &str) -> Value {
 }
 
 /// Convert an Endpoint to JSON.
-fn endpoint_to_json(ep: Option<&proto::Endpoint>) -> Value {
+fn endpoint_to_json(ep: Option<&flow_proto::Endpoint>) -> Value {
     let Some(ep) = ep else {
         return Value::Null;
     };
@@ -125,16 +129,16 @@ fn endpoint_to_json(ep: Option<&proto::Endpoint>) -> Value {
 }
 
 /// Convert IP info to JSON.
-fn ip_to_json(ip: Option<&proto::Ip>) -> Value {
+fn ip_to_json(ip: Option<&flow_proto::Ip>) -> Value {
     let Some(ip) = ip else {
         return Value::Null;
     };
     json!({
         "source": &ip.source,
         "destination": &ip.destination,
-        "ip_version": match proto::IpVersion::try_from(ip.ip_version) {
-            Ok(proto::IpVersion::IPv4) => "IPv4",
-            Ok(proto::IpVersion::IPv6) => "IPv6",
+        "ip_version": match flow_proto::IpVersion::try_from(ip.ip_version) {
+            Ok(flow_proto::IpVersion::IPv4) => "IPv4",
+            Ok(flow_proto::IpVersion::IPv6) => "IPv6",
             _ => "unknown",
         },
         "encrypted": ip.encrypted,
@@ -142,12 +146,12 @@ fn ip_to_json(ip: Option<&proto::Ip>) -> Value {
 }
 
 /// Convert Layer4 info to JSON.
-fn l4_to_json(l4: Option<&proto::Layer4>) -> Value {
+fn l4_to_json(l4: Option<&flow_proto::Layer4>) -> Value {
     let Some(l4) = l4 else {
         return Value::Null;
     };
     match &l4.protocol {
-        Some(proto::layer4::Protocol::Tcp(tcp)) => json!({
+        Some(flow_proto::layer4::Protocol::Tcp(tcp)) => json!({
             "protocol": "TCP",
             "source_port": tcp.source_port,
             "destination_port": tcp.destination_port,
@@ -159,22 +163,22 @@ fn l4_to_json(l4: Option<&proto::Layer4>) -> Value {
                 "PSH": f.psh,
             })),
         }),
-        Some(proto::layer4::Protocol::Udp(udp)) => json!({
+        Some(flow_proto::layer4::Protocol::Udp(udp)) => json!({
             "protocol": "UDP",
             "source_port": udp.source_port,
             "destination_port": udp.destination_port,
         }),
-        Some(proto::layer4::Protocol::Icmpv4(icmp)) => json!({
+        Some(flow_proto::layer4::Protocol::Icmpv4(icmp)) => json!({
             "protocol": "ICMPv4",
             "type": icmp.r#type,
             "code": icmp.code,
         }),
-        Some(proto::layer4::Protocol::Icmpv6(icmp)) => json!({
+        Some(flow_proto::layer4::Protocol::Icmpv6(icmp)) => json!({
             "protocol": "ICMPv6",
             "type": icmp.r#type,
             "code": icmp.code,
         }),
-        Some(proto::layer4::Protocol::Sctp(sctp)) => json!({
+        Some(flow_proto::layer4::Protocol::Sctp(sctp)) => json!({
             "protocol": "SCTP",
             "source_port": sctp.source_port,
             "destination_port": sctp.destination_port,
@@ -184,27 +188,27 @@ fn l4_to_json(l4: Option<&proto::Layer4>) -> Value {
 }
 
 /// Convert Layer7 info to JSON.
-fn l7_to_json(l7: Option<&proto::Layer7>) -> Value {
+fn l7_to_json(l7: Option<&flow_proto::Layer7>) -> Value {
     let Some(l7) = l7 else {
         return Value::Null;
     };
 
-    let flow_type = match proto::Layer7FlowType::try_from(l7.r#type) {
-        Ok(proto::Layer7FlowType::Request) => "REQUEST",
-        Ok(proto::Layer7FlowType::Response) => "RESPONSE",
-        Ok(proto::Layer7FlowType::Sample) => "SAMPLE",
+    let flow_type = match flow_proto::Layer7FlowType::try_from(l7.r#type) {
+        Ok(flow_proto::Layer7FlowType::Request) => "REQUEST",
+        Ok(flow_proto::Layer7FlowType::Response) => "RESPONSE",
+        Ok(flow_proto::Layer7FlowType::Sample) => "SAMPLE",
         _ => "UNKNOWN",
     };
 
     let record = match &l7.record {
-        Some(proto::layer7::Record::Http(http)) => json!({
+        Some(flow_proto::layer7::Record::Http(http)) => json!({
             "type": "http",
             "method": &http.method,
             "url": &http.url,
             "code": http.code,
             "protocol": &http.protocol,
         }),
-        Some(proto::layer7::Record::Dns(dns)) => json!({
+        Some(flow_proto::layer7::Record::Dns(dns)) => json!({
             "type": "dns",
             "query": &dns.query,
             "ips": &dns.ips,
@@ -213,7 +217,7 @@ fn l7_to_json(l7: Option<&proto::Layer7>) -> Value {
             "qtypes": &dns.qtypes,
             "rrtypes": &dns.rrtypes,
         }),
-        Some(proto::layer7::Record::Kafka(kafka)) => json!({
+        Some(flow_proto::layer7::Record::Kafka(kafka)) => json!({
             "type": "kafka",
             "topic": &kafka.topic,
             "api_key": &kafka.api_key,
@@ -252,12 +256,12 @@ fn classify_flow_severity(flow: &Flow) -> Severity {
 
     // L7 policy drops / DNS failures in forwarded traffic still matter.
     if let Some(l7) = &flow.l7 {
-        if let Some(proto::layer7::Record::Http(http)) = &l7.record {
+        if let Some(flow_proto::layer7::Record::Http(http)) = &l7.record {
             if http.code >= 400 {
                 return Severity::Medium;
             }
         }
-        if let Some(proto::layer7::Record::Dns(dns)) = &l7.record {
+        if let Some(flow_proto::layer7::Record::Dns(dns)) = &l7.record {
             // Non-zero rcode = DNS error.
             if dns.rcode != 0 {
                 return Severity::Medium;
@@ -279,7 +283,7 @@ fn is_suspicious_tld(query: &str) -> bool {
 }
 
 /// Check if an endpoint is in a sensitive namespace.
-fn is_sensitive_namespace(ep: Option<&proto::Endpoint>) -> bool {
+fn is_sensitive_namespace(ep: Option<&flow_proto::Endpoint>) -> bool {
     let Some(ep) = ep else {
         return false;
     };
@@ -292,8 +296,8 @@ fn is_sensitive_namespace(ep: Option<&proto::Endpoint>) -> bool {
 mod tests {
     use super::*;
 
-    fn make_endpoint(ns: &str, pod: &str) -> proto::Endpoint {
-        proto::Endpoint {
+    fn make_endpoint(ns: &str, pod: &str) -> flow_proto::Endpoint {
+        flow_proto::Endpoint {
             id: 1,
             identity: 100,
             namespace: ns.to_string(),
@@ -310,14 +314,14 @@ mod tests {
             verdict: verdict.into(),
             drop_reason: 0,
             ethernet: None,
-            ip: Some(proto::Ip {
+            ip: Some(flow_proto::Ip {
                 source: "10.0.0.1".to_string(),
                 destination: "10.0.0.2".to_string(),
-                ip_version: proto::IpVersion::IPv4.into(),
+                ip_version: flow_proto::IpVersion::IPv4.into(),
                 encrypted: false,
             }),
-            l4: Some(proto::Layer4 {
-                protocol: Some(proto::layer4::Protocol::Tcp(proto::Tcp {
+            l4: Some(flow_proto::Layer4 {
+                protocol: Some(flow_proto::layer4::Protocol::Tcp(flow_proto::Tcp {
                     source_port: 12345,
                     destination_port: 80,
                     flags: None,
@@ -325,7 +329,7 @@ mod tests {
             }),
             source: Some(make_endpoint(src_ns, "src-pod")),
             destination: Some(make_endpoint(dst_ns, "dst-pod")),
-            r#type: proto::FlowType::L3L4.into(),
+            r#type: flow_proto::FlowType::L3L4.into(),
             node_name: "node-1".to_string(),
             source_names: vec![],
             destination_names: vec![],
@@ -334,7 +338,7 @@ mod tests {
             event_type: None,
             source_service: None,
             destination_service: None,
-            traffic_direction: proto::TrafficDirection::Egress.into(),
+            traffic_direction: flow_proto::TrafficDirection::Egress.into(),
             policy_match_type: 0,
             drop_reason_desc: 0,
             is_reply: false,
@@ -382,7 +386,7 @@ mod tests {
     fn map_flow_produces_valid_fact() {
         let flow = make_flow(Verdict::Forwarded, "default", "app");
         let resp = GetFlowsResponse {
-            response_types: Some(proto::get_flows_response::ResponseTypes::Flow(flow)),
+            response_types: Some(observer_proto::get_flows_response::ResponseTypes::Flow(flow)),
             node_name: "worker-1".to_string(),
             time: None,
         };
@@ -399,10 +403,10 @@ mod tests {
     #[test]
     fn dns_suspicious_tld_is_medium() {
         let mut flow = make_flow(Verdict::Forwarded, "default", "default");
-        flow.l7 = Some(proto::Layer7 {
-            r#type: proto::Layer7FlowType::Request.into(),
+        flow.l7 = Some(flow_proto::Layer7 {
+            r#type: flow_proto::Layer7FlowType::Request.into(),
             latency_ns: 1000,
-            record: Some(proto::layer7::Record::Dns(proto::Dns {
+            record: Some(flow_proto::layer7::Record::Dns(flow_proto::Dns {
                 query: "c2-callback.evil.tk".to_string(),
                 ips: vec![],
                 ttl: 300,
@@ -419,10 +423,10 @@ mod tests {
     #[test]
     fn dns_normal_tld_is_low() {
         let mut flow = make_flow(Verdict::Forwarded, "default", "default");
-        flow.l7 = Some(proto::Layer7 {
-            r#type: proto::Layer7FlowType::Request.into(),
+        flow.l7 = Some(flow_proto::Layer7 {
+            r#type: flow_proto::Layer7FlowType::Request.into(),
             latency_ns: 1000,
-            record: Some(proto::layer7::Record::Dns(proto::Dns {
+            record: Some(flow_proto::layer7::Record::Dns(flow_proto::Dns {
                 query: "api.github.com".to_string(),
                 ips: vec!["140.82.121.6".to_string()],
                 ttl: 60,
@@ -439,10 +443,10 @@ mod tests {
     #[test]
     fn l7_http_error_is_medium() {
         let mut flow = make_flow(Verdict::Forwarded, "default", "default");
-        flow.l7 = Some(proto::Layer7 {
-            r#type: proto::Layer7FlowType::Response.into(),
+        flow.l7 = Some(flow_proto::Layer7 {
+            r#type: flow_proto::Layer7FlowType::Response.into(),
             latency_ns: 5000,
-            record: Some(proto::layer7::Record::Http(proto::Http {
+            record: Some(flow_proto::layer7::Record::Http(flow_proto::Http {
                 code: 403,
                 method: "GET".to_string(),
                 url: "/api/secrets".to_string(),

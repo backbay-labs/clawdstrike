@@ -1,0 +1,39 @@
+{{- if and .Values.ingress.enabled .Values.ingress.hushd.enabled .Values.hushd.enabled }}
+{{- $annotations := dict }}
+{{- range $k, $v := .Values.ingress.commonAnnotations }}
+{{- $_ := set $annotations $k $v }}
+{{- end }}
+{{- range $k, $v := .Values.ingress.hushd.annotations }}
+{{- $_ := set $annotations $k $v }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hushd
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
+  {{- if $annotations }}
+  annotations:
+    {{- toYaml $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  {{- if .Values.ingress.hushd.tls }}
+  tls:
+    {{- toYaml .Values.ingress.hushd.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.hushd.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.hushd.path }}
+            pathType: {{ .Values.ingress.hushd.pathType }}
+            backend:
+              service:
+                name: {{ include "clawdstrike.fullname" . }}-hushd
+                port:
+                  name: http
+{{- end }}

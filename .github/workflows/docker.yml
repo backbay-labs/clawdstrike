@@ -20,6 +20,11 @@ on:
       - "Cargo.lock"
       - ".github/workflows/docker.yml"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional immutable tag to publish alongside latest and sha tags"
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -63,6 +68,7 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}/spine:${{ matrix.bin }}-latest
             ${{ env.IMAGE_PREFIX }}/spine:${{ matrix.bin }}-${{ github.sha }}
+            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/spine:{1}-{2}', env.IMAGE_PREFIX, matrix.bin, github.event.inputs.release_tag) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -99,6 +105,7 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}/tetragon-bridge:latest
             ${{ env.IMAGE_PREFIX }}/tetragon-bridge:${{ github.sha }}
+            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/tetragon-bridge:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -135,6 +142,7 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}/hubble-bridge:latest
             ${{ env.IMAGE_PREFIX }}/hubble-bridge:${{ github.sha }}
+            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/hubble-bridge:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -171,6 +179,7 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}/hushd:latest
             ${{ env.IMAGE_PREFIX }}/hushd:${{ github.sha }}
+            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && format('{0}/hushd:{1}', env.IMAGE_PREFIX, github.event.inputs.release_tag) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

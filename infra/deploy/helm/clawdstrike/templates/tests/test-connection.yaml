@@ -4,7 +4,10 @@ metadata:
   name: {{ include "clawdstrike.fullname" . }}-test
   namespace: {{ include "clawdstrike.namespace" . }}
   labels:
-    {{- include "clawdstrike.labels" . | nindent 4 }}
+    {{- include "clawdstrike.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "clawdstrike.chart" . }}
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -22,7 +25,7 @@ spec:
           check_url() {
             URL="$1"
             for i in $(seq 1 20); do
-              if wget -q -O- "$URL" >/dev/null 2>&1; then
+              if timeout 3 wget -q -O- "$URL" >/dev/null 2>&1; then
                 return 0
               fi
               sleep 1

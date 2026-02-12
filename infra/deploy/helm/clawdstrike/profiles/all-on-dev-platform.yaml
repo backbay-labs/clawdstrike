@@ -1,0 +1,94 @@
+# All-on profile for platform-dev.
+# Enables bridges, ingress, service monitoring, and network policy hardening.
+global:
+  namespace: clawdstrike
+  imagePullSecrets:
+    - name: ghcr-pull
+  nodeSelector:
+    kubernetes.io/arch: amd64
+    eks.amazonaws.com/nodegroup: platform-dev-cpu-br-fix
+
+namespace:
+  create: true
+  name: clawdstrike
+
+spine:
+  image:
+    tag: "allon-20260212-1"
+  checkpointer:
+    logSeedHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    streamReplicas: 1
+  witness:
+    seedHex: "f1e1d1c1b1a191817161514131211101f0e0d0c0b0a090807060504030201000"
+
+hushd:
+  image:
+    tag: "allon-20260212-1"
+  auth:
+    enabled: false
+  persistence:
+    enabled: false
+
+bridges:
+  tetragon:
+    enabled: true
+    image:
+      tag: "allon-20260212-2"
+    grpcEndpoint: "http://localhost:6789"
+    hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
+    nodeSelector:
+      kubernetes.io/arch: amd64
+      eks.amazonaws.com/nodegroup: platform-dev-cpu-br-fix
+  hubble:
+    enabled: true
+    replicas: 1
+    image:
+      tag: "allon-20260212-2"
+    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
+    nodeSelector:
+      kubernetes.io/arch: amd64
+      eks.amazonaws.com/nodegroup: platform-dev-cpu-br-fix
+
+ingress:
+  enabled: true
+  className: alb
+  commonAnnotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/group.name: clawdstrike
+  hushd:
+    enabled: true
+    host: hushd.clawdstrike.dev.backbay.industries
+    path: /
+    pathType: Prefix
+    annotations:
+      alb.ingress.kubernetes.io/healthcheck-path: /health
+      external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.industries
+  proofsApi:
+    enabled: true
+    host: proofs-api.clawdstrike.dev.backbay.industries
+    path: /
+    pathType: Prefix
+    annotations:
+      alb.ingress.kubernetes.io/healthcheck-path: /healthz
+      external-dns.alpha.kubernetes.io/hostname: proofs-api.clawdstrike.dev.backbay.industries
+
+serviceMonitor:
+  enabled: true
+  endpoints:
+    nats: true
+    hushd: true
+    proofsApi: false
+
+networkPolicy:
+  enabled: true
+  allowHubbleRelayEgress: true
+  hubbleRelay:
+    namespace: kube-system
+    podSelector:
+      k8s-app: hubble-relay
+    ports:
+      - 80
+      - 4245

@@ -21,6 +21,8 @@ spec:
     spec:
       {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      hostNetwork: {{ .Values.bridges.tetragon.hostNetwork }}
+      dnsPolicy: {{ .Values.bridges.tetragon.dnsPolicy }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -30,7 +32,7 @@ spec:
           env:
             - name: NATS_URL
               value: {{ include "clawdstrike.natsUrl" . | quote }}
-            - name: TETRAGON_GRPC
+            - name: TETRAGON_ENDPOINT
               value: {{ .Values.bridges.tetragon.grpcEndpoint | quote }}
             - name: RUST_LOG
               value: {{ .Values.bridges.tetragon.env.RUST_LOG | quote }}

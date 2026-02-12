@@ -19,9 +19,18 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/part-of: clawdstrike
-    # Allow external access to proofs-api and hushd
-    - from: []
+    {{- if and .Values.nats.enabled .Values.nats.monitoring.enabled }}
+    # Allow Helm test hook pod to hit NATS health endpoint
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: test
       ports:
+        - port: {{ .Values.nats.monitoring.port }}
+          protocol: TCP
+    {{- end }}
+    # Allow external access to proofs-api and hushd
+    - ports:
         {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
         - port: {{ .Values.spine.proofsApi.port }}
           protocol: TCP
@@ -36,9 +45,23 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/part-of: clawdstrike
-    # Allow DNS
-    - to: []
+    {{- if and .Values.networkPolicy.allowHubbleRelayEgress .Values.bridges.hubble.enabled }}
+    # Allow bridge egress to Hubble Relay in kube-system
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.hubbleRelay.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.hubbleRelay.podSelector | nindent 14 }}
       ports:
+        {{- range .Values.networkPolicy.hubbleRelay.ports }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
+    # Allow DNS
+    - ports:
         - port: 53
           protocol: UDP
         - port: 53

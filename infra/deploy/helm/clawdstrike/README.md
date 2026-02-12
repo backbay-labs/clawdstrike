@@ -12,7 +12,7 @@ Production Helm chart for the ClawdStrike SDR (Swarm Detection & Response) stack
 | spine-proofs-api | Deployment | enabled |
 | hushd | Deployment | enabled |
 | tetragon-bridge | DaemonSet | disabled |
-| hubble-bridge | DaemonSet | disabled |
+| hubble-bridge | Deployment | disabled |
 
 ## Quick Start
 
@@ -83,9 +83,12 @@ helm install clawdstrike ./infra/deploy/helm/clawdstrike
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `bridges.tetragon.enabled` | Deploy tetragon-bridge | `false` |
-| `bridges.tetragon.grpcEndpoint` | Tetragon gRPC address | `localhost:54321` |
+| `bridges.tetragon.grpcEndpoint` | Tetragon gRPC address | `http://localhost:54321` |
+| `bridges.tetragon.hostNetwork` | Run tetragon-bridge with host networking | `true` |
+| `bridges.tetragon.dnsPolicy` | DNS policy for host-networked bridge | `ClusterFirstWithHostNet` |
 | `bridges.hubble.enabled` | Deploy hubble-bridge | `false` |
-| `bridges.hubble.grpcEndpoint` | Hubble gRPC address | `localhost:4245` |
+| `bridges.hubble.replicas` | Hubble bridge replica count | `1` |
+| `bridges.hubble.grpcEndpoint` | Hubble gRPC address | `http://hubble-relay.kube-system.svc.cluster.local:80` |
 
 ### Security
 
@@ -97,7 +100,10 @@ helm install clawdstrike ./infra/deploy/helm/clawdstrike
 | `securityContext.readOnlyRootFilesystem` | Read-only root FS | `true` |
 | `networkPolicy.enabled` | Deploy NetworkPolicy | `false` |
 | `serviceMonitor.enabled` | Deploy ServiceMonitor | `false` |
-| `ingress.enabled` | Deploy Ingress | `false` |
+| `serviceMonitor.endpoints.proofsApi` | Scrape proofs-api metrics endpoint | `false` |
+| `ingress.enabled` | Deploy ingress resources | `false` |
+| `ingress.hushd.host` | hushd ingress host | `hushd.clawdstrike.local` |
+| `ingress.proofsApi.host` | proofs-api ingress host | `proofs-api.clawdstrike.local` |
 
 ## External NATS
 
@@ -208,6 +214,13 @@ scripts/helm-e2e-smoke.sh \
   --namespace "clawdstrike-smoke-$(date +%s)" \
   --values infra/deploy/helm/clawdstrike/ci/cluster-smoke-values.yaml \
   --artifact-dir dist/helm-smoke/local
+```
+
+### All-On Preflight (Strict Gate)
+
+```bash
+scripts/helm-all-on-preflight.sh \
+  --profile infra/deploy/helm/clawdstrike/profiles/all-on-dev-platform.yaml
 ```
 
 ### Baseline Release Verification Sequence

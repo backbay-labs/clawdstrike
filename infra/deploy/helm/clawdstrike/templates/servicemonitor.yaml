@@ -1,4 +1,7 @@
-{{- if .Values.serviceMonitor.enabled }}
+{{- $enableNats := and .Values.serviceMonitor.endpoints.nats .Values.nats.enabled .Values.nats.monitoring.enabled (not .Values.nats.external.enabled) }}
+{{- $enableProofsApi := and .Values.serviceMonitor.endpoints.proofsApi .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+{{- $enableHushd := and .Values.serviceMonitor.endpoints.hushd .Values.hushd.enabled }}
+{{- if and .Values.serviceMonitor.enabled (or $enableNats $enableProofsApi $enableHushd) }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -14,17 +17,17 @@ spec:
     matchLabels:
       app.kubernetes.io/part-of: clawdstrike
   endpoints:
-    {{- if and .Values.nats.enabled .Values.nats.monitoring.enabled (not .Values.nats.external.enabled) }}
+    {{- if $enableNats }}
     - port: monitoring
       interval: {{ .Values.serviceMonitor.interval }}
       path: /varz
     {{- end }}
-    {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+    {{- if $enableProofsApi }}
     - port: http
       interval: {{ .Values.serviceMonitor.interval }}
       path: /metrics
     {{- end }}
-    {{- if .Values.hushd.enabled }}
+    {{- if $enableHushd }}
     - port: http
       interval: {{ .Values.serviceMonitor.interval }}
       path: /metrics

@@ -1,12 +1,13 @@
 {{- if .Values.bridges.hubble.enabled }}
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
   name: {{ include "clawdstrike.fullname" . }}-hubble-bridge
   namespace: {{ include "clawdstrike.namespace" . }}
   labels:
     {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 4 }}
 spec:
+  replicas: {{ .Values.bridges.hubble.replicas }}
   selector:
     matchLabels:
       {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 6 }}
@@ -21,6 +22,8 @@ spec:
     spec:
       {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      hostNetwork: {{ .Values.bridges.hubble.hostNetwork }}
+      dnsPolicy: {{ .Values.bridges.hubble.dnsPolicy }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -30,7 +33,7 @@ spec:
           env:
             - name: NATS_URL
               value: {{ include "clawdstrike.natsUrl" . | quote }}
-            - name: HUBBLE_GRPC
+            - name: HUBBLE_ENDPOINT
               value: {{ .Values.bridges.hubble.grpcEndpoint | quote }}
             - name: RUST_LOG
               value: {{ .Values.bridges.hubble.env.RUST_LOG | quote }}

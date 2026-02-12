@@ -1,0 +1,39 @@
+{{- if and .Values.ingress.enabled .Values.ingress.proofsApi.enabled .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+{{- $annotations := dict }}
+{{- range $k, $v := .Values.ingress.commonAnnotations }}
+{{- $_ := set $annotations $k $v }}
+{{- end }}
+{{- range $k, $v := .Values.ingress.proofsApi.annotations }}
+{{- $_ := set $annotations $k $v }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-proofs-api
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "proofs-api") | nindent 4 }}
+  {{- if $annotations }}
+  annotations:
+    {{- toYaml $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  {{- if .Values.ingress.proofsApi.tls }}
+  tls:
+    {{- toYaml .Values.ingress.proofsApi.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.proofsApi.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.proofsApi.path }}
+            pathType: {{ .Values.ingress.proofsApi.pathType }}
+            backend:
+              service:
+                name: {{ include "clawdstrike.fullname" . }}-proofs-api
+                port:
+                  name: http
+{{- end }}
