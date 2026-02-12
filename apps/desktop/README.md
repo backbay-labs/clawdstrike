@@ -1,10 +1,10 @@
-# SDR Desktop
+# Clawdstrike Desktop
 
-A Tauri 2.0 desktop application for **Swarm Detection Response (SDR)** - a companion to the clawdstrike-sdr security framework.
+A Tauri 2.0 desktop application for the **Clawdstrike** security platform.
 
 ## Overview
 
-SDR Desktop provides a visual interface for security engineers and developers to monitor, debug, and configure AI agent security policies.
+Clawdstrike Desktop provides a visual interface for security engineers and developers to monitor, debug, and configure AI agent security policies.
 
 ## Features
 
@@ -70,6 +70,23 @@ npm run build
 npm run tauri:build
 ```
 
+### Unsigned macOS Artifacts (CI)
+
+Manual workflow for unsigned desktop installers:
+
+- Workflow: `.github/workflows/desktop-release.yml`
+- Trigger: GitHub Actions -> **Desktop Artifacts (Unsigned)** -> Run workflow
+- Outputs:
+  - `.dmg`
+  - `.app.tar.gz`
+  - `SHA256SUMS`
+
+CLI trigger example:
+
+```bash
+gh workflow run "Desktop Artifacts (Unsigned)" -f ref=main
+```
+
 ### Type Check
 
 ```bash
@@ -105,7 +122,7 @@ openclaw config set --json gateway.controlUi.allowedOrigins \
   '["http://localhost:1420","tauri://localhost"]'
 openclaw gateway restart
 
-# Start the SDR Desktop app (Tauri)
+# Start the Clawdstrike Desktop app (Tauri)
 npm run tauri:dev
 ```
 
@@ -147,7 +164,7 @@ apps/desktop/
 
 ### Daemon Connection
 
-By default, SDR Desktop connects to `http://localhost:9876`. Configure this in Settings or use the environment variable:
+By default, Clawdstrike Desktop connects to `http://localhost:9876`. Configure this in Settings or use the environment variable:
 
 ```bash
 VITE_HUSHD_URL=http://localhost:9876
