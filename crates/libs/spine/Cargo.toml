@@ -16,9 +16,6 @@ name = "spine"
 [features]
 bins = ["dep:anyhow", "dep:clap", "dep:axum", "dep:tower-http", "dep:tracing", "dep:tracing-subscriber", "dep:futures", "dep:uuid"]
 
-[lib]
-name = "spine"
-
 [dependencies]
 hush-core.workspace = true
 serde.workspace = true
