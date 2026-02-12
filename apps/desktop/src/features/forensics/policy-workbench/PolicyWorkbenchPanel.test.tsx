@@ -382,6 +382,55 @@ describe("PolicyWorkbenchPanel", () => {
     expect(editor.value).toContain('name: "local-dirty"');
   });
 
+  it("reloads policy when daemonUrl changes while connected", async () => {
+    loadPolicyMock.mockResolvedValueOnce({
+      name: "default",
+      version: "1.2.0",
+      description: "",
+      policy_hash: "abc123",
+      yaml: 'version: "1.2.0"\nname: "server-a"\n',
+    });
+    loadPolicyMock.mockResolvedValueOnce({
+      name: "default",
+      version: "1.2.0",
+      description: "",
+      policy_hash: "def456",
+      yaml: 'version: "1.2.0"\nname: "server-b"\n',
+    });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const { PolicyWorkbenchPanel } = await import("./PolicyWorkbenchPanel");
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9876" connected />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    const editor = container.querySelector(
+      '[data-testid="policy-editor-textarea"]'
+    ) as HTMLTextAreaElement;
+    expect(editor.value).toContain('name: "server-a"');
+
+    await act(async () => {
+      root.render(<PolicyWorkbenchPanel daemonUrl="http://localhost:9999" connected />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(loadPolicyMock).toHaveBeenCalledTimes(2);
+    expect(editor.value).toContain('name: "server-b"');
+  });
+
   it("preserves newer draft edits when save response returns for an older snapshot", async () => {
     let resolveSave: ((value: { success: boolean; message: string; policy_hash: string }) => void) | undefined;
     savePolicyMock.mockImplementation(
