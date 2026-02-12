@@ -68,7 +68,7 @@ while (($# > 0)); do
   esac
 done
 
-for cmd in helm kubectl jq oras python3; do
+for cmd in helm kubectl jq oras; do
   require_cmd "$cmd"
 done
 
@@ -91,27 +91,6 @@ HELM=(helm)
 if [[ -n "$KUBE_CONTEXT" ]]; then
   HELM+=(--kube-context "$KUBE_CONTEXT")
 fi
-
-PROFILE_JSON="$(python3 - "$PROFILE" <<'PY'
-import json
-import sys
-from pathlib import Path
-import yaml
-
-profile = yaml.safe_load(Path(sys.argv[1]).read_text())
-bridges = profile.get("bridges", {})
-items = []
-for name in ("tetragon", "hubble"):
-    cfg = bridges.get(name, {})
-    enabled = bool(cfg.get("enabled", False))
-    image = cfg.get("image", {}) or {}
-    repo = image.get("repository", f"ghcr.io/backbay-labs/clawdstrike/{name}-bridge")
-    tag = image.get("tag", "")
-    items.append({"name": name, "enabled": enabled, "repository": repo, "tag": tag})
-
-print(json.dumps({"bridges": items}))
-PY
-)"
 
 FAILURES=()
 
@@ -142,27 +121,40 @@ check_cmd "Tetragon daemonset is ready" \
 check_cmd "Hubble relay has ready endpoints" \
   bash -lc "${KCTL[*]} -n kube-system get endpointslice -l kubernetes.io/service-name=hubble-relay -o json | jq -e '[.items[].endpoints[]? | select(.conditions.ready==true)] | length > 0' >/dev/null"
 
-while IFS= read -r bridge; do
-  enabled="$(jq -r '.enabled' <<<"$bridge")"
-  if [[ "$enabled" != "true" ]]; then
-    continue
+render_bridge_image_ref() {
+  local template_path="$1"
+  "${HELM[@]}" template preflight "$CHART_PATH" -f "$PROFILE" --show-only "$template_path" 2>/dev/null \
+    | awk '/^[[:space:]]*image:[[:space:]]*/ { print $2; exit }'
+}
+
+check_bridge_image() {
+  local bridge_name="$1"
+  local template_path="$2"
+  local image_ref
+
+  image_ref="$(render_bridge_image_ref "$template_path")"
+  if [[ -z "$image_ref" ]]; then
+    log "INFO: ${bridge_name} bridge not rendered by profile; skipping image existence check"
+    return 0
   fi
-  name="$(jq -r '.name' <<<"$bridge")"
-  repo="$(jq -r '.repository' <<<"$bridge")"
-  tag="$(jq -r '.tag' <<<"$bridge")"
-  if [[ -z "$tag" ]]; then
-    record_failure "${name} bridge image tag is empty in profile"
-    log "FAIL: ${name} bridge image tag is empty in profile"
-    continue
+
+  if [[ "$image_ref" != *:* ]]; then
+    log "FAIL: ${bridge_name} bridge rendered image has no explicit tag (${image_ref})"
+    record_failure "${bridge_name} bridge rendered image has no explicit tag (${image_ref})"
+    return 1
   fi
-  ref="${repo}:${tag}"
-  if oras manifest fetch --descriptor "$ref" >/dev/null 2>&1; then
-    log "PASS: image exists ${ref}"
+
+  if oras manifest fetch --descriptor "$image_ref" >/dev/null 2>&1; then
+    log "PASS: image exists ${image_ref}"
   else
-    log "FAIL: image missing ${ref}"
-    record_failure "image missing ${ref}"
+    log "FAIL: image missing ${image_ref}"
+    record_failure "image missing ${image_ref}"
+    return 1
   fi
-done < <(jq -c '.bridges[]' <<<"$PROFILE_JSON")
+}
+
+check_bridge_image "tetragon" "templates/bridges/tetragon-bridge-daemonset.yaml"
+check_bridge_image "hubble" "templates/bridges/hubble-bridge-daemonset.yaml"
 
 if ((${#FAILURES[@]} > 0)); then
   printf '\n[%s] Preflight failed with %d issue(s):\n' "$LOG_PREFIX" "${#FAILURES[@]}" >&2

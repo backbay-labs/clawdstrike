@@ -33,7 +33,7 @@ bridges:
     enabled: true
     image:
       tag: "allon-20260212-2"
-    grpcEndpoint: "http://localhost:6789"
+    grpcEndpoint: "http://localhost:54321"
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
     nodeSelector:
