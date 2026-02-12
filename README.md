@@ -85,7 +85,7 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 ### TypeScript (unified SDK)
 
 ```typescript
-import { Clawdstrike } from "@backbay/sdk";
+import { Clawdstrike } from "@clawdstrike/sdk";
 
 // Simple: use built-in strict rules (fail-closed)
 const cs = Clawdstrike.withDefaults("strict");
@@ -107,7 +107,7 @@ console.log(session.getSummary()); // { checkCount, denyCount, ... }
 For framework integrations, use the interceptor pattern:
 
 ```typescript
-import { Clawdstrike } from "@backbay/sdk";
+import { Clawdstrike } from "@clawdstrike/sdk";
 
 const cs = Clawdstrike.withDefaults("strict");
 const interceptor = cs.createInterceptor();

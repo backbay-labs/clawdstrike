@@ -81,24 +81,18 @@ else:
     match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', py_init, flags=re.M)
     errors.append(check(f"{py_init_rel} __version__", match.group(1) if match else None))
 
-for pkg in [
-    "packages/sdk/hush-ts/package.json",
-    "packages/adapters/clawdstrike-openclaw/package.json",
-    "crates/libs/hush-wasm/package.json",
-]:
-    errors.append(check(pkg, read_json(pkg).get("version")))
+for pkg_path in sorted((repo_root / "packages").rglob("package.json")):
+    rel = str(pkg_path.relative_to(repo_root))
+    data = read_json(rel)
+    errors.append(check(rel, data.get("version")))
 
-formula_rel = "infra/packaging/HomebrewFormula/hush.rb"
-if not (repo_root / formula_rel).exists():
-    errors.append("Homebrew formula path: expected infra/packaging/HomebrewFormula/hush.rb")
-else:
-    formula = (repo_root / formula_rel).read_text(encoding="utf-8")
-    match = re.search(
-        r'^\s*url\s+"https://github\.com/backbay-labs/clawdstrike/archive/refs/tags/v([^"]+)\.tar\.gz"\s*$',
-        formula,
-        flags=re.M,
-    )
-    errors.append(check(f"{formula_rel} url tag", match.group(1) if match else None))
+    name = data.get("name")
+    if not isinstance(name, str):
+        errors.append(f"{rel} name: missing package name")
+    elif name != "clawdstrike" and not name.startswith("@clawdstrike/"):
+        errors.append(f"{rel} name: expected @clawdstrike/* or clawdstrike, found {name}")
+
+errors.append(check("crates/libs/hush-wasm/package.json", read_json("crates/libs/hush-wasm/package.json").get("version")))
 
 errors = [e for e in errors if e is not None]
 if errors:

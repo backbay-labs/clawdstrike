@@ -9,5 +9,5 @@ export default defineConfig({
   splitting: false,
   treeshake: true,
   minify: false,
-  noExternal: ["@backbay/adapter-core"],
+  noExternal: ["@clawdstrike/adapter-core"],
 });

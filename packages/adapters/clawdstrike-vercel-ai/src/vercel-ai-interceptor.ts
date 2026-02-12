@@ -1,5 +1,5 @@
-import { BaseToolInterceptor } from '@backbay/adapter-core';
-import type { AdapterConfig, PolicyEngineLike } from '@backbay/adapter-core';
+import { BaseToolInterceptor } from '@clawdstrike/adapter-core';
+import type { AdapterConfig, PolicyEngineLike } from '@clawdstrike/adapter-core';
 
 export type VercelAiInterceptorConfig = AdapterConfig;
 

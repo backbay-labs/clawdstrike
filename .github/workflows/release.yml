@@ -3,24 +3,72 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (X.Y.Z)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: release-${{ github.ref_name || inputs.version }}
+  cancel-in-progress: false
+
 jobs:
-  # Build and test before publishing
+  resolve-version:
+    name: Resolve Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="${{ inputs.version }}"
+            if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Version must be strict semver: X.Y.Z" >&2
+              exit 1
+            fi
+            TAG="v${VERSION}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $VERSION"
+          echo "Resolved release tag: $TAG"
+
   preflight:
     name: Preflight Checks
     runs-on: ubuntu-latest
+    needs: resolve-version
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Validate version consistency
-        run: scripts/release-preflight.sh "${GITHUB_REF#refs/tags/v}"
+        run: scripts/release-preflight.sh "${{ needs.resolve-version.outputs.version }}"
 
       - name: Run tests
         run: cargo test --workspace
@@ -28,198 +76,358 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  # Publish to crates.io
   publish-crates:
-    name: Publish to crates.io
+    name: Publish crates.io
     runs-on: ubuntu-latest
-    needs: preflight
+    needs: [resolve-version, preflight]
     steps:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish hush-core
-        run: cargo publish -p hush-core --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Detect missing crate versions
+        id: detect
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          crates=(hush-core hush-proxy hush-spine clawdstrike hush-cli)
+          missing=()
+          for crate in "${crates[@]}"; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/${crate}/${VERSION}")"
+            if [[ "$code" == "200" ]]; then
+              echo "${crate}@${VERSION} already exists"
+            else
+              echo "${crate}@${VERSION} missing"
+              missing+=("$crate")
+            fi
+          done
+
+          if [[ "${#missing[@]}" -eq 0 ]]; then
+            echo "none_missing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "none_missing=false" >> "$GITHUB_OUTPUT"
+            echo "missing_crates=${missing[*]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish missing crates in dependency order
+        if: steps.detect.outputs.none_missing == 'false'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: Wait for crates.io index update
-        run: sleep 30
+          publish_with_retry() {
+            local crate="$1"
+            local max_attempts=20
+            local attempt=1
+            local output
+            local status
 
-      - name: Publish hush-proxy
-        run: cargo publish -p hush-proxy --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+            while (( attempt <= max_attempts )); do
+              echo "Publishing ${crate}@${VERSION} (attempt ${attempt}/${max_attempts})"
+              set +e
+              output="$(cargo publish -p "$crate" --token "$CARGO_REGISTRY_TOKEN" 2>&1)"
+              status=$?
+              set -e
+              printf '%s\n' "$output"
 
-      - name: Wait for crates.io index update
-        run: sleep 30
+              if [[ $status -eq 0 ]]; then
+                echo "Published ${crate}@${VERSION}"
+                return 0
+              fi
 
-      - name: Publish hush-spine
-        run: cargo publish -p hush-spine --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+              if grep -q "already exists on crates.io index" <<<"$output"; then
+                echo "${crate}@${VERSION} already published; skipping"
+                return 0
+              fi
 
-      - name: Wait for crates.io index update
-        run: sleep 30
+              echo "Publish attempt failed for ${crate}; waiting for index propagation"
+              sleep 30
+              attempt=$((attempt + 1))
+            done
 
-      - name: Publish clawdstrike
-        run: cargo publish -p clawdstrike --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+            echo "Failed to publish ${crate}@${VERSION}"
+            exit 1
+          }
 
-      - name: Wait for crates.io index update
-        run: sleep 30
+          publish_with_retry hush-core
+          publish_with_retry hush-proxy
+          publish_with_retry hush-spine
+          publish_with_retry clawdstrike
+          publish_with_retry hush-cli
 
-      - name: Publish hush-cli
-        run: cargo publish -p hush-cli --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Crates already published
+        if: steps.detect.outputs.none_missing == 'true'
+        run: echo "All crate versions already exist; skipping crates publish"
 
-  # Publish to npm
   publish-npm:
-    name: Publish to npm
+    name: Publish npm packages
     runs-on: ubuntu-latest
-    needs: preflight
+    needs: [resolve-version, preflight]
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
-      - name: Build @backbay/clawdstrike-security
-        working-directory: packages/adapters/clawdstrike-openclaw
+      - name: Detect missing npm package versions
+        id: detect
+        shell: bash
         run: |
-          npm ci
-          npm run build
+          set -euo pipefail
 
-      - name: Publish @backbay/clawdstrike-security
-        working-directory: packages/adapters/clawdstrike-openclaw
-        run: npm publish --access public
+          packages=(
+            packages/adapters/clawdstrike-adapter-core
+            packages/sdk/hush-ts
+            packages/sdk/clawdstrike
+            packages/policy/clawdstrike-policy
+            packages/adapters/clawdstrike-claude-code
+            packages/adapters/clawdstrike-codex
+            packages/adapters/clawdstrike-vercel-ai
+            packages/adapters/clawdstrike-langchain
+            packages/adapters/clawdstrike-openclaw
+            packages/adapters/clawdstrike-opencode
+            packages/adapters/clawdstrike-hush-cli-engine
+            packages/adapters/clawdstrike-hushd-engine
+          )
+
+          missing=()
+          for pkg in "${packages[@]}"; do
+            name="$(node -e "console.log(require('./${pkg}/package.json').name)")"
+            version="$(node -e "console.log(require('./${pkg}/package.json').version)")"
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "${name}@${version} already exists"
+            else
+              echo "${name}@${version} missing"
+              missing+=("$pkg")
+            fi
+          done
+
+          if [[ "${#missing[@]}" -eq 0 ]]; then
+            echo "none_missing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "none_missing=false" >> "$GITHUB_OUTPUT"
+            echo "missing_packages=${missing[*]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install workspace dependencies
+        if: steps.detect.outputs.none_missing == 'false'
+        run: npm ci --ignore-scripts
+
+      - name: Publish missing npm packages in dependency order
+        if: steps.detect.outputs.none_missing == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  # Publish @backbay/sdk to npm
-  publish-hush-ts:
-    name: Publish @backbay/sdk to npm
+          publish_workspace() {
+            local pkg="$1"
+            local name version
+            name="$(node -e "console.log(require('./${pkg}/package.json').name)")"
+            version="$(node -e "console.log(require('./${pkg}/package.json').version)")"
+
+            if [[ "$version" != "$RELEASE_VERSION" ]]; then
+              echo "Version mismatch for $name: package.json=$version release=$RELEASE_VERSION" >&2
+              exit 1
+            fi
+
+            echo "Building ${name}@${version}"
+            npm run build -w "$pkg"
+            echo "Testing ${name}@${version}"
+            npm test -w "$pkg"
+
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "${name}@${version} already published; skipping publish"
+              return 0
+            fi
+
+            echo "Publishing ${name}@${version}"
+            local output status
+            set +e
+            output="$(npm publish -w "$pkg" --access public --provenance 2>&1)"
+            status=$?
+            set -e
+            printf '%s\n' "$output"
+
+            if [[ $status -eq 0 ]]; then
+              return 0
+            fi
+
+            if grep -q "Cannot publish over previously published version" <<<"$output" \
+              || grep -q "You cannot publish over the previously published versions" <<<"$output"; then
+              echo "${name}@${version} appears already published; continuing"
+              return 0
+            fi
+
+            return $status
+          }
+
+          publish_workspace packages/adapters/clawdstrike-adapter-core
+          publish_workspace packages/sdk/hush-ts
+          publish_workspace packages/sdk/clawdstrike
+          publish_workspace packages/policy/clawdstrike-policy
+          publish_workspace packages/adapters/clawdstrike-claude-code
+          publish_workspace packages/adapters/clawdstrike-codex
+          publish_workspace packages/adapters/clawdstrike-vercel-ai
+          publish_workspace packages/adapters/clawdstrike-langchain
+          publish_workspace packages/adapters/clawdstrike-openclaw
+          publish_workspace packages/adapters/clawdstrike-opencode
+          publish_workspace packages/adapters/clawdstrike-hush-cli-engine
+          publish_workspace packages/adapters/clawdstrike-hushd-engine
+
+      - name: npm packages already published
+        if: steps.detect.outputs.none_missing == 'true'
+        run: echo "All npm package versions already exist; skipping npm publish"
+
+  publish-wasm-npm:
+    name: Publish @clawdstrike/wasm
     runs-on: ubuntu-latest
-    needs: preflight
+    needs: [resolve-version, preflight, publish-npm]
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
-      - name: Install and build
-        working-directory: packages/sdk/hush-ts
-        run: |
-          npm ci
-          npm run build
-
-      - name: Set version from tag
-        working-directory: packages/sdk/hush-ts
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          npm version $VERSION --no-git-tag-version --allow-same-version
-
-      - name: Publish to npm
-        working-directory: packages/sdk/hush-ts
-        run: npm publish --access public
+      - name: Detect missing wasm npm version
+        id: detect
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="$(node -e "console.log(require('./crates/libs/hush-wasm/package.json').name)")"
+          version="$(node -e "console.log(require('./crates/libs/hush-wasm/package.json').version)")"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-  # Publish WASM package to npm
-  publish-wasm:
-    name: Publish @backbay/wasm to npm
-    runs-on: ubuntu-latest
-    needs: [preflight]
-    steps:
-      - uses: actions/checkout@v6
+          if [[ "$version" != "$RELEASE_VERSION" ]]; then
+            echo "Version mismatch for $name: package.json=$version release=$RELEASE_VERSION" >&2
+            exit 1
+          fi
 
-      - name: Setup Rust
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "none_missing=true" >> "$GITHUB_OUTPUT"
+            echo "${name}@${version} already exists"
+          else
+            echo "none_missing=false" >> "$GITHUB_OUTPUT"
+            echo "${name}@${version} missing"
+          fi
+
+      - name: Setup Rust target
+        if: steps.detect.outputs.none_missing == 'false'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-
       - name: Install wasm-pack
+        if: steps.detect.outputs.none_missing == 'false'
         run: cargo install wasm-pack --locked --version 0.14.0
 
-      - name: Build WASM (web target)
-        run: |
-          cd crates/libs/hush-wasm
-          wasm-pack build --target web --release --out-dir pkg
-
-      - name: Prepare package for publishing
-        run: |
-          cd crates/libs/hush-wasm
-          # Copy our package.json (overwrite wasm-pack generated one)
-          cp package.json pkg/
-          # Copy README for npm
-          cp README.npm.md pkg/README.md
-          # Copy hand-written TypeScript types (augment wasm-pack types)
-          cp types/hush_wasm.d.ts pkg/
-
-      - name: Set version from tag
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "Setting version to $VERSION"
-          cd crates/libs/hush-wasm/pkg
-          npm version $VERSION --no-git-tag-version --allow-same-version
-
-      - name: Verify package contents
-        run: |
-          cd crates/libs/hush-wasm/pkg
-          echo "Package contents:"
-          ls -la
-          echo ""
-          echo "package.json:"
-          cat package.json
-
-      - name: Publish to npm
-        run: |
-          cd crates/libs/hush-wasm/pkg
-          npm publish --access public
+      - name: Build and publish wasm package
+        if: steps.detect.outputs.none_missing == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  # Publish to PyPI (when hush-py package exists)
+          cd crates/libs/hush-wasm
+          wasm-pack build --target web --release --out-dir pkg
+          cp package.json pkg/
+          cp README.npm.md pkg/README.md
+          cp types/hush_wasm.d.ts pkg/
+
+          cd pkg
+          npm publish --access public --provenance
+
+      - name: wasm package already published
+        if: steps.detect.outputs.none_missing == 'true'
+        run: echo "wasm package version already exists; skipping wasm publish"
+
   publish-pypi:
-    name: Publish to PyPI
+    name: Publish PyPI package
     runs-on: ubuntu-latest
-    needs: preflight
+    needs: [resolve-version, preflight]
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
-      - name: Install build tools
-        run: pip install build twine
+      - name: Detect missing PyPI version
+        id: detect
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg_name="$(python3 - <<'PY'
+          import tomllib
+          with open("packages/sdk/hush-py/pyproject.toml", "rb") as f:
+              data = tomllib.load(f)
+          print(data["project"]["name"])
+          PY
+          )"
+          pkg_version="$(python3 - <<'PY'
+          import tomllib
+          with open("packages/sdk/hush-py/pyproject.toml", "rb") as f:
+              data = tomllib.load(f)
+          print(data["project"]["version"])
+          PY
+          )"
 
-      - name: Build package
-        run: cd packages/sdk/hush-py && python -m build
+          if [[ "$pkg_version" != "$RELEASE_VERSION" ]]; then
+            echo "Version mismatch for ${pkg_name}: pyproject=$pkg_version release=$RELEASE_VERSION" >&2
+            exit 1
+          fi
 
-      - name: Publish to PyPI
-        run: twine upload packages/sdk/hush-py/dist/*
+          echo "name=${pkg_name}" >> "$GITHUB_OUTPUT"
+          echo "version=${pkg_version}" >> "$GITHUB_OUTPUT"
+
+          code="$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/${pkg_name}/${pkg_version}/json")"
+          if [[ "$code" == "200" ]]; then
+            echo "none_missing=true" >> "$GITHUB_OUTPUT"
+            echo "${pkg_name}==${pkg_version} already exists on PyPI"
+          else
+            echo "none_missing=false" >> "$GITHUB_OUTPUT"
+            echo "${pkg_name}==${pkg_version} missing on PyPI"
+          fi
+
+      - name: Build and publish PyPI package
+        if: steps.detect.outputs.none_missing == 'false'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          python -m build --sdist --wheel packages/sdk/hush-py
+          twine upload packages/sdk/hush-py/dist/*
 
-  # Build release binaries
+      - name: PyPI package already published
+        if: steps.detect.outputs.none_missing == 'true'
+        run: echo "PyPI version already exists; skipping PyPI publish"
+
   build-binaries:
     name: Build Binaries
+    runs-on: ${{ matrix.os }}
     needs: preflight
     strategy:
       matrix:
@@ -236,7 +444,6 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: hush-windows-x86_64.exe
-    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -250,13 +457,11 @@ jobs:
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
-        run: |
-          cp target/${{ matrix.target }}/release/hush ${{ matrix.artifact }}
+        run: cp target/${{ matrix.target }}/release/hush ${{ matrix.artifact }}
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
-        run: |
-          cp target/${{ matrix.target }}/release/hush.exe ${{ matrix.artifact }}
+        run: cp target/${{ matrix.target }}/release/hush.exe ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -264,15 +469,40 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
-  # Create GitHub release with binaries
   create-release:
-    name: Create Release
+    name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-binaries, publish-crates]
+    needs: [resolve-version, build-binaries, publish-crates, publish-npm, publish-wasm-npm, publish-pypi]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Ensure release tag exists
+        env:
+          TAG: ${{ needs.resolve-version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists"
+            exit 0
+          fi
+
+          if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
+            echo "Expected existing tag ${TAG} for non-dispatch release" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" "${GITHUB_SHA}" -m "Release ${TAG}"
+          git push origin "refs/tags/${TAG}"
+          echo "Created and pushed missing tag ${TAG}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v7
@@ -280,7 +510,9 @@ jobs:
           path: artifacts
 
       - name: Create checksums
+        shell: bash
         run: |
+          set -euo pipefail
           cd artifacts
           for dir in */; do
             cd "$dir"
@@ -295,51 +527,12 @@ jobs:
           mkdir -p release-files
           find artifacts -type f -exec mv {} release-files/ \;
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.resolve-version.outputs.tag }}
           generate_release_notes: true
           files: release-files/*
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Update Homebrew formula with correct SHA256
-  update-homebrew:
-    name: Update Homebrew Formula
-    runs-on: ubuntu-latest
-    needs: [create-release]
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: main  # Checkout main branch for the update
-
-      - name: Calculate SHA256
-        id: sha
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          URL="https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${VERSION}.tar.gz"
-          echo "Downloading from: $URL"
-          SHA=$(curl -sL "$URL" | shasum -a 256 | cut -d' ' -f1)
-          echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Calculated SHA256: $SHA"
-
-      - name: Update formula
-        run: |
-          # Update URL with new version
-          sed -i 's|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v[^"]*"|url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v${{ steps.sha.outputs.version }}.tar.gz"|' infra/packaging/HomebrewFormula/hush.rb
-          # Update SHA256
-          sed -i 's|sha256 "[^"]*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' infra/packaging/HomebrewFormula/hush.rb
-
-          echo "Updated formula:"
-          cat infra/packaging/HomebrewFormula/hush.rb
-
-      - name: Commit and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add infra/packaging/HomebrewFormula/hush.rb
-          git diff --cached --quiet || git commit -m "chore: update Homebrew formula for v${{ steps.sha.outputs.version }}"
-          git push origin main

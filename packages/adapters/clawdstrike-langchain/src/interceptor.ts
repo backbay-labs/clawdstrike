@@ -1,5 +1,5 @@
-import { BaseToolInterceptor } from '@backbay/adapter-core';
-import type { PolicyEngineLike } from '@backbay/adapter-core';
+import { BaseToolInterceptor } from '@clawdstrike/adapter-core';
+import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
 
 import type { LangChainClawdstrikeConfig } from './types.js';
 

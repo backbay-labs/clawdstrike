@@ -14,7 +14,7 @@ Certification & Compliance program:
 - Server/API: `crates/services/hushd/`
 - Policy/guards: `crates/libs/clawdstrike/`
 - Crypto primitives (JCS, Ed25519, Merkle): `crates/libs/hush-core/`
-- TypeScript SDK: `packages/sdk/hush-ts/` (`@backbay/sdk`)
+- TypeScript SDK: `packages/sdk/hush-ts/` (`@clawdstrike/sdk`)
 - Python SDK: `packages/sdk/hush-py/`
 
 ## Notes

@@ -1,8 +1,8 @@
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-import type { PolicyEngineLike as CanonicalPolicyEngineLike, PolicyEvent as CanonicalPolicyEvent } from '@backbay/adapter-core';
-import { createPolicyEngineFromPolicy, type Policy as CanonicalPolicy } from '@backbay/policy';
+import type { PolicyEngineLike as CanonicalPolicyEngineLike, PolicyEvent as CanonicalPolicyEvent } from '@clawdstrike/adapter-core';
+import { createPolicyEngineFromPolicy, type Policy as CanonicalPolicy } from '@clawdstrike/policy';
 
 import { mergeConfig } from '../config.js';
 import { EgressGuard, ForbiddenPathGuard, PatchIntegrityGuard, SecretLeakGuard } from '../guards/index.js';

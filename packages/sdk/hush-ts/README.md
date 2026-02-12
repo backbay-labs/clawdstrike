@@ -1,11 +1,11 @@
-# @backbay/sdk
+# @clawdstrike/sdk
 
 TypeScript SDK for clawdstrike security verification and fail-closed policy checks.
 
 ## Installation
 
 ```bash
-npm install @backbay/sdk
+npm install @clawdstrike/sdk
 ```
 
 ## Features
@@ -25,7 +25,7 @@ npm install @backbay/sdk
 ### Unified policy checks
 
 ```typescript
-import { Clawdstrike } from "@backbay/sdk";
+import { Clawdstrike } from "@clawdstrike/sdk";
 
 // Built-in ruleset aliases: strict, default, ai-agent, cicd, permissive
 const cs = Clawdstrike.withDefaults("strict");
@@ -41,7 +41,7 @@ await session.check("file_access", { path: "/app/src/main.ts" });
 ```
 
 ```typescript
-import { Clawdstrike } from "@backbay/sdk";
+import { Clawdstrike } from "@clawdstrike/sdk";
 
 // Load from local policy path or inline YAML
 const fromPolicy = Clawdstrike.fromPolicy("./strict.yaml");
@@ -57,7 +57,7 @@ Notes:
 ### Hashing
 
 ```typescript
-import { sha256, keccak256, toHex } from "@backbay/sdk";
+import { sha256, keccak256, toHex } from "@clawdstrike/sdk";
 
 const hash = sha256("hello world");
 console.log(toHex(hash));
@@ -66,7 +66,7 @@ console.log(toHex(hash));
 ### Signatures
 
 ```typescript
-import { generateKeypair, signMessage, verifySignature } from "@backbay/sdk";
+import { generateKeypair, signMessage, verifySignature } from "@clawdstrike/sdk";
 
 const { privateKey, publicKey } = await generateKeypair();
 const message = new TextEncoder().encode("hello");
@@ -77,7 +77,7 @@ const isValid = await verifySignature(message, signature, publicKey);
 ### Canonical JSON
 
 ```typescript
-import { canonicalize, canonicalHash } from "@backbay/sdk";
+import { canonicalize, canonicalHash } from "@clawdstrike/sdk";
 
 const obj = { z: 1, a: 2 };
 const json = canonicalize(obj); // '{"a":2,"z":1}'
@@ -87,7 +87,7 @@ const hash = canonicalHash(obj); // SHA-256 of canonical JSON
 ### Merkle Trees
 
 ```typescript
-import { MerkleTree, hashLeaf, toHex } from "@backbay/sdk";
+import { MerkleTree, hashLeaf, toHex } from "@clawdstrike/sdk";
 
 const leaves = ["a", "b", "c"].map((s) =>
   hashLeaf(new TextEncoder().encode(s))
@@ -103,7 +103,7 @@ console.log("Valid:", proof.verify(leaves[1], tree.root));
 ### Receipts
 
 ```typescript
-import { Receipt, SignedReceipt, generateKeypair } from "@backbay/sdk";
+import { Receipt, SignedReceipt, generateKeypair } from "@clawdstrike/sdk";
 
 const receipt = new Receipt({
   id: "run-123",
@@ -125,7 +125,7 @@ import {
   SecretLeakGuard,
   GuardAction,
   GuardContext,
-} from "@backbay/sdk";
+} from "@clawdstrike/sdk";
 
 // Block access to sensitive paths
 const pathGuard = new ForbiddenPathGuard();

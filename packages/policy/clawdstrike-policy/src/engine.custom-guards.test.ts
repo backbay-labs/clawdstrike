@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 import { createPolicyEngineFromPolicy } from './engine.js';
 import { CustomGuardRegistry } from './custom-registry.js';

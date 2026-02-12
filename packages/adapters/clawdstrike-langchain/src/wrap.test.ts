@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { BaseToolInterceptor } from '@backbay/adapter-core';
-import type { PolicyEngineLike, ToolInterceptor } from '@backbay/adapter-core';
+import { BaseToolInterceptor } from '@clawdstrike/adapter-core';
+import type { PolicyEngineLike, ToolInterceptor } from '@clawdstrike/adapter-core';
 
 import { ClawdstrikeViolationError } from './errors.js';
 import { wrapTool, wrapToolWithConfig, wrapTools } from './wrap.js';

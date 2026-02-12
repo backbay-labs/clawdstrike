@@ -43,7 +43,7 @@ from clawdstrike.canonical import canonicalize, canonical_hash
 from clawdstrike.native import NATIVE_AVAILABLE
 from clawdstrike.certification_badge import verify_certification_badge
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "__version__",

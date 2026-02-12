@@ -11,7 +11,7 @@ This example demonstrates enforcement at the **OpenClaw tool boundary** (preflig
 ```bash
 cd examples/hello-secure-agent
 npm install
-openclaw plugins enable @backbay/openclaw
+openclaw plugins enable @clawdstrike/openclaw
 openclaw start
 ```
 

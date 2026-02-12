@@ -34,10 +34,10 @@ Open http://localhost:5173 in your browser.
 
 ## How It Works
 
-The example uses the `@backbay/sdk` package:
+The example uses the `@clawdstrike/sdk` package:
 
 ```typescript
-import { SignedReceipt } from '@backbay/sdk';
+import { SignedReceipt } from '@clawdstrike/sdk';
 
 const signed = SignedReceipt.fromJSON(jsonText);
 const result = await signed.verify({ signer: signerPublicKeyHex });

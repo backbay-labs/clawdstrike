@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import type { PolicyEngineLike } from '@backbay/adapter-core';
+import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
 
 import { CodexAdapter } from './codex-adapter.js';
 

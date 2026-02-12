@@ -1,20 +1,20 @@
-# @backbay/adapter-core
+# @clawdstrike/adapter-core
 
 Framework-agnostic adapter interfaces for Clawdstrike tool-boundary enforcement.
 
 ## Installation
 
 ```bash
-npm install @backbay/adapter-core
+npm install @clawdstrike/adapter-core
 ```
 
 ## Usage
 
 ```ts
-import { BaseToolInterceptor, createSecurityContext } from "@backbay/adapter-core";
+import { BaseToolInterceptor, createSecurityContext } from "@clawdstrike/adapter-core";
 
 // Create an engine for policy evaluation (implementation-specific).
-// For example, use @backbay/hush-cli-engine to shell out to `hush`.
+// For example, use @clawdstrike/engine-local to shell out to `hush`.
 const engine = /* ... */;
 
 const interceptor = new BaseToolInterceptor(engine, { blockOnViolation: true });
@@ -26,12 +26,12 @@ if (!preflight.proceed) throw new Error("Blocked by policy");
 
 ## Generic tool runner wrapper
 
-`@backbay/adapter-core` can also wrap any `(toolName, input, runId) => Promise<output>`
+`@clawdstrike/adapter-core` can also wrap any `(toolName, input, runId) => Promise<output>`
 dispatcher directly:
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { GenericToolBoundary, wrapGenericToolDispatcher } from '@backbay/adapter-core';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const boundary = new GenericToolBoundary({ engine });

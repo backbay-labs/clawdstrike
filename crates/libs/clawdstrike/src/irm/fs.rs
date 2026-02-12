@@ -500,6 +500,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn filesystem_irm_prefers_object_path_over_pathlike_string_arg() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+        let call = HostCall::new(
+            "fd_read",
+            vec![
+                serde_json::json!("image/logo.png"),
+                serde_json::json!({"path": "../../etc/passwd"}),
+            ],
+        );
+
+        let decision = irm.evaluate(&call, &policy).await;
+        match decision {
+            Decision::Deny { reason } => {
+                assert!(
+                    reason.contains("parent traversal"),
+                    "deny reason should use object path traversal, not a slash token: {reason}"
+                );
+            }
+            other => panic!("expected deny, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn filesystem_irm_denies_traversal_when_path_is_in_nonfirst_object_arg() {
         let irm = FilesystemIrm::new();
         let policy = Policy::default();

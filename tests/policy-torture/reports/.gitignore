@@ -1,0 +1,4 @@
+*.json
+*.txt
+*.log
+!.gitkeep

@@ -1,5 +1,5 @@
 /**
- * @backbay/openclaw - Agent Bootstrap Hook Handler
+ * @clawdstrike/openclaw - Agent Bootstrap Hook Handler
  *
  * Injects a SECURITY.md file into the agent bootstrap context.
  */

@@ -26,7 +26,7 @@ hello-secure-agent/
 
 - Node.js 18+
 - OpenClaw CLI (`npm install -g @openclaw/cli`)
-- `@backbay/openclaw` CLI (`npx clawdstrike ...`)
+- `@clawdstrike/openclaw` CLI (`npx clawdstrike ...`)
 
 ## Quick Start
 
@@ -54,7 +54,7 @@ The OpenClaw configuration enables the clawdstrike plugin:
 {
   "plugins": [
     {
-      "name": "@backbay/openclaw",
+      "name": "@clawdstrike/openclaw",
       "config": {
         "policy": "./policy.yaml",
         "mode": "deterministic"

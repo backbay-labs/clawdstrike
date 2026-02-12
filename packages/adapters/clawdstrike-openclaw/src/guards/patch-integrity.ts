@@ -1,5 +1,5 @@
 /**
- * @backbay/openclaw - Patch Integrity Guard
+ * @clawdstrike/openclaw - Patch Integrity Guard
  *
  * Detects dangerous code patterns in patches and file writes.
  */

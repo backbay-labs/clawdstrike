@@ -1,0 +1,62 @@
+name: "Policy Torture 01 - Deep Merge"
+policy: ../policies/deep-merge-overlay.yaml
+suites:
+  - name: "Deep merge inheritance and additive/removal behavior"
+    parameters:
+      inherited_allow_hosts:
+        - api.github.com
+        - api.openai.com
+    tests:
+      - name: "allow inherited egress host {item}"
+        foreach: inherited_allow_hosts
+        input:
+          eventType: network_egress
+          data:
+            type: network
+            host: "{item}"
+            port: 443
+        expect:
+          allowed: true
+
+      - name: "allow additional egress host from overlay"
+        input:
+          eventType: network_egress
+          data:
+            type: network
+            host: packages.clawdstrike.dev
+            port: 443
+        expect:
+          allowed: true
+
+      - name: "deny egress host removed by overlay"
+        input:
+          eventType: network_egress
+          data:
+            type: network
+            host: docs.rs
+            port: 443
+        expect:
+          denied: true
+          guard: egress_allowlist
+
+      - name: "deny explicit blocked host"
+        input:
+          eventType: network_egress
+          data:
+            type: network
+            host: blocked.example.com
+            port: 443
+        expect:
+          denied: true
+          guard: egress_allowlist
+
+      - name: "deny forbidden additional path pattern"
+        input:
+          eventType: file_read
+          data:
+            type: file
+            path: tests/policy-torture/workspace/company-secrets/token.txt
+        expect:
+          denied: true
+          guard: forbidden_path
+          reason_contains: company-secrets

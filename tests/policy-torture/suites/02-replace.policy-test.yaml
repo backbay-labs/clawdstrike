@@ -1,0 +1,34 @@
+name: "Policy Torture 02 - Replace Merge"
+policy: ../policies/replace-overlay.yaml
+suites:
+  - name: "Replace semantics drop inherited egress allowlist entries"
+    tests:
+      - name: "allow explicitly configured egress host"
+        input:
+          eventType: network_egress
+          data:
+            type: network
+            host: docs.rs
+            port: 443
+        expect:
+          allowed: true
+
+      - name: "deny host that would be allowed in base policy"
+        input:
+          eventType: network_egress
+          data:
+            type: network
+            host: api.github.com
+            port: 443
+        expect:
+          denied: true
+          guard: egress_allowlist
+
+      - name: "allow file access in explicit allowlist"
+        input:
+          eventType: file_read
+          data:
+            type: file
+            path: tests/policy-torture/workspace/allowed.txt
+        expect:
+          allowed: true

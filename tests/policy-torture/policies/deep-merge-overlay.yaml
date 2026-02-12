@@ -1,0 +1,18 @@
+version: "1.2.0"
+name: "Policy Torture Deep Merge Overlay"
+description: "Adds and removes targeted restrictions to validate deep_merge behavior"
+extends: ./base-core.yaml
+merge_strategy: deep_merge
+
+guards:
+  forbidden_path:
+    additional_patterns:
+      - "**/company-secrets/**"
+  egress_allowlist:
+    additional_allow:
+      - "packages.clawdstrike.dev"
+    remove_allow:
+      - "docs.rs"
+
+settings:
+  fail_fast: true

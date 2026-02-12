@@ -1,19 +1,19 @@
-# `@backbay/langchain`
+# `@clawdstrike/langchain`
 
 Baseline wrappers for LangChain-style tools. No hard runtime dependency on LangChain.
 
 ## Install
 
 ```bash
-npm install @backbay/langchain @backbay/adapter-core @backbay/hush-cli-engine
+npm install @clawdstrike/langchain @clawdstrike/adapter-core @clawdstrike/engine-local
 ```
 
 ## Usage
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { BaseToolInterceptor } from '@backbay/adapter-core';
-import { wrapTool } from '@backbay/langchain';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { BaseToolInterceptor } from '@clawdstrike/adapter-core';
+import { wrapTool } from '@clawdstrike/langchain';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const interceptor = new BaseToolInterceptor(engine, { blockOnViolation: true });
@@ -32,8 +32,8 @@ await secureTool.invoke({ cmd: 'echo hello' });
 ## Config overrides
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { wrapToolWithConfig } from '@backbay/langchain';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { wrapToolWithConfig } from '@clawdstrike/langchain';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const tool = { name: 'bash', async _call() { return 'ok'; } };
@@ -45,8 +45,8 @@ const stricter = secureTool.withConfig({ blockOnViolation: true });
 ## Callback handler (in-process hooks)
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { ClawdstrikeCallbackHandler } from '@backbay/langchain';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { ClawdstrikeCallbackHandler } from '@clawdstrike/langchain';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const handler = new ClawdstrikeCallbackHandler({ engine });

@@ -1,0 +1,26 @@
+version: "1.2.0"
+name: "Policy Torture Replace Overlay"
+description: "Replaces base policy to validate replace semantics"
+extends: ./base-core.yaml
+merge_strategy: replace
+
+guards:
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/tests/policy-torture/workspace/**"
+    file_write_allow:
+      - "**/tests/policy-torture/workspace/**"
+    patch_allow:
+      - "**/tests/policy-torture/workspace/**"
+  egress_allowlist:
+    enabled: true
+    allow:
+      - "docs.rs"
+    block: []
+    default_action: block
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600

@@ -1,5 +1,5 @@
 /**
- * @backbay/openclaw - Tool Guard Hook Handler
+ * @clawdstrike/openclaw - Tool Guard Hook Handler
  *
  * Intercepts tool results and enforces security policy.
  */

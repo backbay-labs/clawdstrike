@@ -1,0 +1,82 @@
+version: "1.2.0"
+name: "Policy Torture Base"
+description: "High-signal base policy for stress testing guard composition"
+
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "**/.ssh/**"
+      - "**/.env"
+      - "/etc/passwd"
+      - "/etc/shadow"
+    exceptions: []
+
+  path_allowlist:
+    enabled: true
+    file_access_allow:
+      - "**/tests/policy-torture/workspace/**"
+    file_write_allow:
+      - "**/tests/policy-torture/workspace/**"
+    patch_allow:
+      - "**/tests/policy-torture/workspace/**"
+
+  egress_allowlist:
+    enabled: true
+    allow:
+      - "api.github.com"
+      - "api.openai.com"
+      - "docs.rs"
+    block:
+      - "blocked.example.com"
+    default_action: block
+
+  secret_leak:
+    enabled: true
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+    skip_paths: []
+
+  patch_integrity:
+    enabled: true
+    max_additions: 5000
+    max_deletions: 5000
+    require_balance: false
+    max_imbalance_ratio: 100.0
+    forbidden_patterns:
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)"
+
+  mcp_tool:
+    enabled: true
+    allow:
+      - "read_file"
+      - "list_directory"
+    block:
+      - "shell_exec"
+      - "run_command"
+    require_confirmation: []
+    default_action: block
+    max_args_size: 1048576
+
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: suspicious
+    max_scan_bytes: 200000
+
+  jailbreak:
+    enabled: true
+    detector:
+      block_threshold: 20
+      warn_threshold: 10
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600

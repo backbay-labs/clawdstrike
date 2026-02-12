@@ -1,4 +1,4 @@
-# @backbay/clawdstrike-security
+# @clawdstrike/openclaw
 
 Clawdstrike security plugin for OpenClaw.
 

@@ -1,6 +1,6 @@
 # Generic Adapter Examples
 
-This folder demonstrates the framework-agnostic `@backbay/adapter-core` wrapper.
+This folder demonstrates the framework-agnostic `@clawdstrike/adapter-core` wrapper.
 
 Files:
 

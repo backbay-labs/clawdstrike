@@ -1,4 +1,4 @@
-# @backbay/python
+# clawdstrike
 
 Python SDK for Clawdstrike security verification.
 

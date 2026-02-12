@@ -13,6 +13,9 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, RwLock};
 
+const READY_MAX_ATTEMPTS: usize = 40;
+const READY_POLL_DELAY: Duration = Duration::from_millis(150);
+
 /// Health response from hushd `/health` endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthResponse {
@@ -171,24 +174,7 @@ impl DaemonManager {
 
     /// Perform a health check.
     pub async fn health_check(&self) -> Result<HealthResponse> {
-        let url = self.config.health_url();
-        let response = self
-            .http_client
-            .get(&url)
-            .send()
-            .await
-            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
-
-        if !response.status().is_success() {
-            anyhow::bail!("health endpoint returned {}", response.status());
-        }
-
-        let health: HealthResponse = response
-            .json()
-            .await
-            .with_context(|| "Failed to parse health response")?;
-
-        Ok(health)
+        health_check_with_client(&self.config, &self.http_client).await
     }
 
     async fn spawn_and_wait_ready(&self) -> Result<()> {
@@ -428,27 +414,16 @@ async fn wait_for_ready_with_client(
     config: &DaemonConfig,
     http_client: &reqwest::Client,
 ) -> Result<()> {
-    let max_attempts = 40;
-    let delay = Duration::from_millis(150);
-    for attempt in 0..max_attempts {
-        match health_check_with_client(config, http_client).await {
-            Ok(health) if health.status == "healthy" => {
-                tracing::debug!("Daemon ready after {} attempts", attempt + 1);
-                return Ok(());
-            }
-            Ok(_) => {
-                tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
-            }
-            Err(err) => {
-                tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
-            }
+    for attempt in 0..READY_MAX_ATTEMPTS {
+        if evaluate_ready_probe(attempt, health_check_with_client(config, http_client).await) {
+            return Ok(());
         }
-        tokio::time::sleep(delay).await;
+        tokio::time::sleep(READY_POLL_DELAY).await;
     }
 
     anyhow::bail!(
         "Daemon failed to become ready after {} attempts",
-        max_attempts
+        READY_MAX_ATTEMPTS
     )
 }
 
@@ -474,9 +449,7 @@ async fn wait_for_ready_with_client_or_shutdown(
     http_client: &reqwest::Client,
     shutdown_rx: &mut broadcast::Receiver<()>,
 ) -> Result<ReadyWaitOutcome> {
-    let max_attempts = 40;
-    let delay = Duration::from_millis(150);
-    for attempt in 0..max_attempts {
+    for attempt in 0..READY_MAX_ATTEMPTS {
         let health_result = tokio::select! {
             recv = shutdown_rx.recv() => {
                 match recv {
@@ -488,28 +461,36 @@ async fn wait_for_ready_with_client_or_shutdown(
             result = health_check_with_client(config, http_client) => result,
         };
 
-        match health_result {
-            Ok(health) if health.status == "healthy" => {
-                tracing::debug!("Daemon ready after {} attempts", attempt + 1);
-                return Ok(ReadyWaitOutcome::Ready);
-            }
-            Ok(_) => {
-                tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
-            }
-            Err(err) => {
-                tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
-            }
+        if evaluate_ready_probe(attempt, health_result) {
+            return Ok(ReadyWaitOutcome::Ready);
         }
 
-        if sleep_or_shutdown(shutdown_rx, delay).await {
+        if sleep_or_shutdown(shutdown_rx, READY_POLL_DELAY).await {
             return Ok(ReadyWaitOutcome::Shutdown);
         }
     }
 
     anyhow::bail!(
         "Daemon failed to become ready after {} attempts",
-        max_attempts
+        READY_MAX_ATTEMPTS
     )
+}
+
+fn evaluate_ready_probe(attempt: usize, result: Result<HealthResponse>) -> bool {
+    match result {
+        Ok(health) if health.status == "healthy" => {
+            tracing::debug!("Daemon ready after {} attempts", attempt + 1);
+            true
+        }
+        Ok(_) => {
+            tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
+            false
+        }
+        Err(err) => {
+            tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
+            false
+        }
+    }
 }
 
 async fn health_check_with_client(

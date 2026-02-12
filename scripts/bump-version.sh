@@ -35,46 +35,35 @@ $SED_INPLACE "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
 # Update all crate Cargo.toml files that use workspace version inheritance
 # (They inherit from workspace, so we only need to update the root)
 
-# Update package.json files
-if [[ -f "packages/adapters/clawdstrike-openclaw/package.json" ]]; then
-    echo "  Updating packages/adapters/clawdstrike-openclaw/package.json..."
-    # Use node/jq if available, otherwise sed
-    if command -v node &> /dev/null; then
+# Update package.json files across published npm packages
+echo "  Updating packages/**/package.json versions..."
+if command -v node &> /dev/null; then
+    while IFS= read -r PKG_JSON; do
         node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/adapters/clawdstrike-openclaw/package.json', 'utf8'));
-            pkg.version = '$VERSION';
-            fs.writeFileSync('packages/adapters/clawdstrike-openclaw/package.json', JSON.stringify(pkg, null, 2) + '\n');
-        "
-    else
-        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/adapters/clawdstrike-openclaw/package.json
-    fi
-fi
+            const path = process.argv[1];
+            const version = process.argv[2];
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+            pkg.version = version;
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
+        " "$PKG_JSON" "$VERSION"
+    done < <(find packages -type f -name package.json | sort)
 
-if [[ -f "packages/sdk/hush-ts/package.json" ]]; then
-    echo "  Updating packages/sdk/hush-ts/package.json..."
-    if command -v node &> /dev/null; then
+    if [[ -f "crates/libs/hush-wasm/package.json" ]]; then
         node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/sdk/hush-ts/package.json', 'utf8'));
-            pkg.version = '$VERSION';
-            fs.writeFileSync('packages/sdk/hush-ts/package.json', JSON.stringify(pkg, null, 2) + '\n');
-        "
-    else
-        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/sdk/hush-ts/package.json
+            const path = 'crates/libs/hush-wasm/package.json';
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+            pkg.version = process.argv[1];
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
+        " "$VERSION"
     fi
-fi
+else
+    while IFS= read -r PKG_JSON; do
+        $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$PKG_JSON"
+    done < <(find packages -type f -name package.json | sort)
 
-if [[ -f "crates/libs/hush-wasm/package.json" ]]; then
-    echo "  Updating crates/libs/hush-wasm/package.json..."
-    if command -v node &> /dev/null; then
-        node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('crates/libs/hush-wasm/package.json', 'utf8'));
-            pkg.version = '$VERSION';
-            fs.writeFileSync('crates/libs/hush-wasm/package.json', JSON.stringify(pkg, null, 2) + '\n');
-        "
-    else
+    if [[ -f "crates/libs/hush-wasm/package.json" ]]; then
         $SED_INPLACE "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" crates/libs/hush-wasm/package.json
     fi
 fi

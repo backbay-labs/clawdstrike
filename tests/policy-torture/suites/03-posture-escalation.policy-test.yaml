@@ -1,0 +1,54 @@
+name: "Policy Torture 03 - Posture Escalation"
+policy: ../policies/posture-escalation.yaml
+suites:
+  - name: "Posture transitions"
+    tests:
+      - name: "budget exhaustion triggers quarantine transition"
+        input:
+          eventType: command_exec
+          data:
+            type: command
+            command: echo
+            args: ["hi"]
+        expect:
+          allowed: true
+          posture_state: quarantine
+          posture_transition:
+            from: work
+            to: quarantine
+            trigger: budget_exhausted
+
+      - name: "policy violation triggers any_violation transition"
+        input:
+          eventType: network_egress
+          data:
+            type: network
+            host: blocked.example.com
+            port: 443
+        expect:
+          denied: true
+          guard: egress_allowlist
+          posture_state: quarantine
+          posture_transition:
+            from: work
+            to: quarantine
+            trigger: any_violation
+
+      - name: "quarantine precheck blocks disallowed capability"
+        context:
+          session_posture:
+            current_state: quarantine
+            entered_at: "2026-02-03T00:00:00Z"
+            transition_history: []
+            budgets: {}
+        input:
+          eventType: command_exec
+          data:
+            type: command
+            command: uname
+            args: ["-a"]
+        expect:
+          denied: true
+          guard: posture
+          message_contains: "not allowed in posture state"
+          posture_state: quarantine

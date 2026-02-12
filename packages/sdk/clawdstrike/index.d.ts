@@ -1,1 +1,1 @@
-export * from "@backbay/sdk";
+export * from "@clawdstrike/sdk";

@@ -16,7 +16,7 @@ Clawdstrike ships with seven built-in guards. Guards evaluate a `GuardAction` pl
 
 ## Prompt-security utilities (not policy guards)
 
-Some prompt-security features are implemented as standalone utilities and are wired into integrations (for example, `@backbay/vercel-ai`):
+Some prompt-security features are implemented as standalone utilities and are wired into integrations (for example, `@clawdstrike/vercel-ai`):
 
 - [Output Sanitizer](./output-sanitizer.md) — redact secrets/PII from model output (including streaming)
 - [Watermarking](./watermarking.md) — embed signed provenance markers in prompts

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { BaseToolInterceptor, createSecurityContext } from '@backbay/adapter-core';
-import type { PolicyEngineLike, ToolInterceptor } from '@backbay/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
+import type { PolicyEngineLike, ToolInterceptor } from '@clawdstrike/adapter-core';
 
 import { secureTools } from './tools.js';
 import { ClawdstrikeBlockedError } from './errors.js';

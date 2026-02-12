@@ -12,6 +12,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, Mutex};
 
+const AUDIT_PAGE_SIZE: usize = 50;
+const AUDIT_MAX_PAGES: usize = 40;
+
 /// A policy check event from hushd.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyEvent {
@@ -83,6 +86,7 @@ pub struct EventManager {
     http_client: reqwest::Client,
     events_tx: broadcast::Sender<PolicyEvent>,
     deduper: Arc<Mutex<EventDeduper>>,
+    poll_cursor_id: Arc<Mutex<Option<String>>>,
 }
 
 impl EventManager {
@@ -98,6 +102,7 @@ impl EventManager {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             events_tx,
             deduper: Arc::new(Mutex::new(EventDeduper::new(2_000))),
+            poll_cursor_id: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -200,32 +205,66 @@ impl EventManager {
         }
 
         let url = format!("{}/api/v1/audit", self.daemon_url);
-        let mut request = self
-            .http_client
-            .get(&url)
-            .query(&[("limit", "50"), ("offset", "0")]);
+        let cursor_id = self.poll_cursor_id.lock().await.clone();
+        let mut offset = 0usize;
+        let mut pages = 0usize;
+        let mut found_cursor = false;
+        let mut unseen_desc: Vec<PolicyEvent> = Vec::new();
 
-        if let Some(ref key) = self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", key));
+        while pages < AUDIT_MAX_PAGES {
+            let mut request = self.http_client.get(&url).query(&[
+                ("limit", AUDIT_PAGE_SIZE.to_string()),
+                ("offset", offset.to_string()),
+            ]);
+            if let Some(ref key) = self.api_key {
+                request = request.header("Authorization", format!("Bearer {}", key));
+            }
+
+            let response = request
+                .send()
+                .await
+                .with_context(|| "Failed to poll audit events")?;
+            if !response.status().is_success() {
+                anyhow::bail!("Audit API returned status: {}", response.status());
+            }
+
+            let audit: AuditResponse = response
+                .json()
+                .await
+                .with_context(|| "Failed to parse audit response")?;
+            if audit.events.is_empty() {
+                break;
+            }
+
+            let page_len = audit.events.len();
+            for event in audit.events {
+                if cursor_id.as_ref().is_some_and(|id| &event.id == id) {
+                    found_cursor = true;
+                    break;
+                }
+                unseen_desc.push(event);
+            }
+
+            pages += 1;
+            if found_cursor || page_len < AUDIT_PAGE_SIZE {
+                break;
+            }
+            offset += AUDIT_PAGE_SIZE;
         }
 
-        let response = request
-            .send()
-            .await
-            .with_context(|| "Failed to poll audit events")?;
-
-        if !response.status().is_success() {
-            anyhow::bail!("Audit API returned status: {}", response.status());
+        if pages == AUDIT_MAX_PAGES && !found_cursor {
+            tracing::warn!(
+                page_limit = AUDIT_MAX_PAGES,
+                "Audit poll fallback reached pagination cap; some older events may be skipped"
+            );
         }
 
-        let mut audit: AuditResponse = response
-            .json()
-            .await
-            .with_context(|| "Failed to parse audit response")?;
+        if let Some(newest_unseen) = unseen_desc.first() {
+            *self.poll_cursor_id.lock().await = Some(newest_unseen.id.clone());
+        }
 
         // Audit endpoint is newest-first; emit oldest-first for stable UI ordering.
-        audit.events.reverse();
-        for event in audit.events {
+        for event in unseen_desc.into_iter().rev() {
             self.publish_event_if_new(event).await;
         }
 

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 type MockChildProcess = EventEmitter & {
   stdin: PassThrough;
@@ -172,6 +172,20 @@ describe('createHushCliEngine', () => {
     child.emit('close', 0, null);
 
     await expect(pending).resolves.toMatchObject({
+      status: 'deny',
+      reason: 'engine_error',
+    });
+  });
+
+  it('fails closed when hush binary cannot be spawned', async () => {
+    spawnMock.mockImplementationOnce(() => {
+      throw new Error('spawn ENOENT');
+    });
+
+    const engine = createHushCliEngine({ policyRef: 'default' });
+    const decision = await engine.evaluate(exampleEvent);
+
+    expect(decision).toMatchObject({
       status: 'deny',
       reason: 'engine_error',
     });

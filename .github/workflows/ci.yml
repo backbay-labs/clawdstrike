@@ -29,10 +29,35 @@ jobs:
           cargo test -p hush-cli hush_run::tests::connect_proxy_rejects_ip_target_with_allowlisted_sni_mismatch -- --exact
           cargo test -p hush-cli hush_run::tests::connect_proxy_hostname_target_is_ip_pinned_after_policy_check -- --exact
 
+  policy-torture:
+    name: Policy Torture (PR Gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: security-regressions
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Run policy torture battery
+        run: bash tests/policy-torture/run.sh
+
+      - name: Upload policy torture JSON reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-torture-reports
+          path: tests/policy-torture/reports/*.json
+          if-no-files-found: error
+
   check:
     name: Check
     runs-on: ubuntu-latest
-    needs: security-regressions
+    needs: [security-regressions, policy-torture]
     steps:
       - uses: actions/checkout@v6
 
@@ -188,7 +213,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -203,7 +228,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Spine pipeline tests
-        run: cargo test -p spine --test pipeline_test
+        run: cargo test -p hush-spine --test pipeline_test
 
       - name: Bridge roundtrip tests
         run: cargo test -p sdr-integration-tests --test bridge_roundtrip_test
@@ -523,6 +548,54 @@ jobs:
         run: |
           node -e "const sdk = require('./dist/index.cjs'); console.log('CJS exports:', Object.keys(sdk).slice(0, 10))"
           node --input-type=module -e "import * as sdk from './dist/index.js'; console.log('ESM exports:', Object.keys(sdk).slice(0, 10))"
+
+  agent-fail-closed-smoke:
+    name: Agent Fail-Closed Smoke
+    runs-on: ubuntu-latest
+    needs: security-regressions
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            packages/adapters/clawdstrike-adapter-core/package-lock.json
+            packages/adapters/clawdstrike-codex/package-lock.json
+            packages/adapters/clawdstrike-claude-code/package-lock.json
+            packages/adapters/clawdstrike-hush-cli-engine/package-lock.json
+            packages/adapters/clawdstrike-hushd-engine/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm --prefix packages/adapters/clawdstrike-adapter-core ci
+          npm --prefix packages/adapters/clawdstrike-codex ci
+          npm --prefix packages/adapters/clawdstrike-claude-code ci
+          npm --prefix packages/adapters/clawdstrike-hush-cli-engine ci
+          npm --prefix packages/adapters/clawdstrike-hushd-engine ci
+
+      - name: Build dependencies and adapters
+        run: |
+          npm --prefix packages/adapters/clawdstrike-adapter-core run build
+          npm --prefix packages/adapters/clawdstrike-codex run build
+          npm --prefix packages/adapters/clawdstrike-claude-code run build
+          npm --prefix packages/adapters/clawdstrike-hush-cli-engine run build
+          npm --prefix packages/adapters/clawdstrike-hushd-engine run build
+
+      - name: Run fail-closed smoke POCs
+        run: node tools/scripts/agent-fail-closed-smoke.mjs
+
+      - name: Upload fail-closed smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-fail-closed-smoke-report
+          path: |
+            docs/reports/agent-fail-closed-smoke.json
+            docs/reports/agent-fail-closed-smoke.md
+          if-no-files-found: error
 
   openclaw-plugin:
     name: OpenClaw Plugin

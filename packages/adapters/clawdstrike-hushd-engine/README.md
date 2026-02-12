@@ -1,4 +1,4 @@
-# @backbay/hushd-engine
+# @clawdstrike/engine-remote
 
 Policy engine adapter that calls a running `hushd` daemon for evaluation.
 
@@ -8,7 +8,7 @@ for ruleset parsing and evaluation, without spawning the `hush` CLI per request.
 ## Usage
 
 ```ts
-import { createHushdEngine } from "@backbay/hushd-engine";
+import { createHushdEngine } from "@clawdstrike/engine-remote";
 
 const engine = createHushdEngine({
   baseUrl: "http://127.0.0.1:9876",
@@ -19,3 +19,12 @@ const engine = createHushdEngine({
 const decision = await engine.evaluate(event);
 if (decision.status === "deny") throw new Error(decision.message ?? "Blocked by policy");
 ```
+
+## Fail-Closed POC
+
+```bash
+npm --prefix packages/adapters/clawdstrike-hushd-engine run build
+npm --prefix packages/adapters/clawdstrike-hushd-engine run poc:fail-closed
+```
+
+This deterministic POC proves daemon transport failures return fail-closed decisions (`deny` + `engine_error`).

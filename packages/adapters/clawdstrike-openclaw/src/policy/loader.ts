@@ -2,11 +2,11 @@ import { load as loadYaml } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Policy as CanonicalPolicy } from '@backbay/policy';
+import type { Policy as CanonicalPolicy } from '@clawdstrike/policy';
 import {
   loadPolicyFromFile as loadCanonicalPolicyFromFile,
   loadPolicyFromString as loadCanonicalPolicyFromString,
-} from '@backbay/policy';
+} from '@clawdstrike/policy';
 
 import { resolveBuiltinPolicy } from '../config.js';
 import type { Policy } from '../types.js';

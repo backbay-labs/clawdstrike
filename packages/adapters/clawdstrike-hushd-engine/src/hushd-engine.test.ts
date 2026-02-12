@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PolicyEvent } from '@backbay/adapter-core';
+import type { PolicyEvent } from '@clawdstrike/adapter-core';
 
 import { createHushdEngine } from './hushd-engine.js';
 
@@ -80,6 +80,20 @@ describe('createHushdEngine', () => {
         status: 500,
         text: async () => 'boom',
       };
+    });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const engine = createHushdEngine({ baseUrl: 'http://127.0.0.1:9876' });
+    await expect(engine.evaluate(exampleEvent)).resolves.toMatchObject({
+      status: 'deny',
+      reason: 'engine_error',
+    });
+  });
+
+  it('fails closed on network transport failure', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED');
     });
 
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);

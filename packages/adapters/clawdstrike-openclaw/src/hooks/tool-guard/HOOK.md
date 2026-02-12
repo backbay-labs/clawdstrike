@@ -30,7 +30,7 @@ Configure via the clawdstrike plugin settings:
 {
   "plugins": {
     "entries": {
-      "@backbay/openclaw": {
+      "@clawdstrike/openclaw": {
         "config": {
           "policy": "./policy.yaml",
           "mode": "deterministic"

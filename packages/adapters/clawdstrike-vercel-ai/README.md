@@ -1,18 +1,18 @@
-# `@backbay/vercel-ai`
+# `@clawdstrike/vercel-ai`
 
 Minimal, runtime-optional wrappers for Vercel AI SDK-style tools.
 
 ## Install
 
 ```bash
-npm install @backbay/vercel-ai @backbay/hush-cli-engine ai
+npm install @clawdstrike/vercel-ai @clawdstrike/engine-local ai
 ```
 
 ## Usage (tool wrapping)
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { createVercelAiInterceptor, secureTools } from '@backbay/vercel-ai';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createVercelAiInterceptor, secureTools } from '@clawdstrike/vercel-ai';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const interceptor = createVercelAiInterceptor(engine, { blockOnViolation: true });
@@ -34,8 +34,8 @@ await tools.bash.execute({ cmd: 'echo hello' });
 ## Middleware-style API
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const security = createClawdstrikeMiddleware({
@@ -62,8 +62,8 @@ Enable prompt-security features (instruction hierarchy, jailbreak detection, out
 for model calls:
 
 ```ts
-import { createHushCliEngine } from '@backbay/hush-cli-engine';
-import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
+import { createHushCliEngine } from '@clawdstrike/engine-local';
+import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
 import { openai } from '@ai-sdk/openai';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
