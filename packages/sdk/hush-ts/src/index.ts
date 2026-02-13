@@ -3,9 +3,8 @@
  * @packageDocumentation
  */
 
-import { createRequire } from 'node:module';
-const _require = createRequire(import.meta.url);
-export const VERSION: string = (_require("../package.json") as { version: string }).version;
+declare const __SDK_VERSION__: string;
+export const VERSION: string = __SDK_VERSION__;
 
 // Main entry point
 export {
