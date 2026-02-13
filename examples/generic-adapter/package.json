@@ -6,8 +6,8 @@
     "start": "tsx sample-app.ts"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "workspace:*",
-    "@clawdstrike/engine-local": "workspace:*"
+    "@clawdstrike/adapter-core": "file:../../packages/adapters/clawdstrike-adapter-core",
+    "@clawdstrike/engine-local": "file:../../packages/adapters/clawdstrike-hush-cli-engine"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
