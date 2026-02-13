@@ -145,16 +145,19 @@ export function sanitizeState(value: unknown, engine: PolicyEngineLike, seen = n
   }
   seen.add(value as object);
 
+  let result: unknown;
   if (Array.isArray(value)) {
-    return value.map(item => sanitizeState(item, engine, seen));
+    result = value.map(item => sanitizeState(item, engine, seen));
+  } else {
+    const rec = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rec)) {
+      out[k] = sanitizeState(v, engine, seen);
+    }
+    result = out;
   }
-
-  const rec = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(rec)) {
-    out[k] = sanitizeState(v, engine, seen);
-  }
-  return out;
+  seen.delete(value as object);
+  return result;
 }
 
 export function addSecurityRouting<S extends Record<string, unknown>>(
