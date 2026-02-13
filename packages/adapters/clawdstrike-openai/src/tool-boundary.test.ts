@@ -50,8 +50,8 @@ describe('OpenAIToolBoundary', () => {
       }),
     };
 
-    const boundary = new CodexToolBoundary({ engine, config: { blockOnViolation: true } });
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-fail-closed-test-'));
+    const boundary = new OpenAIToolBoundary({ engine, config: { blockOnViolation: true } });
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openai-fail-closed-test-'));
     const sideEffectPath = path.join(tmpDir, 'side-effect.txt');
 
     const dispatch = vi.fn(async () => {
@@ -59,7 +59,7 @@ describe('OpenAIToolBoundary', () => {
       return 'ok';
     });
 
-    const wrapped = wrapCodexToolDispatcher(boundary, dispatch);
+    const wrapped = wrapOpenAIToolDispatcher(boundary, dispatch);
     await expect(wrapped('bash', { cmd: 'rm -rf /' }, 'run-blocked')).rejects.toBeInstanceOf(
       ClawdstrikeBlockedError,
     );

@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { ClawdstrikeBlockedError, ClaudeCodeToolBoundary, wrapClaudeCodeToolDispatcher } from '../../dist/index.js';
+import { ClawdstrikeBlockedError, OpenAIToolBoundary, wrapOpenAIToolDispatcher } from '../../dist/index.js';
 
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawdstrike-claude-poc-'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawdstrike-openai-poc-'));
 const blockedSideEffectPath = path.join(tmpDir, 'blocked-side-effect.txt');
 const allowedSideEffectPath = path.join(tmpDir, 'allowed-side-effect.txt');
 
 const report = {
-  scenario: 'claude-code-fail-closed',
+  scenario: 'openai-fail-closed',
   startedAt: new Date().toISOString(),
   checks: [],
 };
@@ -34,13 +34,13 @@ const engine = {
   },
 };
 
-const boundary = new ClaudeCodeToolBoundary({
+const boundary = new OpenAIToolBoundary({
   engine,
   config: { blockOnViolation: true },
 });
 
 let dispatchCalls = 0;
-const wrappedDispatch = wrapClaudeCodeToolDispatcher(
+const wrappedDispatch = wrapOpenAIToolDispatcher(
   boundary,
   async (toolName, input, runId) => {
     dispatchCalls += 1;

@@ -1,4 +1,4 @@
-import { createHushCliEngine } from '../../dist/index.js';
+import { createStrikeCell } from '../../dist/index.js';
 
 const report = {
   scenario: 'engine-local-fail-closed',
@@ -13,7 +13,7 @@ function check(name, pass, details = {}) {
   }
 }
 
-const engine = createHushCliEngine({
+const engine = createStrikeCell({
   hushPath: '/definitely/not/a/real/hush-binary',
   policyRef: 'default',
   timeoutMs: 250,

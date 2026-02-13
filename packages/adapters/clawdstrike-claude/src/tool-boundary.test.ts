@@ -50,7 +50,7 @@ describe('ClaudeToolBoundary', () => {
       }),
     };
 
-    const boundary = new ClaudeCodeToolBoundary({ engine, config: { blockOnViolation: true } });
+    const boundary = new ClaudeToolBoundary({ engine, config: { blockOnViolation: true } });
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-fail-closed-test-'));
     const sideEffectPath = path.join(tmpDir, 'side-effect.txt');
 
@@ -59,7 +59,7 @@ describe('ClaudeToolBoundary', () => {
       return 'ok';
     });
 
-    const wrapped = wrapClaudeCodeToolDispatcher(boundary, dispatch);
+    const wrapped = wrapClaudeToolDispatcher(boundary, dispatch);
     await expect(wrapped('bash', { cmd: 'rm -rf /' }, 'run-blocked')).rejects.toBeInstanceOf(
       ClawdstrikeBlockedError,
     );

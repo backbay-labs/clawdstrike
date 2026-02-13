@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { ClawdstrikeBlockedError, CodexToolBoundary, wrapCodexToolDispatcher } from '../../dist/index.js';
+import { ClawdstrikeBlockedError, ClaudeToolBoundary, wrapClaudeToolDispatcher } from '../../dist/index.js';
 
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawdstrike-codex-poc-'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawdstrike-claude-poc-'));
 const blockedSideEffectPath = path.join(tmpDir, 'blocked-side-effect.txt');
 const allowedSideEffectPath = path.join(tmpDir, 'allowed-side-effect.txt');
 
 const report = {
-  scenario: 'codex-fail-closed',
+  scenario: 'claude-fail-closed',
   startedAt: new Date().toISOString(),
   checks: [],
 };
@@ -34,13 +34,13 @@ const engine = {
   },
 };
 
-const boundary = new CodexToolBoundary({
+const boundary = new ClaudeToolBoundary({
   engine,
   config: { blockOnViolation: true },
 });
 
 let dispatchCalls = 0;
-const wrappedDispatch = wrapCodexToolDispatcher(
+const wrappedDispatch = wrapClaudeToolDispatcher(
   boundary,
   async (toolName, input, runId) => {
     dispatchCalls += 1;

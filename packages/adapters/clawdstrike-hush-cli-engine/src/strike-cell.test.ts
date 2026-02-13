@@ -182,7 +182,7 @@ describe('createStrikeCell', () => {
       throw new Error('spawn ENOENT');
     });
 
-    const engine = createHushCliEngine({ policyRef: 'default' });
+    const engine = createStrikeCell({ policyRef: 'default' });
     const decision = await engine.evaluate(exampleEvent);
 
     expect(decision).toMatchObject({

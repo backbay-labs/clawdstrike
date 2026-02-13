@@ -1,12 +1,12 @@
-# Claude Code Fail-Closed POC
+# Claude Fail-Closed POC
 
 Deterministic proof that blocked tool invocations fail closed and do not execute dispatcher side effects.
 
 ## Run
 
 ```bash
-npm --prefix packages/adapters/clawdstrike-claude-code run build
-npm --prefix packages/adapters/clawdstrike-claude-code run poc:fail-closed
+npm --prefix packages/adapters/clawdstrike-claude run build
+npm --prefix packages/adapters/clawdstrike-claude run poc:fail-closed
 ```
 
 ## What it proves

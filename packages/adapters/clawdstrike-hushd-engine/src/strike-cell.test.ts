@@ -98,7 +98,7 @@ describe('createStrikeCell', () => {
 
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
-    const engine = createHushdEngine({ baseUrl: 'http://127.0.0.1:9876' });
+    const engine = createStrikeCell({ baseUrl: 'http://127.0.0.1:9876' });
     await expect(engine.evaluate(exampleEvent)).resolves.toMatchObject({
       status: 'deny',
       reason: 'engine_error',

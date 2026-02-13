@@ -8,15 +8,15 @@ fs.mkdirSync(REPORT_DIR, { recursive: true });
 
 const scenarios = [
   {
-    id: 'codex',
-    name: 'Codex adapter fail-closed boundary',
-    cwd: path.join(REPO_ROOT, 'packages/adapters/clawdstrike-codex'),
+    id: 'openai',
+    name: 'OpenAI adapter fail-closed boundary',
+    cwd: path.join(REPO_ROOT, 'packages/adapters/clawdstrike-openai'),
     command: ['npm', ['run', 'poc:fail-closed']],
   },
   {
-    id: 'claude-code',
-    name: 'Claude Code adapter fail-closed boundary',
-    cwd: path.join(REPO_ROOT, 'packages/adapters/clawdstrike-claude-code'),
+    id: 'claude',
+    name: 'Claude adapter fail-closed boundary',
+    cwd: path.join(REPO_ROOT, 'packages/adapters/clawdstrike-claude'),
     command: ['npm', ['run', 'poc:fail-closed']],
   },
   {

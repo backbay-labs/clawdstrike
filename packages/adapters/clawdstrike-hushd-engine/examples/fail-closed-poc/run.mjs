@@ -1,4 +1,4 @@
-import { createHushdEngine } from '../../dist/index.js';
+import { createStrikeCell } from '../../dist/index.js';
 
 const report = {
   scenario: 'engine-remote-fail-closed',
@@ -13,7 +13,7 @@ function check(name, pass, details = {}) {
   }
 }
 
-const engine = createHushdEngine({
+const engine = createStrikeCell({
   baseUrl: 'http://127.0.0.1:9',
   timeoutMs: 300,
 });
