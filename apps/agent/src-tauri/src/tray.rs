@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 #[allow(dead_code)]
 pub mod menu_ids {
     pub const STATUS: &str = "status";
+    pub const SESSION_INFO: &str = "session_info";
     pub const TOGGLE_ENABLED: &str = "toggle_enabled";
     pub const EVENT_PREFIX: &str = "event_";
     pub const OPEN_DESKTOP: &str = "open_desktop";
@@ -28,6 +29,8 @@ pub struct TrayState {
     pub enabled: bool,
     pub recent_events: Vec<PolicyEvent>,
     pub blocks_today: u32,
+    pub session_info: Option<String>,
+    pub pending_approvals: usize,
 }
 
 impl Default for TrayState {
@@ -37,6 +40,8 @@ impl Default for TrayState {
             enabled: true,
             recent_events: Vec::new(),
             blocks_today: 0,
+            session_info: None,
+            pending_approvals: 0,
         }
     }
 }
@@ -51,6 +56,19 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
     };
 
     let status_item = MenuItem::with_id(app, menu_ids::STATUS, &status_text, false, None::<&str>)?;
+
+    let session_text = state
+        .session_info
+        .as_deref()
+        .unwrap_or("Session: inactive");
+    let session_item = MenuItem::with_id(
+        app,
+        menu_ids::SESSION_INFO,
+        session_text,
+        false,
+        None::<&str>,
+    )?;
+
     let toggle_item = MenuItem::with_id(
         app,
         menu_ids::TOGGLE_ENABLED,
@@ -92,6 +110,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
         app,
         &[
             &status_item,
+            &session_item,
             &toggle_item,
             &sep1,
             &events_submenu,
@@ -161,13 +180,18 @@ fn format_status_text(state: &TrayState) -> String {
         DaemonState::Stopped => "Stopped",
     };
 
+    let mut parts = Vec::new();
     if state.blocks_today > 0 {
-        format!(
-            "{} {} ({} blocks today)",
-            status_icon, status_text, state.blocks_today
-        )
-    } else {
+        parts.push(format!("{} blocks today", state.blocks_today));
+    }
+    if state.pending_approvals > 0 {
+        parts.push(format!("{} pending approvals", state.pending_approvals));
+    }
+
+    if parts.is_empty() {
         format!("{} {}", status_icon, status_text)
+    } else {
+        format!("{} {} ({})", status_icon, status_text, parts.join(", "))
     }
 }
 
@@ -304,6 +328,22 @@ impl<R: Runtime> TrayManager<R> {
     pub async fn set_enabled(&self, enabled: bool) {
         let mut state = self.state.write().await;
         state.enabled = enabled;
+        drop(state);
+        self.refresh_menu().await;
+    }
+
+    /// Update session info displayed in the tray menu.
+    pub async fn set_session_info(&self, info: Option<String>) {
+        let mut state = self.state.write().await;
+        state.session_info = info;
+        drop(state);
+        self.refresh_menu().await;
+    }
+
+    /// Update the pending approvals badge count.
+    pub async fn set_approval_badge(&self, count: usize) {
+        let mut state = self.state.write().await;
+        state.pending_approvals = count;
         drop(state);
         self.refresh_menu().await;
     }

@@ -13,8 +13,11 @@ use async_trait::async_trait;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use crate::text_utils::truncate_to_char_boundary;
+
 use hush_core::{sha256, Hash};
-use unicode_normalization::UnicodeNormalization;
+
+use crate::text_utils;
 
 /// LLM-as-judge interface (optional).
 #[async_trait]
@@ -107,6 +110,20 @@ pub struct JailbreakCanonicalizationStats {
     pub zero_width_stripped: usize,
     pub whitespace_collapsed: bool,
     pub canonical_bytes: usize,
+}
+
+impl From<text_utils::CanonicalizationStats> for JailbreakCanonicalizationStats {
+    fn from(s: text_utils::CanonicalizationStats) -> Self {
+        Self {
+            scanned_bytes: s.scanned_bytes,
+            truncated: s.truncated,
+            nfkc_changed: s.nfkc_changed,
+            casefold_changed: s.casefold_changed,
+            zero_width_stripped: s.zero_width_stripped,
+            whitespace_collapsed: s.whitespace_collapsed,
+            canonical_bytes: s.canonical_bytes,
+        }
+    }
 }
 
 /// Layer enable/disable configuration.
@@ -218,13 +235,6 @@ struct CompiledPattern {
     regex: Regex,
 }
 
-fn compile_hardcoded_regex(pattern: &'static str) -> Regex {
-    Regex::new(pattern).unwrap_or_else(|err| {
-        tracing::error!(error = %err, %pattern, "failed to compile hardcoded regex");
-        Regex::new("a^").unwrap_or_else(|_| Regex::new("a^").unwrap_or_else(|_| unreachable!()))
-    })
-}
-
 fn heuristic_patterns() -> &'static [CompiledPattern] {
     static P: OnceLock<Vec<CompiledPattern>> = OnceLock::new();
     P.get_or_init(|| {
@@ -233,7 +243,7 @@ fn heuristic_patterns() -> &'static [CompiledPattern] {
                 id: "jb_ignore_policy",
                 category: JailbreakCategory::AuthorityConfusion,
                 weight: 0.9,
-                regex: compile_hardcoded_regex(
+                regex: text_utils::compile_hardcoded_regex(
                     r"(?is)\b(ignore|disregard|bypass|override|disable)\b.{0,64}\b(policy|policies|rules|safety|guardrails?)\b",
                 ),
             },
@@ -241,13 +251,13 @@ fn heuristic_patterns() -> &'static [CompiledPattern] {
                 id: "jb_dan_unfiltered",
                 category: JailbreakCategory::RolePlay,
                 weight: 0.9,
-                regex: compile_hardcoded_regex(r"(?is)\b(dan|jailbreak|unfiltered|unrestricted)\b"),
+                regex: text_utils::compile_hardcoded_regex(r"(?is)\b(dan|jailbreak|unfiltered|unrestricted)\b"),
             },
             CompiledPattern {
                 id: "jb_system_prompt_extraction",
                 category: JailbreakCategory::InstructionExtraction,
                 weight: 0.95,
-                regex: compile_hardcoded_regex(
+                regex: text_utils::compile_hardcoded_regex(
                     r"(?is)\b(reveal|show|tell\s+me|repeat|print|output)\b.{0,64}\b(system prompt|developer (message|instructions|prompt)|hidden (instructions|prompt)|system instructions)\b",
                 ),
             },
@@ -255,78 +265,21 @@ fn heuristic_patterns() -> &'static [CompiledPattern] {
                 id: "jb_role_change",
                 category: JailbreakCategory::RolePlay,
                 weight: 0.7,
-                regex: compile_hardcoded_regex(r"(?is)\b(you are now|act as|pretend to be|roleplay)\b"),
+                regex: text_utils::compile_hardcoded_regex(r"(?is)\b(you are now|act as|pretend to be|roleplay)\b"),
             },
             CompiledPattern {
                 id: "jb_encoded_payload",
                 category: JailbreakCategory::EncodingAttack,
                 weight: 0.6,
-                regex: compile_hardcoded_regex(r"(?is)\b(base64|rot13|url[-_ ]?encode|decode)\b"),
+                regex: text_utils::compile_hardcoded_regex(r"(?is)\b(base64|rot13|url[-_ ]?encode|decode)\b"),
             },
         ]
     })
 }
 
-fn is_zero_width_or_formatting(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{180E}'
-            | '\u{200B}'
-            | '\u{200C}'
-            | '\u{200D}'
-            | '\u{200E}'
-            | '\u{200F}'
-            | '\u{202A}'
-            | '\u{202B}'
-            | '\u{202C}'
-            | '\u{202D}'
-            | '\u{202E}'
-            | '\u{2060}'
-            | '\u{2066}'
-            | '\u{2067}'
-            | '\u{2068}'
-            | '\u{2069}'
-            | '\u{FEFF}'
-    )
-}
-
-fn truncate_to_char_boundary(text: &str, max_bytes: usize) -> (&str, bool) {
-    if text.len() <= max_bytes {
-        return (text, false);
-    }
-    let mut end = max_bytes.min(text.len());
-    while end > 0 && !text.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
-    (&text[..end], end < text.len())
-}
-
 fn canonicalize_for_detection(text: &str) -> (String, JailbreakCanonicalizationStats) {
-    let mut stats = JailbreakCanonicalizationStats {
-        scanned_bytes: text.len(),
-        ..Default::default()
-    };
-
-    let nfkc: String = text.nfkc().collect();
-    stats.nfkc_changed = nfkc != text;
-
-    let folded: String = nfkc.chars().flat_map(|c| c.to_lowercase()).collect();
-    stats.casefold_changed = folded != nfkc;
-
-    let mut stripped = String::with_capacity(folded.len());
-    for c in folded.chars() {
-        if is_zero_width_or_formatting(c) {
-            stats.zero_width_stripped = stats.zero_width_stripped.saturating_add(1);
-            continue;
-        }
-        stripped.push(c);
-    }
-
-    let collapsed = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
-    stats.whitespace_collapsed = collapsed != stripped;
-    stats.canonical_bytes = collapsed.len();
-    (collapsed, stats)
+    let (canonical, stats) = text_utils::canonicalize_for_detection(text);
+    (canonical, JailbreakCanonicalizationStats::from(stats))
 }
 
 fn punctuation_ratio(s: &str) -> f32 {

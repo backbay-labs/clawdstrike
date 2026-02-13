@@ -24,8 +24,7 @@ describe('policyCheckTool', () => {
       resource: '/tmp/test.txt',
     } as any);
 
-    expect(result.allowed).toBe(true);
-    expect(result.denied).toBe(false);
+    expect(result.status).toBe('allow');
   });
 
   it('returns denied for blocked action', async () => {
@@ -37,8 +36,7 @@ describe('policyCheckTool', () => {
       resource: `${homedir()}/.ssh/id_rsa`,
     } as any);
 
-    expect(result.allowed).toBe(false);
-    expect(result.denied).toBe(true);
+    expect(result.status).toBe('deny');
     expect(result.guard).toBe('forbidden_path');
   });
 
@@ -64,7 +62,7 @@ describe('policyCheckTool', () => {
       resource: 'https://evil.com',
     } as any);
 
-    expect(result.denied).toBe(true);
+    expect(result.status).toBe('deny');
     expect(result.suggestion).toContain('allowed domain');
   });
 });

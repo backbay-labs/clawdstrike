@@ -1,8 +1,8 @@
 //! Provider webhook endpoints (Okta/Auth0).
 
-use axum::{extract::State, http::StatusCode, Json};
-use serde::Deserialize;
+use axum::{extract::State, Json};
 
+use crate::api::v1::V1Error;
 use crate::config::expand_env_refs;
 use crate::state::AppState;
 
@@ -36,7 +36,7 @@ fn extract_bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
     Some(token.to_string())
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 struct OktaVerificationChallenge {
     #[serde(default)]
     verification: Option<String>,
@@ -47,9 +47,12 @@ pub async fn okta_webhook(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     body: String,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, V1Error> {
     let Some(okta) = state.config.identity.okta.as_ref() else {
-        return Err((StatusCode::NOT_FOUND, "okta_not_configured".to_string()));
+        return Err(V1Error::not_found(
+            "OKTA_NOT_CONFIGURED",
+            "okta_not_configured",
+        ));
     };
 
     // Support Okta verification challenge (initial setup).
@@ -60,29 +63,29 @@ pub async fn okta_webhook(
     }
 
     let Some(webhooks) = okta.webhooks.as_ref() else {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "okta_webhooks_not_configured".to_string(),
+        return Err(V1Error::not_found(
+            "OKTA_WEBHOOKS_NOT_CONFIGURED",
+            "okta_webhooks_not_configured",
         ));
     };
 
     let expected = expand_env_refs(&webhooks.verification_key)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("CONFIG_ERROR", e.to_string()))?;
     let Some(token) = extract_bearer_token(&headers) else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "missing_authorization".to_string(),
+        return Err(V1Error::unauthorized(
+            "MISSING_AUTHORIZATION",
+            "missing_authorization",
         ));
     };
     if !timing_safe_eq(&token, &expected) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "invalid_authorization".to_string(),
+        return Err(V1Error::unauthorized(
+            "INVALID_AUTHORIZATION",
+            "invalid_authorization",
         ));
     }
 
-    let payload: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let payload: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| V1Error::bad_request("INVALID_JSON", e.to_string()))?;
 
     // Okta Event Hooks include an array under data.events.
     let mut terminated = 0u64;
@@ -160,34 +163,37 @@ pub async fn auth0_webhook(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     body: String,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, V1Error> {
     let Some(auth0) = state.config.identity.auth0.as_ref() else {
-        return Err((StatusCode::NOT_FOUND, "auth0_not_configured".to_string()));
+        return Err(V1Error::not_found(
+            "AUTH0_NOT_CONFIGURED",
+            "auth0_not_configured",
+        ));
     };
     let Some(log_stream) = auth0.log_stream.as_ref() else {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "auth0_log_stream_not_configured".to_string(),
+        return Err(V1Error::not_found(
+            "AUTH0_LOG_STREAM_NOT_CONFIGURED",
+            "auth0_log_stream_not_configured",
         ));
     };
 
     let expected = expand_env_refs(&log_stream.authorization)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("CONFIG_ERROR", e.to_string()))?;
     let Some(token) = extract_bearer_token(&headers) else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "missing_authorization".to_string(),
+        return Err(V1Error::unauthorized(
+            "MISSING_AUTHORIZATION",
+            "missing_authorization",
         ));
     };
     if !timing_safe_eq(&token, &expected) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "invalid_authorization".to_string(),
+        return Err(V1Error::unauthorized(
+            "INVALID_AUTHORIZATION",
+            "invalid_authorization",
         ));
     }
 
-    let payload: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let payload: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| V1Error::bad_request("INVALID_JSON", e.to_string()))?;
 
     let mut terminated = 0u64;
     for (event_type, user_id) in extract_auth0_events(&payload) {

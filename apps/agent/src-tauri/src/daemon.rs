@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
 const READY_MAX_ATTEMPTS: usize = 40;
 const READY_POLL_DELAY: Duration = Duration::from_millis(150);
@@ -330,6 +330,180 @@ impl DaemonManager {
     }
 }
 
+// ---- Policy cache for offline fallback mode ----
+
+/// Path for the cached policy bundle.
+fn policy_cache_path() -> PathBuf {
+    crate::settings::get_config_dir().join("policy-cache.yaml")
+}
+
+/// Persistent policy cache that stores the last-known-good policy bundle
+/// fetched from hushd. When hushd is unreachable the agent can fall back
+/// to this cached copy.
+pub struct PolicyCache {
+    http_client: reqwest::Client,
+    cached_policy: Mutex<Option<String>>,
+}
+
+impl PolicyCache {
+    pub fn new() -> Self {
+        let cached = std::fs::read_to_string(policy_cache_path()).ok();
+        Self {
+            http_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
+            cached_policy: Mutex::new(cached),
+        }
+    }
+
+    /// Fetch the policy bundle from hushd and persist it to disk.
+    pub async fn sync_from_daemon(&self, daemon_url: &str, api_key: Option<&str>) -> Result<()> {
+        let url = format!("{}/api/v1/policy/bundle", daemon_url);
+        let mut request = self.http_client.get(&url);
+        if let Some(key) = api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("Failed to fetch policy bundle from {}", url))?;
+
+        if !response.status().is_success() {
+            anyhow::bail!("Policy bundle endpoint returned {}", response.status());
+        }
+
+        let body = response
+            .text()
+            .await
+            .with_context(|| "Failed to read policy bundle response body")?;
+
+        // Persist to disk.
+        let path = policy_cache_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create policy cache directory {:?}", parent))?;
+        }
+        std::fs::write(&path, &body)
+            .with_context(|| format!("Failed to write policy cache to {:?}", path))?;
+
+        *self.cached_policy.lock().await = Some(body);
+        tracing::info!(path = ?path, "Policy cache updated");
+        Ok(())
+    }
+
+    /// Return the last-known-good cached policy YAML, if any.
+    #[allow(dead_code)]
+    pub async fn cached_policy(&self) -> Option<String> {
+        self.cached_policy.lock().await.clone()
+    }
+
+    /// Start a periodic sync loop that refreshes the policy cache from hushd.
+    pub fn start_periodic_sync(
+        self: &Arc<Self>,
+        daemon_url: String,
+        api_key: Option<String>,
+        mut shutdown_rx: broadcast::Receiver<()>,
+    ) {
+        let cache = Arc::clone(self);
+        tokio::spawn(async move {
+            let sync_interval = Duration::from_secs(300); // 5 minutes
+            loop {
+                tokio::select! {
+                    _ = shutdown_rx.recv() => {
+                        tracing::debug!("Policy cache sync loop shutting down");
+                        break;
+                    }
+                    _ = tokio::time::sleep(sync_interval) => {
+                        if let Err(err) = cache.sync_from_daemon(&daemon_url, api_key.as_deref()).await {
+                            tracing::debug!(error = %err, "Periodic policy cache sync failed (daemon may be offline)");
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Queued audit events for offline mode.
+/// Stores events that were generated while hushd was unreachable so they
+/// can be uploaded when connectivity is restored.
+pub struct AuditQueue {
+    queue: Mutex<Vec<serde_json::Value>>,
+    http_client: reqwest::Client,
+}
+
+impl AuditQueue {
+    pub fn new() -> Self {
+        Self {
+            queue: Mutex::new(Vec::new()),
+            http_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
+        }
+    }
+
+    /// Enqueue an audit event to be uploaded later.
+    #[allow(dead_code)]
+    pub async fn enqueue(&self, event: serde_json::Value) {
+        let mut queue = self.queue.lock().await;
+        // Cap at 1000 queued events to bound memory.
+        if queue.len() < 1000 {
+            queue.push(event);
+        } else {
+            tracing::warn!("Audit queue is full (1000 events); dropping oldest event");
+            queue.remove(0);
+            queue.push(event);
+        }
+    }
+
+    /// Drain all queued events and upload them to hushd.
+    pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<usize> {
+        let events: Vec<serde_json::Value> = {
+            let mut queue = self.queue.lock().await;
+            std::mem::take(&mut *queue)
+        };
+
+        if events.is_empty() {
+            return Ok(0);
+        }
+
+        let count = events.len();
+        let url = format!("{}/api/v1/audit/batch", daemon_url);
+        let mut request = self.http_client.post(&url).json(&serde_json::json!({
+            "events": events,
+        }));
+        if let Some(key) = api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = request
+            .send()
+            .await
+            .with_context(|| "Failed to flush audit queue to daemon")?;
+
+        if !response.status().is_success() {
+            // Re-queue on failure.
+            let mut queue = self.queue.lock().await;
+            let mut restored = events;
+            restored.append(&mut std::mem::take(&mut *queue));
+            restored.truncate(1000);
+            *queue = restored;
+            anyhow::bail!("Audit batch upload returned {}", response.status());
+        }
+
+        tracing::info!(count, "Flushed queued audit events to daemon");
+        Ok(count)
+    }
+
+    /// Number of events currently queued.
+    pub async fn len(&self) -> usize {
+        self.queue.lock().await.len()
+    }
+}
+
 async fn spawn_child_into_slot(
     config: &DaemonConfig,
     child_slot: &Arc<RwLock<Option<Child>>>,
@@ -590,5 +764,32 @@ mod tests {
     fn backoff_is_bounded() {
         let backoff = compute_backoff(10, 10);
         assert!(backoff <= Duration::from_millis(20_500));
+    }
+
+    #[tokio::test]
+    async fn audit_queue_enqueue_and_len() {
+        let queue = AuditQueue::new();
+        assert_eq!(queue.len().await, 0);
+        queue.enqueue(serde_json::json!({"id": "1"})).await;
+        queue.enqueue(serde_json::json!({"id": "2"})).await;
+        assert_eq!(queue.len().await, 2);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_caps_at_limit() {
+        let queue = AuditQueue::new();
+        for i in 0..1001 {
+            queue
+                .enqueue(serde_json::json!({"id": i.to_string()}))
+                .await;
+        }
+        assert_eq!(queue.len().await, 1000);
+    }
+
+    #[tokio::test]
+    async fn policy_cache_returns_none_initially() {
+        let cache = PolicyCache::new();
+        // May or may not have a cached file on disk; just verify the method works.
+        let _ = cache.cached_policy().await;
     }
 }

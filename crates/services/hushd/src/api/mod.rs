@@ -24,6 +24,7 @@ use axum::{
     Router,
 };
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::auth::{require_auth, scope_layer, Scope};
@@ -33,7 +34,7 @@ use crate::v1_rate_limit::v1_rate_limit_middleware;
 
 pub use audit::{AuditQuery, AuditResponse, AuditStatsResponse};
 pub use check::{CheckRequest, CheckResponse};
-pub use health::HealthResponse;
+pub use health::{HealthResponse, ReadinessResponse};
 pub use me::MeResponse;
 pub use metrics as metrics_api;
 pub use policy::{
@@ -67,6 +68,7 @@ pub fn create_router(state: AppState) -> Router {
     // Public routes - no auth required
     let public_routes = Router::new()
         .route("/health", get(health::health))
+        .route("/ready", get(health::ready))
         .route("/.well-known/ca.json", get(certification::well_known_ca))
         .route("/verify/{certificationId}", get(certification::verify_page))
         .route("/api/v1/webhooks/okta", post(webhooks::okta_webhook))
@@ -314,6 +316,8 @@ pub fn create_router(state: AppState) -> Router {
 
     // Note: Rate limiting is applied to all routes except /health (handled in middleware).
     // CORS is applied only if enabled in config.
+    let max_body = state.config.max_request_body_bytes;
+
     let app = Router::new()
         .merge(public_routes)
         .nest("/v1", v1_routes)
@@ -330,6 +334,13 @@ pub fn create_router(state: AppState) -> Router {
             metrics::metrics_middleware,
         ))
         .with_state(state);
+
+    // Apply request body size limit (0 means no limit).
+    let app = if max_body > 0 {
+        app.layer(RequestBodyLimitLayer::new(max_body))
+    } else {
+        app
+    };
 
     if cors_enabled {
         app.layer(cors)

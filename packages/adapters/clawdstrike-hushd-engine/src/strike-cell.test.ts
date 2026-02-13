@@ -104,4 +104,111 @@ describe('createStrikeCell', () => {
       reason: 'engine_error',
     });
   });
+
+  it('uses fallback engine on connectivity error when offlineFallback is enabled', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED 127.0.0.1:9876');
+    });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const fallback = {
+      evaluate: vi.fn(async () => ({
+        status: 'allow' as const,
+        guard: 'cached_policy',
+        message: 'Allowed by cached policy',
+      })),
+    };
+
+    const engine = createStrikeCell({
+      baseUrl: 'http://127.0.0.1:9876',
+      fallback,
+      offlineFallback: true,
+    });
+
+    const decision = await engine.evaluate(exampleEvent);
+    expect(decision.status).toBe('allow');
+    expect(decision.details).toMatchObject({ provenance: { mode: 'degraded' } });
+    expect(fallback.evaluate).toHaveBeenCalledWith(exampleEvent);
+  });
+
+  it('does not use fallback on server-side errors (non-connectivity)', async () => {
+    const fetchMock = vi.fn(async () => {
+      return {
+        ok: false,
+        status: 500,
+        text: async () => 'internal error',
+      };
+    });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const fallback = {
+      evaluate: vi.fn(async () => ({
+        status: 'allow' as const,
+      })),
+    };
+
+    const engine = createStrikeCell({
+      baseUrl: 'http://127.0.0.1:9876',
+      fallback,
+      offlineFallback: true,
+    });
+
+    const decision = await engine.evaluate(exampleEvent);
+    expect(decision.status).toBe('deny');
+    expect(decision.reason).toBe('engine_error');
+    // Fallback should NOT be called for server errors.
+    expect(fallback.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('falls back to fail-closed when offlineFallback is disabled', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const fallback = {
+      evaluate: vi.fn(async () => ({
+        status: 'allow' as const,
+      })),
+    };
+
+    const engine = createStrikeCell({
+      baseUrl: 'http://127.0.0.1:9876',
+      fallback,
+      offlineFallback: false,
+    });
+
+    const decision = await engine.evaluate(exampleEvent);
+    expect(decision.status).toBe('deny');
+    expect(decision.reason).toBe('engine_error');
+    expect(fallback.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when fallback engine itself throws', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const fallback = {
+      evaluate: vi.fn(async () => {
+        throw new Error('fallback engine broken');
+      }),
+    };
+
+    const engine = createStrikeCell({
+      baseUrl: 'http://127.0.0.1:9876',
+      fallback,
+      offlineFallback: true,
+    });
+
+    const decision = await engine.evaluate(exampleEvent);
+    expect(decision.status).toBe('deny');
+    expect(decision.reason).toBe('engine_error');
+    expect(decision.message).toContain('fallback engine broken');
+  });
 });

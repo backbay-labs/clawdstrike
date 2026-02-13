@@ -1,7 +1,6 @@
 //! Authorization helpers for hushd endpoints.
 
-use axum::http::StatusCode;
-
+use crate::api::v1::V1Error;
 use crate::auth::{AuthenticatedActor, Scope};
 use crate::rbac::{Action, ResourceRef, ResourceType, RoleScope};
 
@@ -11,7 +10,7 @@ pub fn require_api_key_scope_or_user_permission(
     required_scope_for_api_keys: Scope,
     resource: ResourceType,
     action: Action,
-) -> Result<(), (StatusCode, String)> {
+) -> Result<(), V1Error> {
     let Some(actor) = actor else {
         // Auth disabled: allow (hushd is in a trusted environment).
         return Ok(());
@@ -20,24 +19,27 @@ pub fn require_api_key_scope_or_user_permission(
     match actor {
         AuthenticatedActor::ApiKey(key) => {
             if !key.has_scope(required_scope_for_api_keys) {
-                return Err((StatusCode::FORBIDDEN, "insufficient_scope".to_string()));
+                return Err(V1Error::forbidden(
+                    "INSUFFICIENT_SCOPE",
+                    "insufficient_scope",
+                ));
             }
             Ok(())
         }
         AuthenticatedActor::User(principal) => {
             let result = rbac
                 .check_permission_for_identity(principal, resource, action)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                .map_err(|e| V1Error::internal("RBAC_ERROR", e.to_string()))?;
 
             if result.allowed {
                 return Ok(());
             }
 
             if result.requires_approval == Some(true) {
-                return Err((StatusCode::FORBIDDEN, "approval_required".to_string()));
+                return Err(V1Error::forbidden("APPROVAL_REQUIRED", "approval_required"));
             }
 
-            Err((StatusCode::FORBIDDEN, result.reason))
+            Err(V1Error::forbidden("PERMISSION_DENIED", result.reason))
         }
     }
 }
@@ -49,7 +51,7 @@ pub fn require_api_key_scope_or_user_permission_with_context(
     resource: ResourceRef,
     action: Action,
     scope: Option<RoleScope>,
-) -> Result<(), (StatusCode, String)> {
+) -> Result<(), V1Error> {
     let Some(actor) = actor else {
         // Auth disabled: allow (hushd is in a trusted environment).
         return Ok(());
@@ -58,24 +60,27 @@ pub fn require_api_key_scope_or_user_permission_with_context(
     match actor {
         AuthenticatedActor::ApiKey(key) => {
             if !key.has_scope(required_scope_for_api_keys) {
-                return Err((StatusCode::FORBIDDEN, "insufficient_scope".to_string()));
+                return Err(V1Error::forbidden(
+                    "INSUFFICIENT_SCOPE",
+                    "insufficient_scope",
+                ));
             }
             Ok(())
         }
         AuthenticatedActor::User(principal) => {
             let result = rbac
                 .check_permission_for_identity_with_context(principal, resource, action, scope)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                .map_err(|e| V1Error::internal("RBAC_ERROR", e.to_string()))?;
 
             if result.allowed {
                 return Ok(());
             }
 
             if result.requires_approval == Some(true) {
-                return Err((StatusCode::FORBIDDEN, "approval_required".to_string()));
+                return Err(V1Error::forbidden("APPROVAL_REQUIRED", "approval_required"));
             }
 
-            Err((StatusCode::FORBIDDEN, result.reason))
+            Err(V1Error::forbidden("PERMISSION_DENIED", result.reason))
         }
     }
 }

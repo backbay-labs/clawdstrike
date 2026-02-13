@@ -133,12 +133,36 @@ const SECRET_PATTERNS: SecretPattern[] = [
     description: 'Stripe Test Secret Key',
   },
 
+  // Stripe Restricted Key
+  {
+    name: 'stripe_restricted_key',
+    pattern: /rk_live_[A-Za-z0-9]{24,}/g,
+    severity: 'critical',
+    description: 'Stripe Live Restricted Key',
+  },
+
   // Slack
   {
     name: 'slack_token',
     pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g,
     severity: 'high',
     description: 'Slack Token',
+  },
+
+  // Azure Key Vault
+  {
+    name: 'azure_key_vault_token',
+    pattern: /azure[_-]?(?:key[_-]?vault|kv)[_-]?(?:secret|token|key)['""]?\s*[:=]\s*['""]?[A-Za-z0-9+/=_-]{32,}/gi,
+    severity: 'critical',
+    description: 'Azure Key Vault Secret',
+  },
+
+  // GitLab Personal Access Token
+  {
+    name: 'gitlab_pat',
+    pattern: /glpat-[A-Za-z0-9_-]{20,}/g,
+    severity: 'critical',
+    description: 'GitLab Personal Access Token',
   },
 
   // Generic high-entropy (likely secrets)

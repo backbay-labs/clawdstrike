@@ -1,8 +1,9 @@
 //! Shutdown endpoint
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
 use serde::Serialize;
 
+use crate::api::v1::V1Error;
 use crate::auth::{AuthenticatedActor, Scope};
 use crate::authz::require_api_key_scope_or_user_permission;
 use crate::rbac::{Action, ResourceType};
@@ -17,7 +18,7 @@ pub struct ShutdownResponse {
 pub async fn shutdown(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<ShutdownResponse>, (StatusCode, String)> {
+) -> Result<Json<ShutdownResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,

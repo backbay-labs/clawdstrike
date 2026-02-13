@@ -124,6 +124,30 @@ impl V1Error {
         }
     }
 
+    pub fn bad_request(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, code, message)
+    }
+
+    pub fn unauthorized(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, code, message)
+    }
+
+    pub fn forbidden(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, code, message)
+    }
+
+    pub fn not_found(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, code, message)
+    }
+
+    pub fn conflict(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, code, message)
+    }
+
+    pub fn internal(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, code, message)
+    }
+
     pub fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
         self
@@ -132,6 +156,18 @@ impl V1Error {
     pub fn with_retry_after(mut self, retry_after: u64) -> Self {
         self.retry_after = Some(retry_after);
         self
+    }
+}
+
+impl From<(StatusCode, String)> for V1Error {
+    fn from((status, message): (StatusCode, String)) -> Self {
+        let code = message
+            .split_once(':')
+            .map(|(c, _)| c)
+            .unwrap_or(&message)
+            .to_uppercase()
+            .replace(' ', "_");
+        Self::new(status, code, message)
     }
 }
 

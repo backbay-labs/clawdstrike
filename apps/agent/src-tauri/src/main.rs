@@ -9,6 +9,7 @@
 
 mod agent_auth;
 mod api_server;
+mod approval;
 mod daemon;
 mod decision;
 mod events;
@@ -16,12 +17,15 @@ mod integrations;
 mod notifications;
 mod openclaw;
 mod policy;
+mod session;
 mod settings;
 mod tray;
 
 use agent_auth::ensure_local_api_token;
 use api_server::AgentApiServer;
-use daemon::{find_hushd_binary, DaemonConfig, DaemonManager, DaemonState};
+use approval::ApprovalQueue;
+use daemon::{find_hushd_binary, AuditQueue, DaemonConfig, DaemonManager, DaemonState, PolicyCache};
+use session::SessionManager;
 use events::EventManager;
 use integrations::{ClaudeCodeIntegration, McpServer};
 use notifications::{
@@ -46,6 +50,10 @@ struct AppState {
     daemon_manager: Arc<DaemonManager>,
     event_manager: Arc<EventManager>,
     openclaw_manager: OpenClawManager,
+    session_manager: Arc<SessionManager>,
+    approval_queue: Arc<ApprovalQueue>,
+    policy_cache: Arc<PolicyCache>,
+    audit_queue: Arc<AuditQueue>,
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
     shutdown_complete: Arc<ShutdownComplete>,
@@ -133,6 +141,10 @@ fn main() {
     let daemon_manager = Arc::new(DaemonManager::new(daemon_config));
     let event_manager = Arc::new(EventManager::new(daemon_url, daemon_api_key));
     let openclaw_manager = OpenClawManager::new(settings.clone());
+    let session_manager = Arc::new(SessionManager::new());
+    let approval_queue = Arc::new(ApprovalQueue::new());
+    let policy_cache = Arc::new(PolicyCache::new());
+    let audit_queue = Arc::new(AuditQueue::new());
     let (shutdown_tx, _) = broadcast::channel::<()>(4);
     let shutdown_complete = Arc::new(ShutdownComplete::new());
 
@@ -141,6 +153,10 @@ fn main() {
         daemon_manager,
         event_manager,
         openclaw_manager: openclaw_manager.clone(),
+        session_manager,
+        approval_queue,
+        policy_cache,
+        audit_queue,
         shutdown_tx: shutdown_tx.clone(),
         agent_api_token,
         shutdown_complete: shutdown_complete.clone(),
@@ -153,6 +169,10 @@ fn main() {
         .manage(app_state.daemon_manager.clone())
         .manage(app_state.event_manager.clone())
         .manage(app_state.openclaw_manager.clone())
+        .manage(app_state.session_manager.clone())
+        .manage(app_state.approval_queue.clone())
+        .manage(app_state.policy_cache.clone())
+        .manage(app_state.audit_queue.clone())
         .manage(app_state.shutdown_tx.clone())
         .manage(app_state.shutdown_complete.clone())
         .setup(move |app| {
@@ -165,6 +185,10 @@ fn main() {
             let daemon_manager = app_state.daemon_manager.clone();
             let event_manager = app_state.event_manager.clone();
             let openclaw_manager = app_state.openclaw_manager.clone();
+            let session_manager = app_state.session_manager.clone();
+            let approval_queue = app_state.approval_queue.clone();
+            let policy_cache = app_state.policy_cache.clone();
+            let audit_queue = app_state.audit_queue.clone();
             let settings = app_state.settings.clone();
             let shutdown_tx = app_state.shutdown_tx.clone();
             let agent_api_token = app_state.agent_api_token.clone();
@@ -176,6 +200,10 @@ fn main() {
                     daemon_manager,
                     event_manager,
                     openclaw_manager,
+                    session_manager,
+                    approval_queue,
+                    policy_cache,
+                    audit_queue,
                     tray_manager,
                     settings,
                     shutdown_tx,
@@ -217,6 +245,10 @@ async fn run_agent<R: Runtime>(
     daemon_manager: Arc<DaemonManager>,
     event_manager: Arc<EventManager>,
     openclaw_manager: OpenClawManager,
+    session_manager: Arc<SessionManager>,
+    approval_queue: Arc<ApprovalQueue>,
+    policy_cache: Arc<PolicyCache>,
+    audit_queue: Arc<AuditQueue>,
     tray_manager: Arc<TrayManager<R>>,
     settings: Arc<RwLock<Settings>>,
     shutdown_tx: broadcast::Sender<()>,
@@ -230,13 +262,93 @@ async fn run_agent<R: Runtime>(
     } else {
         tray_manager.set_daemon_state(DaemonState::Running).await;
         show_startup_notification(&app);
+
+        let (daemon_url, api_key) = {
+            let guard = settings.read().await;
+            (guard.daemon_url(), guard.api_key.clone())
+        };
+
+        // Create session with hushd.
+        match session_manager
+            .create_session(&daemon_url, api_key.as_deref())
+            .await
+        {
+            Ok(session_id) => {
+                tracing::info!(session_id = %session_id, "Session established with hushd");
+                // Start session heartbeat loop.
+                session_manager.start_heartbeat(
+                    daemon_url.clone(),
+                    api_key.clone(),
+                    shutdown_tx.subscribe(),
+                );
+                // Update tray with session info.
+                let session_state = session_manager.state().await;
+                tray_manager.set_session_info(Some(session_state.summary())).await;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "Failed to create session with hushd (continuing without session)");
+            }
+        }
+
+        // Initial policy cache sync after successful daemon startup.
+        if let Err(err) = policy_cache
+            .sync_from_daemon(&daemon_url, api_key.as_deref())
+            .await
+        {
+            tracing::warn!(error = %err, "Initial policy cache sync failed");
+        }
+
+        // Start periodic policy cache sync.
+        policy_cache.start_periodic_sync(
+            daemon_url.clone(),
+            api_key.clone(),
+            shutdown_tx.subscribe(),
+        );
+
+        // Flush any queued audit events from a previous offline period.
+        if audit_queue.len().await > 0 {
+            match audit_queue.flush(&daemon_url, api_key.as_deref()).await {
+                Ok(count) => tracing::info!(count, "Flushed queued audit events on startup"),
+                Err(err) => tracing::warn!(error = %err, "Failed to flush queued audit events"),
+            }
+        }
     }
 
     let mut daemon_rx = daemon_manager.subscribe();
     let tray_for_daemon = tray_manager.clone();
+    let audit_queue_for_daemon = audit_queue.clone();
+    let policy_cache_for_daemon = policy_cache.clone();
+    let settings_for_daemon = settings.clone();
     tokio::spawn(async move {
         while let Ok(state) = daemon_rx.recv().await {
-            tray_for_daemon.set_daemon_state(state).await;
+            tray_for_daemon.set_daemon_state(state.clone()).await;
+
+            // On reconnect: flush queued audit events and resync policy cache.
+            if state == DaemonState::Running {
+                let (daemon_url, api_key) = {
+                    let guard = settings_for_daemon.read().await;
+                    (guard.daemon_url(), guard.api_key.clone())
+                };
+                if audit_queue_for_daemon.len().await > 0 {
+                    match audit_queue_for_daemon
+                        .flush(&daemon_url, api_key.as_deref())
+                        .await
+                    {
+                        Ok(count) => {
+                            tracing::info!(count, "Flushed queued audit events after reconnect")
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = %err, "Failed to flush audit queue after reconnect")
+                        }
+                    }
+                }
+                if let Err(err) = policy_cache_for_daemon
+                    .sync_from_daemon(&daemon_url, api_key.as_deref())
+                    .await
+                {
+                    tracing::debug!(error = %err, "Policy cache resync after reconnect failed");
+                }
+            }
         }
     });
 
@@ -253,6 +365,118 @@ async fn run_agent<R: Runtime>(
         while let Ok(event) = events_rx.recv().await {
             tray_for_events.add_event(event.clone()).await;
             notification_manager.notify(&event).await;
+        }
+    });
+
+    // Subscribe to daemon-level SSE events (policy updates, violations, posture transitions).
+    let mut daemon_events_rx = event_manager.subscribe_daemon_events();
+    let policy_cache_for_sse = policy_cache.clone();
+    let session_manager_for_sse = session_manager.clone();
+    let tray_for_sse = tray_manager.clone();
+    let app_for_sse = app.clone();
+    let settings_for_sse = settings.clone();
+    tokio::spawn(async move {
+        use crate::events::DaemonEvent;
+
+        while let Ok(event) = daemon_events_rx.recv().await {
+            match event {
+                DaemonEvent::PolicyUpdated { version } => {
+                    tracing::info!(version = ?version, "Received policy_updated event from hushd");
+                    let (daemon_url, api_key) = {
+                        let guard = settings_for_sse.read().await;
+                        (guard.daemon_url(), guard.api_key.clone())
+                    };
+                    if let Err(err) = policy_cache_for_sse
+                        .sync_from_daemon(&daemon_url, api_key.as_deref())
+                        .await
+                    {
+                        tracing::warn!(error = %err, "Failed to refresh policy cache after update event");
+                    } else {
+                        show_policy_reload_notification(&app_for_sse, true);
+                    }
+                }
+                DaemonEvent::Violation {
+                    guard,
+                    message,
+                    severity,
+                    target,
+                } => {
+                    tracing::info!(
+                        guard = ?guard,
+                        severity = ?severity,
+                        target = ?target,
+                        "Received violation event from hushd"
+                    );
+                    let title = format!(
+                        "Security Violation{}",
+                        guard
+                            .as_ref()
+                            .map(|g| format!(" ({})", g))
+                            .unwrap_or_default()
+                    );
+                    let body = message.unwrap_or_else(|| {
+                        target.unwrap_or_else(|| "Unknown target".to_string())
+                    });
+                    notifications::show_notification(&app_for_sse, &title, &body);
+                }
+                DaemonEvent::SessionPostureTransition {
+                    from,
+                    to,
+                    ..
+                } => {
+                    let new_posture = to.unwrap_or_else(|| "unknown".to_string());
+                    let old_posture = from.unwrap_or_else(|| "unknown".to_string());
+                    tracing::info!(
+                        from = %old_posture,
+                        to = %new_posture,
+                        "Session posture transition"
+                    );
+                    let session_state = session_manager_for_sse.state().await;
+                    let summary = if session_state.session_id.is_some() {
+                        format!(
+                            "Session: active | Posture: {}",
+                            new_posture
+                        )
+                    } else {
+                        format!("Posture: {}", new_posture)
+                    };
+                    tray_for_sse.set_session_info(Some(summary)).await;
+
+                    let body = format!(
+                        "Posture changed from {} to {}",
+                        old_posture, new_posture
+                    );
+                    notifications::show_notification(
+                        &app_for_sse,
+                        "Posture Transition",
+                        &body,
+                    );
+                }
+            }
+        }
+    });
+
+    // Start approval queue cleanup loop and event handler.
+    approval_queue.start_cleanup(shutdown_tx.subscribe());
+    let mut approval_events_rx = approval_queue.subscribe();
+    let tray_for_approvals = tray_manager.clone();
+    let app_for_approvals = app.clone();
+    let approval_queue_for_events = approval_queue.clone();
+    tokio::spawn(async move {
+        while let Ok(event) = approval_events_rx.recv().await {
+            match &event {
+                approval::ApprovalEvent::NewRequest { request } => {
+                    let title = format!("Approval Required: {}", request.tool);
+                    let body = format!("{}\n{}", request.resource, request.reason);
+                    notifications::show_notification(&app_for_approvals, &title, &body);
+                    let count = approval_queue_for_events.pending_count().await;
+                    tray_for_approvals.set_approval_badge(count).await;
+                }
+                approval::ApprovalEvent::Resolved { .. } | approval::ApprovalEvent::Expired { .. } => {
+                    let count = approval_queue_for_events.pending_count().await;
+                    tray_for_approvals.set_approval_badge(count).await;
+                }
+            }
         }
     });
 
@@ -273,6 +497,8 @@ async fn run_agent<R: Runtime>(
         api_port,
         settings.clone(),
         daemon_manager.clone(),
+        session_manager.clone(),
+        approval_queue.clone(),
         openclaw_manager.clone(),
         agent_api_token,
     );
@@ -357,6 +583,21 @@ async fn run_agent<R: Runtime>(
     let _ = shutdown_rx.recv().await;
 
     openclaw_manager.shutdown().await;
+
+    // Terminate session before stopping daemon.
+    {
+        let (daemon_url, api_key) = {
+            let guard = settings.read().await;
+            (guard.daemon_url(), guard.api_key.clone())
+        };
+        if let Err(err) = session_manager
+            .terminate_session(&daemon_url, api_key.as_deref())
+            .await
+        {
+            tracing::warn!(error = %err, "Failed to terminate session during shutdown");
+        }
+    }
+
     if let Err(err) = daemon_manager.stop().await {
         tracing::error!("Error during daemon shutdown: {}", err);
     }

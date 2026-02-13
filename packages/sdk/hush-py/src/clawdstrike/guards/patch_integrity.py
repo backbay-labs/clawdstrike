@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Tuple
+import re
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
 
@@ -16,13 +17,21 @@ class PatchIntegrityConfig:
     max_deletions: int = 500
     require_balance: bool = False
     max_imbalance_ratio: float = 5.0
+    forbidden_patterns: List[str] = field(default_factory=list)
 
 
 class PatchIntegrityGuard(Guard):
-    """Guard that validates patch size and balance."""
+    """Guard that validates patch size, balance, and forbidden patterns."""
 
     def __init__(self, config: Optional[PatchIntegrityConfig] = None) -> None:
         self._config = config or PatchIntegrityConfig()
+        self._compiled_forbidden: List[tuple[str, re.Pattern[str]]] = []
+        for pattern_str in self._config.forbidden_patterns:
+            try:
+                compiled = re.compile(pattern_str)
+                self._compiled_forbidden.append((pattern_str, compiled))
+            except re.error:
+                pass  # Skip invalid patterns
 
     @property
     def name(self) -> str:
@@ -32,16 +41,11 @@ class PatchIntegrityGuard(Guard):
         return action.action_type == "patch"
 
     def _count_changes(self, diff: str) -> Tuple[int, int]:
-        """Count additions and deletions in a diff.
-
-        Returns:
-            Tuple of (additions, deletions)
-        """
+        """Count additions and deletions in a diff."""
         additions = 0
         deletions = 0
 
         for line in diff.split("\n"):
-            # Skip diff headers
             if line.startswith("@@") or line.startswith("---") or line.startswith("+++"):
                 continue
             if line.startswith("+") and not line.startswith("+++"):
@@ -52,15 +56,6 @@ class PatchIntegrityGuard(Guard):
         return additions, deletions
 
     def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
-        """Check if patch is within allowed limits.
-
-        Args:
-            action: The action to check
-            context: Execution context
-
-        Returns:
-            GuardResult
-        """
         if not self.handles(action):
             return GuardResult.allow(self.name)
 
@@ -107,6 +102,20 @@ class PatchIntegrityGuard(Guard):
                     "deletions": deletions,
                     "ratio": ratio,
                     "max_ratio": self._config.max_imbalance_ratio,
+                })
+
+        # Check forbidden patterns in the diff
+        for pattern_str, compiled in self._compiled_forbidden:
+            match = compiled.search(diff)
+            if match:
+                return GuardResult.block(
+                    self.name,
+                    Severity.CRITICAL,
+                    f"Patch contains forbidden pattern: {pattern_str}",
+                ).with_details({
+                    "forbidden_pattern": pattern_str,
+                    "additions": additions,
+                    "deletions": deletions,
                 })
 
         return GuardResult.allow(self.name).with_details({

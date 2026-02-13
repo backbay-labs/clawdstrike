@@ -42,7 +42,7 @@ fn default_enabled() -> bool {
 }
 
 fn default_forbidden_patterns() -> Vec<String> {
-    vec![
+    let mut patterns = vec![
         // SSH keys
         "**/.ssh/**".to_string(),
         "**/id_rsa*".to_string(),
@@ -69,11 +69,37 @@ fn default_forbidden_patterns() -> Vec<String> {
         "**/pass/**".to_string(),
         // 1Password
         "**/.1password/**".to_string(),
-        // System paths
+        // System paths (Unix)
         "/etc/shadow".to_string(),
         "/etc/passwd".to_string(),
         "/etc/sudoers".to_string(),
-    ]
+    ];
+
+    if cfg!(windows) {
+        patterns.extend([
+            // Windows credential stores
+            "**/AppData/Roaming/Microsoft/Credentials/**".to_string(),
+            "**/AppData/Local/Microsoft/Credentials/**".to_string(),
+            // Windows Credential Manager vault
+            "**/AppData/Roaming/Microsoft/Vault/**".to_string(),
+            // Windows registry hives
+            "**/NTUSER.DAT".to_string(),
+            "**/NTUSER.DAT.*".to_string(),
+            // Windows SAM / SECURITY / SYSTEM hives
+            "**/Windows/System32/config/SAM".to_string(),
+            "**/Windows/System32/config/SECURITY".to_string(),
+            "**/Windows/System32/config/SYSTEM".to_string(),
+            // Registry export files
+            "**/*.reg".to_string(),
+            // Windows certificate stores
+            "**/AppData/Roaming/Microsoft/SystemCertificates/**".to_string(),
+            // PowerShell profiles (can contain secrets)
+            "**/WindowsPowerShell/profile.ps1".to_string(),
+            "**/PowerShell/profile.ps1".to_string(),
+        ]);
+    }
+
+    patterns
 }
 
 impl ForbiddenPathConfig {
@@ -435,6 +461,55 @@ remove_patterns:
         );
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_windows_paths_with_backslash_normalization() {
+        // Verify that paths with backslashes are normalized and matched.
+        // The **/.ssh/** pattern should match Windows-style paths.
+        let guard = ForbiddenPathGuard::new();
+        assert!(guard.is_forbidden(r"C:\Users\alice\.ssh\id_rsa"));
+        assert!(guard.is_forbidden(r"C:\Users\bob\.aws\credentials"));
+        assert!(guard.is_forbidden(r"D:\projects\.env"));
+        assert!(!guard.is_forbidden(r"C:\Users\alice\Documents\report.docx"));
+    }
+
+    #[test]
+    fn test_windows_specific_forbidden_patterns() {
+        // Test Windows-specific patterns by explicitly configuring them (so
+        // these tests pass on any platform).
+        let config = ForbiddenPathConfig {
+            enabled: true,
+            patterns: Some(vec![
+                "**/AppData/Roaming/Microsoft/Credentials/**".to_string(),
+                "**/AppData/Roaming/Microsoft/Vault/**".to_string(),
+                "**/NTUSER.DAT".to_string(),
+                "**/Windows/System32/config/SAM".to_string(),
+                "**/Windows/System32/config/SECURITY".to_string(),
+                "**/*.reg".to_string(),
+            ]),
+            exceptions: vec![],
+            additional_patterns: vec![],
+            remove_patterns: vec![],
+        };
+        let guard = ForbiddenPathGuard::with_config(config);
+
+        // Windows credential store
+        assert!(
+            guard.is_forbidden(r"C:\Users\alice\AppData\Roaming\Microsoft\Credentials\token123")
+        );
+        // Windows vault
+        assert!(guard.is_forbidden(r"C:\Users\bob\AppData\Roaming\Microsoft\Vault\schema.ini"));
+        // Registry hive
+        assert!(guard.is_forbidden(r"C:\Users\alice\NTUSER.DAT"));
+        // SAM file
+        assert!(guard.is_forbidden(r"C:\Windows\System32\config\SAM"));
+        // SECURITY hive
+        assert!(guard.is_forbidden(r"C:\Windows\System32\config\SECURITY"));
+        // Registry export
+        assert!(guard.is_forbidden(r"C:\temp\export.reg"));
+        // Normal file should be allowed
+        assert!(!guard.is_forbidden(r"C:\Users\alice\Documents\readme.txt"));
     }
 
     #[cfg(unix)]

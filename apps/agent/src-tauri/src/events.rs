@@ -45,6 +45,37 @@ impl PolicyEvent {
     }
 }
 
+/// Daemon-level SSE event types beyond audit events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DaemonEvent {
+    /// Policy was updated on hushd; local cache should refresh.
+    PolicyUpdated {
+        #[serde(default)]
+        version: Option<String>,
+    },
+    /// A security violation was detected.
+    Violation {
+        #[serde(default)]
+        guard: Option<String>,
+        #[serde(default)]
+        message: Option<String>,
+        #[serde(default)]
+        severity: Option<String>,
+        #[serde(default)]
+        target: Option<String>,
+    },
+    /// Session posture transitioned (e.g., standard -> restricted).
+    SessionPostureTransition {
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        from: Option<String>,
+        #[serde(default)]
+        to: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone)]
 struct EventDeduper {
     order: VecDeque<String>,
@@ -85,6 +116,7 @@ pub struct EventManager {
     api_key: Option<String>,
     http_client: reqwest::Client,
     events_tx: broadcast::Sender<PolicyEvent>,
+    daemon_events_tx: broadcast::Sender<DaemonEvent>,
     deduper: Arc<Mutex<EventDeduper>>,
     poll_cursor_id: Arc<Mutex<Option<String>>>,
 }
@@ -92,6 +124,7 @@ pub struct EventManager {
 impl EventManager {
     pub fn new(daemon_url: String, api_key: Option<String>) -> Self {
         let (events_tx, _) = broadcast::channel(200);
+        let (daemon_events_tx, _) = broadcast::channel(64);
 
         Self {
             daemon_url,
@@ -101,14 +134,20 @@ impl EventManager {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             events_tx,
+            daemon_events_tx,
             deduper: Arc::new(Mutex::new(EventDeduper::new(2_000))),
             poll_cursor_id: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Subscribe to events.
+    /// Subscribe to policy check events.
     pub fn subscribe(&self) -> broadcast::Receiver<PolicyEvent> {
         self.events_tx.subscribe()
+    }
+
+    /// Subscribe to daemon-level events (policy updates, violations, posture transitions).
+    pub fn subscribe_daemon_events(&self) -> broadcast::Receiver<DaemonEvent> {
+        self.daemon_events_tx.subscribe()
     }
 
     /// Start event collection.
@@ -277,6 +316,13 @@ impl EventManager {
             return Ok(());
         }
 
+        // Try to parse as a daemon-level event first (has a "type" field).
+        if let Ok(daemon_event) = serde_json::from_str::<DaemonEvent>(data) {
+            let _ = self.daemon_events_tx.send(daemon_event);
+            return Ok(());
+        }
+
+        // Otherwise treat as a policy audit event.
         let event: PolicyEvent = serde_json::from_str(data)
             .with_context(|| format!("Failed to parse SSE event payload: {}", data))?;
 
@@ -318,6 +364,39 @@ mod tests {
         };
         assert_eq!(event.id, "123");
         assert!(event.normalized_decision().is_blocked());
+    }
+
+    #[test]
+    fn daemon_event_policy_updated_deserializes() {
+        let json = r#"{"type":"policy_updated","version":"1.2.0"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse policy_updated event: {err}"),
+        };
+        assert!(matches!(event, DaemonEvent::PolicyUpdated { .. }));
+    }
+
+    #[test]
+    fn daemon_event_violation_deserializes() {
+        let json = r#"{"type":"violation","guard":"fs_blocklist","severity":"high","target":"/etc/shadow"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse violation event: {err}"),
+        };
+        assert!(matches!(event, DaemonEvent::Violation { .. }));
+    }
+
+    #[test]
+    fn daemon_event_posture_transition_deserializes() {
+        let json = r#"{"type":"session_posture_transition","session_id":"s-1","from":"standard","to":"restricted"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse posture transition event: {err}"),
+        };
+        assert!(matches!(
+            event,
+            DaemonEvent::SessionPostureTransition { .. }
+        ));
     }
 
     #[test]

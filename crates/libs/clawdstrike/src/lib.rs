@@ -62,6 +62,7 @@ pub mod policy;
 pub mod policy_bundle;
 pub mod posture;
 pub mod spine_bridge;
+pub mod text_utils;
 pub mod watermarking;
 
 pub use curator_config::{

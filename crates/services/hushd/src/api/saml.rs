@@ -1,8 +1,9 @@
 //! SAML assertion exchange endpoint.
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
+use crate::api::v1::V1Error;
 use crate::auth::AuthenticatedActor;
 use crate::session::CreateSessionOptions;
 use crate::session::SessionError;
@@ -28,17 +29,20 @@ pub async fn exchange_saml(
     headers: axum::http::HeaderMap,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     Json(request): Json<SamlExchangeRequest>,
-) -> Result<Json<SamlExchangeResponse>, (StatusCode, String)> {
+) -> Result<Json<SamlExchangeResponse>, V1Error> {
     let Some(axum::extract::Extension(actor)) = actor else {
-        return Err((StatusCode::UNAUTHORIZED, "unauthenticated".to_string()));
+        return Err(V1Error::unauthorized("UNAUTHENTICATED", "unauthenticated"));
     };
 
     let Some(saml_cfg) = state.config.identity.saml.as_ref() else {
-        return Err((StatusCode::NOT_FOUND, "saml_not_configured".to_string()));
+        return Err(V1Error::not_found(
+            "SAML_NOT_CONFIGURED",
+            "saml_not_configured",
+        ));
     };
 
     let identity = crate::identity::saml::parse_assertion(saml_cfg, &request.assertion)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| V1Error::bad_request("INVALID_SAML_ASSERTION", e.to_string()))?;
 
     let mut options = request.session.unwrap_or_default();
 
@@ -81,12 +85,12 @@ pub async fn exchange_saml(
     let session = match state.sessions.create_session(identity, Some(options)) {
         Ok(session) => session,
         Err(SessionError::InvalidBinding(_)) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "invalid_session_binding".to_string(),
+            return Err(V1Error::bad_request(
+                "INVALID_SESSION_BINDING",
+                "invalid_session_binding",
             ));
         }
-        Err(err) => return Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+        Err(err) => return Err(V1Error::internal("SESSION_ERROR", err.to_string())),
     };
 
     // Audit + broadcast.

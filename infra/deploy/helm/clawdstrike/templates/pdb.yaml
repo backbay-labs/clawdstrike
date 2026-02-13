@@ -1,0 +1,31 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- if .Values.hushd.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hushd
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.hushd.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "hushd") | nindent 6 }}
+{{- end }}
+---
+{{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-proofs-api
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "proofs-api") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.proofsApi.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "proofs-api") | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -40,7 +40,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'file_read',
         resource: '~/.ssh/id_rsa',
       } as any);
-      expect(result.denied).toBe(true);
+      expect(result.status).toBe('deny');
       expect(result.guard).toBe('forbidden_path');
     });
 
@@ -49,7 +49,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'file_read',
         resource: '~/.aws/credentials',
       } as any);
-      expect(result.denied).toBe(true);
+      expect(result.status).toBe('deny');
       expect(result.guard).toBe('forbidden_path');
     });
 
@@ -58,7 +58,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'file_read',
         resource: '/workspace/.env',
       } as any);
-      expect(result.denied).toBe(true);
+      expect(result.status).toBe('deny');
     });
 
     it('allows writes to /tmp/hello-agent', async () => {
@@ -66,7 +66,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'file_write',
         resource: '/tmp/hello-agent/test.txt',
       } as any);
-      expect(result.allowed).toBe(true);
+      expect(result.status).not.toBe('deny');
     });
 
     it('blocks writes outside allowed roots', async () => {
@@ -74,7 +74,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'file_write',
         resource: '/etc/passwd',
       } as any);
-      expect(result.denied).toBe(true);
+      expect(result.status).toBe('deny');
     });
   });
 
@@ -84,7 +84,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'network',
         resource: 'https://evil.com/exfiltrate',
       } as any);
-      expect(result.denied).toBe(true);
+      expect(result.status).toBe('deny');
       expect(result.guard).toBe('egress');
     });
 
@@ -93,7 +93,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'network',
         resource: 'https://api.github.com/user',
       } as any);
-      expect(result.allowed).toBe(true);
+      expect(result.status).not.toBe('deny');
     });
 
     it('allows pypi.org', async () => {
@@ -101,7 +101,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'network',
         resource: 'https://pypi.org/simple/',
       } as any);
-      expect(result.allowed).toBe(true);
+      expect(result.status).not.toBe('deny');
     });
 
     it('blocks localhost', async () => {
@@ -109,7 +109,7 @@ describe('Hello Secure Agent E2E', () => {
         action: 'network',
         resource: 'http://localhost:8080',
       } as any);
-      expect(result.denied).toBe(true);
+      expect(result.status).toBe('deny');
     });
   });
 

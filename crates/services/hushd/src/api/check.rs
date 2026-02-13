@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, Json};
+
+use crate::api::v1::V1Error;
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::guards::{GuardAction, GuardContext, GuardResult, Severity};
@@ -204,7 +206,7 @@ pub async fn check_action(
     headers: axum::http::HeaderMap,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     Json(request): Json<CheckRequest>,
-) -> Result<Json<CheckResponse>, (StatusCode, String)> {
+) -> Result<Json<CheckResponse>, V1Error> {
     let (default_policy, keypair) = {
         let engine = state.engine.read().await;
         (engine.policy().clone(), engine.keypair().cloned())
@@ -249,11 +251,11 @@ pub async fn check_action(
         let validation = state
             .sessions
             .validate_session(&session_id)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
         if !validation.valid {
-            return Err((
-                StatusCode::FORBIDDEN,
+            return Err(V1Error::forbidden(
+                "INVALID_SESSION",
                 format!(
                     "invalid_session: {}",
                     validation
@@ -266,9 +268,9 @@ pub async fn check_action(
         }
 
         let session = validation.session.ok_or_else(|| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "session_validation_missing_session".to_string(),
+            V1Error::internal(
+                "SESSION_VALIDATION_ERROR",
+                "session_validation_missing_session",
             )
         })?;
 
@@ -279,9 +281,9 @@ pub async fn check_action(
                     if principal.id != session.identity.id
                         || principal.issuer != session.identity.issuer
                     {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "session_identity_mismatch".to_string(),
+                        return Err(V1Error::forbidden(
+                            "SESSION_IDENTITY_MISMATCH",
+                            "session_identity_mismatch",
                         ));
                     }
                 }
@@ -293,15 +295,15 @@ pub async fn check_action(
                         .and_then(|s| s.get("bound_api_key_id"))
                         .and_then(|v| v.as_str());
                     let Some(bound_id) = bound else {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "api_key_cannot_use_unbound_sessions".to_string(),
+                        return Err(V1Error::forbidden(
+                            "API_KEY_UNBOUND_SESSION",
+                            "api_key_cannot_use_unbound_sessions",
                         ));
                     };
                     if bound_id != key.id.as_str() {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "api_key_session_binding_mismatch".to_string(),
+                        return Err(V1Error::forbidden(
+                            "API_KEY_SESSION_BINDING_MISMATCH",
+                            "api_key_session_binding_mismatch",
                         ));
                     }
                 }
@@ -311,7 +313,7 @@ pub async fn check_action(
         state
             .sessions
             .validate_session_binding(&session, &request_context)
-            .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
+            .map_err(|e| V1Error::forbidden("FORBIDDEN", e.to_string()))?;
 
         context = state
             .sessions
@@ -350,11 +352,13 @@ pub async fn check_action(
             .check_and_increment(identity, request.action_type.as_str())
         {
             return match err {
-                IdentityRateLimitError::RateLimited { retry_after_secs } => Err((
+                IdentityRateLimitError::RateLimited { retry_after_secs } => Err(V1Error::new(
                     StatusCode::TOO_MANY_REQUESTS,
+                    "IDENTITY_RATE_LIMITED",
                     format!("identity_rate_limited_retry_after_secs={retry_after_secs}"),
-                )),
-                other => Err((StatusCode::INTERNAL_SERVER_ERROR, other.to_string())),
+                )
+                .with_retry_after(retry_after_secs)),
+                other => Err(V1Error::internal("INTERNAL_ERROR", other.to_string())),
             };
         }
     }
@@ -363,12 +367,12 @@ pub async fn check_action(
     let resolved = state
         .policy_resolver
         .resolve_policy(&default_policy, &context)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let resolved_yaml = resolved
         .policy
         .to_yaml()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     let policy_hash = hush_core::sha256(resolved_yaml.as_bytes()).to_hex();
 
     let engine: Arc<HushEngine> = match keypair {
@@ -382,9 +386,9 @@ pub async fn check_action(
 
     let posture_enabled = resolved.policy.posture.is_some();
     if posture_enabled && request.session_id.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "session_id_required_for_posture_policy".to_string(),
+        return Err(V1Error::bad_request(
+            "SESSION_ID_REQUIRED",
+            "session_id_required_for_posture_policy",
         ));
     }
 
@@ -407,8 +411,8 @@ pub async fn check_action(
                 .await
         }
         "egress" => {
-            let (host, port) =
-                parse_egress_target(&request.target).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+            let (host, port) = parse_egress_target(&request.target)
+                .map_err(|e| V1Error::bad_request("INVALID_EGRESS_TARGET", e))?;
             let action = GuardAction::NetworkEgress(&host, port);
             engine
                 .check_action_report_with_posture(&action, &context, &mut posture_runtime)
@@ -435,13 +439,13 @@ pub async fn check_action(
                 .await
         }
         _ => {
-            return Err((
-                StatusCode::BAD_REQUEST,
+            return Err(V1Error::bad_request(
+                "UNKNOWN_ACTION_TYPE",
                 format!("Unknown action type: {}", request.action_type),
             ));
         }
     }
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let result = posture_report.guard_report.overall.clone();
     let mut response_posture: Option<PostureInfo> = posture_runtime
@@ -451,16 +455,16 @@ pub async fn check_action(
     if let Some(session_id) = request.session_id.as_deref() {
         if let Some(posture) = posture_runtime.as_ref() {
             let patch = posture_state_patch(posture)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
             let updated = state
                 .sessions
                 .merge_state(session_id, patch)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
             let updated_session = updated.ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    "session_not_found_during_posture_update".to_string(),
+                V1Error::not_found(
+                    "SESSION_NOT_FOUND",
+                    "session_not_found_during_posture_update",
                 )
             })?;
             session_for_audit = Some(updated_session.clone());
@@ -475,7 +479,7 @@ pub async fn check_action(
         state
             .sessions
             .touch_session(session_id)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     }
     drop(session_lock);
 
@@ -615,7 +619,7 @@ pub async fn check_action(
         }
     }
 
-    state.record_audit_event(audit_event);
+    state.record_audit_event_async(audit_event).await;
 
     let policy_hash_sha256 = format!("sha256:{policy_hash}");
 

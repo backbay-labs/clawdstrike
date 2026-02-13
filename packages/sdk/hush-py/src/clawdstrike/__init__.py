@@ -13,7 +13,16 @@ from clawdstrike.receipt import (
     ViolationRef,
     validate_receipt_version,
 )
-from clawdstrike.policy import Policy, PolicyEngine, PolicySettings, GuardConfigs
+from clawdstrike.policy import (
+    Policy,
+    PolicyEngine,
+    PolicySettings,
+    PolicyResolver,
+    GuardConfigs,
+    PostureConfig,
+    PostureState,
+    PostureTransition,
+)
 from clawdstrike.guards import (
     Severity,
     GuardResult,
@@ -26,10 +35,16 @@ from clawdstrike.guards import (
     EgressAllowlistConfig,
     SecretLeakGuard,
     SecretLeakConfig,
+    SecretPattern,
     PatchIntegrityGuard,
     PatchIntegrityConfig,
     McpToolGuard,
     McpToolConfig,
+    PromptInjectionGuard,
+    PromptInjectionConfig,
+    PromptInjectionLevel,
+    JailbreakGuard,
+    JailbreakConfig,
 )
 from clawdstrike.merkle import (
     hash_leaf,
@@ -68,7 +83,11 @@ __all__ = [
     "Policy",
     "PolicyEngine",
     "PolicySettings",
+    "PolicyResolver",
     "GuardConfigs",
+    "PostureConfig",
+    "PostureState",
+    "PostureTransition",
     # Guards base
     "Severity",
     "GuardResult",
@@ -82,10 +101,16 @@ __all__ = [
     "EgressAllowlistConfig",
     "SecretLeakGuard",
     "SecretLeakConfig",
+    "SecretPattern",
     "PatchIntegrityGuard",
     "PatchIntegrityConfig",
     "McpToolGuard",
     "McpToolConfig",
+    "PromptInjectionGuard",
+    "PromptInjectionConfig",
+    "PromptInjectionLevel",
+    "JailbreakGuard",
+    "JailbreakConfig",
     # Merkle
     "hash_leaf",
     "hash_node",

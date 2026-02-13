@@ -1,0 +1,49 @@
+{{- if .Values.autoscaling.enabled }}
+{{- if .Values.hushd.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hushd
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "clawdstrike.fullname" . }}-hushd
+  minReplicas: {{ .Values.autoscaling.hushd.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.hushd.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.hushd.targetCPUUtilizationPercentage }}
+{{- end }}
+---
+{{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-proofs-api
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "proofs-api") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "clawdstrike.fullname" . }}-proofs-api
+  minReplicas: {{ .Values.autoscaling.proofsApi.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.proofsApi.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.proofsApi.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}

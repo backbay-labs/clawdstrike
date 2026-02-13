@@ -41,7 +41,7 @@ pub use patch_integrity::{PatchIntegrityConfig, PatchIntegrityGuard};
 pub use path_allowlist::{PathAllowlistConfig, PathAllowlistGuard};
 pub use path_normalization::normalize_path_for_policy;
 pub use prompt_injection::{PromptInjectionConfig, PromptInjectionGuard};
-pub use secret_leak::{SecretLeakConfig, SecretLeakGuard};
+pub use secret_leak::{SecretLeakConfig, SecretLeakGuard, SecretPattern};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

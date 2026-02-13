@@ -55,6 +55,12 @@ pub struct SecretLeakConfig {
     /// Secret patterns to detect
     #[serde(default = "default_patterns")]
     pub patterns: Vec<SecretPattern>,
+    /// Additional patterns to add (merged by name, additive with base).
+    #[serde(default)]
+    pub additional_patterns: Vec<SecretPattern>,
+    /// Pattern names to remove from the effective set.
+    #[serde(default)]
+    pub remove_patterns: Vec<String>,
     /// File patterns to skip (e.g., test fixtures)
     #[serde(default)]
     pub skip_paths: Vec<String>,
@@ -117,8 +123,24 @@ fn default_patterns() -> Vec<SecretPattern> {
             masking: None,
         },
         SecretPattern {
+            name: "openai_project_key".to_string(),
+            pattern: r"sk-proj-[A-Za-z0-9]{48,}".to_string(),
+            severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
+        },
+        SecretPattern {
             name: "anthropic_key".to_string(),
             pattern: r"sk-ant-[A-Za-z0-9\-]{95}".to_string(),
+            severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
+        },
+        SecretPattern {
+            name: "anthropic_api03_key".to_string(),
+            pattern: r"sk-ant-api03-[A-Za-z0-9_\-]{93}".to_string(),
             severity: Severity::Critical,
             description: None,
             luhn_check: false,
@@ -149,8 +171,48 @@ fn default_patterns() -> Vec<SecretPattern> {
             masking: None,
         },
         SecretPattern {
+            name: "stripe_secret_key".to_string(),
+            pattern: r"sk_live_[A-Za-z0-9]{24,}".to_string(),
+            severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
+        },
+        SecretPattern {
+            name: "stripe_restricted_key".to_string(),
+            pattern: r"rk_live_[A-Za-z0-9]{24,}".to_string(),
+            severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
+        },
+        SecretPattern {
+            name: "gcp_service_account".to_string(),
+            pattern: r#""type"\s*:\s*"service_account""#.to_string(),
+            severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
+        },
+        SecretPattern {
+            name: "azure_key_vault_token".to_string(),
+            pattern: r#"(?i)azure[_\-]?(?:key[_\-]?vault|kv)[_\-]?(?:secret|token|key)['"]?\s*[:=]\s*['"]?[A-Za-z0-9+/=_\-]{32,}"#.to_string(),
+            severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
+        },
+        SecretPattern {
+            name: "gitlab_pat".to_string(),
+            pattern: r#"glpat-[A-Za-z0-9_\-]{20,}"#.to_string(),
+            severity: Severity::Critical,
+            description: None,
+            luhn_check: false,
+            masking: None,
+        },
+        SecretPattern {
             name: "generic_api_key".to_string(),
-            pattern: r#"(?i)(api[_\-]?key|apikey)['"]?\s*[:=]\s*['"]?[A-Za-z0-9]{32,}"#.to_string(),
+            pattern: r#"(?i)(api[_\-]?key|apikey)[\x27"]?\s*[:=]\s*[\x27"]?[A-Za-z0-9]{32,}"#.to_string(),
             severity: Severity::Warning,
             description: None,
             luhn_check: false,
@@ -176,12 +238,75 @@ impl Default for SecretLeakConfig {
             redact: default_redact(),
             severity_threshold: default_severity_threshold(),
             patterns: default_patterns(),
+            additional_patterns: vec![],
+            remove_patterns: vec![],
             skip_paths: vec![
                 "**/test/**".to_string(),
                 "**/tests/**".to_string(),
                 "**/*_test.*".to_string(),
                 "**/*.test.*".to_string(),
             ],
+        }
+    }
+}
+
+impl SecretLeakConfig {
+    /// Compute the effective set of patterns: base + additional - removed.
+    pub fn effective_patterns(&self) -> Vec<SecretPattern> {
+        let mut patterns = self.patterns.clone();
+
+        for p in &self.additional_patterns {
+            if !patterns.iter().any(|existing| existing.name == p.name) {
+                patterns.push(p.clone());
+            }
+        }
+
+        patterns.retain(|p| !self.remove_patterns.contains(&p.name));
+        patterns
+    }
+
+    /// Merge this config with a child config (deep merge).
+    ///
+    /// - Start with base effective patterns
+    /// - Add child's additional_patterns
+    /// - Remove child's remove_patterns
+    /// - Merge skip_paths additively
+    pub fn merge_with(&self, child: &Self) -> Self {
+        let mut patterns = self.effective_patterns();
+
+        // Add child's additional patterns
+        for p in &child.additional_patterns {
+            if !patterns.iter().any(|existing| existing.name == p.name) {
+                patterns.push(p.clone());
+            }
+        }
+
+        // Remove child's remove_patterns
+        patterns.retain(|p| !child.remove_patterns.contains(&p.name));
+
+        // If child specifies explicit patterns (non-default), use those as base instead
+        let child_default_patterns = default_patterns();
+        let child_has_explicit_patterns = child.patterns != child_default_patterns;
+        if child_has_explicit_patterns {
+            patterns = child.effective_patterns();
+        }
+
+        // Merge skip_paths additively
+        let mut skip_paths = self.skip_paths.clone();
+        for p in &child.skip_paths {
+            if !skip_paths.contains(p) {
+                skip_paths.push(p.clone());
+            }
+        }
+
+        Self {
+            enabled: child.enabled,
+            redact: child.redact,
+            severity_threshold: child.severity_threshold.clone(),
+            patterns,
+            additional_patterns: vec![],
+            remove_patterns: vec![],
+            skip_paths,
         }
     }
 }
@@ -218,7 +343,7 @@ impl SecretLeakGuard {
         let redact = config.redact;
         let severity_threshold = config.severity_threshold.clone();
         let patterns = config
-            .patterns
+            .effective_patterns()
             .into_iter()
             .filter_map(|p| {
                 Regex::new(&p.pattern).ok().map(|regex| CompiledPattern {
@@ -513,6 +638,90 @@ mod tests {
         assert!(guard.should_skip_path("/app/tests/fixtures/sample.json"));
         assert!(guard.should_skip_path("/app/src/main_test.rs"));
         assert!(!guard.should_skip_path("/app/src/main.rs"));
+    }
+
+    #[test]
+    fn test_openai_project_key() {
+        let guard = SecretLeakGuard::new();
+        let content = format!("key = sk-proj-{}", "a".repeat(48));
+        let matches = guard.scan(content.as_bytes());
+        assert!(!matches.is_empty());
+        assert!(matches
+            .iter()
+            .any(|m| m.pattern_name == "openai_project_key"));
+    }
+
+    #[test]
+    fn test_anthropic_api03_key() {
+        let guard = SecretLeakGuard::new();
+        let content = format!("key = sk-ant-api03-{}", "a".repeat(93));
+        let matches = guard.scan(content.as_bytes());
+        assert!(!matches.is_empty());
+        assert!(matches
+            .iter()
+            .any(|m| m.pattern_name == "anthropic_api03_key"));
+    }
+
+    #[test]
+    fn test_stripe_secret_key() {
+        let guard = SecretLeakGuard::new();
+        let content = format!("key = sk_live_{}", "a".repeat(24));
+        let matches = guard.scan(content.as_bytes());
+        assert!(!matches.is_empty());
+        assert!(matches
+            .iter()
+            .any(|m| m.pattern_name == "stripe_secret_key"));
+    }
+
+    #[test]
+    fn test_stripe_restricted_key() {
+        let guard = SecretLeakGuard::new();
+        let content = format!("key = rk_live_{}", "a".repeat(24));
+        let matches = guard.scan(content.as_bytes());
+        assert!(!matches.is_empty());
+        assert!(matches
+            .iter()
+            .any(|m| m.pattern_name == "stripe_restricted_key"));
+    }
+
+    #[test]
+    fn test_gcp_service_account() {
+        let guard = SecretLeakGuard::new();
+        let content = br#"{"type": "service_account", "project_id": "test"}"#;
+        let matches = guard.scan(content);
+        assert!(!matches.is_empty());
+        assert!(matches
+            .iter()
+            .any(|m| m.pattern_name == "gcp_service_account"));
+    }
+
+    #[test]
+    fn test_azure_key_vault_token() {
+        let guard = SecretLeakGuard::new();
+        let content = format!("azure_key_vault_secret = {}", "a".repeat(32));
+        let matches = guard.scan(content.as_bytes());
+        assert!(!matches.is_empty());
+        assert!(matches
+            .iter()
+            .any(|m| m.pattern_name == "azure_key_vault_token"));
+    }
+
+    #[test]
+    fn test_gitlab_pat() {
+        let guard = SecretLeakGuard::new();
+        let content = format!("token = glpat-{}", "a".repeat(20));
+        let matches = guard.scan(content.as_bytes());
+        assert!(!matches.is_empty());
+        assert!(matches.iter().any(|m| m.pattern_name == "gitlab_pat"));
+    }
+
+    #[test]
+    fn test_github_fine_grained_pat() {
+        let guard = SecretLeakGuard::new();
+        let content = format!("token = github_pat_{}_{}", "a".repeat(22), "b".repeat(59));
+        let matches = guard.scan(content.as_bytes());
+        assert!(!matches.is_empty());
+        assert!(matches.iter().any(|m| m.pattern_name == "github_pat"));
     }
 
     #[tokio::test]

@@ -9,6 +9,7 @@ import type {
   HookEvent,
   ToolResultPersistEvent,
   ClawdstrikeConfig,
+  Decision,
   PolicyEvent,
   ToolEventData,
   FileEventData,
@@ -18,14 +19,85 @@ import type {
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
 
+// ── LRU Decision Cache ──────────────────────────────────────────────
+
+interface CacheEntry {
+  decision: Decision;
+  expiresAt: number;
+}
+
+const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_CACHE_MAX = 256;
+
+/** Event types that must never be cached (destructive / non-idempotent). */
+const UNCACHEABLE_EVENT_TYPES = new Set([
+  'command_exec',
+  'patch_apply',
+  'file_write',
+]);
+
+export class DecisionCache {
+  private readonly maxSize: number;
+  private readonly ttlMs: number;
+  private readonly map = new Map<string, CacheEntry>();
+
+  constructor(maxSize = DEFAULT_CACHE_MAX, ttlMs = DEFAULT_CACHE_TTL_MS) {
+    this.maxSize = maxSize;
+    this.ttlMs = ttlMs;
+  }
+
+  /** Build a cache key from event type + resource identifier + policy version. */
+  static key(eventType: string, resource: string, policyVersion: string): string {
+    return `${eventType}:${resource}:${policyVersion}`;
+  }
+
+  get(key: string): Decision | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.map.delete(key);
+      return undefined;
+    }
+    // Move to end (most-recently-used).
+    this.map.delete(key);
+    this.map.set(key, entry);
+    return entry.decision;
+  }
+
+  set(key: string, decision: Decision): void {
+    // Evict oldest when at capacity.
+    if (this.map.size >= this.maxSize) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
+    }
+    this.map.set(key, { decision, expiresAt: Date.now() + this.ttlMs });
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
+// ── Module State ─────────────────────────────────────────────────────
+
 /** Shared policy engine instance */
 let engine: PolicyEngine | null = null;
+let currentConfig: ClawdstrikeConfig = {};
+
+/** Shared decision cache (reset on initialize) */
+export let decisionCache = new DecisionCache();
 
 /**
  * Initialize the hook with configuration
  */
 export function initialize(config: ClawdstrikeConfig): void {
   engine = new PolicyEngine(config);
+  currentConfig = config;
+  decisionCache = new DecisionCache();
 }
 
 /**
@@ -36,6 +108,28 @@ function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
     engine = new PolicyEngine(config ?? {});
   }
   return engine;
+}
+
+/**
+ * Extract a stable resource identifier from a policy event for cache keying.
+ */
+function extractResourceKey(event: PolicyEvent): string {
+  switch (event.data.type) {
+    case 'file':
+      return event.data.path;
+    case 'network':
+      return event.data.host + ':' + event.data.port;
+    case 'tool':
+      return event.data.toolName;
+    case 'command':
+      return event.data.command + ' ' + event.data.args.join(' ');
+    case 'patch':
+      return event.data.filePath;
+    case 'secret':
+      return event.data.secretName;
+    default:
+      return '';
+  }
 }
 
 /**
@@ -58,13 +152,23 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     result,
   );
 
-  // Evaluate policy
-  const decision = await policyEngine.evaluate(policyEvent);
+  // Check decision cache (skip for destructive ops and advisory/audit modes)
+  const mode = currentConfig.mode ?? 'deterministic';
+  const useCache = mode === 'deterministic' && !UNCACHEABLE_EVENT_TYPES.has(policyEvent.eventType);
+  const policyVersion = policyEngine.getPolicy().version ?? 'unknown';
+  const cacheKey = useCache
+    ? DecisionCache.key(policyEvent.eventType, extractResourceKey(policyEvent), policyVersion)
+    : '';
 
-  const isDenied = decision.status === 'deny' || decision.denied;
-  const isWarn = decision.status === 'warn' || decision.warn;
+  let decision = useCache ? decisionCache.get(cacheKey) : undefined;
+  if (!decision) {
+    decision = await policyEngine.evaluate(policyEvent);
+    if (useCache && decision.status === 'allow') {
+      decisionCache.set(cacheKey, decision);
+    }
+  }
 
-  if (isDenied) {
+  if (decision.status === 'deny') {
     // Block the tool result
     toolEvent.context.toolResult.error = decision.reason ?? 'Policy violation';
     toolEvent.messages.push(
@@ -73,7 +177,7 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     return;
   }
 
-  if (isWarn) {
+  if (decision.status === 'warn') {
     // Add warning message
     toolEvent.messages.push(
       `[clawdstrike] Warning: ${decision.message ?? decision.reason}`,

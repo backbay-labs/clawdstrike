@@ -2,9 +2,10 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
     Json,
 };
+
+use crate::api::v1::V1Error;
 use serde::{Deserialize, Serialize};
 
 use crate::audit::AuditEvent;
@@ -71,7 +72,7 @@ pub struct DeleteRoleResponse {
 pub async fn list_roles(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<ListRolesResponse>, (StatusCode, String)> {
+) -> Result<Json<ListRolesResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -83,7 +84,7 @@ pub async fn list_roles(
     let roles = state
         .rbac
         .list_roles()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     Ok(Json(ListRolesResponse { roles }))
 }
 
@@ -92,7 +93,7 @@ pub async fn get_role(
     State(state): State<AppState>,
     Path(role_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<GetRoleResponse>, (StatusCode, String)> {
+) -> Result<Json<GetRoleResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -104,8 +105,8 @@ pub async fn get_role(
     let role = state
         .rbac
         .get_role(&role_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "role_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("ROLE_NOT_FOUND", "role_not_found"))?;
 
     Ok(Json(GetRoleResponse { role }))
 }
@@ -115,7 +116,7 @@ pub async fn create_role(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(req): Json<CreateRoleRequest>,
-) -> Result<Json<UpsertRoleResponse>, (StatusCode, String)> {
+) -> Result<Json<UpsertRoleResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -127,15 +128,18 @@ pub async fn create_role(
     if let Some(existing) = state
         .rbac
         .get_role(&req.id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
     {
         if existing.builtin {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "cannot_modify_builtin_role".to_string(),
+            return Err(V1Error::forbidden(
+                "CANNOT_MODIFY_BUILTIN_ROLE",
+                "cannot_modify_builtin_role",
             ));
         }
-        return Err((StatusCode::CONFLICT, "role_already_exists".to_string()));
+        return Err(V1Error::conflict(
+            "ROLE_ALREADY_EXISTS",
+            "role_already_exists",
+        ));
     }
 
     let role = Role {
@@ -154,7 +158,7 @@ pub async fn create_role(
     let role = state
         .rbac
         .upsert_role(role)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let role_for_audit = role.clone();
     let mut audit = AuditEvent::session_start(&state.session_id, None);
@@ -177,7 +181,7 @@ pub async fn update_role(
     Path(role_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(req): Json<UpdateRoleRequest>,
-) -> Result<Json<UpsertRoleResponse>, (StatusCode, String)> {
+) -> Result<Json<UpsertRoleResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -189,13 +193,13 @@ pub async fn update_role(
     let mut role = state
         .rbac
         .get_role(&role_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "role_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("ROLE_NOT_FOUND", "role_not_found"))?;
 
     if role.builtin {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "cannot_modify_builtin_role".to_string(),
+        return Err(V1Error::forbidden(
+            "CANNOT_MODIFY_BUILTIN_ROLE",
+            "cannot_modify_builtin_role",
         ));
     }
 
@@ -222,7 +226,7 @@ pub async fn update_role(
     let role = state
         .rbac
         .upsert_role(role)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let after = role.clone();
     let mut audit = AuditEvent::session_start(&state.session_id, None);
@@ -245,7 +249,7 @@ pub async fn delete_role(
     State(state): State<AppState>,
     Path(role_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<DeleteRoleResponse>, (StatusCode, String)> {
+) -> Result<Json<DeleteRoleResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -257,13 +261,13 @@ pub async fn delete_role(
     let existing = state
         .rbac
         .get_role(&role_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "role_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("ROLE_NOT_FOUND", "role_not_found"))?;
 
     if existing.builtin {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "cannot_delete_builtin_role".to_string(),
+        return Err(V1Error::forbidden(
+            "CANNOT_DELETE_BUILTIN_ROLE",
+            "cannot_delete_builtin_role",
         ));
     }
 
@@ -271,7 +275,7 @@ pub async fn delete_role(
     let deleted = state
         .rbac
         .delete_role(&role_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     if deleted {
         let mut audit = AuditEvent::session_start(&state.session_id, None);
@@ -340,7 +344,7 @@ pub async fn create_role_assignment(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(req): Json<CreateRoleAssignmentRequest>,
-) -> Result<Json<CreateRoleAssignmentResponse>, (StatusCode, String)> {
+) -> Result<Json<CreateRoleAssignmentResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -350,15 +354,18 @@ pub async fn create_role_assignment(
     )?;
 
     if req.scope.scope_type != crate::rbac::ScopeType::Global && req.scope.scope_id.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "scope_id_required".to_string()));
+        return Err(V1Error::bad_request(
+            "SCOPE_ID_REQUIRED",
+            "scope_id_required",
+        ));
     }
 
     // Role must exist.
     state
         .rbac
         .get_role(&req.role_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "unknown_role".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::bad_request("UNKNOWN_ROLE", "unknown_role"))?;
 
     // Tenant scoping: non-super-admin users can only grant roles within their org.
     if let Some(axum::extract::Extension(AuthenticatedActor::User(principal))) = actor.as_ref() {
@@ -371,31 +378,40 @@ pub async fn create_role_assignment(
             match req.scope.scope_type {
                 crate::rbac::ScopeType::Organization => {
                     let Some(scope_id) = req.scope.scope_id.as_deref() else {
-                        return Err((StatusCode::BAD_REQUEST, "scope_id_required".to_string()));
+                        return Err(V1Error::bad_request(
+                            "SCOPE_ID_REQUIRED",
+                            "scope_id_required",
+                        ));
                     };
                     if principal.organization_id.as_deref() != Some(scope_id) {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "cross_org_role_assignment_denied".to_string(),
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_ROLE_ASSIGNMENT_DENIED",
+                            "cross_org_role_assignment_denied",
                         ));
                     }
                 }
                 crate::rbac::ScopeType::Team => {
                     let Some(scope_id) = req.scope.scope_id.as_deref() else {
-                        return Err((StatusCode::BAD_REQUEST, "scope_id_required".to_string()));
+                        return Err(V1Error::bad_request(
+                            "SCOPE_ID_REQUIRED",
+                            "scope_id_required",
+                        ));
                     };
                     if !principal.teams.iter().any(|t| t == scope_id) {
-                        return Err((StatusCode::FORBIDDEN, "team_scope_required".to_string()));
+                        return Err(V1Error::forbidden(
+                            "TEAM_SCOPE_REQUIRED",
+                            "team_scope_required",
+                        ));
                     }
                 }
                 crate::rbac::ScopeType::Project => {
-                    return Err((
-                        StatusCode::FORBIDDEN,
-                        "project_scope_not_supported".to_string(),
+                    return Err(V1Error::forbidden(
+                        "PROJECT_SCOPE_NOT_SUPPORTED",
+                        "project_scope_not_supported",
                     ));
                 }
                 crate::rbac::ScopeType::Global | crate::rbac::ScopeType::User => {
-                    return Err((StatusCode::FORBIDDEN, "scope_not_allowed".to_string()));
+                    return Err(V1Error::forbidden("SCOPE_NOT_ALLOWED", "scope_not_allowed"));
                 }
             }
         }
@@ -414,7 +430,7 @@ pub async fn create_role_assignment(
             req.expires_at,
             req.reason,
         )
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let assignment_for_audit = assignment.clone();
     let mut audit = AuditEvent::session_start(&state.session_id, None);
@@ -436,7 +452,7 @@ pub async fn list_role_assignments(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Query(query): Query<ListRoleAssignmentsQuery>,
-) -> Result<Json<ListRoleAssignmentsResponse>, (StatusCode, String)> {
+) -> Result<Json<ListRoleAssignmentsResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -455,7 +471,10 @@ pub async fn list_role_assignments(
             id,
         },
         (None, _) => {
-            return Err((StatusCode::BAD_REQUEST, "principal_id_required".to_string()));
+            return Err(V1Error::bad_request(
+                "PRINCIPAL_ID_REQUIRED",
+                "principal_id_required",
+            ));
         }
     };
 
@@ -470,9 +489,9 @@ pub async fn list_role_assignments(
             && principal.principal_type == PrincipalType::User
             && principal.id != user.id
         {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "cannot_list_other_principals".to_string(),
+            return Err(V1Error::forbidden(
+                "CANNOT_LIST_OTHER_PRINCIPALS",
+                "cannot_list_other_principals",
             ));
         }
     }
@@ -480,7 +499,7 @@ pub async fn list_role_assignments(
     let assignments = state
         .rbac
         .list_role_assignments_for_principal(&principal)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     Ok(Json(ListRoleAssignmentsResponse { assignments }))
 }
@@ -490,7 +509,7 @@ pub async fn delete_role_assignment(
     State(state): State<AppState>,
     Path(assignment_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<DeleteRoleAssignmentResponse>, (StatusCode, String)> {
+) -> Result<Json<DeleteRoleAssignmentResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -502,10 +521,13 @@ pub async fn delete_role_assignment(
     let deleted = state
         .rbac
         .revoke_role_assignment(&assignment_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     if !deleted {
-        return Err((StatusCode::NOT_FOUND, "assignment_not_found".to_string()));
+        return Err(V1Error::not_found(
+            "ASSIGNMENT_NOT_FOUND",
+            "assignment_not_found",
+        ));
     }
 
     let mut audit = AuditEvent::session_start(&state.session_id, None);

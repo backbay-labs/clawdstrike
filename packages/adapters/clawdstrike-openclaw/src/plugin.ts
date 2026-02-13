@@ -6,6 +6,9 @@
 
 import { PolicyEngine } from "./policy/engine.js";
 import type { ClawdstrikeConfig } from "./types.js";
+import toolPreflightHandler, { initialize as initPreflight } from "./hooks/tool-preflight/handler.js";
+import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
+import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agent-bootstrap/handler.js";
 
 // Re-export existing utilities for external use
 export * from "./index.js";
@@ -64,16 +67,12 @@ export default function clawdstrikePlugin(api: any) {
         const event = buildEvent(action, resource);
         const decision = await engine.evaluate(event as any);
 
-        const isDenied = decision.status === 'deny' || decision.denied;
-        const isWarn = decision.status === 'warn' || decision.warn;
         const result = {
-          allowed: !isDenied,
-          denied: isDenied,
-          warn: isWarn,
+          status: decision.status,
           guard: decision.guard,
           reason: decision.reason,
           message: formatDecision(decision),
-          suggestion: isDenied ? getSuggestion(action, resource) : undefined,
+          suggestion: decision.status === 'deny' ? getSuggestion(action, resource) : undefined,
         };
 
         return {
@@ -130,7 +129,7 @@ export default function clawdstrikePlugin(api: any) {
           const event = buildEvent(action as PolicyCheckAction, resource);
           const decision = await engine.evaluate(event as any);
           console.log(formatDecision(decision));
-          if (decision.status === 'deny' || decision.denied) {
+          if (decision.status === 'deny') {
             console.log(`Suggestion: ${getSuggestion(action, resource)}`);
             process.exitCode = 1;
           }
@@ -138,6 +137,22 @@ export default function clawdstrikePlugin(api: any) {
     },
     { commands: ["clawdstrike"] }
   );
+
+  // Initialize and register hooks
+  const config = getConfig();
+  initPreflight(config);
+  initToolGuard(config);
+  initBootstrap(config);
+
+  if (typeof api.registerHook === 'function') {
+    api.registerHook('tool_call', toolPreflightHandler);
+    api.registerHook('tool_result_persist', toolGuardHandler);
+    api.registerHook('agent:bootstrap', agentBootstrapHandler);
+  } else if (typeof api.on === 'function') {
+    api.on('tool_call', toolPreflightHandler);
+    api.on('tool_result_persist', toolGuardHandler);
+    api.on('agent:bootstrap', agentBootstrapHandler);
+  }
 
   logger.info?.("[clawdstrike] Plugin registered");
 }
@@ -169,10 +184,8 @@ interface LocalPolicyEvent {
   data: Record<string, unknown>;
 }
 
-interface Decision {
-  status?: 'allow' | 'warn' | 'deny';
-  denied?: boolean;
-  warn?: boolean;
+interface PluginDecision {
+  status: 'allow' | 'warn' | 'deny';
   guard?: string;
   reason?: string;
   message?: string;
@@ -253,15 +266,13 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
   }
 }
 
-function formatDecision(decision: Decision): string {
-  const isDenied = decision.status === 'deny' || decision.denied;
-  const isWarn = decision.status === 'warn' || decision.warn;
-  if (isDenied) {
+function formatDecision(decision: PluginDecision): string {
+  if (decision.status === 'deny') {
     const guard = decision.guard ? ` by ${decision.guard}` : "";
     const reason = decision.reason ? `: ${decision.reason}` : "";
     return `Denied${guard}${reason}`;
   }
-  if (isWarn) {
+  if (decision.status === 'warn') {
     const msg = decision.message ?? decision.reason ?? "Policy warning";
     return `Warning: ${msg}`;
   }

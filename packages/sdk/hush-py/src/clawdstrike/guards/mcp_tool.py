@@ -15,7 +15,14 @@ class McpToolConfig:
 
     allow: List[str] = field(default_factory=list)
     block: List[str] = field(default_factory=list)
+    require_confirmation: List[str] = field(default_factory=list)
     default_action: str = "block"  # "block" or "allow"
+    max_args_size: Optional[int] = None
+    additional_allow: List[str] = field(default_factory=list)
+    remove_allow: List[str] = field(default_factory=list)
+    additional_block: List[str] = field(default_factory=list)
+    remove_block: List[str] = field(default_factory=list)
+    enabled: bool = True
 
 
 class McpToolGuard(Guard):

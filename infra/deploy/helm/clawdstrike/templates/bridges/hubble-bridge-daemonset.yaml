@@ -37,6 +37,11 @@ spec:
               value: {{ .Values.bridges.hubble.grpcEndpoint | quote }}
             - name: RUST_LOG
               value: {{ .Values.bridges.hubble.env.RUST_LOG | quote }}
+          livenessProbe:
+            exec:
+              command: ["test", "-f", "/proc/1/status"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:

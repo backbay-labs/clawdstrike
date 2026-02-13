@@ -1,0 +1,52 @@
+# AI Agent Posture Ruleset
+# Posture-aware security for AI coding assistants with restricted/standard/elevated states.
+version: "1.2.0"
+name: AI Agent Posture
+description: Posture-aware rules for AI agents with progressive capability grants
+extends: clawdstrike:ai-agent
+
+posture:
+  initial: restricted
+  states:
+    restricted:
+      description: Read-only mode - file access only, no budgets
+      capabilities:
+        - file_access
+      budgets: {}
+    standard:
+      description: Standard work mode with file writes and egress
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+      budgets:
+        file_writes: 50
+        egress_calls: 20
+    elevated:
+      description: Full capabilities with generous budgets
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - mcp_tool
+        - patch
+        - shell
+      budgets:
+        file_writes: 200
+  transitions:
+    - from: restricted
+      to: standard
+      on: user_approval
+    - from: standard
+      to: elevated
+      on: user_approval
+    - from: "*"
+      to: restricted
+      on: critical_violation
+    - from: elevated
+      to: standard
+      on: timeout
+      after: 1h
+    - from: standard
+      to: restricted
+      on: budget_exhausted

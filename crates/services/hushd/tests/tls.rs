@@ -135,6 +135,8 @@ async fn test_health_endpoint_over_https() {
         tls: Some(TlsConfig {
             cert_path: cert_path.clone(),
             key_path: key_path.clone(),
+            client_ca_path: None,
+            require_client_cert: false,
         }),
         ..Default::default()
     };

@@ -191,12 +191,6 @@ export type DecisionStatus = 'allow' | 'warn' | 'deny';
 export interface Decision {
   /** The decision status: 'allow', 'warn', or 'deny' */
   status: DecisionStatus;
-  /** Whether the event is allowed @deprecated Use status === 'allow' || status === 'warn' */
-  allowed: boolean;
-  /** Whether the event is explicitly denied @deprecated Use status === 'deny' */
-  denied: boolean;
-  /** Whether to show a warning @deprecated Use status === 'warn' */
-  warn: boolean;
   /** Reason for denial (if denied) */
   reason?: string;
   /** Guard that made the decision */
@@ -451,9 +445,28 @@ export interface AgentBootstrapEvent {
 }
 
 /**
+ * Hook event context for tool_call (pre-execution)
+ */
+export interface ToolCallEvent {
+  type: 'tool_call';
+  timestamp: string;
+  context: {
+    sessionId: string;
+    toolCall: {
+      toolName: string;
+      params: Record<string, unknown>;
+    };
+  };
+  /** Set to true to block execution */
+  preventDefault: boolean;
+  /** Messages to relay to the agent */
+  messages: string[];
+}
+
+/**
  * Generic hook event type
  */
-export type HookEvent = ToolResultPersistEvent | AgentBootstrapEvent;
+export type HookEvent = ToolResultPersistEvent | AgentBootstrapEvent | ToolCallEvent;
 
 /**
  * Hook handler function type

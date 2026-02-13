@@ -43,13 +43,11 @@ def _require_native() -> None:
         )
 
 
-_require_native()
-
-
 class JailbreakDetector:
     """Detect jailbreak attempts in user input (native-backed)."""
 
     def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+        _require_native()
         self._config_json = json.dumps(config) if config is not None else None
 
     def detect(self, text: str, *, session_id: Optional[str] = None) -> dict[str, Any]:
@@ -61,6 +59,7 @@ class OutputSanitizer:
     """Sanitize model output for secret/PII leakage (native-backed)."""
 
     def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+        _require_native()
         self._config_json = json.dumps(config) if config is not None else None
 
     def sanitize(self, text: str) -> dict[str, Any]:
@@ -112,6 +111,7 @@ class PromptWatermarker:
         application_id: str = "unknown",
         session_id: str = "unknown",
     ) -> None:
+        _require_native()
         self._config_json = json.dumps(config or {})
         self._application_id = application_id
         self._session_id = session_id
@@ -136,6 +136,7 @@ class WatermarkExtractor:
     """Extract and verify watermarks (native-backed)."""
 
     def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+        _require_native()
         self._config_json = json.dumps(config or {})
 
     def extract(self, text: str) -> dict[str, Any]:

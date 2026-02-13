@@ -70,6 +70,12 @@ pub struct TlsConfig {
     pub cert_path: PathBuf,
     /// Path to private key file
     pub key_path: PathBuf,
+    /// Path to CA certificate file for verifying client certificates (mTLS)
+    #[serde(default)]
+    pub client_ca_path: Option<PathBuf>,
+    /// Whether to require a valid client certificate (mTLS)
+    #[serde(default)]
+    pub require_client_cert: bool,
 }
 
 /// Configuration for a single API key
@@ -961,6 +967,10 @@ pub struct Config {
     #[serde(default = "default_cors")]
     pub cors_enabled: bool,
 
+    /// Maximum request body size in bytes (default: 1 MiB, 0 = no limit)
+    #[serde(default = "default_max_request_body_bytes")]
+    pub max_request_body_bytes: usize,
+
     /// Maximum audit log entries to keep (0 = unlimited)
     #[serde(default)]
     pub max_audit_entries: usize,
@@ -1031,6 +1041,10 @@ fn default_cors() -> bool {
     false
 }
 
+fn default_max_request_body_bytes() -> usize {
+    1_048_576 // 1 MiB
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -1044,6 +1058,7 @@ impl Default for Config {
             signing_key: None,
             policy_bundle_trusted_pubkeys: Vec::new(),
             cors_enabled: default_cors(),
+            max_request_body_bytes: default_max_request_body_bytes(),
             max_audit_entries: 0,
             audit: AuditConfig::default(),
             audit_forward: AuditForwardConfig::default(),

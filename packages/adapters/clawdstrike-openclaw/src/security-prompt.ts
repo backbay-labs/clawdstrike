@@ -49,7 +49,7 @@ You have access to the \`policy_check\` tool. Use it BEFORE attempting:
 Example:
 \`\`\`
 policy_check({ action: "file_write", resource: "/etc/passwd" })
--> { allowed: false, denied: true, warn: false, guard: "forbidden_path", message: "Denied by forbidden_path: …" }
+-> { status: "deny", guard: "forbidden_path", reason: "Forbidden path match: /etc/passwd" }
 \`\`\``);
 
   // Violation Handling section

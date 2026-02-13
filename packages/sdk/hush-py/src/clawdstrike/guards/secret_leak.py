@@ -1,7 +1,8 @@
-"""Secret leak guard - detects secrets in output."""
+"""Secret leak guard - detects secrets in output using regex patterns."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -9,22 +10,74 @@ from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResul
 
 
 @dataclass
+class SecretPattern:
+    """A named regex pattern for secret detection."""
+
+    name: str
+    pattern: str
+    severity: str = "critical"
+
+
+DEFAULT_SECRET_PATTERNS: List[SecretPattern] = [
+    SecretPattern(
+        name="aws_access_key",
+        pattern=r"AKIA[0-9A-Z]{16}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="github_token",
+        pattern=r"gh[ps]_[A-Za-z0-9]{36}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="openai_key",
+        pattern=r"sk-[A-Za-z0-9]{48}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="private_key",
+        pattern=r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----",
+        severity="critical",
+    ),
+]
+
+
+def _severity_from_str(s: str) -> Severity:
+    mapping = {
+        "critical": Severity.CRITICAL,
+        "error": Severity.ERROR,
+        "warning": Severity.WARNING,
+        "info": Severity.INFO,
+    }
+    return mapping.get(s.lower(), Severity.CRITICAL)
+
+
+@dataclass
 class SecretLeakConfig:
     """Configuration for SecretLeakGuard."""
 
-    secrets: List[str] = field(default_factory=list)
+    patterns: List[SecretPattern] = field(default_factory=lambda: list(DEFAULT_SECRET_PATTERNS))
+    skip_paths: List[str] = field(default_factory=list)
     enabled: bool = True
+    # Legacy field for backwards compatibility
+    secrets: List[str] = field(default_factory=list)
 
 
 class SecretLeakGuard(Guard):
-    """Guard that detects secret values in output."""
+    """Guard that detects secret values in file writes and output using regex patterns."""
 
-    # Action types that may contain output
     OUTPUT_ACTIONS = {"output", "bash_output", "tool_result", "response"}
 
     def __init__(self, config: Optional[SecretLeakConfig] = None) -> None:
         self._config = config or SecretLeakConfig()
-        # Filter out empty/whitespace-only secrets
+        self._compiled_patterns: List[tuple[SecretPattern, re.Pattern[str]]] = []
+        for sp in self._config.patterns:
+            try:
+                compiled = re.compile(sp.pattern)
+                self._compiled_patterns.append((sp, compiled))
+            except re.error:
+                pass  # Fail closed: skip invalid patterns
+        # Legacy literal secrets support
         self._secrets = [s for s in self._config.secrets if s and s.strip()]
 
     @property
@@ -32,60 +85,82 @@ class SecretLeakGuard(Guard):
         return "secret_leak"
 
     def handles(self, action: GuardAction) -> bool:
+        if action.action_type == "file_write":
+            return True
         if action.action_type == "custom" and action.custom_type:
             return action.custom_type in self.OUTPUT_ACTIONS
         return False
 
-    def _extract_text(self, data: Optional[Dict[str, Any]]) -> str:
-        """Extract text content from action data."""
-        if data is None:
+    def _extract_text(self, action: GuardAction) -> str:
+        """Extract text content from action."""
+        if action.action_type == "file_write":
+            if action.content is not None:
+                try:
+                    return action.content.decode("utf-8", errors="replace")
+                except (AttributeError, UnicodeDecodeError):
+                    return str(action.content)
             return ""
 
-        # Check common content field names
+        data = action.custom_data
+        if data is None:
+            return ""
         for key in ("content", "output", "result", "error", "text"):
             value = data.get(key)
             if isinstance(value, str) and value:
                 return value
-
         return ""
 
+    def _should_skip_path(self, path: Optional[str]) -> bool:
+        """Check if path matches skip_paths patterns."""
+        if not path or not self._config.skip_paths:
+            return False
+        import fnmatch
+        for pattern in self._config.skip_paths:
+            if fnmatch.fnmatch(path, pattern):
+                return True
+        return False
+
     def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
-        """Check if output contains secrets.
-
-        Args:
-            action: The action to check
-            context: Execution context
-
-        Returns:
-            GuardResult
-        """
-        # Skip if disabled or no secrets configured
-        if not self._config.enabled or not self._secrets:
+        if not self._config.enabled:
             return GuardResult.allow(self.name)
 
         if not self.handles(action):
             return GuardResult.allow(self.name)
 
-        text = self._extract_text(action.custom_data)
+        if self._should_skip_path(action.path):
+            return GuardResult.allow(self.name)
+
+        text = self._extract_text(action)
         if not text:
             return GuardResult.allow(self.name)
 
-        # Check for any secret in the output
+        # Check regex patterns
+        for sp, compiled in self._compiled_patterns:
+            match = compiled.search(text)
+            if match:
+                return GuardResult.block(
+                    self.name,
+                    _severity_from_str(sp.severity),
+                    f"Secret pattern matched: {sp.name}",
+                ).with_details({
+                    "pattern_name": sp.name,
+                    "action_type": action.custom_type or action.action_type,
+                })
+
+        # Legacy literal secret matching
         for secret in self._secrets:
             if secret in text:
-                # Create hint (first 4 chars + "...")
                 hint = secret[:4] + "..." if len(secret) > 4 else secret[:2] + "..."
-
                 return GuardResult.block(
                     self.name,
                     Severity.CRITICAL,
                     "Secret value exposed in output",
                 ).with_details({
                     "secret_hint": hint,
-                    "action_type": action.custom_type,
+                    "action_type": action.custom_type or action.action_type,
                 })
 
         return GuardResult.allow(self.name)
 
 
-__all__ = ["SecretLeakGuard", "SecretLeakConfig"]
+__all__ = ["SecretLeakGuard", "SecretLeakConfig", "SecretPattern", "DEFAULT_SECRET_PATTERNS"]

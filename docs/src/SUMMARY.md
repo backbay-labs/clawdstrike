@@ -37,6 +37,7 @@
 - [Policy Inheritance](guides/policy-inheritance.md)
 - [Posture Policies](guides/posture-policy.md)
 - [Observe -> Synth -> Tighten](guides/observe-synth.md)
+- [Desktop Agent Deployment](guides/desktop-agent.md)
 - [Audit Logging](guides/audit-logging.md)
 - [Marketplace Feed](guides/marketplace-feed.md)
 

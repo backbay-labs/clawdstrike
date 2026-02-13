@@ -2,9 +2,10 @@
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
     Json,
 };
+
+use crate::api::v1::V1Error;
 use serde::{Deserialize, Serialize};
 
 use crate::audit::AuditEvent;
@@ -91,15 +92,15 @@ pub async fn create_session(
     headers: axum::http::HeaderMap,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     body: Option<Json<CreateSessionOptions>>,
-) -> Result<Json<CreateSessionResponse>, (StatusCode, String)> {
+) -> Result<Json<CreateSessionResponse>, V1Error> {
     let Some(axum::extract::Extension(actor)) = actor else {
-        return Err((StatusCode::UNAUTHORIZED, "unauthenticated".to_string()));
+        return Err(V1Error::unauthorized("UNAUTHENTICATED", "unauthenticated"));
     };
 
     let AuthenticatedActor::User(principal) = actor else {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "api_key_cannot_create_user_session".to_string(),
+        return Err(V1Error::forbidden(
+            "API_KEY_CANNOT_CREATE_USER_SESSION",
+            "api_key_cannot_create_user_session",
         ));
     };
 
@@ -133,12 +134,12 @@ pub async fn create_session(
     let session = match state.sessions.create_session(principal, Some(options)) {
         Ok(session) => session,
         Err(SessionError::InvalidBinding(_)) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "invalid_session_binding".to_string(),
+            return Err(V1Error::bad_request(
+                "INVALID_SESSION_BINDING",
+                "invalid_session_binding",
             ));
         }
-        Err(err) => return Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+        Err(err) => return Err(V1Error::internal("SESSION_ERROR", err.to_string())),
     };
 
     // Audit: session created.
@@ -165,12 +166,12 @@ pub async fn get_session(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<GetSessionResponse>, (StatusCode, String)> {
+) -> Result<Json<GetSessionResponse>, V1Error> {
     let session = state
         .sessions
         .get_session(&session_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "session_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("SESSION_NOT_FOUND", "session_not_found"))?;
 
     // Users can always fetch their own sessions; otherwise enforce RBAC/scope.
     if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
@@ -192,9 +193,9 @@ pub async fn get_session(
                     let actor_org = principal.organization_id.as_deref();
                     let session_org = session.identity.organization_id.as_deref();
                     if actor_org.is_some() && session_org.is_some() && actor_org != session_org {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "cross_org_session_access_denied".to_string(),
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_SESSION_ACCESS_DENIED",
+                            "cross_org_session_access_denied",
                         ));
                     }
                 }
@@ -220,7 +221,7 @@ pub async fn terminate_session(
     Path(session_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     body: Option<Json<TerminateSessionRequest>>,
-) -> Result<Json<TerminateSessionResponse>, (StatusCode, String)> {
+) -> Result<Json<TerminateSessionResponse>, V1Error> {
     let reason = body.and_then(|Json(v)| v.reason);
 
     // Users can always terminate their own sessions; otherwise enforce RBAC/scope.
@@ -230,7 +231,7 @@ pub async fn terminate_session(
                 if let Some(existing) = state
                     .sessions
                     .get_session(&session_id)
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
                 {
                     if principal.id == existing.identity.id
                         && principal.issuer == existing.identity.issuer
@@ -238,9 +239,12 @@ pub async fn terminate_session(
                         let deleted = state
                             .sessions
                             .terminate_session(&session_id, reason.as_deref())
-                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
                         if !deleted {
-                            return Err((StatusCode::NOT_FOUND, "session_not_found".to_string()));
+                            return Err(V1Error::not_found(
+                                "SESSION_NOT_FOUND",
+                                "session_not_found",
+                            ));
                         }
 
                         let mut audit = AuditEvent::session_start(&session_id, None);
@@ -270,15 +274,15 @@ pub async fn terminate_session(
                     if let Some(existing) = state
                         .sessions
                         .get_session(&session_id)
-                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
                     {
                         let actor_org = principal.organization_id.as_deref();
                         let session_org = existing.identity.organization_id.as_deref();
                         if actor_org.is_some() && session_org.is_some() && actor_org != session_org
                         {
-                            return Err((
-                                StatusCode::FORBIDDEN,
-                                "cross_org_session_access_denied".to_string(),
+                            return Err(V1Error::forbidden(
+                                "CROSS_ORG_SESSION_ACCESS_DENIED",
+                                "cross_org_session_access_denied",
                             ));
                         }
                     }
@@ -299,10 +303,10 @@ pub async fn terminate_session(
     let deleted = state
         .sessions
         .terminate_session(&session_id, reason.as_deref())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     if !deleted {
-        return Err((StatusCode::NOT_FOUND, "session_not_found".to_string()));
+        return Err(V1Error::not_found("SESSION_NOT_FOUND", "session_not_found"));
     }
 
     let mut audit = AuditEvent::session_start(&session_id, None);
@@ -358,12 +362,12 @@ pub async fn get_session_posture(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<SessionPostureResponse>, (StatusCode, String)> {
+) -> Result<Json<SessionPostureResponse>, V1Error> {
     let session = state
         .sessions
         .get_session(&session_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "session_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("SESSION_NOT_FOUND", "session_not_found"))?;
 
     if let Some(axum::extract::Extension(auth_actor)) = actor.as_ref() {
         match auth_actor {
@@ -381,9 +385,9 @@ pub async fn get_session_posture(
                         let session_org = session.identity.organization_id.as_deref();
                         if actor_org.is_some() && session_org.is_some() && actor_org != session_org
                         {
-                            return Err((
-                                StatusCode::FORBIDDEN,
-                                "cross_org_session_access_denied".to_string(),
+                            return Err(V1Error::forbidden(
+                                "CROSS_ORG_SESSION_ACCESS_DENIED",
+                                "cross_org_session_access_denied",
                             ));
                         }
                     }
@@ -409,7 +413,7 @@ pub async fn get_session_posture(
     }
 
     let posture = posture_state_from_session(&session)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "posture_state_not_found".to_string()))?;
+        .ok_or_else(|| V1Error::not_found("POSTURE_STATE_NOT_FOUND", "posture_state_not_found"))?;
 
     Ok(Json(SessionPostureResponse {
         state: posture.current_state,
@@ -425,14 +429,17 @@ pub async fn transition_session_posture(
     Path(session_id): Path<String>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<TransitionSessionPostureRequest>,
-) -> Result<Json<TransitionSessionPostureResponse>, (StatusCode, String)> {
+) -> Result<Json<TransitionSessionPostureResponse>, V1Error> {
     if request.to_state.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "to_state_required".to_string()));
+        return Err(V1Error::bad_request(
+            "TO_STATE_REQUIRED",
+            "to_state_required",
+        ));
     }
     if request.trigger != "user_approval" && request.trigger != "user_denial" {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "trigger_must_be_user_approval_or_user_denial".to_string(),
+        return Err(V1Error::bad_request(
+            "INVALID_TRIGGER",
+            "trigger_must_be_user_approval_or_user_denial",
         ));
     }
 
@@ -441,8 +448,8 @@ pub async fn transition_session_posture(
     let session = state
         .sessions
         .get_session(&session_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "session_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("SESSION_NOT_FOUND", "session_not_found"))?;
 
     let mut owner_allowed = false;
     if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
@@ -461,9 +468,9 @@ pub async fn transition_session_posture(
                         let session_org = session.identity.organization_id.as_deref();
                         if actor_org.is_some() && session_org.is_some() && actor_org != session_org
                         {
-                            return Err((
-                                StatusCode::FORBIDDEN,
-                                "cross_org_session_access_denied".to_string(),
+                            return Err(V1Error::forbidden(
+                                "CROSS_ORG_SESSION_ACCESS_DENIED",
+                                "cross_org_session_access_denied",
                             ));
                         }
                     }
@@ -484,9 +491,9 @@ pub async fn transition_session_posture(
     }
 
     let mut posture = posture_state_from_session(&session).ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            "posture_state_not_initialized".to_string(),
+        V1Error::bad_request(
+            "POSTURE_STATE_NOT_INITIALIZED",
+            "posture_state_not_initialized",
         )
     })?;
 
@@ -502,13 +509,13 @@ pub async fn transition_session_posture(
     });
 
     let patch = posture_state_patch(&posture)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     let updated = state
         .sessions
         .merge_state(&session_id, patch)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     if updated.is_none() {
-        return Err((StatusCode::NOT_FOUND, "session_not_found".to_string()));
+        return Err(V1Error::not_found("SESSION_NOT_FOUND", "session_not_found"));
     }
 
     let mut audit = AuditEvent::session_start(&session_id, None);

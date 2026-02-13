@@ -25,6 +25,8 @@ spec:
       {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
       {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
       serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: nats
           image: "{{ .Values.nats.image.repository }}:{{ .Values.nats.image.tag }}"
@@ -60,6 +62,8 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
           {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
             {{- toYaml .Values.nats.resources | nindent 12 }}
       volumes:

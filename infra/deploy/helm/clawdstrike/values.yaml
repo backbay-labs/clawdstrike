@@ -62,6 +62,9 @@ spine:
     tag: ""
   env:
     RUST_LOG: "info,spine=debug"
+  secrets:
+    # -- Name of existing Secret containing SPINE_LOG_SEED_HEX and SPINE_WITNESS_SEED_HEX
+    existingSecret: ""
 
   checkpointer:
     enabled: true
@@ -140,6 +143,26 @@ hushd:
   service:
     type: ClusterIP
     port: 9876
+  # -- Topology spread constraints for hushd pods (e.g., spread across AZs)
+  topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: DoNotSchedule
+  #   labelSelector:
+  #     matchLabels:
+  #       app.kubernetes.io/component: hushd
+  # -- Affinity rules for hushd pods (e.g., pod anti-affinity)
+  affinity: {}
+  # podAntiAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       podAffinityTerm:
+  #         labelSelector:
+  #           matchExpressions:
+  #             - key: app.kubernetes.io/component
+  #               operator: In
+  #               values: ["hushd"]
+  #         topologyKey: kubernetes.io/hostname
 
 # ---------------------------------------------------------------------------
 # Bridge workloads
@@ -242,6 +265,32 @@ serviceAccount:
   create: true
   name: ""
   annotations: {}
+
+# ---------------------------------------------------------------------------
+# Autoscaling
+# ---------------------------------------------------------------------------
+autoscaling:
+  # -- Enable HorizontalPodAutoscaler for hushd and proofs-api
+  enabled: false
+  hushd:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  proofsApi:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# ---------------------------------------------------------------------------
+# Pod Disruption Budget
+# ---------------------------------------------------------------------------
+podDisruptionBudget:
+  # -- Enable PodDisruptionBudgets for hushd and proofs-api
+  enabled: false
+  hushd:
+    minAvailable: 1
+  proofsApi:
+    minAvailable: 1
 
 # ---------------------------------------------------------------------------
 # Pod-level settings (applied to all components unless overridden)

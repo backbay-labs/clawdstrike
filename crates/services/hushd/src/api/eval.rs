@@ -1,11 +1,12 @@
 //! Canonical PolicyEvent evaluation endpoint.
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::{GuardReport, GuardResult, Severity};
 use hush_certification::audit::NewAuditEventV2;
 
+use crate::api::v1::V1Error;
 use crate::audit::AuditEvent;
 use crate::policy_event::{map_policy_event, PolicyEvent};
 use crate::state::{AppState, DaemonEvent};
@@ -130,19 +131,20 @@ pub struct PolicyEvalResponse {
 pub async fn eval_policy_event(
     State(state): State<AppState>,
     Json(req): Json<EvalRequest>,
-) -> Result<Json<PolicyEvalResponse>, (StatusCode, String)> {
+) -> Result<Json<PolicyEvalResponse>, V1Error> {
     let event = match req {
         EvalRequest::Wrapped { event } => event,
         EvalRequest::Direct(event) => event,
     };
 
-    let mapped = map_policy_event(&event).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let mapped = map_policy_event(&event)
+        .map_err(|e| V1Error::bad_request("INVALID_EVENT", e.to_string()))?;
 
     let engine = state.engine.read().await;
     let report = engine
         .check_action_report(&mapped.action.as_guard_action(), &mapped.context)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("ENGINE_ERROR", e.to_string()))?;
 
     let decision = decision_from_report(&report, mapped.decision_reason.clone());
 

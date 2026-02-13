@@ -512,9 +512,23 @@ impl AppState {
     }
 
     /// Record an audit event to the local ledger and optionally forward it to external sinks.
+    ///
+    /// This synchronous variant is kept for fire-and-forget usage (e.g. session start/end).
     pub fn record_audit_event(&self, event: AuditEvent) {
         self.metrics.inc_audit_event();
         if let Err(err) = self.ledger.record(&event) {
+            self.metrics.inc_audit_write_failure();
+            tracing::warn!(error = %err, "Failed to record audit event");
+        }
+        if let Some(forwarder) = &self.audit_forwarder {
+            forwarder.try_enqueue(event);
+        }
+    }
+
+    /// Record an audit event without blocking the async runtime.
+    pub async fn record_audit_event_async(&self, event: AuditEvent) {
+        self.metrics.inc_audit_event();
+        if let Err(err) = self.ledger.record_async(event.clone()).await {
             self.metrics.inc_audit_write_failure();
             tracing::warn!(error = %err, "Failed to record audit event");
         }

@@ -1,39 +1,80 @@
 """Tests for SecretLeakGuard."""
 
 import pytest
-from clawdstrike.guards.secret_leak import SecretLeakGuard, SecretLeakConfig
+from clawdstrike.guards.secret_leak import (
+    SecretLeakGuard,
+    SecretLeakConfig,
+    SecretPattern,
+    DEFAULT_SECRET_PATTERNS,
+)
 from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 
 
 class TestSecretLeakConfig:
     def test_default_config(self) -> None:
         config = SecretLeakConfig()
-        assert config.secrets == []
+        assert len(config.patterns) > 0
         assert config.enabled is True
 
-    def test_with_secrets(self) -> None:
+    def test_default_patterns_match_known_secrets(self) -> None:
+        config = SecretLeakConfig()
+        assert any(p.name == "aws_access_key" for p in config.patterns)
+        assert any(p.name == "github_token" for p in config.patterns)
+
+    def test_with_custom_patterns(self) -> None:
+        config = SecretLeakConfig(patterns=[
+            SecretPattern(name="custom", pattern=r"CUSTOM_[A-Z]{10}"),
+        ])
+        assert len(config.patterns) == 1
+
+    def test_legacy_secrets_field(self) -> None:
         config = SecretLeakConfig(secrets=["secret1", "secret2"])
         assert len(config.secrets) == 2
 
 
 class TestSecretLeakGuard:
-    def test_detect_secret_in_output(self) -> None:
-        config = SecretLeakConfig(secrets=["sk-abc123secretkey"])
-        guard = SecretLeakGuard(config)
+    def test_detect_aws_key_pattern(self) -> None:
+        guard = SecretLeakGuard()
         context = GuardContext()
 
-        # Create action with output containing secret
         action = GuardAction.custom("output", {
-            "content": "The API key is sk-abc123secretkey",
+            "content": "AWS key: AKIAIOSFODNN7EXAMPLE",
         })
 
         result = guard.check(action, context)
         assert result.allowed is False
         assert result.severity == Severity.CRITICAL
+        assert result.details is not None
+        assert result.details["pattern_name"] == "aws_access_key"
+
+    def test_detect_github_token_pattern(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        action = GuardAction.custom("output", {
+            "content": "Token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+        })
+
+        result = guard.check(action, context)
+        assert result.allowed is False
+        assert result.details is not None
+        assert result.details["pattern_name"] == "github_token"
+
+    def test_detect_private_key_pattern(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        action = GuardAction.custom("output", {
+            "content": "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBAI...",
+        })
+
+        result = guard.check(action, context)
+        assert result.allowed is False
+        assert result.details is not None
+        assert result.details["pattern_name"] == "private_key"
 
     def test_no_secret_in_output(self) -> None:
-        config = SecretLeakConfig(secrets=["sk-abc123secretkey"])
-        guard = SecretLeakGuard(config)
+        guard = SecretLeakGuard()
         context = GuardContext()
 
         action = GuardAction.custom("output", {
@@ -43,47 +84,59 @@ class TestSecretLeakGuard:
         result = guard.check(action, context)
         assert result.allowed is True
 
-    def test_empty_secrets_list(self) -> None:
-        config = SecretLeakConfig(secrets=[])
+    def test_detect_in_file_write(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        action = GuardAction.file_write(
+            "/tmp/config.env",
+            b"AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+        )
+
+        result = guard.check(action, context)
+        assert result.allowed is False
+
+    def test_skip_paths(self) -> None:
+        config = SecretLeakConfig(skip_paths=["**/test/**"])
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
-            "content": "Any output is allowed",
-        })
+        action = GuardAction.file_write(
+            "/project/test/fixtures.py",
+            b"AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+        )
 
         result = guard.check(action, context)
         assert result.allowed is True
 
     def test_disabled_guard(self) -> None:
-        config = SecretLeakConfig(
-            secrets=["secret123"],
-            enabled=False,
-        )
+        config = SecretLeakConfig(enabled=False)
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
         action = GuardAction.custom("output", {
-            "content": "Contains secret123 but guard is disabled",
+            "content": "AKIAIOSFODNN7EXAMPLE",
         })
 
         result = guard.check(action, context)
         assert result.allowed is True
 
-    def test_secret_hint_in_details(self) -> None:
-        config = SecretLeakConfig(secrets=["verylongsecretvalue"])
+    def test_legacy_literal_secrets(self) -> None:
+        config = SecretLeakConfig(
+            patterns=[],
+            secrets=["sk-abc123secretkey"],
+        )
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
         action = GuardAction.custom("output", {
-            "content": "Leaked: verylongsecretvalue",
+            "content": "The API key is sk-abc123secretkey",
         })
 
         result = guard.check(action, context)
+        assert result.allowed is False
         assert result.details is not None
         assert "secret_hint" in result.details
-        # Should only show first 4 chars
-        assert result.details["secret_hint"] == "very..."
 
     def test_handles_output_actions(self) -> None:
         guard = SecretLeakGuard()
@@ -91,33 +144,31 @@ class TestSecretLeakGuard:
         assert guard.handles(GuardAction.custom("output", {})) is True
         assert guard.handles(GuardAction.custom("bash_output", {})) is True
         assert guard.handles(GuardAction.custom("tool_result", {})) is True
+        assert guard.handles(GuardAction.file_write("/test", b"")) is True
         assert guard.handles(GuardAction.file_access("/test")) is False
 
     def test_guard_name(self) -> None:
         guard = SecretLeakGuard()
         assert guard.name == "secret_leak"
 
-    def test_filters_empty_secrets(self) -> None:
-        config = SecretLeakConfig(secrets=["", "  ", "valid"])
+    def test_filters_empty_legacy_secrets(self) -> None:
+        config = SecretLeakConfig(patterns=[], secrets=["", "  ", "valid"])
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        # Only "valid" should be checked
         action = GuardAction.custom("output", {"content": "valid secret"})
         result = guard.check(action, context)
         assert result.allowed is False
 
     def test_multiple_content_fields(self) -> None:
-        config = SecretLeakConfig(secrets=["secret123"])
+        config = SecretLeakConfig(patterns=[], secrets=["secret123"])
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        # Test with "output" field
         action = GuardAction.custom("output", {"output": "secret123 leaked"})
         result = guard.check(action, context)
         assert result.allowed is False
 
-        # Test with "result" field
         action = GuardAction.custom("tool_result", {"result": "secret123 leaked"})
         result = guard.check(action, context)
         assert result.allowed is False

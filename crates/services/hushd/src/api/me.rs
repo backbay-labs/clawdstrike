@@ -1,8 +1,9 @@
 //! Debug endpoint to show the authenticated actor.
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
 use serde::Serialize;
 
+use crate::api::v1::V1Error;
 use crate::auth::{AuthenticatedActor, Scope};
 use crate::state::AppState;
 
@@ -28,9 +29,9 @@ pub struct ApiKeyInfo {
 pub async fn me(
     State(_state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<MeResponse>, (StatusCode, String)> {
+) -> Result<Json<MeResponse>, V1Error> {
     let Some(axum::extract::Extension(actor)) = actor else {
-        return Err((StatusCode::UNAUTHORIZED, "unauthenticated".to_string()));
+        return Err(V1Error::unauthorized("UNAUTHENTICATED", "unauthenticated"));
     };
 
     match actor {

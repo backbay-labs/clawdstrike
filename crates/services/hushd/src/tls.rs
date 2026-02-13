@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use axum::serve::Listener;
 use axum::{extract::connect_info::Connected, serve};
+use rustls::server::WebPkiClientVerifier;
 use rustls::ServerConfig;
 use rustls_pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio::net::{TcpListener, TcpStream};
@@ -44,10 +45,41 @@ impl TlsListener {
         // feature-based auto-detection may not resolve a single provider).
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let mut config = ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)?;
-        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        let builder = ServerConfig::builder();
+
+        let config = if let Some(ref ca_path) = tls.client_ca_path {
+            let ca_certs: Vec<CertificateDer<'static>> =
+                CertificateDer::pem_file_iter(ca_path)?.collect::<Result<Vec<_>, _>>()?;
+            if ca_certs.is_empty() {
+                anyhow::bail!(
+                    "TLS client CA file contained no certificates: {}",
+                    ca_path.display()
+                );
+            }
+
+            let mut root_store = rustls::RootCertStore::empty();
+            for cert in ca_certs {
+                root_store.add(cert)?;
+            }
+
+            let verifier = if tls.require_client_cert {
+                WebPkiClientVerifier::builder(Arc::new(root_store)).build()?
+            } else {
+                WebPkiClientVerifier::builder(Arc::new(root_store))
+                    .allow_unauthenticated()
+                    .build()?
+            };
+
+            let mut cfg = builder
+                .with_client_cert_verifier(verifier)
+                .with_single_cert(certs, key)?;
+            cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+            cfg
+        } else {
+            let mut cfg = builder.with_no_client_auth().with_single_cert(certs, key)?;
+            cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+            cfg
+        };
 
         Ok(Self {
             listener,

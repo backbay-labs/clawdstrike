@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use hush_core::{sha256, Hash};
 
+use crate::text_utils;
+
 /// Categories of sensitive data.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -287,13 +289,6 @@ struct CompiledPattern {
     regex: Regex,
 }
 
-fn compile_hardcoded_regex(pattern: &'static str) -> Regex {
-    Regex::new(pattern).unwrap_or_else(|err| {
-        tracing::error!(error = %err, %pattern, "failed to compile hardcoded regex");
-        Regex::new("a^").unwrap_or_else(|_| Regex::new("a^").unwrap_or_else(|_| unreachable!()))
-    })
-}
-
 fn compile_patterns() -> &'static [CompiledPattern] {
     static PATTERNS: OnceLock<Vec<CompiledPattern>> = OnceLock::new();
 
@@ -306,7 +301,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "openai_api_key",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(r"sk-[A-Za-z0-9]{48}"),
+                regex: text_utils::compile_hardcoded_regex(r"sk-[A-Za-z0-9]{48}"),
             },
             CompiledPattern {
                 id: "secret_anthropic_api_key",
@@ -314,7 +309,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "anthropic_api_key",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(r"sk-ant-api03-[A-Za-z0-9_-]{93}"),
+                regex: text_utils::compile_hardcoded_regex(r"sk-ant-api03-[A-Za-z0-9_-]{93}"),
             },
             CompiledPattern {
                 id: "secret_github_token",
@@ -322,7 +317,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "github_token",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(r"gh[ps]_[A-Za-z0-9]{36}"),
+                regex: text_utils::compile_hardcoded_regex(r"gh[ps]_[A-Za-z0-9]{36}"),
             },
             CompiledPattern {
                 id: "secret_aws_access_key_id",
@@ -330,7 +325,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "aws_access_key_id",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(r"AKIA[0-9A-Z]{16}"),
+                regex: text_utils::compile_hardcoded_regex(r"AKIA[0-9A-Z]{16}"),
             },
             CompiledPattern {
                 id: "secret_private_key_block",
@@ -338,7 +333,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "private_key",
                 confidence: 0.99,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----"),
+                regex: text_utils::compile_hardcoded_regex(
+                    r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----",
+                ),
             },
             CompiledPattern {
                 id: "secret_jwt",
@@ -346,7 +343,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "jwt",
                 confidence: 0.8,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(
+                regex: text_utils::compile_hardcoded_regex(
                     r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}",
                 ),
             },
@@ -356,7 +353,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "password",
                 confidence: 0.7,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(r"(?i)\b(password|passwd|pwd)\b\s*[:=]\s*\S{6,}"),
+                regex: text_utils::compile_hardcoded_regex(
+                    r"(?i)\b(password|passwd|pwd)\b\s*[:=]\s*\S{6,}",
+                ),
             },
             // PII
             CompiledPattern {
@@ -365,7 +364,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "email",
                 confidence: 0.95,
                 strategy: RedactionStrategy::Partial,
-                regex: compile_hardcoded_regex(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"),
+                regex: text_utils::compile_hardcoded_regex(
+                    r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+                ),
             },
             CompiledPattern {
                 id: "pii_phone",
@@ -374,7 +375,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 confidence: 0.8,
                 strategy: RedactionStrategy::Partial,
                 // Conservative: US-ish formats with separators.
-                regex: compile_hardcoded_regex(
+                regex: text_utils::compile_hardcoded_regex(
                     r"\b(?:\+?1[\s.-]?)?\(?(?:[2-9][0-9]{2})\)?[\s.-]?[0-9]{3}[\s.-]?[0-9]{4}\b",
                 ),
             },
@@ -384,7 +385,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "ssn",
                 confidence: 0.9,
                 strategy: RedactionStrategy::Full,
-                regex: compile_hardcoded_regex(r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b"),
+                regex: text_utils::compile_hardcoded_regex(r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b"),
             },
             CompiledPattern {
                 id: "pii_credit_card",
@@ -393,7 +394,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 confidence: 0.7,
                 strategy: RedactionStrategy::Full,
                 // Very approximate; downstream can add Luhn if needed.
-                regex: compile_hardcoded_regex(r"\b(?:[0-9][ -]*?){13,19}\b"),
+                regex: text_utils::compile_hardcoded_regex(r"\b(?:[0-9][ -]*?){13,19}\b"),
             },
             // Internal
             CompiledPattern {
@@ -402,7 +403,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "internal_url",
                 confidence: 0.8,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: compile_hardcoded_regex(
+                regex: text_utils::compile_hardcoded_regex(
                     r"(?i)\bhttps?://(?:localhost|127\.0\.0\.1)(?::[0-9]{2,5})?\b",
                 ),
             },
@@ -412,7 +413,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "internal_ip",
                 confidence: 0.8,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: compile_hardcoded_regex(
+                regex: text_utils::compile_hardcoded_regex(
                     r"\b(?:10|192\.168|172\.(?:1[6-9]|2[0-9]|3[0-1]))\.[0-9]{1,3}\.[0-9]{1,3}\b",
                 ),
             },
@@ -422,7 +423,9 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "windows_path",
                 confidence: 0.7,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: compile_hardcoded_regex(r"(?i)\b[A-Z]:\\(?:[^\\\s]+\\)*[^\\\s]+\b"),
+                regex: text_utils::compile_hardcoded_regex(
+                    r"(?i)\b[A-Z]:\\(?:[^\\\s]+\\)*[^\\\s]+\b",
+                ),
             },
             CompiledPattern {
                 id: "internal_file_path_sensitive",
@@ -430,7 +433,7 @@ fn compile_patterns() -> &'static [CompiledPattern] {
                 data_type: "sensitive_path",
                 confidence: 0.7,
                 strategy: RedactionStrategy::TypeLabel,
-                regex: compile_hardcoded_regex(
+                regex: text_utils::compile_hardcoded_regex(
                     r"(?i)\b(?:/etc/|/var/secrets/|/home/[^\s]+/\.ssh/)",
                 ),
             },
@@ -570,18 +573,6 @@ fn is_luhn_valid_card_number(text: &str) -> bool {
     sum.is_multiple_of(10)
 }
 
-fn truncate_to_char_boundary(text: &str, max_bytes: usize) -> (&str, bool) {
-    if text.len() <= max_bytes {
-        return (text, false);
-    }
-
-    let mut end = max_bytes.min(text.len());
-    while end > 0 && !text.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
-    (&text[..end], end < text.len())
-}
-
 /// Sanitizer for output text.
 #[derive(Clone)]
 pub struct OutputSanitizer {
@@ -663,7 +654,8 @@ impl OutputSanitizer {
             ..Default::default()
         };
 
-        let (limited, truncated) = truncate_to_char_boundary(output, self.config.max_input_bytes);
+        let (limited, truncated) =
+            text_utils::truncate_to_char_boundary(output, self.config.max_input_bytes);
 
         let mut findings: Vec<SensitiveDataFinding> = Vec::new();
         let mut redactions: Vec<Redaction> = Vec::new();
@@ -760,8 +752,8 @@ impl OutputSanitizer {
         if self.config.categories.secrets && self.config.entropy.enabled {
             // A simple scan that finds "word-like" tokens and evaluates entropy.
             static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
-            let token_re =
-                TOKEN_RE.get_or_init(|| compile_hardcoded_regex(r"[A-Za-z0-9+/=_-]{32,}"));
+            let token_re = TOKEN_RE
+                .get_or_init(|| text_utils::compile_hardcoded_regex(r"[A-Za-z0-9+/=_-]{32,}"));
             for m in token_re.find_iter(limited) {
                 let token = m.as_str();
                 if token.len() < self.config.entropy.min_token_len {

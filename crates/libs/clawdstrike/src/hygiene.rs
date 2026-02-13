@@ -9,9 +9,10 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use unicode_normalization::UnicodeNormalization;
 
 use hush_core::{sha256, Hash};
+
+use crate::text_utils;
 
 /// Marker inserted before untrusted text.
 pub const USER_CONTENT_START: &str = "[USER_CONTENT_START]";
@@ -97,6 +98,20 @@ pub struct PromptInjectionCanonicalizationStats {
     pub whitespace_collapsed: bool,
     /// Bytes of the canonicalized scan string.
     pub canonical_bytes: usize,
+}
+
+impl From<text_utils::CanonicalizationStats> for PromptInjectionCanonicalizationStats {
+    fn from(s: text_utils::CanonicalizationStats) -> Self {
+        Self {
+            scanned_bytes: s.scanned_bytes,
+            truncated: s.truncated,
+            nfkc_changed: s.nfkc_changed,
+            casefold_changed: s.casefold_changed,
+            zero_width_stripped: s.zero_width_stripped,
+            whitespace_collapsed: s.whitespace_collapsed,
+            canonical_bytes: s.canonical_bytes,
+        }
+    }
 }
 
 /// Result of recording a fingerprint in a deduper.
@@ -252,73 +267,9 @@ fn compiled_signals() -> &'static [Signal] {
     })
 }
 
-fn is_zero_width_or_formatting(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}' // soft hyphen
-            | '\u{180E}' // mongolian vowel separator (deprecated)
-            | '\u{200B}' // zero width space
-            | '\u{200C}' // zero width non-joiner
-            | '\u{200D}' // zero width joiner
-            | '\u{200E}' // left-to-right mark
-            | '\u{200F}' // right-to-left mark
-            | '\u{202A}' // left-to-right embedding
-            | '\u{202B}' // right-to-left embedding
-            | '\u{202C}' // pop directional formatting
-            | '\u{202D}' // left-to-right override
-            | '\u{202E}' // right-to-left override
-            | '\u{2060}' // word joiner
-            | '\u{2066}' // left-to-right isolate
-            | '\u{2067}' // right-to-left isolate
-            | '\u{2068}' // first strong isolate
-            | '\u{2069}' // pop directional isolate
-            | '\u{FEFF}' // zero width no-break space
-    )
-}
-
-fn truncate_to_char_boundary(text: &str, max_bytes: usize) -> (&str, bool) {
-    if text.len() <= max_bytes {
-        return (text, false);
-    }
-
-    let mut end = max_bytes.min(text.len());
-    while end > 0 && !text.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
-
-    (&text[..end], end < text.len())
-}
-
 fn canonicalize_for_detection(text: &str) -> (String, PromptInjectionCanonicalizationStats) {
-    let mut stats = PromptInjectionCanonicalizationStats {
-        scanned_bytes: text.len(),
-        ..Default::default()
-    };
-
-    // NFKC normalization
-    let nfkc: String = text.nfkc().collect();
-    stats.nfkc_changed = nfkc != text;
-
-    // Unicode-aware lowercasing (not used for fingerprinting).
-    let folded: String = nfkc.chars().flat_map(|c| c.to_lowercase()).collect();
-    stats.casefold_changed = folded != nfkc;
-
-    // Strip zero-width / formatting characters.
-    let mut stripped = String::with_capacity(folded.len());
-    for c in folded.chars() {
-        if is_zero_width_or_formatting(c) {
-            stats.zero_width_stripped = stats.zero_width_stripped.saturating_add(1);
-            continue;
-        }
-        stripped.push(c);
-    }
-
-    // Collapse whitespace to single spaces.
-    let collapsed = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
-    stats.whitespace_collapsed = collapsed != stripped;
-    stats.canonical_bytes = collapsed.len();
-
-    (collapsed, stats)
+    let (canonical, stats) = text_utils::canonicalize_for_detection(text);
+    (canonical, PromptInjectionCanonicalizationStats::from(stats))
 }
 
 /// Detect prompt-injection signals in untrusted text.
@@ -339,7 +290,7 @@ pub fn detect_prompt_injection_with_limit(
     let fingerprint = sha256(text.as_bytes());
 
     // Bound scanning work (still hash full).
-    let (scan_text, truncated) = truncate_to_char_boundary(text, max_scan_bytes);
+    let (scan_text, truncated) = text_utils::truncate_to_char_boundary(text, max_scan_bytes);
     let (canonical_scan_text, mut canonicalization) = canonicalize_for_detection(scan_text);
     canonicalization.truncated = truncated;
 

@@ -4,9 +4,11 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     Json,
 };
+
+use crate::api::v1::V1Error;
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::policy::MergeStrategy;
@@ -145,7 +147,7 @@ pub async fn create_scoped_policy(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<CreateScopedPolicyRequest>,
-) -> Result<Json<ScopedPolicy>, (StatusCode, String)> {
+) -> Result<Json<ScopedPolicy>, V1Error> {
     // RBAC does not currently have a first-class "role" scope type.
     // Fail closed: only super-admin users may mutate role-scoped policies.
     let actor_ref = actor.as_ref().map(|e| &e.0);
@@ -153,9 +155,9 @@ pub async fn create_scoped_policy(
         && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
         && !actor_is_super_admin(&state, actor_ref)
     {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "role_scoped_policy_requires_super_admin".to_string(),
+        return Err(V1Error::forbidden(
+            "ROLE_SCOPED_POLICY_REQUIRES_SUPER_ADMIN",
+            "role_scoped_policy_requires_super_admin",
         ));
     }
 
@@ -173,14 +175,18 @@ pub async fn create_scoped_policy(
     )?;
 
     // Validate policy yaml eagerly.
-    Policy::from_yaml(&request.policy_yaml)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid policy_yaml: {e}")))?;
+    Policy::from_yaml(&request.policy_yaml).map_err(|e| {
+        V1Error::bad_request("INVALID_POLICY_YAML", format!("invalid policy_yaml: {e}"))
+    })?;
 
     // Basic scope validation.
     if request.scope.scope_type != PolicyScopeType::Global
         && request.scope.id.as_deref().unwrap_or("").is_empty()
     {
-        return Err((StatusCode::BAD_REQUEST, "scope.id_required".to_string()));
+        return Err(V1Error::bad_request(
+            "SCOPE_ID_REQUIRED",
+            "scope.id_required",
+        ));
     }
 
     // Tenant scoping: non-super-admin users can only create policies in their org.
@@ -192,13 +198,22 @@ pub async fn create_scoped_policy(
 
                 if let Some(policy_org) = policy_org {
                     if actor_org.is_some() && actor_org != Some(policy_org) {
-                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_POLICY_DENIED",
+                            "cross_org_policy_denied",
+                        ));
                     }
                     if actor_org.is_none() {
-                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                        return Err(V1Error::forbidden(
+                            "ORGANIZATION_REQUIRED",
+                            "organization_required",
+                        ));
                     }
                 } else if request.scope.scope_type != PolicyScopeType::Global {
-                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    return Err(V1Error::forbidden(
+                        "ORGANIZATION_REQUIRED",
+                        "organization_required",
+                    ));
                 }
             }
         }
@@ -237,13 +252,13 @@ pub async fn create_scoped_policy(
             ) = &e
             {
                 if matches!(err.code, rusqlite::ErrorCode::ConstraintViolation) {
-                    return (
-                        StatusCode::CONFLICT,
-                        "scoped_policy_already_exists".to_string(),
+                    return V1Error::conflict(
+                        "SCOPED_POLICY_ALREADY_EXISTS",
+                        "scoped_policy_already_exists",
                     );
                 }
             }
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            V1Error::internal("INTERNAL_ERROR", e.to_string())
         })?;
 
     state.policy_engine_cache.clear();
@@ -271,7 +286,7 @@ pub async fn create_scoped_policy(
 pub async fn list_scoped_policies(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<ListScopedPoliciesResponse>, (StatusCode, String)> {
+) -> Result<Json<ListScopedPoliciesResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -284,7 +299,7 @@ pub async fn list_scoped_policies(
         .policy_resolver
         .store()
         .list_scoped_policies()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let actor_ref = actor.as_ref().map(|e| &e.0);
     let is_super_admin = actor_is_super_admin(&state, actor_ref);
@@ -316,15 +331,18 @@ pub async fn update_scoped_policy(
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Path(id): Path<String>,
     Json(request): Json<UpdateScopedPolicyRequest>,
-) -> Result<Json<ScopedPolicy>, (StatusCode, String)> {
+) -> Result<Json<ScopedPolicy>, V1Error> {
     let actor_ref = actor.as_ref().map(|e| &e.0);
     let Some(mut existing) = state
         .policy_resolver
         .store()
         .get_scoped_policy(&id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
     else {
-        return Err((StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()));
+        return Err(V1Error::not_found(
+            "SCOPED_POLICY_NOT_FOUND",
+            "scoped_policy_not_found",
+        ));
     };
 
     let before = existing.clone();
@@ -336,7 +354,10 @@ pub async fn update_scoped_policy(
         if scope.scope_type != PolicyScopeType::Global
             && scope.id.as_deref().unwrap_or("").is_empty()
         {
-            return Err((StatusCode::BAD_REQUEST, "scope.id_required".to_string()));
+            return Err(V1Error::bad_request(
+                "SCOPE_ID_REQUIRED",
+                "scope.id_required",
+            ));
         }
         existing.scope = scope;
     }
@@ -347,8 +368,9 @@ pub async fn update_scoped_policy(
         existing.merge_strategy = ms;
     }
     if let Some(yaml) = request.policy_yaml {
-        Policy::from_yaml(&yaml)
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid policy_yaml: {e}")))?;
+        Policy::from_yaml(&yaml).map_err(|e| {
+            V1Error::bad_request("INVALID_POLICY_YAML", format!("invalid policy_yaml: {e}"))
+        })?;
         existing.policy_yaml = yaml;
     }
     if let Some(enabled) = request.enabled {
@@ -363,13 +385,22 @@ pub async fn update_scoped_policy(
                 let actor_org = principal.organization_id.as_deref();
                 if let Some(policy_org) = policy_org {
                     if actor_org.is_some() && actor_org != Some(policy_org) {
-                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_POLICY_DENIED",
+                            "cross_org_policy_denied",
+                        ));
                     }
                     if actor_org.is_none() {
-                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                        return Err(V1Error::forbidden(
+                            "ORGANIZATION_REQUIRED",
+                            "organization_required",
+                        ));
                     }
                 } else if existing.scope.scope_type != PolicyScopeType::Global {
-                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    return Err(V1Error::forbidden(
+                        "ORGANIZATION_REQUIRED",
+                        "organization_required",
+                    ));
                 }
             }
         }
@@ -380,9 +411,9 @@ pub async fn update_scoped_policy(
         && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
         && !actor_is_super_admin(&state, actor_ref)
     {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "role_scoped_policy_requires_super_admin".to_string(),
+        return Err(V1Error::forbidden(
+            "ROLE_SCOPED_POLICY_REQUIRES_SUPER_ADMIN",
+            "role_scoped_policy_requires_super_admin",
         ));
     }
 
@@ -424,7 +455,7 @@ pub async fn update_scoped_policy(
         .policy_resolver
         .store()
         .update_scoped_policy(&existing)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     state.policy_engine_cache.clear();
 
@@ -454,22 +485,22 @@ pub async fn delete_scoped_policy(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, V1Error> {
     let actor_ref = actor.as_ref().map(|e| &e.0);
     let existing = state
         .policy_resolver
         .store()
         .get_scoped_policy(&id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("SCOPED_POLICY_NOT_FOUND", "scoped_policy_not_found"))?;
 
     if existing.scope.scope_type == PolicyScopeType::Role
         && matches!(actor_ref, Some(AuthenticatedActor::User(_)))
         && !actor_is_super_admin(&state, actor_ref)
     {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "role_scoped_policy_requires_super_admin".to_string(),
+        return Err(V1Error::forbidden(
+            "ROLE_SCOPED_POLICY_REQUIRES_SUPER_ADMIN",
+            "role_scoped_policy_requires_super_admin",
         ));
     }
 
@@ -494,13 +525,22 @@ pub async fn delete_scoped_policy(
                 let actor_org = principal.organization_id.as_deref();
                 if let Some(policy_org) = policy_org {
                     if actor_org.is_some() && actor_org != Some(policy_org) {
-                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_POLICY_DENIED",
+                            "cross_org_policy_denied",
+                        ));
                     }
                     if actor_org.is_none() {
-                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                        return Err(V1Error::forbidden(
+                            "ORGANIZATION_REQUIRED",
+                            "organization_required",
+                        ));
                     }
                 } else if existing.scope.scope_type != PolicyScopeType::Global {
-                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    return Err(V1Error::forbidden(
+                        "ORGANIZATION_REQUIRED",
+                        "organization_required",
+                    ));
                 }
             }
         }
@@ -510,9 +550,12 @@ pub async fn delete_scoped_policy(
         .policy_resolver
         .store()
         .delete_scoped_policy(&id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     if !deleted {
-        return Err((StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()));
+        return Err(V1Error::not_found(
+            "SCOPED_POLICY_NOT_FOUND",
+            "scoped_policy_not_found",
+        ));
     }
 
     state.policy_engine_cache.clear();
@@ -560,7 +603,7 @@ pub async fn create_assignment(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<CreateAssignmentRequest>,
-) -> Result<Json<PolicyAssignment>, (StatusCode, String)> {
+) -> Result<Json<PolicyAssignment>, V1Error> {
     require_api_key_scope_or_user_permission_with_context(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -579,8 +622,8 @@ pub async fn create_assignment(
         .policy_resolver
         .store()
         .get_scoped_policy(&request.policy_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
+        .ok_or_else(|| V1Error::not_found("SCOPED_POLICY_NOT_FOUND", "scoped_policy_not_found"))?;
 
     // Tenant scoping: policy and target must remain within the actor's org (unless super-admin).
     if let Some(axum::extract::Extension(actor)) = actor.as_ref() {
@@ -590,22 +633,31 @@ pub async fn create_assignment(
                 let actor_org = principal.organization_id.as_deref();
                 if let Some(policy_org) = policy_org {
                     if actor_org.is_some() && actor_org != Some(policy_org) {
-                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_POLICY_DENIED",
+                            "cross_org_policy_denied",
+                        ));
                     }
                     if actor_org.is_none() {
-                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                        return Err(V1Error::forbidden(
+                            "ORGANIZATION_REQUIRED",
+                            "organization_required",
+                        ));
                     }
                     if request.target.target_type
                         == crate::policy_scoping::PolicyAssignmentTargetType::Organization
                         && request.target.id != policy_org
                     {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "cross_org_assignment_denied".to_string(),
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_ASSIGNMENT_DENIED",
+                            "cross_org_assignment_denied",
                         ));
                     }
                 } else if policy.scope.scope_type != PolicyScopeType::Global {
-                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    return Err(V1Error::forbidden(
+                        "ORGANIZATION_REQUIRED",
+                        "organization_required",
+                    ));
                 }
             }
         }
@@ -628,7 +680,7 @@ pub async fn create_assignment(
         .policy_resolver
         .store()
         .insert_assignment(&assignment)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     state.policy_engine_cache.clear();
 
@@ -652,7 +704,7 @@ pub async fn create_assignment(
 pub async fn list_assignments(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<ListAssignmentsResponse>, (StatusCode, String)> {
+) -> Result<Json<ListAssignmentsResponse>, V1Error> {
     // API keys still require explicit scope; user principals are filtered by RBAC below.
     if matches!(
         actor.as_ref().map(|e| &e.0),
@@ -671,7 +723,7 @@ pub async fn list_assignments(
         .policy_resolver
         .store()
         .list_assignments()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let actor_ref = actor.as_ref().map(|e| &e.0);
     let is_super_admin = actor_is_super_admin(&state, actor_ref);
@@ -685,7 +737,7 @@ pub async fn list_assignments(
                     .policy_resolver
                     .store()
                     .get_scoped_policy(&a.policy_id)
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
                 else {
                     continue;
                 };
@@ -748,17 +800,14 @@ pub async fn delete_assignment(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, V1Error> {
     let existing = state
         .policy_resolver
         .store()
         .get_assignment(&id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
         .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "policy_assignment_not_found".to_string(),
-            )
+            V1Error::not_found("POLICY_ASSIGNMENT_NOT_FOUND", "policy_assignment_not_found")
         })?;
 
     require_api_key_scope_or_user_permission_with_context(
@@ -783,21 +832,30 @@ pub async fn delete_assignment(
                     .policy_resolver
                     .store()
                     .get_scoped_policy(&existing.policy_id)
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
                     .ok_or_else(|| {
-                        (StatusCode::NOT_FOUND, "scoped_policy_not_found".to_string())
+                        V1Error::not_found("SCOPED_POLICY_NOT_FOUND", "scoped_policy_not_found")
                     })?;
 
                 let policy_org = scope_org_id(&policy.scope);
                 if let Some(policy_org) = policy_org {
                     if actor_org.is_some() && actor_org != Some(policy_org) {
-                        return Err((StatusCode::FORBIDDEN, "cross_org_policy_denied".to_string()));
+                        return Err(V1Error::forbidden(
+                            "CROSS_ORG_POLICY_DENIED",
+                            "cross_org_policy_denied",
+                        ));
                     }
                     if actor_org.is_none() {
-                        return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                        return Err(V1Error::forbidden(
+                            "ORGANIZATION_REQUIRED",
+                            "organization_required",
+                        ));
                     }
                 } else if policy.scope.scope_type != PolicyScopeType::Global {
-                    return Err((StatusCode::FORBIDDEN, "organization_required".to_string()));
+                    return Err(V1Error::forbidden(
+                        "ORGANIZATION_REQUIRED",
+                        "organization_required",
+                    ));
                 }
             }
         }
@@ -807,11 +865,11 @@ pub async fn delete_assignment(
         .policy_resolver
         .store()
         .delete_assignment(&id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     if !deleted {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "policy_assignment_not_found".to_string(),
+        return Err(V1Error::not_found(
+            "POLICY_ASSIGNMENT_NOT_FOUND",
+            "policy_assignment_not_found",
         ));
     }
 
@@ -856,7 +914,7 @@ pub async fn resolve_policy(
     Query(query): Query<ResolvePolicyQuery>,
     headers: HeaderMap,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
-) -> Result<Json<ResolvePolicyResponse>, (StatusCode, String)> {
+) -> Result<Json<ResolvePolicyResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -900,14 +958,14 @@ pub async fn resolve_policy(
         let validation = state
             .sessions
             .validate_session(session_id)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
         if !validation.valid {
-            return Err((StatusCode::FORBIDDEN, "invalid_session".to_string()));
+            return Err(V1Error::forbidden("INVALID_SESSION", "invalid_session"));
         }
         let session = validation.session.ok_or_else(|| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "session_validation_missing_session".to_string(),
+            V1Error::internal(
+                "SESSION_VALIDATION_ERROR",
+                "session_validation_missing_session",
             )
         })?;
 
@@ -918,9 +976,9 @@ pub async fn resolve_policy(
                     if principal.id != session.identity.id
                         || principal.issuer != session.identity.issuer
                     {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "session_identity_mismatch".to_string(),
+                        return Err(V1Error::forbidden(
+                            "SESSION_IDENTITY_MISMATCH",
+                            "session_identity_mismatch",
                         ));
                     }
                 }
@@ -931,15 +989,15 @@ pub async fn resolve_policy(
                         .and_then(|s| s.get("bound_api_key_id"))
                         .and_then(|v| v.as_str());
                     let Some(bound_id) = bound else {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "api_key_cannot_use_unbound_sessions".to_string(),
+                        return Err(V1Error::forbidden(
+                            "API_KEY_UNBOUND_SESSION",
+                            "api_key_cannot_use_unbound_sessions",
                         ));
                     };
                     if bound_id != key.id.as_str() {
-                        return Err((
-                            StatusCode::FORBIDDEN,
-                            "api_key_session_binding_mismatch".to_string(),
+                        return Err(V1Error::forbidden(
+                            "API_KEY_SESSION_BINDING_MISMATCH",
+                            "api_key_session_binding_mismatch",
                         ));
                     }
                 }
@@ -949,7 +1007,7 @@ pub async fn resolve_policy(
         state
             .sessions
             .validate_session_binding(&session, &request_ctx)
-            .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
+            .map_err(|e| V1Error::forbidden("FORBIDDEN", e.to_string()))?;
 
         ctx = state
             .sessions
@@ -971,12 +1029,12 @@ pub async fn resolve_policy(
     let resolved = state
         .policy_resolver
         .resolve_policy(&default_policy, &ctx)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let policy_yaml = resolved
         .policy
         .to_yaml()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     let policy_hash = hush_core::sha256(policy_yaml.as_bytes()).to_hex();
 
     // Prime cache (optional).
@@ -1004,6 +1062,7 @@ mod tests {
     use super::*;
 
     use axum::extract::State;
+    use axum::http::StatusCode;
     use axum::Json;
 
     fn test_policy_admin(org_id: &str) -> AuthenticatedActor {
@@ -1071,9 +1130,9 @@ mod tests {
         )
         .await;
 
-        let (status, msg) = res.expect_err("expected forbidden");
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(msg, "role_scoped_policy_requires_super_admin");
+        let err = res.expect_err("expected forbidden");
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
+        assert_eq!(err.message, "role_scoped_policy_requires_super_admin");
 
         let _ = std::fs::remove_dir_all(&test_dir);
     }

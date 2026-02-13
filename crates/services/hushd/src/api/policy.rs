@@ -1,6 +1,8 @@
 //! Policy management endpoints
 
 use axum::{extract::State, http::StatusCode, Json};
+
+use crate::api::v1::V1Error;
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::error::{Error as PolicyError, PolicyValidationError};
@@ -160,7 +162,7 @@ fn validation_issues_from_policy_error(err: &PolicyError) -> Vec<ValidationIssue
 /// GET /api/v1/policy/bundle
 pub async fn get_policy_bundle(
     State(state): State<AppState>,
-) -> Result<Json<SignedPolicyBundle>, (StatusCode, String)> {
+) -> Result<Json<SignedPolicyBundle>, V1Error> {
     let engine = state.engine.read().await;
     let policy = engine.policy().clone();
 
@@ -172,7 +174,7 @@ pub async fn get_policy_bundle(
     }
 
     let mut bundle = PolicyBundle::new_with_sources(policy, sources)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     bundle.metadata = Some(serde_json::json!({
         "daemon": {
             "session_id": state.session_id.clone(),
@@ -181,14 +183,14 @@ pub async fn get_policy_bundle(
     }));
 
     let keypair = engine.keypair().cloned().ok_or_else(|| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Daemon signing key is not configured".to_string(),
+        V1Error::internal(
+            "SIGNING_KEY_NOT_CONFIGURED",
+            "Daemon signing key is not configured",
         )
     })?;
 
     let signed = SignedPolicyBundle::sign_with_public_key(bundle, &keypair)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     Ok(Json(signed))
 }
@@ -197,13 +199,13 @@ pub async fn get_policy_bundle(
 pub async fn update_policy_bundle(
     State(state): State<AppState>,
     Json(signed): Json<SignedPolicyBundle>,
-) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
+) -> Result<Json<UpdatePolicyResponse>, V1Error> {
     // Verify signature before accepting the policy.
     let trusted = &state.policy_bundle_trusted_keys;
     let verified = if trusted.is_empty() {
         signed.verify_embedded().map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
+            V1Error::bad_request(
+                "BUNDLE_VERIFICATION_FAILED",
                 format!("Policy bundle verification failed: {}", e),
             )
         })?
@@ -211,8 +213,8 @@ pub async fn update_policy_bundle(
         let mut ok = false;
         for pk in trusted.iter() {
             if signed.verify(pk).map_err(|e| {
-                (
-                    StatusCode::BAD_REQUEST,
+                V1Error::bad_request(
+                    "BUNDLE_VERIFICATION_FAILED",
                     format!("Policy bundle verification failed: {}", e),
                 )
             })? {
@@ -224,9 +226,9 @@ pub async fn update_policy_bundle(
     };
 
     if !verified {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "Invalid policy bundle signature".to_string(),
+        return Err(V1Error::forbidden(
+            "INVALID_BUNDLE_SIGNATURE",
+            "Invalid policy bundle signature",
         ));
     }
 
@@ -235,22 +237,25 @@ pub async fn update_policy_bundle(
         .bundle
         .policy
         .validate()
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy: {}", e)))?;
+        .map_err(|e| V1Error::bad_request("INVALID_POLICY", format!("Invalid policy: {}", e)))?;
 
     // Ensure policy_hash is correctly derived from the policy itself.
     //
     // The bundle is signed, but we still treat policy_hash as a derived field (it must not be
     // allowed to lie).
     let computed_policy_hash = {
-        let value = serde_json::to_value(&signed.bundle.policy)
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy: {}", e)))?;
-        let canonical = canonicalize(&value)
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid policy: {}", e)))?;
+        let value = serde_json::to_value(&signed.bundle.policy).map_err(|e| {
+            V1Error::bad_request("INVALID_POLICY", format!("Invalid policy: {}", e))
+        })?;
+        let canonical = canonicalize(&value).map_err(|e| {
+            V1Error::bad_request("INVALID_POLICY", format!("Invalid policy: {}", e))
+        })?;
         sha256(canonical.as_bytes())
     };
     if computed_policy_hash != signed.bundle.policy_hash {
-        return Err((
+        return Err(V1Error::new(
             StatusCode::UNPROCESSABLE_ENTITY,
+            "POLICY_HASH_MISMATCH",
             format!(
                 "Policy bundle policy_hash mismatch (expected {}, got {})",
                 computed_policy_hash.to_hex_prefixed(),
@@ -263,12 +268,12 @@ pub async fn update_policy_bundle(
     let mut engine = state.engine.write().await;
     let keypair = if let Some(ref key_path) = state.config.signing_key {
         let key_hex = std::fs::read_to_string(key_path)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
             .trim()
             .to_string();
         Some(
             Keypair::from_hex(&key_hex)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+                .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?,
         )
     } else {
         engine.keypair().cloned()
@@ -277,7 +282,7 @@ pub async fn update_policy_bundle(
     // Fail closed if custom guards are requested but unavailable.
     let mut new_engine = HushEngine::builder(signed.bundle.policy.clone())
         .build()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| V1Error::bad_request("INVALID_POLICY", e.to_string()))?;
     new_engine = match keypair {
         Some(keypair) => new_engine.with_keypair(keypair),
         None => new_engine.with_generated_keypair(),
@@ -285,7 +290,7 @@ pub async fn update_policy_bundle(
     let active_policy_hash = new_engine
         .policy_hash()
         .map(|h| h.to_hex())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     *engine = new_engine;
     state.policy_engine_cache.clear();
     drop(engine);
@@ -327,7 +332,7 @@ pub async fn update_policy_bundle(
 pub async fn get_policy(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<PolicyResponse>, (StatusCode, String)> {
+) -> Result<Json<PolicyResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -342,10 +347,10 @@ pub async fn get_policy(
     let policy_hash = engine
         .policy_hash()
         .map(|h| h.to_hex())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     let yaml = engine
         .policy_yaml()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let name = if policy.name.is_empty() {
         state.config.ruleset.clone()
@@ -371,7 +376,7 @@ pub async fn validate_policy(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<ValidatePolicyRequest>,
-) -> Result<Json<ValidatePolicyResponse>, (StatusCode, String)> {
+) -> Result<Json<ValidatePolicyResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -383,7 +388,7 @@ pub async fn validate_policy(
     let resolver = RemotePolicyResolver::new(RemoteExtendsResolverConfig::from_config(
         &state.config.remote_extends,
     ))
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     let base_path = state.config.policy_path.as_deref();
 
     match Policy::from_yaml_with_extends_resolver(&request.yaml, base_path, &resolver) {
@@ -423,7 +428,7 @@ pub async fn update_policy(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
     Json(request): Json<UpdatePolicyRequest>,
-) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
+) -> Result<Json<UpdatePolicyResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -436,11 +441,11 @@ pub async fn update_policy(
         let engine = state.engine.read().await;
         let yaml = engine
             .policy_yaml()
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
         let hash = engine
             .policy_hash()
             .map(|h| h.to_hex())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
         (yaml, hash)
     };
 
@@ -448,27 +453,24 @@ pub async fn update_policy(
     let resolver = RemotePolicyResolver::new(RemoteExtendsResolverConfig::from_config(
         &state.config.remote_extends,
     ))
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let base_path = state.config.policy_path.as_deref();
     let policy = Policy::from_yaml_with_extends_resolver(&request.yaml, base_path, &resolver)
         .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid policy YAML: {}", e),
-            )
+            V1Error::bad_request("INVALID_POLICY_YAML", format!("Invalid policy YAML: {}", e))
         })?;
 
     // Update the engine
     let mut engine = state.engine.write().await;
     let keypair = if let Some(ref key_path) = state.config.signing_key {
         let key_hex = std::fs::read_to_string(key_path)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
             .trim()
             .to_string();
         Some(
             Keypair::from_hex(&key_hex)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+                .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?,
         )
     } else {
         engine.keypair().cloned()
@@ -477,7 +479,7 @@ pub async fn update_policy(
     // Fail closed if custom guards are requested but unavailable.
     let mut new_engine = HushEngine::builder(policy)
         .build()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| V1Error::bad_request("INVALID_POLICY", e.to_string()))?;
     new_engine = match keypair {
         Some(keypair) => new_engine.with_keypair(keypair),
         None => new_engine.with_generated_keypair(),
@@ -485,7 +487,7 @@ pub async fn update_policy(
     let after_hash = new_engine
         .policy_hash()
         .map(|h| h.to_hex())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
     *engine = new_engine;
     state.policy_engine_cache.clear();
 
@@ -513,7 +515,7 @@ pub async fn update_policy(
 pub async fn reload_policy(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<UpdatePolicyResponse>, (StatusCode, String)> {
+) -> Result<Json<UpdatePolicyResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -527,20 +529,20 @@ pub async fn reload_policy(
         engine
             .policy_hash()
             .map(|h| h.to_hex())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
     };
 
     state
         .reload_policy()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
 
     let after_hash = {
         let engine = state.engine.read().await;
         engine
             .policy_hash()
             .map(|h| h.to_hex())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?
     };
 
     let mut audit = AuditEvent::session_start(&state.session_id, None);

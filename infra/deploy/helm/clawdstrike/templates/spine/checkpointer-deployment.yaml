@@ -37,10 +37,18 @@ spec:
             - name: SPINE_BIN
               value: spine-checkpointer
             - name: SPINE_LOG_SEED_HEX
-              value: {{ required "spine.checkpointer.logSeedHex is required" .Values.spine.checkpointer.logSeedHex | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.spine.secrets.existingSecret | default (printf "%s-spine" (include "clawdstrike.fullname" .)) }}
+                  key: SPINE_LOG_SEED_HEX
           envFrom:
             - configMapRef:
                 name: {{ include "clawdstrike.fullname" . }}-spine
+          livenessProbe:
+            exec:
+              command: ["test", "-f", "/proc/1/status"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:

@@ -2,12 +2,13 @@
 
 use axum::{
     extract::{Query, State},
-    http::{header, StatusCode},
+    http::header,
     response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::api::v1::V1Error;
 use crate::audit::{AuditEvent, AuditFilter, ExportFormat};
 use crate::auth::{AuthenticatedActor, Scope};
 use crate::authz::require_api_key_scope_or_user_permission;
@@ -54,7 +55,7 @@ pub async fn query_audit(
     State(state): State<AppState>,
     Query(query): Query<AuditQuery>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, V1Error> {
     let filter = AuditFilter {
         event_type: query.event_type,
         action_type: query.action_type,
@@ -88,8 +89,9 @@ pub async fn query_audit(
 
         let data = state
             .ledger
-            .export(&filter, format.clone())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .export_async(filter, format.clone())
+            .await
+            .map_err(|e| V1Error::internal("AUDIT_EXPORT_ERROR", e.to_string()))?;
 
         let content_type = match format {
             ExportFormat::Csv => "text/csv",
@@ -108,18 +110,22 @@ pub async fn query_audit(
         Action::Read,
     )?;
 
+    let count_filter = AuditFilter {
+        limit: None,
+        offset: None,
+        ..filter.clone()
+    };
     let events = state
         .ledger
-        .query(&filter)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .query_async(filter)
+        .await
+        .map_err(|e| V1Error::internal("AUDIT_QUERY_ERROR", e.to_string()))?;
 
-    let mut count_filter = filter.clone();
-    count_filter.limit = None;
-    count_filter.offset = None;
     let total = state
         .ledger
-        .count_filtered(&count_filter)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .count_filtered_async(count_filter)
+        .await
+        .map_err(|e| V1Error::internal("AUDIT_COUNT_ERROR", e.to_string()))?;
 
     Ok(Json(AuditResponse {
         events,
@@ -134,7 +140,7 @@ pub async fn query_audit(
 pub async fn audit_stats(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
-) -> Result<Json<AuditStatsResponse>, (StatusCode, String)> {
+) -> Result<Json<AuditStatsResponse>, V1Error> {
     require_api_key_scope_or_user_permission(
         actor.as_ref().map(|e| &e.0),
         &state.rbac,
@@ -145,25 +151,28 @@ pub async fn audit_stats(
 
     let total = state
         .ledger
-        .count()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .count_async()
+        .await
+        .map_err(|e| V1Error::internal("AUDIT_COUNT_ERROR", e.to_string()))?;
 
     // Count violations
     let violations = state
         .ledger
-        .count_filtered(&AuditFilter {
+        .count_filtered_async(AuditFilter {
             decision: Some("blocked".to_string()),
             ..Default::default()
         })
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .await
+        .map_err(|e| V1Error::internal("AUDIT_COUNT_ERROR", e.to_string()))?;
 
     let allowed = state
         .ledger
-        .count_filtered(&AuditFilter {
+        .count_filtered_async(AuditFilter {
             decision: Some("allowed".to_string()),
             ..Default::default()
         })
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .await
+        .map_err(|e| V1Error::internal("AUDIT_COUNT_ERROR", e.to_string()))?;
 
     Ok(Json(AuditStatsResponse {
         total_events: total,

@@ -54,7 +54,7 @@ export const policyCommands = {
       const engine = new PolicyEngine({ policy: policyPath });
       const decision = await engine.evaluate(event);
 
-      console.log('Decision:', decision.allowed ? 'ALLOWED' : 'DENIED');
+      console.log('Decision:', decision.status === 'deny' ? 'DENIED' : 'ALLOWED');
       if (decision.reason) console.log('Reason:', decision.reason);
       if (decision.guard) console.log('Guard:', decision.guard);
       if (decision.severity) console.log('Severity:', decision.severity);

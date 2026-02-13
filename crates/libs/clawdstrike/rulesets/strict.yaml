@@ -95,6 +95,20 @@ guards:
     default_action: block
     max_args_size: 524288  # 512KB
 
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: suspicious
+    max_scan_bytes: 200000
+
+  jailbreak:
+    enabled: true
+    detector:
+      block_threshold: 40
+      warn_threshold: 15
+      max_input_bytes: 200000
+      session_aggregation: true
+
 settings:
   fail_fast: true
   verbose_logging: false

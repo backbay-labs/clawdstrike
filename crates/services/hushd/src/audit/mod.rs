@@ -473,6 +473,56 @@ impl AuditLedger {
         Ok(count as usize)
     }
 
+    /// Record an audit event without blocking the async runtime.
+    pub async fn record_async(self: &std::sync::Arc<Self>, event: AuditEvent) -> Result<()> {
+        let ledger = self.clone();
+        tokio::task::spawn_blocking(move || ledger.record(&event))
+            .await
+            .map_err(|e| AuditError::Io(std::io::Error::other(e)))?
+    }
+
+    /// Query audit events without blocking the async runtime.
+    pub async fn query_async(
+        self: &std::sync::Arc<Self>,
+        filter: AuditFilter,
+    ) -> Result<Vec<AuditEvent>> {
+        let ledger = self.clone();
+        tokio::task::spawn_blocking(move || ledger.query(&filter))
+            .await
+            .map_err(|e| AuditError::Io(std::io::Error::other(e)))?
+    }
+
+    /// Get event count without blocking the async runtime.
+    pub async fn count_async(self: &std::sync::Arc<Self>) -> Result<usize> {
+        let ledger = self.clone();
+        tokio::task::spawn_blocking(move || ledger.count())
+            .await
+            .map_err(|e| AuditError::Io(std::io::Error::other(e)))?
+    }
+
+    /// Get filtered event count without blocking the async runtime.
+    pub async fn count_filtered_async(
+        self: &std::sync::Arc<Self>,
+        filter: AuditFilter,
+    ) -> Result<usize> {
+        let ledger = self.clone();
+        tokio::task::spawn_blocking(move || ledger.count_filtered(&filter))
+            .await
+            .map_err(|e| AuditError::Io(std::io::Error::other(e)))?
+    }
+
+    /// Export audit data without blocking the async runtime.
+    pub async fn export_async(
+        self: &std::sync::Arc<Self>,
+        filter: AuditFilter,
+        format: ExportFormat,
+    ) -> Result<Vec<u8>> {
+        let ledger = self.clone();
+        tokio::task::spawn_blocking(move || ledger.export(&filter, format))
+            .await
+            .map_err(|e| AuditError::Io(std::io::Error::other(e)))?
+    }
+
     /// Export audit data
     pub fn export(&self, filter: &AuditFilter, format: ExportFormat) -> Result<Vec<u8>> {
         let events = self.query(filter)?;

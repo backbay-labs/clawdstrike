@@ -283,10 +283,12 @@ impl GuardConfigs {
                 }
                 (None, None) => None,
             },
-            secret_leak: child
-                .secret_leak
-                .clone()
-                .or_else(|| self.secret_leak.clone()),
+            secret_leak: match (&self.secret_leak, &child.secret_leak) {
+                (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
+                (Some(base), None) => Some(base.clone()),
+                (None, Some(child_cfg)) => Some(SecretLeakConfig::default().merge_with(child_cfg)),
+                (None, None) => None,
+            },
             patch_integrity: child
                 .patch_integrity
                 .clone()
@@ -715,6 +717,29 @@ impl Policy {
                 if let Err(e) = Regex::new(&p.pattern) {
                     errors.push(PolicyFieldError::new(
                         format!("guards.secret_leak.patterns[{}].pattern", idx),
+                        format!("invalid regex ({}): {}", p.name, e),
+                    ));
+                }
+            }
+            for (idx, p) in cfg.additional_patterns.iter().enumerate() {
+                validate_placeholders_in_string(
+                    &mut errors,
+                    &format!("guards.secret_leak.additional_patterns[{}].name", idx),
+                    &p.name,
+                    cfg.enabled,
+                    require_env,
+                );
+                validate_placeholders_in_string(
+                    &mut errors,
+                    &format!("guards.secret_leak.additional_patterns[{}].pattern", idx),
+                    &p.pattern,
+                    cfg.enabled,
+                    require_env,
+                );
+
+                if let Err(e) = Regex::new(&p.pattern) {
+                    errors.push(PolicyFieldError::new(
+                        format!("guards.secret_leak.additional_patterns[{}].pattern", idx),
                         format!("invalid regex ({}): {}", p.name, e),
                     ));
                 }
@@ -1545,6 +1570,7 @@ impl RuleSet {
             "default" => Some(include_str!("../rulesets/default.yaml")),
             "strict" => Some(include_str!("../rulesets/strict.yaml")),
             "ai-agent" => Some(include_str!("../rulesets/ai-agent.yaml")),
+            "ai-agent-posture" => Some(include_str!("../rulesets/ai-agent-posture.yaml")),
             "cicd" => Some(include_str!("../rulesets/cicd.yaml")),
             "permissive" => Some(include_str!("../rulesets/permissive.yaml")),
             _ => None,
@@ -1568,7 +1594,14 @@ impl RuleSet {
     }
 
     pub fn list() -> &'static [&'static str] {
-        &["default", "strict", "ai-agent", "cicd", "permissive"]
+        &[
+            "default",
+            "strict",
+            "ai-agent",
+            "ai-agent-posture",
+            "cicd",
+            "permissive",
+        ]
     }
 }
 
@@ -2239,5 +2272,92 @@ guards:
 
         // Simulating circular detection
         assert!(visited.contains("policy-a"));
+    }
+
+    #[test]
+    fn test_secret_leak_merge_preserves_base_patterns() {
+        let yaml = r#"
+version: "1.1.0"
+name: CustomDefault
+extends: default
+guards:
+  secret_leak:
+    additional_patterns:
+      - name: custom_token
+        pattern: "CUSTOM_[A-Za-z0-9]{32}"
+"#;
+        let policy = Policy::from_yaml_with_extends(yaml, None).unwrap();
+        let sl = policy.guards.secret_leak.unwrap();
+        let effective = sl.effective_patterns();
+
+        // Base patterns should still be present
+        assert!(
+            effective.iter().any(|p| p.name == "aws_access_key"),
+            "base pattern aws_access_key must be preserved"
+        );
+        assert!(
+            effective.iter().any(|p| p.name == "github_token"),
+            "base pattern github_token must be preserved"
+        );
+        // Additional pattern should be present
+        assert!(
+            effective.iter().any(|p| p.name == "custom_token"),
+            "additional pattern custom_token must be present"
+        );
+    }
+
+    #[test]
+    fn test_secret_leak_merge_remove_patterns() {
+        let base = SecretLeakConfig::default();
+        let child = SecretLeakConfig {
+            remove_patterns: vec!["generic_api_key".to_string()],
+            ..Default::default()
+        };
+        let merged = base.merge_with(&child);
+        let effective = merged.effective_patterns();
+
+        assert!(
+            !effective.iter().any(|p| p.name == "generic_api_key"),
+            "removed pattern must not be in effective set"
+        );
+        assert!(
+            effective.iter().any(|p| p.name == "aws_access_key"),
+            "other patterns must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_secret_leak_deep_merge_in_guard_configs() {
+        let base = GuardConfigs {
+            secret_leak: Some(SecretLeakConfig::default()),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            secret_leak: Some(SecretLeakConfig {
+                additional_patterns: vec![crate::guards::SecretPattern {
+                    name: "my_custom".to_string(),
+                    pattern: r"MY_[A-Z]{10}".to_string(),
+                    severity: crate::guards::Severity::Critical,
+                    description: None,
+                    luhn_check: false,
+                    masking: None,
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let sl = merged.secret_leak.unwrap();
+        let effective = sl.effective_patterns();
+
+        assert!(
+            effective.iter().any(|p| p.name == "aws_access_key"),
+            "base patterns preserved in deep merge"
+        );
+        assert!(
+            effective.iter().any(|p| p.name == "my_custom"),
+            "additional pattern added in deep merge"
+        );
     }
 }

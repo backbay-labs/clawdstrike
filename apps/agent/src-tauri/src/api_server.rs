@@ -1,11 +1,15 @@
 //! Authenticated local API server for agent control and OpenClaw transport.
 
+use crate::approval::{
+    ApprovalQueue, ApprovalRequestInput, ApprovalResolveInput, ApprovalStatusResponse,
+};
 use crate::daemon::{DaemonManager, DaemonStatus};
 use crate::openclaw::{
     GatewayDiscoverInput, GatewayRequestInput, GatewayUpsertRequest, ImportGatewayRequest,
     OpenClawManager,
 };
 use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
+use crate::session::SessionManager;
 use crate::settings::Settings;
 use anyhow::{Context, Result};
 use axum::extract::{Path, State};
@@ -34,6 +38,8 @@ pub struct AgentApiServer {
 struct AgentApiState {
     settings: Arc<RwLock<Settings>>,
     daemon_manager: Arc<DaemonManager>,
+    session_manager: Arc<SessionManager>,
+    approval_queue: Arc<ApprovalQueue>,
     openclaw: OpenClawManager,
     auth_token: String,
     http_client: reqwest::Client,
@@ -44,6 +50,8 @@ impl AgentApiServer {
         port: u16,
         settings: Arc<RwLock<Settings>>,
         daemon_manager: Arc<DaemonManager>,
+        session_manager: Arc<SessionManager>,
+        approval_queue: Arc<ApprovalQueue>,
         openclaw: OpenClawManager,
         auth_token: String,
     ) -> Self {
@@ -52,6 +60,8 @@ impl AgentApiServer {
             state: Arc::new(AgentApiState {
                 settings,
                 daemon_manager,
+                session_manager,
+                approval_queue,
                 openclaw,
                 auth_token,
                 http_client: reqwest::Client::new(),
@@ -92,6 +102,19 @@ impl AgentApiServer {
                 post(import_desktop_gateways),
             )
             .route("/api/v1/openclaw/events", get(openclaw_events))
+            .route(
+                "/api/v1/approval/request",
+                post(create_approval_request),
+            )
+            .route(
+                "/api/v1/approval/:id/status",
+                get(get_approval_status),
+            )
+            .route(
+                "/api/v1/approval/:id/resolve",
+                post(resolve_approval),
+            )
+            .route("/api/v1/approval/pending", get(list_pending_approvals))
             .with_state(self.state.clone());
 
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
@@ -117,6 +140,7 @@ impl AgentApiServer {
 struct AgentHealthResponse {
     status: &'static str,
     daemon: DaemonStatus,
+    session: crate::session::SessionState,
     openclaw: serde_json::Value,
     version: &'static str,
 }
@@ -160,11 +184,13 @@ async fn agent_health(
     State(state): State<Arc<AgentApiState>>,
 ) -> Result<Json<AgentHealthResponse>, (StatusCode, String)> {
     let daemon = state.daemon_manager.status().await;
+    let session = state.session_manager.state().await;
     let openclaw = state.openclaw.list_gateways().await;
 
     Ok(Json(AgentHealthResponse {
         status: "ok",
         daemon,
+        session,
         openclaw: serde_json::to_value(openclaw)
             .unwrap_or_else(|_| serde_json::json!({"error":"serialize_failed"})),
         version: env!("CARGO_PKG_VERSION"),
@@ -439,6 +465,77 @@ fn sse_stream(
     })
 }
 
+async fn create_approval_request(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<ApprovalRequestInput>,
+) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    // Reject critical severity actions -- they are not approvable.
+    if input.severity.eq_ignore_ascii_case("critical") {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Critical severity actions are not approvable".to_string(),
+        ));
+    }
+
+    let request = state.approval_queue.submit(input).await;
+    Ok(Json(ApprovalStatusResponse::from(&request)))
+}
+
+async fn get_approval_status(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let status = state
+        .approval_queue
+        .get_status(&id)
+        .await
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Approval request not found".to_string()))?;
+
+    Ok(Json(status))
+}
+
+async fn resolve_approval(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(input): Json<ApprovalResolveInput>,
+) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let result = state
+        .approval_queue
+        .resolve(&id, input.resolution)
+        .await
+        .map_err(|err| match err {
+            crate::approval::ApprovalError::NotFound => {
+                (StatusCode::NOT_FOUND, "Approval request not found".to_string())
+            }
+            crate::approval::ApprovalError::AlreadyResolved => {
+                (StatusCode::CONFLICT, "Approval request already resolved".to_string())
+            }
+            crate::approval::ApprovalError::Expired => {
+                (StatusCode::GONE, "Approval request expired".to_string())
+            }
+        })?;
+
+    Ok(Json(result))
+}
+
+async fn list_pending_approvals(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ApprovalStatusResponse>>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    let pending = state.approval_queue.list_pending().await;
+    Ok(Json(pending))
+}
+
 fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (StatusCode, String)> {
     let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) else {
         return Err((
@@ -499,11 +596,15 @@ mod tests {
             port: 9876,
             policy_path: PathBuf::from("/tmp/policy.yaml"),
         }));
+        let session_manager = Arc::new(crate::session::SessionManager::new());
+        let approval_queue = Arc::new(crate::approval::ApprovalQueue::new());
         let openclaw = OpenClawManager::new(settings.clone());
 
         AgentApiState {
             settings,
             daemon_manager,
+            session_manager,
+            approval_queue,
             openclaw,
             auth_token: "test-token".to_string(),
             http_client: reqwest::Client::new(),

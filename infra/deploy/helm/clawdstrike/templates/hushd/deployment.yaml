@@ -8,6 +8,11 @@ metadata:
     {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hushd") | nindent 4 }}
 spec:
   replicas: {{ .Values.hushd.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "hushd") | nindent 6 }}
@@ -26,6 +31,14 @@ spec:
       serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.hushd.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.hushd.topologySpreadConstraints | nindent 8 }}
+      {{- end }}
+      {{- if .Values.hushd.affinity }}
+      affinity:
+        {{- toYaml .Values.hushd.affinity | nindent 8 }}
+      {{- end }}
       containers:
         - name: hushd
           image: "{{ .Values.hushd.image.repository }}:{{ .Values.hushd.image.tag | default .Chart.AppVersion }}"
@@ -47,7 +60,7 @@ spec:
               mountPath: /var/lib/hushd
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: http
             initialDelaySeconds: 2
             periodSeconds: 5

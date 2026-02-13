@@ -78,9 +78,7 @@ export class PolicyEngine {
     const base = this.evaluateDeterministic(event);
 
     // Fail fast on deterministic violations to avoid unnecessary external calls.
-    const baseDenied = base.status === 'deny' || base.denied;
-    const baseWarn = base.status === 'warn' || base.warn;
-    if (baseDenied || baseWarn) {
+    if (base.status === 'deny' || base.status === 'warn') {
       return this.applyMode(base, this.config.mode);
     }
 
@@ -96,16 +94,12 @@ export class PolicyEngine {
 
   private applyMode(result: Decision, mode: EvaluationMode): Decision {
     if (mode === 'audit') {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
-    const isDenied = result.status === 'deny' || result.denied;
-    if (mode === 'advisory' && isDenied) {
+    if (mode === 'advisory' && result.status === 'deny') {
       return {
         status: 'warn',
-        allowed: true,
-        denied: false,
-        warn: true,
         reason: result.reason,
         guard: result.guard,
         severity: result.severity,
@@ -117,7 +111,7 @@ export class PolicyEngine {
   }
 
   private evaluateDeterministic(event: PolicyEvent): Decision {
-    const allowed: Decision = { status: 'allow', allowed: true, denied: false, warn: false };
+    const allowed: Decision = { status: 'allow' };
 
     switch (event.eventType) {
       case 'file_read':
@@ -138,15 +132,13 @@ export class PolicyEngine {
 
   private checkFilesystem(event: PolicyEvent): Decision {
     if (!this.config.guards.forbidden_path) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     // First, enforce forbidden path patterns.
     const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
     const mapped = this.guardResultToDecision(forbidden);
-    const mappedDenied = mapped.status === 'deny' || mapped.denied;
-    const mappedWarn = mapped.status === 'warn' || mapped.warn;
-    if (mappedDenied || mappedWarn) {
+    if (mapped.status === 'deny' || mapped.status === 'warn') {
       return this.applyOnViolation(mapped);
     }
 
@@ -162,9 +154,6 @@ export class PolicyEngine {
         if (!ok) {
           return this.applyOnViolation({
             status: 'deny',
-            allowed: false,
-            denied: true,
-            warn: false,
             reason: 'Write path not in allowed roots',
             guard: 'forbidden_path',
             severity: 'high',
@@ -173,12 +162,12 @@ export class PolicyEngine {
       }
     }
 
-    return { status: 'allow', allowed: true, denied: false, warn: false };
+    return { status: 'allow' };
   }
 
   private checkEgress(event: PolicyEvent): Decision {
     if (!this.config.guards.egress) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     const res = this.egressGuard.checkSync(event, this.policy);
@@ -188,7 +177,7 @@ export class PolicyEngine {
 
   private checkExecution(event: PolicyEvent): Decision {
     if (!this.config.guards.patch_integrity) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     const res = this.patchIntegrityGuard.checkSync(event, this.policy);
@@ -202,26 +191,20 @@ export class PolicyEngine {
       const tools = this.policy.tools;
       const toolName = event.data.toolName.toLowerCase();
 
-      const denied = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
-      if (denied.includes(toolName)) {
+      const deniedTools = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
+      if (deniedTools.includes(toolName)) {
         return this.applyOnViolation({
           status: 'deny',
-          allowed: false,
-          denied: true,
-          warn: false,
           reason: `Tool '${event.data.toolName}' is denied by policy`,
           guard: 'mcp_tool',
           severity: 'high',
         });
       }
 
-      const allowed = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
-      if (allowed.length > 0 && !allowed.includes(toolName)) {
+      const allowedTools = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
+      if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
         return this.applyOnViolation({
           status: 'deny',
-          allowed: false,
-          denied: true,
-          warn: false,
           reason: `Tool '${event.data.toolName}' is not in allowed tool list`,
           guard: 'mcp_tool',
           severity: 'high',
@@ -230,7 +213,7 @@ export class PolicyEngine {
     }
 
     if (!this.config.guards.secret_leak) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     const res = this.secretLeakGuard.checkSync(event, this.policy);
@@ -243,34 +226,26 @@ export class PolicyEngine {
       const r1 = this.patchIntegrityGuard.checkSync(event, this.policy);
       const mapped1 = this.guardResultToDecision(r1);
       const applied1 = this.applyOnViolation(mapped1);
-      const applied1Denied = applied1.status === 'deny' || applied1.denied;
-      const applied1Warn = applied1.status === 'warn' || applied1.warn;
-      if (applied1Denied || applied1Warn) return applied1;
+      if (applied1.status === 'deny' || applied1.status === 'warn') return applied1;
     }
 
     if (this.config.guards.secret_leak) {
       const r2 = this.secretLeakGuard.checkSync(event, this.policy);
       const mapped2 = this.guardResultToDecision(r2);
       const applied2 = this.applyOnViolation(mapped2);
-      const applied2Denied = applied2.status === 'deny' || applied2.denied;
-      const applied2Warn = applied2.status === 'warn' || applied2.warn;
-      if (applied2Denied || applied2Warn) return applied2;
+      if (applied2.status === 'deny' || applied2.status === 'warn') return applied2;
     }
 
-    return { status: 'allow', allowed: true, denied: false, warn: false };
+    return { status: 'allow' };
   }
 
   private applyOnViolation(decision: Decision): Decision {
     const action = this.policy.on_violation;
-    const isDenied = decision.status === 'deny' || decision.denied;
-    if (!isDenied) return decision;
+    if (decision.status !== 'deny') return decision;
 
     if (action === 'warn') {
       return {
         status: 'warn',
-        allowed: true,
-        denied: false,
-        warn: true,
         reason: decision.reason,
         guard: decision.guard,
         severity: decision.severity,
@@ -282,11 +257,11 @@ export class PolicyEngine {
   }
 
   private guardResultToDecision(result: { status: 'allow' | 'deny' | 'warn'; reason?: string; severity?: any; guard: string }): Decision {
-    if (result.status === 'allow') return { status: 'allow', allowed: true, denied: false, warn: false };
+    if (result.status === 'allow') return { status: 'allow' };
     if (result.status === 'warn') {
-      return { status: 'warn', allowed: true, denied: false, warn: true, reason: result.reason, guard: result.guard, message: result.reason };
+      return { status: 'warn', reason: result.reason, guard: result.guard, message: result.reason };
     }
-    return { status: 'deny', allowed: false, denied: true, warn: false, reason: result.reason, guard: result.guard, severity: result.severity };
+    return { status: 'deny', reason: result.reason, guard: result.guard, severity: result.severity };
   }
 }
 
@@ -311,8 +286,6 @@ function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
 }
 
 function combineDecisions(base: Decision, next: Decision): Decision {
-  const nextDenied = next.status === 'deny' || next.denied;
-  const nextWarn = next.status === 'warn' || next.warn;
-  if (nextDenied || nextWarn) return next;
+  if (next.status === 'deny' || next.status === 'warn') return next;
   return base;
 }

@@ -49,4 +49,24 @@ impl ControlDb {
     pub fn lock_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|err| err.into_inner())
     }
+
+    /// Spawn a blocking DB operation on the tokio blocking pool.
+    ///
+    /// Requires an `Arc<ControlDb>` so the DB handle can be moved to the blocking thread.
+    pub async fn spawn_blocking<F, T>(
+        self: &std::sync::Arc<Self>,
+        f: F,
+    ) -> std::result::Result<T, ControlDbError>
+    where
+        F: FnOnce(&Connection) -> std::result::Result<T, ControlDbError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let db = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db.lock_conn();
+            f(&conn)
+        })
+        .await
+        .map_err(|e| ControlDbError::Io(std::io::Error::other(e)))?
+    }
 }

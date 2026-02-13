@@ -27,6 +27,20 @@ guards:
       - "/etc/shadow"
       - "/etc/passwd"
       - "/etc/sudoers"
+      # Windows credential stores
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      # Windows registry hives
+      - "**/NTUSER.DAT"
+      - "**/NTUSER.DAT.*"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
+      # Windows certificate stores
+      - "**/AppData/Roaming/Microsoft/SystemCertificates/**"
+      # Registry export files
+      - "**/*.reg"
       # Additional strict paths
       - "**/.vault/**"
       - "**/.secrets/**"
@@ -94,6 +108,20 @@ guards:
     require_confirmation: []
     default_action: block
     max_args_size: 524288  # 512KB
+
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: suspicious
+    max_scan_bytes: 200000
+
+  jailbreak:
+    enabled: true
+    detector:
+      block_threshold: 40
+      warn_threshold: 15
+      max_input_bytes: 200000
+      session_aggregation: true
 
 settings:
   fail_fast: true
