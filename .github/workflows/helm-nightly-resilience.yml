@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload resilience artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: helm-nightly-resilience-${{ github.run_id }}
           path: ${{ runner.temp }}/helm-nightly-resilience
@@ -166,7 +166,7 @@ jobs:
 
       - name: Upload OpenClaw macOS smoke artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: openclaw-macos-smoke-${{ github.run_id }}
           path: ${{ runner.temp }}/openclaw-nightly

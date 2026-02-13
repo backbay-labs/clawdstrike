@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload smoke artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: helm-cluster-smoke-${{ github.run_id }}
           path: ${{ runner.temp }}/helm-cluster-smoke
