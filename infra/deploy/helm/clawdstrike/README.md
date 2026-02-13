@@ -4,7 +4,7 @@ Production Helm chart for the ClawdStrike SDR (Swarm Detection & Response) stack
 
 ## Architecture
 
-![ClawdStrike Helm architecture](https://raw.githubusercontent.com/backbay-labs/clawdstrike/main/.github/assets/clawdstrike-helm-architecture.svg)
+![ClawdStrike Helm architecture](https://raw.githubusercontent.com/backbay-labs/clawdstrike/main/.github/assets/clawdstrike-helm-architecture.png)
 
 ## Components
 
