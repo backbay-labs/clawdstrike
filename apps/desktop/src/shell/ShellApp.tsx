@@ -3,7 +3,7 @@
  *
  * Routes:
  * - /:appId - Direct app access
- * - / - Redirects to Cyber Nexus (default)
+ * - / - Redirects to Nexus (default)
  */
 import { Suspense, useMemo } from "react";
 import { Navigate, RouterProvider, createHashRouter } from "react-router-dom";
@@ -30,7 +30,7 @@ export function ShellApp() {
         children: [
           {
             index: true,
-            element: <Navigate to={`/${plugins[0]?.id ?? "cyber-nexus"}`} replace />,
+            element: <Navigate to={`/${plugins[0]?.id ?? "nexus"}`} replace />,
           },
           ...plugins.map((plugin) => ({
             path: plugin.id,

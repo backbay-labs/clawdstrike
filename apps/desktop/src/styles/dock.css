@@ -15,7 +15,7 @@
     bottom: 0;
     left: var(--nav-rail-width, 84px);
     pointer-events: none;
-    z-index: 60;
+    z-index: 1200;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -899,6 +899,7 @@
     align-items: center;
     gap: var(--space-2);
     flex: 1;
+    min-width: 0;
     overflow-x: auto;
     padding: var(--space-2) 0;
     scrollbar-width: none;
@@ -949,6 +950,9 @@
     padding-left: var(--space-3);
     margin-left: auto;
     flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+    pointer-events: auto;
   }
 
   .session-rail-sessions {
@@ -1396,20 +1400,23 @@
     position: fixed;
     bottom: 56px;
     left: calc(var(--nav-rail-width, 84px) + var(--space-4));
-    right: var(--space-4);
-    height: 320px;
+    width: calc(100vw - var(--nav-rail-width, 84px) - var(--space-8));
+    max-width: 1680px;
+    height: min(62vh, 680px);
     background: var(--dock-glass-bg);
-    border: 1px solid var(--dock-glass-border);
+    border: 1px solid color-mix(in oklch, var(--dock-molten) 28%, var(--dock-glass-border));
     border-radius: var(--radius-lg);
     box-shadow:
       var(--shadow-modal),
-      0 0 24px oklch(70% 0.2 30 / 0.08);
+      0 0 24px oklch(70% 0.2 30 / 0.08),
+      0 0 0 1px rgba(213, 173, 87, 0.1) inset;
     backdrop-filter: var(--dock-glass-blur);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     pointer-events: auto;
-    z-index: 1000;
+    z-index: 2205;
+    isolation: isolate;
     /* CSS animation for entrance */
     animation: shelf-enter 0.15s ease-out forwards;
   }
@@ -1430,19 +1437,64 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--space-3) var(--space-4);
-    background: linear-gradient(
-      180deg,
-      oklch(16% 0.02 30 / 0.92) 0%,
-      oklch(12% 0.01 30 / 0.98) 100%
-    );
-    border-bottom: 1px solid var(--dock-glass-border);
+    background:
+      linear-gradient(180deg, oklch(16% 0.02 30 / 0.93) 0%, oklch(11% 0.01 30 / 0.98) 100%),
+      radial-gradient(circle at 100% 0%, rgba(213, 173, 87, 0.11) 0%, transparent 48%);
+    border-bottom: 1px solid color-mix(in oklch, var(--dock-molten) 24%, var(--dock-glass-border));
+    cursor: grab;
+    user-select: none;
+  }
+
+  .dock-shelf-header:active {
+    cursor: grabbing;
+  }
+
+  .dock-shelf-header-title-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
   }
 
   .dock-shelf-title {
     margin: 0;
-    font-size: var(--text-base);
+    font-size: 17px;
     font-weight: var(--font-semibold);
-    color: var(--text-primary);
+    color: rgba(236, 231, 220, 0.98);
+    letter-spacing: 0.02em;
+  }
+
+  .dock-shelf-drag-hint {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(166, 172, 184, 0.8);
+  }
+
+  .dock-shelf-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dock-shelf-expand {
+    border: 1px solid rgba(213, 173, 87, 0.45);
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(16, 22, 33, 0.86) 0%, rgba(9, 13, 20, 0.94) 100%);
+    color: rgba(230, 221, 194, 0.9);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .dock-shelf-expand:hover {
+    border-color: rgba(213, 173, 87, 0.76);
+    color: rgba(243, 236, 217, 0.98);
+    box-shadow: 0 0 14px rgba(213, 173, 87, 0.2);
   }
 
   .dock-shelf-close {
@@ -1462,17 +1514,30 @@
   }
 
   .dock-shelf-close:hover {
-    background: var(--btn-ghost-hover);
-    color: var(--text-primary);
+    background: rgba(213, 173, 87, 0.1);
+    color: rgba(238, 230, 205, 0.98);
   }
 
   .dock-shelf-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     padding: var(--space-4);
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklch, var(--dock-molten) 28%, transparent) transparent;
+  }
+
+  .dock-shelf-content--events {
+    display: flex;
+    min-height: 0;
+    overflow: auto;
+    padding: 10px;
+  }
+
+  .dock-shelf-content--events > * {
+    flex: 1;
+    min-height: 0;
   }
 
   .dock-shelf-content::-webkit-scrollbar {
@@ -1500,11 +1565,42 @@
     height: 100%;
     gap: var(--space-3);
     color: var(--text-tertiary);
+    text-align: center;
   }
 
   .dock-shelf-empty-icon {
     font-size: 32px;
     opacity: 0.5;
+  }
+
+  .dock-shelf-empty-detail {
+    max-width: min(520px, 100%);
+    font-size: 11px;
+    color: rgba(180, 188, 202, 0.82);
+    font-family: var(--font-mono);
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .dock-shelf-resize-handle {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 4px;
+    background:
+      linear-gradient(135deg, transparent 0%, transparent 45%, rgba(213, 173, 87, 0.5) 46%, rgba(213, 173, 87, 0.5) 56%, transparent 57%),
+      linear-gradient(135deg, transparent 0%, transparent 64%, rgba(213, 173, 87, 0.42) 65%, rgba(213, 173, 87, 0.42) 75%, transparent 76%);
+    cursor: nwse-resize;
+    opacity: 0.92;
+    transition: opacity 0.15s ease;
+  }
+
+  .dock-shelf-resize-handle:hover {
+    opacity: 1;
   }
 
   /* -----------------------------------------------------------
@@ -1539,6 +1635,7 @@
     position: absolute;
     bottom: calc(100% + 12px);
     left: 50%;
+    transform: translateX(-50%);
     min-width: 220px;
     max-width: 280px;
     background: var(--dock-glass-bg);
@@ -1552,20 +1649,19 @@
     backdrop-filter: var(--dock-glass-blur);
     overflow: hidden;
     z-index: 1100;
-    /* Use margin for centering */
-    margin-left: -110px;
+    margin-left: 0;
     /* CSS animation for entrance */
-    animation: dial-enter 0.1s ease-out forwards;
+    animation: dial-enter-pop 0.12s ease-out forwards;
   }
 
-  @keyframes dial-enter {
+  @keyframes dial-enter-pop {
     from {
       opacity: 0;
-      transform: translateY(4px) scale(0.98);
+      transform: translateX(-50%) translateY(4px) scale(0.985);
     }
     to {
       opacity: 1;
-      transform: translateY(0) scale(1);
+      transform: translateX(-50%) translateY(0) scale(1);
     }
   }
 
@@ -2567,5 +2663,304 @@
     font-size: 10px;
     color: var(--text-tertiary);
     flex-shrink: 0;
+  }
+
+  .dial-menu-oracle {
+    left: 0;
+    transform: none;
+    margin-left: 0;
+    animation-name: dial-enter-pop-left;
+    min-width: 420px;
+    max-width: min(620px, calc(100vw - var(--nav-rail-width, 84px) - 28px));
+    border-color: rgba(213, 173, 87, 0.38);
+    background: linear-gradient(180deg, rgba(11, 15, 24, 0.96) 0%, rgba(6, 9, 14, 0.98) 100%);
+    box-shadow:
+      0 22px 48px rgba(0, 0, 0, 0.7),
+      0 0 32px rgba(213, 173, 87, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .dial-menu-oracle::after {
+    left: 22px;
+    transform: rotate(45deg);
+  }
+
+  @keyframes dial-enter-pop-left {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .dial-menu-oracle .dial-menu-header {
+    padding: 11px 12px;
+    border-bottom-color: rgba(213, 173, 87, 0.18);
+  }
+
+  .dial-menu-oracle .dial-menu-items {
+    max-height: 52vh;
+    padding: 8px;
+  }
+
+  .dial-command-add {
+    margin-left: auto;
+    border: 1px solid rgba(213, 173, 87, 0.4);
+    background: linear-gradient(180deg, rgba(24, 19, 10, 0.65) 0%, rgba(12, 10, 8, 0.9) 100%);
+    color: rgba(233, 223, 196, 0.92);
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
+  }
+
+  .dial-command-add:hover {
+    border-color: rgba(213, 173, 87, 0.68);
+    box-shadow: 0 0 12px rgba(213, 173, 87, 0.2);
+    color: rgba(243, 236, 216, 0.98);
+  }
+
+  .dial-command-feedback {
+    margin: 0 12px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid rgba(213, 173, 87, 0.28);
+    background: linear-gradient(180deg, rgba(23, 20, 12, 0.54) 0%, rgba(12, 10, 7, 0.66) 100%);
+    color: rgba(230, 217, 178, 0.9);
+    font-size: 11px;
+  }
+
+  .dial-command-composer {
+    margin: 8px 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border: 1px solid rgba(213, 173, 87, 0.3);
+    border-radius: 12px;
+    padding: 10px;
+    background:
+      linear-gradient(180deg, rgba(12, 17, 27, 0.92) 0%, rgba(7, 10, 16, 0.95) 100%),
+      radial-gradient(circle at 100% 0%, rgba(213, 173, 87, 0.1) 0%, transparent 48%);
+    box-shadow:
+      inset 0 0 0 1px rgba(213, 173, 87, 0.08),
+      0 8px 18px rgba(0, 0, 0, 0.28);
+  }
+
+  .dial-command-input,
+  .dial-command-select {
+    width: 100%;
+    border: 1px solid rgba(213, 173, 87, 0.36);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(6, 10, 16, 0.9) 0%, rgba(3, 5, 9, 0.94) 100%);
+    color: rgba(235, 229, 214, 0.96);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    padding: 8px 10px;
+  }
+
+  .dial-command-input::placeholder {
+    color: rgba(163, 171, 188, 0.72);
+  }
+
+  .dial-command-input:focus-visible {
+    outline: 1px solid rgba(213, 173, 87, 0.68);
+    border-color: rgba(213, 173, 87, 0.66);
+    box-shadow: 0 0 10px rgba(213, 173, 87, 0.16);
+  }
+
+  .dial-command-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .dial-command-scope {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(213, 173, 87, 0.36);
+    border-radius: 999px;
+    background: rgba(6, 10, 15, 0.82);
+    padding: 2px;
+    gap: 2px;
+  }
+
+  .dial-command-scope-option {
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+
+  .dial-command-scope-option.active {
+    background: rgba(213, 173, 87, 0.18);
+    color: var(--dock-molten);
+    box-shadow: inset 0 0 0 1px rgba(213, 173, 87, 0.35);
+  }
+
+  .dial-command-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .dial-command-checkbox input {
+    accent-color: #d5ad57;
+  }
+
+  .dial-command-submit {
+    margin-left: auto;
+    border: 1px solid rgba(213, 173, 87, 0.48);
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(213, 173, 87, 0.22) 0%, rgba(173, 133, 54, 0.3) 100%);
+    color: rgba(246, 240, 223, 0.97);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 5px 11px;
+    cursor: pointer;
+  }
+
+  .dial-command-submit:hover {
+    border-color: rgba(213, 173, 87, 0.7);
+    box-shadow: 0 0 12px rgba(213, 173, 87, 0.22);
+  }
+
+  .dial-command-row {
+    border: 1px solid rgba(213, 173, 87, 0.22);
+    border-radius: 13px;
+    background:
+      linear-gradient(180deg, rgba(14, 19, 28, 0.88) 0%, rgba(8, 11, 18, 0.94) 100%),
+      radial-gradient(circle at 100% 0%, rgba(126, 139, 167, 0.1) 0%, transparent 52%);
+    padding: 10px;
+    margin-bottom: 8px;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      transform 140ms ease;
+  }
+
+  .dial-command-row:hover {
+    border-color: rgba(213, 173, 87, 0.4);
+    box-shadow: 0 10px 18px rgba(0, 0, 0, 0.3), 0 0 16px rgba(213, 173, 87, 0.14);
+    transform: translateY(-1px);
+  }
+
+  .dial-command-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .dial-command-row-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .dial-command-launch {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 5px 6px;
+    min-width: 0;
+    text-align: left;
+    border-radius: 8px;
+  }
+
+  .dial-command-launch:hover {
+    background: rgba(213, 173, 87, 0.09);
+  }
+
+  .dial-command-launch:hover .dial-item-title {
+    color: rgba(243, 234, 211, 0.97);
+  }
+
+  .dial-command-description {
+    font-size: 10px;
+    line-height: 1.3;
+    color: rgba(171, 179, 196, 0.86);
+    margin-top: 4px;
+    white-space: normal;
+  }
+
+  .dial-command-row-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding-top: 3px;
+  }
+
+  .dial-command-pin-flag {
+    border: 1px solid rgba(213, 173, 87, 0.36);
+    border-radius: 999px;
+    padding: 2px 6px;
+    font-size: 9px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(226, 203, 148, 0.94);
+    background: rgba(213, 173, 87, 0.13);
+  }
+
+  .dial-command-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(213, 173, 87, 0.14);
+  }
+
+  .dial-command-action {
+    border: 1px solid rgba(213, 173, 87, 0.3);
+    border-radius: 999px;
+    background: rgba(9, 13, 20, 0.92);
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .dial-command-action:hover {
+    border-color: rgba(213, 173, 87, 0.52);
+    color: var(--text-primary);
+  }
+
+  .dial-command-action--danger {
+    border-color: rgba(207, 94, 94, 0.44);
+    color: rgba(230, 141, 141, 0.95);
+  }
+
+  .dial-command-action--danger:hover {
+    border-color: rgba(207, 94, 94, 0.74);
+    color: rgba(245, 171, 171, 0.98);
   }
 }

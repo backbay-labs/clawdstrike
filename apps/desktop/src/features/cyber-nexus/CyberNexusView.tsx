@@ -192,7 +192,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
   }, []);
 
   const focusFromUrl = useMemo<StrikecellDomainId | null>(() => {
-    if (!location.pathname.startsWith("/cyber-nexus")) return null;
+    if (!location.pathname.startsWith("/nexus")) return null;
     try {
       const params = new URLSearchParams(location.search);
       const raw = params.get("focus");
@@ -260,7 +260,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
   }, [focusFromUrl, setActiveStrikecell, setKeyboardHighlight, state.selection.activeStrikecellId]);
 
   useEffect(() => {
-    if (!location.pathname.startsWith("/cyber-nexus")) return;
+    if (!location.pathname.startsWith("/nexus")) return;
     if (!state.selection.activeStrikecellId) return;
 
     try {
@@ -272,7 +272,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     const params = new URLSearchParams(location.search);
     if (params.get("focus") === state.selection.activeStrikecellId) return;
     params.set("focus", state.selection.activeStrikecellId);
-    navigate({ pathname: "/cyber-nexus", search: `?${params.toString()}` }, { replace: true });
+    navigate({ pathname: "/nexus", search: `?${params.toString()}` }, { replace: true });
   }, [location.pathname, location.search, navigate, state.selection.activeStrikecellId]);
 
   useEffect(() => {
@@ -499,22 +499,26 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
         connectionStatus={connectionStatus}
         layoutMode={state.layoutMode}
         activeStrikecell={activeStrikecell}
+        brandSubline="Nexus Labs"
         commandQuery={searchQuery}
         layoutDropdownOpen={state.hud.layoutDropdownOpen}
         onOpenSearch={() => setSearchOpen(true)}
         onCommandQueryChange={setSearchQuery}
         onOpenCommandPalette={dispatchShellOpenCommandPalette}
         onToggleLayoutDropdown={() => setLayoutDropdownOpen(!state.hud.layoutDropdownOpen)}
+        onCloseLayoutDropdown={() => setLayoutDropdownOpen(false)}
         onSelectLayout={(mode: NexusLayoutMode) => {
           setLayoutMode(mode);
           setLayoutDropdownOpen(false);
         }}
+        onOpenOperations={() => navigate("/operations?tab=fleet")}
+        onOpenConnectionSettings={() => navigate("/operations?tab=connection")}
       />
 
       <div className="relative flex-1 overflow-hidden">
         {empty ? (
           <div className="absolute inset-0 flex items-center justify-center text-sdr-text-muted text-sm">
-            Cyber Nexus is waiting for data.
+            Nexus Labs is waiting for data.
           </div>
         ) : (
           <NexusCanvas

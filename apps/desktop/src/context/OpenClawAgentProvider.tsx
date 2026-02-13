@@ -131,6 +131,9 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
 
   const clientRef = React.useRef<AgentOpenClawClient | null>(null);
   const unsubscribeEventsRef = React.useRef<(() => void) | null>(null);
+  const autoConnectAttemptAtRef = React.useRef<Record<string, number>>({});
+  const autoConnectHoldUntilRef = React.useRef<Record<string, number>>({});
+  const warmupTriggeredRef = React.useRef<Record<string, boolean>>({});
 
   const syncFromAgent = React.useCallback(async () => {
     const client = clientRef.current;
@@ -141,7 +144,25 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
       console.warn("OpenClaw secret store keyring unavailable; using memory-only session secrets.");
     }
 
-    const normalized = normalizeGatewayList(list);
+    let normalized = normalizeGatewayList(list);
+    if (normalized.gateways.length === 0) {
+      try {
+        await client.createGateway({
+          label: "Local Gateway",
+          gatewayUrl: "ws://openclaw.localhost:18789",
+        });
+      } catch {
+        try {
+          await client.createGateway({
+            label: "Local Gateway",
+            gatewayUrl: "ws://127.0.0.1:18789",
+          });
+        } catch {
+          // no-op
+        }
+      }
+      normalized = normalizeGatewayList(await client.listGateways());
+    }
     setGateways(normalized.gateways);
     setActiveGatewayIdState(normalized.activeGatewayId);
     setRuntimeByGatewayId(normalized.runtimeByGatewayId);
@@ -255,9 +276,14 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
 
       if (typeof patch.label === "string") nextPatch.label = patch.label;
       if (typeof patch.gatewayUrl === "string") nextPatch.gatewayUrl = patch.gatewayUrl;
-      if (typeof patch.token === "string") nextPatch.token = patch.token;
-      if (typeof patch.deviceToken === "string") {
-        nextPatch.deviceToken = patch.deviceToken;
+
+      // Agent-backed secrets are write-only from UI. Ignore blank placeholders so we do not
+      // accidentally clear stored tokens when a user edits non-secret gateway fields.
+      if (typeof patch.token === "string" && patch.token.trim().length > 0) {
+        nextPatch.token = patch.token.trim();
+      }
+      if (typeof patch.deviceToken === "string" && patch.deviceToken.trim().length > 0) {
+        nextPatch.deviceToken = patch.deviceToken.trim();
       }
 
       void client
@@ -290,6 +316,8 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
   const disconnectGateway = React.useCallback((id: string) => {
     const client = clientRef.current;
     if (!client) return;
+    autoConnectHoldUntilRef.current[id] = Date.now() + 60_000;
+    warmupTriggeredRef.current[id] = false;
     void client
       .disconnectGateway(id)
       .then(() => syncFromAgent())
@@ -303,6 +331,8 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
 
   const disconnect = React.useCallback(() => {
     if (!active.id) return;
+    autoConnectHoldUntilRef.current[active.id] = Date.now() + 60_000;
+    warmupTriggeredRef.current[active.id] = false;
     disconnectGateway(active.id);
   }, [active.id, disconnectGateway]);
 
@@ -463,6 +493,39 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
       connected: rows.filter((row) => row.status === "connected").length,
     };
   }, [gateways, runtimeByGatewayId]);
+
+  React.useEffect(() => {
+    if (!active.id) return;
+    const runtime = runtimeByGatewayId[active.id] ?? emptyRuntime();
+    if (runtime.status === "connected" || runtime.status === "connecting") return;
+
+    const now = Date.now();
+    const holdUntil = autoConnectHoldUntilRef.current[active.id] ?? 0;
+    if (now < holdUntil) return;
+
+    const lastAttempt = autoConnectAttemptAtRef.current[active.id] ?? 0;
+    const retryCooldownMs = runtime.status === "error" ? 6_000 : 2_500;
+    if (now - lastAttempt < retryCooldownMs) return;
+
+    autoConnectAttemptAtRef.current[active.id] = now;
+    void connectGateway(active.id).catch(() => {});
+  }, [active.id, connectGateway, runtimeByGatewayId]);
+
+  React.useEffect(() => {
+    if (!active.id) return;
+    const runtime = runtimeByGatewayId[active.id] ?? emptyRuntime();
+    if (runtime.status !== "connected") {
+      warmupTriggeredRef.current[active.id] = false;
+      return;
+    }
+    if (warmupTriggeredRef.current[active.id]) return;
+    warmupTriggeredRef.current[active.id] = true;
+    void Promise.allSettled([
+      refreshNodes(active.id),
+      refreshPresence(active.id),
+      refreshDevices(active.id, { quiet: true }),
+    ]);
+  }, [active.id, refreshDevices, refreshNodes, refreshPresence, runtimeByGatewayId]);
 
   const value: OpenClawContextValue = {
     gateways,

@@ -22,7 +22,7 @@ export function CyberNexusOrb() {
   const pressTimerRef = useRef<number | null>(null);
   const [mode, setMode] = useState<NexusOperationMode>(() => getNexusOperationMode());
   const [menuOpen, setMenuOpen] = useState(false);
-  const isActive = location.pathname.startsWith("/cyber-nexus");
+  const isActive = location.pathname.startsWith("/nexus");
   const descriptor = useMemo(() => getNexusModeDescriptor(mode), [mode]);
   const modeIndex = useMemo(() => NEXUS_MODES.findIndex((entry) => entry.id === mode), [mode]);
 
@@ -76,15 +76,15 @@ export function CyberNexusOrb() {
     setNexusOperationMode(nextMode);
     setMode(nextMode);
     setMenuOpen(false);
-    if (!location.pathname.startsWith("/cyber-nexus")) {
-      navigate("/cyber-nexus");
+    if (!location.pathname.startsWith("/nexus")) {
+      navigate("/nexus");
     }
   };
 
   const handleClick = () => {
     cycleMode();
     if (!isActive) {
-      navigate("/cyber-nexus");
+      navigate("/nexus");
     }
   };
 

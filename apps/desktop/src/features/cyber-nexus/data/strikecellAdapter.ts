@@ -75,8 +75,8 @@ const STRIKECELL_META: Record<
     tags: ["rules", "enforcement", "coverage"],
   },
   "forensics-river": {
-    name: "Forensics River",
-    routeId: "forensics-river",
+    name: "Nexus",
+    routeId: "nexus",
     description: "Forensic action-river timeline replay.",
     tags: ["forensics", "timeline", "audit", "replay"],
   },
