@@ -98,13 +98,11 @@ fn encode_defined_type(encoder: ComponentDefinedTypeEncoder, ty: &ComponentDefin
             encoder.record(r.fields.iter().map(|f| (f.name, &f.ty)));
         }
         ComponentDefinedType::Variant(v) => {
-            encoder.variant(v.cases.iter().map(|c| {
-                (
-                    c.name,
-                    c.ty.as_ref().map(Into::into),
-                    c.refines.as_ref().map(Into::into),
-                )
-            }));
+            encoder.variant(
+                v.cases
+                    .iter()
+                    .map(|c| (c.name, c.ty.as_ref().map(Into::into))),
+            );
         }
         ComponentDefinedType::List(l) => {
             encoder.list(l.element.as_ref());
@@ -112,8 +110,8 @@ fn encode_defined_type(encoder: ComponentDefinedTypeEncoder, ty: &ComponentDefin
         ComponentDefinedType::Map(m) => {
             encoder.map(m.key.as_ref(), m.value.as_ref());
         }
-        ComponentDefinedType::FixedSizeList(l) => {
-            encoder.fixed_size_list(l.element.as_ref(), l.elements);
+        ComponentDefinedType::FixedLengthList(l) => {
+            encoder.fixed_length_list(l.element.as_ref(), l.elements);
         }
         ComponentDefinedType::Tuple(t) => {
             encoder.tuple(t.fields.iter());
@@ -519,21 +517,25 @@ impl<'a> Encoder<'a> {
                     self.funcs
                         .thread_new_indirect(info.ty.into(), info.table.idx.into());
                 }
-                CoreFuncKind::ThreadSwitchTo(info) => {
+                CoreFuncKind::ThreadSuspendToSuspended(info) => {
                     self.core_func_names.push(name);
-                    self.funcs.thread_switch_to(info.cancellable);
+                    self.funcs.thread_suspend_to_suspended(info.cancellable);
                 }
                 CoreFuncKind::ThreadSuspend(info) => {
                     self.core_func_names.push(name);
                     self.funcs.thread_suspend(info.cancellable);
                 }
-                CoreFuncKind::ThreadResumeLater => {
+                CoreFuncKind::ThreadSuspendTo(info) => {
                     self.core_func_names.push(name);
-                    self.funcs.thread_resume_later();
+                    self.funcs.thread_suspend_to(info.cancellable);
                 }
-                CoreFuncKind::ThreadYieldTo(info) => {
+                CoreFuncKind::ThreadUnsuspend => {
                     self.core_func_names.push(name);
-                    self.funcs.thread_yield_to(info.cancellable);
+                    self.funcs.thread_unsuspend();
+                }
+                CoreFuncKind::ThreadYieldToSuspended(info) => {
+                    self.core_func_names.push(name);
+                    self.funcs.thread_yield_to_suspended(info.cancellable);
                 }
             },
         }
@@ -823,15 +825,6 @@ impl From<PrimitiveValType> for wasm_encoder::PrimitiveValType {
             PrimitiveValType::Char => Self::Char,
             PrimitiveValType::String => Self::String,
             PrimitiveValType::ErrorContext => Self::ErrorContext,
-        }
-    }
-}
-
-impl From<&Refinement<'_>> for u32 {
-    fn from(r: &Refinement) -> Self {
-        match r {
-            Refinement::Index(..) => unreachable!("should be resolved by now"),
-            Refinement::Resolved(i) => *i,
         }
     }
 }

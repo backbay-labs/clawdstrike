@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.81.0"
+rust-version = "1.82.0"
 name = "wast"
-version = "244.0.0"
+version = "245.0.1"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 build = false
 autolib = false
@@ -84,12 +84,13 @@ version = "2.4.1"
 version = "0.2.0"
 
 [dependencies.wasm-encoder]
-version = "0.244.0"
+version = "0.245.1"
 features = ["std"]
 default-features = false
 
 [dev-dependencies.anyhow]
 version = "1.0.58"
+default-features = false
 
 [dev-dependencies.libtest-mimic]
 version = "0.8.1"
@@ -131,4 +132,7 @@ unused_import_braces = "warn"
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
-check-cfg = ["cfg(fuzzing)"]
+check-cfg = [
+    "cfg(fuzzing)",
+    "cfg(debug_check_try_op)",
+]

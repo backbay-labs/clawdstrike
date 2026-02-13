@@ -38,6 +38,16 @@ use core::{cmp, iter, mem};
 #[cfg(feature = "simd")]
 mod simd;
 
+#[cfg(feature = "try-op")]
+mod transaction;
+#[cfg(not(feature = "try-op"))]
+mod transaction_disabled;
+#[cfg(not(feature = "try-op"))]
+use transaction_disabled as transaction;
+
+use transaction::{RollbackLogAllocations, Transaction};
+
+#[derive(Clone, PartialEq)]
 pub(crate) struct OperatorValidator {
     pub(super) locals: Locals,
     local_inits: LocalInits,
@@ -63,9 +73,15 @@ pub(crate) struct OperatorValidator {
     /// "pop".
     #[cfg(debug_assertions)]
     pub(crate) pop_push_log: Vec<bool>,
+
+    /// When "try-op" validation of an operator is pending, this is a trace
+    /// of discarded info that can restore the OperatorValidator to its
+    /// pre-operator state if necessary.
+    transaction: Transaction,
 }
 
 /// Captures the initialization of non-defaultable locals.
+#[derive(Clone, PartialEq)]
 struct LocalInits {
     /// Records if a local is already initialized.
     local_inits: Vec<bool>,
@@ -116,7 +132,7 @@ impl LocalInits {
         self.local_inits.resize(new_len, is_defaultable);
     }
 
-    /// Returns `true` if the local at `local_index` has already been initialized.
+    /// Returns `true` if the local at `local_index` has not been initialized.
     #[inline]
     pub fn is_uninit(&self, local_index: u32) -> bool {
         if local_index < self.first_non_default_local {
@@ -134,18 +150,22 @@ impl LocalInits {
         }
     }
 
-    /// Registers a new control frame and returns its `height`.
-    pub fn push_ctrl(&mut self) -> usize {
+    /// Returns the current `height` (number of local inits).
+    pub fn height(&self) -> usize {
         self.inits.len()
     }
 
     /// Pops a control frame via its `height`.
     ///
-    /// This uninitializes all locals that have been initialized within it.
-    pub fn pop_ctrl(&mut self, height: usize) {
-        for local_index in self.inits.split_off(height) {
-            self.local_inits[local_index as usize] = false;
+    /// This uninitializes all locals that have been initialized within it
+    /// and returns their indexes.
+    #[inline]
+    pub fn pop_ctrl(&mut self, height: usize) -> Vec<u32> {
+        let inits = self.inits.split_off(height);
+        for local_index in &inits {
+            self.local_inits[*local_index as usize] = false;
         }
+        inits
     }
 
     /// Clears the [`LocalInits`].
@@ -167,6 +187,7 @@ impl LocalInits {
 // it if you so like.
 const MAX_LOCALS_TO_TRACK: u32 = 50;
 
+#[derive(Clone, PartialEq)]
 pub(super) struct Locals {
     // Total number of locals in the function.
     num_locals: u32,
@@ -196,7 +217,7 @@ pub(super) struct Locals {
 //
 // This structure corresponds to `ctrl_frame` as specified at in the validation
 // appendix of the wasm spec
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Frame {
     /// Indicator for what kind of instruction pushed this frame.
     pub kind: FrameKind,
@@ -225,6 +246,7 @@ pub struct OperatorValidatorAllocations {
     local_inits: LocalInits,
     locals_first: Vec<ValType>,
     locals_uncached: Vec<(u32, ValType)>,
+    rollback_log: RollbackLogAllocations,
 }
 
 /// Type storage within the validator.
@@ -233,7 +255,7 @@ pub struct OperatorValidatorAllocations {
 /// fully know an operand's type. this unknown state is known as the `bottom`
 /// type in the WebAssembly specification. Validating further instructions may
 /// give us more information; either partial (`PartialRef`) or fully known.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum MaybeType<T = ValType> {
     /// The operand has no available type information due to unreachable code.
     ///
@@ -330,11 +352,11 @@ impl OperatorValidator {
             local_inits,
             locals_first,
             locals_uncached,
+            rollback_log,
         } = allocs;
         debug_assert!(popped_types_tmp.is_empty());
         debug_assert!(control.is_empty());
         debug_assert!(operands.is_empty());
-        debug_assert!(local_inits.is_empty());
         debug_assert!(local_inits.is_empty());
         debug_assert!(locals_first.is_empty());
         debug_assert!(locals_uncached.is_empty());
@@ -352,6 +374,7 @@ impl OperatorValidator {
             shared: false,
             #[cfg(debug_assertions)]
             pop_push_log: vec![],
+            transaction: Transaction::new(rollback_log),
         }
     }
 
@@ -539,10 +562,18 @@ impl OperatorValidator {
             },
             locals_first: clear(self.locals.first),
             locals_uncached: clear(self.locals.uncached),
+            rollback_log: self.transaction.into_allocations(),
         }
     }
 
-    fn record_pop(&mut self) {
+    // records a pop that mutated the operand stack
+    fn record_pop(&mut self, ty: MaybeType) {
+        self.transaction.map(|log| log.record_pop(ty));
+        self.record_any_pop();
+    }
+
+    // records any pop, including a Bottom synthesized from an empty polymorphic operand stack
+    fn record_any_pop(&mut self) {
         #[cfg(debug_assertions)]
         {
             self.pop_push_log.push(false);
@@ -550,10 +581,66 @@ impl OperatorValidator {
     }
 
     fn record_push(&mut self) {
+        self.transaction.map(|log| log.record_push());
         #[cfg(debug_assertions)]
         {
             self.pop_push_log.push(true);
         }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn begin_try_op(&mut self) {
+        self.transaction.begin(self.local_inits.height());
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn commit(&mut self) {
+        self.transaction.end();
+    }
+
+    /// Reverse the actions in the rollback log. This is used by `FuncValidator::try_op()`
+    /// if validating the operator fails. The rollback log is sufficient to handle
+    /// the mutations of any individual operator (but not necessarily multiple operators).
+    #[cfg(feature = "try-op")]
+    pub(super) fn rollback(&mut self) {
+        let Transaction::Active(rollback_log) = &self.transaction else {
+            panic!("no transaction pending");
+        };
+
+        if rollback_log.unreachable {
+            self.control.last_mut().unwrap().unreachable = false;
+        }
+
+        for x in rollback_log.operands.iter().rev() {
+            match x {
+                None => {
+                    self.operands.pop();
+                }
+                Some(mt) => self.operands.push(*mt),
+            }
+        }
+
+        for x in rollback_log.frames.iter().rev() {
+            match x {
+                None => {
+                    let frame = self.control.pop().unwrap();
+                    self.local_inits.pop_ctrl(frame.init_height);
+                }
+                Some(frame) => {
+                    self.control.push(*frame);
+                }
+            }
+        }
+
+        for idx in &rollback_log.inits {
+            self.local_inits.set_init(*idx);
+        }
+
+        if self.local_inits.height() > rollback_log.init_height {
+            self.local_inits.pop_ctrl(rollback_log.init_height);
+        }
+
+        self.transaction.end();
     }
 }
 
@@ -727,7 +814,7 @@ where
                 if Some(actual_ty) == expected {
                     if let Some(control) = self.control.last() {
                         if self.operands.len() >= control.height {
-                            self.record_pop();
+                            self.record_pop(MaybeType::Known(actual_ty));
                             return Ok(MaybeType::Known(actual_ty));
                         }
                     }
@@ -752,6 +839,7 @@ where
         self.operands.extend(popped);
         let control = self.control.last().unwrap();
         let actual = if self.operands.len() == control.height && control.unreachable {
+            self.record_any_pop();
             MaybeType::Bottom
         } else {
             if self.operands.len() == control.height {
@@ -764,7 +852,9 @@ where
                     "type mismatch: expected {desc} but nothing on stack"
                 )
             } else {
-                self.operands.pop().unwrap()
+                let ty = self.operands.pop().unwrap();
+                self.record_pop(ty);
+                ty
             }
         };
         if let Some(expected) = expected {
@@ -824,7 +914,6 @@ where
                 }
             }
         }
-        self.record_pop();
         Ok(actual)
     }
 
@@ -937,9 +1026,21 @@ where
     /// Flags the current control frame as unreachable, additionally truncating
     /// the currently active operand stack.
     fn unreachable(&mut self) -> Result<()> {
+        if !self.control.last().unwrap().unreachable {
+            self.transaction.map(|log| log.set_unreachable());
+        }
+
         let control = self.control.last_mut().unwrap();
         control.unreachable = true;
         let new_height = control.height;
+
+        let operands = self.operands.split_off(new_height);
+        self.transaction.map(|log| {
+            for op in operands.iter().rev() {
+                log.record_pop(*op);
+            }
+        });
+
         self.operands.truncate(new_height);
         Ok(())
     }
@@ -951,10 +1052,22 @@ where
     /// breaks interact with this block's type. Additionally the type signature
     /// of the block is specified by `ty`.
     fn push_ctrl(&mut self, kind: FrameKind, ty: BlockType) -> Result<()> {
+        self.push_bare_ctrl(kind, ty);
+        // All of the parameters are now also available in this control frame,
+        // so we push them here in order.
+        for ty in self.params(ty)? {
+            self.push_operand(ty)?;
+        }
+        Ok(())
+    }
+
+    /// Pushes a new frame onto the control stack, without its block params.
+    /// This is used by `push_ctrl` above and directly by LegacyCatch and LegacyCatchAll.
+    fn push_bare_ctrl(&mut self, kind: FrameKind, ty: BlockType) {
         // Push a new frame which has a snapshot of the height of the current
         // operand stack.
         let height = self.operands.len();
-        let init_height = self.local_inits.push_ctrl();
+        let init_height = self.local_inits.height();
         self.control.push(Frame {
             kind,
             block_type: ty,
@@ -962,12 +1075,7 @@ where
             unreachable: false,
             init_height,
         });
-        // All of the parameters are now also available in this control frame,
-        // so we push them here in order.
-        for ty in self.params(ty)? {
-            self.push_operand(ty)?;
-        }
-        Ok(())
+        self.transaction.map(|log| log.push_ctrl());
     }
 
     /// Pops a frame from the control stack.
@@ -980,10 +1088,6 @@ where
         let frame = self.control.last().unwrap();
         let ty = frame.block_type;
         let height = frame.height;
-        let init_height = frame.init_height;
-
-        // reset_locals in the spec
-        self.local_inits.pop_ctrl(init_height);
 
         // Pop all the result types, in reverse order, from the operand stack.
         // These types will, possibly, be transferred to the next frame.
@@ -1000,8 +1104,12 @@ where
             );
         }
 
-        // And then we can remove it!
-        Ok(self.control.pop().unwrap())
+        // And then we can remove it and reset_locals.
+        let frame = self.control.pop().unwrap();
+        let _inits = self.local_inits.pop_ctrl(frame.init_height);
+        self.transaction.map(|log| log.pop_ctrl(frame, _inits));
+
+        Ok(frame)
     }
 
     /// Validates a relative jump to the `depth` specified.
@@ -1419,7 +1527,7 @@ where
 
     /// Common helper for both nullable and non-nullable variants of `ref.cast_desc`
     /// instructions.
-    fn check_ref_cast_desc(&mut self, nullable: bool, heap_type: HeapType) -> Result<()> {
+    fn check_ref_cast_desc_eq(&mut self, nullable: bool, heap_type: HeapType) -> Result<()> {
         let is_exact = self.check_maybe_exact_descriptor_ref(heap_type)?;
 
         self.check_downcast(nullable, heap_type)?;
@@ -1987,9 +2095,7 @@ where
     }
     fn visit_else(&mut self) -> Self::Output {
         let frame = self.pop_ctrl()?;
-        if frame.kind != FrameKind::If {
-            bail!(self.offset, "else found outside of an `if` block");
-        }
+        debug_assert_eq!(frame.kind, FrameKind::If); // syntactic requirement, enforced by reader
         self.push_ctrl(FrameKind::Else, frame.block_type)?;
         Ok(())
     }
@@ -2090,8 +2196,10 @@ where
     fn visit_end(&mut self) -> Self::Output {
         let mut frame = self.pop_ctrl()?;
 
-        // Note that this `if` isn't included in the appendix right
-        // now, but it's used to allow for `if` statements that are
+        // Note that this `if` isn't included in the appendix;
+        // the `if ... end` abbreviation for `if ... else [] end`
+        // is part of the binary and text formats.
+        // This is used to allow for `if` statements that are
         // missing an `else` block which have the same parameter/return
         // types on the block (since that's valid).
         if frame.kind == FrameKind::If {
@@ -4210,20 +4318,9 @@ where
     }
     fn visit_catch(&mut self, index: u32) -> Self::Output {
         let frame = self.pop_ctrl()?;
-        if frame.kind != FrameKind::LegacyTry && frame.kind != FrameKind::LegacyCatch {
-            bail!(self.offset, "catch found outside of an `try` block");
-        }
-        // Start a new frame and push `exnref` value.
-        let height = self.operands.len();
-        let init_height = self.local_inits.push_ctrl();
-        self.control.push(Frame {
-            kind: FrameKind::LegacyCatch,
-            block_type: frame.block_type,
-            height,
-            unreachable: false,
-            init_height,
-        });
-        // Push exception argument types.
+        debug_assert!(frame.kind == FrameKind::LegacyTry || frame.kind == FrameKind::LegacyCatch);
+        // Start a new frame and push exception argument types.
+        self.push_bare_ctrl(FrameKind::LegacyCatch, frame.block_type);
         let ty = self.exception_tag_at(index)?;
         for ty in ty.params() {
             self.push_operand(*ty)?;
@@ -4245,9 +4342,7 @@ where
     }
     fn visit_delegate(&mut self, relative_depth: u32) -> Self::Output {
         let frame = self.pop_ctrl()?;
-        if frame.kind != FrameKind::LegacyTry {
-            bail!(self.offset, "delegate found outside of an `try` block");
-        }
+        debug_assert_eq!(frame.kind, FrameKind::LegacyTry);
         // This operation is not a jump, but we need to check the
         // depth for validity
         let _ = self.jump(relative_depth)?;
@@ -4258,20 +4353,8 @@ where
     }
     fn visit_catch_all(&mut self) -> Self::Output {
         let frame = self.pop_ctrl()?;
-        if frame.kind == FrameKind::LegacyCatchAll {
-            bail!(self.offset, "only one catch_all allowed per `try` block");
-        } else if frame.kind != FrameKind::LegacyTry && frame.kind != FrameKind::LegacyCatch {
-            bail!(self.offset, "catch_all found outside of a `try` block");
-        }
-        let height = self.operands.len();
-        let init_height = self.local_inits.push_ctrl();
-        self.control.push(Frame {
-            kind: FrameKind::LegacyCatchAll,
-            block_type: frame.block_type,
-            height,
-            unreachable: false,
-            init_height,
-        });
+        debug_assert!(frame.kind == FrameKind::LegacyTry || frame.kind == FrameKind::LegacyCatch);
+        self.push_bare_ctrl(FrameKind::LegacyCatchAll, frame.block_type);
         Ok(())
     }
     fn visit_cont_new(&mut self, type_index: u32) -> Self::Output {
@@ -4368,6 +4451,16 @@ where
         }
         Ok(())
     }
+    fn visit_resume_throw_ref(&mut self, type_index: u32, table: ResumeTable) -> Self::Output {
+        let ft = self.check_resume_table(table, type_index)?;
+        self.pop_concrete_ref(true, type_index)?;
+        self.pop_operand(Some(ValType::EXNREF))?;
+
+        for &ty in ft.results() {
+            self.push_operand(ty)?
+        }
+        Ok(())
+    }
     fn visit_switch(&mut self, type_index: u32, tag_index: u32) -> Self::Output {
         // [t1* (ref null $ct2)] -> [te1*]
         let cont_ty = self.cont_type_at(type_index)?;
@@ -4456,13 +4549,13 @@ where
         }
     }
 
-    fn visit_ref_cast_desc_non_null(&mut self, heap_type: HeapType) -> Self::Output {
-        self.check_ref_cast_desc(false, heap_type)
+    fn visit_ref_cast_desc_eq_non_null(&mut self, heap_type: HeapType) -> Self::Output {
+        self.check_ref_cast_desc_eq(false, heap_type)
     }
-    fn visit_ref_cast_desc_nullable(&mut self, heap_type: HeapType) -> Self::Output {
-        self.check_ref_cast_desc(true, heap_type)
+    fn visit_ref_cast_desc_eq_nullable(&mut self, heap_type: HeapType) -> Self::Output {
+        self.check_ref_cast_desc_eq(true, heap_type)
     }
-    fn visit_br_on_cast_desc(
+    fn visit_br_on_cast_desc_eq(
         &mut self,
         relative_depth: u32,
         mut from_ref_type: RefType,
@@ -4502,7 +4595,7 @@ where
         self.push_operand(diff_ty)?;
         Ok(())
     }
-    fn visit_br_on_cast_desc_fail(
+    fn visit_br_on_cast_desc_eq_fail(
         &mut self,
         relative_depth: u32,
         mut from_ref_type: RefType,

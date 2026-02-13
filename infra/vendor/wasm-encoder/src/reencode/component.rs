@@ -758,13 +758,10 @@ pub mod component_utils {
                 );
             }
             wasmparser::ComponentDefinedType::Variant(v) => {
-                defined.variant(v.iter().map(|case| {
-                    (
-                        case.name,
-                        case.ty.map(|t| reencoder.component_val_type(t)),
-                        case.refines,
-                    )
-                }));
+                defined.variant(
+                    v.iter()
+                        .map(|case| (case.name, case.ty.map(|t| reencoder.component_val_type(t)))),
+                );
             }
             wasmparser::ComponentDefinedType::List(t) => {
                 defined.list(reencoder.component_val_type(t));
@@ -775,8 +772,8 @@ pub mod component_utils {
                     reencoder.component_val_type(v),
                 );
             }
-            wasmparser::ComponentDefinedType::FixedSizeList(t, elements) => {
-                defined.fixed_size_list(reencoder.component_val_type(t), elements);
+            wasmparser::ComponentDefinedType::FixedLengthList(t, elements) => {
+                defined.fixed_length_list(reencoder.component_val_type(t), elements);
             }
             wasmparser::ComponentDefinedType::Tuple(t) => {
                 defined.tuple(t.iter().map(|t| reencoder.component_val_type(*t)));
@@ -1121,17 +1118,20 @@ pub mod component_utils {
                 let table_index = reencoder.table_index(table_index)?;
                 section.thread_new_indirect(func_ty, table_index);
             }
-            wasmparser::CanonicalFunction::ThreadSwitchTo { cancellable } => {
-                section.thread_switch_to(cancellable);
+            wasmparser::CanonicalFunction::ThreadSuspendToSuspended { cancellable } => {
+                section.thread_suspend_to_suspended(cancellable);
             }
             wasmparser::CanonicalFunction::ThreadSuspend { cancellable } => {
                 section.thread_suspend(cancellable);
             }
-            wasmparser::CanonicalFunction::ThreadResumeLater => {
-                section.thread_resume_later();
+            wasmparser::CanonicalFunction::ThreadSuspendTo { cancellable } => {
+                section.thread_suspend_to(cancellable);
             }
-            wasmparser::CanonicalFunction::ThreadYieldTo { cancellable } => {
-                section.thread_yield_to(cancellable);
+            wasmparser::CanonicalFunction::ThreadUnsuspend => {
+                section.thread_unsuspend();
+            }
+            wasmparser::CanonicalFunction::ThreadYieldToSuspended { cancellable } => {
+                section.thread_yield_to_suspended(cancellable);
             }
         }
         Ok(())

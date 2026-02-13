@@ -285,6 +285,16 @@ fn visit_resume_throw(
     Some((params + 1, results))
 }
 
+fn visit_resume_throw_ref(
+    module: &dyn ModuleArity,
+    cont: u32,
+    _table: ResumeTable,
+) -> Option<(u32, u32)> {
+    let (_, results) = module.sub_type_arity(module.sub_type_at(cont)?)?;
+    // in: [exnref, cont], out: [result(cont)]
+    Some((2, results))
+}
+
 fn visit_switch(module: &dyn ModuleArity, cont: u32, _tag: u32) -> Option<(u32, u32)> {
     let (params, _) = module.sub_type_arity(module.sub_type_at(cont)?)?;
     let st = &module.sub_type_at(cont)?.composite_type.inner;
@@ -297,7 +307,7 @@ fn visit_switch(module: &dyn ModuleArity, cont: u32, _tag: u32) -> Option<(u32, 
     Some((params, cont_params))
 }
 
-fn visit_br_on_cast_desc(
+fn visit_br_on_cast_desc_eq(
     module: &dyn ModuleArity,
     depth: u32,
     _from: RefType,
@@ -307,7 +317,7 @@ fn visit_br_on_cast_desc(
     Some((params + 1, params))
 }
 
-fn visit_br_on_cast_desc_fail(
+fn visit_br_on_cast_desc_eq_fail(
     module: &dyn ModuleArity,
     depth: u32,
     _from: RefType,

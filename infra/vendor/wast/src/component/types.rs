@@ -387,7 +387,7 @@ pub enum ComponentDefinedType<'a> {
     Variant(Variant<'a>),
     List(List<'a>),
     Map(Map<'a>),
-    FixedSizeList(FixedSizeList<'a>),
+    FixedLengthList(FixedLengthList<'a>),
     Tuple(Tuple<'a>),
     Flags(Flags<'a>),
     Enum(Enum<'a>),
@@ -539,8 +539,6 @@ pub struct VariantCase<'a> {
     pub name: &'a str,
     /// The optional type of the case.
     pub ty: Option<ComponentValType<'a>>,
-    /// The optional refinement.
-    pub refines: Option<Refinement<'a>>,
 }
 
 impl<'a> Parse<'a> for VariantCase<'a> {
@@ -549,38 +547,7 @@ impl<'a> Parse<'a> for VariantCase<'a> {
         let id = parser.parse()?;
         let name = parser.parse()?;
         let ty = parser.parse()?;
-        let refines = if !parser.is_empty() {
-            Some(parser.parse()?)
-        } else {
-            None
-        };
-        Ok(Self {
-            span,
-            id,
-            name,
-            ty,
-            refines,
-        })
-    }
-}
-
-/// A refinement for a variant case.
-#[derive(Debug)]
-pub enum Refinement<'a> {
-    /// The refinement is referenced by index.
-    Index(Span, Index<'a>),
-    /// The refinement has been resolved to an index into
-    /// the cases of the variant.
-    Resolved(u32),
-}
-
-impl<'a> Parse<'a> for Refinement<'a> {
-    fn parse(parser: Parser<'a>) -> Result<Self> {
-        parser.parens(|parser| {
-            let span = parser.parse::<kw::refines>()?.0;
-            let id = parser.parse()?;
-            Ok(Self::Index(span, id))
-        })
+        Ok(Self { span, id, name, ty })
     }
 }
 
@@ -600,9 +567,9 @@ pub struct Map<'a> {
     pub value: Box<ComponentValType<'a>>,
 }
 
-/// A fixed size list type.
+/// A fixed-length list type.
 #[derive(Debug)]
-pub struct FixedSizeList<'a> {
+pub struct FixedLengthList<'a> {
     /// The element type of the array.
     pub element: Box<ComponentValType<'a>>,
     /// Number of Elements
@@ -614,7 +581,7 @@ fn parse_list<'a>(parser: Parser<'a>) -> Result<ComponentDefinedType<'a>> {
     let tp = parser.parse()?;
     let elements = parser.parse::<Option<u32>>()?;
     if let Some(elements) = elements {
-        Ok(ComponentDefinedType::FixedSizeList(FixedSizeList {
+        Ok(ComponentDefinedType::FixedLengthList(FixedLengthList {
             element: Box::new(tp),
             elements,
         }))
