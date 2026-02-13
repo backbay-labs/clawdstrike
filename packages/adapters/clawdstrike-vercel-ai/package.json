@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.1.0",
+    "@clawdstrike/adapter-core": "^0.1.1",
     "@clawdstrike/sdk": "^0.1.0"
   },
   "peerDependencies": {

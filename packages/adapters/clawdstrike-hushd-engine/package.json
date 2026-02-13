@@ -19,7 +19,7 @@
     "poc:fail-closed": "node examples/fail-closed-poc/run.mjs"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.1.0"
+    "@clawdstrike/adapter-core": "^0.1.1"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",
