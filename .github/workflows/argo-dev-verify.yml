@@ -1,0 +1,168 @@
+name: Argo Dev Deploy Verify
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      wait_timeout_seconds:
+        description: "How long to wait for Argo to report Synced+Healthy (seconds)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  EKS_ROLE_ARN: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+  ARGOCD_NAMESPACE: argocd
+  ARGO_APP_NAME: clawdstrike-helm
+  DEPLOY_NAMESPACE: clawdstrike
+  WAIT_TIMEOUT_SECONDS: ${{ github.event.inputs.wait_timeout_seconds || '1800' }}
+  WAIT_INTERVAL_SECONDS: "15"
+
+jobs:
+  verify:
+    name: Verify Dev Deployment (Argo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.EKS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl for EKS
+        run: |
+          set -euo pipefail
+          if [[ -z "${EKS_CLUSTER_NAME}" ]]; then
+            echo "EKS_CLUSTER_NAME is not set (repo var)."
+            exit 1
+          fi
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Wait for clawdstrike-helm to sync and become healthy
+        id: wait
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGO_NS="${ARGOCD_NAMESPACE}"
+          APP="${ARGO_APP_NAME}"
+          TARGET_SHA="${GITHUB_SHA}"
+          TIMEOUT="${WAIT_TIMEOUT_SECONDS}"
+          INTERVAL="${WAIT_INTERVAL_SECONDS}"
+
+          echo "Watching Argo app ${ARGO_NS}/${APP} for commit ${TARGET_SHA}"
+          echo "- timeout: ${TIMEOUT}s"
+          echo "- interval: ${INTERVAL}s"
+
+          deadline=$((SECONDS + TIMEOUT))
+          last_sync=""
+          last_health=""
+          last_rev=""
+
+          while (( SECONDS < deadline )); do
+            app_json="$(kubectl -n "$ARGO_NS" get app "$APP" -o json 2>/dev/null || true)"
+            if [[ -z "$app_json" ]]; then
+              echo "app not readable yet; retrying..."
+              sleep "$INTERVAL"
+              continue
+            fi
+
+            sync_status="$(jq -r '.status.sync.status // ""' <<<"$app_json")"
+            health_status="$(jq -r '.status.health.status // ""' <<<"$app_json")"
+            revision="$(jq -r '.status.sync.revision // ""' <<<"$app_json")"
+
+            if [[ "$sync_status" != "$last_sync" || "$health_status" != "$last_health" || "$revision" != "$last_rev" ]]; then
+              echo "sync=$sync_status health=$health_status revision=$revision"
+              last_sync="$sync_status"
+              last_health="$health_status"
+              last_rev="$revision"
+            fi
+
+            if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && -n "$revision" ]]; then
+              if [[ "$revision" == "$TARGET_SHA" ]]; then
+                echo "verified: app synced+healthy at exact commit"
+                echo "observed_revision=$revision" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              # If Argo has already advanced to a newer commit, accept it if it contains TARGET_SHA.
+              if ! git cat-file -e "$revision^{commit}" 2>/dev/null; then
+                git fetch --no-tags --quiet origin "$revision" || true
+              fi
+
+              if git cat-file -e "$revision^{commit}" 2>/dev/null && git merge-base --is-ancestor "$TARGET_SHA" "$revision"; then
+                echo "verified: app synced+healthy at newer commit containing target"
+                echo "observed_revision=$revision" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+
+            sleep "$INTERVAL"
+          done
+
+          echo "timed out waiting for Argo to report Synced+Healthy at (or ahead of) ${TARGET_SHA}"
+          exit 1
+
+      - name: Collect diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT_DIR="$RUNNER_TEMP/argo-dev-verify"
+          mkdir -p "$OUT_DIR"
+
+          {
+            echo "target_sha=${GITHUB_SHA}"
+            echo "observed_revision=${{ steps.wait.outputs.observed_revision || '' }}"
+            echo "cluster=${EKS_CLUSTER_NAME}"
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$OUT_DIR/meta.txt"
+
+          kubectl -n "$ARGOCD_NAMESPACE" get app "$ARGO_APP_NAME" -o yaml > "$OUT_DIR/argocd-app.yaml" || true
+          kubectl -n "$DEPLOY_NAMESPACE" get all -o wide > "$OUT_DIR/all.txt" || true
+          kubectl -n "$DEPLOY_NAMESPACE" get pods -o wide > "$OUT_DIR/pods.txt" || true
+          kubectl -n "$DEPLOY_NAMESPACE" get events --sort-by=.metadata.creationTimestamp > "$OUT_DIR/events.txt" || true
+          kubectl -n "$DEPLOY_NAMESPACE" get ingress -o yaml > "$OUT_DIR/ingress.yaml" || true
+
+          mkdir -p "$OUT_DIR/logs"
+          for d in hushd proofs-api witness checkpointer; do
+            kubectl -n "$DEPLOY_NAMESPACE" logs "deploy/clawdstrike-helm-$d" --all-containers=true --tail=200 > "$OUT_DIR/logs/$d.txt" 2>&1 || true
+          done
+
+      - name: Upload diagnostics artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argo-dev-verify-${{ github.run_id }}
+          path: ${{ runner.temp }}/argo-dev-verify
+
+      - name: Append job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Argo Dev Deploy Verify"
+            echo ""
+            echo "- app: \`${ARGOCD_NAMESPACE}/${ARGO_APP_NAME}\`"
+            echo "- namespace: \`${DEPLOY_NAMESPACE}\`"
+            echo "- target commit: \`${GITHUB_SHA}\`"
+            if [[ "${{ job.status }}" == "success" ]]; then
+              echo "- result: success"
+              echo "- observed revision: \`${{ steps.wait.outputs.observed_revision }}\`"
+            else
+              echo "- result: failure"
+              echo "- diagnostics: artifact \`argo-dev-verify-${{ github.run_id }}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
