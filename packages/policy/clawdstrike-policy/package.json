@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.1.0",
+    "@clawdstrike/adapter-core": "^0.1.1",
     "js-yaml": "^4.1.0",
     "lru-cache": "^11.2.2"
   },
