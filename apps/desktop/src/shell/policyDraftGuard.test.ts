@@ -4,17 +4,17 @@ import { appIdFromPath, shouldBlockDirtyPolicyDraftExit } from "./policyDraftGua
 
 describe("policyDraftGuard", () => {
   it("parses app id from pathname", () => {
-    expect(appIdFromPath("/forensics-river/session-1")).toBe("forensics-river");
-    expect(appIdFromPath("/cyber-nexus?strikecell=foo")).toBe("cyber-nexus");
+    expect(appIdFromPath("/nexus/session-1")).toBe("nexus");
+    expect(appIdFromPath("/operations?tab=fleet")).toBe("operations");
     expect(appIdFromPath("/")).toBe("");
   });
 
-  it("blocks dirty exits away from forensics-river", () => {
+  it("blocks dirty exits away from nexus", () => {
     expect(
       shouldBlockDirtyPolicyDraftExit({
         hasDirtyDraft: true,
-        currentPathname: "/forensics-river",
-        nextPathname: "/cyber-nexus",
+        currentPathname: "/nexus",
+        nextPathname: "/operations",
       })
     ).toBe(true);
   });
@@ -23,18 +23,18 @@ describe("policyDraftGuard", () => {
     expect(
       shouldBlockDirtyPolicyDraftExit({
         hasDirtyDraft: false,
-        currentPathname: "/forensics-river",
-        nextPathname: "/cyber-nexus",
+        currentPathname: "/nexus",
+        nextPathname: "/operations",
       })
     ).toBe(false);
   });
 
-  it("does not block navigation inside forensics-river", () => {
+  it("does not block navigation inside nexus", () => {
     expect(
       shouldBlockDirtyPolicyDraftExit({
         hasDirtyDraft: true,
-        currentPathname: "/forensics-river",
-        nextPathname: "/forensics-river/session-2",
+        currentPathname: "/nexus",
+        nextPathname: "/nexus/session-2",
       })
     ).toBe(false);
   });
@@ -43,8 +43,8 @@ describe("policyDraftGuard", () => {
     expect(
       shouldBlockDirtyPolicyDraftExit({
         hasDirtyDraft: true,
-        currentPathname: "/cyber-nexus",
-        nextPathname: "/settings",
+        currentPathname: "/operations",
+        nextPathname: "/operations",
       })
     ).toBe(false);
   });

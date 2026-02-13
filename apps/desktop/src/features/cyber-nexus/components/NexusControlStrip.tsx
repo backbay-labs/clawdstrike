@@ -1,18 +1,24 @@
+import * as React from "react";
 import type { ConnectionStatus } from "@/context/ConnectionContext";
 import type { NexusLayoutMode, Strikecell } from "../types";
 import { ALL_LAYOUT_MODES, LAYOUT_METADATA } from "../layouts";
+import { ProfileMenu } from "@/shell/components/ProfileMenu";
 
 interface NexusControlStripProps {
   connectionStatus: ConnectionStatus;
   layoutMode: NexusLayoutMode;
   activeStrikecell: Strikecell | null;
+  brandSubline?: string;
   commandQuery: string;
   layoutDropdownOpen: boolean;
   onOpenSearch: () => void;
   onCommandQueryChange: (value: string) => void;
   onOpenCommandPalette: () => void;
   onToggleLayoutDropdown: () => void;
+  onCloseLayoutDropdown: () => void;
   onSelectLayout: (mode: NexusLayoutMode) => void;
+  onOpenOperations: () => void;
+  onOpenConnectionSettings: () => void;
 }
 
 function statusText(status: ConnectionStatus) {
@@ -25,19 +31,6 @@ function statusText(status: ConnectionStatus) {
       return "ERROR";
     default:
       return "OFFLINE";
-  }
-}
-
-function statusToneClass(status: ConnectionStatus) {
-  switch (status) {
-    case "connected":
-      return "bg-sdr-accent-green shadow-[0_0_8px_rgba(61,191,132,0.62)]";
-    case "connecting":
-      return "bg-sdr-accent-amber shadow-[0_0_8px_rgba(212,168,75,0.58)]";
-    case "error":
-      return "bg-sdr-accent-red shadow-[0_0_8px_rgba(196,92,92,0.48)]";
-    default:
-      return "bg-sdr-text-muted shadow-[0_0_8px_rgba(127,132,148,0.42)]";
   }
 }
 
@@ -74,18 +67,39 @@ export function NexusControlStrip({
   connectionStatus,
   layoutMode,
   activeStrikecell,
+  brandSubline = "Nexus",
   commandQuery,
   layoutDropdownOpen,
   onOpenSearch,
   onCommandQueryChange,
   onOpenCommandPalette,
   onToggleLayoutDropdown,
+  onCloseLayoutDropdown,
   onSelectLayout,
+  onOpenOperations,
+  onOpenConnectionSettings,
 }: NexusControlStripProps) {
+  const rootRef = React.useRef<HTMLElement | null>(null);
   const runId = formatRunId(activeStrikecell?.id);
 
+  React.useEffect(() => {
+    if (!layoutDropdownOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) onCloseLayoutDropdown();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCloseLayoutDropdown();
+    };
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [layoutDropdownOpen, onCloseLayoutDropdown]);
+
   return (
-    <header className="titlebar-drag nexus-command-rail relative z-40 ml-0 mr-3 mt-3 flex items-center gap-2.5 overflow-visible">
+    <header ref={rootRef} className="titlebar-drag nexus-command-rail relative z-40 ml-0 mr-3 mt-3 flex items-center gap-2.5 overflow-visible">
       <div className="titlebar-no-drag premium-panel premium-panel--allow-overflow premium-panel--dense premium-panel--identity nexus-title-plate nexus-title-plate--docked flex h-12 shrink-0 items-center gap-3 rounded-[16px] px-4">
         <span className="nexus-orb-bus-line" aria-hidden="true" />
         <span className="nexus-orb-dock-notch" aria-hidden="true" />
@@ -99,12 +113,12 @@ export function NexusControlStrip({
             <span className="nexus-wordmark-main">WDSTRIKE</span>
           </span>
           <span className="origin-label nexus-wordmark-subline mt-1 text-[7px] tracking-[0.22em] text-sdr-text-muted">
-            Swarm Nexus
+            {brandSubline}
           </span>
         </div>
         <span className="nexus-title-divider w-px" aria-hidden="true" />
         <span className="premium-chip nexus-title-chip px-2.5 py-[3px] text-[9px] font-mono uppercase tracking-[0.1em] text-sdr-text-secondary">
-          {LAYOUT_METADATA[layoutMode].name}
+          BETA
         </span>
       </div>
 
@@ -116,7 +130,7 @@ export function NexusControlStrip({
             </span>
             <span className="premium-separator premium-separator--v h-3 w-px" />
             <span className="origin-label text-[8px] tracking-[0.14em] text-sdr-text-muted">
-              {activeStrikecell?.name ?? "Swarm Nexus"}
+              {activeStrikecell?.name ?? "Nexus Labs"}
             </span>
           </div>
           <div className="mt-[2px] text-[10px] font-mono uppercase tracking-[0.12em] text-sdr-text-secondary">
@@ -134,27 +148,21 @@ export function NexusControlStrip({
               onOpenSearch();
             }}
             onFocus={onOpenSearch}
-            placeholder="Search runs, receipts, tools… (⌘K)"
-            className="premium-input nexus-command-input w-full px-3 py-[7px] text-sm text-sdr-text-primary placeholder:text-sdr-text-muted outline-none"
+            placeholder="Search strikecells, sessions, commands... (Cmd+K)"
+            className="premium-input nexus-command-input w-full px-3 py-[7px] text-sm font-mono text-sdr-text-primary placeholder:text-sdr-text-muted outline-none"
           />
         </div>
-
-        <span className="premium-chip px-2 py-[4px] text-[9px] font-mono uppercase tracking-[0.12em] text-sdr-text-secondary">
-          Cmd+K
-        </span>
       </div>
 
       <div className="titlebar-no-drag premium-panel premium-panel--allow-overflow premium-panel--dense premium-panel--controls nexus-controls-plate flex h-12 shrink-0 items-center gap-1.5 rounded-[16px] px-3">
-        <ControlButton label="⌘K" onClick={onOpenCommandPalette} />
-
         <div className="relative">
           <ControlButton
             label={LAYOUT_METADATA[layoutMode].icon + " Layout"}
             active={layoutDropdownOpen}
             onClick={onToggleLayoutDropdown}
           />
-          {layoutDropdownOpen && (
-            <div className="premium-panel premium-panel--dropdown absolute right-0 top-[calc(100%+8px)] z-[80] min-w-[220px] rounded-lg p-1.5">
+          {layoutDropdownOpen ? (
+            <div className="nexus-layout-dropdown premium-panel premium-panel--dropdown absolute right-0 top-[calc(100%+8px)] z-[80] min-w-[240px] rounded-lg p-1.5">
               <div className="origin-label px-2 pt-1.5 pb-1 text-[10px] leading-[1.35]">Layout Mode</div>
               <div className="premium-separator mb-1 h-px w-full" />
               {ALL_LAYOUT_MODES.map((mode) => (
@@ -174,15 +182,15 @@ export function NexusControlStrip({
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
-        <div className="premium-chip nexus-status-chip ml-0.5 flex items-center gap-1.5 px-2.5 py-[4px]">
-          <span className={["h-2 w-2 rounded-full", statusToneClass(connectionStatus)].join(" ")} />
-          <span className="text-[10px] font-mono uppercase tracking-[0.12em] text-sdr-text-secondary">
-            {statusText(connectionStatus)}
-          </span>
-        </div>
+        <ProfileMenu
+          connectionStatus={connectionStatus}
+          onOpenOperations={onOpenOperations}
+          onOpenConnectionSettings={onOpenConnectionSettings}
+          onOpenCommandPalette={onOpenCommandPalette}
+        />
       </div>
     </header>
   );

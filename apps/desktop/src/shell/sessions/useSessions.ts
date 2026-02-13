@@ -3,7 +3,7 @@
  */
 import { useSyncExternalStore, useCallback, useMemo } from "react";
 import { sessionStore } from "./sessionStore";
-import type { Session, SessionFilter } from "./types";
+import type { Session, SessionFilter, StrikecellSessionKind } from "./types";
 import type { AppId } from "../plugins/types";
 
 // Stable subscribe function (bound once, not per-render)
@@ -79,9 +79,17 @@ export function useActiveApp() {
 }
 
 export function useSessionActions() {
-  const createSession = useCallback((appId: AppId, title?: string, data?: unknown): Session => {
-    return sessionStore.createSession(appId, title, data);
-  }, []);
+  const createSession = useCallback(
+    (
+      appId: AppId,
+      title?: string,
+      data?: unknown,
+      options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind }
+    ): Session => {
+      return sessionStore.createSession(appId, title, data, options);
+    },
+    []
+  );
 
   const updateSession = useCallback((id: string, updates: Partial<Session>): void => {
     sessionStore.updateSession(id, updates);

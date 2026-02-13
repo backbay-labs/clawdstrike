@@ -13,9 +13,6 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, RwLock};
 
-const READY_MAX_ATTEMPTS: usize = 40;
-const READY_POLL_DELAY: Duration = Duration::from_millis(150);
-
 /// Health response from hushd `/health` endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthResponse {
@@ -74,6 +71,14 @@ pub struct DaemonConfig {
     pub policy_path: PathBuf,
 }
 
+#[derive(Debug, Serialize)]
+struct HushdRuntimeConfig {
+    listen: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_path: Option<PathBuf>,
+    ruleset: String,
+}
+
 impl DaemonConfig {
     pub fn health_url(&self) -> String {
         format!("http://127.0.0.1:{}/health", self.port)
@@ -86,6 +91,7 @@ pub struct DaemonManager {
     state: Arc<RwLock<DaemonState>>,
     child: Arc<RwLock<Option<Child>>>,
     restart_count: Arc<RwLock<u32>>,
+    external_mode: Arc<AtomicBool>,
     http_client: reqwest::Client,
     state_tx: broadcast::Sender<DaemonState>,
     shutdown_tx: broadcast::Sender<()>,
@@ -103,6 +109,7 @@ impl DaemonManager {
             state: Arc::new(RwLock::new(DaemonState::Stopped)),
             child: Arc::new(RwLock::new(None)),
             restart_count: Arc::new(RwLock::new(0)),
+            external_mode: Arc::new(AtomicBool::new(false)),
             http_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()
@@ -149,6 +156,22 @@ impl DaemonManager {
         }
 
         self.set_state(DaemonState::Starting).await;
+
+        // If another hushd is already healthy on this port, attach instead of spawning.
+        if let Ok(health) = health_check_with_client(&self.config, &self.http_client).await {
+            if health.status == "healthy" {
+                self.external_mode.store(true, Ordering::SeqCst);
+                *self.child.write().await = None;
+                self.set_state(DaemonState::Running).await;
+                self.start_health_monitor();
+                tracing::info!(
+                    "Attached to externally managed hushd on port {}",
+                    self.config.port
+                );
+                return Ok(());
+            }
+        }
+
         self.spawn_and_wait_ready().await?;
         self.set_state(DaemonState::Running).await;
         self.start_health_monitor();
@@ -160,6 +183,7 @@ impl DaemonManager {
     pub async fn stop(&self) -> Result<()> {
         let _ = self.shutdown_tx.send(());
         self.terminate_child("stop requested").await;
+        self.external_mode.store(false, Ordering::SeqCst);
         self.set_state(DaemonState::Stopped).await;
         self.monitor_started.store(false, Ordering::SeqCst);
         Ok(())
@@ -174,7 +198,24 @@ impl DaemonManager {
 
     /// Perform a health check.
     pub async fn health_check(&self) -> Result<HealthResponse> {
-        health_check_with_client(&self.config, &self.http_client).await
+        let url = self.config.health_url();
+        let response = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+
+        if !response.status().is_success() {
+            anyhow::bail!("health endpoint returned {}", response.status());
+        }
+
+        let health: HealthResponse = response
+            .json()
+            .await
+            .with_context(|| "Failed to parse health response")?;
+
+        Ok(health)
     }
 
     async fn spawn_and_wait_ready(&self) -> Result<()> {
@@ -184,6 +225,23 @@ impl DaemonManager {
             self.terminate_child("startup readiness check failed").await;
             return Err(err);
         }
+
+        // If the spawned child already exited but health is still good, another daemon owns the port.
+        if let Some(reason) = check_process_exit(&self.child).await {
+            if let Ok(health) = health_check_with_client(&self.config, &self.http_client).await {
+                if health.status == "healthy" {
+                    self.external_mode.store(true, Ordering::SeqCst);
+                    tracing::warn!(
+                        reason = %reason,
+                        "Managed hushd exited during startup; using external hushd instance"
+                    );
+                    return Ok(());
+                }
+            }
+            anyhow::bail!("hushd exited during startup: {}", reason);
+        }
+
+        self.external_mode.store(false, Ordering::SeqCst);
 
         Ok(())
     }
@@ -202,6 +260,7 @@ impl DaemonManager {
         let state = Arc::clone(&self.state);
         let child = Arc::clone(&self.child);
         let restart_count = Arc::clone(&self.restart_count);
+        let external_mode = Arc::clone(&self.external_mode);
         let config = self.config.clone();
         let http_client = self.http_client.clone();
         let state_tx = self.state_tx.clone();
@@ -229,66 +288,155 @@ impl DaemonManager {
                             continue;
                         }
 
-                        if let Some(reason) = check_process_exit(&child).await {
-                            tracing::warn!(%reason, "hushd exited unexpectedly");
-                            let next_restart_count = {
-                                let mut value = restart_count.write().await;
-                                *value = value.saturating_add(1);
-                                *value
-                            };
-
-                            if last_ready_at.is_some_and(|ready_at| ready_at.elapsed() >= stable_window) {
-                                restart_streak = 0;
-                            }
-                            last_ready_at = None;
-                            restart_streak = restart_streak.saturating_add(1);
-
-                            set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
-
-                            let backoff = compute_backoff(restart_streak, next_restart_count);
-                            tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
-                            if sleep_or_shutdown(&mut shutdown_rx, backoff).await {
-                                tracing::debug!("Shutdown requested while waiting to restart hushd");
-                                monitor_started.store(false, Ordering::SeqCst);
-                                break 'monitor;
-                            }
-
-                            match spawn_child_into_slot(&config, &child).await {
-                                Ok(()) => {
-                                    match wait_for_ready_with_client_or_shutdown(
-                                        &config,
-                                        &http_client,
-                                        &mut shutdown_rx,
-                                    )
-                                    .await
-                                    {
-                                        Ok(ReadyWaitOutcome::Ready) => {
-                                            consecutive_health_failures = 0;
-                                            restart_streak = 0;
-                                            last_ready_at = Some(Instant::now());
-                                            set_shared_state(&state, &state_tx, DaemonState::Running).await;
-                                            tracing::info!("hushd restart complete");
-                                        }
-                                        Ok(ReadyWaitOutcome::Shutdown) => {
-                                            tracing::debug!("Shutdown requested during hushd readiness wait");
-                                            terminate_child_slot(&child).await;
-                                            monitor_started.store(false, Ordering::SeqCst);
-                                            break 'monitor;
-                                        }
-                                        Err(err) => {
-                                            tracing::error!(error = %err, "hushd restart failed readiness check");
-                                            terminate_child_slot(&child).await;
-                                            set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
-                                        }
+                        if !external_mode.load(Ordering::SeqCst) {
+                            if let Some(reason) = check_process_exit(&child).await {
+                                if let Ok(health) =
+                                    health_check_with_client(&config, &http_client).await
+                                {
+                                    if health.status == "healthy" {
+                                        external_mode.store(true, Ordering::SeqCst);
+                                        consecutive_health_failures = 0;
+                                        restart_streak = 0;
+                                        last_ready_at = Some(Instant::now());
+                                        set_shared_state(&state, &state_tx, DaemonState::Running)
+                                            .await;
+                                        tracing::warn!(
+                                            reason = %reason,
+                                            "Managed hushd exited but external hushd is healthy; switching to attach mode"
+                                        );
+                                        continue;
                                     }
                                 }
-                                Err(err) => {
-                                    tracing::error!(error = %err, "Failed to respawn hushd");
-                                    set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
-                                }
-                            }
 
-                            continue;
+                                tracing::warn!(%reason, "hushd exited unexpectedly");
+                                let next_restart_count = {
+                                    let mut value = restart_count.write().await;
+                                    *value = value.saturating_add(1);
+                                    *value
+                                };
+
+                                if last_ready_at
+                                    .is_some_and(|ready_at| ready_at.elapsed() >= stable_window)
+                                {
+                                    restart_streak = 0;
+                                }
+                                last_ready_at = None;
+                                restart_streak = restart_streak.saturating_add(1);
+
+                                set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
+
+                                let backoff = compute_backoff(restart_streak, next_restart_count);
+                                tracing::info!(
+                                    backoff_ms = backoff.as_millis() as u64,
+                                    "Scheduling hushd restart"
+                                );
+                                if sleep_or_shutdown(&mut shutdown_rx, backoff).await {
+                                    tracing::debug!(
+                                        "Shutdown requested while waiting to restart hushd"
+                                    );
+                                    monitor_started.store(false, Ordering::SeqCst);
+                                    break 'monitor;
+                                }
+
+                                match spawn_child_into_slot(&config, &child).await {
+                                    Ok(()) => {
+                                        match wait_for_ready_with_client_or_shutdown(
+                                            &config,
+                                            &http_client,
+                                            &mut shutdown_rx,
+                                        )
+                                        .await
+                                        {
+                                            Ok(ReadyWaitOutcome::Ready) => {
+                                                if let Some(reason) = check_process_exit(&child).await
+                                                {
+                                                    if let Ok(health) = health_check_with_client(
+                                                        &config,
+                                                        &http_client,
+                                                    )
+                                                    .await
+                                                    {
+                                                        if health.status == "healthy" {
+                                                            external_mode
+                                                                .store(true, Ordering::SeqCst);
+                                                            consecutive_health_failures = 0;
+                                                            restart_streak = 0;
+                                                            last_ready_at = Some(Instant::now());
+                                                            set_shared_state(
+                                                                &state,
+                                                                &state_tx,
+                                                                DaemonState::Running,
+                                                            )
+                                                            .await;
+                                                            tracing::warn!(
+                                                                reason = %reason,
+                                                                "Restarted hushd exited immediately; attached to external hushd"
+                                                            );
+                                                            continue;
+                                                        }
+                                                    }
+                                                    tracing::error!(
+                                                        reason = %reason,
+                                                        "hushd exited before restart readiness stabilized"
+                                                    );
+                                                    terminate_child_slot(&child).await;
+                                                    set_shared_state(
+                                                        &state,
+                                                        &state_tx,
+                                                        DaemonState::Unhealthy,
+                                                    )
+                                                    .await;
+                                                    continue;
+                                                }
+
+                                                external_mode.store(false, Ordering::SeqCst);
+                                                consecutive_health_failures = 0;
+                                                restart_streak = 0;
+                                                last_ready_at = Some(Instant::now());
+                                                set_shared_state(
+                                                    &state,
+                                                    &state_tx,
+                                                    DaemonState::Running,
+                                                )
+                                                .await;
+                                                tracing::info!("hushd restart complete");
+                                            }
+                                            Ok(ReadyWaitOutcome::Shutdown) => {
+                                                tracing::debug!(
+                                                    "Shutdown requested during hushd readiness wait"
+                                                );
+                                                terminate_child_slot(&child).await;
+                                                monitor_started.store(false, Ordering::SeqCst);
+                                                break 'monitor;
+                                            }
+                                            Err(err) => {
+                                                tracing::error!(
+                                                    error = %err,
+                                                    "hushd restart failed readiness check"
+                                                );
+                                                terminate_child_slot(&child).await;
+                                                set_shared_state(
+                                                    &state,
+                                                    &state_tx,
+                                                    DaemonState::Unhealthy,
+                                                )
+                                                .await;
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(error = %err, "Failed to respawn hushd");
+                                        set_shared_state(
+                                            &state,
+                                            &state_tx,
+                                            DaemonState::Unhealthy,
+                                        )
+                                        .await;
+                                    }
+                                }
+
+                                continue;
+                            }
                         }
 
                         match health_check_with_client(&config, &http_client).await {
@@ -366,16 +514,16 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
         anyhow::bail!("hushd binary not found at {:?}", config.binary_path);
     }
 
+    let runtime_config_path = write_runtime_config_file(config)?;
+
     let mut cmd = Command::new(&config.binary_path);
     cmd.arg("start")
+        .arg("--config")
+        .arg(&runtime_config_path)
         .arg("--port")
         .arg(config.port.to_string())
         .arg("--bind")
         .arg("127.0.0.1");
-
-    if config.policy_path.exists() {
-        cmd.arg("--ruleset").arg(&config.policy_path);
-    }
 
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -386,6 +534,60 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
         .with_context(|| format!("Failed to spawn hushd from {:?}", config.binary_path))?;
 
     Ok(child)
+}
+
+fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
+    let parent = config
+        .policy_path
+        .parent()
+        .map(|path| path.to_path_buf())
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("clawdstrike")
+        });
+    std::fs::create_dir_all(&parent)
+        .with_context(|| format!("Failed to create runtime config dir {:?}", parent))?;
+
+    let runtime_config_path = parent.join("hushd.runtime.toml");
+    let policy_path = resolve_supported_policy_path(&config.policy_path);
+    let runtime = HushdRuntimeConfig {
+        listen: format!("127.0.0.1:{}", config.port),
+        policy_path,
+        // Fallback when policy_path is unavailable.
+        ruleset: "default".to_string(),
+    };
+    let serialized =
+        toml::to_string(&runtime).with_context(|| "Failed to serialize hushd runtime config")?;
+    std::fs::write(&runtime_config_path, serialized).with_context(|| {
+        format!(
+            "Failed to write hushd runtime config to {:?}",
+            runtime_config_path
+        )
+    })?;
+    Ok(runtime_config_path)
+}
+
+fn resolve_supported_policy_path(policy_path: &PathBuf) -> Option<PathBuf> {
+    if !policy_path.exists() {
+        return None;
+    }
+    let Ok(raw) = std::fs::read_to_string(policy_path) else {
+        return None;
+    };
+
+    // Hushd no longer accepts legacy guard keys like `fs_blocklist`.
+    // When an incompatible policy is detected, fall back to built-in ruleset
+    // so the daemon stays available instead of restart-looping.
+    if raw.contains("fs_blocklist:") {
+        tracing::warn!(
+            path = %policy_path.display(),
+            "Policy file contains legacy fs_blocklist guard; falling back to default ruleset"
+        );
+        return None;
+    }
+
+    Some(policy_path.clone())
 }
 
 fn attach_child_logs(child: &mut Child) {
@@ -414,16 +616,27 @@ async fn wait_for_ready_with_client(
     config: &DaemonConfig,
     http_client: &reqwest::Client,
 ) -> Result<()> {
-    for attempt in 0..READY_MAX_ATTEMPTS {
-        if evaluate_ready_probe(attempt, health_check_with_client(config, http_client).await) {
-            return Ok(());
+    let max_attempts = 40;
+    let delay = Duration::from_millis(150);
+    for attempt in 0..max_attempts {
+        match health_check_with_client(config, http_client).await {
+            Ok(health) if health.status == "healthy" => {
+                tracing::debug!("Daemon ready after {} attempts", attempt + 1);
+                return Ok(());
+            }
+            Ok(_) => {
+                tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
+            }
+            Err(err) => {
+                tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
+            }
         }
-        tokio::time::sleep(READY_POLL_DELAY).await;
+        tokio::time::sleep(delay).await;
     }
 
     anyhow::bail!(
         "Daemon failed to become ready after {} attempts",
-        READY_MAX_ATTEMPTS
+        max_attempts
     )
 }
 
@@ -449,7 +662,9 @@ async fn wait_for_ready_with_client_or_shutdown(
     http_client: &reqwest::Client,
     shutdown_rx: &mut broadcast::Receiver<()>,
 ) -> Result<ReadyWaitOutcome> {
-    for attempt in 0..READY_MAX_ATTEMPTS {
+    let max_attempts = 40;
+    let delay = Duration::from_millis(150);
+    for attempt in 0..max_attempts {
         let health_result = tokio::select! {
             recv = shutdown_rx.recv() => {
                 match recv {
@@ -461,36 +676,28 @@ async fn wait_for_ready_with_client_or_shutdown(
             result = health_check_with_client(config, http_client) => result,
         };
 
-        if evaluate_ready_probe(attempt, health_result) {
-            return Ok(ReadyWaitOutcome::Ready);
+        match health_result {
+            Ok(health) if health.status == "healthy" => {
+                tracing::debug!("Daemon ready after {} attempts", attempt + 1);
+                return Ok(ReadyWaitOutcome::Ready);
+            }
+            Ok(_) => {
+                tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
+            }
+            Err(err) => {
+                tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
+            }
         }
 
-        if sleep_or_shutdown(shutdown_rx, READY_POLL_DELAY).await {
+        if sleep_or_shutdown(shutdown_rx, delay).await {
             return Ok(ReadyWaitOutcome::Shutdown);
         }
     }
 
     anyhow::bail!(
         "Daemon failed to become ready after {} attempts",
-        READY_MAX_ATTEMPTS
+        max_attempts
     )
-}
-
-fn evaluate_ready_probe(attempt: usize, result: Result<HealthResponse>) -> bool {
-    match result {
-        Ok(health) if health.status == "healthy" => {
-            tracing::debug!("Daemon ready after {} attempts", attempt + 1);
-            true
-        }
-        Ok(_) => {
-            tracing::debug!("Daemon not healthy yet, attempt {}", attempt + 1);
-            false
-        }
-        Err(err) => {
-            tracing::debug!("Health check failed (attempt {}): {}", attempt + 1, err);
-            false
-        }
-    }
 }
 
 async fn health_check_with_client(
@@ -553,27 +760,67 @@ fn compute_backoff(restart_streak: u32, restart_count: u32) -> Duration {
 
 /// Find the hushd binary.
 pub fn find_hushd_binary() -> Option<PathBuf> {
-    let candidates = [
-        which::which("hushd").ok(),
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    let mut seen = std::collections::HashSet::<PathBuf>::new();
+
+    let mut push_candidate = |candidate: Option<PathBuf>| {
+        if let Some(path) = candidate {
+            if seen.insert(path.clone()) {
+                candidates.push(path);
+            }
+        }
+    };
+
+    // Explicit path override for local troubleshooting.
+    push_candidate(
+        std::env::var("CLAWDSTRIKE_HUSHD_PATH")
+            .ok()
+            .map(PathBuf::from),
+    );
+
+    push_candidate(which::which("hushd").ok());
+    push_candidate(
         std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.join("hushd"))),
+    );
+    push_candidate(
         std::env::var("CARGO_MANIFEST_DIR")
             .ok()
             .map(|p| PathBuf::from(p).join("../../target/release/hushd")),
+    );
+    push_candidate(
         std::env::var("CARGO_MANIFEST_DIR")
             .ok()
             .map(|p| PathBuf::from(p).join("../../target/debug/hushd")),
-        Some(PathBuf::from("/usr/local/bin/hushd")),
-        Some(PathBuf::from("/opt/clawdstrike/bin/hushd")),
-        dirs::home_dir().map(|p| p.join(".local/bin/hushd")),
-        dirs::home_dir().map(|p| p.join(".cargo/bin/hushd")),
-    ];
+    );
 
-    candidates
-        .into_iter()
-        .flatten()
-        .find(|candidate| candidate.exists())
+    // Compile-time workspace-relative fallback for local `cargo run`.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    push_candidate(Some(manifest_dir.join("../../../target/debug/hushd")));
+    push_candidate(Some(manifest_dir.join("../../../target/release/hushd")));
+
+    // Runtime workspace fallback: walk ancestors and probe `target/{debug,release}`.
+    if let Ok(current_dir) = std::env::current_dir() {
+        for ancestor in current_dir.ancestors().take(8) {
+            push_candidate(Some(ancestor.join("target/debug/hushd")));
+            push_candidate(Some(ancestor.join("target/release/hushd")));
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        for ancestor in current_exe.ancestors().take(8) {
+            push_candidate(Some(ancestor.join("target/debug/hushd")));
+            push_candidate(Some(ancestor.join("target/release/hushd")));
+        }
+    }
+
+    push_candidate(Some(PathBuf::from("/usr/local/bin/hushd")));
+    push_candidate(Some(PathBuf::from("/opt/clawdstrike/bin/hushd")));
+    push_candidate(dirs::home_dir().map(|p| p.join(".local/bin/hushd")));
+    push_candidate(dirs::home_dir().map(|p| p.join(".cargo/bin/hushd")));
+
+    candidates.into_iter().find(|candidate| candidate.exists())
 }
 
 #[cfg(test)]

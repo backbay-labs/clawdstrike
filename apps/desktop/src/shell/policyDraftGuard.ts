@@ -11,5 +11,5 @@ export function shouldBlockDirtyPolicyDraftExit(params: {
   if (!params.hasDirtyDraft) return false;
   const fromApp = appIdFromPath(params.currentPathname);
   const toApp = appIdFromPath(params.nextPathname);
-  return fromApp === "forensics-river" && toApp !== "forensics-river";
+  return fromApp === "nexus" && toApp !== "nexus";
 }

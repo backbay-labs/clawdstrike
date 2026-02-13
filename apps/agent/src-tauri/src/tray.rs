@@ -206,6 +206,7 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> 
         .on_menu_event(handle_menu_event)
         .on_tray_icon_event(handle_tray_event)
         .build(app)?;
+    tray.set_show_menu_on_left_click(true)?;
 
     Ok(tray)
 }

@@ -4,12 +4,15 @@
 import type { AppId } from "../plugins/types";
 
 export type SessionStatus = "idle" | "running" | "error" | "completed";
+export type StrikecellSessionKind = "chat" | "experiment" | "red-team";
 
 export interface Session {
   id: string;
   appId: AppId;
   title: string;
   subtitle?: string;
+  strikecellId?: string;
+  strikecellKind?: StrikecellSessionKind;
   pinned: boolean;
   archived: boolean;
   status: SessionStatus;
@@ -33,7 +36,12 @@ export interface SessionsState {
 }
 
 export interface SessionActions {
-  createSession: (appId: AppId, title?: string, data?: unknown) => Session;
+  createSession: (
+    appId: AppId,
+    title?: string,
+    data?: unknown,
+    options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind }
+  ) => Session;
   updateSession: (id: string, updates: Partial<Session>) => void;
   deleteSession: (id: string) => void;
   setActiveSession: (id: string | null) => void;
