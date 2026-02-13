@@ -133,6 +133,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
   const unsubscribeEventsRef = React.useRef<(() => void) | null>(null);
   const autoConnectAttemptAtRef = React.useRef<Record<string, number>>({});
   const autoConnectHoldUntilRef = React.useRef<Record<string, number>>({});
+  const autoConnectInFlightRef = React.useRef<Record<string, boolean>>({});
   const warmupTriggeredRef = React.useRef<Record<string, boolean>>({});
 
   const syncFromAgent = React.useCallback(async () => {
@@ -499,6 +500,11 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
     const runtime = runtimeByGatewayId[active.id] ?? emptyRuntime();
     if (runtime.status === "connected" || runtime.status === "connecting") return;
 
+    // Guard against re-entry: connectGateway calls syncFromAgent which updates
+    // runtimeByGatewayId which re-triggers this effect. Without this guard a
+    // fast-failing connection can cause a tight retry loop.
+    if (autoConnectInFlightRef.current[active.id]) return;
+
     const now = Date.now();
     const holdUntil = autoConnectHoldUntilRef.current[active.id] ?? 0;
     if (now < holdUntil) return;
@@ -508,7 +514,12 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
     if (now - lastAttempt < retryCooldownMs) return;
 
     autoConnectAttemptAtRef.current[active.id] = now;
-    void connectGateway(active.id).catch(() => {});
+    autoConnectInFlightRef.current[active.id] = true;
+    void connectGateway(active.id)
+      .catch(() => {})
+      .finally(() => {
+        autoConnectInFlightRef.current[active.id] = false;
+      });
   }, [active.id, connectGateway, runtimeByGatewayId]);
 
   React.useEffect(() => {

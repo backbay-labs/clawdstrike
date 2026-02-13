@@ -465,6 +465,50 @@ impl DaemonManager {
                             if current == DaemonState::Running {
                                 set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
                             }
+
+                            // In external mode there is no child to restart, but the
+                            // external daemon may have disappeared. Fall back to
+                            // spawning a managed child so the agent can self-heal
+                            // instead of staying offline indefinitely.
+                            if external_mode.load(Ordering::SeqCst) {
+                                tracing::warn!(
+                                    consecutive_failures = consecutive_health_failures,
+                                    "External hushd unhealthy; falling back to managed daemon"
+                                );
+                                external_mode.store(false, Ordering::SeqCst);
+                                set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
+
+                                match spawn_child_into_slot(&config, &child).await {
+                                    Ok(()) => {
+                                        match wait_for_ready_with_client(&config, &http_client).await {
+                                            Ok(()) => {
+                                                consecutive_health_failures = 0;
+                                                restart_streak = 0;
+                                                last_ready_at = Some(Instant::now());
+                                                let count = {
+                                                    let mut value = restart_count.write().await;
+                                                    *value = value.saturating_add(1);
+                                                    *value
+                                                };
+                                                set_shared_state(&state, &state_tx, DaemonState::Running).await;
+                                                tracing::info!(
+                                                    restart_count = count,
+                                                    "Recovered from external hushd loss; managed daemon running"
+                                                );
+                                            }
+                                            Err(err) => {
+                                                tracing::error!(error = %err, "Managed daemon failed readiness after external fallback");
+                                                terminate_child_slot(&child).await;
+                                                set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(error = %err, "Failed to spawn managed daemon after external hushd loss");
+                                        set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -519,11 +563,7 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
     let mut cmd = Command::new(&config.binary_path);
     cmd.arg("start")
         .arg("--config")
-        .arg(&runtime_config_path)
-        .arg("--port")
-        .arg(config.port.to_string())
-        .arg("--bind")
-        .arg("127.0.0.1");
+        .arg(&runtime_config_path);
 
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())

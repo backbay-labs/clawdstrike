@@ -26,6 +26,16 @@ const KNOWN_APP_IDS = new Set<AppId>([
   "security-overview",
 ]);
 
+/** Map legacy persisted app IDs from prior versions to current equivalents. */
+const LEGACY_APP_ID_MAP: Record<string, AppId> = {
+  "cyber-nexus": "nexus",
+  "settings": "operations",
+  "forensics": "events",
+  "forensics-river": "events",
+  "policy-workbench": "policies",
+  "strikecell": "swarm",
+};
+
 const KNOWN_SESSION_STATUSES = new Set<SessionStatus>(["idle", "running", "error", "completed"]);
 const KNOWN_STRIKECELL_KINDS = new Set<StrikecellSessionKind>(["chat", "experiment", "red-team"]);
 
@@ -55,7 +65,10 @@ function asStrikecellKind(value: unknown): StrikecellSessionKind | undefined {
 
 function asAppId(value: unknown): AppId | null {
   if (typeof value !== "string") return null;
-  return KNOWN_APP_IDS.has(value as AppId) ? (value as AppId) : null;
+  if (KNOWN_APP_IDS.has(value as AppId)) return value as AppId;
+  // Fall back to legacy mapping so persisted sessions from prior versions are preserved.
+  const mapped = LEGACY_APP_ID_MAP[value];
+  return mapped ?? null;
 }
 
 function normalizeStoredSession(raw: unknown): Session | null {
