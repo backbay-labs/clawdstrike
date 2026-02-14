@@ -3,6 +3,7 @@ package hush
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -285,6 +286,61 @@ func TestKeypairDoubleClose(t *testing.T) {
 	}
 	kp.Close()
 	kp.Close() // Should not panic
+}
+
+func TestKeypairNilGuard(t *testing.T) {
+	var kp *Keypair
+
+	if _, err := kp.PublicKeyHex(); !errors.Is(err, ErrKeypairNil) {
+		t.Fatalf("PublicKeyHex nil: got %v, want ErrKeypairNil", err)
+	}
+	if _, err := kp.PublicKeyBytes(); !errors.Is(err, ErrKeypairNil) {
+		t.Fatalf("PublicKeyBytes nil: got %v, want ErrKeypairNil", err)
+	}
+	if _, err := kp.SignHex([]byte("msg")); !errors.Is(err, ErrKeypairNil) {
+		t.Fatalf("SignHex nil: got %v, want ErrKeypairNil", err)
+	}
+	if _, err := kp.Sign([]byte("msg")); !errors.Is(err, ErrKeypairNil) {
+		t.Fatalf("Sign nil: got %v, want ErrKeypairNil", err)
+	}
+	if _, err := kp.ToHex(); !errors.Is(err, ErrKeypairNil) {
+		t.Fatalf("ToHex nil: got %v, want ErrKeypairNil", err)
+	}
+
+	// Close should be safe on a nil receiver.
+	kp.Close()
+}
+
+func TestKeypairClosedGuard(t *testing.T) {
+	kp := &Keypair{ptr: nil}
+
+	if _, err := kp.PublicKeyHex(); !errors.Is(err, ErrKeypairClosed) {
+		t.Fatalf("PublicKeyHex closed: got %v, want ErrKeypairClosed", err)
+	}
+	if _, err := kp.PublicKeyBytes(); !errors.Is(err, ErrKeypairClosed) {
+		t.Fatalf("PublicKeyBytes closed: got %v, want ErrKeypairClosed", err)
+	}
+	if _, err := kp.SignHex([]byte("msg")); !errors.Is(err, ErrKeypairClosed) {
+		t.Fatalf("SignHex closed: got %v, want ErrKeypairClosed", err)
+	}
+	if _, err := kp.Sign([]byte("msg")); !errors.Is(err, ErrKeypairClosed) {
+		t.Fatalf("Sign closed: got %v, want ErrKeypairClosed", err)
+	}
+	if _, err := kp.ToHex(); !errors.Is(err, ErrKeypairClosed) {
+		t.Fatalf("ToHex closed: got %v, want ErrKeypairClosed", err)
+	}
+
+	// Close should be safe on an already-closed keypair.
+	kp.Close()
+}
+
+func TestSignReceiptKeypairGuards(t *testing.T) {
+	if _, err := SignReceipt(sampleReceiptJSON, nil); !errors.Is(err, ErrKeypairNil) {
+		t.Fatalf("SignReceipt nil keypair: got %v, want ErrKeypairNil", err)
+	}
+	if _, err := SignReceipt(sampleReceiptJSON, &Keypair{ptr: nil}); !errors.Is(err, ErrKeypairClosed) {
+		t.Fatalf("SignReceipt closed keypair: got %v, want ErrKeypairClosed", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

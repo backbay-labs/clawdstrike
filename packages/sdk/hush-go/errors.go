@@ -1,6 +1,16 @@
 package hush
 
-import "unsafe"
+import (
+	"errors"
+	"unsafe"
+)
+
+var (
+	// ErrKeypairNil is returned when a nil *Keypair is passed or used.
+	ErrKeypairNil = errors.New("hush: keypair is nil")
+	// ErrKeypairClosed is returned when a Keypair has been closed (its native handle is nil).
+	ErrKeypairClosed = errors.New("hush: keypair is closed")
+)
 
 // HushError represents an error from the native hush-ffi library.
 type HushError struct {

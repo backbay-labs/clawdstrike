@@ -78,6 +78,16 @@ type Keypair struct {
 	ptr unsafe.Pointer
 }
 
+func (kp *Keypair) ptrOrErr() (unsafe.Pointer, error) {
+	if kp == nil {
+		return nil, ErrKeypairNil
+	}
+	if kp.ptr == nil {
+		return nil, ErrKeypairClosed
+	}
+	return kp.ptr, nil
+}
+
 func newKeypair(ptr unsafe.Pointer) *Keypair {
 	kp := &Keypair{ptr: ptr}
 	runtime.SetFinalizer(kp, (*Keypair).Close)
@@ -124,10 +134,15 @@ func KeypairFromHex(hex string) (*Keypair, error) {
 
 // PublicKeyHex returns the public key as a hex-encoded string.
 func (kp *Keypair) PublicKeyHex() (string, error) {
+	ptr, err := kp.ptrOrErr()
+	if err != nil {
+		return "", err
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	p := ffiKeypairPublicKeyHex(kp.ptr)
+	p := ffiKeypairPublicKeyHex(ptr)
 	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()
@@ -137,11 +152,16 @@ func (kp *Keypair) PublicKeyHex() (string, error) {
 
 // PublicKeyBytes returns the 32-byte public key.
 func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
+	var out [32]byte
+	ptr, err := kp.ptrOrErr()
+	if err != nil {
+		return out, err
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	var out [32]byte
-	rc := ffiKeypairPublicKeyBytes(kp.ptr, unsafe.Pointer(&out[0]))
+	rc := ffiKeypairPublicKeyBytes(ptr, unsafe.Pointer(&out[0]))
 	runtime.KeepAlive(kp)
 	if rc != 0 {
 		return out, lastError()
@@ -151,10 +171,15 @@ func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
 
 // SignHex signs a message and returns the hex-encoded signature.
 func (kp *Keypair) SignHex(msg []byte) (string, error) {
+	ptr, err := kp.ptrOrErr()
+	if err != nil {
+		return "", err
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	p := ffiKeypairSignHex(kp.ptr, cBytesPtr(msg), len(msg))
+	p := ffiKeypairSignHex(ptr, cBytesPtr(msg), len(msg))
 	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()
@@ -164,11 +189,16 @@ func (kp *Keypair) SignHex(msg []byte) (string, error) {
 
 // Sign signs a message and returns the 64-byte signature.
 func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
+	var out [64]byte
+	ptr, err := kp.ptrOrErr()
+	if err != nil {
+		return out, err
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	var out [64]byte
-	rc := ffiKeypairSign(kp.ptr, cBytesPtr(msg), len(msg), unsafe.Pointer(&out[0]))
+	rc := ffiKeypairSign(ptr, cBytesPtr(msg), len(msg), unsafe.Pointer(&out[0]))
 	runtime.KeepAlive(kp)
 	if rc != 0 {
 		return out, lastError()
@@ -178,10 +208,15 @@ func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
 
 // ToHex exports the keypair seed as a hex-encoded string.
 func (kp *Keypair) ToHex() (string, error) {
+	ptr, err := kp.ptrOrErr()
+	if err != nil {
+		return "", err
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	p := ffiKeypairToHex(kp.ptr)
+	p := ffiKeypairToHex(ptr)
 	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()
@@ -192,6 +227,9 @@ func (kp *Keypair) ToHex() (string, error) {
 // Close explicitly destroys the keypair, zeroing key material.
 // Safe to call multiple times.
 func (kp *Keypair) Close() {
+	if kp == nil {
+		return
+	}
 	if kp.ptr != nil {
 		ffiKeypairDestroy(kp.ptr)
 		kp.ptr = nil
