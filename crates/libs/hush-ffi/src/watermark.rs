@@ -1,6 +1,6 @@
 //! Prompt watermarking FFI functions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::{c_char, CStr};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -11,6 +11,37 @@ use crate::string_to_c;
 
 const MAX_WATERMARKER_CACHE_ENTRIES: usize = 128;
 
+#[derive(Default)]
+struct WatermarkerCache {
+    map: HashMap<String, CachedWatermarker>,
+    // Tracks only non-pinned entries (pinned entries must not be evicted).
+    // Most-recently-used (back) -> least-recently-used (front).
+    lru_non_pinned: VecDeque<String>,
+}
+
+impl WatermarkerCache {
+    fn touch_non_pinned(&mut self, key: &str) {
+        if let Some(pos) = self.lru_non_pinned.iter().position(|k| k == key) {
+            self.lru_non_pinned.remove(pos);
+        }
+        self.lru_non_pinned.push_back(key.to_string());
+    }
+
+    fn evict_one_non_pinned(&mut self) -> bool {
+        while let Some(old_key) = self.lru_non_pinned.pop_front() {
+            match self.map.get(&old_key) {
+                Some(entry) if entry.pinned => continue, // shouldn't happen, but avoid evicting
+                Some(_) => {
+                    self.map.remove(&old_key);
+                    return true;
+                }
+                None => continue,
+            }
+        }
+        false
+    }
+}
+
 struct CachedWatermarker {
     /// If true, re-creating this watermarker would generate a new random keypair, so eviction
     /// would silently rotate keys and break verification for callers that previously trusted the
@@ -19,7 +50,7 @@ struct CachedWatermarker {
     wm: Arc<clawdstrike::PromptWatermarker>,
 }
 
-static WATERMARKERS: OnceLock<Mutex<HashMap<String, CachedWatermarker>>> = OnceLock::new();
+static WATERMARKERS: OnceLock<Mutex<WatermarkerCache>> = OnceLock::new();
 
 fn parse_config_and_key(
     config_json: &str,
@@ -38,21 +69,23 @@ fn get_or_create_watermarker(
 ) -> Result<Arc<clawdstrike::PromptWatermarker>, String> {
     let (cfg, key, pinned) = parse_config_and_key(config_json)?;
 
-    let map = WATERMARKERS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = map
+    let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::default()));
+    let mut guard = cache
         .lock()
         .map_err(|_| "watermarker lock poisoned".to_string())?;
-    if let Some(entry) = guard.get(&key) {
-        return Ok(entry.wm.clone());
+    if let Some(entry) = guard.map.get(&key) {
+        let wm = entry.wm.clone();
+        let pinned_entry = entry.pinned;
+        if !pinned_entry {
+            guard.touch_non_pinned(&key);
+        }
+        return Ok(wm);
     }
 
     let mut should_cache = true;
-    if guard.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
-        if let Some(key_to_evict) = guard
-            .iter()
-            .find_map(|(k, v)| (!v.pinned).then(|| k.clone()))
-        {
-            guard.remove(&key_to_evict);
+    if guard.map.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+        if guard.evict_one_non_pinned() {
+            // ok
         } else if pinned {
             return Err(format!(
                 "watermarker cache full ({MAX_WATERMARKER_CACHE_ENTRIES} entries) and cannot evict \
@@ -68,13 +101,16 @@ fn get_or_create_watermarker(
     let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{e:?}"))?;
     let wm = Arc::new(wm);
     if should_cache {
-        guard.insert(
-            key,
+        guard.map.insert(
+            key.clone(),
             CachedWatermarker {
                 pinned,
                 wm: wm.clone(),
             },
         );
+        if !pinned {
+            guard.touch_non_pinned(&key);
+        }
     }
     Ok(wm)
 }
