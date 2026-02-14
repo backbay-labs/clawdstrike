@@ -11,7 +11,7 @@ static DEFAULT_DETECTOR: OnceLock<clawdstrike::JailbreakDetector> = OnceLock::ne
 /// Detect jailbreak attempts in the given text.
 ///
 /// Returns a JSON string describing the detection result, or `NULL` on error.
-/// The caller must free the returned string with [`hush_free_string`].
+/// The caller must free the returned string with `hush_free_string`.
 ///
 /// # Safety
 ///

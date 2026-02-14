@@ -43,7 +43,7 @@ fn get_or_create_watermarker(
 /// Return the hex-encoded public key for a watermark configuration.
 ///
 /// Returns a C string, or `NULL` on error.
-/// The caller must free the returned string with [`hush_free_string`].
+/// The caller must free the returned string with `hush_free_string`.
 ///
 /// # Safety
 ///
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn hush_watermark_public_key(config_json: *const c_char) -
 ///
 /// Returns a JSON string with `original`, `watermarked`, and `watermark` fields,
 /// or `NULL` on error.
-/// The caller must free the returned string with [`hush_free_string`].
+/// The caller must free the returned string with `hush_free_string`.
 ///
 /// # Safety
 ///
@@ -171,7 +171,7 @@ pub unsafe extern "C" fn hush_watermark_prompt(
 ///
 /// Returns a JSON string with `found`, `verified`, `errors`, and `watermark` fields,
 /// or `NULL` on error.
-/// The caller must free the returned string with [`hush_free_string`].
+/// The caller must free the returned string with `hush_free_string`.
 ///
 /// # Safety
 ///

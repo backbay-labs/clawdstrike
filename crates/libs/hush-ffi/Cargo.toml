@@ -10,6 +10,12 @@ description = "C ABI for hush-core and clawdstrike — exposes crypto, receipts,
 [lib]
 crate-type = ["cdylib", "staticlib"]
 
+[features]
+# Enable cbindgen header generation in build.rs.
+# The generated hush.h is checked into the repo, so this is only needed
+# when the C API surface changes.
+cbindgen = ["dep:cbindgen"]
+
 [dependencies]
 hush-core.workspace = true
 clawdstrike.workspace = true
@@ -20,7 +26,7 @@ base64.workspace = true
 libc = "0.2"
 
 [build-dependencies]
-cbindgen = "0.28"
+cbindgen = { version = "0.28", optional = true }
 
 [lints]
 workspace = true

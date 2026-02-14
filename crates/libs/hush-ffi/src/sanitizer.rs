@@ -8,7 +8,7 @@ use crate::string_to_c;
 /// Sanitize model output for secret/PII leakage.
 ///
 /// Returns a JSON string describing the sanitization result, or `NULL` on error.
-/// The caller must free the returned string with [`hush_free_string`].
+/// The caller must free the returned string with `hush_free_string`.
 ///
 /// # Safety
 ///

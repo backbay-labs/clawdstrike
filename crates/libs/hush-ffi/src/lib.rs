@@ -7,12 +7,12 @@
 //! # Error handling
 //!
 //! Functions that can fail return a sentinel value (`NULL` for pointers,
-//! `-1` for integers). Call [`hush_last_error`] to retrieve a human-readable
+//! `-1` for integers). Call `hush_last_error()` to retrieve a human-readable
 //! error message (valid until the next FFI call on the same thread).
 //!
 //! # Memory
 //!
-//! Callee-allocated strings must be freed with [`hush_free_string`].
+//! Callee-allocated strings must be freed with `hush_free_string()`.
 //! Fixed-size outputs (hashes, signatures) write into caller-provided buffers.
 
 mod error;
