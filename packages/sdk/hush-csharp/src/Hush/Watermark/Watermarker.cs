@@ -39,13 +39,13 @@ namespace Hush.Watermark
             IntPtr appIdPtr = IntPtr.Zero;
             IntPtr sessionIdPtr = IntPtr.Zero;
 
-            if (appId != null)
-                appIdPtr = Marshal.StringToCoTaskMemUTF8(appId);
-            if (sessionId != null)
-                sessionIdPtr = Marshal.StringToCoTaskMemUTF8(sessionId);
-
             try
             {
+                if (appId != null)
+                    appIdPtr = Marshal.StringToCoTaskMemUTF8(appId);
+                if (sessionId != null)
+                    sessionIdPtr = Marshal.StringToCoTaskMemUTF8(sessionId);
+
                 var ptr = NativeMethods.hush_watermark_prompt(
                     prompt, configJson, appIdPtr, sessionIdPtr);
                 HushException.ThrowIfNull(ptr);

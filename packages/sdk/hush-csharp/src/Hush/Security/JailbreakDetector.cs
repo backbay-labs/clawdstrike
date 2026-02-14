@@ -23,13 +23,13 @@ namespace Hush.Security
             IntPtr sessionPtr = IntPtr.Zero;
             IntPtr configPtr = IntPtr.Zero;
 
-            if (sessionId != null)
-                sessionPtr = Marshal.StringToCoTaskMemUTF8(sessionId);
-            if (configJson != null)
-                configPtr = Marshal.StringToCoTaskMemUTF8(configJson);
-
             try
             {
+                if (sessionId != null)
+                    sessionPtr = Marshal.StringToCoTaskMemUTF8(sessionId);
+                if (configJson != null)
+                    configPtr = Marshal.StringToCoTaskMemUTF8(configJson);
+
                 var ptr = NativeMethods.hush_detect_jailbreak(text, sessionPtr, configPtr);
                 HushException.ThrowIfNull(ptr);
                 using var ns = new NativeString(ptr);
