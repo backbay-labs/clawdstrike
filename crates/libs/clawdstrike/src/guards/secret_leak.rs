@@ -272,47 +272,36 @@ impl SecretLeakConfig {
     /// - Remove child's remove_patterns
     /// - Merge skip_paths additively
     pub fn merge_with(&self, child: &Self) -> Self {
-        let mut patterns = self.effective_patterns();
+        let child_has_explicit_patterns = child.patterns != default_patterns();
 
-        // Add child's additional patterns
+        // Start from child's explicit patterns if provided, otherwise base effective.
+        let mut patterns = if child_has_explicit_patterns {
+            child.patterns.clone()
+        } else {
+            self.effective_patterns()
+        };
+
+        // Fold in base additional_patterns (not already present).
+        if child_has_explicit_patterns {
+            for p in &self.additional_patterns {
+                if !patterns.iter().any(|existing| existing.name == p.name) {
+                    patterns.push(p.clone());
+                }
+            }
+        }
+
+        // Add child's additional_patterns (not already present).
         for p in &child.additional_patterns {
             if !patterns.iter().any(|existing| existing.name == p.name) {
                 patterns.push(p.clone());
             }
         }
 
-        // Remove child's remove_patterns
-        patterns.retain(|p| !child.remove_patterns.contains(&p.name));
-
-        // If child specifies explicit patterns (non-default), start from child's
-        // patterns but still fold in base additional_patterns and child remove_patterns.
-        let child_default_patterns = default_patterns();
-        let child_has_explicit_patterns = child.patterns != child_default_patterns;
-        if child_has_explicit_patterns {
-            let mut merged = child.patterns.clone();
-
-            // Add base additional_patterns that aren't already present.
-            for p in &self.additional_patterns {
-                if !merged.iter().any(|existing| existing.name == p.name) {
-                    merged.push(p.clone());
-                }
-            }
-
-            // Add child additional_patterns that aren't already present.
-            for p in &child.additional_patterns {
-                if !merged.iter().any(|existing| existing.name == p.name) {
-                    merged.push(p.clone());
-                }
-            }
-
-            // Apply both base and child remove_patterns.
-            merged.retain(|p| {
-                !self.remove_patterns.contains(&p.name)
-                    && !child.remove_patterns.contains(&p.name)
-            });
-
-            patterns = merged;
-        }
+        // Apply both base and child remove_patterns.
+        patterns.retain(|p| {
+            !self.remove_patterns.contains(&p.name)
+                && !child.remove_patterns.contains(&p.name)
+        });
 
         // Merge skip_paths additively
         let mut skip_paths = self.skip_paths.clone();

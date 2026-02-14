@@ -195,7 +195,7 @@ impl EventManager {
                             tracing::info!("hushd SSE connection opened");
                         }
                         Some(Ok(Event::Message(msg))) => {
-                            if let Err(err) = self.handle_raw_event(&msg.data).await {
+                            if let Err(err) = self.handle_sse_message(&msg.event, &msg.data).await {
                                 tracing::warn!(error = %err, "Failed to parse SSE event payload");
                             }
                         }
@@ -310,13 +310,36 @@ impl EventManager {
         Ok(())
     }
 
-    async fn handle_raw_event(&self, data: &str) -> Result<()> {
-        // Skip heartbeats.
+    /// Handle an SSE message using both the SSE event-type field and the JSON data payload.
+    ///
+    /// hushd puts the event type in the SSE `event:` protocol field, not in the JSON
+    /// `data:` payload. We use the SSE event field to identify daemon-level events and
+    /// inject the `"type"` key so serde can deserialize the tagged enum.
+    async fn handle_sse_message(&self, event_type: &str, data: &str) -> Result<()> {
         if data.is_empty() || data == "ping" {
             return Ok(());
         }
 
-        // Try to parse as a daemon-level event first (has a "type" field).
+        // Daemon-level events: hushd sends type via SSE `event:` field.
+        match event_type {
+            "policy_updated" | "violation" | "session_posture_transition" => {
+                let mut json: serde_json::Value = serde_json::from_str(data)
+                    .unwrap_or_else(|_| serde_json::json!({}));
+                if let Some(obj) = json.as_object_mut() {
+                    obj.insert(
+                        "type".to_string(),
+                        serde_json::Value::String(event_type.to_string()),
+                    );
+                }
+                let daemon_event: DaemonEvent = serde_json::from_value(json)
+                    .with_context(|| format!("Failed to parse daemon event ({event_type}): {data}"))?;
+                let _ = self.daemon_events_tx.send(daemon_event);
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // Fallback: try direct deserialization in case the data payload contains "type".
         if let Ok(daemon_event) = serde_json::from_str::<DaemonEvent>(data) {
             let _ = self.daemon_events_tx.send(daemon_event);
             return Ok(());
@@ -397,6 +420,46 @@ mod tests {
             event,
             DaemonEvent::SessionPostureTransition { .. }
         ));
+    }
+
+    /// Verify that handle_sse_message dispatches daemon events using the SSE event-type
+    /// field (how hushd actually sends them) rather than requiring "type" in the JSON data.
+    #[tokio::test]
+    async fn sse_event_field_dispatches_daemon_events() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut daemon_rx = mgr.subscribe_daemon_events();
+
+        // hushd sends: event: policy_updated\ndata: {"version":"2.0.0"}
+        // Note: no "type" key in the JSON payload.
+        mgr.handle_sse_message("policy_updated", r#"{"version":"2.0.0"}"#)
+            .await
+            .expect("should dispatch policy_updated");
+
+        let evt = daemon_rx.try_recv().expect("should have received daemon event");
+        assert!(matches!(evt, DaemonEvent::PolicyUpdated { version: Some(v) } if v == "2.0.0"));
+
+        // violation with SSE event field
+        mgr.handle_sse_message("violation", r#"{"guard":"fs_blocklist","severity":"high"}"#)
+            .await
+            .expect("should dispatch violation");
+
+        let evt = daemon_rx.try_recv().expect("should have received violation event");
+        assert!(matches!(evt, DaemonEvent::Violation { guard: Some(g), .. } if g == "fs_blocklist"));
+    }
+
+    /// Verify that audit events (no special SSE event field) still parse correctly.
+    #[tokio::test]
+    async fn sse_default_event_dispatches_audit() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        let data = r#"{"id":"ev-1","timestamp":"2024-01-01T00:00:00Z","action_type":"file_access","decision":"blocked"}"#;
+        mgr.handle_sse_message("message", data)
+            .await
+            .expect("should dispatch audit event");
+
+        let evt = events_rx.try_recv().expect("should have received policy event");
+        assert_eq!(evt.id, "ev-1");
     }
 
     #[test]
