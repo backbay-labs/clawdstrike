@@ -1,0 +1,75 @@
+name: FFI SDKs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - crates/libs/hush-ffi/**
+      - packages/sdk/hush-go/**
+      - packages/sdk/hush-csharp/**
+  pull_request:
+    branches: [main]
+    paths:
+      - crates/libs/hush-ffi/**
+      - packages/sdk/hush-go/**
+      - packages/sdk/hush-csharp/**
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  bindings:
+    name: Go + C# bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ffi-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ffi-
+            ${{ runner.os }}-cargo-
+
+      - name: Build hush-ffi (release)
+        run: cargo build -p hush-ffi --release
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Run Go tests
+        working-directory: packages/sdk/hush-go
+        env:
+          CGO_LDFLAGS: -L${{ github.workspace }}/target/release
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: go test ./...
+
+      - name: Run .NET tests
+        working-directory: packages/sdk/hush-csharp
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: dotnet test
+
