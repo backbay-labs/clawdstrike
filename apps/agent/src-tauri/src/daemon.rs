@@ -101,6 +101,7 @@ pub struct DaemonManager {
     state_tx: broadcast::Sender<DaemonState>,
     shutdown_tx: broadcast::Sender<()>,
     monitor_started: Arc<AtomicBool>,
+    monitor_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl DaemonManager {
@@ -123,6 +124,7 @@ impl DaemonManager {
             state_tx,
             shutdown_tx,
             monitor_started: Arc::new(AtomicBool::new(false)),
+            monitor_task: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -171,7 +173,7 @@ impl DaemonManager {
                 // Ensure we do not leak a managed child when transitioning into attach mode.
                 let _ = terminate_child_slot(&self.child).await;
                 self.set_state(DaemonState::Running).await;
-                self.start_health_monitor();
+                self.start_health_monitor().await;
                 tracing::info!(
                     "Attached to externally managed hushd on port {}",
                     self.config.port
@@ -182,7 +184,7 @@ impl DaemonManager {
 
         self.spawn_and_wait_ready().await?;
         self.set_state(DaemonState::Running).await;
-        self.start_health_monitor();
+        self.start_health_monitor().await;
         tracing::info!("hushd daemon started on port {}", self.config.port);
         Ok(())
     }
@@ -197,19 +199,25 @@ impl DaemonManager {
             self.set_state(DaemonState::Stopped).await;
         }
 
-        // Ensure the background health monitor has fully observed shutdown before we return.
-        // This prevents overlapping monitor tasks during restart cycles.
-        if self.monitor_started.load(Ordering::SeqCst) {
-            let deadline = Instant::now() + Duration::from_secs(8);
-            while self.monitor_started.load(Ordering::SeqCst) && Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
+        let monitor_handle = self.monitor_task.lock().await.take();
+        if let Some(handle) = monitor_handle {
+            // Ensure the background health monitor has fully observed shutdown before we return.
+            // This prevents overlapping monitor tasks during restart cycles.
             if self.monitor_started.load(Ordering::SeqCst) {
-                tracing::warn!(
-                    "Health monitor did not shut down in time; forcing monitor_started reset"
-                );
-                self.monitor_started.store(false, Ordering::SeqCst);
+                let deadline = Instant::now() + Duration::from_secs(8);
+                while self.monitor_started.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                if self.monitor_started.load(Ordering::SeqCst) {
+                    tracing::warn!("Health monitor did not shut down in time; aborting task");
+                    handle.abort();
+                }
             }
+
+            // Await the monitor so the flag guard can run; don't block shutdown indefinitely.
+            let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        } else if self.monitor_started.load(Ordering::SeqCst) {
+            tracing::warn!("Health monitor flag set but no join handle present");
         }
         Ok(())
     }
@@ -263,7 +271,7 @@ impl DaemonManager {
         }
     }
 
-    fn start_health_monitor(&self) {
+    async fn start_health_monitor(&self) {
         if self.monitor_started.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -279,7 +287,7 @@ impl DaemonManager {
         let monitor_started = Arc::clone(&self.monitor_started);
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             struct MonitorFlagGuard(Arc<AtomicBool>);
 
             impl Drop for MonitorFlagGuard {
@@ -301,7 +309,6 @@ impl DaemonManager {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
                         tracing::debug!("Health monitor received shutdown signal");
-                        monitor_started.store(false, Ordering::SeqCst);
                         break;
                     }
                     _ = tokio::time::sleep(check_interval) => {
@@ -350,11 +357,35 @@ impl DaemonManager {
                                 tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
                                 if sleep_or_shutdown(&mut shutdown_rx, backoff).await {
                                     tracing::debug!("Shutdown requested while waiting to restart hushd");
-                                    monitor_started.store(false, Ordering::SeqCst);
                                     break 'monitor;
                                 }
 
                                 let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                if external_mode.load(Ordering::SeqCst) {
+                                    tracing::info!(
+                                        "External mode enabled during restart backoff; skipping managed respawn"
+                                    );
+                                    continue;
+                                }
+                                // If another hushd has claimed the port since we scheduled the
+                                // restart, attach instead of respawning.
+                                if let Ok(health) =
+                                    health_check_with_client(&config, &http_client).await
+                                {
+                                    if health.status == "healthy" {
+                                        external_mode.store(true, Ordering::SeqCst);
+                                        let _ = terminate_child_slot(&child).await;
+                                        consecutive_health_failures = 0;
+                                        restart_streak = 0;
+                                        last_ready_at = Some(Instant::now());
+                                        set_shared_state(&state, &state_tx, DaemonState::Running)
+                                            .await;
+                                        tracing::warn!(
+                                            "External hushd became healthy during restart; switching to attach mode"
+                                        );
+                                        continue;
+                                    }
+                                }
                                 match spawn_child_into_slot(&config, &child).await {
                                     Ok(()) => {
                                         match wait_for_ready_with_client_or_shutdown(
@@ -400,7 +431,6 @@ impl DaemonManager {
                                             Ok(ReadyWaitOutcome::Shutdown) => {
                                                 tracing::debug!("Shutdown requested during hushd readiness wait");
                                                 terminate_child_slot(&child).await;
-                                                monitor_started.store(false, Ordering::SeqCst);
                                                 break 'monitor;
                                             }
                                             Err(err) => {
@@ -486,7 +516,6 @@ impl DaemonManager {
                                             Ok(ReadyWaitOutcome::Shutdown) => {
                                                 tracing::debug!("Shutdown requested during hushd readiness wait");
                                                 terminate_child_slot(&child).await;
-                                                monitor_started.store(false, Ordering::SeqCst);
                                                 break 'monitor;
                                             }
                                             Err(err) => {
@@ -513,6 +542,9 @@ impl DaemonManager {
                 }
             }
         });
+
+        // Store handle for shutdown coordination (stop() may abort on timeout).
+        *self.monitor_task.lock().await = Some(handle);
     }
 
     async fn set_state(&self, new_state: DaemonState) {

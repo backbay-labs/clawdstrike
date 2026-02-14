@@ -4,6 +4,8 @@
  * Intercepts tool results and enforces security policy.
  */
 
+import { createHash } from 'node:crypto';
+
 import type {
   HookHandler,
   HookEvent,
@@ -26,6 +28,66 @@ interface CacheEntry {
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_CACHE_MAX = 256;
 
+function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
+  if (value === null) return 'null';
+
+  const t = typeof value;
+  if (t === 'string') return JSON.stringify(value);
+  if (t === 'number' || t === 'boolean') return String(value);
+  if (t === 'bigint') return JSON.stringify(value.toString());
+  if (t === 'undefined') return '"__undefined__"';
+  if (t === 'symbol') return JSON.stringify(value.toString());
+  if (t === 'function') return '"__function__"';
+
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => stableStringify(v, seen)).join(',')}]`;
+  }
+
+  if (t !== 'object') {
+    return JSON.stringify(String(value));
+  }
+
+  if (seen.has(value as object)) {
+    return '"__cycle__"';
+  }
+  seen.add(value as object);
+
+  // Only stable-sort plain objects; for other objects (Date, Buffer, etc) defer to
+  // JSON.stringify where possible.
+  const tag = Object.prototype.toString.call(value);
+  if (tag !== '[object Object]') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return JSON.stringify(String(value));
+    }
+  }
+
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k], seen)}`);
+  return `{${entries.join(',')}}`;
+}
+
+function shortSha256(value: unknown): string {
+  const h = createHash('sha256');
+  if (typeof value === 'string') h.update(value);
+  else h.update(stableStringify(value));
+  return h.digest('hex').slice(0, 16);
+}
+
+function policyCacheKey(policy: unknown): string {
+  const version =
+    policy &&
+    typeof policy === 'object' &&
+    'version' in policy &&
+    typeof (policy as { version?: unknown }).version === 'string'
+      ? (policy as { version: string }).version
+      : 'unknown';
+
+  return `${version}@${shortSha256(policy)}`;
+}
+
 /** Event types that must never be cached (destructive / non-idempotent). */
 const UNCACHEABLE_EVENT_TYPES = new Set([
   'command_exec',
@@ -43,9 +105,9 @@ export class DecisionCache {
     this.ttlMs = ttlMs;
   }
 
-  /** Build a cache key from event type + resource identifier + policy version. */
-  static key(eventType: string, resource: string, policyVersion: string): string {
-    return `${eventType}:${resource}:${policyVersion}`;
+  /** Build a cache key from event type + resource identifier + policy fingerprint. */
+  static key(eventType: string, resource: string, policyKey: string): string {
+    return `${eventType}:${resource}:${policyKey}`;
   }
 
   get(key: string): Decision | undefined {
@@ -84,6 +146,7 @@ export class DecisionCache {
 /** Shared policy engine instance */
 let engine: PolicyEngine | null = null;
 let currentConfig: ClawdstrikeConfig = {};
+let cachedPolicyKey = 'unknown';
 
 /** Shared decision cache (reset on initialize) */
 export let decisionCache = new DecisionCache();
@@ -95,6 +158,7 @@ export function initialize(config: ClawdstrikeConfig): void {
   engine = new PolicyEngine(config);
   currentConfig = config;
   decisionCache = new DecisionCache();
+  cachedPolicyKey = policyCacheKey(engine.getPolicy());
 }
 
 /**
@@ -103,6 +167,7 @@ export function initialize(config: ClawdstrikeConfig): void {
 function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
   if (!engine) {
     engine = new PolicyEngine(config ?? {});
+    cachedPolicyKey = policyCacheKey(engine.getPolicy());
   }
   return engine;
 }
@@ -117,7 +182,9 @@ function extractResourceKey(event: PolicyEvent): string {
     case 'network':
       return event.data.host + ':' + event.data.port;
     case 'tool':
-      return event.data.toolName;
+      // Tool-call decisions depend on parameters and outputs (e.g., secret leak checks).
+      // Include both so cached allows cannot be reused for a different invocation.
+      return `${event.data.toolName}:${shortSha256(event.data.parameters)}:${shortSha256(event.data.result ?? '')}`;
     case 'command':
       return event.data.command + ' ' + event.data.args.join(' ');
     case 'patch':
@@ -159,9 +226,8 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     // Check decision cache (skip for destructive ops and advisory/audit modes)
     const mode = currentConfig.mode ?? 'deterministic';
     const useCache = mode === 'deterministic' && !UNCACHEABLE_EVENT_TYPES.has(policyEvent.eventType);
-    const policyVersion = policyEngine.getPolicy().version ?? 'unknown';
     const cacheKey = useCache
-      ? DecisionCache.key(policyEvent.eventType, extractResourceKey(policyEvent), policyVersion)
+      ? DecisionCache.key(policyEvent.eventType, extractResourceKey(policyEvent), cachedPolicyKey)
       : '';
 
     let decision = useCache ? decisionCache.get(cacheKey) : undefined;

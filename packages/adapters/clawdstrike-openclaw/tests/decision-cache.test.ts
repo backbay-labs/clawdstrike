@@ -163,4 +163,29 @@ describe('Decision caching in handler', () => {
     // Deny should not be cached
     expect(cache.size).toBe(sizeBefore);
   });
+
+  it('should key tool_call cache entries by tool parameters and output', async () => {
+    const { decisionCache: cache } = await import('../src/hooks/tool-guard/handler.js');
+
+    const ev1 = makeToolResultEvent('custom_tool', { a: 1 }, 'ok');
+    await toolGuardHandler(ev1);
+    const size1 = cache.size;
+    expect(size1).toBeGreaterThan(0);
+
+    // Identical invocation should hit cache (no new entry).
+    const ev2 = makeToolResultEvent('custom_tool', { a: 1 }, 'ok');
+    await toolGuardHandler(ev2);
+    expect(cache.size).toBe(size1);
+
+    // Different parameters should produce a different cache entry.
+    const ev3 = makeToolResultEvent('custom_tool', { a: 2 }, 'ok');
+    await toolGuardHandler(ev3);
+    expect(cache.size).toBe(size1 + 1);
+
+    // Same parameters but different output should also bypass cache.
+    const size2 = cache.size;
+    const ev4 = makeToolResultEvent('custom_tool', { a: 2 }, 'different');
+    await toolGuardHandler(ev4);
+    expect(cache.size).toBe(size2 + 1);
+  });
 });

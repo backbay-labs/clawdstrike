@@ -22,6 +22,15 @@ const MAX_TTL_SECS: u64 = 3600;
 /// Maximum number of entries (pending + resolved) in the approval queue.
 const MAX_QUEUE_SIZE: usize = 500;
 
+fn compute_expires_at(now: DateTime<Utc>, ttl_secs: u64) -> DateTime<Utc> {
+    now.checked_add_signed(chrono::Duration::seconds(ttl_secs as i64))
+        .unwrap_or_else(|| {
+            // If the addition ever overflows (e.g., extreme clock skew), clamp to the max
+            // representable time rather than shortening the requested TTL.
+            DateTime::<Utc>::MAX_UTC
+        })
+}
+
 /// How the user resolved the approval request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -155,13 +164,7 @@ impl ApprovalQueue {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let ttl_secs = input.ttl_secs.unwrap_or(DEFAULT_TTL_SECS).min(MAX_TTL_SECS);
-        let expires_at = now
-            .checked_add_signed(chrono::Duration::seconds(ttl_secs as i64))
-            .unwrap_or_else(|| {
-                // If the addition ever overflows (e.g., extreme clock skew), clamp to the
-                // max representable time rather than shortening the requested TTL.
-                DateTime::<Utc>::from_timestamp(i64::MAX, 0).unwrap_or(now)
-            });
+        let expires_at = compute_expires_at(now, ttl_secs);
 
         let request = ApprovalRequest {
             id: id.clone(),
@@ -379,6 +382,13 @@ pub enum ApprovalError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expires_at_clamps_to_max_on_overflow() {
+        let now = DateTime::<Utc>::MAX_UTC;
+        let expires_at = compute_expires_at(now, 1);
+        assert_eq!(expires_at, DateTime::<Utc>::MAX_UTC);
+    }
 
     #[tokio::test]
     async fn submit_and_get_status() {
