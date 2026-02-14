@@ -275,10 +275,10 @@ mod tests {
 
     #[test]
     fn test_null_pointers() {
-        assert!(
-            unsafe { hush_verify_receipt(std::ptr::null(), std::ptr::null(), std::ptr::null()) }
-                .is_null()
-        );
+        assert!(unsafe {
+            hush_verify_receipt(std::ptr::null(), std::ptr::null(), std::ptr::null())
+        }
+        .is_null());
         assert!(unsafe { hush_sign_receipt(std::ptr::null(), std::ptr::null()) }.is_null());
         assert!(unsafe { hush_hash_receipt(std::ptr::null(), std::ptr::null()) }.is_null());
         assert!(unsafe { hush_receipt_canonical_json(std::ptr::null()) }.is_null());

@@ -62,10 +62,7 @@ pub unsafe extern "C" fn hush_watermark_public_key(config_json: *const c_char) -
         std::ptr::null_mut()
     );
 
-    let wm = ffi_try!(
-        get_or_create_watermarker(cfg_str),
-        std::ptr::null_mut()
-    );
+    let wm = ffi_try!(get_or_create_watermarker(cfg_str), std::ptr::null_mut());
 
     string_to_c(wm.public_key())
 }
@@ -134,10 +131,7 @@ pub unsafe extern "C" fn hush_watermark_prompt(
         )
     };
 
-    let wm = ffi_try!(
-        get_or_create_watermarker(cfg_str),
-        std::ptr::null_mut()
-    );
+    let wm = ffi_try!(get_or_create_watermarker(cfg_str), std::ptr::null_mut());
 
     let payload = wm.generate_payload(app_id_str, session_id_str);
     let out = ffi_try!(

@@ -121,7 +121,12 @@ mod tests {
 
         let wrong = b"wrong";
         let result = unsafe {
-            hush_verify_ed25519(pk_hex.as_ptr(), wrong.as_ptr(), wrong.len(), sig_hex.as_ptr())
+            hush_verify_ed25519(
+                pk_hex.as_ptr(),
+                wrong.as_ptr(),
+                wrong.len(),
+                sig_hex.as_ptr(),
+            )
         };
         assert_eq!(result, 0);
     }
@@ -202,9 +207,8 @@ mod tests {
         let pk_hex = std::ffi::CString::new(kp.public_key().to_hex()).unwrap();
         let sig_hex = std::ffi::CString::new(sig.to_hex()).unwrap();
 
-        let result = unsafe {
-            hush_verify_ed25519(pk_hex.as_ptr(), std::ptr::null(), 0, sig_hex.as_ptr())
-        };
+        let result =
+            unsafe { hush_verify_ed25519(pk_hex.as_ptr(), std::ptr::null(), 0, sig_hex.as_ptr()) };
         assert_eq!(result, 1);
     }
 }

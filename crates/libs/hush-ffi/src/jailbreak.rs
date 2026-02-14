@@ -101,9 +101,8 @@ mod tests {
     fn test_detect_jailbreak_with_session_id() {
         let text = CString::new("Hello world").unwrap();
         let session = CString::new("session-123").unwrap();
-        let result = unsafe {
-            hush_detect_jailbreak(text.as_ptr(), session.as_ptr(), std::ptr::null())
-        };
+        let result =
+            unsafe { hush_detect_jailbreak(text.as_ptr(), session.as_ptr(), std::ptr::null()) };
         assert!(!result.is_null());
         let json_str = unsafe { CStr::from_ptr(result) }.to_str().unwrap();
         let v: serde_json::Value = serde_json::from_str(json_str).unwrap();

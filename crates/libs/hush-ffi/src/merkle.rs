@@ -214,10 +214,8 @@ mod tests {
 
         let c_leaf = std::ffi::CString::new(h1.clone()).unwrap();
         let c_root = std::ffi::CString::new(root).unwrap();
-        let c_proof = std::ffi::CString::new(
-            unsafe { CStr::from_ptr(proof_ptr) }.to_str().unwrap(),
-        )
-        .unwrap();
+        let c_proof =
+            std::ffi::CString::new(unsafe { CStr::from_ptr(proof_ptr) }.to_str().unwrap()).unwrap();
 
         let result =
             unsafe { hush_verify_merkle_proof(c_leaf.as_ptr(), c_proof.as_ptr(), c_root.as_ptr()) };
