@@ -167,7 +167,7 @@ impl ApprovalQueue {
 
         {
             let mut requests = self.requests.lock().await;
-            // Evict resolved/expired entries if at capacity.
+            // Evict resolved/expired entries first, then oldest pending if still full.
             if requests.len() >= MAX_QUEUE_SIZE {
                 let to_evict: Vec<String> = requests
                     .iter()
@@ -178,6 +178,17 @@ impl ApprovalQueue {
                     requests.remove(&evict_id);
                     if requests.len() < MAX_QUEUE_SIZE {
                         break;
+                    }
+                }
+                // If still at capacity (all entries are pending), evict oldest pending.
+                if requests.len() >= MAX_QUEUE_SIZE {
+                    if let Some(oldest_id) = requests
+                        .iter()
+                        .filter(|(_, r)| r.status == ApprovalStatus::Pending)
+                        .min_by_key(|(_, r)| r.created_at)
+                        .map(|(id, _)| id.clone())
+                    {
+                        requests.remove(&oldest_id);
                     }
                 }
             }

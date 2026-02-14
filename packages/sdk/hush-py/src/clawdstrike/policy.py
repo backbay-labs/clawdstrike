@@ -41,8 +41,12 @@ def _find_rulesets_dir() -> Path:
         p = Path(str(ref))
         if p.is_dir():
             return p
-    except Exception:
-        pass
+    except Exception as exc:
+        import warnings
+        warnings.warn(
+            f"Could not locate 'clawdstrike' rulesets via importlib.resources: {exc}",
+            stacklevel=2,
+        )
     # Last resort: return the relative path and let callers handle missing files
     return pkg_relative.resolve()
 

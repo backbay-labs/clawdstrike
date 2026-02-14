@@ -481,10 +481,12 @@ impl AuditQueue {
             Ok(resp) => resp,
             Err(err) => {
                 // Re-queue events so they are not lost.
+                // New events go first (newest), failed batch appended after.
+                // Truncation drops from the tail, shedding oldest failed events.
                 let mut queue = self.queue.lock().await;
                 let new_events = std::mem::take(&mut *queue);
-                let mut restored = events;
-                restored.extend(new_events);
+                let mut restored = new_events;
+                restored.extend(events);
                 restored.truncate(1000);
                 *queue = restored;
                 return Err(err).with_context(|| "Failed to flush audit queue to daemon");
@@ -492,11 +494,12 @@ impl AuditQueue {
         };
 
         if !response.status().is_success() {
-            // Re-queue failed events behind any new events that arrived since the drain.
+            // Re-queue: new events first (newest), failed batch after.
+            // Truncation drops from the tail, shedding oldest failed events.
             let mut queue = self.queue.lock().await;
             let new_events = std::mem::take(&mut *queue);
-            let mut restored = events;
-            restored.extend(new_events);
+            let mut restored = new_events;
+            restored.extend(events);
             restored.truncate(1000);
             *queue = restored;
             anyhow::bail!("Audit batch upload returned {}", response.status());
