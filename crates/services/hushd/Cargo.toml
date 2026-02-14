@@ -88,6 +88,7 @@ url.workspace = true
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }
 tempfile = "3"
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 
 [features]
 default = []

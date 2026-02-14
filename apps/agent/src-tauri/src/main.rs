@@ -485,7 +485,7 @@ async fn run_agent<R: Runtime>(
         (guard.mcp_port, guard.agent_api_port)
     };
 
-    let mcp_server = McpServer::new(mcp_port, settings.clone());
+    let mcp_server = McpServer::new(mcp_port, settings.clone(), session_manager.clone());
     let mcp_shutdown = shutdown_tx.subscribe();
     tokio::spawn(async move {
         if let Err(e) = mcp_server.start(mcp_shutdown).await {

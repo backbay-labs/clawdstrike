@@ -25,7 +25,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 
 # HTTP client + server
 reqwest = { version = "0.12", features = ["json"] }
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
 

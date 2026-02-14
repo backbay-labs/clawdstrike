@@ -1,6 +1,7 @@
 //! TLS integration tests for hushd.
 //!
 //! This test spawns a daemon with a self-signed certificate and verifies `/health` over HTTPS.
+//! Also includes mTLS tests that verify client certificate enforcement.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -8,6 +9,10 @@ use std::process::{Child, Command};
 use std::time::Duration;
 
 use hushd::config::{Config, RateLimitConfig, TlsConfig};
+use rcgen::{
+    BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
+    Issuer, KeyPair, KeyUsagePurpose,
+};
 
 const CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
 MIIDCTCCAfGgAwIBAgIUJVPpZHIJ5cG5QLAYJ25Ksc2xVoIwDQYJKoZIhvcNAQEL
@@ -171,6 +176,204 @@ async fn test_health_endpoint_over_https() {
     assert!(resp.status().is_success());
 
     // Explicitly kill now to avoid holding on to the process longer than needed.
+    let _ = spawned.process.kill();
+    let _ = spawned.process.wait();
+}
+
+// ---------------------------------------------------------------------------
+// mTLS helpers
+// ---------------------------------------------------------------------------
+
+/// Generate a CA keypair and self-signed certificate.
+fn generate_ca() -> (Issuer<'static, KeyPair>, rcgen::Certificate) {
+    let key = KeyPair::generate().unwrap();
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, "Test CA");
+    let mut params = CertificateParams::default();
+    params.distinguished_name = dn;
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::DigitalSignature,
+    ];
+    let cert = params.self_signed(&key).unwrap();
+    (Issuer::new(params, key), cert)
+}
+
+/// Generate a server certificate signed by `ca`.
+fn generate_server_cert(ca: &Issuer<KeyPair>) -> (KeyPair, rcgen::Certificate) {
+    let key = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+    params.is_ca = IsCa::ExplicitNoCa;
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    let cert = params.signed_by(&key, ca).unwrap();
+    (key, cert)
+}
+
+/// Generate a client certificate signed by `ca`.
+fn generate_client_cert(ca: &Issuer<KeyPair>) -> (KeyPair, rcgen::Certificate) {
+    let key = KeyPair::generate().unwrap();
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, "Test Client");
+    let mut params = CertificateParams::default();
+    params.distinguished_name = dn;
+    params.is_ca = IsCa::ExplicitNoCa;
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
+    let cert = params.signed_by(&key, ca).unwrap();
+    (key, cert)
+}
+
+/// Spawn a daemon configured for mTLS and return the spawned handle plus cert paths.
+fn spawn_mtls_daemon(
+    test_dir: &std::path::Path,
+    port: u16,
+    ca_cert: &rcgen::Certificate,
+    server_key: &KeyPair,
+    server_cert: &rcgen::Certificate,
+) -> Spawned {
+    let ca_pem_path = test_dir.join("ca.pem");
+    let cert_path = test_dir.join("server.pem");
+    let key_path = test_dir.join("server.key");
+
+    std::fs::write(&ca_pem_path, ca_cert.pem()).expect("write CA cert");
+    std::fs::write(&cert_path, server_cert.pem()).expect("write server cert");
+    std::fs::write(&key_path, server_key.serialize_pem()).expect("write server key");
+
+    let config = Config {
+        listen: format!("127.0.0.1:{}", port),
+        audit_db: test_dir.join("audit.db"),
+        cors_enabled: false,
+        rate_limit: RateLimitConfig {
+            enabled: false,
+            ..Default::default()
+        },
+        tls: Some(TlsConfig {
+            cert_path: cert_path.clone(),
+            key_path: key_path.clone(),
+            client_ca_path: Some(ca_pem_path),
+            require_client_cert: true,
+        }),
+        ..Default::default()
+    };
+
+    let config_path = test_dir.join("hushd.yaml");
+    let yaml = serde_yaml::to_string(&config).expect("serialize config");
+    std::fs::write(&config_path, yaml).expect("write config");
+
+    let process = Command::new(daemon_path())
+        .args(["--config", config_path.to_str().unwrap(), "start"])
+        .spawn()
+        .expect("spawn hushd");
+
+    Spawned {
+        process,
+        url: format!("https://localhost:{}", port),
+        test_dir: test_dir.to_path_buf(),
+    }
+}
+
+/// Wait for the daemon health endpoint using a client that presents a client cert (needed for mTLS).
+async fn wait_for_mtls_health(url: &str, identity: &reqwest::Identity, timeout: Duration) {
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .identity(identity.clone())
+        .build()
+        .expect("build reqwest client with identity");
+
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if let Ok(resp) = client.get(format!("{}/health", url)).send().await {
+            if resp.status().is_success() {
+                return;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    panic!("mTLS daemon failed to become healthy within {:?}", timeout);
+}
+
+// ---------------------------------------------------------------------------
+// mTLS tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_mtls_with_valid_client_cert() {
+    let (ca_issuer, ca_cert) = generate_ca();
+    let (server_key, server_cert) = generate_server_cert(&ca_issuer);
+    let (client_key, client_cert) = generate_client_cert(&ca_issuer);
+
+    let port = find_available_port();
+    let test_dir = std::env::temp_dir().join(format!("hushd-test-mtls-valid-{}", port));
+    std::fs::create_dir_all(&test_dir).expect("create test dir");
+
+    let mut spawned = spawn_mtls_daemon(&test_dir, port, &ca_cert, &server_key, &server_cert);
+
+    // Build a reqwest Identity from the client cert + key PEM.
+    let client_pem = format!("{}{}", client_cert.pem(), client_key.serialize_pem());
+    let identity =
+        reqwest::Identity::from_pem(client_pem.as_bytes()).expect("build client identity");
+
+    // Wait for the daemon to become healthy (using the client cert).
+    wait_for_mtls_health(&spawned.url, &identity, Duration::from_secs(30)).await;
+
+    // Now make the real request.
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .identity(identity)
+        .build()
+        .expect("build reqwest client with client cert");
+
+    let resp = client
+        .get(format!("{}/health", spawned.url))
+        .send()
+        .await
+        .expect("GET /health with client cert");
+    assert!(
+        resp.status().is_success(),
+        "Expected 200 with valid client cert, got {}",
+        resp.status()
+    );
+
+    let _ = spawned.process.kill();
+    let _ = spawned.process.wait();
+}
+
+#[tokio::test]
+async fn test_mtls_rejects_without_client_cert() {
+    let (ca_issuer, ca_cert) = generate_ca();
+    let (server_key, server_cert) = generate_server_cert(&ca_issuer);
+    let (client_key, client_cert) = generate_client_cert(&ca_issuer);
+
+    let port = find_available_port();
+    let test_dir = std::env::temp_dir().join(format!("hushd-test-mtls-reject-{}", port));
+    std::fs::create_dir_all(&test_dir).expect("create test dir");
+
+    let mut spawned = spawn_mtls_daemon(&test_dir, port, &ca_cert, &server_key, &server_cert);
+
+    // Use the client cert just for the health-check wait so the daemon is ready.
+    let client_pem = format!("{}{}", client_cert.pem(), client_key.serialize_pem());
+    let identity =
+        reqwest::Identity::from_pem(client_pem.as_bytes()).expect("build client identity");
+    wait_for_mtls_health(&spawned.url, &identity, Duration::from_secs(30)).await;
+
+    // Now try without a client certificate.
+    let client_no_cert = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .expect("build reqwest client without client cert");
+
+    let result = client_no_cert
+        .get(format!("{}/health", spawned.url))
+        .send()
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Expected connection error when no client cert is presented to mTLS server, got: {:?}",
+        result
+    );
+
     let _ = spawned.process.kill();
     let _ = spawned.process.wait();
 }

@@ -86,11 +86,11 @@ impl AgentApiServer {
                 patch(patch_gateway).delete(delete_gateway),
             )
             .route(
-                "/api/v1/openclaw/gateways/:id/connect",
+                "/api/v1/openclaw/gateways/{id}/connect",
                 post(connect_gateway),
             )
             .route(
-                "/api/v1/openclaw/gateways/:id/disconnect",
+                "/api/v1/openclaw/gateways/{id}/disconnect",
                 post(disconnect_gateway),
             )
             .route("/api/v1/openclaw/active-gateway", put(set_active_gateway))
@@ -256,7 +256,8 @@ async fn agent_policy_check(
     Json(input): Json<PolicyCheckInput>,
 ) -> Result<Json<PolicyCheckOutput>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
-    let output = evaluate_policy_check(state.settings.clone(), &state.http_client, input)
+    let session_id = state.session_manager.session_id().await;
+    let output = evaluate_policy_check(state.settings.clone(), &state.http_client, input, session_id)
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(output))
@@ -480,7 +481,16 @@ async fn create_approval_request(
         ));
     }
 
-    let request = state.approval_queue.submit(input).await;
+    let request = state
+        .approval_queue
+        .submit(input)
+        .await
+        .map_err(|err| match err {
+            crate::approval::ApprovalError::QueueFull => {
+                (StatusCode::SERVICE_UNAVAILABLE, err.to_string())
+            }
+            other => (StatusCode::INTERNAL_SERVER_ERROR, other.to_string()),
+        })?;
     Ok(Json(ApprovalStatusResponse::from(&request)))
 }
 
@@ -521,6 +531,9 @@ async fn resolve_approval(
             }
             crate::approval::ApprovalError::Expired => {
                 (StatusCode::GONE, "Approval request expired".to_string())
+            }
+            crate::approval::ApprovalError::QueueFull => {
+                (StatusCode::SERVICE_UNAVAILABLE, "Approval queue is full".to_string())
             }
         })?;
 
@@ -588,6 +601,7 @@ mod tests {
     use super::*;
     use crate::daemon::DaemonConfig;
     use std::path::PathBuf;
+    use tower::ServiceExt;
 
     fn test_state() -> AgentApiState {
         let settings = Arc::new(RwLock::new(Settings::default()));
@@ -676,5 +690,34 @@ mod tests {
             explicit_value.openclaw_active_gateway_id,
             Some(Some(value)) if value == "gw-1"
         ));
+    }
+
+    #[tokio::test]
+    async fn approval_status_route_matches_uuid_path() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route(
+                "/api/v1/approval/{id}/status",
+                get(get_approval_status),
+            )
+            .with_state(state);
+
+        let request = axum::http::Request::builder()
+            .uri("/api/v1/approval/550e8400-e29b-41d4-a716-446655440000/status")
+            .header("authorization", "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+
+        let response = app
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+
+        // Should be 404 (approval not found) rather than 405/routing failure.
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "Route should match the UUID path param and return 404 (not found), not a routing error"
+        );
     }
 }

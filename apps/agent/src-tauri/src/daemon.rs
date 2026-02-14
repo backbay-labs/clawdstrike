@@ -331,7 +331,7 @@ impl DaemonManager {
     }
 }
 
-// ---- Policy cache for offline fallback mode ----
+// ---- Policy cache for warm-start recovery ----
 
 /// Path for the cached policy bundle.
 fn policy_cache_path() -> PathBuf {
@@ -339,8 +339,10 @@ fn policy_cache_path() -> PathBuf {
 }
 
 /// Persistent policy cache that stores the last-known-good policy bundle
-/// fetched from hushd. When hushd is unreachable the agent can fall back
-/// to this cached copy.
+/// fetched from hushd. Used for quick warm-start on agent restart so that
+/// hushd can re-load policies faster. This is NOT used for inline evaluation
+/// fallback — when hushd is unreachable, policy checks return deny with
+/// reason "hushd_unavailable" (fail-closed).
 pub struct PolicyCache {
     http_client: reqwest::Client,
     cached_policy: Mutex<Option<String>>,

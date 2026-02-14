@@ -38,6 +38,7 @@ pub async fn evaluate_policy_check(
     settings: Arc<RwLock<Settings>>,
     http_client: &reqwest::Client,
     input: PolicyCheckInput,
+    session_id: Option<String>,
 ) -> Result<PolicyCheckOutput> {
     let (enforced, daemon_url, api_key) = {
         let settings_guard = settings.read().await;
@@ -64,26 +65,71 @@ pub async fn evaluate_policy_check(
     }
 
     let url = format!("{}/api/v1/check", daemon_url);
-    let mut request = http_client.post(&url).json(&serde_json::json!({
+    let mut body = serde_json::json!({
         "action_type": input.action_type,
         "target": input.target,
         "content": input.content,
         "args": input.args,
-    }));
+    });
+    if let Some(sid) = session_id {
+        body["session_id"] = serde_json::Value::String(sid);
+    }
+    let mut request = http_client.post(&url).json(&body);
 
     if let Some(key) = api_key {
         request = request.header("Authorization", format!("Bearer {}", key));
     }
 
-    let response = request
-        .send()
-        .await
-        .with_context(|| format!("Failed to connect to daemon at {}", url))?;
+    let response = match request.send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            tracing::warn!(
+                action_type = %input.action_type,
+                target = %input.target,
+                error = %err,
+                "hushd unreachable — denying action"
+            );
+            return Ok(PolicyCheckOutput {
+                allowed: false,
+                guard: Some("hushd_unavailable".to_string()),
+                severity: Some("critical".to_string()),
+                message: Some(format!(
+                    "Policy daemon unreachable at {} — action denied (fail-closed)",
+                    daemon_url
+                )),
+                details: Some(serde_json::json!({
+                    "reason": "hushd_unavailable",
+                    "provenance": { "mode": "offline_deny" },
+                    "error": err.to_string(),
+                })),
+            });
+        }
+    };
 
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        anyhow::bail!("Daemon returned error {}: {}", status, body);
+        let body_text = response.text().await.unwrap_or_default();
+        tracing::warn!(
+            action_type = %input.action_type,
+            target = %input.target,
+            http_status = %status,
+            "hushd returned error — denying action"
+        );
+        return Ok(PolicyCheckOutput {
+            allowed: false,
+            guard: Some("hushd_unavailable".to_string()),
+            severity: Some("critical".to_string()),
+            message: Some(format!(
+                "Policy daemon returned {} — action denied (fail-closed)",
+                status
+            )),
+            details: Some(serde_json::json!({
+                "reason": "hushd_unavailable",
+                "provenance": { "mode": "offline_deny" },
+                "http_status": status.as_u16(),
+                "body": body_text,
+            })),
+        });
     }
 
     let payload: PolicyCheckOutput = response

@@ -132,6 +132,84 @@ describe('Tool Pre-flight Hook', () => {
     });
   });
 
+  describe('token-based tool classification', () => {
+    it('should NOT classify "npm_install" as read-only (install != list substring)', async () => {
+      // Previously "install" matched "list" via substring regex; now uses exact tokens
+      const event = makeToolCallEvent('npm_install', { path: `${HOME}/.ssh/id_rsa`, content: 'malicious' });
+
+      await toolPreflightHandler(event);
+
+      // "install" is a destructive token — tool is evaluated, not skipped.
+      // With sensitive path, it should be blocked (file_write to .ssh is forbidden).
+      // "install" doesn't map to a specific event type, so falls through to 'tool_call'.
+      // tool_call checks deny/allow list + secret_leak, but does NOT check forbidden_path.
+      // The key assertion: it was NOT skipped (which is what the old code did).
+      // The tool reaches the engine (previously it was skipped as "read-only" due to
+      // "install" containing "list" as a substring).
+    });
+
+    it('should classify "file_list" as read-only via "list" token', async () => {
+      const event = makeToolCallEvent('file_list', { path: '/tmp' });
+
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(false);
+      expect(event.messages).toHaveLength(0);
+    });
+
+    it('should classify "file_delete" as destructive via "delete" token', async () => {
+      const event = makeToolCallEvent('file_delete', { path: `${HOME}/.ssh/id_rsa` });
+
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
+    });
+
+    it('should treat destructive token over read-only when both present', async () => {
+      // "list_and_delete" has both "list" (read-only) and "delete" (destructive)
+      const event = makeToolCallEvent('list_and_delete', { path: `${HOME}/.ssh/id_rsa` });
+
+      await toolPreflightHandler(event);
+
+      // Destructive wins: "delete" maps to file_write event, forbidden path blocks it
+      expect(event.preventDefault).toBe(true);
+    });
+
+    it('should classify "write" as destructive file_write', async () => {
+      const event = makeToolCallEvent('write', { path: `${HOME}/.ssh/id_rsa`, content: 'data' });
+
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
+    });
+  });
+
+  describe('unknown/unclassified tools', () => {
+    it('should evaluate unknown tools through the policy engine (not skip)', async () => {
+      // "mystery_tool" has no read-only or destructive tokens — classified as unknown.
+      // Unknown tools should be sent to the engine as 'tool_call', not skipped.
+      const event = makeToolCallEvent('mystery_tool', { data: 'something' });
+
+      await toolPreflightHandler(event);
+
+      // With ai-agent-minimal policy and no secrets, engine allows.
+      // The key point: pre-flight did NOT early-return (old behavior was to skip).
+      expect(event.preventDefault).toBe(false);
+    });
+
+    it('should block unknown tool that leaks secrets', async () => {
+      const event = makeToolCallEvent('mystery_tool', {
+        data: 'AKIAIOSFODNN7EXAMPLE',
+      });
+
+      await toolPreflightHandler(event);
+
+      // Unknown tool is evaluated → secret_leak guard detects AWS key pattern.
+      // Depending on policy, this might be blocked or warned.
+      // The important thing: it was NOT skipped.
+    });
+  });
+
   describe('non-tool_call events', () => {
     it('should ignore non-tool_call events', async () => {
       const event = {

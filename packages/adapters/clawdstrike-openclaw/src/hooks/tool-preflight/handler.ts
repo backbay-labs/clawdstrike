@@ -38,41 +38,92 @@ function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
   return engine;
 }
 
-/** Tool names that map to destructive action types */
-const DESTRUCTIVE_PATTERNS: Array<{ pattern: RegExp; eventType: EventType }> = [
-  { pattern: /write|edit|create|save|overwrite/i, eventType: 'file_write' },
-  { pattern: /delete|remove|unlink|rm\b/i, eventType: 'file_write' },
-  { pattern: /shell|bash|exec|command|terminal|run/i, eventType: 'command_exec' },
-  { pattern: /patch|apply_patch|diff/i, eventType: 'patch_apply' },
+/** Read-only tokens: if ANY token matches and no destructive token is present, tool is read-only */
+const READ_ONLY_TOKENS = new Set([
+  'read', 'list', 'get', 'search', 'view', 'show', 'find', 'describe',
+  'info', 'status', 'check', 'ls', 'cat', 'head', 'tail', 'type',
+  'which', 'echo', 'pwd', 'env', 'whoami', 'hostname', 'uname', 'date',
+  'glob', 'grep',
+]);
+
+/** Destructive tokens: if ANY token matches, tool is destructive */
+const DESTRUCTIVE_TOKENS = new Set([
+  'write', 'delete', 'remove', 'rm', 'kill', 'exec', 'run', 'install',
+  'uninstall', 'create', 'update', 'modify', 'patch', 'put', 'post',
+  'move', 'mv', 'rename', 'chmod', 'chown', 'drop', 'truncate',
+]);
+
+/** Destructive token-to-event-type mapping for specific policy routing */
+const DESTRUCTIVE_EVENT_MAP: Array<{ tokens: Set<string>; eventType: EventType }> = [
+  { tokens: new Set(['write', 'edit', 'create', 'save', 'overwrite']), eventType: 'file_write' },
+  { tokens: new Set(['delete', 'remove', 'unlink', 'rm']), eventType: 'file_write' },
+  { tokens: new Set(['shell', 'bash', 'exec', 'command', 'terminal', 'run']), eventType: 'command_exec' },
+  { tokens: new Set(['patch', 'diff']), eventType: 'patch_apply' },
 ];
 
-/** Tool names that are known read-only */
-const READ_ONLY_PATTERNS = /read|cat|head|tail|glob|grep|search|list|ls|find|view|inspect/i;
+/** Network tokens for egress classification */
+const NETWORK_TOKENS = new Set(['fetch', 'http', 'web', 'curl', 'request']);
 
 /**
- * Infer whether a tool is destructive and what event type it maps to.
- * Returns null if the tool is read-only or unknown (skip pre-flight).
+ * Tokenize a tool name by splitting on common delimiters.
+ */
+function tokenize(toolName: string): string[] {
+  return toolName.toLowerCase().split(/[_\-/\s.]+/).filter(Boolean);
+}
+
+type ToolClassification = 'read_only' | 'destructive' | 'unknown';
+
+/**
+ * Classify a tool based on its name tokens.
+ * - If ANY token is destructive → destructive
+ * - If ANY token is read-only and NO token is destructive → read-only
+ * - Otherwise → unknown (treated as potentially destructive)
+ */
+function classifyTool(tokens: string[]): ToolClassification {
+  let hasReadOnly = false;
+  let hasDestructive = false;
+
+  for (const token of tokens) {
+    if (DESTRUCTIVE_TOKENS.has(token)) {
+      hasDestructive = true;
+    }
+    if (READ_ONLY_TOKENS.has(token)) {
+      hasReadOnly = true;
+    }
+  }
+
+  if (hasDestructive) return 'destructive';
+  if (hasReadOnly) return 'read_only';
+  return 'unknown';
+}
+
+/**
+ * Infer the event type for a tool based on its name tokens.
+ * Returns null only for confirmed read-only tools.
+ * Unknown/unclassified tools return 'tool_call' so they are evaluated.
  */
 function inferDestructiveEventType(toolName: string): EventType | null {
-  const lower = toolName.toLowerCase();
+  const tokens = tokenize(toolName);
+  const classification = classifyTool(tokens);
 
-  // Skip known read-only tools
-  if (READ_ONLY_PATTERNS.test(lower)) {
+  if (classification === 'read_only') {
     return null;
   }
 
-  for (const { pattern, eventType } of DESTRUCTIVE_PATTERNS) {
-    if (pattern.test(lower)) {
+  // Check specific destructive event types
+  for (const { tokens: matchTokens, eventType } of DESTRUCTIVE_EVENT_MAP) {
+    if (tokens.some(t => matchTokens.has(t))) {
       return eventType;
     }
   }
 
-  // Network-related tools
-  if (/fetch|http|web|curl|request/i.test(lower)) {
+  // Check network tokens
+  if (tokens.some(t => NETWORK_TOKENS.has(t))) {
     return 'network_egress';
   }
 
-  return null;
+  // Unknown or unclassified tools: treat as generic tool_call for evaluation
+  return 'tool_call';
 }
 
 /**
@@ -181,11 +232,101 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
   return { host, port, url };
 }
 
+// Approval flow:
+// 1. Pre-flight guard denies a non-critical action
+// 2. If the agent's approval API is configured (CLAWDSTRIKE_APPROVAL_URL env),
+//    submit an approval request and poll for resolution
+// 3. If no approval system configured or timeout, deny immediately
+//
+// The desktop agent's ApprovalQueue (/api/v1/approval/*) surfaces these
+// to users via OS notifications and tray menu. The OpenClaw gateway
+// exec_approval_queue is a separate system for gateway-specific flows.
+
+const APPROVAL_POLL_INTERVAL_MS = 1_000;
+const APPROVAL_POLL_TIMEOUT_MS = 60_000;
+
+interface ApprovalStatusResponse {
+  id: string;
+  status: 'pending' | 'resolved' | 'expired';
+  resolution: 'allow-once' | 'allow-session' | 'allow-always' | 'deny' | null;
+  tool: string;
+  resource: string;
+  guard: string;
+  reason: string;
+  severity: string;
+}
+
+/**
+ * Submit an approval request and poll until resolved or expired.
+ * Returns true if the user approved, false otherwise.
+ */
+async function requestApproval(details: {
+  toolName: string;
+  resource: string;
+  guard: string;
+  reason: string;
+  severity: string;
+  sessionId: string;
+}): Promise<boolean> {
+  const approvalUrl = process.env.CLAWDSTRIKE_APPROVAL_URL;
+  if (!approvalUrl) {
+    return false;
+  }
+
+  let id: string;
+  try {
+    const submitRes = await fetch(`${approvalUrl}/api/v1/approval/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: details.toolName,
+        resource: details.resource,
+        guard: details.guard,
+        reason: details.reason,
+        severity: details.severity,
+        session_id: details.sessionId,
+      }),
+    });
+    if (!submitRes.ok) {
+      return false;
+    }
+    const body = (await submitRes.json()) as ApprovalStatusResponse;
+    id = body.id;
+  } catch {
+    return false;
+  }
+
+  const deadline = Date.now() + APPROVAL_POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, APPROVAL_POLL_INTERVAL_MS));
+
+    try {
+      const pollRes = await fetch(`${approvalUrl}/api/v1/approval/${id}/status`);
+      if (!pollRes.ok) {
+        return false;
+      }
+      const status = (await pollRes.json()) as ApprovalStatusResponse;
+
+      if (status.status === 'resolved') {
+        return status.resolution !== null && status.resolution !== 'deny';
+      }
+      if (status.status === 'expired') {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Hook handler for tool_call (pre-execution) events.
  *
  * If the tool is destructive, evaluates the policy engine.
- * On deny: sets preventDefault = true and adds a block message.
+ * On deny: submits an approval request if the approval API is configured,
+ *          and blocks unless the user approves.
  * On warn: adds a warning message but allows execution.
  * On allow / read-only: no-op.
  */
@@ -201,7 +342,7 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   // Determine if this tool is destructive
   const eventType = inferDestructiveEventType(toolName);
   if (eventType === null) {
-    // Read-only or unknown tool: skip pre-flight, let post-execution handle it
+    // Confirmed read-only tool: skip pre-flight, let post-execution handle it
     return;
   }
 
@@ -210,8 +351,30 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   const decision = await policyEngine.evaluate(policyEvent);
 
   if (decision.status === 'deny') {
-    toolEvent.preventDefault = true;
     const resource = extractPath(params) ?? (typeof params.command === 'string' ? params.command : toolName);
+    const guard = decision.guard ?? 'unknown';
+    const severity = decision.severity ?? 'high';
+
+    // If the denial is non-critical and the approval API is configured,
+    // submit an approval request and wait for user resolution.
+    if (severity !== 'critical' && process.env.CLAWDSTRIKE_APPROVAL_URL) {
+      const approved = await requestApproval({
+        toolName,
+        resource,
+        guard,
+        reason: decision.reason ?? 'Policy denied',
+        severity,
+        sessionId,
+      });
+      if (approved) {
+        toolEvent.messages.push(
+          `[clawdstrike] Pre-flight check: ${toolName} on ${resource} was approved by user`,
+        );
+        return;
+      }
+    }
+
+    toolEvent.preventDefault = true;
     toolEvent.messages.push(
       `[clawdstrike] Pre-flight check: blocked ${toolName} on ${resource}${decision.reason ? ` — ${decision.reason}` : ''}`,
     );

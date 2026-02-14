@@ -16,6 +16,9 @@ use uuid::Uuid;
 /// Default TTL for approval requests.
 const DEFAULT_TTL_SECS: u64 = 60;
 
+/// Maximum TTL for approval requests (1 hour).
+const MAX_TTL_SECS: u64 = 3600;
+
 /// Maximum number of entries (pending + resolved) in the approval queue.
 const MAX_QUEUE_SIZE: usize = 500;
 
@@ -143,12 +146,18 @@ impl ApprovalQueue {
         self.event_tx.subscribe()
     }
 
-    /// Submit a new approval request. Returns the created request.
-    pub async fn submit(&self, input: ApprovalRequestInput) -> ApprovalRequest {
+    /// Submit a new approval request. Returns the created request or an error
+    /// if the queue is full (all entries pending).
+    pub async fn submit(
+        &self,
+        input: ApprovalRequestInput,
+    ) -> Result<ApprovalRequest, ApprovalError> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
-        let ttl_secs = input.ttl_secs.unwrap_or(DEFAULT_TTL_SECS).min(i64::MAX as u64);
-        let expires_at = now + chrono::Duration::seconds(ttl_secs as i64);
+        let ttl_secs = input.ttl_secs.unwrap_or(DEFAULT_TTL_SECS).min(MAX_TTL_SECS);
+        let expires_at = now
+            .checked_add_signed(chrono::Duration::seconds(ttl_secs as i64))
+            .unwrap_or(now + chrono::Duration::seconds(DEFAULT_TTL_SECS as i64));
 
         let request = ApprovalRequest {
             id: id.clone(),
@@ -167,7 +176,7 @@ impl ApprovalQueue {
 
         {
             let mut requests = self.requests.lock().await;
-            // Evict resolved/expired entries first, then oldest pending if still full.
+            // Evict resolved/expired entries first when at capacity.
             if requests.len() >= MAX_QUEUE_SIZE {
                 let to_evict: Vec<String> = requests
                     .iter()
@@ -180,16 +189,9 @@ impl ApprovalQueue {
                         break;
                     }
                 }
-                // If still at capacity (all entries are pending), evict oldest pending.
+                // If still at capacity (all entries are pending), reject submission.
                 if requests.len() >= MAX_QUEUE_SIZE {
-                    if let Some(oldest_id) = requests
-                        .iter()
-                        .filter(|(_, r)| r.status == ApprovalStatus::Pending)
-                        .min_by_key(|(_, r)| r.created_at)
-                        .map(|(id, _)| id.clone())
-                    {
-                        requests.remove(&oldest_id);
-                    }
+                    return Err(ApprovalError::QueueFull);
                 }
             }
             requests.insert(id, request.clone());
@@ -199,7 +201,7 @@ impl ApprovalQueue {
             request: ApprovalStatusResponse::from(&request),
         });
 
-        request
+        Ok(request)
     }
 
     /// Get the current status of an approval request. Checks expiry.
@@ -354,6 +356,8 @@ pub enum ApprovalError {
     AlreadyResolved,
     #[error("Approval request expired")]
     Expired,
+    #[error("Approval queue is full — resolve existing approvals first")]
+    QueueFull,
 }
 
 #[cfg(test)]
@@ -373,7 +377,8 @@ mod tests {
                 session_id: None,
                 ttl_secs: Some(60),
             })
-            .await;
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
         let status = queue.get_status(&request.id).await;
         assert!(status.is_some());
@@ -395,7 +400,8 @@ mod tests {
                 session_id: None,
                 ttl_secs: Some(60),
             })
-            .await;
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
         let result = queue
             .resolve(&request.id, ApprovalResolution::AllowOnce)
@@ -419,7 +425,8 @@ mod tests {
                 session_id: None,
                 ttl_secs: Some(60),
             })
-            .await;
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
         let _ = queue
             .resolve(&request.id, ApprovalResolution::AllowOnce)
@@ -443,7 +450,8 @@ mod tests {
                 session_id: None,
                 ttl_secs: Some(0), // Expires immediately.
             })
-            .await;
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
         // Give it a moment to be past the expiry.
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -469,7 +477,8 @@ mod tests {
                 session_id: None,
                 ttl_secs: Some(60),
             })
-            .await;
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
         let expired_req = queue
             .submit(ApprovalRequestInput {
@@ -481,7 +490,8 @@ mod tests {
                 session_id: None,
                 ttl_secs: Some(0),
             })
-            .await;
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
@@ -507,7 +517,8 @@ mod tests {
                 session_id: None,
                 ttl_secs: Some(60),
             })
-            .await;
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
         assert_eq!(queue.pending_count().await, 1);
     }

@@ -3,6 +3,7 @@
 //! Exposes a `policy_check` tool via JSON-RPC that AI tools can call.
 
 use crate::policy::{evaluate_policy_check, PolicyCheckInput};
+use crate::session::SessionManager;
 use crate::settings::Settings;
 use anyhow::{Context, Result};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
@@ -16,18 +17,20 @@ use tokio::sync::{broadcast, RwLock};
 pub struct McpServer {
     port: u16,
     settings: Arc<RwLock<Settings>>,
+    session_manager: Arc<SessionManager>,
 }
 
 impl McpServer {
     /// Create a new MCP server.
-    pub fn new(port: u16, settings: Arc<RwLock<Settings>>) -> Self {
-        Self { port, settings }
+    pub fn new(port: u16, settings: Arc<RwLock<Settings>>, session_manager: Arc<SessionManager>) -> Self {
+        Self { port, settings, session_manager }
     }
 
     /// Start the MCP server.
     pub async fn start(self, mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
         let state = McpState {
             settings: self.settings,
+            session_manager: self.session_manager,
             http_client: reqwest::Client::new(),
         };
 
@@ -59,6 +62,7 @@ impl McpServer {
 /// Shared state for MCP handlers.
 struct McpState {
     settings: Arc<RwLock<Settings>>,
+    session_manager: Arc<SessionManager>,
     http_client: reqwest::Client,
 }
 
@@ -236,7 +240,8 @@ async fn handle_call_tool(state: &McpState, params: Option<serde_json::Value>) -
                 }
             };
 
-            match evaluate_policy_check(state.settings.clone(), &state.http_client, check_params)
+            let session_id = state.session_manager.session_id().await;
+            match evaluate_policy_check(state.settings.clone(), &state.http_client, check_params, session_id)
                 .await
             {
                 Ok(result) => {

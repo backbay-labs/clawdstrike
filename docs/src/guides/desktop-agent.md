@@ -131,33 +131,39 @@ The plugin registers a `policy_check` tool that agents call before risky operati
 
 ## Approval Flow
 
-The desktop agent supports per-action approval for sensitive operations. When a guard blocks an action, the desktop UI presents an approval prompt. The approval queue is visible via the local API:
+The desktop agent supports per-action approval for non-critical operations that are denied by policy. The flow is:
+
+1. A pre-flight guard denies a non-critical action.
+2. If the adapter has `CLAWDSTRIKE_APPROVAL_URL` configured, it submits an approval request to the agent's ApprovalQueue API.
+3. The agent surfaces the request via OS notification and tray badge.
+4. The user resolves the request (allow-once, allow-session, allow-always, or deny).
+5. If the user approves, the action proceeds. If denied, expired, or no approval system is configured, the action is blocked.
+
+List pending approvals via the local API:
 
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${AGENT_TOKEN}" \
-  "${API_BASE}/api/v1/openclaw/gateways" | jq '.[].runtime.exec_approval_queue'
+  "${API_BASE}/api/v1/approval/pending" | jq '.[].id'
 ```
 
-Actions requiring confirmation are configured in the `mcp_tool` guard:
+Check a specific approval status:
 
-```yaml
-guards:
-  mcp_tool:
-    require_confirmation:
-      - file_write
-      - file_delete
-      - git_push
-      - deploy
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${AGENT_TOKEN}" \
+  "${API_BASE}/api/v1/approval/${APPROVAL_ID}/status" | jq '{id, status, resolution, tool, resource, guard, reason, severity}'
 ```
 
-## Offline Mode
+> **Note:** The OpenClaw gateway has a separate `exec_approval_queue` for gateway-specific approval flows. These are distinct systems -- the desktop agent's ApprovalQueue is for local per-action approval.
 
-The desktop agent operates in offline fallback mode when `hushd` or the OpenClaw gateway is unreachable:
+## Behavior When hushd Is Unreachable
 
-- Policy evaluation continues using the local policy file.
-- Guard decisions are made locally using the embedded Clawdstrike engine.
-- Receipts are queued and synced when connectivity is restored.
+When `hushd` is unreachable (transport error or non-success HTTP status), policy checks return **deny** with reason `hushd_unavailable` and `provenance.mode: "offline_deny"`. This is a fail-closed design -- no actions are allowed without a live policy daemon.
+
+- All policy check requests return `allowed: false` with guard `hushd_unavailable`.
+- The agent logs a warning with the connection error details.
+- A policy cache is maintained on disk (`~/.config/clawdstrike/policy-cache.yaml`) for quick warm-start when the agent restarts, but it is **not** used for inline evaluation fallback.
 - The agent logs a warning when secure storage (OS keyring) is unavailable and falls back to memory-only secrets.
 
 ## OpenClaw Gateway Connection
