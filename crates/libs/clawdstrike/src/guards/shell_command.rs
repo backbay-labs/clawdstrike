@@ -138,6 +138,13 @@ impl ShellCommandGuard {
             i += 1;
         }
 
+        // Windows paths often include backslashes which the shlex splitter treats as escapes.
+        // Scan the raw commandline to extract drive-rooted paths (e.g. `C:\\Windows\\...`) so they
+        // still flow through ForbiddenPathGuard.
+        for p in extract_windows_paths_best_effort(commandline) {
+            push_path_candidate(&mut out, &p);
+        }
+
         out
     }
 }
@@ -293,6 +300,17 @@ fn looks_like_path(t: &str) -> bool {
     if t.contains("://") {
         return false;
     }
+
+    // Windows drive-rooted paths like C:\Users\... or C:/Users/...
+    let bytes = t.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && (bytes[0] as char).is_ascii_alphabetic() {
+        return true;
+    }
+    // UNC paths: \\server\share\... or //server/share/...
+    if t.starts_with("\\\\") || t.starts_with("//") {
+        return true;
+    }
+
     t.starts_with('/')
         || t.starts_with('~')
         || t.starts_with("./")
@@ -302,6 +320,41 @@ fn looks_like_path(t: &str) -> bool {
         || t.contains("/.ssh/")
         || t.contains("/.aws/")
         || t.contains("/.gnupg/")
+}
+
+fn extract_windows_paths_best_effort(commandline: &str) -> Vec<String> {
+    // Extract drive-rooted paths like `C:\Windows\System32\config\SAM`.
+    // We stop at whitespace / pipe / redirection, matching the Unix path parsing behavior above.
+    let bytes = commandline.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0usize;
+
+    while i + 2 < bytes.len() {
+        let b0 = bytes[i];
+        let b1 = bytes[i + 1];
+        let b2 = bytes[i + 2];
+
+        if b1 == b':' && (b2 == b'\\' || b2 == b'/') && (b0 as char).is_ascii_alphabetic() {
+            let start = i;
+            i += 3;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if b.is_ascii_whitespace() || matches!(b, b'|' | b'>' | b'<') {
+                    break;
+                }
+                i += 1;
+            }
+            let end = i;
+            if end > start {
+                out.push(commandline[start..end].to_string());
+            }
+            continue;
+        }
+
+        i += 1;
+    }
+
+    out
 }
 
 fn push_path_candidate(out: &mut Vec<String>, raw: &str) {
@@ -364,6 +417,20 @@ mod tests {
         let res = guard
             .check(
                 &GuardAction::ShellCommand("echo hi > ~/.ssh/id_rsa"),
+                &context,
+            )
+            .await;
+        assert!(!res.allowed);
+    }
+
+    #[tokio::test]
+    async fn blocks_windows_forbidden_paths_via_shell() {
+        let guard = ShellCommandGuard::new();
+        let context = GuardContext::new();
+
+        let res = guard
+            .check(
+                &GuardAction::ShellCommand(r"type C:\Windows\System32\config\SAM"),
                 &context,
             )
             .await;
