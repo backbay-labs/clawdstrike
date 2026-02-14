@@ -445,6 +445,8 @@ pub struct AuditQueue {
     http_client: reqwest::Client,
 }
 
+const MAX_AUDIT_QUEUE_LEN: usize = 1000;
+
 impl AuditQueue {
     pub fn new() -> Self {
         Self {
@@ -460,10 +462,23 @@ impl AuditQueue {
     #[allow(dead_code)]
     pub async fn enqueue(&self, event: serde_json::Value) {
         let mut queue = self.queue.lock().await;
-        if queue.len() >= 1000 {
+        if queue.len() >= MAX_AUDIT_QUEUE_LEN {
             queue.pop_front();
         }
         queue.push_back(event);
+    }
+
+    async fn requeue_failed_flush(&self, events: VecDeque<serde_json::Value>) {
+        // Preserve chronological ordering: front=oldest, back=newest.
+        // If over capacity, drop oldest entries to match `enqueue()` semantics.
+        let mut queue = self.queue.lock().await;
+        let new_events = std::mem::take(&mut *queue);
+        let mut restored = events;
+        restored.extend(new_events);
+        while restored.len() > MAX_AUDIT_QUEUE_LEN {
+            restored.pop_front();
+        }
+        *queue = restored;
     }
 
     /// Drain all queued events and upload them to hushd.
@@ -491,27 +506,14 @@ impl AuditQueue {
             Ok(resp) => resp,
             Err(err) => {
                 // Re-queue events so they are not lost.
-                // New events go first (newest), failed batch appended after.
-                // Truncation drops from the tail, shedding oldest failed events.
-                let mut queue = self.queue.lock().await;
-                let new_events = std::mem::take(&mut *queue);
-                let mut restored = new_events;
-                restored.extend(events);
-                restored.truncate(1000);
-                *queue = restored;
+                self.requeue_failed_flush(events).await;
                 return Err(err).with_context(|| "Failed to flush audit queue to daemon");
             }
         };
 
         if !response.status().is_success() {
-            // Re-queue: new events first (newest), failed batch after.
-            // Truncation drops from the tail, shedding oldest failed events.
-            let mut queue = self.queue.lock().await;
-            let new_events = std::mem::take(&mut *queue);
-            let mut restored = new_events;
-            restored.extend(events);
-            restored.truncate(1000);
-            *queue = restored;
+            // Re-queue: preserve chronological ordering (oldest -> newest).
+            self.requeue_failed_flush(events).await;
             anyhow::bail!("Audit batch upload returned {}", response.status());
         }
 
@@ -804,7 +806,92 @@ mod tests {
                 .enqueue(serde_json::json!({"id": i.to_string()}))
                 .await;
         }
-        assert_eq!(queue.len().await, 1000);
+        assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_failure_preserves_order_and_drops_oldest() {
+        use axum::{http::StatusCode, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::TcpListener;
+        use tokio::sync::{oneshot, Notify};
+
+        let queue = Arc::new(AuditQueue::new());
+
+        for i in 0..MAX_AUDIT_QUEUE_LEN {
+            queue.enqueue(serde_json::json!({ "id": i as i64 })).await;
+        }
+        assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+
+        let notify = Arc::new(Notify::new());
+        let notify_for_handler = notify.clone();
+
+        let (started_tx, started_rx) = oneshot::channel::<()>();
+        let started_tx = Arc::new(StdMutex::new(Some(started_tx)));
+        let started_tx_for_handler = started_tx.clone();
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(move || {
+                let notify_for_handler = notify_for_handler.clone();
+                let started_tx_for_handler = started_tx_for_handler.clone();
+                async move {
+                    if let Some(tx) = started_tx_for_handler.lock().unwrap().take() {
+                        let _ = tx.send(());
+                    }
+                    // Hold the response so the caller can enqueue new events mid-flush.
+                    notify_for_handler.notified().await;
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": "fail"})),
+                    )
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let daemon_url = format!("http://{}", addr);
+
+        let queue_for_flush = queue.clone();
+        let daemon_url_for_flush = daemon_url.clone();
+        let flush_task =
+            tokio::spawn(async move { queue_for_flush.flush(&daemon_url_for_flush, None).await });
+
+        // Wait until the server has received the batch request.
+        let _ = started_rx.await;
+
+        // Enqueue new events while flush is in-flight. This will exceed capacity once requeued.
+        for i in MAX_AUDIT_QUEUE_LEN..(MAX_AUDIT_QUEUE_LEN + 5) {
+            queue.enqueue(serde_json::json!({ "id": i as i64 })).await;
+        }
+
+        // Now let the server respond with failure.
+        notify.notify_one();
+
+        let res = flush_task.await.unwrap();
+        assert!(res.is_err());
+
+        let guard = queue.queue.lock().await;
+        assert_eq!(guard.len(), MAX_AUDIT_QUEUE_LEN);
+
+        let ids: Vec<i64> = guard
+            .iter()
+            .map(|v| v.get("id").and_then(|x| x.as_i64()).unwrap())
+            .collect();
+
+        // Oldest should be dropped first to enforce the cap (enqueue() pops front/oldest).
+        assert_eq!(ids.first().copied(), Some(5));
+        // Newest should be preserved.
+        assert_eq!(ids.last().copied(), Some((MAX_AUDIT_QUEUE_LEN + 4) as i64));
+
+        // Queue must preserve chronological order (strictly increasing IDs).
+        for w in ids.windows(2) {
+            assert!(w[0] < w[1]);
+        }
     }
 
     #[tokio::test]

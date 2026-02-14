@@ -270,6 +270,15 @@ async fn run_agent<R: Runtime>(
             (guard.daemon_url(), guard.api_key.clone())
         };
 
+        // Start heartbeat loop once. It no-ops until a session is established, and it reads the
+        // current session ID from shared state each tick (so daemon reconnect replacements do not
+        // require restarting the loop).
+        session_manager.start_heartbeat(
+            daemon_url.clone(),
+            api_key.clone(),
+            shutdown_tx.subscribe(),
+        );
+
         // Create session with hushd.
         match session_manager
             .create_session(&daemon_url, api_key.as_deref())
@@ -277,12 +286,6 @@ async fn run_agent<R: Runtime>(
         {
             Ok(session_id) => {
                 tracing::info!(session_id = %session_id, "Session established with hushd");
-                // Start session heartbeat loop.
-                session_manager.start_heartbeat(
-                    daemon_url.clone(),
-                    api_key.clone(),
-                    shutdown_tx.subscribe(),
-                );
                 // Update tray with session info.
                 let session_state = session_manager.state().await;
                 tray_manager
