@@ -161,8 +161,25 @@ class PostureConfig:
                 after=t_data.get("after"),
             ))
 
+        initial = str(data.get("initial", ""))
+        if initial and states and initial not in states:
+            raise ValueError(
+                f"Posture initial state {initial!r} not found in states: {sorted(states.keys())}"
+            )
+
+        for t in transitions:
+            if states:
+                if t.from_state and t.from_state not in states:
+                    raise ValueError(
+                        f"Posture transition references unknown from_state {t.from_state!r}"
+                    )
+                if t.to_state and t.to_state not in states:
+                    raise ValueError(
+                        f"Posture transition references unknown to_state {t.to_state!r}"
+                    )
+
         return cls(
-            initial=str(data.get("initial", "")),
+            initial=initial,
             states=states,
             transitions=transitions,
         )
@@ -311,6 +328,7 @@ class Policy:
     guards: GuardConfigs = field(default_factory=GuardConfigs)
     settings: PolicySettings = field(default_factory=PolicySettings)
     posture: Optional[PostureConfig] = None
+    _raw_settings: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_yaml(cls, yaml_str: str) -> Policy:
@@ -351,6 +369,7 @@ class Policy:
             guards=GuardConfigs.from_dict(guards_data) if guards_data else GuardConfigs(),
             settings=PolicySettings(**settings_data) if settings_data else PolicySettings(),
             posture=posture,
+            _raw_settings=dict(settings_data) if settings_data else {},
         )
 
     @classmethod
@@ -416,7 +435,18 @@ class Policy:
         return child
 
     def merge(self, child: Policy) -> Policy:
-        """Merge this (base) policy with a child policy."""
+        """Merge this (base) policy with a child policy.
+
+        Child settings explicitly declared in YAML override base settings.
+        Settings not declared in the child inherit from the base.
+        """
+        merged_settings_data: Dict[str, Any] = {
+            "fail_fast": self.settings.fail_fast,
+            "verbose_logging": self.settings.verbose_logging,
+            "session_timeout_secs": self.settings.session_timeout_secs,
+        }
+        merged_settings_data.update(child._raw_settings)
+
         return Policy(
             version=child.version if child.version != self.version else self.version,
             name=child.name if child.name else self.name,
@@ -424,12 +454,9 @@ class Policy:
             extends=None,
             merge_strategy="deep_merge",
             guards=self._merge_guards(child.guards),
-            settings=PolicySettings(
-                fail_fast=child.settings.fail_fast if child.settings.fail_fast != PolicySettings().fail_fast else self.settings.fail_fast,
-                verbose_logging=child.settings.verbose_logging if child.settings.verbose_logging != PolicySettings().verbose_logging else self.settings.verbose_logging,
-                session_timeout_secs=child.settings.session_timeout_secs if child.settings.session_timeout_secs != PolicySettings().session_timeout_secs else self.settings.session_timeout_secs,
-            ),
+            settings=PolicySettings(**merged_settings_data),
             posture=child.posture if child.posture else self.posture,
+            _raw_settings=merged_settings_data,
         )
 
     def _merge_guards(self, child: GuardConfigs) -> GuardConfigs:

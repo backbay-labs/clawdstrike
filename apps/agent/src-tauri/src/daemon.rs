@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -430,14 +431,14 @@ impl PolicyCache {
 /// Stores events that were generated while hushd was unreachable so they
 /// can be uploaded when connectivity is restored.
 pub struct AuditQueue {
-    queue: Mutex<Vec<serde_json::Value>>,
+    queue: Mutex<VecDeque<serde_json::Value>>,
     http_client: reqwest::Client,
 }
 
 impl AuditQueue {
     pub fn new() -> Self {
         Self {
-            queue: Mutex::new(Vec::new()),
+            queue: Mutex::new(VecDeque::new()),
             http_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
@@ -449,19 +450,15 @@ impl AuditQueue {
     #[allow(dead_code)]
     pub async fn enqueue(&self, event: serde_json::Value) {
         let mut queue = self.queue.lock().await;
-        // Cap at 1000 queued events to bound memory.
-        if queue.len() < 1000 {
-            queue.push(event);
-        } else {
-            tracing::warn!("Audit queue is full (1000 events); dropping oldest event");
-            queue.remove(0);
-            queue.push(event);
+        if queue.len() >= 1000 {
+            queue.pop_front();
         }
+        queue.push_back(event);
     }
 
     /// Drain all queued events and upload them to hushd.
     pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<usize> {
-        let events: Vec<serde_json::Value> = {
+        let events: VecDeque<serde_json::Value> = {
             let mut queue = self.queue.lock().await;
             std::mem::take(&mut *queue)
         };
@@ -471,9 +468,10 @@ impl AuditQueue {
         }
 
         let count = events.len();
+        let events_vec: Vec<_> = events.iter().collect();
         let url = format!("{}/api/v1/audit/batch", daemon_url);
         let mut request = self.http_client.post(&url).json(&serde_json::json!({
-            "events": events,
+            "events": events_vec,
         }));
         if let Some(key) = api_key {
             request = request.header("Authorization", format!("Bearer {}", key));
@@ -485,10 +483,11 @@ impl AuditQueue {
             .with_context(|| "Failed to flush audit queue to daemon")?;
 
         if !response.status().is_success() {
-            // Re-queue on failure.
+            // Re-queue failed events behind any new events that arrived since the drain.
             let mut queue = self.queue.lock().await;
+            let new_events = std::mem::take(&mut *queue);
             let mut restored = events;
-            restored.append(&mut std::mem::take(&mut *queue));
+            restored.extend(new_events);
             restored.truncate(1000);
             *queue = restored;
             anyhow::bail!("Audit batch upload returned {}", response.status());
@@ -691,20 +690,20 @@ async fn health_check_with_client(
 
 async fn check_process_exit(child_slot: &Arc<RwLock<Option<Child>>>) -> Option<String> {
     let mut guard = child_slot.write().await;
-    if let Some(ref mut proc) = *guard {
-        match proc.try_wait() {
-            Ok(Some(status)) => {
-                *guard = None;
-                Some(format!("process exited with status {}", status))
-            }
-            Ok(None) => None,
-            Err(err) => {
-                *guard = None;
-                Some(format!("failed to check process status: {}", err))
-            }
+    let Some(ref mut proc) = *guard else {
+        // Child was already taken (e.g., by stop()); not a crash.
+        return None;
+    };
+    match proc.try_wait() {
+        Ok(Some(status)) => {
+            *guard = None;
+            Some(format!("process exited with status {}", status))
         }
-    } else {
-        Some("process handle missing".to_string())
+        Ok(None) => None,
+        Err(err) => {
+            *guard = None;
+            Some(format!("failed to check process status: {}", err))
+        }
     }
 }
 

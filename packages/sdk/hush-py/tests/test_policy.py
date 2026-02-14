@@ -270,6 +270,45 @@ class TestPolicyEngine:
         assert len(blocked) >= 1
 
 
+    def test_merge_child_explicit_false_overrides_base_true(self) -> None:
+        base_yaml = """
+version: "1.1.0"
+name: base
+settings:
+  fail_fast: true
+"""
+        child_yaml = """
+version: "1.1.0"
+name: child
+extends: base_policy
+settings:
+  fail_fast: false
+"""
+        base = Policy.from_yaml(base_yaml)
+        child = Policy.from_yaml(child_yaml)
+        merged = base.merge(child)
+        assert merged.settings.fail_fast is False
+
+    def test_merge_child_inherits_unspecified_settings(self) -> None:
+        base_yaml = """
+version: "1.1.0"
+name: base
+settings:
+  fail_fast: true
+  verbose_logging: true
+"""
+        child_yaml = """
+version: "1.1.0"
+name: child
+extends: base_policy
+"""
+        base = Policy.from_yaml(base_yaml)
+        child = Policy.from_yaml(child_yaml)
+        merged = base.merge(child)
+        assert merged.settings.fail_fast is True
+        assert merged.settings.verbose_logging is True
+
+
 class TestPostureConfig:
     def test_posture_from_dict(self) -> None:
         data = {
@@ -295,3 +334,26 @@ class TestPostureConfig:
         assert posture.states["standard"].budgets["file_writes"] == 50
         assert len(posture.transitions) == 1
         assert posture.transitions[0].on == "user_approval"
+
+    def test_posture_rejects_invalid_initial_state(self) -> None:
+        data = {
+            "initial": "nonexistent",
+            "states": {
+                "work": {"capabilities": ["file_access"]},
+            },
+        }
+        with pytest.raises(ValueError, match="initial state.*not found"):
+            PostureConfig.from_dict(data)
+
+    def test_posture_rejects_invalid_transition_state(self) -> None:
+        data = {
+            "initial": "work",
+            "states": {
+                "work": {"capabilities": ["file_access"]},
+            },
+            "transitions": [
+                {"from": "work", "to": "nonexistent", "on": "escalate"},
+            ],
+        }
+        with pytest.raises(ValueError, match="unknown to_state"):
+            PostureConfig.from_dict(data)

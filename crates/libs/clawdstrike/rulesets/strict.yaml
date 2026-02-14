@@ -27,6 +27,20 @@ guards:
       - "/etc/shadow"
       - "/etc/passwd"
       - "/etc/sudoers"
+      # Windows credential stores
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      # Windows registry hives
+      - "**/NTUSER.DAT"
+      - "**/NTUSER.DAT.*"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
+      # Windows certificate stores
+      - "**/AppData/Roaming/Microsoft/SystemCertificates/**"
+      # Registry export files
+      - "**/*.reg"
       # Additional strict paths
       - "**/.vault/**"
       - "**/.secrets/**"

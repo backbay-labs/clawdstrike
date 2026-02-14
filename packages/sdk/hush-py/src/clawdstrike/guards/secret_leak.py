@@ -31,7 +31,12 @@ DEFAULT_SECRET_PATTERNS: List[SecretPattern] = [
     ),
     SecretPattern(
         name="openai_key",
-        pattern=r"sk-[A-Za-z0-9]{48}",
+        pattern=r"\bsk-proj-[A-Za-z0-9_-]{40,}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="generic_api_key",
+        pattern=r"\b(?:sk_live|sk_test)_[A-Za-z0-9]{24,}",
         severity="critical",
     ),
     SecretPattern(
@@ -74,9 +79,11 @@ class SecretLeakGuard(Guard):
         for sp in self._config.patterns:
             try:
                 compiled = re.compile(sp.pattern)
-                self._compiled_patterns.append((sp, compiled))
-            except re.error:
-                pass  # Fail closed: skip invalid patterns
+            except re.error as e:
+                raise ValueError(
+                    f"Invalid regex in secret pattern {sp.name!r}: {e}"
+                ) from e
+            self._compiled_patterns.append((sp, compiled))
         # Legacy literal secrets support
         self._secrets = [s for s in self._config.secrets if s and s.strip()]
 

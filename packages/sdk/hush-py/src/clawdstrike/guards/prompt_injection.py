@@ -29,12 +29,12 @@ _SIGNALS: List[tuple[str, str, int]] = [
     ("ignore_previous_instructions", r"(?i)ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)", 40),
     ("reveal_system_prompt", r"(?i)(reveal|show|display|output|print|repeat)\s+(the\s+)?(system\s+)?(prompt|instructions|rules)", 35),
     ("new_instructions", r"(?i)(new|updated|override|replacement)\s+(system\s+)?(instructions|prompt|rules)", 30),
-    ("you_are_now", r"(?i)you\s+are\s+now\s+(a|an|the|my)", 25),
+    ("you_are_now", r"(?i)you\s+are\s+now\s+(a|an|the|my)\s+(unrestricted|unfiltered|uncensored|jailbroken?|evil|new|different)\s", 25),
     ("do_anything_now", r"(?i)(DAN|do\s+anything\s+now)", 30),
     ("jailbreak_prefix", r"(?i)(ignore\s+safety|bypass\s+restrictions|disable\s+filter)", 35),
     ("role_play_override", r"(?i)pretend\s+(you\s+are|to\s+be|you're)\s+", 20),
     ("encoding_evasion", r"(?i)(base64|rot13|hex|unicode)\s*(encode|decode|convert)", 15),
-    ("delimiter_injection", r"(?i)(```|<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\])", 25),
+    ("delimiter_injection", r"(?i)(<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\]|<\|system\|>|<\|user\|>|<\|assistant\|>)", 25),
     ("exfiltration_request", r"(?i)(send|transmit|exfiltrate|post)\s+(to|data|secrets|keys)\s+(http|url|endpoint|server)", 40),
 ]
 

@@ -41,14 +41,14 @@ describe('DecisionCache', () => {
   });
 
   it('should expire entries after TTL', () => {
+    vi.useFakeTimers();
     const cache = new DecisionCache(10, 50); // 50ms TTL
     cache.set('key1', { status: 'allow' });
 
     // Should be present immediately
     expect(cache.get('key1')).toBeDefined();
 
-    // Wait for expiry
-    vi.useFakeTimers();
+    // Advance past TTL
     vi.advanceTimersByTime(100);
     expect(cache.get('key1')).toBeUndefined();
     vi.useRealTimers();

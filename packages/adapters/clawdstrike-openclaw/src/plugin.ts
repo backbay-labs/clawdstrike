@@ -5,7 +5,7 @@
  */
 
 import { PolicyEngine } from "./policy/engine.js";
-import type { ClawdstrikeConfig } from "./types.js";
+import type { ClawdstrikeConfig, CommandBuilder, HookHandler, PolicyEvent } from "./types.js";
 import toolPreflightHandler, { initialize as initPreflight } from "./hooks/tool-preflight/handler.js";
 import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
 import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agent-bootstrap/handler.js";
@@ -13,25 +13,41 @@ import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agen
 // Re-export existing utilities for external use
 export * from "./index.js";
 
+/** Minimal OpenClaw plugin API surface used by this plugin. */
+interface OpenClawPluginAPI {
+  logger?: { info?(...args: unknown[]): void; warn?(...args: unknown[]): void; error?(...args: unknown[]): void };
+  config?: { plugins?: { entries?: Record<string, { config?: Record<string, unknown> }> } };
+  registerTool(tool: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+    execute: (id: string, params: Record<string, unknown>) => Promise<unknown>;
+  }): void;
+  registerCli(callback: (ctx: { program: { command(name: string): CommandBuilder } }) => void, opts?: { commands?: string[] }): void;
+  registerHook?(event: string, handler: HookHandler): void;
+  on?(event: string, handler: HookHandler): void;
+}
+
 /**
  * Plugin registration function (function format per OpenClaw docs)
  */
-export default function clawdstrikePlugin(api: any) {
+export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   const logger = api.logger ?? console;
 
   // Load config from plugin settings
   const getConfig = (): ClawdstrikeConfig => {
     const pluginConfig = api.config?.plugins?.entries?.["clawdstrike-security"]?.config ?? {};
+    const policy = typeof pluginConfig.policy === 'string' ? pluginConfig.policy : undefined;
+    const mode = typeof pluginConfig.mode === 'string' ? pluginConfig.mode : 'deterministic';
+    const logLevel = typeof pluginConfig.logLevel === 'string' ? pluginConfig.logLevel : 'info';
+    const guards = pluginConfig.guards && typeof pluginConfig.guards === 'object'
+      ? pluginConfig.guards as ClawdstrikeConfig['guards']
+      : { forbidden_path: true, egress: true, secret_leak: true, patch_integrity: true };
     return {
-      policy: pluginConfig.policy,
-      mode: pluginConfig.mode ?? "deterministic",
-      logLevel: pluginConfig.logLevel ?? "info",
-      guards: pluginConfig.guards ?? {
-        forbidden_path: true,
-        egress: true,
-        secret_leak: true,
-        patch_integrity: true,
-      },
+      policy,
+      mode: mode as ClawdstrikeConfig['mode'],
+      logLevel: logLevel as ClawdstrikeConfig['logLevel'],
+      guards,
     };
   };
 
@@ -56,16 +72,16 @@ export default function clawdstrikePlugin(api: any) {
       },
       required: ["action", "resource"],
     },
-    async execute(_id: string, params: { action: string; resource: string }) {
+    async execute(_id: string, params: Record<string, unknown>) {
       try {
         const config = getConfig();
         const engine = new PolicyEngine(config);
 
-        const action = (params.action as PolicyCheckAction) ?? "tool_call";
-        const resource = params.resource ?? "";
+        const action = (typeof params.action === 'string' ? params.action : 'tool_call') as PolicyCheckAction;
+        const resource = typeof params.resource === 'string' ? params.resource : '';
 
         const event = buildEvent(action, resource);
-        const decision = await engine.evaluate(event as any);
+        const decision = await engine.evaluate(event);
 
         const result = {
           status: decision.status,
@@ -99,7 +115,7 @@ export default function clawdstrikePlugin(api: any) {
 
   // Register CLI commands
   api.registerCli(
-    ({ program }: { program: any }) => {
+    ({ program }) => {
       const clawdstrike = program
         .command("clawdstrike")
         .description("Clawdstrike security management");
@@ -123,11 +139,13 @@ export default function clawdstrikePlugin(api: any) {
       clawdstrike
         .command("check <action> <resource>")
         .description("Check if an action is allowed")
-        .action(async (action: string, resource: string) => {
+        .action(async (...args: unknown[]) => {
+          const action = typeof args[0] === 'string' ? args[0] : '';
+          const resource = typeof args[1] === 'string' ? args[1] : '';
           const config = getConfig();
           const engine = new PolicyEngine(config);
           const event = buildEvent(action as PolicyCheckAction, resource);
-          const decision = await engine.evaluate(event as any);
+          const decision = await engine.evaluate(event);
           console.log(formatDecision(decision));
           if (decision.status === 'deny') {
             console.log(`Suggestion: ${getSuggestion(action, resource)}`);
@@ -168,22 +186,6 @@ type PolicyCheckAction =
   | "command_exec"
   | "tool_call";
 
-type EventType =
-  | "file_read"
-  | "file_write"
-  | "command_exec"
-  | "network_egress"
-  | "tool_call"
-  | "patch_apply"
-  | "secret_access";
-
-interface LocalPolicyEvent {
-  eventId: string;
-  eventType: EventType;
-  timestamp: string;
-  data: Record<string, unknown>;
-}
-
 interface PluginDecision {
   status: 'allow' | 'warn' | 'deny';
   guard?: string;
@@ -191,7 +193,7 @@ interface PluginDecision {
   message?: string;
 }
 
-function buildEvent(action: PolicyCheckAction, resource: string): LocalPolicyEvent {
+function buildEvent(action: PolicyCheckAction, resource: string): PolicyEvent {
   const now = new Date();
   const eventId = `policy-check-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
   const timestamp = now.toISOString();

@@ -6,7 +6,7 @@ import { createPolicyEngineFromPolicy, type Policy as CanonicalPolicy } from '@c
 
 import { mergeConfig } from '../config.js';
 import { EgressGuard, ForbiddenPathGuard, PatchIntegrityGuard, SecretLeakGuard } from '../guards/index.js';
-import type { Decision, EvaluationMode, ClawdstrikeConfig, Policy, PolicyEvent } from '../types.js';
+import type { Decision, EvaluationMode, ClawdstrikeConfig, Policy, PolicyEvent, Severity } from '../types.js';
 import { sanitizeOutputText } from '../sanitizer/output-sanitizer.js';
 
 import { loadPolicy } from './loader.js';
@@ -256,7 +256,7 @@ export class PolicyEngine {
     return decision;
   }
 
-  private guardResultToDecision(result: { status: 'allow' | 'deny' | 'warn'; reason?: string; severity?: any; guard: string }): Decision {
+  private guardResultToDecision(result: { status: 'allow' | 'deny' | 'warn'; reason?: string; severity?: Severity; guard: string }): Decision {
     if (result.status === 'allow') return { status: 'allow' };
     if (result.status === 'warn') {
       return { status: 'warn', reason: result.reason, guard: result.guard, message: result.reason };
@@ -266,17 +266,20 @@ export class PolicyEngine {
 }
 
 function buildThreatIntelEngine(policy: Policy): CanonicalPolicyEngineLike | null {
-  const custom = (policy.guards as any)?.custom;
+  const custom = policy.guards?.custom;
   if (!Array.isArray(custom) || custom.length === 0) {
     return null;
   }
 
+  // The openclaw Policy types `custom` as `unknown`; the canonical Policy
+  // expects `CustomGuardSpec[]`. We've validated it's an array above.
+  // GuardConfigs has an index signature so `unknown[]` is assignable.
   const canonicalPolicy: CanonicalPolicy = {
     version: '1.1.0',
     guards: { custom },
   };
 
-  return createPolicyEngineFromPolicy(canonicalPolicy as any);
+  return createPolicyEngineFromPolicy(canonicalPolicy);
 }
 
 function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {

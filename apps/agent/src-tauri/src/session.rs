@@ -218,7 +218,8 @@ impl SessionManager {
             .await
             .with_context(|| "Session heartbeat failed")?;
 
-        if response.status().is_success() {
+        let status_code = response.status();
+        if status_code.is_success() {
             if let Ok(status) = response.json::<SessionStatusResponse>().await {
                 let mut state = self.state.write().await;
                 if let Some(posture) = status.posture {
@@ -231,11 +232,13 @@ impl SessionManager {
                     state.budget_limit = budget_limit;
                 }
             }
-        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+        } else if status_code == reqwest::StatusCode::NOT_FOUND {
             // Session expired server-side; clear local state.
             tracing::warn!(session_id = %session_id, "Session expired server-side");
             let mut state = self.state.write().await;
             *state = SessionState::default();
+        } else {
+            anyhow::bail!("Session heartbeat returned {}", status_code);
         }
 
         Ok(())

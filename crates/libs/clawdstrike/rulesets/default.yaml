@@ -33,10 +33,19 @@ guards:
       - "**/pass/**"
       # 1Password
       - "**/.1password/**"
-      # System paths
+      # System paths (Unix)
       - "/etc/shadow"
       - "/etc/passwd"
       - "/etc/sudoers"
+      # Windows credential stores
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      # Windows registry hives
+      - "**/NTUSER.DAT"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
     exceptions: []
 
   egress_allowlist:

@@ -52,7 +52,8 @@ pub fn truncate_to_char_boundary(text: &str, max_bytes: usize) -> (&str, bool) {
 pub fn compile_hardcoded_regex(pattern: &'static str) -> Regex {
     Regex::new(pattern).unwrap_or_else(|err| {
         tracing::error!(error = %err, %pattern, "failed to compile hardcoded regex");
-        Regex::new("a^").unwrap_or_else(|_| Regex::new("a^").unwrap_or_else(|_| unreachable!()))
+        // "a^" is always valid; it matches nothing (anchor after literal).
+        Regex::new("a^").unwrap_or_else(|_| unreachable!())
     })
 }
 

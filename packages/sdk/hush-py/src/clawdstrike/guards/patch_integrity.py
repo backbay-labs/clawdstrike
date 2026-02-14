@@ -29,9 +29,11 @@ class PatchIntegrityGuard(Guard):
         for pattern_str in self._config.forbidden_patterns:
             try:
                 compiled = re.compile(pattern_str)
-                self._compiled_forbidden.append((pattern_str, compiled))
-            except re.error:
-                pass  # Skip invalid patterns
+            except re.error as e:
+                raise ValueError(
+                    f"Invalid regex in forbidden_patterns: {pattern_str!r}: {e}"
+                ) from e
+            self._compiled_forbidden.append((pattern_str, compiled))
 
     @property
     def name(self) -> str:

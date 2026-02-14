@@ -353,7 +353,7 @@ fn detectors() -> &'static Detectors {
             r"(?i)(\\[/?SYSTEM\\]|</?system>|<\\|im_start\\|>|<\\|im_end\\|>)",
         ),
         tool_commandy: text_utils::compile_hardcoded_regex(
-            r"(?is)\\b(run|execute|invoke|call)\\b.{0,32}\\b(tool|command|bash|shell)\\b",
+            r"(?is)\b(run|execute|invoke|call)\b.{0,32}\b(tool|command|bash|shell)\b",
         ),
     })
 }

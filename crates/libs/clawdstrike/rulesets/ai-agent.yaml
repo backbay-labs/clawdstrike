@@ -22,6 +22,15 @@ guards:
       - "**/.npmrc"
       - "/etc/shadow"
       - "/etc/passwd"
+      # Windows credential stores
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      # Windows registry hives
+      - "**/NTUSER.DAT"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
     exceptions:
       # Allow reading .env.example for documentation
       - "**/.env.example"

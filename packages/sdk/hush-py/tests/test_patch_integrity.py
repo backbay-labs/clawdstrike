@@ -118,3 +118,20 @@ class TestPatchIntegrityGuard:
         assert result.details is not None
         assert result.details.get("additions") == 1
         assert result.details.get("deletions") == 1
+
+    def test_invalid_forbidden_pattern_raises(self) -> None:
+        config = PatchIntegrityConfig(forbidden_patterns=[r"[invalid"])
+        with pytest.raises(ValueError, match="Invalid regex in forbidden_patterns"):
+            PatchIntegrityGuard(config)
+
+    def test_forbidden_pattern_blocks(self) -> None:
+        config = PatchIntegrityConfig(
+            forbidden_patterns=[r"(?i)eval\s*\("],
+        )
+        guard = PatchIntegrityGuard(config)
+        context = GuardContext()
+
+        diff = "+result = eval(user_input)"
+        result = guard.check(GuardAction.patch("/file.py", diff), context)
+        assert result.allowed is False
+        assert "forbidden pattern" in result.message

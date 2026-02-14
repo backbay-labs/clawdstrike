@@ -11,11 +11,6 @@ import type {
   ClawdstrikeConfig,
   Decision,
   PolicyEvent,
-  ToolEventData,
-  FileEventData,
-  CommandEventData,
-  NetworkEventData,
-  PatchEventData,
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
 
@@ -337,7 +332,7 @@ function createEventData(
         contentBase64,
         contentHash,
         operation: eventType === 'file_read' ? 'read' : 'write',
-      } as FileEventData;
+      };
     }
 
     case 'network_egress': {
@@ -347,7 +342,7 @@ function createEventData(
         host,
         port,
         url,
-      } as NetworkEventData;
+      };
     }
 
     case 'command_exec': {
@@ -357,7 +352,7 @@ function createEventData(
         command,
         args,
         workingDir,
-      } as CommandEventData;
+      };
     }
 
     case 'patch_apply': {
@@ -366,7 +361,7 @@ function createEventData(
         type: 'patch',
         filePath,
         patchContent,
-      } as PatchEventData;
+      };
     }
 
     case 'tool_call':
@@ -376,7 +371,7 @@ function createEventData(
         toolName,
         parameters: params,
         result: typeof result === 'string' ? result : JSON.stringify(result ?? ''),
-      } as ToolEventData;
+      };
     }
   }
 }
@@ -389,16 +384,16 @@ function extractPath(params: Record<string, unknown>): string | undefined {
   const pathKeys = ['path', 'file', 'file_path', 'filepath', 'filename', 'target'];
 
   for (const key of pathKeys) {
-    if (typeof params[key] === 'string') {
-      return params[key] as string;
+    const value = params[key];
+    if (typeof value === 'string') {
+      return value;
     }
   }
 
   // Check for path in command string
   if (typeof params.command === 'string') {
-    const command = params.command as string;
     // Try to extract path from commands like "cat /path/to/file"
-    const match = command.match(/(?:cat|head|tail|less|more|vim|nano|read)\s+([^\s|><]+)/);
+    const match = params.command.match(/(?:cat|head|tail|less|more|vim|nano|read)\s+([^\s|><]+)/);
     if (match) {
       return match[1];
     }
@@ -445,10 +440,10 @@ function extractNetworkInfo(
   params: Record<string, unknown>,
 ): { host: string; port: number; url?: string } {
   // Try to get URL first
-  const url =
-    (params.url as string) ??
-    (params.endpoint as string) ??
-    (params.href as string);
+  const url = typeof params.url === 'string' ? params.url
+    : typeof params.endpoint === 'string' ? params.endpoint
+    : typeof params.href === 'string' ? params.href
+    : undefined;
 
   if (url) {
     try {
@@ -465,8 +460,7 @@ function extractNetworkInfo(
 
   // Try to extract from command
   if (typeof params.command === 'string') {
-    const command = params.command as string;
-    const urlMatch = command.match(/https?:\/\/[^\s'"]+/);
+    const urlMatch = params.command.match(/https?:\/\/[^\s'"]+/);
     if (urlMatch) {
       try {
         const parsed = new URL(urlMatch[0]);
@@ -482,11 +476,11 @@ function extractNetworkInfo(
   }
 
   // Fallback
-  return {
-    host: (params.host as string) ?? (params.hostname as string) ?? 'unknown',
-    port: (params.port as number) ?? 80,
-    url,
-  };
+  const host = typeof params.host === 'string' ? params.host
+    : typeof params.hostname === 'string' ? params.hostname
+    : 'unknown';
+  const port = typeof params.port === 'number' ? params.port : 80;
+  return { host, port, url };
 }
 
 function extractCommandInfo(

@@ -151,15 +151,19 @@ function buildPolicyEvent(
 function extractPath(params: Record<string, unknown>): string | undefined {
   const pathKeys = ['path', 'file', 'file_path', 'filepath', 'filename', 'target'];
   for (const key of pathKeys) {
-    if (typeof params[key] === 'string') {
-      return params[key] as string;
+    const value = params[key];
+    if (typeof value === 'string') {
+      return value;
     }
   }
   return undefined;
 }
 
 function extractNetworkInfo(params: Record<string, unknown>): { host: string; port: number; url?: string } {
-  const url = (params.url as string) ?? (params.endpoint as string) ?? (params.href as string);
+  const url = typeof params.url === 'string' ? params.url
+    : typeof params.endpoint === 'string' ? params.endpoint
+    : typeof params.href === 'string' ? params.href
+    : undefined;
   if (url) {
     try {
       const parsed = new URL(url);
@@ -172,11 +176,9 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
       // Not a valid URL
     }
   }
-  return {
-    host: (params.host as string) ?? 'unknown',
-    port: (params.port as number) ?? 80,
-    url,
-  };
+  const host = typeof params.host === 'string' ? params.host : 'unknown';
+  const port = typeof params.port === 'number' ? params.port : 80;
+  return { host, port, url };
 }
 
 /**

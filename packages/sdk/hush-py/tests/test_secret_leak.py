@@ -172,3 +172,63 @@ class TestSecretLeakGuard:
         action = GuardAction.custom("tool_result", {"result": "secret123 leaked"})
         result = guard.check(action, context)
         assert result.allowed is False
+
+    def test_invalid_regex_raises_on_init(self) -> None:
+        config = SecretLeakConfig(patterns=[
+            SecretPattern(name="bad", pattern=r"[invalid"),
+        ])
+        with pytest.raises(ValueError, match="Invalid regex in secret pattern 'bad'"):
+            SecretLeakGuard(config)
+
+    def test_openai_key_pattern_no_false_positive_on_short_sk(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        action = GuardAction.custom("output", {
+            "content": "Use sk-something for the key name",
+        })
+        result = guard.check(action, context)
+        assert result.allowed is True
+
+    def test_openai_key_pattern_detects_proj_key(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        key = "sk-proj-" + "A" * 48
+        action = GuardAction.custom("output", {
+            "content": f"Key: {key}",
+        })
+        result = guard.check(action, context)
+        assert result.allowed is False
+        assert result.details["pattern_name"] == "openai_key"
+
+    def test_stripe_key_detected(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        action = GuardAction.custom("output", {
+            "content": "sk_live_" + "X" * 24,
+        })
+        result = guard.check(action, context)
+        assert result.allowed is False
+        assert result.details["pattern_name"] == "generic_api_key"
+
+    def test_no_false_positive_on_uuid(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        action = GuardAction.custom("output", {
+            "content": "ID: 550e8400-e29b-41d4-a716-446655440000",
+        })
+        result = guard.check(action, context)
+        assert result.allowed is True
+
+    def test_no_false_positive_on_base64_blob(self) -> None:
+        guard = SecretLeakGuard()
+        context = GuardContext()
+
+        action = GuardAction.custom("output", {
+            "content": "data: SGVsbG8gV29ybGQ=",
+        })
+        result = guard.check(action, context)
+        assert result.allowed is True

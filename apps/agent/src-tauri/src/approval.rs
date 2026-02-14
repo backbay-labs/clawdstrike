@@ -16,6 +16,9 @@ use uuid::Uuid;
 /// Default TTL for approval requests.
 const DEFAULT_TTL_SECS: u64 = 60;
 
+/// Maximum number of entries (pending + resolved) in the approval queue.
+const MAX_QUEUE_SIZE: usize = 500;
+
 /// How the user resolved the approval request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -142,7 +145,6 @@ impl ApprovalQueue {
 
     /// Submit a new approval request. Returns the created request.
     pub async fn submit(&self, input: ApprovalRequestInput) -> ApprovalRequest {
-        // Reject critical severity actions -- they are not approvable.
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let ttl_secs = input.ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
@@ -165,6 +167,20 @@ impl ApprovalQueue {
 
         {
             let mut requests = self.requests.lock().await;
+            // Evict resolved/expired entries if at capacity.
+            if requests.len() >= MAX_QUEUE_SIZE {
+                let to_evict: Vec<String> = requests
+                    .iter()
+                    .filter(|(_, r)| r.status != ApprovalStatus::Pending)
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for evict_id in to_evict {
+                    requests.remove(&evict_id);
+                    if requests.len() < MAX_QUEUE_SIZE {
+                        break;
+                    }
+                }
+            }
             requests.insert(id, request.clone());
         }
 
