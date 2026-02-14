@@ -33,6 +33,13 @@ export {
   verifySignature,
   type Keypair,
 } from "./crypto/sign";
+export {
+  getBackend,
+  setBackend,
+  initWasm,
+  isWasmBackend,
+  type CryptoBackend,
+} from "./crypto/backend";
 
 // Canonical JSON
 export { canonicalize, canonicalHash } from "./canonical";

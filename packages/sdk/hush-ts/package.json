@@ -26,7 +26,8 @@
     "lint": "npm run typecheck",
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "bench": "node benchmarks/guards.bench.mjs",
-    "bench:json": "OUTPUT_JSON=1 node benchmarks/guards.bench.mjs"
+    "bench:json": "OUTPUT_JSON=1 node benchmarks/guards.bench.mjs",
+    "test:wasm": "WASM_AVAILABLE=1 vitest run"
   },
   "keywords": [
     "clawdstrike",
@@ -49,6 +50,14 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "peerDependencies": {
+    "@clawdstrike/wasm": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@clawdstrike/wasm": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@clawdstrike/adapter-core": "^0.1.1",

@@ -63,6 +63,88 @@ fn test_verify_ed25519_invalid_pubkey() {
 }
 
 // ============================================================================
+// Hash Bytes Variants
+// ============================================================================
+
+#[wasm_bindgen_test]
+fn test_hash_sha256_bytes() {
+    let bytes = hash_sha256_bytes(b"hello");
+    assert_eq!(bytes.len(), 32);
+    // Should match the hex variant
+    let hex = hash_sha256(b"hello");
+    let bytes_hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    assert_eq!(bytes_hex, hex);
+}
+
+#[wasm_bindgen_test]
+fn test_hash_sha256_bytes_empty() {
+    let bytes = hash_sha256_bytes(b"");
+    assert_eq!(bytes.len(), 32);
+}
+
+#[wasm_bindgen_test]
+fn test_hash_keccak256_bytes() {
+    let bytes = hash_keccak256_bytes(b"hello");
+    assert_eq!(bytes.len(), 32);
+    // hex variant returns 0x prefix
+    let hex = hash_keccak256(b"hello");
+    let bytes_hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    assert_eq!(format!("0x{}", bytes_hex), hex);
+}
+
+// ============================================================================
+// Key Generation & Signing Tests
+// ============================================================================
+
+#[wasm_bindgen_test]
+fn test_sign_and_verify_roundtrip() {
+    // Generate a keypair using hush-core directly (generate_keypair returns JsValue)
+    let keypair = hush_core::Keypair::generate();
+    let seed_hex = keypair.to_hex();
+    let pk_hex = keypair.public_key().to_hex();
+
+    let message = b"wasm sign+verify roundtrip test";
+    let sig_hex = sign_ed25519(&seed_hex, message).unwrap();
+    assert_eq!(sig_hex.len(), 128); // 64 bytes = 128 hex chars
+
+    let valid = verify_ed25519(&pk_hex, message, &sig_hex).unwrap();
+    assert!(valid);
+}
+
+#[wasm_bindgen_test]
+fn test_sign_ed25519_wrong_message_fails_verify() {
+    let keypair = hush_core::Keypair::generate();
+    let seed_hex = keypair.to_hex();
+    let pk_hex = keypair.public_key().to_hex();
+
+    let sig_hex = sign_ed25519(&seed_hex, b"original").unwrap();
+    let valid = verify_ed25519(&pk_hex, b"tampered", &sig_hex).unwrap();
+    assert!(!valid);
+}
+
+#[wasm_bindgen_test]
+fn test_sign_ed25519_invalid_key() {
+    let result = sign_ed25519("bad_hex", b"message");
+    assert!(result.is_err());
+}
+
+#[wasm_bindgen_test]
+fn test_public_key_from_private() {
+    let keypair = hush_core::Keypair::generate();
+    let seed_hex = keypair.to_hex();
+    let expected_pk = keypair.public_key().to_hex();
+
+    let derived_pk = public_key_from_private(&seed_hex).unwrap();
+    assert_eq!(derived_pk, expected_pk);
+}
+
+#[wasm_bindgen_test]
+fn test_public_key_from_private_invalid() {
+    let result = public_key_from_private("not_valid");
+    assert!(result.is_err());
+}
+
+// ============================================================================
 // Receipt Verification Tests
 // ============================================================================
 

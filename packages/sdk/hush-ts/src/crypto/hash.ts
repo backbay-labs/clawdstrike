@@ -1,5 +1,4 @@
-import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
-import { keccak_256 } from "@noble/hashes/sha3.js";
+import { getBackend } from "./backend";
 
 /**
  * Compute SHA-256 hash.
@@ -8,7 +7,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
  */
 export function sha256(data: string | Uint8Array): Uint8Array {
   const input = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return nobleSha256(input);
+  return getBackend().sha256(input);
 }
 
 /**
@@ -18,7 +17,7 @@ export function sha256(data: string | Uint8Array): Uint8Array {
  */
 export function keccak256(data: string | Uint8Array): Uint8Array {
   const input = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return keccak_256(input);
+  return getBackend().keccak256(input);
 }
 
 /**

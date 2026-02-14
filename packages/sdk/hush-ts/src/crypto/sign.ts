@@ -1,4 +1,4 @@
-import * as ed25519 from "@noble/ed25519";
+import { getBackend } from "./backend";
 
 export interface Keypair {
   privateKey: Uint8Array;
@@ -10,9 +10,7 @@ export interface Keypair {
  * @returns Promise resolving to { privateKey, publicKey } (both 32 bytes)
  */
 export async function generateKeypair(): Promise<Keypair> {
-  const privateKey = globalThis.crypto.getRandomValues(new Uint8Array(32));
-  const publicKey = await ed25519.getPublicKeyAsync(privateKey);
-  return { privateKey, publicKey };
+  return getBackend().generateKeypair();
 }
 
 /**
@@ -25,7 +23,7 @@ export async function signMessage(
   message: Uint8Array,
   privateKey: Uint8Array
 ): Promise<Uint8Array> {
-  return ed25519.signAsync(message, privateKey);
+  return getBackend().signMessage(message, privateKey);
 }
 
 /**
@@ -40,9 +38,5 @@ export async function verifySignature(
   signature: Uint8Array,
   publicKey: Uint8Array
 ): Promise<boolean> {
-  try {
-    return await ed25519.verifyAsync(signature, message, publicKey);
-  } catch {
-    return false;
-  }
+  return getBackend().verifySignature(message, signature, publicKey);
 }

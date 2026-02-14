@@ -5,8 +5,8 @@
 //! This crate provides browser-side verification of clawdstrike attestations.
 
 use hush_core::{
-    keccak256, receipt::PublicKeySet, sha256, Hash, MerkleProof, MerkleTree, PublicKey, Receipt,
-    Signature, SignedReceipt,
+    keccak256, receipt::PublicKeySet, sha256, Hash, Keypair, MerkleProof, MerkleTree, PublicKey,
+    Receipt, Signature, SignedReceipt,
 };
 use wasm_bindgen::prelude::*;
 
@@ -56,6 +56,78 @@ pub fn hash_sha256_prefixed(data: &[u8]) -> String {
 #[wasm_bindgen]
 pub fn hash_keccak256(data: &[u8]) -> String {
     keccak256(data).to_hex_prefixed()
+}
+
+/// Compute SHA-256 hash of data, returning raw bytes.
+///
+/// # Arguments
+/// * `data` - The bytes to hash
+///
+/// # Returns
+/// 32-byte hash as `Uint8Array`
+#[wasm_bindgen]
+pub fn hash_sha256_bytes(data: &[u8]) -> Vec<u8> {
+    sha256(data).as_bytes().to_vec()
+}
+
+/// Compute Keccak-256 hash of data, returning raw bytes.
+///
+/// # Arguments
+/// * `data` - The bytes to hash
+///
+/// # Returns
+/// 32-byte hash as `Uint8Array`
+#[wasm_bindgen]
+pub fn hash_keccak256_bytes(data: &[u8]) -> Vec<u8> {
+    keccak256(data).as_bytes().to_vec()
+}
+
+// ============================================================================
+// Key Generation & Signing
+// ============================================================================
+
+/// Generate a new Ed25519 keypair.
+///
+/// # Returns
+/// JavaScript object `{ privateKey: string, publicKey: string }` with hex-encoded keys (no 0x prefix).
+/// Private key is 32 bytes (64 hex chars), public key is 32 bytes (64 hex chars).
+#[wasm_bindgen]
+pub fn generate_keypair() -> Result<JsValue, JsError> {
+    let keypair = Keypair::generate();
+    let result = serde_json::json!({
+        "privateKey": keypair.to_hex(),
+        "publicKey": keypair.public_key().to_hex(),
+    });
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| JsError::new(&format!("Serialization failed: {}", e)))
+}
+
+/// Sign a message with an Ed25519 private key.
+///
+/// # Arguments
+/// * `private_key_hex` - Hex-encoded private key (32 bytes, with or without 0x prefix)
+/// * `message` - The message bytes to sign
+///
+/// # Returns
+/// Hex-encoded signature (64 bytes = 128 hex chars, no 0x prefix)
+#[wasm_bindgen]
+pub fn sign_ed25519(private_key_hex: &str, message: &[u8]) -> Result<String, JsError> {
+    let keypair = Keypair::from_hex(private_key_hex).map_err(|e| JsError::new(&e.to_string()))?;
+    let signature = keypair.sign(message);
+    Ok(signature.to_hex())
+}
+
+/// Derive an Ed25519 public key from a private key.
+///
+/// # Arguments
+/// * `private_key_hex` - Hex-encoded private key (32 bytes, with or without 0x prefix)
+///
+/// # Returns
+/// Hex-encoded public key (32 bytes = 64 hex chars, no 0x prefix)
+#[wasm_bindgen]
+pub fn public_key_from_private(private_key_hex: &str) -> Result<String, JsError> {
+    let keypair = Keypair::from_hex(private_key_hex).map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(keypair.public_key().to_hex())
 }
 
 // ============================================================================
@@ -296,6 +368,76 @@ mod tests {
             result,
             "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
         );
+    }
+
+    #[test]
+    fn sha256_bytes_matches_hex() {
+        let hex_result = hash_sha256(b"hello");
+        let bytes_result = hash_sha256_bytes(b"hello");
+        assert_eq!(bytes_result.len(), 32);
+        // Convert bytes to hex and compare
+        let bytes_hex: String = bytes_result.iter().map(|b| format!("{:02x}", b)).collect();
+        assert_eq!(bytes_hex, hex_result);
+    }
+
+    #[test]
+    fn keccak256_bytes_matches_hex() {
+        let hex_result = hash_keccak256(b"hello");
+        let bytes_result = hash_keccak256_bytes(b"hello");
+        assert_eq!(bytes_result.len(), 32);
+        // hex_result has 0x prefix, strip it for comparison
+        let bytes_hex: String = bytes_result.iter().map(|b| format!("{:02x}", b)).collect();
+        assert_eq!(format!("0x{}", bytes_hex), hex_result);
+    }
+
+    #[test]
+    fn generate_keypair_returns_valid_keys() {
+        // We can't call the wasm_bindgen version directly in unit tests (returns JsValue),
+        // so test the underlying hush-core Keypair::generate instead
+        let keypair = Keypair::generate();
+        let pk_hex = keypair.public_key().to_hex();
+        let seed_hex = keypair.to_hex();
+        assert_eq!(pk_hex.len(), 64);
+        assert_eq!(seed_hex.len(), 64);
+    }
+
+    #[test]
+    fn sign_ed25519_roundtrip() {
+        let keypair = Keypair::generate();
+        let seed_hex = keypair.to_hex();
+        let message = b"test message for signing";
+
+        let sig_hex = sign_ed25519(&seed_hex, message).unwrap();
+        assert_eq!(sig_hex.len(), 128); // 64 bytes = 128 hex chars
+
+        // Verify with existing verify function
+        let pk_hex = keypair.public_key().to_hex();
+        let valid = verify_ed25519(&pk_hex, message, &sig_hex).unwrap();
+        assert!(valid);
+    }
+
+    #[test]
+    fn sign_ed25519_invalid_key() {
+        // Keypair::from_hex rejects invalid hex (JsError can't be created on non-wasm)
+        let result = Keypair::from_hex("not_a_valid_hex_key");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn public_key_from_private_matches() {
+        let keypair = Keypair::generate();
+        let seed_hex = keypair.to_hex();
+        let expected_pk = keypair.public_key().to_hex();
+
+        let derived_pk = public_key_from_private(&seed_hex).unwrap();
+        assert_eq!(derived_pk, expected_pk);
+    }
+
+    #[test]
+    fn public_key_from_private_invalid_key() {
+        // Keypair::from_hex rejects invalid hex (JsError can't be created on non-wasm)
+        let result = Keypair::from_hex("invalid");
+        assert!(result.is_err());
     }
 
     #[test]

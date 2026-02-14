@@ -45,6 +45,55 @@ export function hash_sha256_prefixed(data: Uint8Array): string;
 export function hash_keccak256(data: Uint8Array): string;
 
 /**
+ * Compute SHA-256 hash of data, returning raw bytes
+ * @param data - Bytes to hash
+ * @returns 32-byte hash as Uint8Array
+ */
+export function hash_sha256_bytes(data: Uint8Array): Uint8Array;
+
+/**
+ * Compute Keccak-256 hash of data, returning raw bytes
+ * @param data - Bytes to hash
+ * @returns 32-byte hash as Uint8Array
+ */
+export function hash_keccak256_bytes(data: Uint8Array): Uint8Array;
+
+/** Keypair result from generate_keypair */
+export interface GeneratedKeypair {
+  /** Hex-encoded private key (64 hex chars, no 0x prefix) */
+  privateKey: string;
+  /** Hex-encoded public key (64 hex chars, no 0x prefix) */
+  publicKey: string;
+}
+
+/**
+ * Generate a new Ed25519 keypair
+ * @returns Object with hex-encoded privateKey and publicKey
+ * @throws Error if random generation fails
+ */
+export function generate_keypair(): GeneratedKeypair;
+
+/**
+ * Sign a message with an Ed25519 private key
+ * @param privateKeyHex - Hex-encoded private key (32 bytes)
+ * @param message - Message bytes to sign
+ * @returns Hex-encoded signature (128 hex chars, no 0x prefix)
+ * @throws Error if private key is malformed
+ */
+export function sign_ed25519(
+  privateKeyHex: string,
+  message: Uint8Array
+): string;
+
+/**
+ * Derive an Ed25519 public key from a private key
+ * @param privateKeyHex - Hex-encoded private key (32 bytes)
+ * @returns Hex-encoded public key (64 hex chars, no 0x prefix)
+ * @throws Error if private key is malformed
+ */
+export function public_key_from_private(privateKeyHex: string): string;
+
+/**
  * Verify an Ed25519 signature
  * @param publicKeyHex - Hex-encoded public key (32 bytes)
  * @param message - Message bytes that were signed

@@ -13,6 +13,7 @@ export default defineConfig({
   treeshake: true,
   minify: false,
   noExternal: ["@clawdstrike/adapter-core"],
+  external: ["@clawdstrike/wasm"],
   define: {
     __SDK_VERSION__: JSON.stringify(pkg.version),
   },
