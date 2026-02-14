@@ -8,15 +8,21 @@ import {
 } from "../../src/crypto/backend";
 import { createNobleBackend } from "../../src/crypto/noble-backend";
 
-// Reset backend to noble after each test to avoid leaking state
+const initialBackend = getBackend();
+
+// Reset backend after each test to avoid leaking state.
 afterEach(() => {
-  setBackend(createNobleBackend());
+  setBackend(initialBackend);
 });
 
 describe("getBackend", () => {
   it("returns noble by default", () => {
-    const backend = getBackend();
-    expect(backend.name).toBe("noble");
+    // In `test:wasm` mode we initialize WASM in a global setup file.
+    if (process.env.WASM_AVAILABLE === "1") {
+      expect(getBackend().name).toBe("wasm");
+    } else {
+      expect(getBackend().name).toBe("noble");
+    }
   });
 });
 
@@ -42,6 +48,7 @@ describe("setBackend", () => {
 
 describe("isWasmBackend", () => {
   it("returns false when noble is active", () => {
+    setBackend(createNobleBackend());
     expect(isWasmBackend()).toBe(false);
   });
 
@@ -64,7 +71,7 @@ describe("isWasmBackend", () => {
   });
 });
 
-describe("noble backend crypto operations", () => {
+describe("crypto operations", () => {
   it("sha256 produces 32-byte output", () => {
     const data = new TextEncoder().encode("hello");
     const hash = getBackend().sha256(data);

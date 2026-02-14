@@ -23,6 +23,23 @@ export interface CryptoBackend {
 
 let currentBackend: CryptoBackend = createNobleBackend();
 
+function isCompatibleWasmModule(wasm: unknown): boolean {
+  // Keep this in sync with `packages/sdk/hush-ts/src/crypto/wasm-backend.ts`.
+  const required = [
+    "hash_sha256_bytes",
+    "hash_keccak256_bytes",
+    "generate_keypair",
+    "sign_ed25519",
+    "verify_ed25519",
+    "public_key_from_private",
+  ] as const;
+
+  for (const key of required) {
+    if (typeof (wasm as any)?.[key] !== "function") return false;
+  }
+  return true;
+}
+
 /**
  * Get the current crypto backend.
  */
@@ -58,6 +75,10 @@ export async function initWasm(): Promise<boolean> {
     // the WASM module before any other exports are usable.
     if (typeof wasm.default === "function") {
       await wasm.default();
+    }
+    if (!isCompatibleWasmModule(wasm)) {
+      // The package is installed but too old / incompatible.
+      return false;
     }
     currentBackend = createWasmBackend(wasm);
     return true;
