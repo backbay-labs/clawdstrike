@@ -7,6 +7,11 @@ import (
 
 // Sha256 computes the SHA-256 hash of data, returning 32 bytes.
 func Sha256(data []byte) ([32]byte, error) {
+	// Ensure any follow-up hush_last_error() call happens on the same OS thread
+	// as the failing FFI call (native errors are thread-local).
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	var out [32]byte
 	rc := ffiSha256(cBytesPtr(data), len(data), unsafe.Pointer(&out[0]))
 	if rc != 0 {
@@ -17,6 +22,9 @@ func Sha256(data []byte) ([32]byte, error) {
 
 // Sha256Hex computes the SHA-256 hash of data and returns the hex string.
 func Sha256Hex(data []byte) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	p := ffiSha256Hex(cBytesPtr(data), len(data))
 	if p == nil {
 		return "", lastError()
@@ -26,6 +34,9 @@ func Sha256Hex(data []byte) (string, error) {
 
 // Keccak256 computes the Keccak-256 hash of data, returning 32 bytes.
 func Keccak256(data []byte) ([32]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	var out [32]byte
 	rc := ffiKeccak256(cBytesPtr(data), len(data), unsafe.Pointer(&out[0]))
 	if rc != 0 {
@@ -36,6 +47,9 @@ func Keccak256(data []byte) ([32]byte, error) {
 
 // Keccak256Hex computes the Keccak-256 hash of data and returns the hex string.
 func Keccak256Hex(data []byte) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	p := ffiKeccak256Hex(cBytesPtr(data), len(data))
 	if p == nil {
 		return "", lastError()
@@ -45,6 +59,9 @@ func Keccak256Hex(data []byte) (string, error) {
 
 // CanonicalizeJSON canonicalizes a JSON string per RFC 8785 (JCS).
 func CanonicalizeJSON(json string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	cj := allocCString(json)
 	defer freeCString(cj)
 	p := ffiCanonicalizeJSON(cj)
@@ -69,6 +86,9 @@ func newKeypair(ptr unsafe.Pointer) *Keypair {
 
 // GenerateKeypair creates a new random Ed25519 keypair.
 func GenerateKeypair() (*Keypair, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ptr := ffiKeypairGenerate()
 	if err := checkPtr(ptr); err != nil {
 		return nil, err
@@ -78,6 +98,9 @@ func GenerateKeypair() (*Keypair, error) {
 
 // KeypairFromSeed creates a keypair from a 32-byte seed.
 func KeypairFromSeed(seed [32]byte) (*Keypair, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ptr := ffiKeypairFromSeed(unsafe.Pointer(&seed[0]))
 	if err := checkPtr(ptr); err != nil {
 		return nil, err
@@ -87,6 +110,9 @@ func KeypairFromSeed(seed [32]byte) (*Keypair, error) {
 
 // KeypairFromHex creates a keypair from a hex-encoded seed string.
 func KeypairFromHex(hex string) (*Keypair, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ch := allocCString(hex)
 	defer freeCString(ch)
 	ptr := ffiKeypairFromHex(ch)
@@ -98,6 +124,9 @@ func KeypairFromHex(hex string) (*Keypair, error) {
 
 // PublicKeyHex returns the public key as a hex-encoded string.
 func (kp *Keypair) PublicKeyHex() (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	p := ffiKeypairPublicKeyHex(kp.ptr)
 	runtime.KeepAlive(kp)
 	if p == nil {
@@ -108,6 +137,9 @@ func (kp *Keypair) PublicKeyHex() (string, error) {
 
 // PublicKeyBytes returns the 32-byte public key.
 func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	var out [32]byte
 	rc := ffiKeypairPublicKeyBytes(kp.ptr, unsafe.Pointer(&out[0]))
 	runtime.KeepAlive(kp)
@@ -119,6 +151,9 @@ func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
 
 // SignHex signs a message and returns the hex-encoded signature.
 func (kp *Keypair) SignHex(msg []byte) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	p := ffiKeypairSignHex(kp.ptr, cBytesPtr(msg), len(msg))
 	runtime.KeepAlive(kp)
 	if p == nil {
@@ -129,6 +164,9 @@ func (kp *Keypair) SignHex(msg []byte) (string, error) {
 
 // Sign signs a message and returns the 64-byte signature.
 func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	var out [64]byte
 	rc := ffiKeypairSign(kp.ptr, cBytesPtr(msg), len(msg), unsafe.Pointer(&out[0]))
 	runtime.KeepAlive(kp)
@@ -140,6 +178,9 @@ func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
 
 // ToHex exports the keypair seed as a hex-encoded string.
 func (kp *Keypair) ToHex() (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	p := ffiKeypairToHex(kp.ptr)
 	runtime.KeepAlive(kp)
 	if p == nil {
@@ -161,6 +202,9 @@ func (kp *Keypair) Close() {
 // VerifyEd25519 verifies an Ed25519 signature using hex-encoded inputs.
 // Returns true if the signature is valid.
 func VerifyEd25519(pubkeyHex string, msg []byte, sigHex string) (bool, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	cpk := allocCString(pubkeyHex)
 	defer freeCString(cpk)
 	csig := allocCString(sigHex)
@@ -179,6 +223,9 @@ func VerifyEd25519(pubkeyHex string, msg []byte, sigHex string) (bool, error) {
 // VerifyEd25519Bytes verifies an Ed25519 signature using raw byte inputs.
 // Returns true if the signature is valid.
 func VerifyEd25519Bytes(pubkey [32]byte, msg []byte, sig [64]byte) (bool, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	rc := ffiVerifyEd25519Bytes(
 		unsafe.Pointer(&pubkey[0]),
 		cBytesPtr(msg),

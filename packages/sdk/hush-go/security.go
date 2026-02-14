@@ -1,9 +1,14 @@
 package hush
 
+import "runtime"
+
 // DetectJailbreak analyzes text for jailbreak attempts.
 // sessionID and configJSON are optional (pass nil to use defaults).
 // Returns the detection result as a JSON string.
 func DetectJailbreak(text string, sessionID, configJSON *string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ct := allocCString(text)
 	defer freeCString(ct)
 	cs := allocCStringOpt(sessionID)
@@ -22,6 +27,9 @@ func DetectJailbreak(text string, sessionID, configJSON *string) (string, error)
 // configJSON is optional (pass nil for defaults).
 // Returns the sanitized text as a JSON string.
 func SanitizeOutput(text string, configJSON *string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ct := allocCString(text)
 	defer freeCString(ct)
 	cc := allocCStringOpt(configJSON)

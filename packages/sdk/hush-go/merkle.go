@@ -1,10 +1,16 @@
 package hush
 
-import "errors"
+import (
+	"errors"
+	"runtime"
+)
 
 // MerkleRoot computes the Merkle root from a JSON array of hex-encoded leaf hashes.
 // Returns the root hash as a hex string.
 func MerkleRoot(leafHashesJSON string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	cl := allocCString(leafHashesJSON)
 	defer freeCString(cl)
 
@@ -22,6 +28,9 @@ func MerkleProof(leafHashesJSON string, index int) (string, error) {
 		return "", errors.New("hush: index must be non-negative")
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	cl := allocCString(leafHashesJSON)
 	defer freeCString(cl)
 
@@ -35,6 +44,9 @@ func MerkleProof(leafHashesJSON string, index int) (string, error) {
 // VerifyMerkleProof verifies a Merkle inclusion proof.
 // Returns true if the proof is valid.
 func VerifyMerkleProof(leafHex, proofJSON, rootHex string) (bool, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	clh := allocCString(leafHex)
 	defer freeCString(clh)
 	cpj := allocCString(proofJSON)

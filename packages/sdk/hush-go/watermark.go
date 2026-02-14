@@ -1,7 +1,12 @@
 package hush
 
+import "runtime"
+
 // WatermarkPublicKey returns the public key hex for a watermark configuration.
 func WatermarkPublicKey(configJSON string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	cc := allocCString(configJSON)
 	defer freeCString(cc)
 
@@ -15,6 +20,9 @@ func WatermarkPublicKey(configJSON string) (string, error) {
 // WatermarkPrompt watermarks a prompt with the given configuration.
 // appID and sessionID are optional (pass nil for "unknown").
 func WatermarkPrompt(prompt, configJSON string, appID, sessionID *string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	cp := allocCString(prompt)
 	defer freeCString(cp)
 	cc := allocCString(configJSON)
@@ -34,6 +42,9 @@ func WatermarkPrompt(prompt, configJSON string, appID, sessionID *string) (strin
 // ExtractWatermark extracts and verifies a watermark from text.
 // Returns the watermark data as a JSON string.
 func ExtractWatermark(text, configJSON string) (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ct := allocCString(text)
 	defer freeCString(ct)
 	cc := allocCString(configJSON)
