@@ -297,10 +297,17 @@ impl SecretLeakConfig {
             }
         }
 
-        // Apply both base and child remove_patterns.
+        // Apply remove_patterns. Child's additional_patterns represent explicit intent
+        // to add coverage, so base remove_patterns must not suppress them.
+        let child_added: std::collections::HashSet<&str> = child
+            .additional_patterns
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         patterns.retain(|p| {
-            !self.remove_patterns.contains(&p.name)
-                && !child.remove_patterns.contains(&p.name)
+            let dominated_by_base_remove =
+                self.remove_patterns.contains(&p.name) && !child_added.contains(p.name.as_str());
+            !dominated_by_base_remove && !child.remove_patterns.contains(&p.name)
         });
 
         // Merge skip_paths additively
