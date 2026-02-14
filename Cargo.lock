@@ -3297,7 +3297,6 @@ dependencies = [
  "futures",
  "hex",
  "hush-core",
- "libc",
  "serde_json",
 ]
 

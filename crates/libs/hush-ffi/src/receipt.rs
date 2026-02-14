@@ -27,37 +27,43 @@ pub unsafe extern "C" fn hush_verify_receipt(
     signer_hex: *const c_char,
     cosigner_hex: *const c_char,
 ) -> *mut c_char {
-    if receipt_json.is_null() || signer_hex.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if receipt_json.is_null() || signer_hex.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
 
-    let receipt_str = ffi_try!(
-        unsafe { CStr::from_ptr(receipt_json) }.to_str(),
-        std::ptr::null_mut()
-    );
-    let signer_str = ffi_try!(
-        unsafe { CStr::from_ptr(signer_hex) }.to_str(),
-        std::ptr::null_mut()
-    );
+            let receipt_str = ffi_try!(
+                unsafe { CStr::from_ptr(receipt_json) }.to_str(),
+                std::ptr::null_mut()
+            );
+            let signer_str = ffi_try!(
+                unsafe { CStr::from_ptr(signer_hex) }.to_str(),
+                std::ptr::null_mut()
+            );
 
-    let signed: SignedReceipt = ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
-    let signer_pk = ffi_try!(PublicKey::from_hex(signer_str), std::ptr::null_mut());
+            let signed: SignedReceipt =
+                ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
+            let signer_pk = ffi_try!(PublicKey::from_hex(signer_str), std::ptr::null_mut());
 
-    let keys = if !cosigner_hex.is_null() {
-        let cosigner_str = ffi_try!(
-            unsafe { CStr::from_ptr(cosigner_hex) }.to_str(),
-            std::ptr::null_mut()
-        );
-        let cosigner_pk = ffi_try!(PublicKey::from_hex(cosigner_str), std::ptr::null_mut());
-        PublicKeySet::new(signer_pk).with_cosigner(cosigner_pk)
-    } else {
-        PublicKeySet::new(signer_pk)
-    };
+            let keys = if !cosigner_hex.is_null() {
+                let cosigner_str = ffi_try!(
+                    unsafe { CStr::from_ptr(cosigner_hex) }.to_str(),
+                    std::ptr::null_mut()
+                );
+                let cosigner_pk = ffi_try!(PublicKey::from_hex(cosigner_str), std::ptr::null_mut());
+                PublicKeySet::new(signer_pk).with_cosigner(cosigner_pk)
+            } else {
+                PublicKeySet::new(signer_pk)
+            };
 
-    let result = signed.verify(&keys);
-    let json = ffi_try!(serde_json::to_string(&result), std::ptr::null_mut());
-    crate::string_to_c(json)
+            let result = signed.verify(&keys);
+            let json = ffi_try!(serde_json::to_string(&result), std::ptr::null_mut());
+            crate::string_to_c(json)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Sign an unsigned receipt with a keypair.
@@ -75,24 +81,30 @@ pub unsafe extern "C" fn hush_sign_receipt(
     receipt_json: *const c_char,
     kp: *const HushKeypair,
 ) -> *mut c_char {
-    if receipt_json.is_null() || kp.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if receipt_json.is_null() || kp.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
 
-    let receipt_str = ffi_try!(
-        unsafe { CStr::from_ptr(receipt_json) }.to_str(),
-        std::ptr::null_mut()
-    );
-    let receipt: Receipt = ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
-    let kp = unsafe { &*kp };
+            let receipt_str = ffi_try!(
+                unsafe { CStr::from_ptr(receipt_json) }.to_str(),
+                std::ptr::null_mut()
+            );
+            let receipt: Receipt =
+                ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
+            let kp = unsafe { &*kp };
 
-    let signed = ffi_try!(
-        SignedReceipt::sign(receipt, &kp.inner),
-        std::ptr::null_mut()
-    );
-    let json = ffi_try!(serde_json::to_string(&signed), std::ptr::null_mut());
-    crate::string_to_c(json)
+            let signed = ffi_try!(
+                SignedReceipt::sign(receipt, &kp.inner),
+                std::ptr::null_mut()
+            );
+            let json = ffi_try!(serde_json::to_string(&signed), std::ptr::null_mut());
+            crate::string_to_c(json)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Hash a receipt using the specified algorithm.
@@ -111,35 +123,41 @@ pub unsafe extern "C" fn hush_hash_receipt(
     receipt_json: *const c_char,
     algorithm: *const c_char,
 ) -> *mut c_char {
-    if receipt_json.is_null() || algorithm.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if receipt_json.is_null() || algorithm.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
 
-    let receipt_str = ffi_try!(
-        unsafe { CStr::from_ptr(receipt_json) }.to_str(),
-        std::ptr::null_mut()
-    );
-    let algo_str = ffi_try!(
-        unsafe { CStr::from_ptr(algorithm) }.to_str(),
-        std::ptr::null_mut()
-    );
+            let receipt_str = ffi_try!(
+                unsafe { CStr::from_ptr(receipt_json) }.to_str(),
+                std::ptr::null_mut()
+            );
+            let algo_str = ffi_try!(
+                unsafe { CStr::from_ptr(algorithm) }.to_str(),
+                std::ptr::null_mut()
+            );
 
-    let receipt: Receipt = ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
+            let receipt: Receipt =
+                ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
 
-    let hash = match algo_str {
-        "sha256" => ffi_try!(receipt.hash_sha256(), std::ptr::null_mut()),
-        "keccak256" => ffi_try!(receipt.hash_keccak256(), std::ptr::null_mut()),
-        other => {
-            set_last_error(&format!(
-                "invalid algorithm '{}': use 'sha256' or 'keccak256'",
-                other
-            ));
-            return std::ptr::null_mut();
-        }
-    };
+            let hash = match algo_str {
+                "sha256" => ffi_try!(receipt.hash_sha256(), std::ptr::null_mut()),
+                "keccak256" => ffi_try!(receipt.hash_keccak256(), std::ptr::null_mut()),
+                other => {
+                    set_last_error(&format!(
+                        "invalid algorithm '{}': use 'sha256' or 'keccak256'",
+                        other
+                    ));
+                    return std::ptr::null_mut();
+                }
+            };
 
-    crate::string_to_c(hash.to_hex_prefixed())
+            crate::string_to_c(hash.to_hex_prefixed())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Get the canonical JSON representation of a receipt (the bytes that are signed).
@@ -152,18 +170,24 @@ pub unsafe extern "C" fn hush_hash_receipt(
 /// `receipt_json` must be a valid NUL-terminated C string (JSON-serialized `Receipt`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_receipt_canonical_json(receipt_json: *const c_char) -> *mut c_char {
-    if receipt_json.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if receipt_json.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
 
-    let receipt_str = ffi_try!(
-        unsafe { CStr::from_ptr(receipt_json) }.to_str(),
-        std::ptr::null_mut()
-    );
-    let receipt: Receipt = ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
-    let canonical = ffi_try!(receipt.to_canonical_json(), std::ptr::null_mut());
-    crate::string_to_c(canonical)
+            let receipt_str = ffi_try!(
+                unsafe { CStr::from_ptr(receipt_json) }.to_str(),
+                std::ptr::null_mut()
+            );
+            let receipt: Receipt =
+                ffi_try!(serde_json::from_str(receipt_str), std::ptr::null_mut());
+            let canonical = ffi_try!(receipt.to_canonical_json(), std::ptr::null_mut());
+            crate::string_to_c(canonical)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 #[cfg(test)]

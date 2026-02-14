@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using Hush.Internal;
 
 namespace Hush
 {
@@ -23,12 +24,6 @@ namespace Hush
         /// </summary>
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void hush_free_string(IntPtr ptr);
-
-        /// <summary>
-        /// Free a callee-allocated byte buffer.
-        /// </summary>
-        [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void hush_free_bytes(IntPtr ptr, UIntPtr len);
 
         /// <summary>
         /// Return the library version (static pointer, do NOT free).
@@ -71,22 +66,22 @@ namespace Hush
             [MarshalAs(UnmanagedType.LPUTF8Str)] string hex);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr hush_keypair_public_key_hex(IntPtr kp);
+        internal static extern IntPtr hush_keypair_public_key_hex(SafeKeypairHandle kp);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int hush_keypair_public_key_bytes(
-            IntPtr kp, byte[] out_32);
+            SafeKeypairHandle kp, byte[] out_32);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr hush_keypair_sign_hex(
-            IntPtr kp, byte[] msg, UIntPtr len);
+            SafeKeypairHandle kp, byte[] msg, UIntPtr len);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int hush_keypair_sign(
-            IntPtr kp, byte[] msg, UIntPtr len, byte[] out_64);
+            SafeKeypairHandle kp, byte[] msg, UIntPtr len, byte[] out_64);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr hush_keypair_to_hex(IntPtr kp);
+        internal static extern IntPtr hush_keypair_to_hex(SafeKeypairHandle kp);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void hush_keypair_destroy(IntPtr kp);
@@ -114,7 +109,7 @@ namespace Hush
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr hush_sign_receipt(
             [MarshalAs(UnmanagedType.LPUTF8Str)] string receipt_json,
-            IntPtr kp);
+            SafeKeypairHandle kp);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr hush_hash_receipt(

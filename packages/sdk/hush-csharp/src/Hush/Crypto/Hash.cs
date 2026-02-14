@@ -24,6 +24,7 @@ namespace Hush.Crypto
 
         /// <summary>
         /// Compute the SHA-256 hash and return it as a lowercase hex string.
+        /// The returned value is not <c>0x</c>-prefixed.
         /// </summary>
         public static string Sha256Hex(byte[] data)
         {
@@ -50,6 +51,7 @@ namespace Hush.Crypto
 
         /// <summary>
         /// Compute the Keccak-256 hash and return it as a lowercase hex string.
+        /// The returned value is not <c>0x</c>-prefixed.
         /// </summary>
         public static string Keccak256Hex(byte[] data)
         {

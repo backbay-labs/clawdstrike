@@ -18,9 +18,14 @@ pub struct HushKeypair {
 /// The returned pointer is exclusively owned by the caller.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keypair_generate() -> *mut HushKeypair {
-    Box::into_raw(Box::new(HushKeypair {
-        inner: hush_core::Keypair::generate(),
-    }))
+    crate::error::with_ffi_guard(
+        || {
+            Box::into_raw(Box::new(HushKeypair {
+                inner: hush_core::Keypair::generate(),
+            }))
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Create a keypair from a 32-byte seed.
@@ -33,16 +38,21 @@ pub unsafe extern "C" fn hush_keypair_generate() -> *mut HushKeypair {
 /// `seed_32` must point to at least 32 readable bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keypair_from_seed(seed_32: *const u8) -> *mut HushKeypair {
-    if seed_32.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
-    let slice = unsafe { std::slice::from_raw_parts(seed_32, 32) };
-    let mut seed = [0u8; 32];
-    seed.copy_from_slice(slice);
-    Box::into_raw(Box::new(HushKeypair {
-        inner: hush_core::Keypair::from_seed(&seed),
-    }))
+    crate::error::with_ffi_guard(
+        || {
+            if seed_32.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
+            let slice = unsafe { std::slice::from_raw_parts(seed_32, 32) };
+            let mut seed = [0u8; 32];
+            seed.copy_from_slice(slice);
+            Box::into_raw(Box::new(HushKeypair {
+                inner: hush_core::Keypair::from_seed(&seed),
+            }))
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Create a keypair from a hex-encoded seed.
@@ -55,14 +65,19 @@ pub unsafe extern "C" fn hush_keypair_from_seed(seed_32: *const u8) -> *mut Hush
 /// `hex` must be a valid NUL-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keypair_from_hex(hex: *const c_char) -> *mut HushKeypair {
-    if hex.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
-    let c_str = unsafe { CStr::from_ptr(hex) };
-    let s = ffi_try!(c_str.to_str(), std::ptr::null_mut());
-    let kp = ffi_try!(hush_core::Keypair::from_hex(s), std::ptr::null_mut());
-    Box::into_raw(Box::new(HushKeypair { inner: kp }))
+    crate::error::with_ffi_guard(
+        || {
+            if hex.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
+            let c_str = unsafe { CStr::from_ptr(hex) };
+            let s = ffi_try!(c_str.to_str(), std::ptr::null_mut());
+            let kp = ffi_try!(hush_core::Keypair::from_hex(s), std::ptr::null_mut());
+            Box::into_raw(Box::new(HushKeypair { inner: kp }))
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Get the public key as a hex-encoded string (64 hex chars, no 0x prefix).
@@ -75,12 +90,17 @@ pub unsafe extern "C" fn hush_keypair_from_hex(hex: *const c_char) -> *mut HushK
 /// `kp` must be a valid pointer returned by a `hush_keypair_*` constructor.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keypair_public_key_hex(kp: *const HushKeypair) -> *mut c_char {
-    if kp.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
-    let kp = unsafe { &*kp };
-    crate::string_to_c(kp.inner.public_key().to_hex())
+    crate::error::with_ffi_guard(
+        || {
+            if kp.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
+            let kp = unsafe { &*kp };
+            crate::string_to_c(kp.inner.public_key().to_hex())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Write the 32-byte public key into `out_32`.
@@ -96,17 +116,22 @@ pub unsafe extern "C" fn hush_keypair_public_key_bytes(
     kp: *const HushKeypair,
     out_32: *mut u8,
 ) -> i32 {
-    if kp.is_null() || out_32.is_null() {
-        set_last_error("null pointer");
-        return -1;
-    }
-    let kp = unsafe { &*kp };
-    let pk = kp.inner.public_key();
-    let bytes = pk.as_bytes();
-    unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_32, 32);
-    }
-    0
+    crate::error::with_ffi_guard(
+        || {
+            if kp.is_null() || out_32.is_null() {
+                set_last_error("null pointer");
+                return -1;
+            }
+            let kp = unsafe { &*kp };
+            let pk = kp.inner.public_key();
+            let bytes = pk.as_bytes();
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_32, 32);
+            }
+            0
+        },
+        -1,
+    )
 }
 
 /// Sign a message, returning the signature as a hex-encoded string (128 hex chars).
@@ -124,22 +149,27 @@ pub unsafe extern "C" fn hush_keypair_sign_hex(
     msg: *const u8,
     len: usize,
 ) -> *mut c_char {
-    if kp.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
-    let kp = unsafe { &*kp };
-    let slice = if len == 0 {
-        &[]
-    } else {
-        if msg.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return std::ptr::null_mut();
-        }
-        unsafe { std::slice::from_raw_parts(msg, len) }
-    };
-    let sig = kp.inner.sign(slice);
-    crate::string_to_c(sig.to_hex())
+    crate::error::with_ffi_guard(
+        || {
+            if kp.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
+            let kp = unsafe { &*kp };
+            let slice = if len == 0 {
+                &[]
+            } else {
+                if msg.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return std::ptr::null_mut();
+                }
+                unsafe { std::slice::from_raw_parts(msg, len) }
+            };
+            let sig = kp.inner.sign(slice);
+            crate::string_to_c(sig.to_hex())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Sign a message, writing the 64-byte signature into `out_64`.
@@ -158,26 +188,31 @@ pub unsafe extern "C" fn hush_keypair_sign(
     len: usize,
     out_64: *mut u8,
 ) -> i32 {
-    if kp.is_null() || out_64.is_null() {
-        set_last_error("null pointer");
-        return -1;
-    }
-    let kp = unsafe { &*kp };
-    let slice = if len == 0 {
-        &[]
-    } else {
-        if msg.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return -1;
-        }
-        unsafe { std::slice::from_raw_parts(msg, len) }
-    };
-    let sig = kp.inner.sign(slice);
-    let bytes = sig.to_bytes();
-    unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_64, 64);
-    }
-    0
+    crate::error::with_ffi_guard(
+        || {
+            if kp.is_null() || out_64.is_null() {
+                set_last_error("null pointer");
+                return -1;
+            }
+            let kp = unsafe { &*kp };
+            let slice = if len == 0 {
+                &[]
+            } else {
+                if msg.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return -1;
+                }
+                unsafe { std::slice::from_raw_parts(msg, len) }
+            };
+            let sig = kp.inner.sign(slice);
+            let bytes = sig.to_bytes();
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_64, 64);
+            }
+            0
+        },
+        -1,
+    )
 }
 
 /// Export the keypair seed as a hex-encoded string (64 hex chars).
@@ -190,12 +225,17 @@ pub unsafe extern "C" fn hush_keypair_sign(
 /// `kp` must be a valid `HushKeypair` pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keypair_to_hex(kp: *const HushKeypair) -> *mut c_char {
-    if kp.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
-    let kp = unsafe { &*kp };
-    crate::string_to_c(kp.inner.to_hex())
+    crate::error::with_ffi_guard(
+        || {
+            if kp.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
+            let kp = unsafe { &*kp };
+            crate::string_to_c(kp.inner.to_hex())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Destroy a keypair, freeing its memory.
@@ -208,11 +248,16 @@ pub unsafe extern "C" fn hush_keypair_to_hex(kp: *const HushKeypair) -> *mut c_c
 /// not be used after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keypair_destroy(kp: *mut HushKeypair) {
-    if !kp.is_null() {
-        unsafe {
-            drop(Box::from_raw(kp));
-        }
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if !kp.is_null() {
+                unsafe {
+                    drop(Box::from_raw(kp));
+                }
+            }
+        },
+        (),
+    );
 }
 
 #[cfg(test)]

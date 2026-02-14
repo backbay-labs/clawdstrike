@@ -14,27 +14,32 @@ use crate::error::{ffi_try, set_last_error};
 /// - `out_32` must point to a writable buffer of at least 32 bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_sha256(data: *const u8, len: usize, out_32: *mut u8) -> i32 {
-    if out_32.is_null() {
-        set_last_error("null output pointer");
-        return -1;
-    }
-    let slice = if len == 0 {
-        &[]
-    } else {
-        if data.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return -1;
-        }
-        unsafe { std::slice::from_raw_parts(data, len) }
-    };
-    let hash = hush_core::hashing::sha256(slice);
-    unsafe {
-        std::ptr::copy_nonoverlapping(hash.as_bytes().as_ptr(), out_32, 32);
-    }
-    0
+    crate::error::with_ffi_guard(
+        || {
+            if out_32.is_null() {
+                set_last_error("null output pointer");
+                return -1;
+            }
+            let slice = if len == 0 {
+                &[]
+            } else {
+                if data.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return -1;
+                }
+                unsafe { std::slice::from_raw_parts(data, len) }
+            };
+            let hash = hush_core::hashing::sha256(slice);
+            unsafe {
+                std::ptr::copy_nonoverlapping(hash.as_bytes().as_ptr(), out_32, 32);
+            }
+            0
+        },
+        -1,
+    )
 }
 
-/// Compute SHA-256 hash, returning a hex-encoded string.
+/// Compute SHA-256 hash, returning a lowercase, unprefixed hex string.
 ///
 /// Caller must free the returned string with `hush_free_string`.
 /// Returns `NULL` on error.
@@ -44,17 +49,22 @@ pub unsafe extern "C" fn hush_sha256(data: *const u8, len: usize, out_32: *mut u
 /// `data` must point to at least `len` readable bytes (may be NULL if `len == 0`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_sha256_hex(data: *const u8, len: usize) -> *mut c_char {
-    let slice = if len == 0 {
-        &[]
-    } else {
-        if data.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return std::ptr::null_mut();
-        }
-        unsafe { std::slice::from_raw_parts(data, len) }
-    };
-    let hash = hush_core::hashing::sha256(slice);
-    crate::string_to_c(hash.to_hex())
+    crate::error::with_ffi_guard(
+        || {
+            let slice = if len == 0 {
+                &[]
+            } else {
+                if data.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return std::ptr::null_mut();
+                }
+                unsafe { std::slice::from_raw_parts(data, len) }
+            };
+            let hash = hush_core::hashing::sha256(slice);
+            crate::string_to_c(hash.to_hex())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Compute Keccak-256 hash, writing 32 bytes into `out_32`.
@@ -67,27 +77,32 @@ pub unsafe extern "C" fn hush_sha256_hex(data: *const u8, len: usize) -> *mut c_
 /// - `out_32` must point to a writable buffer of at least 32 bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keccak256(data: *const u8, len: usize, out_32: *mut u8) -> i32 {
-    if out_32.is_null() {
-        set_last_error("null output pointer");
-        return -1;
-    }
-    let slice = if len == 0 {
-        &[]
-    } else {
-        if data.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return -1;
-        }
-        unsafe { std::slice::from_raw_parts(data, len) }
-    };
-    let hash = hush_core::hashing::keccak256(slice);
-    unsafe {
-        std::ptr::copy_nonoverlapping(hash.as_bytes().as_ptr(), out_32, 32);
-    }
-    0
+    crate::error::with_ffi_guard(
+        || {
+            if out_32.is_null() {
+                set_last_error("null output pointer");
+                return -1;
+            }
+            let slice = if len == 0 {
+                &[]
+            } else {
+                if data.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return -1;
+                }
+                unsafe { std::slice::from_raw_parts(data, len) }
+            };
+            let hash = hush_core::hashing::keccak256(slice);
+            unsafe {
+                std::ptr::copy_nonoverlapping(hash.as_bytes().as_ptr(), out_32, 32);
+            }
+            0
+        },
+        -1,
+    )
 }
 
-/// Compute Keccak-256 hash, returning a hex-encoded string.
+/// Compute Keccak-256 hash, returning a lowercase, unprefixed hex string.
 ///
 /// Caller must free the returned string with `hush_free_string`.
 /// Returns `NULL` on error.
@@ -97,17 +112,22 @@ pub unsafe extern "C" fn hush_keccak256(data: *const u8, len: usize, out_32: *mu
 /// `data` must point to at least `len` readable bytes (may be NULL if `len == 0`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_keccak256_hex(data: *const u8, len: usize) -> *mut c_char {
-    let slice = if len == 0 {
-        &[]
-    } else {
-        if data.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return std::ptr::null_mut();
-        }
-        unsafe { std::slice::from_raw_parts(data, len) }
-    };
-    let hash = hush_core::hashing::keccak256(slice);
-    crate::string_to_c(hash.to_hex())
+    crate::error::with_ffi_guard(
+        || {
+            let slice = if len == 0 {
+                &[]
+            } else {
+                if data.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return std::ptr::null_mut();
+                }
+                unsafe { std::slice::from_raw_parts(data, len) }
+            };
+            let hash = hush_core::hashing::keccak256(slice);
+            crate::string_to_c(hash.to_hex())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Canonicalize a JSON string according to RFC 8785.
@@ -120,15 +140,20 @@ pub unsafe extern "C" fn hush_keccak256_hex(data: *const u8, len: usize) -> *mut
 /// `json` must be a valid NUL-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_canonicalize_json(json: *const c_char) -> *mut c_char {
-    if json.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
-    let c_str = unsafe { CStr::from_ptr(json) };
-    let s = ffi_try!(c_str.to_str(), std::ptr::null_mut());
-    let value: serde_json::Value = ffi_try!(serde_json::from_str(s), std::ptr::null_mut());
-    let canonical = ffi_try!(hush_core::canonicalize_json(&value), std::ptr::null_mut());
-    crate::string_to_c(canonical)
+    crate::error::with_ffi_guard(
+        || {
+            if json.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
+            let c_str = unsafe { CStr::from_ptr(json) };
+            let s = ffi_try!(c_str.to_str(), std::ptr::null_mut());
+            let value: serde_json::Value = ffi_try!(serde_json::from_str(s), std::ptr::null_mut());
+            let canonical = ffi_try!(hush_core::canonicalize_json(&value), std::ptr::null_mut());
+            crate::string_to_c(canonical)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 #[cfg(test)]

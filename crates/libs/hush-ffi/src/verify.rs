@@ -22,28 +22,33 @@ pub unsafe extern "C" fn hush_verify_ed25519(
     msg_len: usize,
     sig_hex: *const c_char,
 ) -> i32 {
-    if pubkey_hex.is_null() || sig_hex.is_null() {
-        set_last_error("null pointer");
-        return -1;
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if pubkey_hex.is_null() || sig_hex.is_null() {
+                set_last_error("null pointer");
+                return -1;
+            }
 
-    let pk_str = ffi_try!(unsafe { CStr::from_ptr(pubkey_hex) }.to_str(), -1);
-    let sig_str = ffi_try!(unsafe { CStr::from_ptr(sig_hex) }.to_str(), -1);
+            let pk_str = ffi_try!(unsafe { CStr::from_ptr(pubkey_hex) }.to_str(), -1);
+            let sig_str = ffi_try!(unsafe { CStr::from_ptr(sig_hex) }.to_str(), -1);
 
-    let pk = ffi_try!(PublicKey::from_hex(pk_str), -1);
-    let sig = ffi_try!(Signature::from_hex(sig_str), -1);
+            let pk = ffi_try!(PublicKey::from_hex(pk_str), -1);
+            let sig = ffi_try!(Signature::from_hex(sig_str), -1);
 
-    let message = if msg_len == 0 {
-        &[]
-    } else {
-        if msg.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return -1;
-        }
-        unsafe { std::slice::from_raw_parts(msg, msg_len) }
-    };
+            let message = if msg_len == 0 {
+                &[]
+            } else {
+                if msg.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return -1;
+                }
+                unsafe { std::slice::from_raw_parts(msg, msg_len) }
+            };
 
-    i32::from(pk.verify(message, &sig))
+            i32::from(pk.verify(message, &sig))
+        },
+        -1,
+    )
 }
 
 /// Verify an Ed25519 signature using raw byte pointers.
@@ -62,34 +67,39 @@ pub unsafe extern "C" fn hush_verify_ed25519_bytes(
     msg_len: usize,
     sig_64: *const u8,
 ) -> i32 {
-    if pubkey_32.is_null() || sig_64.is_null() {
-        set_last_error("null pointer");
-        return -1;
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if pubkey_32.is_null() || sig_64.is_null() {
+                set_last_error("null pointer");
+                return -1;
+            }
 
-    let pk_slice = unsafe { std::slice::from_raw_parts(pubkey_32, 32) };
-    let sig_slice = unsafe { std::slice::from_raw_parts(sig_64, 64) };
+            let pk_slice = unsafe { std::slice::from_raw_parts(pubkey_32, 32) };
+            let sig_slice = unsafe { std::slice::from_raw_parts(sig_64, 64) };
 
-    let mut pk_bytes = [0u8; 32];
-    pk_bytes.copy_from_slice(pk_slice);
+            let mut pk_bytes = [0u8; 32];
+            pk_bytes.copy_from_slice(pk_slice);
 
-    let mut sig_bytes = [0u8; 64];
-    sig_bytes.copy_from_slice(sig_slice);
+            let mut sig_bytes = [0u8; 64];
+            sig_bytes.copy_from_slice(sig_slice);
 
-    let pk = ffi_try!(PublicKey::from_bytes(&pk_bytes), -1);
-    let sig = Signature::from_bytes(&sig_bytes);
+            let pk = ffi_try!(PublicKey::from_bytes(&pk_bytes), -1);
+            let sig = Signature::from_bytes(&sig_bytes);
 
-    let message = if msg_len == 0 {
-        &[]
-    } else {
-        if msg.is_null() {
-            set_last_error("null data pointer with non-zero length");
-            return -1;
-        }
-        unsafe { std::slice::from_raw_parts(msg, msg_len) }
-    };
+            let message = if msg_len == 0 {
+                &[]
+            } else {
+                if msg.is_null() {
+                    set_last_error("null data pointer with non-zero length");
+                    return -1;
+                }
+                unsafe { std::slice::from_raw_parts(msg, msg_len) }
+            };
 
-    i32::from(pk.verify(message, &sig))
+            i32::from(pk.verify(message, &sig))
+        },
+        -1,
+    )
 }
 
 #[cfg(test)]

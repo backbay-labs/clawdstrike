@@ -8,7 +8,6 @@ package hush
 // Infra
 extern const char* hush_last_error(void);
 extern void hush_free_string(char* ptr);
-extern void hush_free_bytes(uint8_t* ptr, size_t len);
 extern const char* hush_version(void);
 
 // Hashing

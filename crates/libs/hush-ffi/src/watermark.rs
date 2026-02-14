@@ -9,13 +9,16 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use crate::error::{ffi_try, set_last_error};
 use crate::string_to_c;
 
+const MAX_WATERMARKER_CACHE_ENTRIES: usize = 128;
+
 static WATERMARKERS: OnceLock<Mutex<HashMap<String, Arc<clawdstrike::PromptWatermarker>>>> =
     OnceLock::new();
 
 fn watermark_key(config_json: &str) -> Result<String, String> {
-    let v: serde_json::Value =
-        serde_json::from_str(config_json).map_err(|e| format!("invalid JSON: {e}"))?;
-    hush_core::canonicalize_json(&v).map_err(|e| e.to_string())
+    let cfg: clawdstrike::WatermarkConfig =
+        serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {e}"))?;
+    let value = serde_json::to_value(cfg).map_err(|e| format!("Invalid WatermarkConfig: {e}"))?;
+    hush_core::canonicalize_json(&value).map_err(|e| e.to_string())
 }
 
 fn get_or_create_watermarker(
@@ -30,6 +33,11 @@ fn get_or_create_watermarker(
         .lock()
         .map_err(|_| "watermarker lock poisoned".to_string())?;
     if !guard.contains_key(&key) {
+        if guard.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+            if let Some(first_key) = guard.keys().next().cloned() {
+                guard.remove(&first_key);
+            }
+        }
         let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{e:?}"))?;
         guard.insert(key.clone(), Arc::new(wm));
     }
@@ -50,21 +58,26 @@ fn get_or_create_watermarker(
 /// `config_json` must be a valid, NUL-terminated UTF-8 C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_watermark_public_key(config_json: *const c_char) -> *mut c_char {
-    if config_json.is_null() {
-        set_last_error("config_json pointer is null");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if config_json.is_null() {
+                set_last_error("config_json pointer is null");
+                return std::ptr::null_mut();
+            }
 
-    let cfg_str = ffi_try!(
-        unsafe { CStr::from_ptr(config_json) }
-            .to_str()
-            .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
-        std::ptr::null_mut()
-    );
+            let cfg_str = ffi_try!(
+                unsafe { CStr::from_ptr(config_json) }
+                    .to_str()
+                    .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let wm = ffi_try!(get_or_create_watermarker(cfg_str), std::ptr::null_mut());
+            let wm = ffi_try!(get_or_create_watermarker(cfg_str), std::ptr::null_mut());
 
-    string_to_c(wm.public_key())
+            string_to_c(wm.public_key())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Watermark a prompt and return a JSON result.
@@ -86,79 +99,84 @@ pub unsafe extern "C" fn hush_watermark_prompt(
     app_id: *const c_char,
     session_id: *const c_char,
 ) -> *mut c_char {
-    if prompt.is_null() {
-        set_last_error("prompt pointer is null");
-        return std::ptr::null_mut();
-    }
-    if config_json.is_null() {
-        set_last_error("config_json pointer is null");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if prompt.is_null() {
+                set_last_error("prompt pointer is null");
+                return std::ptr::null_mut();
+            }
+            if config_json.is_null() {
+                set_last_error("config_json pointer is null");
+                return std::ptr::null_mut();
+            }
 
-    let prompt_str = ffi_try!(
-        unsafe { CStr::from_ptr(prompt) }
-            .to_str()
-            .map_err(|e| format!("prompt is not valid UTF-8: {e}")),
-        std::ptr::null_mut()
-    );
+            let prompt_str = ffi_try!(
+                unsafe { CStr::from_ptr(prompt) }
+                    .to_str()
+                    .map_err(|e| format!("prompt is not valid UTF-8: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let cfg_str = ffi_try!(
-        unsafe { CStr::from_ptr(config_json) }
-            .to_str()
-            .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
-        std::ptr::null_mut()
-    );
+            let cfg_str = ffi_try!(
+                unsafe { CStr::from_ptr(config_json) }
+                    .to_str()
+                    .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let app_id_str = if app_id.is_null() {
-        "unknown"
-    } else {
-        ffi_try!(
-            unsafe { CStr::from_ptr(app_id) }
-                .to_str()
-                .map_err(|e| format!("app_id is not valid UTF-8: {e}")),
-            std::ptr::null_mut()
-        )
-    };
+            let app_id_str = if app_id.is_null() {
+                "unknown"
+            } else {
+                ffi_try!(
+                    unsafe { CStr::from_ptr(app_id) }
+                        .to_str()
+                        .map_err(|e| format!("app_id is not valid UTF-8: {e}")),
+                    std::ptr::null_mut()
+                )
+            };
 
-    let session_id_str = if session_id.is_null() {
-        "unknown"
-    } else {
-        ffi_try!(
-            unsafe { CStr::from_ptr(session_id) }
-                .to_str()
-                .map_err(|e| format!("session_id is not valid UTF-8: {e}")),
-            std::ptr::null_mut()
-        )
-    };
+            let session_id_str = if session_id.is_null() {
+                "unknown"
+            } else {
+                ffi_try!(
+                    unsafe { CStr::from_ptr(session_id) }
+                        .to_str()
+                        .map_err(|e| format!("session_id is not valid UTF-8: {e}")),
+                    std::ptr::null_mut()
+                )
+            };
 
-    let wm = ffi_try!(get_or_create_watermarker(cfg_str), std::ptr::null_mut());
+            let wm = ffi_try!(get_or_create_watermarker(cfg_str), std::ptr::null_mut());
 
-    let payload = wm.generate_payload(app_id_str, session_id_str);
-    let out = ffi_try!(
-        wm.watermark(prompt_str, Some(payload))
-            .map_err(|e| format!("Watermarking failed: {e:?}")),
-        std::ptr::null_mut()
-    );
+            let payload = wm.generate_payload(app_id_str, session_id_str);
+            let out = ffi_try!(
+                wm.watermark(prompt_str, Some(payload))
+                    .map_err(|e| format!("Watermarking failed: {e:?}")),
+                std::ptr::null_mut()
+            );
 
-    let encoded_data_b64 = URL_SAFE_NO_PAD.encode(&out.watermark.encoded_data);
-    let v = serde_json::json!({
-        "original": out.original,
-        "watermarked": out.watermarked,
-        "watermark": {
-            "payload": out.watermark.payload,
-            "encoding": out.watermark.encoding,
-            "encodedDataBase64Url": encoded_data_b64,
-            "signature": out.watermark.signature,
-            "publicKey": out.watermark.public_key,
-            "fingerprint": out.watermark.fingerprint(),
-        }
-    });
+            let encoded_data_b64 = URL_SAFE_NO_PAD.encode(&out.watermark.encoded_data);
+            let v = serde_json::json!({
+                "original": out.original,
+                "watermarked": out.watermarked,
+                "watermark": {
+                    "payload": out.watermark.payload,
+                    "encoding": out.watermark.encoding,
+                    "encodedDataBase64Url": encoded_data_b64,
+                    "signature": out.watermark.signature,
+                    "publicKey": out.watermark.public_key,
+                    "fingerprint": out.watermark.fingerprint(),
+                }
+            });
 
-    let json = ffi_try!(
-        serde_json::to_string(&v).map_err(|e| format!("Failed to serialize result: {e}")),
-        std::ptr::null_mut()
-    );
-    string_to_c(json)
+            let json = ffi_try!(
+                serde_json::to_string(&v).map_err(|e| format!("Failed to serialize result: {e}")),
+                std::ptr::null_mut()
+            );
+            string_to_c(json)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Extract (and verify) a watermark from text.
@@ -177,62 +195,67 @@ pub unsafe extern "C" fn hush_extract_watermark(
     text: *const c_char,
     config_json: *const c_char,
 ) -> *mut c_char {
-    if text.is_null() {
-        set_last_error("text pointer is null");
-        return std::ptr::null_mut();
-    }
-    if config_json.is_null() {
-        set_last_error("config_json pointer is null");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if text.is_null() {
+                set_last_error("text pointer is null");
+                return std::ptr::null_mut();
+            }
+            if config_json.is_null() {
+                set_last_error("config_json pointer is null");
+                return std::ptr::null_mut();
+            }
 
-    let text_str = ffi_try!(
-        unsafe { CStr::from_ptr(text) }
-            .to_str()
-            .map_err(|e| format!("text is not valid UTF-8: {e}")),
-        std::ptr::null_mut()
-    );
+            let text_str = ffi_try!(
+                unsafe { CStr::from_ptr(text) }
+                    .to_str()
+                    .map_err(|e| format!("text is not valid UTF-8: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let cfg_str = ffi_try!(
-        unsafe { CStr::from_ptr(config_json) }
-            .to_str()
-            .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
-        std::ptr::null_mut()
-    );
+            let cfg_str = ffi_try!(
+                unsafe { CStr::from_ptr(config_json) }
+                    .to_str()
+                    .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let cfg: clawdstrike::WatermarkVerifierConfig = ffi_try!(
-        serde_json::from_str(cfg_str)
-            .map_err(|e| format!("Invalid WatermarkVerifierConfig JSON: {e}")),
-        std::ptr::null_mut()
-    );
+            let cfg: clawdstrike::WatermarkVerifierConfig = ffi_try!(
+                serde_json::from_str(cfg_str)
+                    .map_err(|e| format!("Invalid WatermarkVerifierConfig JSON: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let extractor = clawdstrike::WatermarkExtractor::new(cfg);
-    let r = extractor.extract(text_str);
+            let extractor = clawdstrike::WatermarkExtractor::new(cfg);
+            let r = extractor.extract(text_str);
 
-    let watermark = match r.watermark {
-        Some(wm) => serde_json::json!({
-            "payload": wm.payload,
-            "encoding": wm.encoding,
-            "encodedDataBase64Url": URL_SAFE_NO_PAD.encode(&wm.encoded_data),
-            "signature": wm.signature,
-            "publicKey": wm.public_key,
-            "fingerprint": wm.fingerprint(),
-        }),
-        None => serde_json::Value::Null,
-    };
+            let watermark = match r.watermark {
+                Some(wm) => serde_json::json!({
+                    "payload": wm.payload,
+                    "encoding": wm.encoding,
+                    "encodedDataBase64Url": URL_SAFE_NO_PAD.encode(&wm.encoded_data),
+                    "signature": wm.signature,
+                    "publicKey": wm.public_key,
+                    "fingerprint": wm.fingerprint(),
+                }),
+                None => serde_json::Value::Null,
+            };
 
-    let v = serde_json::json!({
-        "found": r.found,
-        "verified": r.verified,
-        "errors": r.errors,
-        "watermark": watermark,
-    });
+            let v = serde_json::json!({
+                "found": r.found,
+                "verified": r.verified,
+                "errors": r.errors,
+                "watermark": watermark,
+            });
 
-    let json = ffi_try!(
-        serde_json::to_string(&v).map_err(|e| format!("Failed to serialize result: {e}")),
-        std::ptr::null_mut()
-    );
-    string_to_c(json)
+            let json = ffi_try!(
+                serde_json::to_string(&v).map_err(|e| format!("Failed to serialize result: {e}")),
+                std::ptr::null_mut()
+            );
+            string_to_c(json)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 #[cfg(test)]

@@ -20,7 +20,8 @@ namespace Hush.Tests
             }
         }
 
-        private const string SampleConfig = "{\"algorithm\": \"default\"}";
+        private const string SampleConfig = "{\"generate_keypair\": true}";
+        private const string SampleVerifierConfig = "{\"trusted_public_keys\": []}";
 
         [Fact]
         public void Watermarker_PublicKey_ReturnsJson()
@@ -62,7 +63,7 @@ namespace Hush.Tests
 
             var result = Watermarker.Extract(
                 "The ocean waves crash upon the shore.",
-                SampleConfig);
+                SampleVerifierConfig);
             Assert.False(string.IsNullOrEmpty(result));
         }
 

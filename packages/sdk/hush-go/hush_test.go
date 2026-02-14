@@ -3,6 +3,7 @@ package hush
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,15 @@ func requireAvailable(t *testing.T) {
 		t.Skip("libhush_ffi not available, skipping")
 	}
 }
+
+const sampleReceiptJSON = `{
+		"version": "1.0.0",
+		"timestamp": "2025-01-01T00:00:00Z",
+		"content_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"verdict": {"passed": true}
+}`
+
+const sampleWatermarkConfig = `{"generate_keypair": true}`
 
 // ---------------------------------------------------------------------------
 // Version / availability
@@ -338,6 +348,155 @@ func TestMerkleRoundtrip(t *testing.T) {
 	}
 	if valid {
 		t.Error("VerifyMerkleProof: proof should be invalid for wrong leaf")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Receipt
+// ---------------------------------------------------------------------------
+
+func TestReceiptSignVerifyRoundtrip(t *testing.T) {
+	requireAvailable(t)
+
+	kp, err := GenerateKeypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kp.Close()
+
+	pkHex, err := kp.PublicKeyHex()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	signed, err := SignReceipt(sampleReceiptJSON, kp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verified, err := VerifyReceipt(signed, pkHex, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(verified), &obj); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := obj["valid"]; !ok {
+		t.Errorf("VerifyReceipt result missing valid field: %v", verified)
+	}
+}
+
+func TestReceiptHashReceipt(t *testing.T) {
+	requireAvailable(t)
+
+	hash, err := HashReceipt(sampleReceiptJSON, "sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(hash, "0x") {
+		t.Errorf("expected sha256 receipt hash to have 0x prefix, got %q", hash)
+	}
+	if len(hash) != 66 {
+		t.Errorf("expected sha256 receipt hash length 66, got %d", len(hash))
+	}
+
+	hash, err = HashReceipt(sampleReceiptJSON, "keccak256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(hash, "0x") {
+		t.Errorf("expected keccak256 receipt hash to have 0x prefix, got %q", hash)
+	}
+	if len(hash) != 66 {
+		t.Errorf("expected keccak256 receipt hash length 66, got %d", len(hash))
+	}
+}
+
+func TestReceiptCanonicalJSONDeterministic(t *testing.T) {
+	requireAvailable(t)
+
+	c1, err := ReceiptCanonicalJSON(sampleReceiptJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := ReceiptCanonicalJSON(sampleReceiptJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c1 != c2 {
+		t.Errorf("ReceiptCanonicalJSON not deterministic")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Watermark
+// ---------------------------------------------------------------------------
+
+func TestWatermarkRoundtrip(t *testing.T) {
+	requireAvailable(t)
+
+	publicKey, err := WatermarkPublicKey(sampleWatermarkConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(publicKey) != 64 {
+		t.Fatalf("WatermarkPublicKey length: got %d, want 64", len(publicKey))
+	}
+
+	promptResultJSON, err := WatermarkPrompt("Hello from Clawdstrike", sampleWatermarkConfig, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var promptResult map[string]any
+	if err := json.Unmarshal([]byte(promptResultJSON), &promptResult); err != nil {
+		t.Fatal(err)
+	}
+
+	watermarked, ok := promptResult["watermarked"].(string)
+	if !ok {
+		t.Fatal("expected watermarked field in watermark result")
+	}
+	if !strings.HasPrefix(watermarked, "<!--hushclaw.watermark:v1:") {
+		t.Fatalf("unexpected watermark prefix: %q", watermarked[:40])
+	}
+
+	configJSON := fmt.Sprintf(`{"trusted_public_keys":["%s"]}`, publicKey)
+	extractedJSON, err := ExtractWatermark(watermarked, configJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var extracted map[string]any
+	if err := json.Unmarshal([]byte(extractedJSON), &extracted); err != nil {
+		t.Fatal(err)
+	}
+	found := extracted["found"]
+	if found != true {
+		t.Errorf("expected found watermark, got %#v", found)
+	}
+	verified := extracted["verified"]
+	if verified != true {
+		t.Errorf("expected verified watermark, got %#v", verified)
+	}
+}
+
+func TestWatermarkNoWatermark(t *testing.T) {
+	requireAvailable(t)
+
+	const configJSON = `{"trusted_public_keys":[]}`
+	extractedJSON, err := ExtractWatermark("Hello, no watermark here", configJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var extracted map[string]any
+	if err := json.Unmarshal([]byte(extractedJSON), &extracted); err != nil {
+		t.Fatal(err)
+	}
+	if extracted["found"] != false {
+		t.Errorf("expected no watermark, got %#v", extracted["found"])
 	}
 }
 

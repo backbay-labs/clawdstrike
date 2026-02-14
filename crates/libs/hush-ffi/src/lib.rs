@@ -35,14 +35,19 @@ use std::os::raw::c_char;
 /// The returned pointer is valid for the lifetime of the process.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_version() -> *const c_char {
-    // Computed once; leaked intentionally so the pointer is 'static.
-    static VERSION: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
-    VERSION
-        .get_or_init(|| {
-            CString::new(env!("CARGO_PKG_VERSION"))
-                .unwrap_or_else(|_| CString::new("unknown").unwrap_or_default())
-        })
-        .as_ptr()
+    crate::error::with_ffi_guard(
+        || {
+            // Computed once; leaked intentionally so the pointer is 'static.
+            static VERSION: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+            VERSION
+                .get_or_init(|| {
+                    CString::new(env!("CARGO_PKG_VERSION"))
+                        .unwrap_or_else(|_| CString::new("unknown").unwrap_or_default())
+                })
+                .as_ptr()
+        },
+        std::ptr::null(),
+    )
 }
 
 /// Free a string previously returned by this library.
@@ -55,28 +60,16 @@ pub unsafe extern "C" fn hush_version() -> *const c_char {
 /// "caller must free with `hush_free_string`".
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_free_string(ptr: *mut c_char) {
-    if !ptr.is_null() {
-        unsafe {
-            drop(CString::from_raw(ptr));
-        }
-    }
-}
-
-/// Free a byte buffer previously returned by this library.
-///
-/// Passing `NULL` is a no-op.
-///
-/// # Safety
-///
-/// `ptr` and `len` must correspond to a `Vec<u8>` returned by a `hush_*`
-/// function that documents "caller must free with `hush_free_bytes`".
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn hush_free_bytes(ptr: *mut u8, len: usize) {
-    if !ptr.is_null() {
-        unsafe {
-            drop(Vec::from_raw_parts(ptr, len, len));
-        }
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if !ptr.is_null() {
+                unsafe {
+                    drop(CString::from_raw(ptr));
+                }
+            }
+        },
+        (),
+    );
 }
 
 /// Helper: convert a Rust `String` into a caller-owned `*mut c_char`.

@@ -41,18 +41,6 @@ const char *hush_version(void);
 void hush_free_string(char *ptr);
 
 /**
- * Free a byte buffer previously returned by this library.
- *
- * Passing `NULL` is a no-op.
- *
- * # Safety
- *
- * `ptr` and `len` must correspond to a `Vec<u8>` returned by a `hush_*`
- * function that documents "caller must free with `hush_free_bytes`".
- */
-void hush_free_bytes(uint8_t *ptr, uintptr_t len);
-
-/**
  * Return a pointer to the last error message (static, do **not** free).
  *
  * Returns an empty string if no error has been recorded on this thread.
@@ -76,7 +64,7 @@ const char *hush_last_error(void);
 int32_t hush_sha256(const uint8_t *data, uintptr_t len, uint8_t *out_32);
 
 /**
- * Compute SHA-256 hash, returning a hex-encoded string.
+ * Compute SHA-256 hash, returning a lowercase, unprefixed hex string.
  *
  * Caller must free the returned string with `hush_free_string`.
  * Returns `NULL` on error.
@@ -100,7 +88,7 @@ char *hush_sha256_hex(const uint8_t *data, uintptr_t len);
 int32_t hush_keccak256(const uint8_t *data, uintptr_t len, uint8_t *out_32);
 
 /**
- * Compute Keccak-256 hash, returning a hex-encoded string.
+ * Compute Keccak-256 hash, returning a lowercase, unprefixed hex string.
  *
  * Caller must free the returned string with `hush_free_string`.
  * Returns `NULL` on error.

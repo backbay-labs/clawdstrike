@@ -19,42 +19,48 @@ pub unsafe extern "C" fn hush_sanitize_output(
     text: *const c_char,
     config_json: *const c_char,
 ) -> *mut c_char {
-    if text.is_null() {
-        set_last_error("text pointer is null");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if text.is_null() {
+                set_last_error("text pointer is null");
+                return std::ptr::null_mut();
+            }
 
-    let text_str = ffi_try!(
-        unsafe { CStr::from_ptr(text) }
-            .to_str()
-            .map_err(|e| format!("text is not valid UTF-8: {e}")),
-        std::ptr::null_mut()
-    );
+            let text_str = ffi_try!(
+                unsafe { CStr::from_ptr(text) }
+                    .to_str()
+                    .map_err(|e| format!("text is not valid UTF-8: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let cfg: clawdstrike::OutputSanitizerConfig = if config_json.is_null() {
-        clawdstrike::OutputSanitizerConfig::default()
-    } else {
-        let cfg_str = ffi_try!(
-            unsafe { CStr::from_ptr(config_json) }
-                .to_str()
-                .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
-            std::ptr::null_mut()
-        );
-        ffi_try!(
-            serde_json::from_str(cfg_str)
-                .map_err(|e| format!("Invalid OutputSanitizerConfig JSON: {e}")),
-            std::ptr::null_mut()
-        )
-    };
+            let cfg: clawdstrike::OutputSanitizerConfig = if config_json.is_null() {
+                clawdstrike::OutputSanitizerConfig::default()
+            } else {
+                let cfg_str = ffi_try!(
+                    unsafe { CStr::from_ptr(config_json) }
+                        .to_str()
+                        .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
+                    std::ptr::null_mut()
+                );
+                ffi_try!(
+                    serde_json::from_str(cfg_str)
+                        .map_err(|e| format!("Invalid OutputSanitizerConfig JSON: {e}")),
+                    std::ptr::null_mut()
+                )
+            };
 
-    let sanitizer = clawdstrike::OutputSanitizer::with_config(cfg);
-    let result = sanitizer.sanitize_sync(text_str);
+            let sanitizer = clawdstrike::OutputSanitizer::with_config(cfg);
+            let result = sanitizer.sanitize_sync(text_str);
 
-    let json = ffi_try!(
-        serde_json::to_string(&result).map_err(|e| format!("Failed to serialize result: {e}")),
-        std::ptr::null_mut()
-    );
-    string_to_c(json)
+            let json = ffi_try!(
+                serde_json::to_string(&result)
+                    .map_err(|e| format!("Failed to serialize result: {e}")),
+                std::ptr::null_mut()
+            );
+            string_to_c(json)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 #[cfg(test)]

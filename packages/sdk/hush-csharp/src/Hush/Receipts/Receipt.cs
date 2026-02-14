@@ -51,7 +51,7 @@ namespace Hush.Receipts
             if (receiptJson == null) throw new ArgumentNullException(nameof(receiptJson));
             if (keypair == null) throw new ArgumentNullException(nameof(keypair));
 
-            var ptr = NativeMethods.hush_sign_receipt(receiptJson, keypair.RawHandle);
+            var ptr = NativeMethods.hush_sign_receipt(receiptJson, keypair.Handle);
             HushException.ThrowIfNull(ptr);
             using var ns = new NativeString(ptr);
             return ns.ToString()!;

@@ -19,29 +19,35 @@ use crate::error::{ffi_try, set_last_error};
 /// a JSON array of hex-encoded hash strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_merkle_root(leaf_hashes_json: *const c_char) -> *mut c_char {
-    if leaf_hashes_json.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if leaf_hashes_json.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
 
-    let json_str = ffi_try!(
-        unsafe { CStr::from_ptr(leaf_hashes_json) }.to_str(),
-        std::ptr::null_mut()
-    );
+            let json_str = ffi_try!(
+                unsafe { CStr::from_ptr(leaf_hashes_json) }.to_str(),
+                std::ptr::null_mut()
+            );
 
-    let hex_strs: Vec<String> = ffi_try!(serde_json::from_str(json_str), std::ptr::null_mut());
+            let hex_strs: Vec<String> =
+                ffi_try!(serde_json::from_str(json_str), std::ptr::null_mut());
 
-    let hashes: Vec<Hash> = ffi_try!(
-        hex_strs
-            .iter()
-            .map(|h| Hash::from_hex(h))
-            .collect::<Result<Vec<_>, _>>(),
-        std::ptr::null_mut()
-    );
+            let hashes: Vec<Hash> = ffi_try!(
+                hex_strs
+                    .iter()
+                    .map(|h| Hash::from_hex(h))
+                    .collect::<Result<Vec<_>, _>>(),
+                std::ptr::null_mut()
+            );
 
-    let tree = ffi_try!(MerkleTree::from_hashes(hashes), std::ptr::null_mut());
+            let tree = ffi_try!(MerkleTree::from_hashes(hashes), std::ptr::null_mut());
 
-    crate::string_to_c(tree.root().to_hex_prefixed())
+            crate::string_to_c(tree.root().to_hex_prefixed())
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Generate a Merkle inclusion proof for a leaf at the given index.
@@ -59,30 +65,36 @@ pub unsafe extern "C" fn hush_merkle_proof(
     leaf_hashes_json: *const c_char,
     index: usize,
 ) -> *mut c_char {
-    if leaf_hashes_json.is_null() {
-        set_last_error("null pointer");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if leaf_hashes_json.is_null() {
+                set_last_error("null pointer");
+                return std::ptr::null_mut();
+            }
 
-    let json_str = ffi_try!(
-        unsafe { CStr::from_ptr(leaf_hashes_json) }.to_str(),
-        std::ptr::null_mut()
-    );
+            let json_str = ffi_try!(
+                unsafe { CStr::from_ptr(leaf_hashes_json) }.to_str(),
+                std::ptr::null_mut()
+            );
 
-    let hex_strs: Vec<String> = ffi_try!(serde_json::from_str(json_str), std::ptr::null_mut());
+            let hex_strs: Vec<String> =
+                ffi_try!(serde_json::from_str(json_str), std::ptr::null_mut());
 
-    let hashes: Vec<Hash> = ffi_try!(
-        hex_strs
-            .iter()
-            .map(|h| Hash::from_hex(h))
-            .collect::<Result<Vec<_>, _>>(),
-        std::ptr::null_mut()
-    );
+            let hashes: Vec<Hash> = ffi_try!(
+                hex_strs
+                    .iter()
+                    .map(|h| Hash::from_hex(h))
+                    .collect::<Result<Vec<_>, _>>(),
+                std::ptr::null_mut()
+            );
 
-    let tree = ffi_try!(MerkleTree::from_hashes(hashes), std::ptr::null_mut());
-    let proof = ffi_try!(tree.inclusion_proof(index), std::ptr::null_mut());
-    let json = ffi_try!(serde_json::to_string(&proof), std::ptr::null_mut());
-    crate::string_to_c(json)
+            let tree = ffi_try!(MerkleTree::from_hashes(hashes), std::ptr::null_mut());
+            let proof = ffi_try!(tree.inclusion_proof(index), std::ptr::null_mut());
+            let json = ffi_try!(serde_json::to_string(&proof), std::ptr::null_mut());
+            crate::string_to_c(json)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 /// Verify a Merkle inclusion proof.
@@ -100,20 +112,25 @@ pub unsafe extern "C" fn hush_verify_merkle_proof(
     proof_json: *const c_char,
     root_hex: *const c_char,
 ) -> i32 {
-    if leaf_hex.is_null() || proof_json.is_null() || root_hex.is_null() {
-        set_last_error("null pointer");
-        return -1;
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if leaf_hex.is_null() || proof_json.is_null() || root_hex.is_null() {
+                set_last_error("null pointer");
+                return -1;
+            }
 
-    let leaf_str = ffi_try!(unsafe { CStr::from_ptr(leaf_hex) }.to_str(), -1);
-    let proof_str = ffi_try!(unsafe { CStr::from_ptr(proof_json) }.to_str(), -1);
-    let root_str = ffi_try!(unsafe { CStr::from_ptr(root_hex) }.to_str(), -1);
+            let leaf_str = ffi_try!(unsafe { CStr::from_ptr(leaf_hex) }.to_str(), -1);
+            let proof_str = ffi_try!(unsafe { CStr::from_ptr(proof_json) }.to_str(), -1);
+            let root_str = ffi_try!(unsafe { CStr::from_ptr(root_hex) }.to_str(), -1);
 
-    let leaf = ffi_try!(Hash::from_hex(leaf_str), -1);
-    let root = ffi_try!(Hash::from_hex(root_str), -1);
-    let proof: hush_core::MerkleProof = ffi_try!(serde_json::from_str(proof_str), -1);
+            let leaf = ffi_try!(Hash::from_hex(leaf_str), -1);
+            let root = ffi_try!(Hash::from_hex(root_str), -1);
+            let proof: hush_core::MerkleProof = ffi_try!(serde_json::from_str(proof_str), -1);
 
-    i32::from(proof.verify_hash(leaf, &root))
+            i32::from(proof.verify_hash(leaf, &root))
+        },
+        -1,
+    )
 }
 
 #[cfg(test)]

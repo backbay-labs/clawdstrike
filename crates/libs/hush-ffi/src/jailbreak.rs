@@ -24,53 +24,59 @@ pub unsafe extern "C" fn hush_detect_jailbreak(
     session_id: *const c_char,
     config_json: *const c_char,
 ) -> *mut c_char {
-    if text.is_null() {
-        set_last_error("text pointer is null");
-        return std::ptr::null_mut();
-    }
+    crate::error::with_ffi_guard(
+        || {
+            if text.is_null() {
+                set_last_error("text pointer is null");
+                return std::ptr::null_mut();
+            }
 
-    let text_str = ffi_try!(
-        unsafe { CStr::from_ptr(text) }
-            .to_str()
-            .map_err(|e| format!("text is not valid UTF-8: {e}")),
-        std::ptr::null_mut()
-    );
+            let text_str = ffi_try!(
+                unsafe { CStr::from_ptr(text) }
+                    .to_str()
+                    .map_err(|e| format!("text is not valid UTF-8: {e}")),
+                std::ptr::null_mut()
+            );
 
-    let session_id_str = if session_id.is_null() {
-        None
-    } else {
-        Some(ffi_try!(
-            unsafe { CStr::from_ptr(session_id) }
-                .to_str()
-                .map_err(|e| format!("session_id is not valid UTF-8: {e}")),
-            std::ptr::null_mut()
-        ))
-    };
+            let session_id_str = if session_id.is_null() {
+                None
+            } else {
+                Some(ffi_try!(
+                    unsafe { CStr::from_ptr(session_id) }
+                        .to_str()
+                        .map_err(|e| format!("session_id is not valid UTF-8: {e}")),
+                    std::ptr::null_mut()
+                ))
+            };
 
-    let result = if config_json.is_null() {
-        let detector = DEFAULT_DETECTOR.get_or_init(clawdstrike::JailbreakDetector::new);
-        futures::executor::block_on(detector.detect(text_str, session_id_str))
-    } else {
-        let cfg_str = ffi_try!(
-            unsafe { CStr::from_ptr(config_json) }
-                .to_str()
-                .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
-            std::ptr::null_mut()
-        );
-        let cfg: clawdstrike::JailbreakGuardConfig = ffi_try!(
-            serde_json::from_str(cfg_str)
-                .map_err(|e| format!("Invalid JailbreakGuardConfig JSON: {e}")),
-            std::ptr::null_mut()
-        );
-        let detector = clawdstrike::JailbreakDetector::with_config(cfg);
-        futures::executor::block_on(detector.detect(text_str, session_id_str))
-    };
+            let result = if config_json.is_null() {
+                let detector = DEFAULT_DETECTOR.get_or_init(clawdstrike::JailbreakDetector::new);
+                futures::executor::block_on(detector.detect(text_str, session_id_str))
+            } else {
+                let cfg_str = ffi_try!(
+                    unsafe { CStr::from_ptr(config_json) }
+                        .to_str()
+                        .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
+                    std::ptr::null_mut()
+                );
+                let cfg: clawdstrike::JailbreakGuardConfig = ffi_try!(
+                    serde_json::from_str(cfg_str)
+                        .map_err(|e| format!("Invalid JailbreakGuardConfig JSON: {e}")),
+                    std::ptr::null_mut()
+                );
+                let detector = clawdstrike::JailbreakDetector::with_config(cfg);
+                futures::executor::block_on(detector.detect(text_str, session_id_str))
+            };
 
-    let json = ffi_try!(
-        serde_json::to_string(&result).map_err(|e| format!("Failed to serialize result: {e}")),
-        std::ptr::null_mut()
-    );
-    string_to_c(json)
+            let json = ffi_try!(
+                serde_json::to_string(&result)
+                    .map_err(|e| format!("Failed to serialize result: {e}")),
+                std::ptr::null_mut()
+            );
+            string_to_c(json)
+        },
+        std::ptr::null_mut(),
+    )
 }
 
 #[cfg(test)]

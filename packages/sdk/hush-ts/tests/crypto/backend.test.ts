@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   getBackend,
   setBackend,
+  initWasm,
   isWasmBackend,
   type CryptoBackend,
 } from "../../src/crypto/backend";
@@ -100,5 +101,22 @@ describe("noble backend crypto operations", () => {
     const { privateKey, publicKey } = await backend.generateKeypair();
     const derived = await backend.publicKeyFromPrivate(privateKey);
     expect(derived).toEqual(publicKey);
+  });
+});
+
+describe("optional wasm backend", () => {
+  if (process.env.WASM_AVAILABLE !== "1") {
+    it.skip("is skipped unless WASM_AVAILABLE=1", () => {
+      // Environment-gated test to keep CI control in command-only mode.
+    });
+    return;
+  }
+
+  it("attempts to initialize the wasm backend", async () => {
+    const ok = await initWasm();
+    expect(ok).toBeTypeOf("boolean");
+    if (ok) {
+      expect(isWasmBackend()).toBe(true);
+    }
   });
 });

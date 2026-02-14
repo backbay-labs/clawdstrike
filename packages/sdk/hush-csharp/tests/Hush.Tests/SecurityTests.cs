@@ -45,7 +45,7 @@ namespace Hush.Tests
         {
             if (!NativeAvailable()) return;
 
-            var config = "{\"threshold\": 0.8}";
+            var config = "{\"block_threshold\": 80, \"warn_threshold\": 60}";
             var result = JailbreakDetector.Detect(
                 "Normal question",
                 configJson: config);

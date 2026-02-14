@@ -28,9 +28,10 @@ namespace Hush.Tests
             var leafHash = Hash.Sha256Hex(Encoding.UTF8.GetBytes("leaf1"));
             var json = $"[\"{leafHash}\"]";
             var root = Hush.Merkle.Merkle.ComputeRoot(json);
-            Assert.Equal(64, root.Length);
+            Assert.Equal(66, root.Length);
+            Assert.True(root.StartsWith("0x"));
             // Single leaf: root == leaf hash
-            Assert.Equal(leafHash, root);
+            Assert.Equal("0x" + leafHash, root);
         }
 
         [Fact]
@@ -42,7 +43,7 @@ namespace Hush.Tests
             var h2 = Hash.Sha256Hex(Encoding.UTF8.GetBytes("leaf2"));
             var json = $"[\"{h1}\",\"{h2}\"]";
             var root = Hush.Merkle.Merkle.ComputeRoot(json);
-            Assert.Equal(64, root.Length);
+            Assert.Equal(66, root.Length);
         }
 
         [Fact]

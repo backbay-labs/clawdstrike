@@ -59,7 +59,7 @@ namespace Hush.Crypto
             get
             {
                 ThrowIfDisposed();
-                var ptr = NativeMethods.hush_keypair_public_key_hex(_handle.DangerousGetHandle());
+                var ptr = NativeMethods.hush_keypair_public_key_hex(_handle);
                 HushException.ThrowIfNull(ptr);
                 using var ns = new NativeString(ptr);
                 return ns.ToString()!;
@@ -76,7 +76,7 @@ namespace Hush.Crypto
                 ThrowIfDisposed();
                 var output = new byte[32];
                 var rc = NativeMethods.hush_keypair_public_key_bytes(
-                    _handle.DangerousGetHandle(), output);
+                    _handle, output);
                 HushException.ThrowIfError(rc);
                 return output;
             }
@@ -90,7 +90,7 @@ namespace Hush.Crypto
             if (message == null) throw new ArgumentNullException(nameof(message));
             ThrowIfDisposed();
             var ptr = NativeMethods.hush_keypair_sign_hex(
-                _handle.DangerousGetHandle(), message, (UIntPtr)message.Length);
+                _handle, message, (UIntPtr)message.Length);
             HushException.ThrowIfNull(ptr);
             using var ns = new NativeString(ptr);
             return ns.ToString()!;
@@ -105,7 +105,7 @@ namespace Hush.Crypto
             ThrowIfDisposed();
             var output = new byte[64];
             var rc = NativeMethods.hush_keypair_sign(
-                _handle.DangerousGetHandle(), message, (UIntPtr)message.Length, output);
+                _handle, message, (UIntPtr)message.Length, output);
             HushException.ThrowIfError(rc);
             return output;
         }
@@ -116,7 +116,7 @@ namespace Hush.Crypto
         public string ToHex()
         {
             ThrowIfDisposed();
-            var ptr = NativeMethods.hush_keypair_to_hex(_handle.DangerousGetHandle());
+            var ptr = NativeMethods.hush_keypair_to_hex(_handle);
             HushException.ThrowIfNull(ptr);
             using var ns = new NativeString(ptr);
             return ns.ToString()!;
@@ -125,12 +125,12 @@ namespace Hush.Crypto
         /// <summary>
         /// Get the raw handle for passing to receipt functions.
         /// </summary>
-        internal IntPtr RawHandle
+        internal SafeKeypairHandle Handle
         {
             get
             {
                 ThrowIfDisposed();
-                return _handle.DangerousGetHandle();
+                return _handle;
             }
         }
 

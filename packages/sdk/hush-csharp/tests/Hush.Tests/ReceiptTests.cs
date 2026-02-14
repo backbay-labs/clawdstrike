@@ -22,11 +22,10 @@ namespace Hush.Tests
         }
 
         private const string SampleReceipt = @"{
-            ""version"": ""1.0"",
-            ""action"": ""file_read"",
-            ""target"": ""/etc/hosts"",
-            ""decision"": ""allow"",
-            ""timestamp"": ""2025-01-01T00:00:00Z""
+            ""version"": ""1.0.0"",
+            ""timestamp"": ""2025-01-01T00:00:00Z"",
+            ""content_hash"": ""0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"",
+            ""verdict"": {""passed"": true}
         }";
 
         [Fact]
@@ -57,7 +56,8 @@ namespace Hush.Tests
             if (!NativeAvailable()) return;
 
             var hash = Receipt.Hash(SampleReceipt, "sha256");
-            Assert.Equal(64, hash.Length);
+            Assert.Equal(66, hash.Length);
+            Assert.True(hash.StartsWith("0x"));
         }
 
         [Fact]
@@ -66,7 +66,8 @@ namespace Hush.Tests
             if (!NativeAvailable()) return;
 
             var hash = Receipt.Hash(SampleReceipt, "keccak256");
-            Assert.Equal(64, hash.Length);
+            Assert.Equal(66, hash.Length);
+            Assert.True(hash.StartsWith("0x"));
         }
 
         [Fact]
