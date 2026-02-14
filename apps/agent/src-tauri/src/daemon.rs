@@ -380,17 +380,25 @@ impl PolicyCache {
             .await
             .with_context(|| "Failed to read policy bundle response body")?;
 
-        // Persist to disk.
+        // Persist to disk via spawn_blocking to avoid blocking the tokio runtime.
         let path = policy_cache_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create policy cache directory {:?}", parent))?;
-        }
-        std::fs::write(&path, &body)
-            .with_context(|| format!("Failed to write policy cache to {:?}", path))?;
+        let path_for_log = path.clone();
+        let body_clone = body.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!("Failed to create policy cache directory {:?}", parent)
+                })?;
+            }
+            std::fs::write(&path, &body_clone)
+                .with_context(|| format!("Failed to write policy cache to {:?}", path))?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .with_context(|| "Policy cache write task panicked")??;
 
         *self.cached_policy.lock().await = Some(body);
-        tracing::info!(path = ?path, "Policy cache updated");
+        tracing::info!(path = ?path_for_log, "Policy cache updated");
         Ok(())
     }
 

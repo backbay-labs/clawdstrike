@@ -82,7 +82,7 @@ impl AgentApiServer {
                 get(list_gateways).post(create_gateway),
             )
             .route(
-                "/api/v1/openclaw/gateways/:id",
+                "/api/v1/openclaw/gateways/{id}",
                 patch(patch_gateway).delete(delete_gateway),
             )
             .route(
@@ -107,11 +107,11 @@ impl AgentApiServer {
                 post(create_approval_request),
             )
             .route(
-                "/api/v1/approval/:id/status",
+                "/api/v1/approval/{id}/status",
                 get(get_approval_status),
             )
             .route(
-                "/api/v1/approval/:id/resolve",
+                "/api/v1/approval/{id}/resolve",
                 post(resolve_approval),
             )
             .route("/api/v1/approval/pending", get(list_pending_approvals))

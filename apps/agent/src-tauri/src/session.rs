@@ -46,25 +46,51 @@ impl SessionState {
     }
 }
 
-/// hushd session creation response.
+/// Inner session object matching hushd's `SessionContext` (camelCase).
+/// We only deserialize the fields the agent cares about; serde ignores the rest.
 #[derive(Debug, Deserialize)]
-struct CreateSessionResponse {
+#[serde(rename_all = "camelCase")]
+struct HushdSessionInfo {
     session_id: String,
+    /// Posture may live in the `state` map; extracted after deserialization.
     #[serde(default)]
-    posture: Option<String>,
-    #[serde(default)]
-    budget_limit: Option<u64>,
+    state: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
-/// hushd session heartbeat/status response.
+impl HushdSessionInfo {
+    fn posture(&self) -> Option<String> {
+        self.state
+            .as_ref()
+            .and_then(|s| s.get("posture"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    }
+
+    fn budget_limit(&self) -> Option<u64> {
+        self.state
+            .as_ref()
+            .and_then(|s| s.get("budget_limit"))
+            .and_then(|v| v.as_u64())
+    }
+
+    fn budget_used(&self) -> Option<u64> {
+        self.state
+            .as_ref()
+            .and_then(|s| s.get("budget_used"))
+            .and_then(|v| v.as_u64())
+    }
+}
+
+/// hushd session creation response — wraps session in an envelope.
 #[derive(Debug, Deserialize)]
-struct SessionStatusResponse {
-    #[serde(default)]
-    posture: Option<String>,
-    #[serde(default)]
-    budget_used: Option<u64>,
-    #[serde(default)]
-    budget_limit: Option<u64>,
+struct CreateSessionResponse {
+    session: HushdSessionInfo,
+}
+
+/// hushd session status/heartbeat response — same envelope.
+#[derive(Debug, Deserialize)]
+struct GetSessionResponse {
+    session: HushdSessionInfo,
 }
 
 /// Manages the lifecycle of a hushd session.
@@ -128,17 +154,19 @@ impl SessionManager {
             anyhow::bail!("Session creation returned {}: {}", status, body);
         }
 
-        let session: CreateSessionResponse = response
+        let resp: CreateSessionResponse = response
             .json()
             .await
             .with_context(|| "Failed to parse session creation response")?;
 
-        let session_id = session.session_id.clone();
+        let session_id = resp.session.session_id.clone();
+        let posture = resp.session.posture().unwrap_or_else(|| "standard".to_string());
+        let budget_limit = resp.session.budget_limit().unwrap_or(0);
         {
             let mut state = self.state.write().await;
-            state.session_id = Some(session.session_id);
-            state.posture = session.posture.unwrap_or_else(|| "standard".to_string());
-            state.budget_limit = session.budget_limit.unwrap_or(0);
+            state.session_id = Some(resp.session.session_id);
+            state.posture = posture;
+            state.budget_limit = budget_limit;
             state.budget_used = 0;
         }
 
@@ -220,15 +248,15 @@ impl SessionManager {
 
         let status_code = response.status();
         if status_code.is_success() {
-            if let Ok(status) = response.json::<SessionStatusResponse>().await {
+            if let Ok(resp) = response.json::<GetSessionResponse>().await {
                 let mut state = self.state.write().await;
-                if let Some(posture) = status.posture {
+                if let Some(posture) = resp.session.posture() {
                     state.posture = posture;
                 }
-                if let Some(budget_used) = status.budget_used {
+                if let Some(budget_used) = resp.session.budget_used() {
                     state.budget_used = budget_used;
                 }
-                if let Some(budget_limit) = status.budget_limit {
+                if let Some(budget_limit) = resp.session.budget_limit() {
                     state.budget_limit = budget_limit;
                 }
             }

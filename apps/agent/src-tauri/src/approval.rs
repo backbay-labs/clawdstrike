@@ -147,7 +147,7 @@ impl ApprovalQueue {
     pub async fn submit(&self, input: ApprovalRequestInput) -> ApprovalRequest {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
-        let ttl_secs = input.ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
+        let ttl_secs = input.ttl_secs.unwrap_or(DEFAULT_TTL_SECS).min(i64::MAX as u64);
         let expires_at = now + chrono::Duration::seconds(ttl_secs as i64);
 
         let request = ApprovalRequest {
