@@ -7,18 +7,7 @@ namespace Hush.Tests
 {
     public class WatermarkTests
     {
-        private static bool NativeAvailable()
-        {
-            try
-            {
-                var _ = Hash.Sha256(new byte[] { 0 });
-                return true;
-            }
-            catch (DllNotFoundException)
-            {
-                return false;
-            }
-        }
+        private static bool NativeAvailable() => TestNative.Require();
 
         private const string SampleConfig = "{\"generate_keypair\": true}";
         private const string SampleVerifierConfig = "{\"trusted_public_keys\": []}";

@@ -61,6 +61,7 @@ jobs:
       - name: Run Go tests
         working-directory: packages/sdk/hush-go
         env:
+          HUSH_FFI_REQUIRED: "1"
           CGO_LDFLAGS: -L${{ github.workspace }}/target/release
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
@@ -69,7 +70,7 @@ jobs:
       - name: Run .NET tests
         working-directory: packages/sdk/hush-csharp
         env:
+          HUSH_FFI_REQUIRED: "1"
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: dotnet test
-

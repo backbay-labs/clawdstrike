@@ -8,18 +8,7 @@ namespace Hush.Tests
 {
     public class ReceiptTests
     {
-        private static bool NativeAvailable()
-        {
-            try
-            {
-                var _ = Hash.Sha256(new byte[] { 0 });
-                return true;
-            }
-            catch (DllNotFoundException)
-            {
-                return false;
-            }
-        }
+        private static bool NativeAvailable() => TestNative.Require();
 
         private const string SampleReceipt = @"{
             ""version"": ""1.0.0"",

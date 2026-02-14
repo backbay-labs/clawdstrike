@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -12,6 +13,9 @@ import (
 func requireAvailable(t *testing.T) {
 	t.Helper()
 	if !IsAvailable() {
+		if os.Getenv("HUSH_FFI_REQUIRED") == "1" {
+			t.Fatal("libhush_ffi not available, but HUSH_FFI_REQUIRED=1")
+		}
 		t.Skip("libhush_ffi not available, skipping")
 	}
 }

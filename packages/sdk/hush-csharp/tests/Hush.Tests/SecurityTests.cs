@@ -7,18 +7,7 @@ namespace Hush.Tests
 {
     public class SecurityTests
     {
-        private static bool NativeAvailable()
-        {
-            try
-            {
-                var _ = Hash.Sha256(new byte[] { 0 });
-                return true;
-            }
-            catch (DllNotFoundException)
-            {
-                return false;
-            }
-        }
+        private static bool NativeAvailable() => TestNative.Require();
 
         [Fact]
         public void JailbreakDetector_Detect_SafeInput()
