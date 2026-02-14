@@ -334,6 +334,23 @@ mod tests {
         CString::new(r#"{"generate_keypair": true}"#).unwrap()
     }
 
+    fn seed_hex(byte: u8) -> String {
+        let seed = [byte; 32];
+        format!("0x{}", hex::encode(seed))
+    }
+
+    #[test]
+    fn watermarker_cache_is_bounded() {
+        for i in 0..(MAX_WATERMARKER_CACHE_ENTRIES + 10) {
+            let cfg = format!("{{\"private_key\":\"{}\"}}", seed_hex(i as u8));
+            let _ = get_or_create_watermarker(&cfg).unwrap();
+        }
+
+        let cache = WATERMARKERS.get().unwrap().lock().unwrap();
+        assert!(cache.map.len() <= MAX_WATERMARKER_CACHE_ENTRIES);
+        assert!(cache.lru_non_pinned.len() <= MAX_WATERMARKER_CACHE_ENTRIES);
+    }
+
     #[test]
     fn test_watermark_public_key() {
         let config = test_config_json();
