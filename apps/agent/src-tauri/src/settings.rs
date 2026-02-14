@@ -62,6 +62,12 @@ pub struct Settings {
     #[serde(default)]
     pub notification_sound: bool,
 
+    /// Debug-only: include hushd error bodies in tool-visible policy-check JSON.
+    ///
+    /// This can leak internal details; keep disabled in normal operation.
+    #[serde(default)]
+    pub debug_include_daemon_error_body: bool,
+
     /// Path to hushd binary (if not using bundled).
     #[serde(default)]
     pub hushd_binary_path: Option<PathBuf>,
@@ -119,6 +125,7 @@ impl Default for Settings {
             notifications_enabled: default_notifications_enabled(),
             notification_severity: default_notification_severity(),
             notification_sound: false,
+            debug_include_daemon_error_body: false,
             hushd_binary_path: None,
             api_key: None,
             openclaw: OpenClawSettings::default(),
@@ -215,6 +222,7 @@ mod tests {
         assert_eq!(settings.agent_api_port, 9878);
         assert!(settings.enabled);
         assert!(settings.notifications_enabled);
+        assert!(!settings.debug_include_daemon_error_body);
     }
 
     #[test]

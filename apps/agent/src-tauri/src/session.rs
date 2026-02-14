@@ -5,8 +5,10 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
+use tokio::sync::Mutex;
 
 /// Session state exposed to the tray and other components.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +118,8 @@ struct GetSessionResponse {
 pub struct SessionManager {
     state: Arc<RwLock<SessionState>>,
     http_client: reqwest::Client,
+    lifecycle_lock: Mutex<()>,
+    ensure_loop_running: AtomicBool,
 }
 
 impl SessionManager {
@@ -126,6 +130,8 @@ impl SessionManager {
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
+            lifecycle_lock: Mutex::new(()),
+            ensure_loop_running: AtomicBool::new(false),
         }
     }
 
@@ -140,8 +146,50 @@ impl SessionManager {
         self.state.read().await.session_id.clone()
     }
 
+    async fn delete_session_best_effort(
+        &self,
+        daemon_url: &str,
+        api_key: Option<&str>,
+        session_id: &str,
+    ) {
+        let url = format!("{}/api/v1/session/{}", daemon_url, session_id);
+        let mut request = self.http_client.delete(&url);
+        if let Some(key) = api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        match request.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                tracing::info!(session_id = %session_id, "Session terminated before replacement");
+            }
+            Ok(resp) => {
+                tracing::warn!(
+                    session_id = %session_id,
+                    status = %resp.status(),
+                    "Session termination returned non-success status"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %err,
+                    "Failed to terminate session (daemon may be unreachable)"
+                );
+            }
+        }
+    }
+
     /// Create a new session with hushd.
     pub async fn create_session(&self, daemon_url: &str, api_key: Option<&str>) -> Result<String> {
+        // Ensure session create/replace is serialized with termination/shutdown.
+        let _lock = self.lifecycle_lock.lock().await;
+
+        if let Some(existing) = self.session_id().await {
+            // Best-effort: avoid leaking server-side sessions on reconnect/replacement.
+            self.delete_session_best_effort(daemon_url, api_key, &existing)
+                .await;
+        }
+
         let url = format!("{}/api/v1/session", daemon_url);
 
         let hostname = hostname::get()
@@ -194,6 +242,9 @@ impl SessionManager {
 
     /// Terminate the current session.
     pub async fn terminate_session(&self, daemon_url: &str, api_key: Option<&str>) -> Result<()> {
+        // Ensure terminate does not race with create/replace.
+        let _lock = self.lifecycle_lock.lock().await;
+
         let session_id = {
             let state = self.state.read().await;
             state.session_id.clone()
@@ -236,6 +287,66 @@ impl SessionManager {
         }
 
         Ok(())
+    }
+
+    /// Start an "ensure session" loop with exponential backoff.
+    ///
+    /// This is used when posture-enabled policies require a session_id and session creation fails
+    /// (for example on startup or after reconnect).
+    pub fn start_ensure_session(
+        self: &Arc<Self>,
+        daemon_url: String,
+        api_key: Option<String>,
+        mut shutdown_rx: broadcast::Receiver<()>,
+    ) {
+        if self
+            .ensure_loop_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+
+        let manager = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut backoff = Duration::from_millis(250);
+            let max_backoff = Duration::from_secs(10);
+
+            loop {
+                tokio::select! {
+                    _ = shutdown_rx.recv() => {
+                        tracing::debug!("Ensure-session loop shutting down");
+                        break;
+                    }
+                    default => {}
+                }
+
+                if manager.session_id().await.is_some() {
+                    break;
+                }
+
+                match manager.create_session(&daemon_url, api_key.as_deref()).await {
+                    Ok(session_id) => {
+                        tracing::info!(session_id = %session_id, "Session established after retry");
+                        break;
+                    }
+                    Err(err) => {
+                        tracing::warn!(error = %err, "Failed to establish session with hushd (will retry)");
+                    }
+                }
+
+                tokio::select! {
+                    _ = shutdown_rx.recv() => {
+                        tracing::debug!("Ensure-session loop shutting down");
+                        break;
+                    }
+                    _ = tokio::time::sleep(backoff) => {}
+                }
+                backoff = std::cmp::min(backoff * 2, max_backoff);
+            }
+
+            manager.ensure_loop_running.store(false, Ordering::SeqCst);
+        });
     }
 
     async fn with_state_if_current_session_id<T>(
@@ -361,6 +472,9 @@ mod hostname {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{extract::Path, http::StatusCode, routing::{delete, post}, Json, Router};
+    use std::sync::Mutex as StdMutex;
+    use tokio::net::TcpListener;
 
     #[test]
     fn session_state_default_summary() {
@@ -428,5 +542,125 @@ mod tests {
         let state = manager.state().await;
         assert_eq!(state.session_id.as_deref(), Some("new"));
         assert_eq!(state.posture, "standard");
+    }
+
+    async fn start_test_server(
+        post_behavior: impl Fn() -> Result<String, StatusCode> + Send + Sync + 'static,
+        events: Arc<StdMutex<Vec<String>>>,
+    ) -> String {
+        let post_behavior = Arc::new(post_behavior);
+        let events_post = events.clone();
+        let events_delete = events.clone();
+        let app = Router::new()
+            .route(
+                "/api/v1/session",
+                post({
+                    let post_behavior = post_behavior.clone();
+                    move || async move {
+                        match post_behavior() {
+                            Ok(session_id) => {
+                                events_post
+                                    .lock()
+                                    .unwrap()
+                                    .push(format!("post:{}", session_id));
+                                (StatusCode::OK, Json(serde_json::json!({ "session": { "session_id": session_id } })))
+                            }
+                            Err(code) => (code, Json(serde_json::json!({ "error": "fail" }))),
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/session/{id}",
+                delete({
+                    move |Path(id): Path<String>| async move {
+                        events_delete
+                            .lock()
+                            .unwrap()
+                            .push(format!("delete:{}", id));
+                        StatusCode::NO_CONTENT
+                    }
+                }),
+            );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        format!("http://{}", addr)
+    }
+
+    #[tokio::test]
+    async fn create_session_terminates_existing_before_replacement() {
+        let events: Arc<StdMutex<Vec<String>>> = Arc::new(StdMutex::new(Vec::new()));
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let daemon_url = start_test_server(
+            {
+                let counter = counter.clone();
+                move || {
+                    let n = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    Ok(format!("sess-{}", n))
+                }
+            },
+            events.clone(),
+        )
+        .await;
+
+        let manager = SessionManager::new();
+        let s1 = manager.create_session(&daemon_url, None).await.unwrap();
+        assert_eq!(s1, "sess-1");
+
+        let s2 = manager.create_session(&daemon_url, None).await.unwrap();
+        assert_eq!(s2, "sess-2");
+
+        let got = events.lock().unwrap().clone();
+        assert_eq!(
+            got,
+            vec![
+                "post:sess-1".to_string(),
+                "delete:sess-1".to_string(),
+                "post:sess-2".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_session_retries_until_success() {
+        let events: Arc<StdMutex<Vec<String>>> = Arc::new(StdMutex::new(Vec::new()));
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let daemon_url = start_test_server(
+            {
+                let attempts = attempts.clone();
+                move || {
+                    let n = attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    if n <= 2 {
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                    }
+                    Ok("sess-ok".to_string())
+                }
+            },
+            events.clone(),
+        )
+        .await;
+
+        let manager = Arc::new(SessionManager::new());
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
+        manager.start_ensure_session(daemon_url, None, shutdown_rx);
+
+        let sid = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Some(sid) = manager.session_id().await {
+                    return sid;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("timed out waiting for session");
+        assert_eq!(sid, "sess-ok");
+
+        let _ = shutdown_tx.send(());
     }
 }

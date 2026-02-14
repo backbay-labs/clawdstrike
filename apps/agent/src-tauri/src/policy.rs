@@ -96,12 +96,13 @@ pub async fn evaluate_policy_check(
     session_id: Option<String>,
 ) -> Result<PolicyCheckOutput> {
     let input = normalize_policy_check_input(input);
-    let (enforced, daemon_url, api_key) = {
+    let (enforced, daemon_url, api_key, include_error_body) = {
         let settings_guard = settings.read().await;
         (
             settings_guard.enabled,
             settings_guard.daemon_url(),
             settings_guard.api_key.clone(),
+            settings_guard.debug_include_daemon_error_body,
         )
     };
 
@@ -164,8 +165,13 @@ pub async fn evaluate_policy_check(
 
     if !response.status().is_success() {
         let status = response.status();
-        let body_text = response.text().await.unwrap_or_default();
-        let (body_preview, body_truncated) = truncate_bytes(&body_text, 4 * 1024);
+        let (body_preview, body_truncated) = if include_error_body {
+            let body_text = response.text().await.unwrap_or_default();
+            let (preview, truncated) = truncate_bytes(&body_text, 4 * 1024);
+            (Some(preview), Some(truncated))
+        } else {
+            (None, None)
+        };
 
         let (guard, severity, reason_prefix) = match status.as_u16() {
             401 | 403 => (
@@ -193,6 +199,19 @@ pub async fn evaluate_policy_check(
             guard = guard,
             "hushd returned error — denying action"
         );
+
+        let mut details = serde_json::json!({
+            "reason": guard,
+            "provenance": { "mode": "offline_deny" },
+            "http_status": status.as_u16(),
+        });
+        if let Some(preview) = body_preview {
+            details["body"] = serde_json::Value::String(preview);
+        }
+        if let Some(truncated) = body_truncated {
+            details["body_truncated"] = serde_json::Value::Bool(truncated);
+        }
+
         return Ok(PolicyCheckOutput {
             allowed: false,
             guard: Some(guard.to_string()),
@@ -201,13 +220,7 @@ pub async fn evaluate_policy_check(
                 "{} ({}) — action denied (fail-closed)",
                 reason_prefix, status
             )),
-            details: Some(serde_json::json!({
-                "reason": guard,
-                "provenance": { "mode": "offline_deny" },
-                "http_status": status.as_u16(),
-                "body": body_preview,
-                "body_truncated": body_truncated,
-            })),
+            details: Some(details),
         });
     }
 
@@ -222,6 +235,10 @@ pub async fn evaluate_policy_check(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{http::StatusCode, routing::post, Router};
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+    use tokio::net::TcpListener;
 
     #[test]
     fn normalizes_action_type_aliases() {
@@ -299,5 +316,89 @@ mod tests {
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.target, "[::1]:8443");
+    }
+
+    async fn start_test_check_server(status: StatusCode, body: &'static str) -> u16 {
+        let app = Router::new().route(
+            "/api/v1/check",
+            post(move || async move { (status, body) }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn daemon_error_body_is_omitted_by_default() {
+        let port =
+            start_test_check_server(StatusCode::BAD_REQUEST, "SENSITIVE_INTERNAL_ERROR").await;
+
+        let mut s = Settings::default();
+        s.daemon_port = port;
+        s.enabled = true;
+        s.debug_include_daemon_error_body = false;
+        let settings = Arc::new(RwLock::new(s));
+
+        let out = evaluate_policy_check(
+            settings,
+            &reqwest::Client::new(),
+            PolicyCheckInput {
+                action_type: "file_access".to_string(),
+                target: "/tmp/a.txt".to_string(),
+                content: None,
+                args: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(!out.allowed);
+        let details = out.details.expect("details should be present");
+        assert!(details.get("http_status").is_some());
+        assert!(details.get("body").is_none());
+        assert!(details.get("body_truncated").is_none());
+    }
+
+    #[tokio::test]
+    async fn daemon_error_body_is_included_when_debug_enabled() {
+        let port =
+            start_test_check_server(StatusCode::BAD_REQUEST, "SENSITIVE_INTERNAL_ERROR").await;
+
+        let mut s = Settings::default();
+        s.daemon_port = port;
+        s.enabled = true;
+        s.debug_include_daemon_error_body = true;
+        let settings = Arc::new(RwLock::new(s));
+
+        let out = evaluate_policy_check(
+            settings,
+            &reqwest::Client::new(),
+            PolicyCheckInput {
+                action_type: "file_access".to_string(),
+                target: "/tmp/a.txt".to_string(),
+                content: None,
+                args: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(!out.allowed);
+        let details = out.details.expect("details should be present");
+        assert_eq!(details.get("http_status").and_then(|v| v.as_u64()), Some(400));
+        assert_eq!(
+            details.get("body").and_then(|v| v.as_str()),
+            Some("SENSITIVE_INTERNAL_ERROR")
+        );
+        assert_eq!(
+            details.get("body_truncated").and_then(|v| v.as_bool()),
+            Some(false)
+        );
     }
 }

@@ -290,7 +290,19 @@ async fn run_agent<R: Runtime>(
                     .await;
             }
             Err(err) => {
-                tracing::warn!(error = %err, "Failed to create session with hushd (continuing without session)");
+                tracing::warn!(
+                    error = %err,
+                    "Failed to create session with hushd; posture-enabled policies may deny actions until a session is established (retrying in background)"
+                );
+                session_manager.start_ensure_session(
+                    daemon_url.clone(),
+                    api_key.clone(),
+                    shutdown_tx.subscribe(),
+                );
+                let session_state = session_manager.state().await;
+                tray_manager
+                    .set_session_info(Some(session_state.summary()))
+                    .await;
             }
         }
 
@@ -324,6 +336,7 @@ async fn run_agent<R: Runtime>(
     let policy_cache_for_daemon = policy_cache.clone();
     let settings_for_daemon = settings.clone();
     let session_for_daemon = session_manager.clone();
+    let shutdown_for_daemon = shutdown_tx.clone();
     tokio::spawn(async move {
         while let Ok(state) = daemon_rx.recv().await {
             tray_for_daemon.set_daemon_state(state.clone()).await;
@@ -348,7 +361,15 @@ async fn run_agent<R: Runtime>(
                             .await;
                     }
                     Err(err) => {
-                        tracing::warn!(error = %err, "Failed to re-establish session after daemon reconnect");
+                        tracing::warn!(
+                            error = %err,
+                            "Failed to re-establish session after daemon reconnect (retrying in background)"
+                        );
+                        session_for_daemon.start_ensure_session(
+                            daemon_url.clone(),
+                            api_key.clone(),
+                            shutdown_for_daemon.subscribe(),
+                        );
                     }
                 }
 

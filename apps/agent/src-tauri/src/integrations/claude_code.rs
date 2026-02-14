@@ -39,7 +39,7 @@ if ! TOOL_NAME=$(echo "$INPUT" | jq -er '.tool_name // empty' 2>/dev/null); then
   fail "invalid hook payload: missing/invalid .tool_name"
 fi
 
-if ! TOOL_INPUT=$(echo "$INPUT" | jq -ec '.tool_input // {}' 2>/dev/null); then
+if ! TOOL_INPUT=$(echo "$INPUT" | jq -ec '.tool_input // {} | if type == "object" then . else {"tool_input": .} end' 2>/dev/null); then
   fail "invalid hook payload: .tool_input is not JSON"
 fi
 
@@ -82,8 +82,9 @@ case "$TOOL_NAME" in
     TARGET=$(echo "$TOOL_INPUT" | jq -er '.url // .query // empty' 2>/dev/null || true)
     ;;
   *)
-    # Allow unknown tools by default
-    exit 0
+    # Unknown tool: treat as an MCP tool and let policy decide.
+    ACTION_TYPE="mcp_tool"
+    TARGET="$TOOL_NAME"
     ;;
 esac
 
@@ -93,13 +94,25 @@ if [ -z "${TARGET:-}" ]; then
 fi
 
 # Build JSON safely.
-if [ -n "${CONTENT:-}" ]; then
-  if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" '{action_type:$action_type,target:$target,content:$content}' 2>/dev/null); then
-    fail "failed to encode policy request payload"
+if [ "$ACTION_TYPE" = "mcp_tool" ]; then
+  if [ -n "${CONTENT:-}" ]; then
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,content:$content,args:$args}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  else
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,args:$args}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
   fi
 else
-  if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" '{action_type:$action_type,target:$target}' 2>/dev/null); then
-    fail "failed to encode policy request payload"
+  if [ -n "${CONTENT:-}" ]; then
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" '{action_type:$action_type,target:$target,content:$content}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  else
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" '{action_type:$action_type,target:$target}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
   fi
 fi
 
@@ -270,12 +283,19 @@ mod tests {
         assert!(HOOK_SCRIPT.contains("jq -cn"));
         assert!(HOOK_SCRIPT.contains("/api/v1/agent/policy-check"));
         assert!(HOOK_SCRIPT.contains("CLAWDSTRIKE_HOOK_FAIL_OPEN"));
+        assert!(HOOK_SCRIPT.contains("ACTION_TYPE=\"mcp_tool\""));
     }
 
     #[test]
     fn test_hook_script_escapes_json_payload() {
         assert!(HOOK_SCRIPT.contains("--arg target \"$TARGET\""));
         assert!(!HOOK_SCRIPT.contains("\\\"target\\\":\\\"${TARGET}\\\""));
+    }
+
+    #[test]
+    fn test_hook_script_handles_unknown_tools_via_mcp_tool_args() {
+        assert!(HOOK_SCRIPT.contains("--argjson args \"$TOOL_INPUT\""));
+        assert!(HOOK_SCRIPT.contains("Unknown tool: treat as an MCP tool"));
     }
 
     #[test]

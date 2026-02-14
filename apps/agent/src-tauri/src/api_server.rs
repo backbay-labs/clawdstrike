@@ -145,6 +145,7 @@ struct AgentSettingsResponse {
     auto_start: bool,
     notifications_enabled: bool,
     notification_severity: String,
+    debug_include_daemon_error_body: bool,
     openclaw_active_gateway_id: Option<String>,
 }
 
@@ -154,6 +155,7 @@ struct AgentSettingsUpdate {
     auto_start: Option<bool>,
     notifications_enabled: Option<bool>,
     notification_severity: Option<String>,
+    debug_include_daemon_error_body: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_optional_string_field")]
     openclaw_active_gateway_id: Option<Option<String>>,
 }
@@ -203,6 +205,7 @@ async fn get_settings(
         auto_start: settings.auto_start,
         notifications_enabled: settings.notifications_enabled,
         notification_severity: settings.notification_severity.clone(),
+        debug_include_daemon_error_body: settings.debug_include_daemon_error_body,
         openclaw_active_gateway_id: settings.openclaw.active_gateway_id.clone(),
     }))
 }
@@ -228,6 +231,9 @@ async fn update_settings(
         }
         if let Some(value) = input.notification_severity {
             settings.notification_severity = value;
+        }
+        if let Some(value) = input.debug_include_daemon_error_body {
+            settings.debug_include_daemon_error_body = value;
         }
         if let Some(value) = input.openclaw_active_gateway_id {
             settings.openclaw.active_gateway_id = value;

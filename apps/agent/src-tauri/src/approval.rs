@@ -30,7 +30,7 @@ pub enum ApprovalResolution {
     AllowOnce,
     /// Allow this action for the rest of the session.
     AllowSession,
-    /// Allow this action permanently (add policy exception).
+    /// Allow this action "always" (not persisted by the agent; adapters may treat this as in-memory).
     AllowAlways,
     /// Deny the action.
     Deny,
