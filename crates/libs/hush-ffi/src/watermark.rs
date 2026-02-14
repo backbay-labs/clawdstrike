@@ -11,41 +11,72 @@ use crate::string_to_c;
 
 const MAX_WATERMARKER_CACHE_ENTRIES: usize = 128;
 
-static WATERMARKERS: OnceLock<Mutex<HashMap<String, Arc<clawdstrike::PromptWatermarker>>>> =
-    OnceLock::new();
+struct CachedWatermarker {
+    /// If true, re-creating this watermarker would generate a new random keypair, so eviction
+    /// would silently rotate keys and break verification for callers that previously trusted the
+    /// public key.
+    pinned: bool,
+    wm: Arc<clawdstrike::PromptWatermarker>,
+}
 
-fn watermark_key(config_json: &str) -> Result<String, String> {
+static WATERMARKERS: OnceLock<Mutex<HashMap<String, CachedWatermarker>>> = OnceLock::new();
+
+fn parse_config_and_key(
+    config_json: &str,
+) -> Result<(clawdstrike::WatermarkConfig, String, bool), String> {
     let cfg: clawdstrike::WatermarkConfig =
         serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {e}"))?;
-    let value = serde_json::to_value(cfg).map_err(|e| format!("Invalid WatermarkConfig: {e}"))?;
-    hush_core::canonicalize_json(&value).map_err(|e| e.to_string())
+    let pinned = cfg.private_key.is_none() && cfg.generate_keypair;
+
+    let value =
+        serde_json::to_value(&cfg).map_err(|e| format!("Invalid WatermarkConfig: {e}"))?;
+    let key = hush_core::canonicalize_json(&value).map_err(|e| e.to_string())?;
+    Ok((cfg, key, pinned))
 }
 
 fn get_or_create_watermarker(
     config_json: &str,
 ) -> Result<Arc<clawdstrike::PromptWatermarker>, String> {
-    let key = watermark_key(config_json)?;
+    let (cfg, key, pinned) = parse_config_and_key(config_json)?;
 
     let map = WATERMARKERS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = map
         .lock()
         .map_err(|_| "watermarker lock poisoned".to_string())?;
-    if let Some(wm) = guard.get(&key) {
-        return Ok(wm.clone());
+    if let Some(entry) = guard.get(&key) {
+        return Ok(entry.wm.clone());
     }
 
+    let mut should_cache = true;
     if guard.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
-        if let Some(first_key) = guard.keys().next().cloned() {
-            guard.remove(&first_key);
+        if let Some(key_to_evict) = guard
+            .iter()
+            .find_map(|(k, v)| (!v.pinned).then(|| k.clone()))
+        {
+            guard.remove(&key_to_evict);
+        } else if pinned {
+            return Err(format!(
+                "watermarker cache full ({MAX_WATERMARKER_CACHE_ENTRIES} entries) and cannot evict \
+                 generate_keypair entries; provide private_key or increase cache size"
+            ));
+        } else {
+            // Deterministic key (private_key provided): safe to skip caching rather than evicting
+            // a pinned entry and silently rotating its key.
+            should_cache = false;
         }
     }
 
-    // Only parse the config on cache miss; `watermark_key()` already validated it.
-    let cfg: clawdstrike::WatermarkConfig =
-        serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {e}"))?;
     let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{e:?}"))?;
     let wm = Arc::new(wm);
-    guard.insert(key, wm.clone());
+    if should_cache {
+        guard.insert(
+            key,
+            CachedWatermarker {
+                pinned,
+                wm: wm.clone(),
+            },
+        );
+    }
     Ok(wm)
 }
 
