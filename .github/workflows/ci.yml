@@ -48,7 +48,7 @@ jobs:
 
       - name: Upload policy torture JSON reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: policy-torture-reports
           path: tests/policy-torture/reports/*.json
@@ -589,7 +589,7 @@ jobs:
 
       - name: Upload fail-closed smoke report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: agent-fail-closed-smoke-report
           path: |

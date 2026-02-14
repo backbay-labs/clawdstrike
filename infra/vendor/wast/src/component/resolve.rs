@@ -475,10 +475,11 @@ impl<'a> Resolver<'a> {
                     self.resolve_ns(&mut info.ty, Ns::CoreType)?;
                     self.core_item_ref(&mut info.table)?;
                 }
-                CoreFuncKind::ThreadSwitchTo(_) => {}
+                CoreFuncKind::ThreadSuspendToSuspended(_) => {}
                 CoreFuncKind::ThreadSuspend(_) => {}
-                CoreFuncKind::ThreadResumeLater => {}
-                CoreFuncKind::ThreadYieldTo(_) => {}
+                CoreFuncKind::ThreadSuspendTo(_) => {}
+                CoreFuncKind::ThreadUnsuspend => {}
+                CoreFuncKind::ThreadYieldToSuspended(_) => {}
             },
         }
 
@@ -538,29 +539,15 @@ impl<'a> Resolver<'a> {
                 // Namespace for case identifier resolution
                 let mut ns = Namespace::default();
                 for case in v.cases.iter_mut() {
-                    let index = ns.register(case.id, "variant case")?;
+                    ns.register(case.id, "variant case")?;
 
                     if let Some(ty) = &mut case.ty {
                         self.component_val_type(ty)?;
                     }
-
-                    if let Some(refines) = &mut case.refines {
-                        if let Refinement::Index(span, idx) = refines {
-                            let resolved = ns.resolve(idx, "variant case")?;
-                            if resolved == index {
-                                return Err(Error::new(
-                                    *span,
-                                    "variant case cannot refine itself".to_string(),
-                                ));
-                            }
-
-                            *refines = Refinement::Resolved(resolved);
-                        }
-                    }
                 }
             }
             ComponentDefinedType::List(List { element: t })
-            | ComponentDefinedType::FixedSizeList(FixedSizeList {
+            | ComponentDefinedType::FixedLengthList(FixedLengthList {
                 element: t,
                 elements: _,
             }) => {

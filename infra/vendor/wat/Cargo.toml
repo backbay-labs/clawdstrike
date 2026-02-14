@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.81.0"
+rust-version = "1.82.0"
 name = "wat"
-version = "1.244.0"
+version = "1.245.1"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 build = false
 autolib = false
@@ -43,7 +43,7 @@ name = "wat"
 path = "src/lib.rs"
 
 [dependencies.wast]
-version = "244.0.0"
+version = "245.0.1"
 features = ["wasm-module"]
 default-features = false
 
@@ -80,4 +80,7 @@ unused_import_braces = "warn"
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
-check-cfg = ["cfg(fuzzing)"]
+check-cfg = [
+    "cfg(fuzzing)",
+    "cfg(debug_check_try_op)",
+]

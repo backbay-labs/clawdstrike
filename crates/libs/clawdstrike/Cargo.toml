@@ -43,7 +43,7 @@ tokio-test = "0.4"
 tempfile = "3.25"
 axum.workspace = true
 criterion = { version = "0.5", features = ["html_reports"] }
-wat = "1.241.2"
+wat = "1.245.1"
 
 [[bench]]
 name = "engine"

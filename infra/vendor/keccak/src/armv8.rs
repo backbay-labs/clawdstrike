@@ -19,7 +19,7 @@ pub unsafe fn p1600_armv8_sha3_asm(state: &mut [u64; 25], round_count: usize) {
         // NOTE: This loop actually computes two f1600 functions in
         // parallel, in both the lower and the upper 64-bit of the
         // 128-bit registers v0-v24.
-    0:  sub	x8, x8, #1
+        0:  sub	x8, x8, #1
 
         // Theta Calculations
         eor3.16b   v25, v20, v15, v10
@@ -112,9 +112,9 @@ pub unsafe fn p1600_armv8_sha3_asm(state: &mut [u64; 25], round_count: usize) {
         st1.1d	{{v20-v23}}, [x0], #32
         st1.1d	{{v24}},     [x0]
     ",
-        in("x0") state.as_mut_ptr(),
-        in("x1") crate::RC[24-round_count..].as_ptr(),
-        in("x8") round_count,
+        inout("x0") state.as_mut_ptr() => _,
+        inout("x1") crate::RC[24-round_count..].as_ptr() => _,
+        inout("x8") round_count => _,
         clobber_abi("C"),
         options(nostack)
     );

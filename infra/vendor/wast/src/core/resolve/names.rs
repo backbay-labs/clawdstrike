@@ -677,6 +677,10 @@ impl<'a, 'b> ExprResolver<'a, 'b> {
                 self.resolver.resolve(&mut rt.tag_index, Ns::Tag)?;
                 self.resolve_resume_table(&mut rt.table)?;
             }
+            ResumeThrowRef(rt) => {
+                self.resolver.resolve(&mut rt.type_index, Ns::Type)?;
+                self.resolve_resume_table(&mut rt.table)?;
+            }
             Switch(s) => {
                 self.resolver.resolve(&mut s.type_index, Ns::Type)?;
                 self.resolver.resolve(&mut s.tag_index, Ns::Tag)?;
@@ -688,15 +692,15 @@ impl<'a, 'b> ExprResolver<'a, 'b> {
             RefGetDesc(i) => {
                 self.resolver.resolve(i, Ns::Type)?;
             }
-            RefCastDesc(i) => {
+            RefCastDescEq(i) => {
                 self.resolver.resolve_reftype(&mut i.r#type)?;
             }
-            BrOnCastDesc(i) => {
+            BrOnCastDescEq(i) => {
                 self.resolve_label(&mut i.label)?;
                 self.resolver.resolve_reftype(&mut i.to_type)?;
                 self.resolver.resolve_reftype(&mut i.from_type)?;
             }
-            BrOnCastDescFail(i) => {
+            BrOnCastDescEqFail(i) => {
                 self.resolve_label(&mut i.label)?;
                 self.resolver.resolve_reftype(&mut i.to_type)?;
                 self.resolver.resolve_reftype(&mut i.from_type)?;

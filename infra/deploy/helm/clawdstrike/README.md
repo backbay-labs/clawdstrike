@@ -2,6 +2,10 @@
 
 Production Helm chart for the ClawdStrike SDR (Swarm Detection & Response) stack.
 
+## Architecture
+
+![ClawdStrike Helm architecture](https://raw.githubusercontent.com/backbay-labs/clawdstrike/main/.github/assets/clawdstrike-helm-architecture.png)
+
 ## Components
 
 | Component | Type | Default |
@@ -18,6 +22,12 @@ Production Helm chart for the ClawdStrike SDR (Swarm Detection & Response) stack
 
 ```bash
 helm install clawdstrike ./infra/deploy/helm/clawdstrike
+```
+
+Install from OCI:
+
+```bash
+helm install clawdstrike oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike --version <version>
 ```
 
 ## Configuration
@@ -180,7 +190,7 @@ helm install clawdstrike oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike
 
 Artifact Hub consumes the chart from the OCI repository. Use the following one-time setup:
 
-1. Create an Artifact Hub Helm repository pointing to `oci://ghcr.io/backbay-labs/clawdstrike/helm`.
+1. Create an Artifact Hub Helm repository pointing to `oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike`.
 2. Copy the repository ID from Artifact Hub settings.
 3. Add `ARTIFACTHUB_REPOSITORY_ID` as a GitHub Actions secret in this repository.
 4. Tag a release (`vX.Y.Z`) or run the Helm release workflow manually; the workflow will publish repository metadata (`artifacthub.io`) via ORAS.

@@ -4588,9 +4588,24 @@ impl<'a> InstructionSink<'a> {
         self
     }
 
+    /// Encode [`Instruction::ResumeThrowRef`].
+    pub fn resume_throw_ref<V: IntoIterator<Item = Handle>>(
+        &mut self,
+        cont_type_index: u32,
+        resume_table: V,
+    ) -> &mut Self
+    where
+        V::IntoIter: ExactSizeIterator,
+    {
+        self.sink.push(0xE5);
+        cont_type_index.encode(self.sink);
+        encode_vec(resume_table, self.sink);
+        self
+    }
+
     /// Encode [`Instruction::Switch`].
     pub fn switch(&mut self, cont_type_index: u32, tag_index: u32) -> &mut Self {
-        self.sink.push(0xE5);
+        self.sink.push(0xE6);
         cont_type_index.encode(self.sink);
         tag_index.encode(self.sink);
         self
@@ -4634,24 +4649,24 @@ impl<'a> InstructionSink<'a> {
         self
     }
 
-    /// Encode [`Instruction::RefCastDescNonNull`].
-    pub fn ref_cast_desc_non_null(&mut self, ht: HeapType) -> &mut Self {
+    /// Encode [`Instruction::RefCastDescEqNonNull`].
+    pub fn ref_cast_desc_eq_non_null(&mut self, ht: HeapType) -> &mut Self {
         self.sink.push(0xFB);
         35u32.encode(self.sink);
         ht.encode(self.sink);
         self
     }
 
-    /// Encode [`Instruction::RefCastDescNullable`].
-    pub fn ref_cast_desc_nullable(&mut self, ht: HeapType) -> &mut Self {
+    /// Encode [`Instruction::RefCastDescEqNullable`].
+    pub fn ref_cast_desc_eq_nullable(&mut self, ht: HeapType) -> &mut Self {
         self.sink.push(0xFB);
         36u32.encode(self.sink);
         ht.encode(self.sink);
         self
     }
 
-    /// Encode [`Instruction::BrOnCastDesc`].
-    pub fn br_on_cast_desc(
+    /// Encode [`Instruction::BrOnCastDescEq`].
+    pub fn br_on_cast_desc_eq(
         &mut self,
         relative_depth: u32,
         from_ref_type: RefType,
@@ -4667,8 +4682,8 @@ impl<'a> InstructionSink<'a> {
         self
     }
 
-    /// Encode [`Instruction::BrOnCastDescFail`].
-    pub fn br_on_cast_desc_fail(
+    /// Encode [`Instruction::BrOnCastDescEqFail`].
+    pub fn br_on_cast_desc_eq_fail(
         &mut self,
         relative_depth: u32,
         from_ref_type: RefType,

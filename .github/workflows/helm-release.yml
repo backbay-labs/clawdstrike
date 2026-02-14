@@ -61,7 +61,7 @@ jobs:
         run: helm push "dist/helm/clawdstrike-$VERSION.tgz" "$HELM_OCI_REPO"
 
       - name: Upload packaged chart artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: clawdstrike-chart-${{ steps.resolve-version.outputs.version }}
           path: dist/helm/clawdstrike-${{ steps.resolve-version.outputs.version }}.tgz

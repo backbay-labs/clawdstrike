@@ -5,7 +5,7 @@ type: application
 version: 0.1.0
 appVersion: "0.1.0"
 home: https://github.com/backbay-labs/clawdstrike
-icon: https://raw.githubusercontent.com/backbay-labs/clawdstrike/main/.github/assets/sigils/claw-light.svg
+icon: https://raw.githubusercontent.com/backbay-labs/clawdstrike/main/.github/assets/clawdstrike-icon.png
 sources:
   - https://github.com/backbay-labs/clawdstrike
 maintainers:

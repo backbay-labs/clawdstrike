@@ -27,7 +27,7 @@ macro_rules! define_wasm_features {
         /// This is the disabled zero-size version of this structure because the
         /// `features` feature was disabled at compile time of this crate.
         #[cfg(not(feature = "features"))]
-        #[derive(Clone, Debug, Default, Hash, Copy)]
+        #[derive(Clone, Debug, Default, Hash, Copy, PartialEq)]
         pub struct WasmFeatures {
             _priv: (),
         }
@@ -276,11 +276,11 @@ define_wasm_features! {
         /// Corresponds to the 📝 character in
         /// <https://github.com/WebAssembly/component-model/blob/main/design/mvp/Explainer.md>.
         pub cm_error_context: CM_ERROR_CONTEXT(1 << 31) = false;
-        /// Support for fixed size lists
+        /// Support for fixed-length lists
         ///
         /// Corresponds to the 🔧 character in
         /// <https://github.com/WebAssembly/component-model/blob/main/design/mvp/Explainer.md>.
-        pub cm_fixed_size_list: CM_FIXED_SIZE_LIST(1 << 32) = false;
+        pub cm_fixed_length_lists: CM_FIXED_LENGTH_LISTS(1 << 32) = false;
         /// Support for Wasm GC in the component model proposal.
         ///
         /// Corresponds to the 🛸 character in

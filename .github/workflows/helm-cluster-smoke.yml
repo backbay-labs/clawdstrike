@@ -115,7 +115,7 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.EKS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload smoke artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: helm-cluster-smoke-${{ github.run_id }}
           path: ${{ runner.temp }}/helm-cluster-smoke
