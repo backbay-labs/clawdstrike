@@ -1,7 +1,6 @@
-use crate::ber::wrap_any::parse_ber_any_r;
 use crate::ber::*;
 use crate::error::*;
-use asn1_rs::{FromBer, Tag};
+use asn1_rs::FromBer;
 use nom::bytes::streaming::take;
 use nom::{Err, Offset};
 

@@ -76,7 +76,7 @@ pub fn generate_file<P: AsRef<Path>>(map: &LoadedMap, dest_path: P) -> Result<()
     writeln!(out_file)?;
     writeln!(out_file, r#"#[cfg(feature = "registry")]"#)?;
     writeln!(out_file, r#"#[cfg_attr(docsrs, doc(cfg(feature = "registry")))]"#)?;
-    writeln!(out_file, "impl<'a> OidRegistry<'a> {{")?;
+    writeln!(out_file, "impl OidRegistry<'_> {{")?;
     for (k, v) in map {
         writeln!(out_file, r#"    #[cfg(feature = "{}")]"#, k)?;
         writeln!(out_file, r#"    #[cfg_attr(docsrs, doc(cfg(feature = "{}")))]"#, k)?;

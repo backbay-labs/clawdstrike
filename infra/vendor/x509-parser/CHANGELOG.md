@@ -6,6 +6,60 @@
 
 ### Thanks
 
+## 0.18.1
+
+### Fixed
+
+- fix(verify): also enable all functions when using verify-aws, otherwise
+  par of the API is missing
+
+## 0.18.0
+
+### Added/Changed
+
+- Update lock file and dependencies
+- Fix clippy warnings
+- Visitor: add method to visit unknown extension and those with parse errors
+- Add new feature `verify-aws` to used `aws-lc-rs` as crypto provider instead of `ring`
+  - The features are exclusive, so only one should be used
+  - If both are specified, `aws-lc-rs` is used (but both dependencies are included)
+- Add `as_raw` methods to `X509Certificate`, `CertificateRevocationList` and `X509CertificationRequest`
+  - This method exposes the raw ASN.1 DER bytes used to build the object (#217)
+
+Extensions:
+- Add support for SubjectInfoAccess extension
+- GeneralName: add a new variant `Invalid` so an invalid entry does not stop
+  parsing for the entire list of names (for ex in SAN)
+
+### Fixed
+
+- PEM: ignore lines in comments which contain invalid UTF-8 characters (#180)
+
+### Thanks
+
+- Daniel McCarney
+
+## 0.17.0
+
+### Added/Changed/Fixed
+
+Global:
+- Upgrade `asn1-rs` to version 0.6.2. (#161)
+- Update asn1-rs to 0.7, der-parser to 10.0 and oid-registry to 0.8
+- Upgrade time to 0.3.35 to make the crate compatible with rust >1.79.0 (#168, #175)
+- Update MSRV to 1.67 (due to time 0.3.35, see #168)
+- Add Visitor traits for X.509 Certificates and Certificate Revocation Lists (#179)
+
+Code:
+- Add support for RSA-PSS signature verification (#156)
+- ASN1Time: store the kind of time (UTC or Generalized) in ASN1Time (#163)
+- X509StructureValidator: add validation for dates encoding (#163)
+- X509StructureValidator: enforce version > 1 for issuerUniqueID or subjectUniqueID (Closes #162)
+
+### Thanks
+
+- Daniel McCarney, DefiCake, Victor M. Alvarez, Nikolaus Thuemmel
+
 ## 0.16.0
 
 ### Added/Changed/Fixed

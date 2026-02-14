@@ -29,7 +29,8 @@ pub use set_of::*;
 /// - if the set is composed of objects of the same type, the [`Set::from_iter_to_der`] method can be used
 /// - otherwise, the [`ToDer`] trait can be used to create content incrementally
 ///
-/// ```
+#[cfg_attr(feature = "std", doc = r#"```"#)]
+#[cfg_attr(not(feature = "std"), doc = r#"```rust,compile_fail"#)]
 /// use asn1_rs::{Integer, Set, SerializeResult, ToDer};
 ///
 /// fn build_set<'a>() -> SerializeResult<Set<'a>> {
@@ -49,7 +50,8 @@ pub use set_of::*;
 ///
 /// # Examples
 ///
-/// ```
+#[cfg_attr(feature = "std", doc = r#"```"#)]
+#[cfg_attr(not(feature = "std"), doc = r#"```rust,compile_fail"#)]
 /// use asn1_rs::{Error, Set};
 ///
 /// // build set
@@ -99,7 +101,7 @@ impl<'a> Set<'a> {
     ///   in one step, ensuring there are only references (and dropping the temporary set).
     pub fn and_then<U, F, E>(self, op: F) -> ParseResult<'a, U, E>
     where
-        F: FnOnce(Cow<'a, [u8]>) -> ParseResult<U, E>,
+        F: FnOnce(Cow<'a, [u8]>) -> ParseResult<'a, U, E>,
     {
         op(self.content)
     }
@@ -107,7 +109,7 @@ impl<'a> Set<'a> {
     /// Same as [`Set::from_der_and_then`], but using BER encoding (no constraints).
     pub fn from_ber_and_then<U, F, E>(bytes: &'a [u8], op: F) -> ParseResult<'a, U, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<U, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, U, E>,
         E: From<Error>,
     {
         let (rem, seq) = Set::from_ber(bytes).map_err(Err::convert)?;
@@ -143,7 +145,7 @@ impl<'a> Set<'a> {
     /// ```
     pub fn from_der_and_then<U, F, E>(bytes: &'a [u8], op: F) -> ParseResult<'a, U, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<U, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, U, E>,
         E: From<Error>,
     {
         let (rem, seq) = Set::from_der(bytes).map_err(Err::convert)?;
@@ -277,7 +279,7 @@ impl<'a> Set<'a> {
     }
 }
 
-impl<'a> ToStatic for Set<'a> {
+impl ToStatic for Set<'_> {
     type Owned = Set<'static>;
 
     fn to_static(&self) -> Self::Owned {
@@ -287,7 +289,7 @@ impl<'a> ToStatic for Set<'a> {
     }
 }
 
-impl<'a> AsRef<[u8]> for Set<'a> {
+impl AsRef<[u8]> for Set<'_> {
     fn as_ref(&self) -> &[u8] {
         &self.content
     }
@@ -313,15 +315,15 @@ impl<'a, 'b> TryFrom<&'b Any<'a>> for Set<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for Set<'a> {
+impl CheckDerConstraints for Set<'_> {
     fn check_constraints(_any: &Any) -> Result<()> {
         Ok(())
     }
 }
 
-impl<'a> DerAutoDerive for Set<'a> {}
+impl DerAutoDerive for Set<'_> {}
 
-impl<'a> Tagged for Set<'a> {
+impl Tagged for Set<'_> {
     const TAG: Tag = Tag::Set;
 }
 
@@ -346,7 +348,7 @@ impl ToDer for Set<'_> {
             Self::TAG,
             Length::Definite(self.content.len()),
         );
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
@@ -355,7 +357,7 @@ impl ToDer for Set<'_> {
 }
 
 #[cfg(feature = "std")]
-impl<'a> Set<'a> {
+impl Set<'_> {
     /// Attempt to create a `Set` from an iterator over serializable objects (to DER)
     ///
     /// # Examples

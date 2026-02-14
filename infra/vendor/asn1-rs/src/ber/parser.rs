@@ -8,7 +8,7 @@ use rusticata_macros::custom_check;
 /// Default maximum recursion limit
 pub const MAX_RECURSION: usize = 50;
 
-/// Default maximum object size (2^32)
+// /// Default maximum object size (2^32)
 // pub const MAX_OBJECT_SIZE: usize = 4_294_967_295;
 
 pub trait GetObjectContent {

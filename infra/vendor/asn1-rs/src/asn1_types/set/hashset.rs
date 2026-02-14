@@ -90,7 +90,7 @@ where
             len += t.to_der_len().map_err(|_| SerializeError::InvalidLength)?;
         }
         let header = Header::new(Class::Universal, true, Self::TAG, Length::Definite(len));
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {

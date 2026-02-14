@@ -1,7 +1,7 @@
 #![cfg(feature = "std")]
 use crate::ber::*;
 use crate::oid::Oid;
-use asn1_rs::{ASN1DateTime, Tag};
+use asn1_rs::ASN1DateTime;
 use cookie_factory::bytes::be_u8;
 use cookie_factory::combinator::slice;
 use cookie_factory::gen_simple;
@@ -15,7 +15,7 @@ fn encode_length<'a, W: Write + 'a, Len: Into<Length>>(len: Len) -> impl Seriali
     move |out| {
         match l {
             Length::Definite(sz) => {
-                if sz <= 128 {
+                if sz <= 0x7f {
                     // definite, short form
                     be_u8(sz as u8)(out)
                 } else {
@@ -142,7 +142,6 @@ fn ber_encode_object_content<'a, W: Write + Default + AsRef<[u8]> + 'a>(
             ber_encode_datetime(time)(out)
         }
         BerObjectContent::NumericString(s)
-        | BerObjectContent::BmpString(s)
         | BerObjectContent::GeneralString(s)
         | BerObjectContent::ObjectDescriptor(s)
         | BerObjectContent::GraphicString(s)
@@ -152,6 +151,7 @@ fn ber_encode_object_content<'a, W: Write + Default + AsRef<[u8]> + 'a>(
         | BerObjectContent::T61String(s)
         | BerObjectContent::VideotexString(s)
         | BerObjectContent::UTF8String(s) => slice(s)(out),
+        BerObjectContent::BmpString(s) => slice(s)(out),
         BerObjectContent::UniversalString(s) => slice(s)(out),
         BerObjectContent::Sequence(v) | BerObjectContent::Set(v) => ber_encode_sequence(v)(out),
         // best we can do is tagged-explicit, but we don't know
@@ -207,7 +207,7 @@ pub fn ber_encode_object<'a, 'b: 'a, W: Write + Default + AsRef<[u8]> + 'a>(
     }
 }
 
-impl<'a> BerObject<'a> {
+impl BerObject<'_> {
     /// Attempt to encode object as BER
     ///
     /// Note that the encoding will not check that the values of the `BerObject` fields are correct.

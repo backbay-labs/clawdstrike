@@ -28,7 +28,8 @@ pub use sequence_of::*;
 /// - if the sequence is composed of objects of the same type, the [`Sequence::from_iter_to_der`] method can be used
 /// - otherwise, the [`ToDer`] trait can be used to create content incrementally
 ///
-/// ```
+#[cfg_attr(feature = "std", doc = r#"```"#)]
+#[cfg_attr(not(feature = "std"), doc = r#"```rust,compile_fail"#)]
 /// use asn1_rs::{Integer, Sequence, SerializeResult, ToDer};
 ///
 /// fn build_seq<'a>() -> SerializeResult<Sequence<'a>> {
@@ -48,7 +49,8 @@ pub use sequence_of::*;
 ///
 /// # Examples
 ///
-/// ```
+#[cfg_attr(feature = "std", doc = r#"```"#)]
+#[cfg_attr(not(feature = "std"), doc = r#"```rust,compile_fail"#)]
 /// use asn1_rs::{Error, Sequence};
 ///
 /// // build sequence
@@ -98,7 +100,7 @@ impl<'a> Sequence<'a> {
     ///   in one step, ensuring there are only references (and dropping the temporary sequence).
     pub fn and_then<U, F, E>(self, op: F) -> ParseResult<'a, U, E>
     where
-        F: FnOnce(Cow<'a, [u8]>) -> ParseResult<U, E>,
+        F: FnOnce(Cow<'a, [u8]>) -> ParseResult<'a, U, E>,
     {
         op(self.content)
     }
@@ -106,7 +108,7 @@ impl<'a> Sequence<'a> {
     /// Same as [`Sequence::from_der_and_then`], but using BER encoding (no constraints).
     pub fn from_ber_and_then<U, F, E>(bytes: &'a [u8], op: F) -> ParseResult<'a, U, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<U, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, U, E>,
         E: From<Error>,
     {
         let (rem, seq) = Sequence::from_ber(bytes).map_err(Err::convert)?;
@@ -142,7 +144,7 @@ impl<'a> Sequence<'a> {
     /// ```
     pub fn from_der_and_then<U, F, E>(bytes: &'a [u8], op: F) -> ParseResult<'a, U, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<U, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, U, E>,
         E: From<Error>,
     {
         let (rem, seq) = Sequence::from_der(bytes).map_err(Err::convert)?;
@@ -276,7 +278,7 @@ impl<'a> Sequence<'a> {
     }
 }
 
-impl<'a> ToStatic for Sequence<'a> {
+impl ToStatic for Sequence<'_> {
     type Owned = Sequence<'static>;
 
     fn to_static(&self) -> Self::Owned {
@@ -298,7 +300,7 @@ where
     }
 }
 
-impl<'a> AsRef<[u8]> for Sequence<'a> {
+impl AsRef<[u8]> for Sequence<'_> {
     fn as_ref(&self) -> &[u8] {
         &self.content
     }
@@ -324,7 +326,7 @@ impl<'a, 'b> TryFrom<&'b Any<'a>> for Sequence<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for Sequence<'a> {
+impl CheckDerConstraints for Sequence<'_> {
     fn check_constraints(_any: &Any) -> Result<()> {
         // TODO: iterate on ANY objects and check constraints? -> this will not be exhaustive
         // test, for ex INTEGER encoding will not be checked
@@ -332,9 +334,9 @@ impl<'a> CheckDerConstraints for Sequence<'a> {
     }
 }
 
-impl<'a> DerAutoDerive for Sequence<'a> {}
+impl DerAutoDerive for Sequence<'_> {}
 
-impl<'a> Tagged for Sequence<'a> {
+impl Tagged for Sequence<'_> {
     const TAG: Tag = Tag::Sequence;
 }
 
@@ -359,7 +361,7 @@ impl ToDer for Sequence<'_> {
             Self::TAG,
             Length::Definite(self.content.len()),
         );
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
@@ -368,7 +370,7 @@ impl ToDer for Sequence<'_> {
 }
 
 #[cfg(feature = "std")]
-impl<'a> Sequence<'a> {
+impl Sequence<'_> {
     /// Attempt to create a `Sequence` from an iterator over serializable objects (to DER)
     ///
     /// # Examples

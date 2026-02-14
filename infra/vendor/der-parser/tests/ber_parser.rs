@@ -472,7 +472,7 @@ fn test_ber_relativeoid() {
 fn test_ber_bmpstring() {
     let empty = &b""[..];
     let bytes = hex!("1e 08 00 55 00 73 00 65 00 72");
-    let expected = BerObject::from_obj(BerObjectContent::BmpString("\x00U\x00s\x00e\x00r"));
+    let expected = BerObject::from_obj(BerObjectContent::BmpString(b"\x00U\x00s\x00e\x00r"));
     assert_eq!(parse_ber_bmpstring(&bytes), Ok((empty, expected)));
 }
 

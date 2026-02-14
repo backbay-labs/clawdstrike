@@ -1,3 +1,5 @@
+#![cfg(feature = "std")]
+
 use asn1_rs::*;
 use hex_literal::hex;
 // use nom::HexDisplay;

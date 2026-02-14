@@ -6,15 +6,13 @@ use crate::x509::{
     parse_serial, parse_signature_value, AlgorithmIdentifier, ReasonCode, X509Name, X509Version,
 };
 
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "verify", feature = "verify-aws"))]
 use crate::verify::verify_signature;
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "verify", feature = "verify-aws"))]
 use crate::x509::SubjectPublicKeyInfo;
 use asn1_rs::{BitString, FromDer};
-use der_parser::ber::Tag;
 use der_parser::der::*;
 use der_parser::num_bigint::BigUint;
-use der_parser::oid::Oid;
 use nom::combinator::{all_consuming, complete, map, opt};
 use nom::multi::many0;
 use nom::Offset;
@@ -53,6 +51,9 @@ pub struct CertificateRevocationList<'a> {
     pub tbs_cert_list: TbsCertList<'a>,
     pub signature_algorithm: AlgorithmIdentifier<'a>,
     pub signature_value: BitString<'a>,
+
+    /// Complete raw ASN.1 DER content (TBS certificate list, signature algorithm and signature).
+    pub(crate) raw: &'a [u8],
 }
 
 impl<'a> CertificateRevocationList<'a> {
@@ -63,7 +64,7 @@ impl<'a> CertificateRevocationList<'a> {
 
     /// Get the certificate issuer.
     #[inline]
-    pub fn issuer(&self) -> &X509Name {
+    pub fn issuer(&self) -> &X509Name<'_> {
         &self.tbs_cert_list.issuer
     }
 
@@ -86,7 +87,7 @@ impl<'a> CertificateRevocationList<'a> {
 
     /// Get the CRL extensions.
     #[inline]
-    pub fn extensions(&self) -> &[X509Extension] {
+    pub fn extensions(&self) -> &[X509Extension<'_>] {
         &self.tbs_cert_list.extensions
     }
 
@@ -113,8 +114,8 @@ impl<'a> CertificateRevocationList<'a> {
     /// `public_key` is the public key of the **signer**.
     ///
     /// Not all algorithms are supported, this function is limited to what `ring` supports.
-    #[cfg(feature = "verify")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "verify")))]
+    #[cfg(any(feature = "verify", feature = "verify-aws"))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "verify", feature = "verify-aws"))))]
     pub fn verify_signature(&self, public_key: &SubjectPublicKeyInfo) -> Result<(), X509Error> {
         verify_signature(
             public_key,
@@ -122,6 +123,23 @@ impl<'a> CertificateRevocationList<'a> {
             &self.signature_value,
             self.tbs_cert_list.raw,
         )
+    }
+
+    ///
+    /// Return the raw ASN.1 DER content of the complete signed certificate revocation list that was parsed.
+    ///
+    /// This includes the to-be-signed (TBS) certificate list, the signature algorithm, and the signature.
+    /// If you want just the ASN.1 DER of the TBS certificate list, prefer [`TbsCertList::as_ref()`].
+    ///
+    /// We avoid the `AsRef` trait in this instance to ensure the full lifetime of the `CertificateRevocationList` is used.
+    pub fn as_raw(&self) -> &'a [u8] {
+        self.raw
+    }
+}
+
+impl<'a> AsRef<[u8]> for CertificateRevocationList<'a> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_raw()
     }
 }
 
@@ -132,8 +150,9 @@ impl<'a> CertificateRevocationList<'a> {
 ///      signatureValue       BIT STRING  }
 /// </pre>
 impl<'a> FromDer<'a, X509Error> for CertificateRevocationList<'a> {
-    fn from_der(i: &'a [u8]) -> X509Result<Self> {
-        parse_der_sequence_defined_g(|i, _| {
+    fn from_der(i: &'a [u8]) -> X509Result<'a, Self> {
+        let start_i = i;
+        let (rem, mut crl) = parse_der_sequence_defined_g(|i, _| {
             let (i, tbs_cert_list) = TbsCertList::from_der(i)?;
             let (i, signature_algorithm) = AlgorithmIdentifier::from_der(i)?;
             let (i, signature_value) = parse_signature_value(i)?;
@@ -141,9 +160,13 @@ impl<'a> FromDer<'a, X509Error> for CertificateRevocationList<'a> {
                 tbs_cert_list,
                 signature_algorithm,
                 signature_value,
+                raw: &[],
             };
             Ok((i, crl))
-        })(i)
+        })(i)?;
+        let len = start_i.offset(rem);
+        crl.raw = &start_i[..len];
+        Ok((rem, crl))
     }
 }
 
@@ -182,30 +205,30 @@ pub struct TbsCertList<'a> {
     pub(crate) raw: &'a [u8],
 }
 
-impl<'a> TbsCertList<'a> {
+impl TbsCertList<'_> {
     /// Returns the certificate extensions
     #[inline]
-    pub fn extensions(&self) -> &[X509Extension] {
+    pub fn extensions(&self) -> &[X509Extension<'_>] {
         &self.extensions
     }
 
     /// Returns an iterator over the certificate extensions
     #[inline]
-    pub fn iter_extensions(&self) -> impl Iterator<Item = &X509Extension> {
+    pub fn iter_extensions(&self) -> impl Iterator<Item = &X509Extension<'_>> {
         self.extensions.iter()
     }
 
     /// Searches for an extension with the given `Oid`.
     ///
     /// Note: if there are several extensions with the same `Oid`, the first one is returned.
-    pub fn find_extension(&self, oid: &Oid) -> Option<&X509Extension> {
+    pub fn find_extension(&self, oid: &Oid) -> Option<&X509Extension<'_>> {
         self.extensions.iter().find(|&ext| ext.oid == *oid)
     }
 
     /// Builds and returns a map of extensions.
     ///
     /// If an extension is present twice, this will fail and return `DuplicateExtensions`.
-    pub fn extensions_map(&self) -> Result<HashMap<Oid, &X509Extension>, X509Error> {
+    pub fn extensions_map(&self) -> Result<HashMap<Oid<'_>, &X509Extension<'_>>, X509Error> {
         self.extensions
             .iter()
             .try_fold(HashMap::new(), |mut m, ext| {
@@ -218,14 +241,14 @@ impl<'a> TbsCertList<'a> {
     }
 }
 
-impl<'a> AsRef<[u8]> for TbsCertList<'a> {
+impl AsRef<[u8]> for TbsCertList<'_> {
     fn as_ref(&self) -> &[u8] {
         self.raw
     }
 }
 
 impl<'a> FromDer<'a, X509Error> for TbsCertList<'a> {
-    fn from_der(i: &'a [u8]) -> X509Result<Self> {
+    fn from_der(i: &'a [u8]) -> X509Result<'a, Self> {
         let start_i = i;
         parse_der_sequence_defined_g(move |i, _| {
             let (i, version) =
@@ -263,7 +286,7 @@ pub struct RevokedCertificate<'a> {
     pub(crate) raw_serial: &'a [u8],
 }
 
-impl<'a> RevokedCertificate<'a> {
+impl RevokedCertificate<'_> {
     /// Return the serial number of the revoked certificate
     pub fn serial(&self) -> &BigUint {
         &self.user_certificate
@@ -271,27 +294,27 @@ impl<'a> RevokedCertificate<'a> {
 
     /// Get the CRL entry extensions.
     #[inline]
-    pub fn extensions(&self) -> &[X509Extension] {
+    pub fn extensions(&self) -> &[X509Extension<'_>] {
         &self.extensions
     }
 
     /// Returns an iterator over the CRL entry extensions
     #[inline]
-    pub fn iter_extensions(&self) -> impl Iterator<Item = &X509Extension> {
+    pub fn iter_extensions(&self) -> impl Iterator<Item = &X509Extension<'_>> {
         self.extensions.iter()
     }
 
     /// Searches for a CRL entry extension with the given `Oid`.
     ///
     /// Note: if there are several extensions with the same `Oid`, the first one is returned.
-    pub fn find_extension(&self, oid: &Oid) -> Option<&X509Extension> {
+    pub fn find_extension(&self, oid: &Oid) -> Option<&X509Extension<'_>> {
         self.extensions.iter().find(|&ext| ext.oid == *oid)
     }
 
     /// Builds and returns a map of CRL entry extensions.
     ///
     /// If an extension is present twice, this will fail and return `DuplicateExtensions`.
-    pub fn extensions_map(&self) -> Result<HashMap<Oid, &X509Extension>, X509Error> {
+    pub fn extensions_map(&self) -> Result<HashMap<Oid<'_>, &X509Extension<'_>>, X509Error> {
         self.extensions
             .iter()
             .try_fold(HashMap::new(), |mut m, ext| {
@@ -342,7 +365,7 @@ impl<'a> RevokedCertificate<'a> {
 //                                   -- if present, MUST be v2
 //                          }  OPTIONAL,
 impl<'a> FromDer<'a, X509Error> for RevokedCertificate<'a> {
-    fn from_der(i: &'a [u8]) -> X509Result<Self> {
+    fn from_der(i: &'a [u8]) -> X509Result<'a, Self> {
         parse_der_sequence_defined_g(|i, _| {
             let (i, (raw_serial, user_certificate)) = parse_serial(i)?;
             let (i, revocation_date) = ASN1Time::from_der(i)?;
@@ -358,7 +381,7 @@ impl<'a> FromDer<'a, X509Error> for RevokedCertificate<'a> {
     }
 }
 
-fn parse_revoked_certificates(i: &[u8]) -> X509Result<Vec<RevokedCertificate>> {
+fn parse_revoked_certificates(i: &[u8]) -> X509Result<'_, Vec<RevokedCertificate<'_>>> {
     parse_der_sequence_defined_g(|a, _| {
         all_consuming(many0(complete(RevokedCertificate::from_der)))(a)
     })(i)

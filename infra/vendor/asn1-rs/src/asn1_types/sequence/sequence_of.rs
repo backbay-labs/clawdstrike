@@ -134,7 +134,7 @@ where
     T: FromDer<'a, E>,
     E: From<Error> + Display + Debug,
 {
-    fn from_der(bytes: &'a [u8]) -> ParseResult<Self, E> {
+    fn from_der(bytes: &'a [u8]) -> ParseResult<'a, Self, E> {
         trace_generic(
             core::any::type_name::<Self>(),
             "SequenceOf::from_der",

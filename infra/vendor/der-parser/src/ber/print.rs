@@ -99,7 +99,7 @@ fn dbg_header(header: &Header, f: &mut fmt::Formatter) -> fmt::Result {
     Ok(())
 }
 
-impl<'a> fmt::Debug for PrettyBer<'a> {
+impl fmt::Debug for PrettyBer<'_> {
     #[rustfmt::skip]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.indent > 0 {
@@ -109,6 +109,18 @@ impl<'a> fmt::Debug for PrettyBer<'a> {
             dbg_header(&self.obj.header, f)?;
             write!(f, " ")?;
         };
+        fn print_utf16_string_with_type(f: &mut fmt::Formatter, s: &[u8], ty: &str) -> fmt::Result {
+            let v: Vec<_> = s
+                .chunks_exact(2)
+                .map(|a| u16::from_be_bytes([a[0], a[1]]))
+                .collect();
+            let s = String::from_utf16(&v);
+
+            match s {
+                Ok(s)  => writeln!(f, "{}(\"{}\")", ty, s),
+                Err(_) => writeln!(f, "{}({:?}) <error decoding utf32 string>", ty, s),
+            }
+        }
         fn print_utf32_string_with_type(f: &mut fmt::Formatter, s: &[u8], ty: &str) -> fmt::Result {
             let chars: Option<Vec<char>> = s
                 .chunks_exact(4)
@@ -143,7 +155,7 @@ impl<'a> fmt::Debug for PrettyBer<'a> {
             BerObjectContent::T61String(s)           => write!(f, "T61String({})", s),
             BerObjectContent::VideotexString(s)      => write!(f, "VideotexString({})", s),
             BerObjectContent::ObjectDescriptor(s)    => write!(f, "ObjectDescriptor(\"{}\")", s),
-            BerObjectContent::BmpString(s)           => write!(f, "BmpString(\"{}\")", s),
+            BerObjectContent::BmpString(s)           => print_utf16_string_with_type(f, s, "BmpString"),
             BerObjectContent::UniversalString(s)     => print_utf32_string_with_type(f, s, "UniversalString"),
             BerObjectContent::Optional(ref o) => {
                 match o {

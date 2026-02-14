@@ -85,7 +85,7 @@ impl<'a> FromDer<'a> for AttributeTypeAndValue<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for AttributeTypeAndValue<'a> {
+impl CheckDerConstraints for AttributeTypeAndValue<'_> {
     fn check_constraints(any: &Any) -> asn1_rs::Result<()> {
         any.tag().assert_eq(Sequence::TAG)?;
         Ok(())

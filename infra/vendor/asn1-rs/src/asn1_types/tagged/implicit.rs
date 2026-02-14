@@ -126,7 +126,7 @@ where
         // XXX a) the encoding shall be constructed if the base encoding is constructed, and shall be primitive otherwise
         let constructed = matches!(self.inner.tag(), Tag::Sequence | Tag::Set);
         let header = Header::new(class, constructed, self.tag(), Length::Definite(inner_len));
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
@@ -189,7 +189,7 @@ where
 
 // implementations for TaggedParser
 
-impl<'a, T, E> TaggedParser<'a, Implicit, T, E> {
+impl<T, E> TaggedParser<'_, Implicit, T, E> {
     pub const fn new_implicit(class: Class, constructed: bool, tag: u32, inner: T) -> Self {
         Self {
             header: Header::new(class, constructed, Tag(tag), Length::Definite(0)),
@@ -233,7 +233,7 @@ where
     }
 }
 
-impl<'a, T> CheckDerConstraints for TaggedParser<'a, Implicit, T>
+impl<T> CheckDerConstraints for TaggedParser<'_, Implicit, T>
 where
     T: CheckDerConstraints,
     T: Tagged,
@@ -253,7 +253,7 @@ where
 }
 
 #[cfg(feature = "std")]
-impl<'a, T> ToDer for TaggedParser<'a, Implicit, T>
+impl<T> ToDer for TaggedParser<'_, Implicit, T>
 where
     T: ToDer,
 {
@@ -278,7 +278,7 @@ where
         // XXX X.690 section 8.14.3: if implicing tagging was used [...]:
         // XXX a) the encoding shall be constructed if the base encoding is constructed, and shall be primitive otherwise
         let header = Header::new(self.class(), false, self.tag(), Length::Definite(inner_len));
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {

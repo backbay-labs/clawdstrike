@@ -1,7 +1,7 @@
 /// Formats a slice to a colon-separated hex string (for ex `01:02:ff:ff`)
 pub fn format_serial(i: &[u8]) -> String {
     let mut s = i.iter().fold(String::with_capacity(3 * i.len()), |a, b| {
-        a + &format!("{:02x}:", b)
+        a + &format!("{b:02x}:")
     });
     s.pop();
     s

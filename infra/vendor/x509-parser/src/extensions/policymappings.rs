@@ -75,7 +75,7 @@ impl<'a> PolicyMapping<'a> {
 // PolicyMappings ::= SEQUENCE SIZE (1..MAX) OF SEQUENCE {
 //  issuerDomainPolicy      CertPolicyId,
 //  subjectDomainPolicy     CertPolicyId }
-pub(crate) fn parse_policymappings(i: &[u8]) -> IResult<&[u8], PolicyMappings, Error> {
+pub(crate) fn parse_policymappings(i: &[u8]) -> IResult<&[u8], PolicyMappings<'_>, Error> {
     let (ret, pairs) = <Vec<PolicyMapping>>::from_der(i)?;
     // let mut mappings: HashMap<Oid, Vec<Oid>> = HashMap::new();
     let mappings = pairs;

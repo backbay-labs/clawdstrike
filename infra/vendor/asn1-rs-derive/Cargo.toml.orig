@@ -1,6 +1,6 @@
 [package]
 name = "asn1-rs-derive"
-version = "0.5.1"
+version = "0.6.0"
 authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 description = "Derive macros for the `asn1-rs` crate"
 license = "MIT OR Apache-2.0"

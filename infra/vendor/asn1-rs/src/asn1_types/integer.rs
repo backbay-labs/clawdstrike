@@ -276,7 +276,8 @@ impl_int!(u128 => i128);
 ///
 /// Encoding an `Integer` to DER
 ///
-/// ```
+#[cfg_attr(feature = "std", doc = r#"```"#)]
+#[cfg_attr(not(feature = "std"), doc = r#"```rust,compile_fail"#)]
 /// use asn1_rs::{Integer, ToDer};
 ///
 /// let i = Integer::from(4);
@@ -458,7 +459,7 @@ impl_from_to!(UNSIGNED u32, from_u32, as_u32);
 impl_from_to!(UNSIGNED u64, from_u64, as_u64);
 impl_from_to!(UNSIGNED u128, from_u128, as_u128);
 
-impl<'a> AsRef<[u8]> for Integer<'a> {
+impl AsRef<[u8]> for Integer<'_> {
     fn as_ref(&self) -> &[u8] {
         &self.data
     }
@@ -483,7 +484,7 @@ impl<'a, 'b> TryFrom<&'b Any<'a>> for Integer<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for Integer<'a> {
+impl CheckDerConstraints for Integer<'_> {
     fn check_constraints(any: &Any) -> Result<()> {
         check_der_int_constraints(any)
     }
@@ -509,7 +510,7 @@ fn check_der_int_constraints(any: &Any) -> Result<()> {
 
 impl DerAutoDerive for Integer<'_> {}
 
-impl<'a> Tagged for Integer<'a> {
+impl Tagged for Integer<'_> {
     const TAG: Tag = Tag::Integer;
 }
 
@@ -535,7 +536,7 @@ impl ToDer for Integer<'_> {
             Self::TAG,
             Length::Definite(self.data.len()),
         );
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
@@ -552,7 +553,7 @@ impl ToDer for Integer<'_> {
 ///
 /// - `int!(1234)`: Create a const expression for the corresponding `Integer<'static>`
 /// - `int!(raw 1234)`: Return the DER encoded form as a byte array (hex-encoded, big-endian
-///    representation from the integer, with leading zeroes removed).
+///   representation from the integer, with leading zeroes removed).
 ///
 /// # Examples
 ///
@@ -576,7 +577,7 @@ macro_rules! int {
     };
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use crate::{Any, FromDer, Header, Tag, ToDer};
     use std::convert::TryInto;

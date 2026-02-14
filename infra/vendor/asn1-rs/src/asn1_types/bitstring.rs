@@ -37,7 +37,7 @@ impl<'a> BitString<'a> {
     }
 }
 
-impl<'a> AsRef<[u8]> for BitString<'a> {
+impl AsRef<[u8]> for BitString<'_> {
     fn as_ref(&self) -> &[u8] {
         &self.data
     }
@@ -66,7 +66,7 @@ impl<'a, 'b> TryFrom<&'b Any<'a>> for BitString<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for BitString<'a> {
+impl CheckDerConstraints for BitString<'_> {
     fn check_constraints(any: &Any) -> Result<()> {
         // X.690 section 10.2
         any.header.assert_primitive()?;
@@ -96,7 +96,7 @@ impl<'a> CheckDerConstraints for BitString<'a> {
 
 impl DerAutoDerive for BitString<'_> {}
 
-impl<'a> Tagged for BitString<'a> {
+impl Tagged for BitString<'_> {
     const TAG: Tag = Tag::BitString;
 }
 
@@ -121,7 +121,7 @@ impl ToDer for BitString<'_> {
             Self::TAG,
             Length::Definite(1 + self.data.len()),
         );
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {

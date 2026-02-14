@@ -91,8 +91,10 @@ use asn1_rs::oid;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+mod deprecated;
 mod load;
 
+pub use deprecated::*;
 pub use load::*;
 
 /// An entry stored in the OID registry

@@ -100,7 +100,7 @@ impl<'a> Validator<'a> for X509ExtensionsValidator {
                             GeneralName::DNSName(ref s) | GeneralName::RFC822Name(ref s) => {
                                 // should be an ia5string
                                 if !s.as_bytes().iter().all(u8::is_ascii) {
-                                    l.warn(&format!("Invalid charset in 'SAN' entry '{}'", s));
+                                    l.warn(&format!("Invalid charset in 'SAN' entry '{s}'"));
                                 }
                             }
                             _ => (),

@@ -8,6 +8,21 @@
 
 ### Thanks
 
+## 10.0.0
+
+### Changed/Fixed
+
+Breaking change:
+- BerObject: convert BmpString data to `&[u8]` to properly handle UTF-16 data (#76)
+
+- Upgrade `asn1-rs` to 0.7.0
+- Rename feature "bitvec" to "as_bitvec" and update to bitvec 1.0 (#73)
+- Serialize: fix possible wrong encoding of length if exactly 128 (#77)
+
+### Thanks
+
+- Daniel McCarney
+
 ## 9.0.0
 
 ### Changed/Fixed

@@ -85,7 +85,7 @@ where
 /// ```
 pub trait FromBer<'a, E = Error>: Sized {
     /// Attempt to parse input bytes into a BER object
-    fn from_ber(bytes: &'a [u8]) -> ParseResult<Self, E>;
+    fn from_ber(bytes: &'a [u8]) -> ParseResult<'a, Self, E>;
 }
 
 impl<'a, T, E> FromBer<'a, E> for T
@@ -93,7 +93,7 @@ where
     T: TryFrom<Any<'a>, Error = E>,
     E: From<Error>,
 {
-    fn from_ber(bytes: &'a [u8]) -> ParseResult<T, E> {
+    fn from_ber(bytes: &'a [u8]) -> ParseResult<'a, T, E> {
         let (i, any) = Any::from_ber(bytes).map_err(nom::Err::convert)?;
         let result = any.try_into().map_err(nom::Err::Error)?;
         Ok((i, result))
@@ -154,7 +154,7 @@ where
 /// ```
 pub trait FromDer<'a, E = Error>: Sized {
     /// Attempt to parse input bytes into a DER object (enforcing constraints)
-    fn from_der(bytes: &'a [u8]) -> ParseResult<Self, E>;
+    fn from_der(bytes: &'a [u8]) -> ParseResult<'a, Self, E>;
 }
 
 /// Trait to automatically derive `FromDer`
@@ -182,7 +182,7 @@ where
     T: DerAutoDerive,
     E: From<Error> + Display + Debug,
 {
-    fn from_der(bytes: &'a [u8]) -> ParseResult<T, E> {
+    fn from_der(bytes: &'a [u8]) -> ParseResult<'a, T, E> {
         trace_generic(
             core::any::type_name::<T>(),
             "T::from_der",
@@ -351,7 +351,4 @@ pub trait AsTaggedImplicit<'a, E = Error>: Sized {
 
 impl<'a, T, E> AsTaggedImplicit<'a, E> for T where T: Sized + 'a {}
 
-pub trait ToStatic {
-    type Owned: 'static;
-    fn to_static(&self) -> Self::Owned;
-}
+pub use crate::tostatic::*;

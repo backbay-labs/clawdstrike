@@ -2,9 +2,11 @@ mod alias;
 mod container;
 mod sequence;
 mod set;
+mod tostatic;
 use alias::*;
 use sequence::*;
 use set::*;
+use tostatic::derive_tostatic;
 
 synstructure::decl_derive!([BerAlias, attributes(
     debug_derive,
@@ -62,3 +64,11 @@ synstructure::decl_derive!([DerSet, attributes(
     error,
     map_err
 )] => derive_der_set);
+
+synstructure::decl_derive!([ToStatic, attributes(
+    debug_derive
+)] => derive_tostatic);
+
+synstructure::decl_derive!([ToDerSequence, attributes(
+    debug_derive,
+)] => derive_toder_sequence);

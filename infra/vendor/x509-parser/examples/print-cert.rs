@@ -25,21 +25,22 @@ fn print_hex_dump(bytes: &[u8], max_len: usize) {
 fn format_oid(oid: &Oid) -> String {
     match oid2sn(oid, oid_registry()) {
         Ok(s) => s.to_owned(),
-        _ => format!("{}", oid),
+        _ => format!("{oid}"),
     }
 }
 
 fn generalname_to_string(gn: &GeneralName) -> String {
     match gn {
-        GeneralName::DNSName(name) => format!("DNSName:{}", name),
-        GeneralName::DirectoryName(n) => format!("DirName:{}", n),
-        GeneralName::EDIPartyName(obj) => format!("EDIPartyName:{:?}", obj),
-        GeneralName::IPAddress(n) => format!("IPAddress:{:?}", n),
-        GeneralName::OtherName(oid, n) => format!("OtherName:{}, {:?}", oid, n),
-        GeneralName::RFC822Name(n) => format!("RFC822Name:{}", n),
-        GeneralName::RegisteredID(oid) => format!("RegisteredID:{}", oid),
-        GeneralName::URI(n) => format!("URI:{}", n),
-        GeneralName::X400Address(obj) => format!("X400Address:{:?}", obj),
+        GeneralName::DNSName(name) => format!("DNSName:{name}"),
+        GeneralName::DirectoryName(n) => format!("DirName:{n}"),
+        GeneralName::EDIPartyName(obj) => format!("EDIPartyName:{obj:?}"),
+        GeneralName::IPAddress(n) => format!("IPAddress:{n:?}"),
+        GeneralName::OtherName(oid, n) => format!("OtherName:{oid}, {n:?}"),
+        GeneralName::RFC822Name(n) => format!("RFC822Name:{n}"),
+        GeneralName::RegisteredID(oid) => format!("RegisteredID:{oid}"),
+        GeneralName::URI(n) => format!("URI:{n}"),
+        GeneralName::X400Address(obj) => format!("X400Address:{obj:?}"),
+        GeneralName::Invalid(tag, b) => format!("Invalid:tag={tag},data={b:?}"),
     }
 }
 
@@ -54,11 +55,11 @@ fn print_x509_extension(oid: &Oid, ext: &X509Extension) {
         ParsedExtension::AuthorityKeyIdentifier(aki) => {
             println!("      X509v3 Authority Key Identifier");
             if let Some(key_id) = &aki.key_identifier {
-                println!("        Key Identifier: {:x}", key_id);
+                println!("        Key Identifier: {key_id:x}");
             }
             if let Some(issuer) = &aki.authority_cert_issuer {
                 for name in issuer {
-                    println!("        Cert Issuer: {}", name);
+                    println!("        Cert Issuer: {name}");
                 }
             }
             if let Some(serial) = aki.authority_cert_serial {
@@ -72,10 +73,10 @@ fn print_x509_extension(oid: &Oid, ext: &X509Extension) {
             println!("      X509v3 CRL Distribution Points:");
             for point in points.iter() {
                 if let Some(name) = &point.distribution_point {
-                    println!("        Full Name: {:?}", name);
+                    println!("        Full Name: {name:?}");
                 }
                 if let Some(reasons) = &point.reasons {
-                    println!("        Reasons: {}", reasons);
+                    println!("        Reasons: {reasons}");
                 }
                 if let Some(crl_issuer) = &point.crl_issuer {
                     print!("        CRL Issuer: ");
@@ -88,44 +89,44 @@ fn print_x509_extension(oid: &Oid, ext: &X509Extension) {
             }
         }
         ParsedExtension::KeyUsage(ku) => {
-            println!("      X509v3 Key Usage: {}", ku);
+            println!("      X509v3 Key Usage: {ku}");
         }
         ParsedExtension::NSCertType(ty) => {
-            println!("      Netscape Cert Type: {}", ty);
+            println!("      Netscape Cert Type: {ty}");
         }
         ParsedExtension::SubjectAlternativeName(san) => {
             for name in &san.general_names {
                 let s = match name {
                     GeneralName::DNSName(s) => {
-                        format!("DNS:{}", s)
+                        format!("DNS:{s}")
                     }
                     GeneralName::IPAddress(b) => {
                         let ip = match b.len() {
                             4 => {
                                 let b = <[u8; 4]>::try_from(*b).unwrap();
                                 let ip = Ipv4Addr::from(b);
-                                format!("{}", ip)
+                                format!("{ip}")
                             }
                             16 => {
                                 let b = <[u8; 16]>::try_from(*b).unwrap();
                                 let ip = Ipv6Addr::from(b);
-                                format!("{}", ip)
+                                format!("{ip}")
                             }
-                            l => format!("invalid (len={})", l),
+                            l => format!("invalid (len={l})"),
                         };
-                        format!("IP Address:{}", ip)
+                        format!("IP Address:{ip}")
                     }
                     _ => {
-                        format!("{:?}", name)
+                        format!("{name:?}")
                     }
                 };
-                println!("      X509v3 SAN: {}", s);
+                println!("      X509v3 SAN: {s}");
             }
         }
         ParsedExtension::SubjectKeyIdentifier(id) => {
-            println!("      X509v3 Subject Key Identifier: {:x}", id);
+            println!("      X509v3 Subject Key Identifier: {id:x}");
         }
-        x => println!("      {:?}", x),
+        x => println!("      {x:?}"),
     }
 }
 
@@ -155,7 +156,7 @@ fn print_x509_digest_algorithm(alg: &AlgorithmIdentifier, level: usize) {
 fn print_x509_info(x509: &X509Certificate) -> io::Result<()> {
     let version = x509.version();
     if version.0 < 3 {
-        println!("  Version: {}", version);
+        println!("  Version: {version}");
     } else {
         println!("  Version: INVALID({})", version.0);
     }
@@ -172,7 +173,7 @@ fn print_x509_info(x509: &X509Certificate) -> io::Result<()> {
 
     println!("  Signature Value:");
     for l in format_number_to_hex_with_colon(&x509.signature_value.data, 16) {
-        println!("      {}", l);
+        println!("      {l}");
     }
     println!("  Extensions:");
     for ext in x509.extensions() {
@@ -193,10 +194,10 @@ fn print_x509_info(x509: &X509Certificate) -> io::Result<()> {
             println!("FAIL");
         }
         for warning in logger.warnings() {
-            println!("  [W] {}", warning);
+            println!("  [W] {warning}");
         }
         for error in logger.errors() {
-            println!("  [E] {}", error);
+            println!("  [E] {error}");
         }
         println!();
         if VALIDATE_ERRORS_FATAL && !logger.errors().is_empty() {
@@ -207,7 +208,7 @@ fn print_x509_info(x509: &X509Certificate) -> io::Result<()> {
     {
         println!("Unknown (feature 'validate' not enabled)");
     }
-    #[cfg(feature = "verify")]
+    #[cfg(any(feature = "verify", feature = "verify-aws"))]
     {
         print!("Signature verification: ");
         if x509.subject() == x509.issuer() {
@@ -243,7 +244,7 @@ fn print_x509_signature_algorithm(signature_algorithm: &AlgorithmIdentifier, ind
                         indent_s,
                         format_oid(params.hash_algorithm_oid()),
                     );
-                    print!("{}Mask Generation Function: ", indent_s);
+                    print!("{indent_s}Mask Generation Function: ");
                     if let Ok(mask_gen) = params.mask_gen_algorithm() {
                         println!(
                             "{}/{}",
@@ -263,7 +264,7 @@ fn print_x509_signature_algorithm(signature_algorithm: &AlgorithmIdentifier, ind
                         indent_s,
                         format_oid(params.hash_algorithm_oid()),
                     );
-                    print!("{}Mask Generation Function: ", indent_s);
+                    print!("{indent_s}Mask Generation Function: ");
                     if let Ok(mask_gen) = params.mask_gen_algorithm() {
                         println!(
                             "{}/{}",
@@ -282,7 +283,7 @@ fn print_x509_signature_algorithm(signature_algorithm: &AlgorithmIdentifier, ind
             }
         }
         Err(e) => {
-            eprintln!("Could not parse signature algorithm: {}", e);
+            eprintln!("Could not parse signature algorithm: {e}");
             println!("  Signature Algorithm:");
             print_x509_digest_algorithm(signature_algorithm, indent);
         }
@@ -297,10 +298,10 @@ fn print_x509_ski(public_key: &SubjectPublicKeyInfo) {
             println!("    RSA Public Key: ({} bit)", rsa.key_size());
             // print_hex_dump(rsa.modulus, 1024);
             for l in format_number_to_hex_with_colon(rsa.modulus, 16) {
-                println!("        {}", l);
+                println!("        {l}");
             }
             if let Ok(e) = rsa.try_exponent() {
-                println!("    exponent: 0x{:x} ({})", e, e);
+                println!("    exponent: 0x{e:x} ({e})");
             } else {
                 println!("    exponent: <INVALID>:");
                 print_hex_dump(rsa.exponent, 32);
@@ -309,7 +310,7 @@ fn print_x509_ski(public_key: &SubjectPublicKeyInfo) {
         Ok(PublicKey::EC(ec)) => {
             println!("    EC Public Key: ({} bit)", ec.key_size());
             for l in format_number_to_hex_with_colon(ec.data(), 16) {
-                println!("        {}", l);
+                println!("        {l}");
             }
             // // identify curve
             // if let Some(params) = &public_key.algorithm.parameters {
@@ -328,19 +329,19 @@ fn print_x509_ski(public_key: &SubjectPublicKeyInfo) {
         Ok(PublicKey::DSA(y)) => {
             println!("    DSA Public Key: ({} bit)", 8 * y.len());
             for l in format_number_to_hex_with_colon(y, 16) {
-                println!("        {}", l);
+                println!("        {l}");
             }
         }
         Ok(PublicKey::GostR3410(y)) => {
             println!("    GOST R 34.10-94 Public Key: ({} bit)", 8 * y.len());
             for l in format_number_to_hex_with_colon(y, 16) {
-                println!("        {}", l);
+                println!("        {l}");
             }
         }
         Ok(PublicKey::GostR3410_2012(y)) => {
             println!("    GOST R 34.10-2012 Public Key: ({} bit)", 8 * y.len());
             for l in format_number_to_hex_with_colon(y, 16) {
-                println!("        {}", l);
+                println!("        {l}");
             }
         }
         Ok(PublicKey::Unknown(b)) => {
@@ -348,7 +349,7 @@ fn print_x509_ski(public_key: &SubjectPublicKeyInfo) {
             print_hex_dump(b, 256);
             if let Ok((rem, res)) = der_parser::parse_der(b) {
                 eprintln!("rem: {} bytes", rem.len());
-                eprintln!("{:?}", res);
+                eprintln!("{res:?}");
             } else {
                 eprintln!("      <Could not parse key as DER>");
             }
@@ -365,7 +366,7 @@ fn format_number_to_hex_with_colon(b: &[u8], row_size: usize) -> Vec<String> {
     let mut v = Vec::with_capacity(1 + b.len() / row_size);
     for r in b.chunks(row_size) {
         let s = r.iter().fold(String::with_capacity(3 * r.len()), |a, b| {
-            a + &format!("{:02x}:", b)
+            a + &format!("{b:02x}:")
         });
         v.push(s)
     }
@@ -379,11 +380,11 @@ fn handle_certificate(file_name: &str, data: &[u8]) -> io::Result<()> {
             Ok(())
         }
         Err(e) => {
-            let s = format!("Error while parsing {}: {}", file_name, e);
+            let s = format!("Error while parsing {file_name}: {e}");
             if PARSE_ERRORS_FATAL {
                 Err(io::Error::new(io::ErrorKind::Other, s))
             } else {
-                eprintln!("{}", s);
+                eprintln!("{s}");
                 Ok(())
             }
         }
@@ -392,7 +393,7 @@ fn handle_certificate(file_name: &str, data: &[u8]) -> io::Result<()> {
 
 pub fn main() -> io::Result<()> {
     for file_name in env::args().skip(1) {
-        println!("File: {}", file_name);
+        println!("File: {file_name}");
         let data = std::fs::read(file_name.clone()).expect("Unable to read file");
         if matches!((data[0], data[1]), (0x30, 0x81..=0x83)) {
             // probably DER
@@ -403,11 +404,11 @@ pub fn main() -> io::Result<()> {
                 match pem {
                     Ok(pem) => {
                         let data = &pem.contents;
-                        println!("Certificate [{}]", n);
+                        println!("Certificate [{n}]");
                         handle_certificate(&file_name, data)?;
                     }
                     Err(e) => {
-                        eprintln!("Error while decoding PEM entry {}: {}", n, e);
+                        eprintln!("Error while decoding PEM entry {n}: {e}");
                     }
                 }
             }

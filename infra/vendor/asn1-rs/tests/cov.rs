@@ -1,3 +1,5 @@
+#![cfg(feature = "std")]
+
 //! Generic and coverage tests
 use asn1_rs::*;
 use std::io;

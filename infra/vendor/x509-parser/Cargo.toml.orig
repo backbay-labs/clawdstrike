@@ -1,6 +1,6 @@
 [package]
 name = "x509-parser"
-version = "0.16.0"
+version = "0.18.1"
 description = "Parser for the X.509 v3 format (RFC 5280 certificates)"
 license = "MIT OR Apache-2.0"
 keywords = ["X509","Certificate","parser","nom"]
@@ -10,7 +10,7 @@ repository = "https://github.com/rusticata/x509-parser.git"
 categories = ["parser-implementations", "cryptography"]
 readme = "README.md"
 edition = "2018"
-rust-version = "1.63.0"
+rust-version = "1.67.1"
 
 include = [
   "CHANGELOG.md",
@@ -22,6 +22,7 @@ include = [
   "src/*.rs",
   "src/extensions/*.rs",
   "src/validate/*.rs",
+  "src/visitor/*.rs",
   "tests/*.rs",
   "assets/*.crl",
   "assets/*.csr",
@@ -37,17 +38,20 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
+verify-aws = ["aws-lc-rs"]
 verify = ["ring"]
 validate = []
 
 [dependencies]
-asn1-rs = { version = "0.6.1", features=["datetime"] }
+aws-lc-rs = { version = "1.0", optional = true }
+asn1-rs = { version = "0.7.0", features=["datetime"] }
 data-encoding = "2.2.1"
 lazy_static = "1.4"
 nom = "7.0"
-oid-registry = { version="0.7", features=["crypto", "x509", "x962"] }
+oid-registry = { version="0.8.1", features=["crypto", "x509", "x962"] }
 rusticata-macros = "4.0"
-ring = { version="0.17.7", optional=true }
-der-parser = { version = "9.0", features=["bigint"] }
-thiserror = "1.0.2"
-time = { version="0.3.20", features=["formatting"] }
+ring = { version="0.17.12", optional=true }
+der-parser = { version = "10.0", features=["bigint"] }
+thiserror = "2.0"
+time = { version="0.3.35", features=["formatting"] }
+

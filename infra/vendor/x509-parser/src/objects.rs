@@ -19,7 +19,7 @@
 //! ```
 
 use crate::error::NidError;
-use asn1_rs::{oid, Oid};
+use asn1_rs::oid;
 use lazy_static::lazy_static;
 use oid_registry::*;
 use std::collections::HashMap;

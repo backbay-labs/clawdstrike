@@ -4,7 +4,7 @@
 //! [![crates.io](https://img.shields.io/crates/v/x509-parser.svg)](https://crates.io/crates/x509-parser)
 //! [![Download numbers](https://img.shields.io/crates/d/x509-parser.svg)](https://crates.io/crates/x509-parser)
 //! [![Github CI](https://github.com/rusticata/x509-parser/workflows/Continuous%20integration/badge.svg)](https://github.com/rusticata/x509-parser/actions)
-//! [![Minimum rustc version](https://img.shields.io/badge/rustc-1.63.0+-lightgray.svg)](#rust-version-requirements)
+//! [![Minimum rustc version](https://img.shields.io/badge/rustc-1.67.1+-lightgray.svg)](#rust-version-requirements)
 //!
 //! # X.509 Parser
 //!
@@ -37,6 +37,8 @@
 //! same as accessing `<object>.tbs_certificate.issuer`.
 //!
 //! For PEM-encoded certificates, use the [`pem`](pem/index.html) module.
+//!
+//! This crate also provides visitor traits: [`X509CertificateVisitor`](crate::visitor::X509CertificateVisitor).
 //!
 //! # Examples
 //!
@@ -85,16 +87,16 @@
 //!
 //! # Features
 //!
-//! - The `verify` feature adds support for (cryptographic) signature verification, based on `ring`.
+//! - The `verify` and `verify-aws` features adds support for (cryptographic) signature verification, based on `ring` or `aws-lc` respectively.
 //!   It adds the
 //!   [`X509Certificate::verify_signature()`](certificate/struct.X509Certificate.html#method.verify_signature)
 //!   to `X509Certificate`.
 //!
 //! ```rust
-//! # #[cfg(feature = "verify")]
+//! # #[cfg(any(feature = "verify", feature = "verify-aws"))]
 //! # use x509_parser::certificate::X509Certificate;
 //! /// Cryptographic signature verification: returns true if certificate was signed by issuer
-//! #[cfg(feature = "verify")]
+//! #[cfg(any(feature = "verify", feature = "verify-aws"))]
 //! pub fn check_signature(cert: &X509Certificate<'_>, issuer: &X509Certificate<'_>) -> bool {
 //!     let issuer_public_key = issuer.public_key();
 //!     cert
@@ -103,18 +105,21 @@
 //! }
 //! ```
 //!
+//! - The `verify-aws` feature offers the same support for signature verification, but based on
+//!   `aws-lc-rs` instead of `ring`.
+//!
+//! - _Note_: if both `verify` and `verify-aws` features are enabled (which happens when using
+//!   `--all-features`), the verification will use `aws-lc-rs`. It also has the side-effect of
+//!   having a dependency on `ring`, even if it is not used.
+//!
 //! - The `validate` features add methods to run more validation functions on the certificate structure
 //!   and values using the [`Validate`](validate/trait.Validate.html) trait.
 //!   It does not validate any cryptographic parameter (see `verify` above).
 //!
 //! ## Rust version requirements
 //!
-//! `x509-parser` requires **Rustc version 1.63 or greater**, based on der-parser
+//! `x509-parser` requires **Rustc version 1.67.1 or greater**, based on der-parser
 //! dependencies and for proc-macro attributes support.
-//!
-//! Note that due to breaking changes in the `time` crate, a specific version of this
-//! crate must be specified for compiler versions <= 1.63:
-//! `cargo update -p time --precise 0.3.20`
 //!
 //! [RFC5280]: https://tools.ietf.org/html/rfc5280
 
@@ -152,12 +157,14 @@ pub mod utils;
 #[cfg(feature = "validate")]
 #[cfg_attr(docsrs, doc(cfg(feature = "validate")))]
 pub mod validate;
-#[cfg(feature = "verify")]
-#[cfg_attr(docsrs, doc(cfg(feature = "verify")))]
+#[cfg(any(feature = "verify", feature = "verify-aws"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "verify", feature = "verify-aws"))))]
 pub mod verify;
+pub mod visitor;
 pub mod x509;
 
 // reexports
+pub use asn1_rs;
 pub use der_parser;
 pub use der_parser::num_bigint;
 pub use nom;
@@ -177,7 +184,7 @@ use revocation_list::CertificateRevocationList;
 ///
 /// For PEM-encoded certificates, use the [`pem`](pem/index.html) module.
 #[inline]
-pub fn parse_x509_certificate(i: &[u8]) -> X509Result<X509Certificate> {
+pub fn parse_x509_certificate(i: &[u8]) -> X509Result<'_, X509Certificate<'_>> {
     X509Certificate::from_der(i)
 }
 
@@ -187,7 +194,7 @@ pub fn parse_x509_certificate(i: &[u8]) -> X509Result<X509Certificate> {
 /// This function is an alias to [CertificateRevocationList::from_der](revocation_list::CertificateRevocationList::from_der). See this function
 /// for more information.
 #[inline]
-pub fn parse_x509_crl(i: &[u8]) -> X509Result<CertificateRevocationList> {
+pub fn parse_x509_crl(i: &[u8]) -> X509Result<'_, CertificateRevocationList<'_>> {
     CertificateRevocationList::from_der(i)
 }
 
@@ -197,7 +204,7 @@ pub fn parse_x509_crl(i: &[u8]) -> X509Result<CertificateRevocationList> {
     note = "please use `parse_x509_certificate` or `X509Certificate::from_der` instead"
 )]
 #[inline]
-pub fn parse_x509_der(i: &[u8]) -> X509Result<X509Certificate> {
+pub fn parse_x509_der(i: &[u8]) -> X509Result<'_, X509Certificate<'_>> {
     X509Certificate::from_der(i)
 }
 
@@ -208,6 +215,6 @@ pub fn parse_x509_der(i: &[u8]) -> X509Result<X509Certificate> {
     note = "please use `parse_x509_crl` or `CertificateRevocationList::from_der` instead"
 )]
 #[inline]
-pub fn parse_crl_der(i: &[u8]) -> X509Result<CertificateRevocationList> {
+pub fn parse_crl_der(i: &[u8]) -> X509Result<'_, CertificateRevocationList<'_>> {
     CertificateRevocationList::from_der(i)
 }

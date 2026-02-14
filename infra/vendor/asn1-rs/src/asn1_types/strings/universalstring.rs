@@ -30,7 +30,7 @@ impl<'a> UniversalString<'a> {
     }
 }
 
-impl<'a> AsRef<str> for UniversalString<'a> {
+impl AsRef<str> for UniversalString<'_> {
     fn as_ref(&self) -> &str {
         &self.data
     }
@@ -92,7 +92,7 @@ impl<'a, 'b> TryFrom<&'b Any<'a>> for UniversalString<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for UniversalString<'a> {
+impl CheckDerConstraints for UniversalString<'_> {
     fn check_constraints(any: &Any) -> Result<()> {
         any.header.assert_primitive()?;
         Ok(())
@@ -101,7 +101,7 @@ impl<'a> CheckDerConstraints for UniversalString<'a> {
 
 impl DerAutoDerive for UniversalString<'_> {}
 
-impl<'a> Tagged for UniversalString<'a> {
+impl Tagged for UniversalString<'_> {
     const TAG: Tag = Tag::UniversalString;
 }
 
@@ -109,7 +109,7 @@ impl<'a> Tagged for UniversalString<'a> {
 impl ToDer for UniversalString<'_> {
     fn to_der_len(&self) -> Result<usize> {
         // UCS-4: 4 bytes per character
-        let sz = self.data.as_bytes().len() * 4;
+        let sz = self.data.len() * 4;
         if sz < 127 {
             // 1 (class+tag) + 1 (length) + len
             Ok(2 + sz)
@@ -125,15 +125,15 @@ impl ToDer for UniversalString<'_> {
             Class::Universal,
             false,
             Self::TAG,
-            Length::Definite(self.data.as_bytes().len() * 4),
+            Length::Definite(self.data.len() * 4),
         );
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
         self.data
             .chars()
             .try_for_each(|c| writer.write(&(c as u32).to_be_bytes()[..]).map(|_| ()))?;
-        Ok(self.data.as_bytes().len() * 4)
+        Ok(self.data.len() * 4)
     }
 }

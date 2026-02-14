@@ -1,9 +1,10 @@
+use alloc::string::String;
+
 use super::{BerObject, BerObjectContent, BitStringObject};
 use crate::ber::{ber_get_object_content, MAX_OBJECT_SIZE};
 use crate::error::{BerError, BerResult};
 use alloc::vec::Vec;
 use asn1_rs::*;
-use nom::Err;
 use rusticata_macros::custom_check;
 
 /// Parse any BER object recursively, specifying the maximum recursion depth and expected tag
@@ -95,7 +96,19 @@ fn try_berobject_from_any(any: Any, max_depth: usize) -> Result<BerObject> {
                 BerObjectContent::BitString(ignored_bits, BitStringObject { data }),
             ))
         }
-        Tag::BmpString => from_obj!(STRING BmpString, any, header),
+        Tag::BmpString => {
+            custom_check!(any.data, header.constructed(), BerError::Unsupported)?; // XXX valid in BER (8.6.3)
+            if any.data.len() % 2 != 0 {
+                return Err(BerError::Unsupported);
+            }
+            let v: Vec<u16> = any
+                .data
+                .chunks_exact(2)
+                .map(|a| u16::from_be_bytes([a[0], a[1]]))
+                .collect();
+            let _s = String::from_utf16(&v)?;
+            Ok(obj_from(header, BerObjectContent::BmpString(any.data)))
+        }
         Tag::Boolean => {
             let b = any.bool()?;
             Ok(obj_from(header, BerObjectContent::Boolean(b)))
@@ -201,7 +214,7 @@ mod tests {
     #[test_case(&hex!("13 04 01 02 03 04") => matches Err(BerError::StringInvalidCharset) ; "printable string err")]
     #[test_case(&hex!("16 04 31 32 33 34") => matches Ok(BerObject{header:_, content:BerObjectContent::IA5String("1234")}) ; "ia5: numeric")]
     #[test_case(&hex!("1a 04 31 32 33 34") => matches Ok(BerObject{header:_, content:BerObjectContent::VisibleString("1234")}) ; "visible: numeric")]
-    #[test_case(&hex!("1e 08 00 55 00 73 00 65 00 72") => matches Ok(BerObject{header:_, content:BerObjectContent::BmpString("\x00U\x00s\x00e\x00r")}) ; "bmp")]
+    #[test_case(&hex!("1e 08 00 55 00 73 00 65 00 72") => matches Ok(BerObject{header:_, content:BerObjectContent::BmpString(b"\x00U\x00s\x00e\x00r")}) ; "bmp")]
     #[test_case(&hex!("30 80 04 03 56 78 90 00 00") => matches Ok(BerObject{header:_, content:BerObjectContent::Sequence(_)}) ; "indefinite length")]
     #[test_case(&hex!("c0 03 01 00 01") => matches Ok(BerObject{header:_, content:BerObjectContent::Unknown(_)}) ; "private")]
     fn ber_from_any(i: &[u8]) -> Result<BerObject, BerError> {

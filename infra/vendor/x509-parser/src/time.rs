@@ -10,15 +10,18 @@ use crate::error::{X509Error, X509Result};
 
 /// An ASN.1 timestamp.
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
-pub struct ASN1Time(OffsetDateTime);
+pub struct ASN1Time {
+    time: OffsetDateTime,
+    generalized: bool,
+}
 
 impl ASN1Time {
-    pub(crate) fn from_der_opt(i: &[u8]) -> X509Result<Option<Self>> {
+    pub(crate) fn from_der_opt(i: &[u8]) -> X509Result<'_, Option<Self>> {
         if i.is_empty() {
             return Ok((i, None));
         }
         match parse_choice_of_time(i) {
-            Ok((rem, dt)) => Ok((rem, Some(ASN1Time(dt)))),
+            Ok((rem, time)) => Ok((rem, Some(time))),
             Err(Err::Error(Error::InvalidTag)) | Err(Err::Error(Error::UnexpectedTag { .. })) => {
                 Ok((i, None))
             }
@@ -28,30 +31,50 @@ impl ASN1Time {
 
     #[inline]
     pub const fn new(dt: OffsetDateTime) -> Self {
-        Self(dt)
+        let generalized = dt.year() > 2049;
+        Self {
+            time: dt,
+            generalized,
+        }
+    }
+
+    #[inline]
+    pub const fn new_generalized(dt: OffsetDateTime) -> Self {
+        Self {
+            time: dt,
+            generalized: true,
+        }
+    }
+
+    #[inline]
+    pub const fn new_utc(dt: OffsetDateTime) -> Self {
+        Self {
+            time: dt,
+            generalized: false,
+        }
     }
 
     #[inline]
     pub const fn to_datetime(&self) -> OffsetDateTime {
-        self.0
+        self.time
     }
 
     /// Makes a new `ASN1Time` from the number of non-leap seconds since Epoch
     pub fn from_timestamp(secs: i64) -> Result<Self, X509Error> {
         let dt = OffsetDateTime::from_unix_timestamp(secs).map_err(|_| X509Error::InvalidDate)?;
-        Ok(ASN1Time(dt))
+        Ok(ASN1Time::new(dt))
     }
 
     /// Returns the number of non-leap seconds since January 1, 1970 0:00:00 UTC (aka "UNIX timestamp").
     #[inline]
     pub fn timestamp(&self) -> i64 {
-        self.0.unix_timestamp()
+        self.time.unix_timestamp()
     }
 
     /// Returns a `ASN1Time` which corresponds to the current date.
     #[inline]
     pub fn now() -> Self {
-        ASN1Time(OffsetDateTime::now_utc())
+        ASN1Time::new(OffsetDateTime::now_utc())
     }
 
     /// Returns an RFC 2822 date and time string such as `Tue, 1 Jul 2003 10:52:37 +0200`.
@@ -62,33 +85,51 @@ impl ASN1Time {
     /// For an infallible conversion to string, use `.to_string()`.
     #[inline]
     pub fn to_rfc2822(self) -> Result<String, String> {
-        self.0
+        self.time
             .format(&time::format_description::well_known::Rfc2822)
             .map_err(|e| e.to_string())
     }
-}
 
-impl<'a> FromDer<'a, X509Error> for ASN1Time {
-    fn from_der(i: &[u8]) -> X509Result<Self> {
-        let (rem, dt) = parse_choice_of_time(i).map_err(|_| X509Error::InvalidDate)?;
-        Ok((rem, ASN1Time(dt)))
+    /// Return `true` if date is encoded as UTCTime
+    ///
+    /// According to RFC 5280, dates though year 2049 should be encoded as UTCTime, and
+    /// GeneralizedTime after 2029.
+    #[inline]
+    pub const fn is_utctime(&self) -> bool {
+        !self.generalized
+    }
+
+    /// Return `true` if date is encoded as GeneralizedTime
+    ///
+    /// According to RFC 5280, dates though year 2049 should be encoded as UTCTime, and
+    /// GeneralizedTime after 2029.
+    #[inline]
+    pub const fn is_generalizedtime(&self) -> bool {
+        self.generalized
     }
 }
 
-pub(crate) fn parse_choice_of_time(i: &[u8]) -> ParseResult<OffsetDateTime> {
+impl FromDer<'_, X509Error> for ASN1Time {
+    fn from_der(i: &[u8]) -> X509Result<'_, Self> {
+        let (rem, time) = parse_choice_of_time(i).map_err(|_| X509Error::InvalidDate)?;
+        Ok((rem, time))
+    }
+}
+
+pub(crate) fn parse_choice_of_time(i: &[u8]) -> ParseResult<'_, ASN1Time> {
     if let Ok((rem, t)) = UtcTime::from_der(i) {
         let dt = t.utc_adjusted_datetime()?;
-        return Ok((rem, dt));
+        return Ok((rem, ASN1Time::new_utc(dt)));
     }
     if let Ok((rem, t)) = GeneralizedTime::from_der(i) {
         let dt = t.utc_datetime()?;
-        return Ok((rem, dt));
+        return Ok((rem, ASN1Time::new_generalized(dt)));
     }
     parse_malformed_date(i)
 }
 
 // allow relaxed parsing of UTCTime (ex: 370116130016+0000)
-fn parse_malformed_date(i: &[u8]) -> ParseResult<OffsetDateTime> {
+fn parse_malformed_date(i: &[u8]) -> ParseResult<'_, ASN1Time> {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     // fn check_char(b: &u8) -> bool {
     //     (0x20 <= *b && *b <= 0x7f) || (*b == b'+')
@@ -96,7 +137,7 @@ fn parse_malformed_date(i: &[u8]) -> ParseResult<OffsetDateTime> {
     let (_rem, hdr) = Header::from_der(i)?;
     let len = hdr.length().definite()?;
     if len > MAX_OBJECT_SIZE {
-        return Err(nom::Err::Error(Error::InvalidLength));
+        return Err(Err::Error(Error::InvalidLength));
     }
     match hdr.tag() {
         Tag::UtcTime => {
@@ -111,9 +152,9 @@ fn parse_malformed_date(i: &[u8]) -> ParseResult<OffsetDateTime> {
             // let content = BerObjectContent::UTCTime(s);
             // let obj = DerObject::from_header_and_content(hdr, content);
             // Ok((rem, obj))
-            Err(nom::Err::Error(Error::BerValueError))
+            Err(Err::Error(Error::BerValueError))
         }
-        _ => Err(nom::Err::Error(Error::unexpected_tag(None, hdr.tag()))),
+        _ => Err(Err::Error(Error::unexpected_tag(None, hdr.tag()))),
     }
 }
 
@@ -121,9 +162,9 @@ impl fmt::Display for ASN1Time {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let format = format_description!("[month repr:short] [day padding:space] [hour]:[minute]:[second] [year padding:none] [offset_hour sign:mandatory]:[offset_minute]");
         let s = self
-            .0
+            .time
             .format(format)
-            .unwrap_or_else(|e| format!("Invalid date: {}", e));
+            .unwrap_or_else(|e| format!("Invalid date: {e}"));
         f.write_str(&s)
     }
 }
@@ -133,7 +174,7 @@ impl Add<Duration> for ASN1Time {
 
     #[inline]
     fn add(self, rhs: Duration) -> Option<ASN1Time> {
-        Some(ASN1Time(self.0 + rhs))
+        Some(ASN1Time::new(self.time + rhs))
     }
 }
 
@@ -142,8 +183,8 @@ impl Sub<ASN1Time> for ASN1Time {
 
     #[inline]
     fn sub(self, rhs: ASN1Time) -> Option<Duration> {
-        if self.0 > rhs.0 {
-            Some(self.0 - rhs.0)
+        if self.time > rhs.time {
+            Some(self.time - rhs.time)
         } else {
             None
         }
@@ -152,7 +193,7 @@ impl Sub<ASN1Time> for ASN1Time {
 
 impl From<OffsetDateTime> for ASN1Time {
     fn from(dt: OffsetDateTime) -> Self {
-        ASN1Time(dt)
+        ASN1Time::new(dt)
     }
 }
 

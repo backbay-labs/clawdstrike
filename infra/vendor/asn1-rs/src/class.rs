@@ -67,7 +67,7 @@ impl TryFrom<u8> for Class {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

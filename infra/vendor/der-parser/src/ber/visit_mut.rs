@@ -31,7 +31,7 @@ pub trait VisitMut<'a> {
     }
 
     /// Called for BER bmpstring objects
-    fn visit_ber_bmpstring_mut(&mut self, s: &'a mut &'_ str, depth: usize) {}
+    fn visit_ber_bmpstring_mut(&mut self, s: &'a mut &'_ [u8], depth: usize) {}
 
     /// Called for BER boolean objects
     fn visit_ber_boolean_mut(&mut self, b: &'a mut bool, depth: usize) {}
@@ -195,6 +195,7 @@ mod tests {
     use super::VisitMut;
     use crate::ber::BerObject;
 
+    #[allow(unused)]
     #[derive(Debug)]
     struct BerObjectVisitor {}
 

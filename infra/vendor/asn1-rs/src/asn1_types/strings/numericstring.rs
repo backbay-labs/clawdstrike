@@ -5,7 +5,7 @@ use alloc::string::String;
 
 asn1_string!(NumericString);
 
-impl<'a> TestValidCharset for NumericString<'a> {
+impl TestValidCharset for NumericString<'_> {
     fn test_valid_charset(i: &[u8]) -> Result<()> {
         #[allow(clippy::trivially_copy_pass_by_ref)]
         fn is_numeric(b: &u8) -> bool {

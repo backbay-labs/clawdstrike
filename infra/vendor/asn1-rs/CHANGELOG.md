@@ -8,6 +8,27 @@
 
 ### Thanks
 
+## 0.7.1
+
+### Changed/Fixed
+
+- Update lock file
+- Update features trace and debug to depend on std (#70)
+- Fix doctests with `--no-default-features`
+- Make some tests conditional if `std` is not enabled
+- Fix misc clippy (nightly) warnings
+
+## 0.7.0
+
+### Changed/Fixed
+
+- Update `thiserror` to 2.0 and derive `Error` for error types (even with `no_std`)
+
+### Added
+
+- Add `ToStatic` custom derive attribute
+- Add `ToDerSequence` custom derive attribute (#44)
+
 ## 0.6.2
 
 ### Changed/Fixed

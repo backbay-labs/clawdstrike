@@ -8,7 +8,7 @@ use alloc::string::String;
 
 asn1_string!(ObjectDescriptor);
 
-impl<'a> TestValidCharset for ObjectDescriptor<'a> {
+impl TestValidCharset for ObjectDescriptor<'_> {
     fn test_valid_charset(i: &[u8]) -> Result<()> {
         if !i.iter().all(u8::is_ascii) {
             return Err(Error::StringInvalidCharset);

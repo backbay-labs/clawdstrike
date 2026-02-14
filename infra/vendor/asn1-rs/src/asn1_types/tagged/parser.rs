@@ -39,7 +39,7 @@ impl<'a, TagKind, T, E> TaggedParser<'a, TagKind, T, E> {
     }
 }
 
-impl<'a, TagKind, T, E> AsRef<T> for TaggedParser<'a, TagKind, T, E> {
+impl<TagKind, T, E> AsRef<T> for TaggedParser<'_, TagKind, T, E> {
     fn as_ref(&self) -> &T {
         &self.inner
     }
@@ -71,7 +71,7 @@ where
     }
 }
 
-impl<'a, TagKind, T, E> DynTagged for TaggedParser<'a, TagKind, T, E> {
+impl<TagKind, T, E> DynTagged for TaggedParser<'_, TagKind, T, E> {
     fn tag(&self) -> Tag {
         self.tag()
     }

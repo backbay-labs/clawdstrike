@@ -29,7 +29,7 @@ impl<'a> BmpString<'a> {
     }
 }
 
-impl<'a> AsRef<str> for BmpString<'a> {
+impl AsRef<str> for BmpString<'_> {
     fn as_ref(&self) -> &str {
         &self.data
     }
@@ -82,7 +82,7 @@ impl<'a> core::convert::TryFrom<Any<'a>> for BmpString<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for BmpString<'a> {
+impl CheckDerConstraints for BmpString<'_> {
     fn check_constraints(any: &Any) -> Result<()> {
         any.header.assert_primitive()?;
         Ok(())
@@ -91,11 +91,11 @@ impl<'a> CheckDerConstraints for BmpString<'a> {
 
 impl DerAutoDerive for BmpString<'_> {}
 
-impl<'a> Tagged for BmpString<'a> {
+impl Tagged for BmpString<'_> {
     const TAG: Tag = Tag::BmpString;
 }
 
-impl<'a> TestValidCharset for BmpString<'a> {
+impl TestValidCharset for BmpString<'_> {
     fn test_valid_charset(i: &[u8]) -> Result<()> {
         if i.len() % 2 != 0 {
             return Err(Error::StringInvalidCharset);
@@ -129,7 +129,7 @@ impl ToDer for BmpString<'_> {
         // compute the UTF-16 length
         let l = self.data.encode_utf16().count() * 2;
         let header = Header::new(Class::Universal, false, Self::TAG, Length::Definite(l));
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {

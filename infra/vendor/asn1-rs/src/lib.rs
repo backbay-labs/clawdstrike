@@ -101,7 +101,8 @@
 //!
 //! Writing 2 BER integers:
 //!
-//! ```rust
+#![cfg_attr(feature = "std", doc = r#"```rust"#)]
+#![cfg_attr(not(feature = "std"), doc = r#"```rust,compile_fail"#)]
 //! use asn1_rs::{Integer, ToDer};
 //!
 //! let mut writer = Vec::new();
@@ -120,7 +121,8 @@
 //!
 //! Similarly to `FromBer`/`FromDer`, serialization methods are also implemented for primitive types:
 //!
-//! ```rust
+#![cfg_attr(feature = "std", doc = r#"```rust"#)]
+#![cfg_attr(not(feature = "std"), doc = r#"```rust,compile_fail"#)]
 //! use asn1_rs::ToDer;
 //!
 //! let mut writer = Vec::new();
@@ -190,6 +192,7 @@ mod error;
 mod header;
 mod length;
 mod tag;
+mod tostatic;
 mod traits;
 
 pub use asn1_types::*;

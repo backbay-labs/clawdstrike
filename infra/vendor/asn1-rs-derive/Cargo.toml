@@ -12,9 +12,10 @@
 [package]
 edition = "2018"
 name = "asn1-rs-derive"
-version = "0.5.1"
+version = "0.6.0"
 authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false

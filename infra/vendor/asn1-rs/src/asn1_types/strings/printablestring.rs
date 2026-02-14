@@ -5,7 +5,7 @@ use alloc::string::String;
 
 asn1_string!(PrintableString);
 
-impl<'a> TestValidCharset for PrintableString<'a> {
+impl TestValidCharset for PrintableString<'_> {
     fn test_valid_charset(i: &[u8]) -> Result<()> {
         // Argument must be a reference, because of the .iter().all(F) call below
         #[allow(clippy::trivially_copy_pass_by_ref)]

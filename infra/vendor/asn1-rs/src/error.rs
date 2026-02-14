@@ -11,13 +11,9 @@ use nom::error::{ErrorKind, FromExternalError, ParseError};
 use nom::IResult;
 #[cfg(feature = "std")]
 use std::io;
-#[cfg(feature = "std")]
 use thiserror::Error;
 
-#[cfg(feature = "std")]
-impl std::error::Error for DerConstraint {}
-
-#[derive(Clone, Copy, Debug, Display, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Error)]
 /// Error types for DER constraints
 pub enum DerConstraint {
     /// Indefinite length not allowed
@@ -42,17 +38,9 @@ pub enum DerConstraint {
     IntegerLeadingFF,
 }
 
-// XXX
-// thiserror does not work in no_std
-// see https://github.com/dtolnay/thiserror/pull/64
-
-#[cfg(feature = "std")]
-impl std::error::Error for Error {}
-
 /// The error type for operations of the [`FromBer`](crate::FromBer),
 /// [`FromDer`](crate::FromDer), and associated traits.
-#[derive(Clone, Debug, Display, PartialEq, Eq)]
-// #[cfg_attr(feature = "std", derive(Error))]
+#[derive(Clone, Debug, Display, PartialEq, Eq, Error)]
 pub enum Error {
     /// BER object does not have the expected type
     BerTypeError,

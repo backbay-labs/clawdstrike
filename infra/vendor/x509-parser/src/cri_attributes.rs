@@ -19,7 +19,7 @@ pub struct X509CriAttribute<'a> {
 }
 
 impl<'a> FromDer<'a, X509Error> for X509CriAttribute<'a> {
-    fn from_der(i: &'a [u8]) -> X509Result<X509CriAttribute> {
+    fn from_der(i: &'a [u8]) -> X509Result<'a, X509CriAttribute<'a>> {
         Sequence::from_ber_and_then(i, |i| {
             let (i, oid) = Oid::from_der(i)?;
             let value_start = i;
@@ -28,8 +28,8 @@ impl<'a> FromDer<'a, X509Error> for X509CriAttribute<'a> {
                 return Err(Err::Error(Error::BerTypeError));
             };
 
-            let (i, parsed_attribute) = crate::cri_attributes::parser::parse_attribute(i, &oid)
-                .map_err(|_| Err::Error(Error::BerValueError))?;
+            let (i, parsed_attribute) =
+                parser::parse_attribute(i, &oid).map_err(|_| Err::Error(Error::BerValueError))?;
             let attribute = X509CriAttribute {
                 oid,
                 value: &value_start[..value_start.len() - i.len()],
@@ -116,12 +116,12 @@ pub(crate) mod parser {
         }
     }
 
-    pub(super) fn parse_extension_request(i: &[u8]) -> X509Result<ExtensionRequest> {
+    pub(super) fn parse_extension_request(i: &[u8]) -> X509Result<'_, ExtensionRequest<'_>> {
         crate::extensions::parse_extension_sequence(i)
             .map(|(i, extensions)| (i, ExtensionRequest { extensions }))
     }
 
-    fn parse_extension_request_attr(i: &[u8]) -> X509Result<ParsedCriAttribute> {
+    fn parse_extension_request_attr(i: &[u8]) -> X509Result<'_, ParsedCriAttribute<'_>> {
         map(
             parse_extension_request,
             ParsedCriAttribute::ExtensionRequest,
@@ -143,7 +143,7 @@ pub(crate) mod parser {
     //          utf8String              UTF8String (SIZE (1..MAX)),
     //          bmpString               BMPString (SIZE (1..MAX))
     //    }
-    pub(super) fn parse_challenge_password(i: &[u8]) -> X509Result<ChallengePassword> {
+    pub(super) fn parse_challenge_password(i: &[u8]) -> X509Result<'_, ChallengePassword> {
         let (rem, obj) = match alt((
             parse_der_utf8string,
             parse_der_printablestring,
@@ -161,7 +161,7 @@ pub(crate) mod parser {
         }
     }
 
-    fn parse_challenge_password_attr(i: &[u8]) -> X509Result<ParsedCriAttribute> {
+    fn parse_challenge_password_attr(i: &[u8]) -> X509Result<'_, ParsedCriAttribute<'_>> {
         map(
             parse_challenge_password,
             ParsedCriAttribute::ChallengePassword,
@@ -169,7 +169,7 @@ pub(crate) mod parser {
     }
 }
 
-pub(crate) fn parse_cri_attributes(i: &[u8]) -> X509Result<Vec<X509CriAttribute>> {
+pub(crate) fn parse_cri_attributes(i: &[u8]) -> X509Result<'_, Vec<X509CriAttribute<'_>>> {
     let (i, hdr) = Header::from_der(i).map_err(|_| Err::Error(X509Error::InvalidAttributes))?;
     if hdr.is_contextspecific() && hdr.tag().0 == 0 {
         all_consuming(many0(complete(X509CriAttribute::from_der)))(i)

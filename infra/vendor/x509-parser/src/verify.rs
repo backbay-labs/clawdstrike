@@ -1,24 +1,38 @@
 use crate::prelude::*;
-use asn1_rs::BitString;
+use crate::signature_algorithm::RsaSsaPssParams;
+use asn1_rs::{Any, BitString};
 use oid_registry::{
-    OID_EC_P256, OID_NIST_EC_P384, OID_PKCS1_SHA1WITHRSA, OID_PKCS1_SHA256WITHRSA,
+    OID_EC_P256, OID_NIST_EC_P384, OID_NIST_HASH_SHA256, OID_NIST_HASH_SHA384,
+    OID_NIST_HASH_SHA512, OID_PKCS1_RSASSAPSS, OID_PKCS1_SHA1WITHRSA, OID_PKCS1_SHA256WITHRSA,
     OID_PKCS1_SHA384WITHRSA, OID_PKCS1_SHA512WITHRSA, OID_SHA1_WITH_RSA, OID_SIG_ECDSA_WITH_SHA256,
     OID_SIG_ECDSA_WITH_SHA384, OID_SIG_ED25519,
 };
+use std::convert::TryFrom;
+
+// Since the `signature` object is similar in ring and in aws-lc-rs, we just use simple logic
+// to determine which one to use.
+// If both verify and verify-aws features are enabled, aws will be used.
+#[cfg(feature = "verify-aws")]
+use aws_lc_rs::signature;
+#[cfg(all(feature = "verify", not(feature = "verify-aws")))]
+use ring::signature;
 
 /// Verify the cryptographic signature of the raw data (can be a certificate, a CRL or a CSR).
 ///
 /// `public_key` is the public key of the **signer**.
 ///
-/// Not all algorithms are supported, this function is limited to what `ring` supports.
+/// Not all algorithms are supported, this function is limited to what `aws_lc_rs` or `ring` supports.
 pub fn verify_signature(
     public_key: &SubjectPublicKeyInfo,
     signature_algorithm: &AlgorithmIdentifier,
     signature_value: &BitString,
     raw_data: &[u8],
 ) -> Result<(), X509Error> {
-    use ring::signature;
-    let signature_algorithm = &signature_algorithm.algorithm;
+    let AlgorithmIdentifier {
+        algorithm: signature_algorithm,
+        parameters: signature_algorithm_parameters,
+    } = &signature_algorithm;
+
     // identify verification algorithm
     let verification_alg: &dyn signature::VerificationAlgorithm = if *signature_algorithm
         == OID_PKCS1_SHA1WITHRSA
@@ -31,6 +45,9 @@ pub fn verify_signature(
         &signature::RSA_PKCS1_2048_8192_SHA384
     } else if *signature_algorithm == OID_PKCS1_SHA512WITHRSA {
         &signature::RSA_PKCS1_2048_8192_SHA512
+    } else if *signature_algorithm == OID_PKCS1_RSASSAPSS {
+        get_rsa_pss_verification_algo(signature_algorithm_parameters)
+            .ok_or(X509Error::SignatureUnsupportedAlgorithm)?
     } else if *signature_algorithm == OID_SIG_ECDSA_WITH_SHA256 {
         get_ec_curve_sha(&public_key.algorithm, 256)
             .ok_or(X509Error::SignatureUnsupportedAlgorithm)?
@@ -52,12 +69,11 @@ pub fn verify_signature(
 
 /// Find the verification algorithm for the given EC curve and SHA digest size
 ///
-/// Not all algorithms are supported, we are limited to what `ring` supports.
+/// Not all algorithms are supported, we are limited to what `aws_lc_rs`  or `ring`supports.
 fn get_ec_curve_sha(
     pubkey_alg: &AlgorithmIdentifier,
     sha_len: usize,
-) -> Option<&'static dyn ring::signature::VerificationAlgorithm> {
-    use ring::signature;
+) -> Option<&'static dyn signature::VerificationAlgorithm> {
     let curve_oid = pubkey_alg.parameters.as_ref()?.as_oid().ok()?;
     // let curve_oid = pubkey_alg.parameters.as_ref()?.as_oid().ok()?;
     if curve_oid == OID_EC_P256 {
@@ -72,6 +88,28 @@ fn get_ec_curve_sha(
             384 => Some(&signature::ECDSA_P384_SHA384_ASN1),
             _ => None,
         }
+    } else {
+        None
+    }
+}
+
+/// Find the verification algorithm for the given RSA-PSS parameters
+///
+/// Not all algorithms are supported, we are limited to what `aws_lc_rs` or `ring` supports.
+/// Notably, the SHA-1 hash algorithm is not supported.
+fn get_rsa_pss_verification_algo(
+    params: &Option<Any>,
+) -> Option<&'static dyn signature::VerificationAlgorithm> {
+    let params = params.as_ref()?;
+    let params = RsaSsaPssParams::try_from(params).ok()?;
+    let hash_algo = params.hash_algorithm_oid();
+
+    if *hash_algo == OID_NIST_HASH_SHA256 {
+        Some(&signature::RSA_PSS_2048_8192_SHA256)
+    } else if *hash_algo == OID_NIST_HASH_SHA384 {
+        Some(&signature::RSA_PSS_2048_8192_SHA384)
+    } else if *hash_algo == OID_NIST_HASH_SHA512 {
+        Some(&signature::RSA_PSS_2048_8192_SHA512)
     } else {
         None
     }

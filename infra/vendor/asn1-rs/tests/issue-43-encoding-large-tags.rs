@@ -1,3 +1,5 @@
+#![cfg(feature = "std")]
+
 use asn1_rs::{Any, FromDer, Integer, Tag, ToDer};
 
 #[test]

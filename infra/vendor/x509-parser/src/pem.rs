@@ -61,7 +61,7 @@ use crate::certificate::X509Certificate;
 use crate::error::{PEMError, X509Error};
 use crate::parse_x509_certificate;
 use nom::{Err, IResult};
-use std::io::{BufRead, Cursor, Seek};
+use std::io::{BufRead, Cursor, ErrorKind, Seek};
 
 /// Representation of PEM data
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -119,7 +119,16 @@ impl Pem {
     pub fn read(mut r: impl BufRead + Seek) -> Result<(Pem, usize), PEMError> {
         let mut line = String::new();
         let label = loop {
-            let num_bytes = r.read_line(&mut line)?;
+            let num_bytes = match r.read_line(&mut line) {
+                Ok(line) => line,
+                Err(e) if e.kind() == ErrorKind::InvalidData => {
+                    // some tools put invalid UTF-8 data in PEM comment section. Ignore line
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
+            };
             if num_bytes == 0 {
                 // EOF
                 return Err(PEMError::MissingHeader);
@@ -161,7 +170,7 @@ impl Pem {
     }
 
     /// Decode the PEM contents into a X.509 object
-    pub fn parse_x509(&self) -> Result<X509Certificate, ::nom::Err<X509Error>> {
+    pub fn parse_x509(&self) -> Result<X509Certificate<'_>, Err<X509Error>> {
         parse_x509_certificate(&self.contents).map(|(_, x509)| x509)
     }
 

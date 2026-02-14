@@ -21,7 +21,7 @@ pub enum PublicKey<'a> {
     Unknown(&'a [u8]),
 }
 
-impl<'a> PublicKey<'a> {
+impl PublicKey<'_> {
     /// Return the key size (in bits) or 0
     pub fn key_size(&self) -> usize {
         match self {
@@ -46,7 +46,7 @@ pub struct RSAPublicKey<'a> {
     pub exponent: &'a [u8],
 }
 
-impl<'a> RSAPublicKey<'a> {
+impl RSAPublicKey<'_> {
     /// Attempt to convert exponent to u64
     ///
     /// Returns an error if integer is too large, empty, or negative
@@ -73,7 +73,7 @@ impl<'a> RSAPublicKey<'a> {
 }
 
 // helper function to parse with error type BerError
-fn parse_rsa_key(bytes: &[u8]) -> BerResult<RSAPublicKey> {
+fn parse_rsa_key(bytes: &[u8]) -> BerResult<'_, RSAPublicKey<'_>> {
     parse_der_sequence_defined_g(move |i, _| {
         let (i, obj_modulus) = parse_der_integer(i)?;
         let (i, obj_exponent) = parse_der_integer(i)?;

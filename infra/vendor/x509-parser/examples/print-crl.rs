@@ -16,7 +16,7 @@ fn print_hex_dump(bytes: &[u8], max_len: usize) {
 fn format_oid(oid: &Oid) -> String {
     match oid2sn(oid, oid_registry()) {
         Ok(s) => s.to_owned(),
-        _ => format!("{}", oid),
+        _ => format!("{oid}"),
     }
 }
 
@@ -136,7 +136,7 @@ pub fn main() -> io::Result<()> {
         // placeholder to store decoded PEM data, if needed
         let tmpdata;
 
-        println!("File: {}", file_name);
+        println!("File: {file_name}");
         let data = std::fs::read(file_name.clone()).expect("Unable to read file");
         let der_data: &[u8] = if (data[0], data[1]) == (0x30, 0x82) {
             // probably DER

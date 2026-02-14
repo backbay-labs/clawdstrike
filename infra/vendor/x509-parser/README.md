@@ -6,7 +6,7 @@
 [![crates.io](https://img.shields.io/crates/v/x509-parser.svg)](https://crates.io/crates/x509-parser)
 [![Download numbers](https://img.shields.io/crates/d/x509-parser.svg)](https://crates.io/crates/x509-parser)
 [![Github CI](https://github.com/rusticata/x509-parser/workflows/Continuous%20integration/badge.svg)](https://github.com/rusticata/x509-parser/actions)
-[![Minimum rustc version](https://img.shields.io/badge/rustc-1.63.0+-lightgray.svg)](#rust-version-requirements)
+[![Minimum rustc version](https://img.shields.io/badge/rustc-1.67.1+-lightgray.svg)](#rust-version-requirements)
 
 # X.509 Parser
 
@@ -39,6 +39,8 @@ example [`X509Certificate::issuer()`](https://docs.rs/x509-parser/latest/x509_pa
 same as accessing `<object>.tbs_certificate.issuer`.
 
 For PEM-encoded certificates, use the [`pem`](https://docs.rs/x509-parser/latest/x509_parser/pem/index.html) module.
+
+This crate also provides visitor traits: [`X509CertificateVisitor`](crate::visitor::X509CertificateVisitor).
 
 # Examples
 
@@ -81,14 +83,14 @@ See also `examples/print-cert.rs`.
 
 # Features
 
-- The `verify` feature adds support for (cryptographic) signature verification, based on `ring`.
+- The `verify` and `verify-aws` features add support for (cryptographic) signature verification, based on `ring` or `aws-lc` respectively.
   It adds the
   [`X509Certificate::verify_signature()`](https://docs.rs/x509-parser/latest/x509_parser/certificate/struct.X509Certificate.html#method.verify_signature)
   to `X509Certificate`.
 
 ```rust
 /// Cryptographic signature verification: returns true if certificate was signed by issuer
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "verify", feature = "verify-aws"))]
 pub fn check_signature(cert: &X509Certificate<'_>, issuer: &X509Certificate<'_>) -> bool {
     let issuer_public_key = issuer.public_key();
     cert
@@ -97,18 +99,14 @@ pub fn check_signature(cert: &X509Certificate<'_>, issuer: &X509Certificate<'_>)
 }
 ```
 
-- The `validate` features add methods to run more validation functions on the certificate structure
+- The `validate` feature add methods to run more validation functions on the certificate structure
   and values using the [`Validate`](https://docs.rs/x509-parser/latest/x509_parser/validate/trait.Validate.html) trait.
   It does not validate any cryptographic parameter (see `verify` above).
 
 ## Rust version requirements
 
-`x509-parser` requires **Rustc version 1.63 or greater**, based on der-parser
+`x509-parser` requires **Rustc version 1.67.1 or greater**, based on der-parser
 dependencies and for proc-macro attributes support.
-
-Note that due to breaking changes in the `time` crate, a specific version of this
-crate must be specified for compiler versions <= 1.63:
-`cargo update -p time --precise 0.3.20`
 
 [RFC5280]: https://tools.ietf.org/html/rfc5280
 <!-- cargo-sync-readme end -->

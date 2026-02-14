@@ -3,7 +3,7 @@ use crate::der::*;
 use crate::der_constraint_fail_if;
 use crate::error::*;
 use alloc::borrow::ToOwned;
-use asn1_rs::{Any, FromDer, Tag};
+use asn1_rs::{Any, FromDer};
 use nom::bytes::streaming::take;
 use nom::number::streaming::be_u8;
 use nom::{Err, Needed};
@@ -486,7 +486,7 @@ pub fn der_read_element_content_as(
     max_depth: usize,
 ) -> BerResult<DerObjectContent> {
     // Indefinite lengths are not allowed in DER (X.690 section 10.1)
-    let l = length.definite().map_err(BerError::from)?;
+    let l = length.definite()?;
     if i.len() < l {
         return Err(Err::Incomplete(Needed::new(l)));
     }
@@ -504,17 +504,17 @@ pub fn der_read_element_content_as(
             // verify leading zeros
             match i[..l] {
                 [] => {
-                    return Err(nom::Err::Error(BerError::DerConstraintFailed(
+                    return Err(Err::Error(BerError::DerConstraintFailed(
                         DerConstraint::IntegerEmpty,
                     )))
                 }
                 [0, 0, ..] => {
-                    return Err(nom::Err::Error(BerError::DerConstraintFailed(
+                    return Err(Err::Error(BerError::DerConstraintFailed(
                         DerConstraint::IntegerLeadingZeroes,
                     )))
                 }
                 [0, byte, ..] if byte < 0x80 => {
-                    return Err(nom::Err::Error(BerError::DerConstraintFailed(
+                    return Err(Err::Error(BerError::DerConstraintFailed(
                         DerConstraint::IntegerLeadingZeroes,
                     )));
                 }

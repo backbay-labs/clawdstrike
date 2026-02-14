@@ -60,7 +60,7 @@ impl fmt::Display for KeyUsage {
             .iter()
             .enumerate()
             .fold(String::new(), |acc, (idx, s)| {
-                if self.flags >> idx & 1 != 0 {
+                if (self.flags >> idx) & 1 != 0 {
                     acc + s + ", "
                 } else {
                     acc
@@ -106,11 +106,11 @@ pub(crate) fn parse_keyusage(i: &[u8]) -> IResult<&[u8], KeyUsage, BerError> {
         .data
         .iter()
         .rev()
-        .fold(0, |acc, x| acc << 8 | (x.reverse_bits() as u16));
+        .fold(0, |acc, x| (acc << 8) | (x.reverse_bits() as u16));
     Ok((rest, KeyUsage { flags }))
 }
 
-pub(crate) fn parse_extendedkeyusage(i: &[u8]) -> IResult<&[u8], ExtendedKeyUsage, BerError> {
+pub(crate) fn parse_extendedkeyusage(i: &[u8]) -> IResult<&[u8], ExtendedKeyUsage<'_>, BerError> {
     let (ret, seq) = <Vec<Oid>>::from_der(i)?;
     let mut seen = std::collections::HashSet::new();
     let mut eku = ExtendedKeyUsage {

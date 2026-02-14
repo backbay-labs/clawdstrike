@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.63"
 name = "oid-registry"
-version = "0.7.1"
+version = "0.8.1"
 authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 build = "build.rs"
 include = [
@@ -25,6 +25,7 @@ include = [
     "build.rs",
     "src/*.rs",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -58,7 +59,7 @@ name = "oid_registry"
 path = "src/lib.rs"
 
 [dependencies.asn1-rs]
-version = "0.6"
+version = "0.7"
 
 [features]
 crypto = [

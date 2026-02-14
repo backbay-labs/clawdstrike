@@ -24,7 +24,7 @@ impl<'a> ParseError<&'a [u8]> for MyError<'a> {
     }
 }
 
-impl<'a> From<BerError> for MyError<'a> {
+impl From<BerError> for MyError<'_> {
     fn from(e: BerError) -> Self {
         MyError::BerError(e)
     }

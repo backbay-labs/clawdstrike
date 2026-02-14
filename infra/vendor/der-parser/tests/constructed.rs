@@ -250,7 +250,7 @@ fn struct02() {
     }
     fn parse_attr_type_and_value(i: &[u8]) -> BerResult<Attr> {
         fn clone_oid(x: BerObject) -> Result<Oid, BerError> {
-            x.as_oid().map(|o| o.clone())
+            x.as_oid().cloned()
         }
         parse_der_sequence_defined_g(|i: &[u8], _| {
             let (i, o) = map_res(parse_ber_oid, clone_oid)(i)?;

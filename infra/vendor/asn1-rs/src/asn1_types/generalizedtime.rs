@@ -235,7 +235,7 @@ impl CheckDerConstraints for GeneralizedTime {
         // X.690 section 11.7.2: The seconds element shall always be present.
         // XXX
         // X.690 section 11.7.4: The decimal point element, if present, shall be the point option "."
-        if any.data.iter().any(|&b| b == b',') {
+        if any.data.contains(&b',') {
             return Err(Error::DerConstraintFailed(DerConstraint::MissingSeconds));
         }
         Ok(())

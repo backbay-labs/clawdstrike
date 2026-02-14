@@ -306,6 +306,61 @@ impl Container {
             }
         }
     }
+
+    pub fn gen_to_der_len(&self) -> TokenStream {
+        let field_names = &self.fields.iter().map(|f| &f.name).collect::<Vec<_>>();
+        let add_len_instructions = field_names.iter().fold(Vec::new(), |mut instrs, field| {
+            instrs.push(quote! {total_len += self.#field.to_der_len()?;});
+            instrs
+        });
+        quote! {
+            fn to_der_len(&self) -> asn1_rs::Result<usize> {
+                let mut total_len = 0;
+                #(#add_len_instructions)*
+                // now add header length computation
+                if total_len < 127 {
+                    // 1 (class+tag) + 1 (length) + len
+                    Ok(2 + total_len)
+                } else {
+                    // 1 (class+tag) + n (length) + len
+                    let n = asn1_rs::Length::Definite(total_len).to_der_len()?;
+                    Ok(1 + n + total_len)
+                }
+            }
+        }
+    }
+
+    pub fn gen_write_der_header(&self) -> TokenStream {
+        quote! {
+            fn write_der_header(&self, writer: &mut dyn std::io::Write) -> asn1_rs::SerializeResult<usize> {
+                let mut empty = std::io::empty();
+                let num_bytes = self.write_der_content(&mut empty)?;
+                let header = asn1_rs::Header::new(
+                    asn1_rs::Class::Universal,
+                    true,
+                    asn1_rs::Sequence::TAG,
+                    asn1_rs::Length::Definite(num_bytes),
+                );
+                header.write_der_header(writer).map_err(Into::into)
+            }
+        }
+    }
+
+    pub fn gen_write_der_content(&self) -> TokenStream {
+        let field_names = &self.fields.iter().map(|f| &f.name).collect::<Vec<_>>();
+        let write_instructions = field_names.iter().fold(Vec::new(), |mut instrs, field| {
+            instrs.push(quote! {num_bytes += self.#field.write_der_header(writer)?;});
+            instrs.push(quote! {num_bytes += self.#field.write_der_content(writer)?;});
+            instrs
+        });
+        quote! {
+            fn write_der_content(&self, writer: &mut dyn std::io::Write) -> asn1_rs::SerializeResult<usize> {
+                let mut num_bytes = 0;
+                #(#write_instructions)*
+                Ok(num_bytes)
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -39,11 +39,11 @@ pub struct StderrLogger;
 
 impl Logger for StderrLogger {
     fn warn(&mut self, message: &str) {
-        eprintln!("[W] {}", message);
+        eprintln!("[W] {message}");
     }
 
     fn err(&mut self, message: &str) {
-        eprintln!("[E] {}", message);
+        eprintln!("[E] {message}");
     }
 }
 

@@ -5,7 +5,7 @@ use alloc::string::String;
 
 asn1_string!(GeneralString);
 
-impl<'a> TestValidCharset for GeneralString<'a> {
+impl TestValidCharset for GeneralString<'_> {
     fn test_valid_charset(i: &[u8]) -> Result<()> {
         if !i.iter().all(u8::is_ascii) {
             return Err(Error::StringInvalidCharset);

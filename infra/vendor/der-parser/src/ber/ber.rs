@@ -10,10 +10,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use asn1_rs::ASN1DateTime;
 use asn1_rs::Any;
-#[cfg(feature = "bitvec")]
+#[cfg(feature = "as_bitvec")]
 use bitvec::{order::Msb0, slice::BitSlice};
-use core::convert::AsRef;
-use core::convert::From;
 use core::convert::TryFrom;
 use core::ops::Index;
 
@@ -72,8 +70,11 @@ pub enum BerObjectContent<'a> {
     /// VideotexString: decoded string
     VideotexString(&'a str),
 
-    /// BmpString: decoded string
-    BmpString(&'a str),
+    /// BmpString: raw object bytes
+    ///
+    /// Note: the string is stored as raw bytes because not all UTF-16 sequences can be stored as
+    /// `&str`. To access content, use `String::from_utf16` or `String::from_utf16_lossy`.
+    BmpString(&'a [u8]),
     /// UniversalString: raw object bytes
     UniversalString(&'a [u8]),
 
@@ -136,7 +137,7 @@ impl<'a> BerObject<'a> {
     }
 
     /// Set a tag for the BER object
-    pub fn set_raw_tag(self, raw_tag: Option<&'a [u8]>) -> BerObject {
+    pub fn set_raw_tag(self, raw_tag: Option<&'a [u8]>) -> BerObject<'a> {
         let header = self.header.with_raw_tag(raw_tag.map(|x| x.into()));
         BerObject { header, ..self }
     }
@@ -270,8 +271,8 @@ impl<'a> BerObject<'a> {
     }
 
     /// Constructs a shared `&BitSlice` reference over the object data, if available as slice.
-    #[cfg(feature = "bitvec")]
-    pub fn as_bitslice(&self) -> Result<&BitSlice<Msb0, u8>, BerError> {
+    #[cfg(feature = "as_bitvec")]
+    pub fn as_bitslice(&self) -> Result<&BitSlice<u8, Msb0>, BerError> {
         self.content.as_bitslice()
     }
 
@@ -499,7 +500,7 @@ impl<'a> BerObjectContent<'a> {
             }
             BerObjectContent::BitString(ignored_bits, data) => {
                 bitstring_to_u64(*ignored_bits as usize, data).and_then(|x| {
-                    if x > u64::from(core::u32::MAX) {
+                    if x > u64::from(u32::MAX) {
                         Err(BerError::IntegerTooLarge)
                     } else {
                         Ok(x as u32)
@@ -507,7 +508,7 @@ impl<'a> BerObjectContent<'a> {
                 })
             }
             BerObjectContent::Enum(i) => {
-                if *i > u64::from(core::u32::MAX) {
+                if *i > u64::from(u32::MAX) {
                     Err(BerError::IntegerTooLarge)
                 } else {
                     Ok(*i as u32)
@@ -533,7 +534,7 @@ impl<'a> BerObjectContent<'a> {
     }
 
     pub fn as_oid_val(&self) -> Result<Oid<'a>, BerError> {
-        self.as_oid().map(|o| o.clone())
+        self.as_oid().cloned()
     }
 
     pub fn as_optional(&self) -> Result<Option<&BerObject<'a>>, BerError> {
@@ -566,10 +567,11 @@ impl<'a> BerObjectContent<'a> {
     }
 
     /// Constructs a shared `&BitSlice` reference over the object data, if available as slice.
-    #[cfg(feature = "bitvec")]
-    pub fn as_bitslice(&self) -> Result<&BitSlice<Msb0, u8>, BerError> {
-        self.as_slice()
-            .and_then(|s| BitSlice::<Msb0, _>::from_slice(s).map_err(|_| BerError::BerValueError))
+    #[cfg(feature = "as_bitvec")]
+    pub fn as_bitslice(&self) -> Result<&BitSlice<u8, Msb0>, BerError> {
+        self.as_slice().and_then(|s| {
+            BitSlice::<_, Msb0>::try_from_slice(s).map_err(|_| BerError::BerValueError)
+        })
     }
 
     pub fn as_sequence(&self) -> Result<&Vec<BerObject<'a>>, BerError> {
@@ -590,7 +592,6 @@ impl<'a> BerObjectContent<'a> {
     pub fn as_slice(&self) -> Result<&'a [u8],BerError> {
         match *self {
             BerObjectContent::NumericString(s) |
-            BerObjectContent::BmpString(s) |
             BerObjectContent::VisibleString(s) |
             BerObjectContent::PrintableString(s) |
             BerObjectContent::GeneralString(s) |
@@ -603,6 +604,7 @@ impl<'a> BerObjectContent<'a> {
             BerObjectContent::Integer(s) |
             BerObjectContent::BitString(_,BitStringObject{data:s}) |
             BerObjectContent::OctetString(s) |
+            BerObjectContent::BmpString(s) |
             BerObjectContent::UniversalString(s) => Ok(s),
             BerObjectContent::Unknown(ref any) => Ok(any.data),
             _ => Err(BerError::BerTypeError),
@@ -613,7 +615,6 @@ impl<'a> BerObjectContent<'a> {
     pub fn as_str(&self) -> Result<&'a str,BerError> {
         match *self {
             BerObjectContent::NumericString(s) |
-            BerObjectContent::BmpString(s) |
             BerObjectContent::VisibleString(s) |
             BerObjectContent::PrintableString(s) |
             BerObjectContent::GeneralString(s) |
@@ -669,7 +670,7 @@ use num_bigint::{BigInt, BigUint};
 
 #[cfg(feature = "bigint")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bigint")))]
-impl<'a> BerObject<'a> {
+impl BerObject<'_> {
     /// Attempt to read an integer value from this object.
     ///
     /// This can fail if the object is not an integer.
@@ -854,7 +855,7 @@ pub struct BitStringObject<'a> {
     pub data: &'a [u8],
 }
 
-impl<'a> BitStringObject<'a> {
+impl BitStringObject<'_> {
     /// Test if bit `bitnum` is set
     pub fn is_set(&self, bitnum: usize) -> bool {
         let byte_pos = bitnum / 8;
@@ -866,13 +867,13 @@ impl<'a> BitStringObject<'a> {
     }
 
     /// Constructs a shared `&BitSlice` reference over the object data.
-    #[cfg(feature = "bitvec")]
-    pub fn as_bitslice(&self) -> Option<&BitSlice<Msb0, u8>> {
-        BitSlice::<Msb0, _>::from_slice(self.data).ok()
+    #[cfg(feature = "as_bitvec")]
+    pub fn as_bitslice(&self) -> Option<&BitSlice<u8, Msb0>> {
+        BitSlice::<_, Msb0>::try_from_slice(self.data).ok()
     }
 }
 
-impl<'a> AsRef<[u8]> for BitStringObject<'a> {
+impl AsRef<[u8]> for BitStringObject<'_> {
     fn as_ref(&self) -> &[u8] {
         self.data
     }
@@ -951,7 +952,7 @@ mod tests {
         assert!(obj.is_set(17));
     }
 
-    #[cfg(feature = "bitvec")]
+    #[cfg(feature = "as_bitvec")]
     #[test]
     fn test_der_bitslice() {
         use std::string::String;

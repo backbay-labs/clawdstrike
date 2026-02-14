@@ -7,7 +7,7 @@ use nom::{Err, IResult};
 
 pub fn parse_der_tagged_explicit<'a, IntoTag, T, E>(
     tag: IntoTag,
-) -> impl FnMut(&'a [u8]) -> ParseResult<TaggedParser<'a, Explicit, T, E>, E>
+) -> impl FnMut(&'a [u8]) -> ParseResult<'a, TaggedParser<'a, Explicit, T, E>, E>
 where
     IntoTag: Into<Tag>,
     TaggedParser<'a, Explicit, T, E>: FromDer<'a, E>,
@@ -41,7 +41,7 @@ where
 
 pub fn parse_der_tagged_implicit<'a, IntoTag, T, E>(
     tag: IntoTag,
-) -> impl FnMut(&'a [u8]) -> ParseResult<TaggedParser<'a, Implicit, T, E>, E>
+) -> impl FnMut(&'a [u8]) -> ParseResult<'a, TaggedParser<'a, Implicit, T, E>, E>
 where
     IntoTag: Into<Tag>,
     // T: TryFrom<Any<'a>, Error = Error> + Tagged,

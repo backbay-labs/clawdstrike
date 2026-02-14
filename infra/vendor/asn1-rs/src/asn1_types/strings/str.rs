@@ -23,7 +23,7 @@ impl<'a, 'b> TryFrom<&'b Any<'a>> for &'a str {
     }
 }
 
-impl<'a> CheckDerConstraints for &'a str {
+impl CheckDerConstraints for &'_ str {
     fn check_constraints(any: &Any) -> Result<()> {
         // X.690 section 10.2
         any.header.assert_primitive()?;
@@ -33,14 +33,14 @@ impl<'a> CheckDerConstraints for &'a str {
 
 impl DerAutoDerive for &'_ str {}
 
-impl<'a> Tagged for &'a str {
+impl Tagged for &'_ str {
     const TAG: Tag = Tag::Utf8String;
 }
 
 #[cfg(feature = "std")]
-impl<'a> ToDer for &'a str {
+impl ToDer for &'_ str {
     fn to_der_len(&self) -> Result<usize> {
-        let sz = self.as_bytes().len();
+        let sz = self.len();
         if sz < 127 {
             // 1 (class+tag) + 1 (length) + len
             Ok(2 + sz)
@@ -56,9 +56,9 @@ impl<'a> ToDer for &'a str {
             Class::Universal,
             false,
             Self::TAG,
-            Length::Definite(self.as_bytes().len()),
+            Length::Definite(self.len()),
         );
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {

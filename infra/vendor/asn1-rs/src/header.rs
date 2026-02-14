@@ -208,7 +208,7 @@ impl From<Tag> for Header<'_> {
     }
 }
 
-impl<'a> ToStatic for Header<'a> {
+impl ToStatic for Header<'_> {
     type Owned = Header<'static>;
 
     fn to_static(&self) -> Self::Owned {
@@ -225,7 +225,7 @@ impl<'a> ToStatic for Header<'a> {
 }
 
 impl<'a> FromBer<'a> for Header<'a> {
-    fn from_ber(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_ber(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         let (i1, el) = parse_identifier(bytes)?;
         let class = match Class::try_from(el.0) {
             Ok(c) => c,
@@ -270,7 +270,7 @@ impl<'a> FromBer<'a> for Header<'a> {
 }
 
 impl<'a> FromDer<'a> for Header<'a> {
-    fn from_der(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_der(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         let (i1, el) = parse_identifier(bytes)?;
         let class = match Class::try_from(el.0) {
             Ok(c) => c,
@@ -452,7 +452,7 @@ impl<'a> PartialEq<Header<'a>> for Header<'a> {
 
 impl Eq for Header<'_> {}
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use crate::*;
     use hex_literal::hex;

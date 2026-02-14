@@ -72,11 +72,6 @@ impl<'a> Validator<'a> for TbsCertificateStructureValidator {
             l.err("Invalid version");
             res = false;
         }
-        // extensions require v3
-        if !item.extensions().is_empty() && item.version != X509Version::V3 {
-            l.err("Extensions present but version is not 3");
-            res = false;
-        }
         let b = item.raw_serial();
         if b.is_empty() {
             l.err("Serial is empty");
@@ -96,6 +91,38 @@ impl<'a> Validator<'a> for TbsCertificateStructureValidator {
         res &= X509NameStructureValidator.validate(&item.issuer, l);
         // subject public key
         res &= X509PublicKeyValidator.validate(&item.subject_pki, l);
+        // validity: dates <= 2049 must use UTCTime, >= 2050 must use GeneralizedTime
+        let validity = item.validity();
+        let year_notbefore = validity.not_before.to_datetime().year();
+        if year_notbefore <= 2049 {
+            if !validity.not_before.is_utctime() {
+                l.warn("year <= 2049 should use UTCTime (notBefore)");
+            }
+        } else if !validity.not_before.is_generalizedtime() {
+            l.warn("year >= 2050 should use GeneralizedTime (notBefore)");
+        }
+        let year_notafter = validity.not_after.to_datetime().year();
+        if year_notafter <= 2049 {
+            if !validity.not_after.is_utctime() {
+                l.warn("year <= 2049 should use UTCTime (notAfter)");
+            }
+        } else if !validity.not_after.is_generalizedtime() {
+            l.warn("year >= 2050 should use GeneralizedTime (notAfter)");
+        }
+        if item.version == X509Version::V1 {
+            // unique identifiers: version must 2 or 3
+            if item.issuer_uid.is_some() {
+                l.warn("issuerUniqueID present but version 1");
+            }
+            if item.subject_uid.is_some() {
+                l.warn("subjectUniqueID present but version 1");
+            }
+        }
+        // extensions require v3
+        if !item.extensions().is_empty() && item.version != X509Version::V3 {
+            l.err("Extensions present but version is not 3");
+            res = false;
+        }
         // check for parse errors or unsupported extensions
         for ext in item.extensions() {
             if let ParsedExtension::UnsupportedExtension { .. } = &ext.parsed_extension {
@@ -116,7 +143,7 @@ impl<'a> Validator<'a> for TbsCertificateStructureValidator {
                         GeneralName::DNSName(ref s) | GeneralName::RFC822Name(ref s) => {
                             // should be an ia5string
                             if !s.as_bytes().iter().all(u8::is_ascii) {
-                                l.warn(&format!("Invalid charset in 'SAN' entry '{}'", s));
+                                l.warn(&format!("Invalid charset in 'SAN' entry '{s}'"));
                             }
                         }
                         _ => (),

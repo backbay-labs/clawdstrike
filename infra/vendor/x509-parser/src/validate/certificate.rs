@@ -1,8 +1,6 @@
 use crate::certificate::*;
 use crate::validate::*;
 
-use extensions::X509ExtensionsValidator;
-
 #[derive(Debug)]
 pub struct X509CertificateValidator;
 

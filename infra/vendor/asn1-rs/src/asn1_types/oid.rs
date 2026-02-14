@@ -9,20 +9,26 @@ use alloc::vec::Vec;
 use core::{
     convert::TryFrom, fmt, iter::FusedIterator, marker::PhantomData, ops::Shl, str::FromStr,
 };
+use displaydoc::Display;
 use num_traits::Num;
+use thiserror::Error;
 
 /// An error for OID parsing functions.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Error)]
 pub enum OidParseError {
+    /// Encoded data length too short
     TooShort,
-    /// Signalizes that the first or second component is too large.
-    /// The first must be within the range 0 to 6 (inclusive).
-    /// The second component must be less than 40.
+    /** Signalizes that the first or second component is too large.
+     * The first must be within the range 0 to 6 (inclusive).
+     * The second component must be less than 40.
+     */
     FirstComponentsTooLarge,
+    /// a
     ParseIntError,
 }
 
 /// Object ID (OID) representation which can be relative or non-relative.
+///
 /// An example for an OID in string representation is `"1.2.840.113549.1.1.5"`.
 ///
 /// For non-relative OIDs restrictions apply to the first two components.
@@ -31,7 +37,6 @@ pub enum OidParseError {
 /// create oids. For example `oid!(1.2.44.233)` or `oid!(rel 44.233)`
 /// for relative oids. See the [module documentation](index.html) for more information.
 #[derive(Hash, PartialEq, Eq, Clone)]
-
 pub struct Oid<'a> {
     asn1: Cow<'a, [u8]>,
     relative: bool,
@@ -55,7 +60,7 @@ impl<'a, 'b> TryFrom<&'b Any<'a>> for Oid<'a> {
     }
 }
 
-impl<'a> CheckDerConstraints for Oid<'a> {
+impl CheckDerConstraints for Oid<'_> {
     fn check_constraints(any: &Any) -> Result<()> {
         any.header.assert_primitive()?;
         any.header.length.assert_definite()?;
@@ -65,7 +70,7 @@ impl<'a> CheckDerConstraints for Oid<'a> {
 
 impl DerAutoDerive for Oid<'_> {}
 
-impl<'a> Tagged for Oid<'a> {
+impl Tagged for Oid<'_> {
     const TAG: Tag = Tag::Oid;
 }
 
@@ -94,7 +99,7 @@ impl ToDer for Oid<'_> {
             tag,
             Length::Definite(self.asn1.len()),
         );
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
@@ -116,7 +121,7 @@ fn encode_relative(ids: &'_ [u64]) -> impl Iterator<Item = u8> + '_ {
 impl<'a> Oid<'a> {
     /// Create an OID from the ASN.1 DER encoded form. See the [module documentation](index.html)
     /// for other ways to create oids.
-    pub const fn new(asn1: Cow<'a, [u8]>) -> Oid {
+    pub const fn new(asn1: Cow<'a, [u8]>) -> Oid<'a> {
         Oid {
             asn1,
             relative: false,
@@ -125,7 +130,7 @@ impl<'a> Oid<'a> {
 
     /// Create a relative OID from the ASN.1 DER encoded form. See the [module documentation](index.html)
     /// for other ways to create relative oids.
-    pub const fn new_relative(asn1: Cow<'a, [u8]>) -> Oid {
+    pub const fn new_relative(asn1: Cow<'a, [u8]>) -> Oid<'a> {
         Oid {
             asn1,
             relative: true,
@@ -309,7 +314,7 @@ struct SubIdentifierIterator<'a, N: Repr> {
     n: PhantomData<&'a N>,
 }
 
-impl<'a, N: Repr> Iterator for SubIdentifierIterator<'a, N> {
+impl<N: Repr> Iterator for SubIdentifierIterator<'_, N> {
     type Item = N;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -345,13 +350,13 @@ impl<'a, N: Repr> Iterator for SubIdentifierIterator<'a, N> {
     }
 }
 
-impl<'a, N: Repr> FusedIterator for SubIdentifierIterator<'a, N> {}
+impl<N: Repr> FusedIterator for SubIdentifierIterator<'_, N> {}
 
-impl<'a, N: Repr> ExactSizeIterator for SubIdentifierIterator<'a, N> {
+impl<N: Repr> ExactSizeIterator for SubIdentifierIterator<'_, N> {
     fn len(&self) -> usize {
         if self.oid.relative {
             self.oid.asn1.iter().filter(|o| (*o >> 7) == 0u8).count()
-        } else if self.oid.asn1.len() == 0 {
+        } else if self.oid.asn1.is_empty() {
             0
         } else if self.oid.asn1.len() == 1 {
             if self.oid.asn1[0] == 0 {
@@ -368,7 +373,7 @@ impl<'a, N: Repr> ExactSizeIterator for SubIdentifierIterator<'a, N> {
     }
 }
 
-impl<'a> fmt::Display for Oid<'a> {
+impl fmt::Display for Oid<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.relative {
             f.write_str("rel. ")?;
@@ -377,7 +382,7 @@ impl<'a> fmt::Display for Oid<'a> {
     }
 }
 
-impl<'a> fmt::Debug for Oid<'a> {
+impl fmt::Debug for Oid<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("OID(")?;
         <Oid as fmt::Display>::fmt(self, f)?;
@@ -385,7 +390,7 @@ impl<'a> fmt::Debug for Oid<'a> {
     }
 }
 
-impl<'a> FromStr for Oid<'a> {
+impl FromStr for Oid<'_> {
     type Err = OidParseError;
 
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
@@ -459,7 +464,7 @@ macro_rules! oid {
     };
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use crate::{FromDer, Oid, ToDer};
     use hex_literal::hex;

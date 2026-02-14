@@ -123,6 +123,8 @@ fn test_x509_parser() {
             assert!(tbs_cert.is_ca());
             //
             assert_eq!(tbs_cert.as_ref(), &IGCA_DER[4..(8 + 746)]);
+            // check that cert.as_raw() returns the certificate bytes
+            assert_eq!(cert.as_raw(), IGCA_DER);
         }
         _ => panic!("x509 parsing failed: {:?}", res),
     }

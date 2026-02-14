@@ -10,7 +10,7 @@ where
     T: FromBer<'a>,
     T: Tagged,
 {
-    fn from_ber(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_ber(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         if bytes.is_empty() {
             return Ok((bytes, None));
         }
@@ -28,7 +28,7 @@ where
 }
 
 impl<'a> FromBer<'a> for Option<Any<'a>> {
-    fn from_ber(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_ber(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         if bytes.is_empty() {
             return Ok((bytes, None));
         }
@@ -44,7 +44,7 @@ where
     T: FromDer<'a>,
     T: Tagged,
 {
-    fn from_der(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_der(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         if bytes.is_empty() {
             return Ok((bytes, None));
         }
@@ -62,7 +62,7 @@ where
 }
 
 impl<'a> FromDer<'a> for Option<Any<'a>> {
-    fn from_der(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_der(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         if bytes.is_empty() {
             return Ok((bytes, None));
         }

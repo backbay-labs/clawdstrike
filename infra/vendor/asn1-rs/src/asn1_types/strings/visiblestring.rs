@@ -5,7 +5,7 @@ use alloc::string::String;
 
 asn1_string!(VisibleString);
 
-impl<'a> TestValidCharset for VisibleString<'a> {
+impl TestValidCharset for VisibleString<'_> {
     fn test_valid_charset(i: &[u8]) -> Result<()> {
         #[allow(clippy::trivially_copy_pass_by_ref)]
         fn is_visible(b: &u8) -> bool {

@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.63"
 name = "asn1-rs"
-version = "0.6.2"
+version = "0.7.1"
 authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 build = false
 include = [
@@ -35,6 +35,7 @@ include = [
     "src/doc/*.rs",
     "tests/*.rs",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -67,6 +68,19 @@ rustdoc-args = [
     "--cfg",
     "docsrs",
 ]
+
+[features]
+bigint = ["num-bigint"]
+bits = ["bitvec"]
+datetime = ["time"]
+debug = [
+    "std",
+    "colored",
+]
+default = ["std"]
+serialize = ["cookie-factory"]
+std = []
+trace = ["debug"]
 
 [lib]
 name = "asn1_rs"
@@ -113,11 +127,23 @@ name = "to_der"
 path = "tests/to_der.rs"
 
 [[test]]
+name = "to_static"
+path = "tests/to_static.rs"
+
+[[test]]
+name = "toder_sequence_lifetime"
+path = "tests/toder_sequence_lifetime.rs"
+
+[[test]]
+name = "toder_sequence_simple"
+path = "tests/toder_sequence_simple.rs"
+
+[[test]]
 name = "x509"
 path = "tests/x509.rs"
 
 [dependencies.asn1-rs-derive]
-version = "0.5"
+version = "0.6"
 
 [dependencies.asn1-rs-impl]
 version = "0.2"
@@ -127,7 +153,7 @@ version = "1.0"
 optional = true
 
 [dependencies.colored]
-version = "2.0"
+version = "3.0"
 optional = true
 
 [dependencies.cookie-factory]
@@ -153,7 +179,7 @@ version = "0.2.14"
 version = "4.0"
 
 [dependencies.thiserror]
-version = "1.0.25"
+version = "2.0.0"
 
 [dependencies.time]
 version = "0.3"
@@ -165,7 +191,7 @@ features = [
 optional = true
 
 [dev-dependencies.colored]
-version = "2.0"
+version = "3.0"
 
 [dev-dependencies.hex-literal]
 version = "0.4"
@@ -175,13 +201,3 @@ version = "3.0"
 
 [dev-dependencies.trybuild]
 version = "1.0"
-
-[features]
-bigint = ["num-bigint"]
-bits = ["bitvec"]
-datetime = ["time"]
-debug = ["colored"]
-default = ["std"]
-serialize = ["cookie-factory"]
-std = []
-trace = ["debug"]

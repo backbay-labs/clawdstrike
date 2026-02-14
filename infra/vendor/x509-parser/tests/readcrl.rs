@@ -1,6 +1,6 @@
 use x509_parser::prelude::*;
 
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "verify", feature = "verify-aws"))]
 #[test]
 fn read_crl_verify() {
     const CA_DATA: &[u8] = include_bytes!("../assets/ca_minimalcrl.der");
@@ -9,8 +9,11 @@ fn read_crl_verify() {
     let (_, x509_ca) = X509Certificate::from_der(CA_DATA).expect("could not parse certificate");
     let (_, crl) = parse_x509_crl(CRL_DATA).expect("could not parse revocation list");
     let res = crl.verify_signature(&x509_ca.tbs_certificate.subject_pki);
-    eprintln!("Verification: {:?}", res);
+    eprintln!("Verification: {res:?}");
     assert!(res.is_ok());
+
+    // check that `.as_raw()` returns the input bytes
+    assert_eq!(crl.as_raw(), CRL_DATA);
 }
 
 fn crl_idp<'a>(crl: &'a CertificateRevocationList) -> &'a IssuingDistributionPoint<'a> {

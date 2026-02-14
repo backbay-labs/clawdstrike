@@ -1,6 +1,6 @@
 [package]
 name = "oid-registry"
-version = "0.7.1"
+version = "0.8.1"
 authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 license = "MIT OR Apache-2.0"
 description = "Object Identifier (OID) database"
@@ -42,7 +42,7 @@ x509 = []
 x962 = []
 
 [dependencies]
-asn1-rs = "0.6"
+asn1-rs = "0.7"
 
 [package.metadata.cargo_check_external_types]
 allowed_external_types = [

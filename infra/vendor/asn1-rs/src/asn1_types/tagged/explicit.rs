@@ -99,7 +99,7 @@ where
         let class =
             Class::try_from(CLASS).map_err(|_| SerializeError::InvalidClass { class: CLASS })?;
         let header = Header::new(class, true, self.tag(), Length::Definite(inner_len));
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
@@ -156,7 +156,7 @@ impl<'a, T, E> TaggedParser<'a, Explicit, T, E> {
         op: F,
     ) -> ParseResult<'a, T, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<T, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, T, E>,
         E: From<Error>,
     {
         Any::from_ber_and_then(class, tag, bytes, op)
@@ -176,7 +176,7 @@ impl<'a, T, E> TaggedParser<'a, Explicit, T, E> {
         op: F,
     ) -> ParseResult<'a, T, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<T, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, T, E>,
         E: From<Error>,
     {
         Any::from_der_and_then(class, tag, bytes, op)
@@ -221,7 +221,7 @@ where
     }
 }
 
-impl<'a, T> CheckDerConstraints for TaggedParser<'a, Explicit, T>
+impl<T> CheckDerConstraints for TaggedParser<'_, Explicit, T>
 where
     T: CheckDerConstraints,
 {
@@ -234,7 +234,7 @@ where
 }
 
 #[cfg(feature = "std")]
-impl<'a, T> ToDer for TaggedParser<'a, Explicit, T>
+impl<T> ToDer for TaggedParser<'_, Explicit, T>
 where
     T: ToDer,
 {
@@ -253,7 +253,7 @@ where
     fn write_der_header(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
         let inner_len = self.inner.to_der_len()?;
         let header = Header::new(self.class(), true, self.tag(), Length::Definite(inner_len));
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {

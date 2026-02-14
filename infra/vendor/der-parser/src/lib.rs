@@ -4,7 +4,7 @@
 //! [![crates.io](https://img.shields.io/crates/v/der-parser.svg)](https://crates.io/crates/der-parser)
 //! [![Download numbers](https://img.shields.io/crates/d/der-parser.svg)](https://crates.io/crates/der-parser)
 //! [![dependency status](https://deps.rs/crate/der-parser/9.0.0/status.svg)](https://deps.rs/crate/der-parser/9.0.0)
-//! [![Github CI](https://github.com/rusticata/der-parser/workflows/Continuous%20integration/badge.svg)](https://github.com/rusticata/der-parser/actions)
+//! [![Github CI](https://github.com/rusticata/der-parser/actions/workflows/rust.yml/badge.svg)](https://github.com/rusticata/der-parser/actions/workflows/rust.yml)
 //! [![Minimum rustc version](https://img.shields.io/badge/rustc-1.63.0+-lightgray.svg)](#rust-version-requirements)
 //!
 //! # BER/DER Parser
@@ -105,8 +105,11 @@
 //!
 //! The second (and preferred) parsing method is to specify the expected objects recursively. The
 //! following functions can be used:
+//!
 //! - [`parse_ber_sequence_defined`](ber/fn.parse_ber_sequence_defined.html) and similar functions
+//!
 //! for sequences and sets variants
+//!
 //! - [`parse_ber_tagged_explicit`](ber/fn.parse_ber_tagged_explicit.html) for tagged explicit
 //! - [`parse_ber_tagged_implicit`](ber/fn.parse_ber_tagged_implicit.html) for tagged implicit
 //! - [`parse_ber_container`](ber/fn.parse_ber_container.html) for generic parsing, etc.
@@ -196,7 +199,7 @@
 //!
 //! ## Rust version requirements
 //!
-//! The 7.0 series of `der-parser` requires **Rustc version 1.53 or greater**, based on `asn1-rs`
+//! The 9.0 series of `der-parser` requires **Rustc version 1.63 or greater**, based on `asn1-rs`
 //! and `nom` 7 dependencies.
 //!
 //! # Serialization
@@ -231,7 +234,7 @@
     missing_debug_implementations,
 )]
 // pragmas for doc
-#![deny(broken_intra_doc_links)]
+#![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(test(
     no_crate_inject,

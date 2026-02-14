@@ -13,7 +13,7 @@ struct Context<'a> {
     t: PhantomData<&'a ()>,
 }
 
-impl<'a> Default for Context<'a> {
+impl Default for Context<'_> {
     fn default() -> Self {
         // let oid_registry = OidRegistry::default().with_all_crypto().with_x509();
         Context {

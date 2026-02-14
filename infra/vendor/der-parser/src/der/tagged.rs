@@ -36,9 +36,9 @@ use nom::{Err, IResult};
 /// #     _ => assert!(false)
 /// # }
 /// ```
-pub fn parse_der_tagged_explicit<'a, T, F>(tag: T, f: F) -> impl FnMut(&'a [u8]) -> BerResult
+pub fn parse_der_tagged_explicit<'a, T, F>(tag: T, f: F) -> impl FnMut(&'a [u8]) -> BerResult<'a>
 where
-    F: Fn(&'a [u8]) -> BerResult<DerObject>,
+    F: Fn(&'a [u8]) -> BerResult<'a, DerObject<'a>>,
     T: Into<Tag>,
 {
     let tag = tag.into();
@@ -169,7 +169,7 @@ where
 /// #     _ => assert!(false)
 /// # }
 /// ```
-pub fn parse_der_tagged_implicit<'a, T, F>(tag: T, f: F) -> impl FnMut(&'a [u8]) -> BerResult
+pub fn parse_der_tagged_implicit<'a, T, F>(tag: T, f: F) -> impl FnMut(&'a [u8]) -> BerResult<'a>
 where
     F: Fn(&'a [u8], &'_ Header, usize) -> BerResult<'a, DerObjectContent<'a>>,
     T: Into<Tag>,
@@ -245,7 +245,7 @@ where
 pub fn parse_der_tagged_implicit_g<'a, T, Output, F, E>(
     tag: T,
     f: F,
-) -> impl FnMut(&'a [u8]) -> IResult<&[u8], Output, E>
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Output, E>
 where
     F: Fn(&'a [u8], Header<'a>, usize) -> IResult<&'a [u8], Output, E>,
     E: ParseError<&'a [u8]> + From<BerError>,

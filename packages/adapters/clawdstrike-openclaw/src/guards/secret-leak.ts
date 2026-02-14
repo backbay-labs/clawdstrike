@@ -152,7 +152,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   // Azure Key Vault
   {
     name: 'azure_key_vault_token',
-    pattern: /azure[_-]?(?:key[_-]?vault|kv)[_-]?(?:secret|token|key)['"]?\s*[:=]\s*['"]?[A-Za-z0-9+/=_-]{32,}/gi,
+    pattern: /azure[_-]?(?:key[_-]?vault|kv)[_-]?(?:secret|token|key)(?:'|")?\s*[:=]\s*(?:'|")?[A-Za-z0-9+/=_-]{32,}/gi,
     severity: 'critical',
     description: 'Azure Key Vault Secret',
   },

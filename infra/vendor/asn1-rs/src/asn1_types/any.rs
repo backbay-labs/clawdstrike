@@ -2,7 +2,7 @@ use crate::ber::*;
 use crate::*;
 use alloc::borrow::Cow;
 #[cfg(not(feature = "std"))]
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use core::convert::{TryFrom, TryInto};
 
 use self::debug::trace;
@@ -98,7 +98,7 @@ impl<'a> Any<'a> {
         op: F,
     ) -> ParseResult<'a, T, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<T, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, T, E>,
         E: From<Error>,
     {
         let (rem, any) = Any::from_ber(bytes).map_err(Err::convert)?;
@@ -122,7 +122,7 @@ impl<'a> Any<'a> {
         op: F,
     ) -> ParseResult<'a, T, E>
     where
-        F: FnOnce(&'a [u8]) -> ParseResult<T, E>,
+        F: FnOnce(&'a [u8]) -> ParseResult<'a, T, E>,
         E: From<Error>,
     {
         let (rem, any) = Any::from_der(bytes).map_err(Err::convert)?;
@@ -321,6 +321,54 @@ impl<'a> Any<'a> {
     {
         TryFrom::try_from(self)
     }
+
+    /// Attempt to get value as `str`, for all known string types
+    ///
+    /// This function does not allocate data, so it supports all string types except
+    /// `UniversalString`.
+    pub fn as_any_str(&self) -> Result<String> {
+        match self.tag() {
+            Tag::GeneralString
+            | Tag::GraphicString
+            | Tag::Ia5String
+            | Tag::NumericString
+            | Tag::PrintableString
+            | Tag::T61String
+            | Tag::Utf8String
+            | Tag::VideotexString
+            | Tag::VisibleString => {
+                let res = core::str::from_utf8(self.data)?;
+                Ok(res.to_string())
+            }
+            Tag::UniversalString => {
+                let us = UniversalString::try_from(self)?;
+                Ok(us.string())
+            }
+            _ => todo!(),
+        }
+    }
+
+    /// Attempt to get value as `String`, for all known string types
+    ///
+    /// This function allocates data
+    pub fn as_any_string(&self) -> Result<&str> {
+        match self.tag() {
+            Tag::GeneralString
+            | Tag::GraphicString
+            | Tag::Ia5String
+            | Tag::NumericString
+            | Tag::PrintableString
+            | Tag::T61String
+            //| Tag::UniversalString // UCS-4, cannot be converted
+            | Tag::Utf8String
+            | Tag::VideotexString
+            | Tag::VisibleString => {
+                let res = core::str::from_utf8(self.data)?;
+                Ok(res)
+            }
+            _ => todo!(),
+        }
+    }
 }
 
 pub(crate) fn parse_ber_any(input: &[u8]) -> ParseResult<Any> {
@@ -339,14 +387,14 @@ pub(crate) fn parse_der_any(input: &[u8]) -> ParseResult<Any> {
 
 impl<'a> FromBer<'a> for Any<'a> {
     #[inline]
-    fn from_ber(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_ber(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         trace("Any", parse_ber_any, bytes)
     }
 }
 
 impl<'a> FromDer<'a> for Any<'a> {
     #[inline]
-    fn from_der(bytes: &'a [u8]) -> ParseResult<Self> {
+    fn from_der(bytes: &'a [u8]) -> ParseResult<'a, Self> {
         trace("Any", parse_der_any, bytes)
     }
 }

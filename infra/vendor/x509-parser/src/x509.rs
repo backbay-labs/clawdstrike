@@ -8,7 +8,7 @@ use crate::objects::*;
 use crate::public_key::*;
 
 use asn1_rs::{
-    Any, BitString, BmpString, DerSequence, FromBer, FromDer, Oid, OptTaggedParser, ParseResult,
+    Any, BitString, BmpString, DerSequence, FromBer, FromDer, OptTaggedParser, ParseResult,
 };
 use core::convert::TryFrom;
 use data_encoding::HEXUPPER;
@@ -39,8 +39,8 @@ use std::iter::FromIterator;
 pub struct X509Version(pub u32);
 
 impl X509Version {
-    /// Parse [0] EXPLICIT Version DEFAULT v1
-    pub(crate) fn from_der_tagged_0(i: &[u8]) -> X509Result<X509Version> {
+    /// Parse `[0]` EXPLICIT Version DEFAULT v1
+    pub(crate) fn from_der_tagged_0(i: &[u8]) -> X509Result<'_, X509Version> {
         let (rem, opt_version) = OptTaggedParser::from(0)
             .parse_der(i, |_, data| Self::from_der(data))
             .map_err(Err::convert)?;
@@ -153,15 +153,15 @@ impl<'a> FromDer<'a, X509Error> for AttributeTypeAndValue<'a> {
 
 // AttributeValue          ::= ANY -- DEFINED BY AttributeType
 #[inline]
-fn parse_attribute_value(i: &[u8]) -> ParseResult<Any, Error> {
+fn parse_attribute_value(i: &[u8]) -> ParseResult<'_, Any<'_>, Error> {
     alt((Any::from_der, parse_malformed_string))(i)
 }
 
-fn parse_malformed_string(i: &[u8]) -> ParseResult<Any, Error> {
+fn parse_malformed_string(i: &[u8]) -> ParseResult<'_, Any<'_>, Error> {
     let (rem, hdr) = Header::from_der(i)?;
     let len = hdr.length().definite()?;
     if len > MAX_OBJECT_SIZE {
-        return Err(nom::Err::Error(Error::InvalidLength));
+        return Err(Err::Error(Error::InvalidLength));
     }
     match hdr.tag() {
         Tag::PrintableString => {
@@ -174,7 +174,7 @@ fn parse_malformed_string(i: &[u8]) -> ParseResult<Any, Error> {
             let obj = Any::new(hdr, data);
             Ok((rem, obj))
         }
-        t => Err(nom::Err::Error(Error::unexpected_tag(
+        t => Err(Err::Error(Error::unexpected_tag(
             Some(Tag::PrintableString),
             t,
         ))),
@@ -210,7 +210,7 @@ impl<'a> FromIterator<AttributeTypeAndValue<'a>> for RelativeDistinguishedName<'
 }
 
 impl<'a> FromDer<'a, X509Error> for RelativeDistinguishedName<'a> {
-    fn from_der(i: &'a [u8]) -> X509Result<Self> {
+    fn from_der(i: &'a [u8]) -> X509Result<'a, Self> {
         parse_der_set_defined_g(|i, _| {
             let (i, set) = many1(complete(AttributeTypeAndValue::from_der))(i)?;
             let rdn = RelativeDistinguishedName { set };
@@ -229,9 +229,9 @@ pub struct SubjectPublicKeyInfo<'a> {
     pub raw: &'a [u8],
 }
 
-impl<'a> SubjectPublicKeyInfo<'a> {
+impl SubjectPublicKeyInfo<'_> {
     /// Attempt to parse the public key, and return the parsed version or an error
-    pub fn parsed(&self) -> Result<PublicKey, X509Error> {
+    pub fn parsed(&self) -> Result<PublicKey<'_>, X509Error> {
         let b = &self.subject_public_key.data;
         if self.algorithm.algorithm == OID_PKCS1_RSAENCRYPTION {
             let (_, key) = RSAPublicKey::from_der(b).map_err(|_| X509Error::InvalidSPKI)?;
@@ -260,7 +260,7 @@ impl<'a> SubjectPublicKeyInfo<'a> {
 
 impl<'a> FromDer<'a, X509Error> for SubjectPublicKeyInfo<'a> {
     /// Parse the SubjectPublicKeyInfo struct portion of a DER-encoded X.509 Certificate
-    fn from_der(i: &'a [u8]) -> X509Result<Self> {
+    fn from_der(i: &'a [u8]) -> X509Result<'a, Self> {
         let start_i = i;
         parse_der_sequence_defined_g(move |i, _| {
             let (i, algorithm) = AlgorithmIdentifier::from_der(i)?;
@@ -310,12 +310,12 @@ impl<'a> AlgorithmIdentifier<'a> {
     }
 
     /// Get the algorithm OID
-    pub const fn oid(&'a self) -> &'a Oid {
+    pub const fn oid(&'a self) -> &'a Oid<'a> {
         &self.algorithm
     }
 
     /// Get a reference to the algorithm parameters, if present
-    pub const fn parameters(&'a self) -> Option<&'a Any> {
+    pub const fn parameters(&'a self) -> Option<&'a Any<'a>> {
         self.parameters.as_ref()
     }
 }
@@ -332,10 +332,10 @@ pub struct X509Name<'a> {
     pub(crate) raw: &'a [u8],
 }
 
-impl<'a> fmt::Display for X509Name<'a> {
+impl fmt::Display for X509Name<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match x509name_to_string(&self.rdn_seq, oid_registry()) {
-            Ok(o) => write!(f, "{}", o),
+            Ok(o) => write!(f, "{o}"),
             Err(_) => write!(f, "<X509Error: Invalid X.509 name>"),
         }
     }
@@ -468,7 +468,7 @@ impl<'a> From<X509Name<'a>> for Vec<RelativeDistinguishedName<'a>> {
 
 impl<'a> FromDer<'a, X509Error> for X509Name<'a> {
     /// Parse the X.501 type Name, used for ex in issuer and subject of a X.509 certificate
-    fn from_der(i: &'a [u8]) -> X509Result<Self> {
+    fn from_der(i: &'a [u8]) -> X509Result<'a, Self> {
         let start_i = i;
         parse_der_sequence_defined_g(move |i, _| {
             let (i, rdn_seq) = many0(complete(RelativeDistinguishedName::from_der))(i)?;
@@ -558,7 +558,7 @@ fn x509name_to_string(
                     Ok(s) => String::from(s),
                     _ => format!("{:?}", attr.attr_type),
                 };
-                let rdn = format!("{}={}", abbrev, val_str);
+                let rdn = format!("{abbrev}={val_str}");
                 match acc2.len() {
                     0 => Ok(rdn),
                     _ => Ok(acc2 + " + " + &rdn),
@@ -571,11 +571,11 @@ fn x509name_to_string(
     })
 }
 
-pub(crate) fn parse_signature_value(i: &[u8]) -> X509Result<BitString> {
+pub(crate) fn parse_signature_value(i: &[u8]) -> X509Result<'_, BitString<'_>> {
     BitString::from_der(i).or(Err(Err::Error(X509Error::InvalidSignatureValue)))
 }
 
-pub(crate) fn parse_serial(i: &[u8]) -> X509Result<(&[u8], BigUint)> {
+pub(crate) fn parse_serial(i: &[u8]) -> X509Result<'_, (&[u8], BigUint)> {
     let (rem, any) = Any::from_ber(i).map_err(|_| X509Error::InvalidSerial)?;
     // RFC 5280 4.1.2.2: "The serial number MUST be a positive integer"
     // however, many CAs do not respect this and send integers with MSB set,

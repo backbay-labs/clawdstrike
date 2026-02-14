@@ -62,11 +62,11 @@ impl ToDer for Enumerated {
         let i = Integer::from(self.0);
         let len = i.data.len();
         let header = Header::new(Class::Universal, false, Self::TAG, Length::Definite(len));
-        header.write_der_header(writer).map_err(Into::into)
+        header.write_der_header(writer)
     }
 
     fn write_der_content(&self, writer: &mut dyn std::io::Write) -> SerializeResult<usize> {
         let int = Integer::from(self.0);
-        int.write_der_content(writer).map_err(Into::into)
+        int.write_der_content(writer)
     }
 }
