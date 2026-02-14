@@ -313,12 +313,18 @@ impl SessionManager {
             let max_backoff = Duration::from_secs(10);
 
             loop {
-                tokio::select! {
-                    _ = shutdown_rx.recv() => {
+                // Best-effort non-blocking shutdown check before attempting work.
+                // `tokio::select!` does not support a `default` branch.
+                match shutdown_rx.try_recv() {
+                    Ok(_) | Err(broadcast::error::TryRecvError::Closed) => {
                         tracing::debug!("Ensure-session loop shutting down");
                         break;
                     }
-                    default => {}
+                    Err(broadcast::error::TryRecvError::Lagged(_)) => {
+                        tracing::debug!("Ensure-session loop lagged; treating as shutdown");
+                        break;
+                    }
+                    Err(broadcast::error::TryRecvError::Empty) => {}
                 }
 
                 if manager.session_id().await.is_some() {
