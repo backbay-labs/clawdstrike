@@ -25,27 +25,28 @@ fn get_or_create_watermarker(
     config_json: &str,
 ) -> Result<Arc<clawdstrike::PromptWatermarker>, String> {
     let key = watermark_key(config_json)?;
-    let cfg: clawdstrike::WatermarkConfig =
-        serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {e}"))?;
 
     let map = WATERMARKERS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = map
         .lock()
         .map_err(|_| "watermarker lock poisoned".to_string())?;
-    if !guard.contains_key(&key) {
-        if guard.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
-            if let Some(first_key) = guard.keys().next().cloned() {
-                guard.remove(&first_key);
-            }
-        }
-        let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{e:?}"))?;
-        guard.insert(key.clone(), Arc::new(wm));
+    if let Some(wm) = guard.get(&key) {
+        return Ok(wm.clone());
     }
 
-    guard
-        .get(&key)
-        .cloned()
-        .ok_or_else(|| "watermarker missing".to_string())
+    if guard.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+        if let Some(first_key) = guard.keys().next().cloned() {
+            guard.remove(&first_key);
+        }
+    }
+
+    // Only parse the config on cache miss; `watermark_key()` already validated it.
+    let cfg: clawdstrike::WatermarkConfig =
+        serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {e}"))?;
+    let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{e:?}"))?;
+    let wm = Arc::new(wm);
+    guard.insert(key, wm.clone());
+    Ok(wm)
 }
 
 /// Return the hex-encoded public key for a watermark configuration.
