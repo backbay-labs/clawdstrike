@@ -405,12 +405,12 @@ function deriveActionsFromProbeRows(args: {
   const rowByKey = new Map(args.rows.map((row) => [row.key, row] as const));
   const selectedKeys =
     args.selectedSessionKey === "__all__"
-      ? args.rows.slice(0, 8).map((row) => row.key)
+      ? args.rows.slice(0, 3).map((row) => row.key)
       : [args.selectedSessionKey];
   const selectedRows = selectedKeys
     .map((key) => rowByKey.get(key))
     .filter((row): row is ProbeSessionRow => Boolean(row));
-  const sourceRows = selectedRows.length > 0 ? selectedRows : args.rows.slice(0, 8);
+  const sourceRows = selectedRows.length > 0 ? selectedRows : args.rows.slice(0, 3);
 
   const actions: RiverAction[] = [];
   sourceRows.forEach((row, index) => {

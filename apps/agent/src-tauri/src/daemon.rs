@@ -198,24 +198,7 @@ impl DaemonManager {
 
     /// Perform a health check.
     pub async fn health_check(&self) -> Result<HealthResponse> {
-        let url = self.config.health_url();
-        let response = self
-            .http_client
-            .get(&url)
-            .send()
-            .await
-            .with_context(|| format!("Failed to connect to daemon at {}", url))?;
-
-        if !response.status().is_success() {
-            anyhow::bail!("health endpoint returned {}", response.status());
-        }
-
-        let health: HealthResponse = response
-            .json()
-            .await
-            .with_context(|| "Failed to parse health response")?;
-
-        Ok(health)
+        health_check_with_client(&self.config, &self.http_client).await
     }
 
     async fn spawn_and_wait_ready(&self) -> Result<()> {

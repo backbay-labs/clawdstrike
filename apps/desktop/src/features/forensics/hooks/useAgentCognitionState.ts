@@ -135,6 +135,7 @@ export function useAgentCognitionState({
 }: UseAgentCognitionStateInput): AgentGlyphState[] {
   const controllersRef = React.useRef<Map<string, CognitionController>>(new Map());
   const lastProcessedRunRef = React.useRef<Map<string, string>>(new Map());
+  const [glyphs, setGlyphs] = React.useState<AgentGlyphState[]>([]);
 
   React.useEffect(() => {
     return () => {
@@ -144,7 +145,7 @@ export function useAgentCognitionState({
     };
   }, []);
 
-  return React.useMemo(() => {
+  React.useEffect(() => {
     const nowMs = Date.now();
     const byAgent = new Map<string, AgentAccumulator>();
 
@@ -197,7 +198,7 @@ export function useAgentCognitionState({
       .sort((a, b) => b.latestAt - a.latestAt)
       .slice(0, 24);
 
-    return entries.map((entry, index) => {
+    const nextGlyphs = entries.map((entry, index) => {
       const controller = ensureController(controllersRef.current, entry.normalizedId);
       const sortedActions = [...entry.actions].sort((a, b) => b.timestamp - a.timestamp);
       const latestAction = sortedActions[0];
@@ -294,6 +295,9 @@ export function useAgentCognitionState({
         history: sortedActions.slice(0, 200),
       } satisfies AgentGlyphState;
     });
-  }, [actions, focusedAgentId, sessionRows]);
-}
 
+    setGlyphs(nextGlyphs);
+  }, [actions, focusedAgentId, sessionRows]);
+
+  return glyphs;
+}
