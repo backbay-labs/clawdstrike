@@ -140,6 +140,33 @@ impl SessionManager {
         self.state.read().await.clone()
     }
 
+    /// Apply a posture transition event from hushd (SSE), keeping the exposed session state
+    /// consistent with what the tray/notifications display.
+    ///
+    /// Returns true if the update applied to the currently tracked session.
+    pub async fn update_posture_from_daemon_event(
+        &self,
+        session_id: Option<&str>,
+        new_posture: String,
+    ) -> bool {
+        if let Some(session_id) = session_id {
+            return self
+                .with_state_if_current_session_id(session_id, move |state| {
+                    state.posture = new_posture;
+                })
+                .await
+                .is_some();
+        }
+
+        // Best-effort fallback for legacy events without session_id.
+        let mut state = self.state.write().await;
+        if state.session_id.is_none() {
+            return false;
+        }
+        state.posture = new_posture;
+        true
+    }
+
     /// Get the current session ID, if any.
     #[allow(dead_code)]
     pub async fn session_id(&self) -> Option<String> {
@@ -519,6 +546,41 @@ mod tests {
         let state = manager.state().await;
         assert!(state.session_id.is_none());
         assert_eq!(state.posture, "unknown");
+    }
+
+    #[tokio::test]
+    async fn update_posture_from_daemon_event_updates_current_session() {
+        let manager = SessionManager::new();
+
+        {
+            let mut state = manager.state.write().await;
+            state.session_id = Some("sess-123".to_string());
+            state.posture = "restricted".to_string();
+        }
+
+        let applied = manager
+            .update_posture_from_daemon_event(Some("sess-123"), "standard".to_string())
+            .await;
+        assert!(applied);
+
+        let state = manager.state().await;
+        assert_eq!(state.posture, "standard");
+
+        let applied = manager
+            .update_posture_from_daemon_event(Some("sess-other"), "restricted".to_string())
+            .await;
+        assert!(!applied);
+
+        let state = manager.state().await;
+        assert_eq!(state.posture, "standard");
+
+        let applied = manager
+            .update_posture_from_daemon_event(None, "restricted".to_string())
+            .await;
+        assert!(applied);
+
+        let state = manager.state().await;
+        assert_eq!(state.posture, "restricted");
     }
 
     #[tokio::test]

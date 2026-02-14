@@ -465,7 +465,11 @@ async fn run_agent<R: Runtime>(
                         .unwrap_or_else(|| target.unwrap_or_else(|| "Unknown target".to_string()));
                     notifications::show_notification(&app_for_sse, &title, &body);
                 }
-                DaemonEvent::SessionPostureTransition { from, to, .. } => {
+                DaemonEvent::SessionPostureTransition {
+                    session_id,
+                    from,
+                    to,
+                } => {
                     let new_posture = to.unwrap_or_else(|| "unknown".to_string());
                     let old_posture = from.unwrap_or_else(|| "unknown".to_string());
                     tracing::info!(
@@ -473,9 +477,16 @@ async fn run_agent<R: Runtime>(
                         to = %new_posture,
                         "Session posture transition"
                     );
+
+                    // Keep the exposed session state in sync with SSE posture updates so the agent
+                    // health endpoint doesn't lag behind the tray display until the next heartbeat.
+                    let _ = session_manager_for_sse
+                        .update_posture_from_daemon_event(session_id.as_deref(), new_posture.clone())
+                        .await;
+
                     let session_state = session_manager_for_sse.state().await;
                     let summary = if session_state.session_id.is_some() {
-                        format!("Session: active | Posture: {}", new_posture)
+                        session_state.summary()
                     } else {
                         format!("Posture: {}", new_posture)
                     };

@@ -46,6 +46,27 @@ function looksLikePathToken(t: string): boolean {
   return false;
 }
 
+const WRITE_PATH_FLAG_NAMES = new Set([
+  // Common output flags
+  'o',
+  'out',
+  'output',
+  'outfile',
+  'output-file',
+  // Common log file flags
+  'log-file',
+  'logfile',
+  'log-path',
+  'logpath',
+]);
+
+function isWritePathFlagToken(t: string): boolean {
+  if (!t) return false;
+  if (!t.startsWith('-')) return false;
+  const normalized = t.replace(/^-+/, '').toLowerCase().replace(/_/g, '-');
+  return WRITE_PATH_FLAG_NAMES.has(normalized);
+}
+
 function extractCommandPathCandidates(command: string, args: string[]): { reads: string[]; writes: string[] } {
   const tokens = [command, ...args].map((t) => String(t ?? '')).filter(Boolean);
   const reads: string[] = [];
@@ -80,17 +101,33 @@ function extractCommandPathCandidates(command: string, args: string[]): { reads:
       continue;
     }
 
-    // Flags like --output=/path
-    const eq = t.indexOf('=');
-    if (eq > 0) {
-      const rhs = t.slice(eq + 1);
-      if (looksLikePathToken(rhs)) {
-        reads.push(cleanPathToken(rhs));
+    // Flags like --output /path or -o /path (write targets)
+    if (isWritePathFlagToken(t)) {
+      const next = tokens[i + 1];
+      if (typeof next === 'string' && next.length > 0) {
+        const cleaned = cleanPathToken(next);
+        if (looksLikePathToken(cleaned)) {
+          writes.push(cleaned);
+          i += 1;
+          continue;
+        }
       }
     }
 
-    if (looksLikePathToken(t)) {
-      reads.push(cleanPathToken(t));
+    // Flags like --output=/path
+    const eq = t.indexOf('=');
+    if (eq > 0) {
+      const lhs = t.slice(0, eq);
+      const rhs = cleanPathToken(t.slice(eq + 1));
+      if (looksLikePathToken(rhs)) {
+        if (isWritePathFlagToken(lhs)) writes.push(rhs);
+        else reads.push(rhs);
+      }
+    }
+
+    const cleanedToken = cleanPathToken(t);
+    if (looksLikePathToken(cleanedToken)) {
+      reads.push(cleanedToken);
     }
   }
 

@@ -112,7 +112,13 @@ function inferPolicyEventType(toolName: string, params: Record<string, unknown>)
   const classification = classifyTool(tokens);
 
   if (classification === 'read_only') {
-    // Read-only tools can still be dangerous if they target forbidden paths.
+    // Read-only tools can still be risky if they touch forbidden paths OR perform network egress.
+    // Do not skip preflight egress checks (eg. web_search/http_get) just because the tool name
+    // contains a read-only token like "get" or "search".
+    if (tokens.some(t => NETWORK_TOKENS.has(t)) || looksLikeNetworkEgress(params)) {
+      return 'network_egress';
+    }
+
     // If it looks like a filesystem read, evaluate it as file_read.
     const p = extractPath(params);
     if (p) return 'file_read';
