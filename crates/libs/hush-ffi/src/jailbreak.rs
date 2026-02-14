@@ -186,8 +186,10 @@ mod tests {
     fn test_detector_cache_is_bounded() {
         // Create more unique configs than the cache limit; we should still remain bounded.
         for i in 0..(MAX_DETECTOR_CACHE_ENTRIES + 10) {
-            let mut cfg = clawdstrike::JailbreakGuardConfig::default();
-            cfg.block_threshold = i as u8;
+            let cfg = clawdstrike::JailbreakGuardConfig {
+                block_threshold: i as u8,
+                ..Default::default()
+            };
             let _ = get_or_create_detector(cfg).unwrap();
         }
 
