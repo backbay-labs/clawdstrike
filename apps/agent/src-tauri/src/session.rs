@@ -122,6 +122,16 @@ pub struct SessionManager {
     ensure_loop_running: AtomicBool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeartbeatOutcome {
+    /// No-op: session is not currently established.
+    NoSession,
+    /// Session heartbeat succeeded (and may have updated posture/budget state).
+    Updated,
+    /// Session heartbeat returned an invalidation response and local session state was cleared.
+    Invalidated,
+}
+
 impl SessionManager {
     pub fn new() -> Self {
         Self {
@@ -403,14 +413,14 @@ impl SessionManager {
     }
 
     /// Send a heartbeat to keep the session alive and update state.
-    async fn heartbeat(&self, daemon_url: &str, api_key: Option<&str>) -> Result<()> {
+    async fn heartbeat(&self, daemon_url: &str, api_key: Option<&str>) -> Result<HeartbeatOutcome> {
         let session_id = {
             let state = self.state.read().await;
             state.session_id.clone()
         };
 
         let Some(session_id) = session_id else {
-            return Ok(());
+            return Ok(HeartbeatOutcome::NoSession);
         };
 
         let url = format!("{}/api/v1/session/{}", daemon_url, session_id);
@@ -443,6 +453,7 @@ impl SessionManager {
                     })
                     .await;
             }
+            Ok(HeartbeatOutcome::Updated)
         } else if matches!(
             status_code,
             reqwest::StatusCode::NOT_FOUND
@@ -461,11 +472,10 @@ impl SessionManager {
                     *state = SessionState::default();
                 })
                 .await;
+            Ok(HeartbeatOutcome::Invalidated)
         } else {
             anyhow::bail!("Session heartbeat returned {}", status_code);
         }
-
-        Ok(())
     }
 
     /// Start the heartbeat loop. Runs until shutdown signal.
@@ -485,8 +495,18 @@ impl SessionManager {
                         break;
                     }
                     _ = tokio::time::sleep(heartbeat_interval) => {
-                        if let Err(err) = manager.heartbeat(&daemon_url, api_key.as_deref()).await {
-                            tracing::debug!(error = %err, "Session heartbeat failed");
+                        match manager.heartbeat(&daemon_url, api_key.as_deref()).await {
+                            Ok(HeartbeatOutcome::Updated) => {}
+                            Ok(HeartbeatOutcome::NoSession | HeartbeatOutcome::Invalidated) => {
+                                manager.start_ensure_session(
+                                    daemon_url.clone(),
+                                    api_key.clone(),
+                                    shutdown_rx.resubscribe(),
+                                );
+                            }
+                            Err(err) => {
+                                tracing::debug!(error = %err, "Session heartbeat failed");
+                            }
                         }
                     }
                 }

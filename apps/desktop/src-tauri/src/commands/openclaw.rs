@@ -240,11 +240,13 @@ pub async fn openclaw_gateway_discover(timeout_ms: Option<u64>) -> Result<Value,
         match call_agent_openclaw_endpoint("/api/v1/openclaw/discover", timeout_ms).await {
             Ok(value) => return Ok(value),
             Err(err) => {
-                if !is_expected_agent_unavailable_error(&err) {
+                if is_expected_agent_unavailable_error(&err) {
                     eprintln!(
-                        "Agent OpenClaw discover failed, falling back to local CLI probe: {}",
+                        "Agent OpenClaw discover unavailable, falling back to local CLI discover: {}",
                         err
                     );
+                } else {
+                    return Err(err);
                 }
             }
         }
@@ -270,11 +272,13 @@ pub async fn openclaw_gateway_probe(timeout_ms: Option<u64>) -> Result<Value, St
         match call_agent_openclaw_endpoint("/api/v1/openclaw/probe", timeout_ms).await {
             Ok(value) => return Ok(value),
             Err(err) => {
-                if !is_expected_agent_unavailable_error(&err) {
+                if is_expected_agent_unavailable_error(&err) {
                     eprintln!(
-                        "Agent OpenClaw probe failed, falling back to local CLI probe: {}",
+                        "Agent OpenClaw probe unavailable, falling back to local CLI probe: {}",
                         err
                     );
+                } else {
+                    return Err(err);
                 }
             }
         }

@@ -190,11 +190,27 @@ impl DaemonManager {
     /// Stop the daemon.
     pub async fn stop(&self) -> Result<()> {
         let _ = self.shutdown_tx.send(());
-        let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
-        self.terminate_child("stop requested").await;
-        self.external_mode.store(false, Ordering::SeqCst);
-        self.set_state(DaemonState::Stopped).await;
-        self.monitor_started.store(false, Ordering::SeqCst);
+        {
+            let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
+            self.terminate_child("stop requested").await;
+            self.external_mode.store(false, Ordering::SeqCst);
+            self.set_state(DaemonState::Stopped).await;
+        }
+
+        // Ensure the background health monitor has fully observed shutdown before we return.
+        // This prevents overlapping monitor tasks during restart cycles.
+        if self.monitor_started.load(Ordering::SeqCst) {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while self.monitor_started.load(Ordering::SeqCst) && Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            if self.monitor_started.load(Ordering::SeqCst) {
+                tracing::warn!(
+                    "Health monitor did not shut down in time; forcing monitor_started reset"
+                );
+                self.monitor_started.store(false, Ordering::SeqCst);
+            }
+        }
         Ok(())
     }
 
@@ -264,6 +280,16 @@ impl DaemonManager {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
+            struct MonitorFlagGuard(Arc<AtomicBool>);
+
+            impl Drop for MonitorFlagGuard {
+                fn drop(&mut self) {
+                    self.0.store(false, Ordering::SeqCst);
+                }
+            }
+
+            let _monitor_flag_guard = MonitorFlagGuard(Arc::clone(&monitor_started));
+
             let check_interval = Duration::from_secs(5);
             let max_health_failures = 3u32;
             let stable_window = Duration::from_secs(90);
@@ -606,6 +632,7 @@ impl PolicyCache {
 /// can be uploaded when connectivity is restored.
 pub struct AuditQueue {
     queue: Mutex<VecDeque<serde_json::Value>>,
+    flush_lock: Mutex<()>,
     http_client: reqwest::Client,
 }
 
@@ -615,6 +642,7 @@ impl AuditQueue {
     pub fn new() -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
+            flush_lock: Mutex::new(()),
             http_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
@@ -647,6 +675,10 @@ impl AuditQueue {
 
     /// Drain all queued events and upload them to hushd.
     pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<usize> {
+        // Serialize flushes so we never interleave drain/requeue in ways that can reorder or
+        // duplicate audit uploads during rapid reconnects.
+        let _flush_guard = self.flush_lock.lock().await;
+
         let events: VecDeque<serde_json::Value> = {
             let mut queue = self.queue.lock().await;
             std::mem::take(&mut *queue)
