@@ -7,14 +7,12 @@ repository.workspace = true
 rust-version.workspace = true
 description = "C ABI for hush-core and clawdstrike — exposes crypto, receipts, jailbreak detection, and watermarking over FFI"
 
+# To regenerate hush.h after changing the C API:
+#   cargo install cbindgen
+#   cbindgen --crate hush-ffi -o crates/libs/hush-ffi/hush.h
+
 [lib]
 crate-type = ["cdylib", "staticlib"]
-
-[features]
-# Enable cbindgen header generation in build.rs.
-# The generated hush.h is checked into the repo, so this is only needed
-# when the C API surface changes.
-cbindgen = ["dep:cbindgen"]
 
 [dependencies]
 hush-core.workspace = true
@@ -24,9 +22,6 @@ serde_json.workspace = true
 hex.workspace = true
 base64.workspace = true
 libc = "0.2"
-
-[build-dependencies]
-cbindgen = { version = "0.28", optional = true }
 
 [lints]
 workspace = true
