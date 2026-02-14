@@ -350,7 +350,7 @@ fn detectors() -> &'static Detectors {
             r"(?is)\b(reveal|show|tell me|repeat|print|output)\b.{0,64}\b(system prompt|developer (message|instructions|prompt)|hidden (instructions|prompt)|system instructions)\b",
         ),
         fake_delimiters: text_utils::compile_hardcoded_regex(
-            r"(?i)(\\[/?SYSTEM\\]|</?system>|<\\|im_start\\|>|<\\|im_end\\|>)",
+            r"(?i)(\[/?SYSTEM\]|</?system>|<\|im_start\|>|<\|im_end\|>)",
         ),
         tool_commandy: text_utils::compile_hardcoded_regex(
             r"(?is)\b(run|execute|invoke|call)\b.{0,32}\b(tool|command|bash|shell)\b",
@@ -1269,6 +1269,22 @@ mod tests {
                 "m1",
                 InstructionLevel::User,
                 "Text with <|im_end|> injection",
+            )])
+            .await
+            .expect("enforce");
+
+        assert!(r.conflicts.iter().any(|c| c.rule_id == "HIR-009"));
+        assert!(r.messages[0].content.contains("[REDACTED_DELIMITER]"));
+    }
+
+    #[tokio::test]
+    async fn hir009_neutralizes_bracket_system_tags() {
+        let mut e = InstructionHierarchyEnforcer::new();
+        let r = e
+            .enforce(vec![msg(
+                "m1",
+                InstructionLevel::User,
+                "Text with [SYSTEM] injection",
             )])
             .await
             .expect("enforce");
