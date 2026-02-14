@@ -49,3 +49,8 @@ _diag/
 .DS_Store
 
 .env
+
+# .NET build artifacts
+**/bin/
+**/obj/
+.vs/
