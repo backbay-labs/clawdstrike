@@ -11,7 +11,7 @@ use crate::guards::{
     EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard, Guard,
     JailbreakConfig, JailbreakGuard, McpToolConfig, McpToolGuard, PatchIntegrityConfig,
     PatchIntegrityGuard, PathAllowlistConfig, PathAllowlistGuard, PromptInjectionConfig,
-    PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard,
+    PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard, ShellCommandConfig, ShellCommandGuard,
 };
 use crate::placeholders::env_var_for_placeholder;
 use crate::posture::{validate_posture_config, PostureConfig};
@@ -239,6 +239,9 @@ pub struct GuardConfigs {
     /// Patch integrity guard config
     #[serde(default)]
     pub patch_integrity: Option<PatchIntegrityConfig>,
+    /// Shell command guard config
+    #[serde(default)]
+    pub shell_command: Option<ShellCommandConfig>,
     /// MCP tool guard config
     #[serde(default)]
     pub mcp_tool: Option<McpToolConfig>,
@@ -293,6 +296,10 @@ impl GuardConfigs {
                 .patch_integrity
                 .clone()
                 .or_else(|| self.patch_integrity.clone()),
+            shell_command: child
+                .shell_command
+                .clone()
+                .or_else(|| self.shell_command.clone()),
             mcp_tool: match (&self.mcp_tool, &child.mcp_tool) {
                 (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
                 (Some(base), None) => Some(base.clone()),
@@ -776,6 +783,24 @@ impl Policy {
             }
         }
 
+        if let Some(cfg) = &self.guards.shell_command {
+            for (idx, pattern) in cfg.forbidden_patterns.iter().enumerate() {
+                if let Err(e) = Regex::new(pattern) {
+                    errors.push(PolicyFieldError::new(
+                        format!("guards.shell_command.forbidden_patterns[{}]", idx),
+                        format!("invalid regex: {}", e),
+                    ));
+                }
+                validate_placeholders_in_string(
+                    &mut errors,
+                    &format!("guards.shell_command.forbidden_patterns[{}]", idx),
+                    pattern,
+                    cfg.enabled,
+                    require_env,
+                );
+            }
+        }
+
         if let Some(cfg) = &self.guards.prompt_injection {
             if cfg.max_scan_bytes == 0 {
                 errors.push(PolicyFieldError::new(
@@ -1045,6 +1070,12 @@ impl Policy {
                 .patch_integrity
                 .clone()
                 .map(PatchIntegrityGuard::with_config)
+                .unwrap_or_default(),
+            shell_command: self
+                .guards
+                .shell_command
+                .clone()
+                .map(|cfg| ShellCommandGuard::with_config(cfg, self.guards.forbidden_path.clone()))
                 .unwrap_or_default(),
             mcp_tool: self
                 .guards
@@ -1527,6 +1558,7 @@ pub(crate) struct PolicyGuards {
     pub egress_allowlist: EgressAllowlistGuard,
     pub secret_leak: SecretLeakGuard,
     pub patch_integrity: PatchIntegrityGuard,
+    pub shell_command: ShellCommandGuard,
     pub mcp_tool: McpToolGuard,
     pub prompt_injection: PromptInjectionGuard,
     pub jailbreak: JailbreakGuard,
@@ -1541,6 +1573,7 @@ impl PolicyGuards {
             &self.egress_allowlist as &dyn Guard,
             &self.secret_leak as &dyn Guard,
             &self.patch_integrity as &dyn Guard,
+            &self.shell_command as &dyn Guard,
             &self.mcp_tool as &dyn Guard,
             &self.prompt_injection as &dyn Guard,
             &self.jailbreak as &dyn Guard,

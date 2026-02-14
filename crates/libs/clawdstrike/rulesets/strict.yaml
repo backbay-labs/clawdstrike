@@ -98,6 +98,10 @@ guards:
       - "(?i)reverse[_\\-]?shell"
       - "(?i)bind[_\\-]?shell"
 
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
+
   mcp_tool:
     allow:
       - read_file

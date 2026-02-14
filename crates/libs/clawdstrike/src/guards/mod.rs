@@ -31,6 +31,7 @@ mod path_allowlist;
 mod path_normalization;
 mod prompt_injection;
 mod secret_leak;
+mod shell_command;
 
 pub use custom::{CustomGuardFactory, CustomGuardRegistry};
 pub use egress_allowlist::{EgressAllowlistConfig, EgressAllowlistGuard};
@@ -42,6 +43,7 @@ pub use path_allowlist::{PathAllowlistConfig, PathAllowlistGuard};
 pub use path_normalization::normalize_path_for_policy;
 pub use prompt_injection::{PromptInjectionConfig, PromptInjectionGuard};
 pub use secret_leak::{SecretLeakConfig, SecretLeakGuard, SecretPattern};
+pub use shell_command::{ShellCommandConfig, ShellCommandGuard};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

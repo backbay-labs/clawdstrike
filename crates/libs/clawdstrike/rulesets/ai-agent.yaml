@@ -106,6 +106,10 @@ guards:
       - "(?i)chmod\\s+777"
       - "(?i)reverse[_\\-]?shell"
 
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
+
   mcp_tool:
     allow: []
     block:

@@ -95,6 +95,10 @@ guards:
       - "(?i)rm\\s+-rf\\s+/"
       - "(?i)chmod\\s+777"
 
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
+
   mcp_tool:
     allow:
       - read_file
