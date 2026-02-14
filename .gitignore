@@ -51,6 +51,6 @@ _diag/
 .env
 
 # .NET build artifacts
-**/bin/
-**/obj/
-.vs/
+packages/sdk/hush-csharp/**/bin/
+packages/sdk/hush-csharp/**/obj/
+packages/sdk/hush-csharp/.vs/
