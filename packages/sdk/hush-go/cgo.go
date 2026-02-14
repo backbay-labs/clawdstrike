@@ -11,10 +11,10 @@ extern void hush_free_string(char* ptr);
 extern const char* hush_version(void);
 
 // Hashing
-extern int32_t hush_sha256(const uint8_t* data, size_t len, uint8_t* out_32);
-extern char* hush_sha256_hex(const uint8_t* data, size_t len);
-extern int32_t hush_keccak256(const uint8_t* data, size_t len, uint8_t* out_32);
-extern char* hush_keccak256_hex(const uint8_t* data, size_t len);
+extern int32_t hush_sha256(const uint8_t* data, uintptr_t len, uint8_t* out_32);
+extern char* hush_sha256_hex(const uint8_t* data, uintptr_t len);
+extern int32_t hush_keccak256(const uint8_t* data, uintptr_t len, uint8_t* out_32);
+extern char* hush_keccak256_hex(const uint8_t* data, uintptr_t len);
 extern char* hush_canonicalize_json(const char* json);
 
 // Keypair
@@ -23,14 +23,14 @@ extern void* hush_keypair_from_seed(const uint8_t* seed_32);
 extern void* hush_keypair_from_hex(const char* hex);
 extern char* hush_keypair_public_key_hex(const void* kp);
 extern int32_t hush_keypair_public_key_bytes(const void* kp, uint8_t* out_32);
-extern char* hush_keypair_sign_hex(const void* kp, const uint8_t* msg, size_t len);
-extern int32_t hush_keypair_sign(const void* kp, const uint8_t* msg, size_t len, uint8_t* out_64);
+extern char* hush_keypair_sign_hex(const void* kp, const uint8_t* msg, uintptr_t len);
+extern int32_t hush_keypair_sign(const void* kp, const uint8_t* msg, uintptr_t len, uint8_t* out_64);
 extern char* hush_keypair_to_hex(const void* kp);
 extern void hush_keypair_destroy(void* kp);
 
 // Verify
-extern int32_t hush_verify_ed25519(const char* pk_hex, const uint8_t* msg, size_t msg_len, const char* sig_hex);
-extern int32_t hush_verify_ed25519_bytes(const uint8_t* pk_32, const uint8_t* msg, size_t msg_len, const uint8_t* sig_64);
+extern int32_t hush_verify_ed25519(const char* pk_hex, const uint8_t* msg, uintptr_t msg_len, const char* sig_hex);
+extern int32_t hush_verify_ed25519_bytes(const uint8_t* pk_32, const uint8_t* msg, uintptr_t msg_len, const uint8_t* sig_64);
 
 // Receipt
 extern char* hush_verify_receipt(const char* receipt_json, const char* signer_hex, const char* cosigner_hex);
@@ -40,7 +40,7 @@ extern char* hush_receipt_canonical_json(const char* receipt_json);
 
 // Merkle
 extern char* hush_merkle_root(const char* leaf_hashes_json);
-extern char* hush_merkle_proof(const char* leaf_hashes_json, size_t index);
+extern char* hush_merkle_proof(const char* leaf_hashes_json, uintptr_t index);
 extern int32_t hush_verify_merkle_proof(const char* leaf_hex, const char* proof_json, const char* root_hex);
 
 // Security
@@ -122,16 +122,16 @@ func ffiLastError() unsafe.Pointer { return unsafe.Pointer(C.hush_last_error()) 
 
 // Hashing
 func ffiSha256(data unsafe.Pointer, dlen int, out unsafe.Pointer) int32 {
-	return int32(C.hush_sha256((*C.uint8_t)(data), C.size_t(dlen), (*C.uint8_t)(out)))
+	return int32(C.hush_sha256((*C.uint8_t)(data), C.uintptr_t(dlen), (*C.uint8_t)(out)))
 }
 func ffiSha256Hex(data unsafe.Pointer, dlen int) unsafe.Pointer {
-	return unsafe.Pointer(C.hush_sha256_hex((*C.uint8_t)(data), C.size_t(dlen)))
+	return unsafe.Pointer(C.hush_sha256_hex((*C.uint8_t)(data), C.uintptr_t(dlen)))
 }
 func ffiKeccak256(data unsafe.Pointer, dlen int, out unsafe.Pointer) int32 {
-	return int32(C.hush_keccak256((*C.uint8_t)(data), C.size_t(dlen), (*C.uint8_t)(out)))
+	return int32(C.hush_keccak256((*C.uint8_t)(data), C.uintptr_t(dlen), (*C.uint8_t)(out)))
 }
 func ffiKeccak256Hex(data unsafe.Pointer, dlen int) unsafe.Pointer {
-	return unsafe.Pointer(C.hush_keccak256_hex((*C.uint8_t)(data), C.size_t(dlen)))
+	return unsafe.Pointer(C.hush_keccak256_hex((*C.uint8_t)(data), C.uintptr_t(dlen)))
 }
 func ffiCanonicalizeJSON(json unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.hush_canonicalize_json((*C.char)(json)))
@@ -154,10 +154,10 @@ func ffiKeypairPublicKeyBytes(kp unsafe.Pointer, out unsafe.Pointer) int32 {
 	return int32(C.hush_keypair_public_key_bytes(kp, (*C.uint8_t)(out)))
 }
 func ffiKeypairSignHex(kp unsafe.Pointer, msg unsafe.Pointer, mlen int) unsafe.Pointer {
-	return unsafe.Pointer(C.hush_keypair_sign_hex(kp, (*C.uint8_t)(msg), C.size_t(mlen)))
+	return unsafe.Pointer(C.hush_keypair_sign_hex(kp, (*C.uint8_t)(msg), C.uintptr_t(mlen)))
 }
 func ffiKeypairSign(kp unsafe.Pointer, msg unsafe.Pointer, mlen int, out unsafe.Pointer) int32 {
-	return int32(C.hush_keypair_sign(kp, (*C.uint8_t)(msg), C.size_t(mlen), (*C.uint8_t)(out)))
+	return int32(C.hush_keypair_sign(kp, (*C.uint8_t)(msg), C.uintptr_t(mlen), (*C.uint8_t)(out)))
 }
 func ffiKeypairToHex(kp unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.hush_keypair_to_hex(kp))
@@ -168,10 +168,10 @@ func ffiKeypairDestroy(kp unsafe.Pointer) {
 
 // Verify
 func ffiVerifyEd25519(pkHex unsafe.Pointer, msg unsafe.Pointer, msgLen int, sigHex unsafe.Pointer) int32 {
-	return int32(C.hush_verify_ed25519((*C.char)(pkHex), (*C.uint8_t)(msg), C.size_t(msgLen), (*C.char)(sigHex)))
+	return int32(C.hush_verify_ed25519((*C.char)(pkHex), (*C.uint8_t)(msg), C.uintptr_t(msgLen), (*C.char)(sigHex)))
 }
 func ffiVerifyEd25519Bytes(pk unsafe.Pointer, msg unsafe.Pointer, msgLen int, sig unsafe.Pointer) int32 {
-	return int32(C.hush_verify_ed25519_bytes((*C.uint8_t)(pk), (*C.uint8_t)(msg), C.size_t(msgLen), (*C.uint8_t)(sig)))
+	return int32(C.hush_verify_ed25519_bytes((*C.uint8_t)(pk), (*C.uint8_t)(msg), C.uintptr_t(msgLen), (*C.uint8_t)(sig)))
 }
 
 // Receipt
@@ -193,7 +193,7 @@ func ffiMerkleRoot(leafHashesJSON unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.hush_merkle_root((*C.char)(leafHashesJSON)))
 }
 func ffiMerkleProof(leafHashesJSON unsafe.Pointer, index int) unsafe.Pointer {
-	return unsafe.Pointer(C.hush_merkle_proof((*C.char)(leafHashesJSON), C.size_t(index)))
+	return unsafe.Pointer(C.hush_merkle_proof((*C.char)(leafHashesJSON), C.uintptr_t(index)))
 }
 func ffiVerifyMerkleProof(leafHex, proofJSON, rootHex unsafe.Pointer) int32 {
 	return int32(C.hush_verify_merkle_proof((*C.char)(leafHex), (*C.char)(proofJSON), (*C.char)(rootHex)))

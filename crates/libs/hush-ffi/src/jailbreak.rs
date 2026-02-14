@@ -1,12 +1,35 @@
 //! Jailbreak detection FFI function.
 
+use std::collections::HashMap;
 use std::ffi::{c_char, CStr};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::{ffi_try, set_last_error};
 use crate::string_to_c;
 
-static DEFAULT_DETECTOR: OnceLock<clawdstrike::JailbreakDetector> = OnceLock::new();
+static DETECTORS: OnceLock<Mutex<HashMap<String, Arc<clawdstrike::JailbreakDetector>>>> =
+    OnceLock::new();
+
+fn detector_key(cfg: &clawdstrike::JailbreakGuardConfig) -> Result<String, String> {
+    let value = serde_json::to_value(cfg).map_err(|e| format!("Invalid JailbreakGuardConfig: {e}"))?;
+    hush_core::canonicalize_json(&value).map_err(|e| e.to_string())
+}
+
+fn get_or_create_detector(cfg: clawdstrike::JailbreakGuardConfig) -> Result<Arc<clawdstrike::JailbreakDetector>, String> {
+    let key = detector_key(&cfg)?;
+
+    let map = DETECTORS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = map
+        .lock()
+        .map_err(|_| "jailbreak detector lock poisoned".to_string())?;
+    if let Some(detector) = guard.get(&key) {
+        return Ok(detector.clone());
+    }
+
+    let detector = Arc::new(clawdstrike::JailbreakDetector::with_config(cfg));
+    guard.insert(key, detector.clone());
+    Ok(detector)
+}
 
 /// Detect jailbreak attempts in the given text.
 ///
@@ -17,7 +40,7 @@ static DEFAULT_DETECTOR: OnceLock<clawdstrike::JailbreakDetector> = OnceLock::ne
 ///
 /// - `text` must be a valid, NUL-terminated UTF-8 C string.
 /// - `session_id` may be `NULL` (treated as no session).
-/// - `config_json` may be `NULL` (uses a default detector singleton).
+/// - `config_json` may be `NULL` (uses a cached default detector singleton).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_detect_jailbreak(
     text: *const c_char,
@@ -49,9 +72,8 @@ pub unsafe extern "C" fn hush_detect_jailbreak(
                 ))
             };
 
-            let result = if config_json.is_null() {
-                let detector = DEFAULT_DETECTOR.get_or_init(clawdstrike::JailbreakDetector::new);
-                futures::executor::block_on(detector.detect(text_str, session_id_str))
+            let cfg = if config_json.is_null() {
+                clawdstrike::JailbreakGuardConfig::default()
             } else {
                 let cfg_str = ffi_try!(
                     unsafe { CStr::from_ptr(config_json) }
@@ -59,14 +81,15 @@ pub unsafe extern "C" fn hush_detect_jailbreak(
                         .map_err(|e| format!("config_json is not valid UTF-8: {e}")),
                     std::ptr::null_mut()
                 );
-                let cfg: clawdstrike::JailbreakGuardConfig = ffi_try!(
+                ffi_try!(
                     serde_json::from_str(cfg_str)
                         .map_err(|e| format!("Invalid JailbreakGuardConfig JSON: {e}")),
                     std::ptr::null_mut()
-                );
-                let detector = clawdstrike::JailbreakDetector::with_config(cfg);
-                futures::executor::block_on(detector.detect(text_str, session_id_str))
+                )
             };
+
+            let detector = ffi_try!(get_or_create_detector(cfg), std::ptr::null_mut());
+            let result = futures::executor::block_on(detector.detect(text_str, session_id_str));
 
             let json = ffi_try!(
                 serde_json::to_string(&result)
@@ -83,6 +106,7 @@ pub unsafe extern "C" fn hush_detect_jailbreak(
 mod tests {
     use super::*;
     use std::ffi::CString;
+    use std::sync::Arc;
 
     #[test]
     fn test_detect_jailbreak_benign() {
@@ -114,5 +138,13 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(json_str).unwrap();
         assert!(v.get("blocked").is_some());
         unsafe { crate::hush_free_string(result) };
+    }
+
+    #[test]
+    fn test_cached_detectors_reused_for_equivalent_configs() {
+        let d1 = get_or_create_detector(clawdstrike::JailbreakGuardConfig::default()).unwrap();
+        let cfg_from_json: clawdstrike::JailbreakGuardConfig = serde_json::from_str("{}").unwrap();
+        let d2 = get_or_create_detector(cfg_from_json).unwrap();
+        assert!(Arc::ptr_eq(&d1, &d2));
     }
 }
