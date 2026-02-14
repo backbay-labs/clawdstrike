@@ -54,6 +54,11 @@ export async function initWasm(): Promise<boolean> {
   try {
     const { createWasmBackend } = await import("./wasm-backend");
     const wasm = await import("@clawdstrike/wasm" as string);
+    // The web target requires calling the default export (init) to instantiate
+    // the WASM module before any other exports are usable.
+    if (typeof wasm.default === "function") {
+      await wasm.default();
+    }
     currentBackend = createWasmBackend(wasm);
     return true;
   } catch {
