@@ -351,6 +351,7 @@ class Policy:
     guards: GuardConfigs = field(default_factory=GuardConfigs)
     settings: PolicySettings = field(default_factory=PolicySettings)
     posture: Optional[PostureConfig] = None
+    _raw_guards: Dict[str, Any] = field(default_factory=dict, repr=False)
     _raw_settings: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -392,6 +393,7 @@ class Policy:
             guards=GuardConfigs.from_dict(guards_data) if guards_data else GuardConfigs(),
             settings=PolicySettings(**settings_data) if settings_data else PolicySettings(),
             posture=posture,
+            _raw_guards=dict(guards_data) if guards_data else {},
             _raw_settings=dict(settings_data) if settings_data else {},
         )
 
@@ -476,22 +478,256 @@ class Policy:
             description=child.description if child.description else self.description,
             extends=None,
             merge_strategy="deep_merge",
-            guards=self._merge_guards(child.guards),
+            guards=self._merge_guards(child.guards, child._raw_guards),
             settings=PolicySettings(**merged_settings_data),
             posture=child.posture if child.posture else self.posture,
+            _raw_guards={},
             _raw_settings=merged_settings_data,
         )
 
-    def _merge_guards(self, child: GuardConfigs) -> GuardConfigs:
-        """Deep merge guard configs (child overrides base)."""
+    def _merge_guards(self, child: GuardConfigs, child_raw: Dict[str, Any]) -> GuardConfigs:
+        """Deep merge guard configs.
+
+        The child policy may omit fields, but guard dataclasses fill omitted fields with defaults.
+        To avoid silently dropping inherited restrictions, consult the raw YAML mapping to detect
+        which fields were explicitly specified by the child.
+        """
+        raw = child_raw or {}
+
+        def guard_raw(key: str) -> Dict[str, Any]:
+            g = raw.get(key)
+            return g if isinstance(g, dict) else {}
+
+        def merge_str_list(base_list: List[str], child_list: List[str]) -> List[str]:
+            out = list(base_list)
+            for item in child_list:
+                if item not in out:
+                    out.append(item)
+            return out
+
+        def merge_secret_patterns(
+            base_patterns: List[SecretPattern],
+            child_patterns: List[SecretPattern],
+        ) -> List[SecretPattern]:
+            out = list(base_patterns)
+            idx_by_name = {sp.name: i for i, sp in enumerate(out) if getattr(sp, "name", None)}
+            for sp in child_patterns:
+                i = idx_by_name.get(sp.name)
+                if i is None:
+                    idx_by_name[sp.name] = len(out)
+                    out.append(sp)
+                else:
+                    out[i] = sp
+            return out
+
+        # Forbidden path guard
+        forbidden_path = self.guards.forbidden_path
+        if forbidden_path is None:
+            forbidden_path = child.forbidden_path
+        elif child.forbidden_path is not None:
+            g = guard_raw("forbidden_path")
+            patterns = forbidden_path.patterns
+            if "patterns" in g:
+                patterns = merge_str_list(patterns, child.forbidden_path.patterns)
+            exceptions = forbidden_path.exceptions
+            if "exceptions" in g:
+                exceptions = merge_str_list(exceptions, child.forbidden_path.exceptions)
+            forbidden_path = ForbiddenPathConfig(patterns=patterns, exceptions=exceptions)
+
+        # Egress allowlist guard
+        egress_allowlist = self.guards.egress_allowlist
+        if egress_allowlist is None:
+            egress_allowlist = child.egress_allowlist
+        elif child.egress_allowlist is not None:
+            g = guard_raw("egress_allowlist")
+            allow = egress_allowlist.allow
+            if "allow" in g:
+                allow = merge_str_list(allow, child.egress_allowlist.allow)
+            block = egress_allowlist.block
+            if "block" in g:
+                block = merge_str_list(block, child.egress_allowlist.block)
+            default_action = egress_allowlist.default_action
+            if "default_action" in g:
+                default_action = child.egress_allowlist.default_action
+            egress_allowlist = EgressAllowlistConfig(
+                allow=allow,
+                block=block,
+                default_action=default_action,
+            )
+
+        # Secret leak guard
+        secret_leak = self.guards.secret_leak
+        if secret_leak is None:
+            secret_leak = child.secret_leak
+        elif child.secret_leak is not None:
+            g = guard_raw("secret_leak")
+            patterns = secret_leak.patterns
+            if "patterns" in g:
+                patterns = merge_secret_patterns(patterns, child.secret_leak.patterns)
+            skip_paths = secret_leak.skip_paths
+            if "skip_paths" in g:
+                skip_paths = merge_str_list(skip_paths, child.secret_leak.skip_paths)
+            enabled = secret_leak.enabled
+            if "enabled" in g:
+                enabled = child.secret_leak.enabled
+            secrets = secret_leak.secrets
+            if "secrets" in g:
+                secrets = merge_str_list(secrets, child.secret_leak.secrets)
+            secret_leak = SecretLeakConfig(
+                patterns=patterns,
+                skip_paths=skip_paths,
+                enabled=enabled,
+                secrets=secrets,
+            )
+
+        # Patch integrity guard
+        patch_integrity = self.guards.patch_integrity
+        if patch_integrity is None:
+            patch_integrity = child.patch_integrity
+        elif child.patch_integrity is not None:
+            g = guard_raw("patch_integrity")
+            max_additions = patch_integrity.max_additions
+            if "max_additions" in g:
+                max_additions = child.patch_integrity.max_additions
+            max_deletions = patch_integrity.max_deletions
+            if "max_deletions" in g:
+                max_deletions = child.patch_integrity.max_deletions
+            require_balance = patch_integrity.require_balance
+            if "require_balance" in g:
+                require_balance = child.patch_integrity.require_balance
+            max_imbalance_ratio = patch_integrity.max_imbalance_ratio
+            if "max_imbalance_ratio" in g:
+                max_imbalance_ratio = child.patch_integrity.max_imbalance_ratio
+            forbidden_patterns = patch_integrity.forbidden_patterns
+            if "forbidden_patterns" in g:
+                forbidden_patterns = merge_str_list(
+                    forbidden_patterns, child.patch_integrity.forbidden_patterns
+                )
+            patch_integrity = PatchIntegrityConfig(
+                max_additions=max_additions,
+                max_deletions=max_deletions,
+                require_balance=require_balance,
+                max_imbalance_ratio=max_imbalance_ratio,
+                forbidden_patterns=forbidden_patterns,
+            )
+
+        # MCP tool guard
+        mcp_tool = self.guards.mcp_tool
+        if mcp_tool is None:
+            mcp_tool = child.mcp_tool
+        elif child.mcp_tool is not None:
+            g = guard_raw("mcp_tool")
+            allow = mcp_tool.allow
+            if "allow" in g:
+                allow = merge_str_list(allow, child.mcp_tool.allow)
+            block = mcp_tool.block
+            if "block" in g:
+                block = merge_str_list(block, child.mcp_tool.block)
+            require_confirmation = mcp_tool.require_confirmation
+            if "require_confirmation" in g:
+                require_confirmation = merge_str_list(
+                    require_confirmation, child.mcp_tool.require_confirmation
+                )
+            default_action = mcp_tool.default_action
+            if "default_action" in g:
+                default_action = child.mcp_tool.default_action
+            max_args_size = mcp_tool.max_args_size
+            if "max_args_size" in g:
+                max_args_size = child.mcp_tool.max_args_size
+            additional_allow = mcp_tool.additional_allow
+            if "additional_allow" in g:
+                additional_allow = merge_str_list(
+                    additional_allow, child.mcp_tool.additional_allow
+                )
+            remove_allow = mcp_tool.remove_allow
+            if "remove_allow" in g:
+                remove_allow = merge_str_list(remove_allow, child.mcp_tool.remove_allow)
+            additional_block = mcp_tool.additional_block
+            if "additional_block" in g:
+                additional_block = merge_str_list(
+                    additional_block, child.mcp_tool.additional_block
+                )
+            remove_block = mcp_tool.remove_block
+            if "remove_block" in g:
+                remove_block = merge_str_list(remove_block, child.mcp_tool.remove_block)
+            enabled = mcp_tool.enabled
+            if "enabled" in g:
+                enabled = child.mcp_tool.enabled
+            mcp_tool = McpToolConfig(
+                allow=allow,
+                block=block,
+                require_confirmation=require_confirmation,
+                default_action=default_action,
+                max_args_size=max_args_size,
+                additional_allow=additional_allow,
+                remove_allow=remove_allow,
+                additional_block=additional_block,
+                remove_block=remove_block,
+                enabled=enabled,
+            )
+
+        # Prompt injection guard
+        prompt_injection = self.guards.prompt_injection
+        if prompt_injection is None:
+            prompt_injection = child.prompt_injection
+        elif child.prompt_injection is not None:
+            g = guard_raw("prompt_injection")
+            enabled = prompt_injection.enabled
+            if "enabled" in g:
+                enabled = child.prompt_injection.enabled
+            warn_at_or_above = prompt_injection.warn_at_or_above
+            if "warn_at_or_above" in g:
+                warn_at_or_above = child.prompt_injection.warn_at_or_above
+            block_at_or_above = prompt_injection.block_at_or_above
+            if "block_at_or_above" in g:
+                block_at_or_above = child.prompt_injection.block_at_or_above
+            max_scan_bytes = prompt_injection.max_scan_bytes
+            if "max_scan_bytes" in g:
+                max_scan_bytes = child.prompt_injection.max_scan_bytes
+            prompt_injection = PromptInjectionConfig(
+                enabled=enabled,
+                warn_at_or_above=warn_at_or_above,
+                block_at_or_above=block_at_or_above,
+                max_scan_bytes=max_scan_bytes,
+            )
+
+        # Jailbreak detection guard
+        jailbreak = self.guards.jailbreak
+        if jailbreak is None:
+            jailbreak = child.jailbreak
+        elif child.jailbreak is not None:
+            g = guard_raw("jailbreak")
+            enabled = jailbreak.enabled
+            if "enabled" in g:
+                enabled = child.jailbreak.enabled
+            block_threshold = jailbreak.block_threshold
+            if "block_threshold" in g:
+                block_threshold = child.jailbreak.block_threshold
+            warn_threshold = jailbreak.warn_threshold
+            if "warn_threshold" in g:
+                warn_threshold = child.jailbreak.warn_threshold
+            max_input_bytes = jailbreak.max_input_bytes
+            if "max_input_bytes" in g:
+                max_input_bytes = child.jailbreak.max_input_bytes
+            session_aggregation = jailbreak.session_aggregation
+            if "session_aggregation" in g:
+                session_aggregation = child.jailbreak.session_aggregation
+            jailbreak = JailbreakConfig(
+                enabled=enabled,
+                block_threshold=block_threshold,
+                warn_threshold=warn_threshold,
+                max_input_bytes=max_input_bytes,
+                session_aggregation=session_aggregation,
+            )
+
         return GuardConfigs(
-            forbidden_path=child.forbidden_path or self.guards.forbidden_path,
-            egress_allowlist=child.egress_allowlist or self.guards.egress_allowlist,
-            secret_leak=child.secret_leak or self.guards.secret_leak,
-            patch_integrity=child.patch_integrity or self.guards.patch_integrity,
-            mcp_tool=child.mcp_tool or self.guards.mcp_tool,
-            prompt_injection=child.prompt_injection or self.guards.prompt_injection,
-            jailbreak=child.jailbreak or self.guards.jailbreak,
+            forbidden_path=forbidden_path,
+            egress_allowlist=egress_allowlist,
+            secret_leak=secret_leak,
+            patch_integrity=patch_integrity,
+            mcp_tool=mcp_tool,
+            prompt_injection=prompt_injection,
+            jailbreak=jailbreak,
         )
 
     def to_yaml(self) -> str:

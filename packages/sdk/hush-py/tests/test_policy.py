@@ -308,6 +308,85 @@ extends: base_policy
         assert merged.settings.verbose_logging is True
 
 
+class TestPolicyMergeGuards:
+    def test_merge_preserves_base_forbidden_path_patterns_when_child_omits(self) -> None:
+        base_yaml = """
+version: "1.1.0"
+name: base
+guards:
+  forbidden_path:
+    patterns:
+      - "**/repo/**"
+"""
+        child_yaml = """
+version: "1.1.0"
+name: child
+extends: base_policy
+guards:
+  forbidden_path:
+    exceptions:
+      - "**/repo/**/public/**"
+"""
+        base = Policy.from_yaml(base_yaml)
+        child = Policy.from_yaml(child_yaml)
+        merged = base.merge(child)
+
+        assert merged.guards.forbidden_path is not None
+        # Must keep base patterns instead of falling back to guard defaults.
+        assert merged.guards.forbidden_path.patterns == ["**/repo/**"]
+        assert "**/repo/**/public/**" in merged.guards.forbidden_path.exceptions
+
+    def test_merge_preserves_base_patch_integrity_limits_when_child_omits(self) -> None:
+        base_yaml = """
+version: "1.1.0"
+name: base
+guards:
+  patch_integrity:
+    max_additions: 10
+"""
+        child_yaml = """
+version: "1.1.0"
+name: child
+extends: base_policy
+guards:
+  patch_integrity:
+    forbidden_patterns:
+      - "(?i)password"
+"""
+        base = Policy.from_yaml(base_yaml)
+        child = Policy.from_yaml(child_yaml)
+        merged = base.merge(child)
+
+        assert merged.guards.patch_integrity is not None
+        assert merged.guards.patch_integrity.max_additions == 10
+        assert "(?i)password" in merged.guards.patch_integrity.forbidden_patterns
+
+    def test_merge_preserves_base_secret_leak_enabled_when_child_omits(self) -> None:
+        base_yaml = """
+version: "1.1.0"
+name: base
+guards:
+  secret_leak:
+    enabled: false
+"""
+        child_yaml = """
+version: "1.1.0"
+name: child
+extends: base_policy
+guards:
+  secret_leak:
+    skip_paths:
+      - "**/fixtures/**"
+"""
+        base = Policy.from_yaml(base_yaml)
+        child = Policy.from_yaml(child_yaml)
+        merged = base.merge(child)
+
+        assert merged.guards.secret_leak is not None
+        assert merged.guards.secret_leak.enabled is False
+        assert "**/fixtures/**" in merged.guards.secret_leak.skip_paths
+
+
 class TestPostureConfig:
     def test_posture_from_dict(self) -> None:
         data = {
