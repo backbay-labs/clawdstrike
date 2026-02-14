@@ -20,11 +20,11 @@ namespace Hush.Security
             if (text == null) throw new ArgumentNullException(nameof(text));
 
             IntPtr configPtr = IntPtr.Zero;
-            if (configJson != null)
-                configPtr = Marshal.StringToCoTaskMemUTF8(configJson);
-
             try
             {
+                if (configJson != null)
+                    configPtr = Marshal.StringToCoTaskMemUTF8(configJson);
+
                 var ptr = NativeMethods.hush_sanitize_output(text, configPtr);
                 HushException.ThrowIfNull(ptr);
                 using var ns = new NativeString(ptr);

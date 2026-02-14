@@ -23,11 +23,11 @@ namespace Hush.Receipts
             if (signerHex == null) throw new ArgumentNullException(nameof(signerHex));
 
             IntPtr cosignerPtr = IntPtr.Zero;
-            if (cosignerHex != null)
-                cosignerPtr = Marshal.StringToCoTaskMemUTF8(cosignerHex);
-
             try
             {
+                if (cosignerHex != null)
+                    cosignerPtr = Marshal.StringToCoTaskMemUTF8(cosignerHex);
+
                 var ptr = NativeMethods.hush_verify_receipt(receiptJson, signerHex, cosignerPtr);
                 HushException.ThrowIfNull(ptr);
                 using var ns = new NativeString(ptr);
