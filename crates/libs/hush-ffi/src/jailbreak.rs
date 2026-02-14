@@ -142,8 +142,27 @@ mod tests {
     use std::ffi::CString;
     use std::sync::Arc;
 
+    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        // These tests share a process-wide cache, and `cargo test` runs tests in parallel by
+        // default. Serialize and reset to avoid inter-test flakiness due to eviction.
+        let guard = TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        let cache = DETECTORS.get_or_init(|| Mutex::new(DetectorCache::default()));
+        let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache.map.clear();
+        cache.lru.clear();
+
+        guard
+    }
+
     #[test]
     fn test_detect_jailbreak_benign() {
+        let _guard = test_guard();
         let text = CString::new("What is the weather today?").unwrap();
         let result =
             unsafe { hush_detect_jailbreak(text.as_ptr(), std::ptr::null(), std::ptr::null()) };
@@ -156,6 +175,7 @@ mod tests {
 
     #[test]
     fn test_detect_jailbreak_null_text() {
+        let _guard = test_guard();
         let result =
             unsafe { hush_detect_jailbreak(std::ptr::null(), std::ptr::null(), std::ptr::null()) };
         assert!(result.is_null());
@@ -163,6 +183,7 @@ mod tests {
 
     #[test]
     fn test_detect_jailbreak_with_session_id() {
+        let _guard = test_guard();
         let text = CString::new("Hello world").unwrap();
         let session = CString::new("session-123").unwrap();
         let result =
@@ -176,6 +197,7 @@ mod tests {
 
     #[test]
     fn test_cached_detectors_reused_for_equivalent_configs() {
+        let _guard = test_guard();
         let d1 = get_or_create_detector(clawdstrike::JailbreakGuardConfig::default()).unwrap();
         let cfg_from_json: clawdstrike::JailbreakGuardConfig = serde_json::from_str("{}").unwrap();
         let d2 = get_or_create_detector(cfg_from_json).unwrap();
@@ -184,6 +206,7 @@ mod tests {
 
     #[test]
     fn test_detector_cache_is_bounded() {
+        let _guard = test_guard();
         // Create more unique configs than the cache limit; we should still remain bounded.
         for i in 0..(MAX_DETECTOR_CACHE_ENTRIES + 10) {
             let cfg = clawdstrike::JailbreakGuardConfig {

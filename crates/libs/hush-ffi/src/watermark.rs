@@ -330,6 +330,24 @@ mod tests {
     use super::*;
     use std::ffi::CString;
 
+    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        // These tests share a process-wide cache, and `cargo test` runs tests in parallel by
+        // default. Serialize and reset to avoid inter-test flakiness due to eviction/pinning.
+        let guard = TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::default()));
+        let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache.map.clear();
+        cache.lru_non_pinned.clear();
+
+        guard
+    }
+
     fn test_config_json() -> CString {
         CString::new(r#"{"generate_keypair": true}"#).unwrap()
     }
@@ -341,6 +359,7 @@ mod tests {
 
     #[test]
     fn watermarker_cache_is_bounded() {
+        let _guard = test_guard();
         for i in 0..(MAX_WATERMARKER_CACHE_ENTRIES + 10) {
             let cfg = format!("{{\"private_key\":\"{}\"}}", seed_hex(i as u8));
             let _ = get_or_create_watermarker(&cfg).unwrap();
@@ -353,6 +372,7 @@ mod tests {
 
     #[test]
     fn test_watermark_public_key() {
+        let _guard = test_guard();
         let config = test_config_json();
         let result = unsafe { hush_watermark_public_key(config.as_ptr()) };
         assert!(!result.is_null());
@@ -364,12 +384,14 @@ mod tests {
 
     #[test]
     fn test_watermark_public_key_null_config() {
+        let _guard = test_guard();
         let result = unsafe { hush_watermark_public_key(std::ptr::null()) };
         assert!(result.is_null());
     }
 
     #[test]
     fn test_watermark_prompt_roundtrip() {
+        let _guard = test_guard();
         let config = test_config_json();
         let prompt = CString::new("Hello, world!").unwrap();
 
@@ -393,6 +415,7 @@ mod tests {
 
     #[test]
     fn test_watermark_prompt_null_prompt() {
+        let _guard = test_guard();
         let config = test_config_json();
         let result = unsafe {
             hush_watermark_prompt(
@@ -407,6 +430,7 @@ mod tests {
 
     #[test]
     fn test_extract_watermark_no_watermark() {
+        let _guard = test_guard();
         let text = CString::new("Just plain text with no watermark").unwrap();
         let config = CString::new(r#"{"trusted_public_keys": []}"#).unwrap();
         let result = unsafe { hush_extract_watermark(text.as_ptr(), config.as_ptr()) };
@@ -419,6 +443,7 @@ mod tests {
 
     #[test]
     fn test_extract_watermark_null_text() {
+        let _guard = test_guard();
         let config = CString::new(r#"{"trusted_public_keys": []}"#).unwrap();
         let result = unsafe { hush_extract_watermark(std::ptr::null(), config.as_ptr()) };
         assert!(result.is_null());
@@ -426,6 +451,7 @@ mod tests {
 
     #[test]
     fn test_extract_watermark_null_config() {
+        let _guard = test_guard();
         let text = CString::new("Some text").unwrap();
         let result = unsafe { hush_extract_watermark(text.as_ptr(), std::ptr::null()) };
         assert!(result.is_null());
