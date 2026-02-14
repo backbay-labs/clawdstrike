@@ -44,7 +44,10 @@ where
         Ok(value) => value,
         Err(payload) => {
             let message = panic_to_string(payload.as_ref());
-            set_last_error(&format!("FFI panic: {message}"));
+
+            // Best-effort: record the panic reason, but never unwind across the
+            // FFI boundary (including from this error-handling path).
+            let _ = panic::catch_unwind(|| set_last_error(&format!("FFI panic: {message}")));
             fallback
         }
     }
