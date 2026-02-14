@@ -99,6 +99,7 @@ func KeypairFromHex(hex string) (*Keypair, error) {
 // PublicKeyHex returns the public key as a hex-encoded string.
 func (kp *Keypair) PublicKeyHex() (string, error) {
 	p := ffiKeypairPublicKeyHex(kp.ptr)
+	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()
 	}
@@ -109,6 +110,7 @@ func (kp *Keypair) PublicKeyHex() (string, error) {
 func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
 	var out [32]byte
 	rc := ffiKeypairPublicKeyBytes(kp.ptr, unsafe.Pointer(&out[0]))
+	runtime.KeepAlive(kp)
 	if rc != 0 {
 		return out, lastError()
 	}
@@ -118,6 +120,7 @@ func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
 // SignHex signs a message and returns the hex-encoded signature.
 func (kp *Keypair) SignHex(msg []byte) (string, error) {
 	p := ffiKeypairSignHex(kp.ptr, cBytesPtr(msg), len(msg))
+	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()
 	}
@@ -128,6 +131,7 @@ func (kp *Keypair) SignHex(msg []byte) (string, error) {
 func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
 	var out [64]byte
 	rc := ffiKeypairSign(kp.ptr, cBytesPtr(msg), len(msg), unsafe.Pointer(&out[0]))
+	runtime.KeepAlive(kp)
 	if rc != 0 {
 		return out, lastError()
 	}
@@ -137,6 +141,7 @@ func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
 // ToHex exports the keypair seed as a hex-encoded string.
 func (kp *Keypair) ToHex() (string, error) {
 	p := ffiKeypairToHex(kp.ptr)
+	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()
 	}
@@ -162,9 +167,9 @@ func VerifyEd25519(pubkeyHex string, msg []byte, sigHex string) (bool, error) {
 	defer freeCString(csig)
 	rc := ffiVerifyEd25519(cpk, cBytesPtr(msg), len(msg), csig)
 	switch rc {
-	case 0:
-		return true, nil
 	case 1:
+		return true, nil
+	case 0:
 		return false, nil
 	default:
 		return false, lastError()
@@ -181,9 +186,9 @@ func VerifyEd25519Bytes(pubkey [32]byte, msg []byte, sig [64]byte) (bool, error)
 		unsafe.Pointer(&sig[0]),
 	)
 	switch rc {
-	case 0:
-		return true, nil
 	case 1:
+		return true, nil
+	case 0:
 		return false, nil
 	default:
 		return false, lastError()

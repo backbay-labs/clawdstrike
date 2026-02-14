@@ -22,10 +22,10 @@ namespace Hush.Crypto
 
             var rc = NativeMethods.hush_verify_ed25519(
                 publicKeyHex, message, (UIntPtr)message.Length, signatureHex);
-            // 0 = valid, 1 = invalid, negative = error
+            // 1 = valid, 0 = invalid, negative = error
             if (rc < 0)
                 throw HushException.FromLastError();
-            return rc == 0;
+            return rc == 1;
         }
 
         /// <summary>
@@ -49,7 +49,7 @@ namespace Hush.Crypto
                 publicKey, message, (UIntPtr)message.Length, signature);
             if (rc < 0)
                 throw HushException.FromLastError();
-            return rc == 0;
+            return rc == 1;
         }
     }
 }

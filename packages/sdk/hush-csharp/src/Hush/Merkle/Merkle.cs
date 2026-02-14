@@ -55,7 +55,7 @@ namespace Hush.Merkle
             var rc = NativeMethods.hush_verify_merkle_proof(leafHex, proofJson, rootHex);
             if (rc < 0)
                 throw HushException.FromLastError();
-            return rc == 0;
+            return rc == 1;
         }
     }
 }

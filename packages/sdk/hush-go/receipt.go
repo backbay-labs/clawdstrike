@@ -1,5 +1,7 @@
 package hush
 
+import "runtime"
+
 // VerifyReceipt verifies a signed receipt JSON against a signer public key.
 // cosignerHex is optional (pass nil to skip cosigner verification).
 // Returns the verification result as a JSON string.
@@ -25,6 +27,7 @@ func SignReceipt(receiptJSON string, kp *Keypair) (string, error) {
 	defer freeCString(cr)
 
 	p := ffiSignReceipt(cr, kp.ptr)
+	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()
 	}

@@ -38,9 +38,9 @@ func VerifyMerkleProof(leafHex, proofJSON, rootHex string) (bool, error) {
 
 	rc := ffiVerifyMerkleProof(clh, cpj, crh)
 	switch rc {
-	case 0:
-		return true, nil
 	case 1:
+		return true, nil
+	case 0:
 		return false, nil
 	default:
 		return false, lastError()
