@@ -1,0 +1,191 @@
+package hush
+
+import (
+	"runtime"
+	"unsafe"
+)
+
+// Sha256 computes the SHA-256 hash of data, returning 32 bytes.
+func Sha256(data []byte) ([32]byte, error) {
+	var out [32]byte
+	rc := ffiSha256(cBytesPtr(data), len(data), unsafe.Pointer(&out[0]))
+	if rc != 0 {
+		return out, lastError()
+	}
+	return out, nil
+}
+
+// Sha256Hex computes the SHA-256 hash of data and returns the hex string.
+func Sha256Hex(data []byte) (string, error) {
+	p := ffiSha256Hex(cBytesPtr(data), len(data))
+	if p == nil {
+		return "", lastError()
+	}
+	return goStringFromCFree(p), nil
+}
+
+// Keccak256 computes the Keccak-256 hash of data, returning 32 bytes.
+func Keccak256(data []byte) ([32]byte, error) {
+	var out [32]byte
+	rc := ffiKeccak256(cBytesPtr(data), len(data), unsafe.Pointer(&out[0]))
+	if rc != 0 {
+		return out, lastError()
+	}
+	return out, nil
+}
+
+// Keccak256Hex computes the Keccak-256 hash of data and returns the hex string.
+func Keccak256Hex(data []byte) (string, error) {
+	p := ffiKeccak256Hex(cBytesPtr(data), len(data))
+	if p == nil {
+		return "", lastError()
+	}
+	return goStringFromCFree(p), nil
+}
+
+// CanonicalizeJSON canonicalizes a JSON string per RFC 8785 (JCS).
+func CanonicalizeJSON(json string) (string, error) {
+	cj := allocCString(json)
+	defer freeCString(cj)
+	p := ffiCanonicalizeJSON(cj)
+	if p == nil {
+		return "", lastError()
+	}
+	return goStringFromCFree(p), nil
+}
+
+// Keypair wraps an opaque hush-ffi Ed25519 keypair handle.
+// Call Close() to explicitly destroy the keypair and zero key material.
+// The finalizer will also destroy it on GC if Close() was not called.
+type Keypair struct {
+	ptr unsafe.Pointer
+}
+
+func newKeypair(ptr unsafe.Pointer) *Keypair {
+	kp := &Keypair{ptr: ptr}
+	runtime.SetFinalizer(kp, (*Keypair).Close)
+	return kp
+}
+
+// GenerateKeypair creates a new random Ed25519 keypair.
+func GenerateKeypair() (*Keypair, error) {
+	ptr := ffiKeypairGenerate()
+	if err := checkPtr(ptr); err != nil {
+		return nil, err
+	}
+	return newKeypair(ptr), nil
+}
+
+// KeypairFromSeed creates a keypair from a 32-byte seed.
+func KeypairFromSeed(seed [32]byte) (*Keypair, error) {
+	ptr := ffiKeypairFromSeed(unsafe.Pointer(&seed[0]))
+	if err := checkPtr(ptr); err != nil {
+		return nil, err
+	}
+	return newKeypair(ptr), nil
+}
+
+// KeypairFromHex creates a keypair from a hex-encoded seed string.
+func KeypairFromHex(hex string) (*Keypair, error) {
+	ch := allocCString(hex)
+	defer freeCString(ch)
+	ptr := ffiKeypairFromHex(ch)
+	if err := checkPtr(ptr); err != nil {
+		return nil, err
+	}
+	return newKeypair(ptr), nil
+}
+
+// PublicKeyHex returns the public key as a hex-encoded string.
+func (kp *Keypair) PublicKeyHex() (string, error) {
+	p := ffiKeypairPublicKeyHex(kp.ptr)
+	if p == nil {
+		return "", lastError()
+	}
+	return goStringFromCFree(p), nil
+}
+
+// PublicKeyBytes returns the 32-byte public key.
+func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
+	var out [32]byte
+	rc := ffiKeypairPublicKeyBytes(kp.ptr, unsafe.Pointer(&out[0]))
+	if rc != 0 {
+		return out, lastError()
+	}
+	return out, nil
+}
+
+// SignHex signs a message and returns the hex-encoded signature.
+func (kp *Keypair) SignHex(msg []byte) (string, error) {
+	p := ffiKeypairSignHex(kp.ptr, cBytesPtr(msg), len(msg))
+	if p == nil {
+		return "", lastError()
+	}
+	return goStringFromCFree(p), nil
+}
+
+// Sign signs a message and returns the 64-byte signature.
+func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
+	var out [64]byte
+	rc := ffiKeypairSign(kp.ptr, cBytesPtr(msg), len(msg), unsafe.Pointer(&out[0]))
+	if rc != 0 {
+		return out, lastError()
+	}
+	return out, nil
+}
+
+// ToHex exports the keypair seed as a hex-encoded string.
+func (kp *Keypair) ToHex() (string, error) {
+	p := ffiKeypairToHex(kp.ptr)
+	if p == nil {
+		return "", lastError()
+	}
+	return goStringFromCFree(p), nil
+}
+
+// Close explicitly destroys the keypair, zeroing key material.
+// Safe to call multiple times.
+func (kp *Keypair) Close() {
+	if kp.ptr != nil {
+		ffiKeypairDestroy(kp.ptr)
+		kp.ptr = nil
+		runtime.SetFinalizer(kp, nil)
+	}
+}
+
+// VerifyEd25519 verifies an Ed25519 signature using hex-encoded inputs.
+// Returns true if the signature is valid.
+func VerifyEd25519(pubkeyHex string, msg []byte, sigHex string) (bool, error) {
+	cpk := allocCString(pubkeyHex)
+	defer freeCString(cpk)
+	csig := allocCString(sigHex)
+	defer freeCString(csig)
+	rc := ffiVerifyEd25519(cpk, cBytesPtr(msg), len(msg), csig)
+	switch rc {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, lastError()
+	}
+}
+
+// VerifyEd25519Bytes verifies an Ed25519 signature using raw byte inputs.
+// Returns true if the signature is valid.
+func VerifyEd25519Bytes(pubkey [32]byte, msg []byte, sig [64]byte) (bool, error) {
+	rc := ffiVerifyEd25519Bytes(
+		unsafe.Pointer(&pubkey[0]),
+		cBytesPtr(msg),
+		len(msg),
+		unsafe.Pointer(&sig[0]),
+	)
+	switch rc {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, lastError()
+	}
+}

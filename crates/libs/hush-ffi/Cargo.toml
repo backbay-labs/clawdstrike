@@ -1,0 +1,26 @@
+[package]
+name = "hush-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "C ABI for hush-core and clawdstrike — exposes crypto, receipts, jailbreak detection, and watermarking over FFI"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+hush-core.workspace = true
+clawdstrike.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+base64.workspace = true
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.28"
+
+[lints]
+workspace = true

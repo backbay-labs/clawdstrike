@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Hush</RootNamespace>
+    <PackageId>Backbay.Clawdstrike</PackageId>
+    <Version>0.1.1</Version>
+    <Authors>Backbay Labs</Authors>
+    <Description>C# SDK for ClawdStrike runtime security enforcement</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+</Project>

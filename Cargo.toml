@@ -17,6 +17,7 @@ members = [
     "crates/tests/sdr-integration-tests",
     "crates/services/cloud-api",
     "packages/sdk/hush-py/hush-native",
+    "crates/libs/hush-ffi",
 ]
 exclude = [
     "fuzz",
