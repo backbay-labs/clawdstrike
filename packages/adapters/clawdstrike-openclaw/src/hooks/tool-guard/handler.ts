@@ -34,9 +34,9 @@ function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
   const t = typeof value;
   if (t === 'string') return JSON.stringify(value);
   if (t === 'number' || t === 'boolean') return String(value);
-  if (t === 'bigint') return JSON.stringify(value.toString());
+  if (t === 'bigint') return JSON.stringify(String(value));
   if (t === 'undefined') return '"__undefined__"';
-  if (t === 'symbol') return JSON.stringify(value.toString());
+  if (t === 'symbol') return JSON.stringify(String(value));
   if (t === 'function') return '"__function__"';
 
   if (Array.isArray(value)) {
