@@ -26,12 +26,11 @@ func VerifyReceipt(receiptJSON, signerHex string, cosignerHex *string) (string, 
 // SignReceipt signs an unsigned receipt JSON with a keypair.
 // Returns the signed receipt as a JSON string.
 func SignReceipt(receiptJSON string, kp *Keypair) (string, error) {
-	if kp == nil {
-		return "", ErrKeypairNil
+	ptr, unlock, err := kp.rlockPtrOrErr()
+	if err != nil {
+		return "", err
 	}
-	if kp.ptr == nil {
-		return "", ErrKeypairClosed
-	}
+	defer unlock()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -39,7 +38,7 @@ func SignReceipt(receiptJSON string, kp *Keypair) (string, error) {
 	cr := allocCString(receiptJSON)
 	defer freeCString(cr)
 
-	p := ffiSignReceipt(cr, kp.ptr)
+	p := ffiSignReceipt(cr, ptr)
 	runtime.KeepAlive(kp)
 	if p == nil {
 		return "", lastError()

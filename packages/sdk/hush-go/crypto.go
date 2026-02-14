@@ -2,6 +2,7 @@ package hush
 
 import (
 	"runtime"
+	"sync"
 	"unsafe"
 )
 
@@ -75,17 +76,21 @@ func CanonicalizeJSON(json string) (string, error) {
 // Call Close() to explicitly destroy the keypair and zero key material.
 // The finalizer will also destroy it on GC if Close() was not called.
 type Keypair struct {
+	mu  sync.RWMutex
 	ptr unsafe.Pointer
 }
 
-func (kp *Keypair) ptrOrErr() (unsafe.Pointer, error) {
+func (kp *Keypair) rlockPtrOrErr() (unsafe.Pointer, func(), error) {
 	if kp == nil {
-		return nil, ErrKeypairNil
+		return nil, func() {}, ErrKeypairNil
 	}
+
+	kp.mu.RLock()
 	if kp.ptr == nil {
-		return nil, ErrKeypairClosed
+		kp.mu.RUnlock()
+		return nil, func() {}, ErrKeypairClosed
 	}
-	return kp.ptr, nil
+	return kp.ptr, kp.mu.RUnlock, nil
 }
 
 func newKeypair(ptr unsafe.Pointer) *Keypair {
@@ -134,10 +139,11 @@ func KeypairFromHex(hex string) (*Keypair, error) {
 
 // PublicKeyHex returns the public key as a hex-encoded string.
 func (kp *Keypair) PublicKeyHex() (string, error) {
-	ptr, err := kp.ptrOrErr()
+	ptr, unlock, err := kp.rlockPtrOrErr()
 	if err != nil {
 		return "", err
 	}
+	defer unlock()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -153,10 +159,11 @@ func (kp *Keypair) PublicKeyHex() (string, error) {
 // PublicKeyBytes returns the 32-byte public key.
 func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
 	var out [32]byte
-	ptr, err := kp.ptrOrErr()
+	ptr, unlock, err := kp.rlockPtrOrErr()
 	if err != nil {
 		return out, err
 	}
+	defer unlock()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -171,10 +178,11 @@ func (kp *Keypair) PublicKeyBytes() ([32]byte, error) {
 
 // SignHex signs a message and returns the hex-encoded signature.
 func (kp *Keypair) SignHex(msg []byte) (string, error) {
-	ptr, err := kp.ptrOrErr()
+	ptr, unlock, err := kp.rlockPtrOrErr()
 	if err != nil {
 		return "", err
 	}
+	defer unlock()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -190,10 +198,11 @@ func (kp *Keypair) SignHex(msg []byte) (string, error) {
 // Sign signs a message and returns the 64-byte signature.
 func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
 	var out [64]byte
-	ptr, err := kp.ptrOrErr()
+	ptr, unlock, err := kp.rlockPtrOrErr()
 	if err != nil {
 		return out, err
 	}
+	defer unlock()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -208,10 +217,11 @@ func (kp *Keypair) Sign(msg []byte) ([64]byte, error) {
 
 // ToHex exports the keypair seed as a hex-encoded string.
 func (kp *Keypair) ToHex() (string, error) {
-	ptr, err := kp.ptrOrErr()
+	ptr, unlock, err := kp.rlockPtrOrErr()
 	if err != nil {
 		return "", err
 	}
+	defer unlock()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -230,6 +240,10 @@ func (kp *Keypair) Close() {
 	if kp == nil {
 		return
 	}
+
+	kp.mu.Lock()
+	defer kp.mu.Unlock()
+
 	if kp.ptr != nil {
 		ffiKeypairDestroy(kp.ptr)
 		kp.ptr = nil
