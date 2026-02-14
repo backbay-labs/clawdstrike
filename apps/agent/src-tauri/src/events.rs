@@ -324,7 +324,9 @@ impl EventManager {
         match event_type {
             "policy_updated" | "violation" | "session_posture_transition" => {
                 let mut json: serde_json::Value = serde_json::from_str(data)
-                    .unwrap_or_else(|_| serde_json::json!({}));
+                    .with_context(|| {
+                        format!("Malformed JSON in SSE daemon event ({event_type}): {data}")
+                    })?;
                 if let Some(obj) = json.as_object_mut() {
                     obj.insert(
                         "type".to_string(),
@@ -460,6 +462,20 @@ mod tests {
 
         let evt = events_rx.try_recv().expect("should have received policy event");
         assert_eq!(evt.id, "ev-1");
+    }
+
+    /// Malformed JSON in a known daemon event type must return an error,
+    /// not silently create a phantom event with all-None fields.
+    #[tokio::test]
+    async fn sse_malformed_json_returns_error() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut daemon_rx = mgr.subscribe_daemon_events();
+
+        let result = mgr.handle_sse_message("violation", "not valid json{{{").await;
+        assert!(result.is_err(), "malformed JSON should be an error");
+
+        // No phantom event should have been emitted.
+        assert!(daemon_rx.try_recv().is_err());
     }
 
     #[test]

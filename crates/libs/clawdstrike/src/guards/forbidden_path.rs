@@ -75,29 +75,30 @@ fn default_forbidden_patterns() -> Vec<String> {
         "/etc/sudoers".to_string(),
     ];
 
-    if cfg!(windows) {
-        patterns.extend([
-            // Windows credential stores
-            "**/AppData/Roaming/Microsoft/Credentials/**".to_string(),
-            "**/AppData/Local/Microsoft/Credentials/**".to_string(),
-            // Windows Credential Manager vault
-            "**/AppData/Roaming/Microsoft/Vault/**".to_string(),
-            // Windows registry hives
-            "**/NTUSER.DAT".to_string(),
-            "**/NTUSER.DAT.*".to_string(),
-            // Windows SAM / SECURITY / SYSTEM hives
-            "**/Windows/System32/config/SAM".to_string(),
-            "**/Windows/System32/config/SECURITY".to_string(),
-            "**/Windows/System32/config/SYSTEM".to_string(),
-            // Registry export files
-            "**/*.reg".to_string(),
-            // Windows certificate stores
-            "**/AppData/Roaming/Microsoft/SystemCertificates/**".to_string(),
-            // PowerShell profiles (can contain secrets)
-            "**/WindowsPowerShell/profile.ps1".to_string(),
-            "**/PowerShell/profile.ps1".to_string(),
-        ]);
-    }
+    // Windows paths are always included for consistency with YAML rulesets
+    // (default.yaml, strict.yaml, etc.) which list them unconditionally.
+    // On non-Windows these globs simply never match, so no false-positive risk.
+    patterns.extend([
+        // Windows credential stores
+        "**/AppData/Roaming/Microsoft/Credentials/**".to_string(),
+        "**/AppData/Local/Microsoft/Credentials/**".to_string(),
+        // Windows Credential Manager vault
+        "**/AppData/Roaming/Microsoft/Vault/**".to_string(),
+        // Windows registry hives
+        "**/NTUSER.DAT".to_string(),
+        "**/NTUSER.DAT.*".to_string(),
+        // Windows SAM / SECURITY / SYSTEM hives
+        "**/Windows/System32/config/SAM".to_string(),
+        "**/Windows/System32/config/SECURITY".to_string(),
+        "**/Windows/System32/config/SYSTEM".to_string(),
+        // Registry export files
+        "**/*.reg".to_string(),
+        // Windows certificate stores
+        "**/AppData/Roaming/Microsoft/SystemCertificates/**".to_string(),
+        // PowerShell profiles (can contain secrets)
+        "**/WindowsPowerShell/profile.ps1".to_string(),
+        "**/PowerShell/profile.ps1".to_string(),
+    ]);
 
     patterns
 }
