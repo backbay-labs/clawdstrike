@@ -178,4 +178,28 @@ guards:
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("checkNetwork accepts host:port inputs", async () => {
+    const policy = `
+version: "1.2.0"
+name: "network parsing"
+guards:
+  egress_allowlist:
+    enabled: true
+    allow:
+      - "api.example.com"
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+
+    const decision = await cs.checkNetwork("api.example.com:443");
+    expect(decision.status).toBe("allow");
+
+    const decisionWithPath = await cs.checkNetwork("api.example.com:443/v1/test");
+    expect(decisionWithPath.status).toBe("allow");
+
+    const session = cs.session();
+    const sessionDecision = await session.checkNetwork("api.example.com:443");
+    expect(sessionDecision.status).toBe("allow");
+  });
 });

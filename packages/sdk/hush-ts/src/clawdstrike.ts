@@ -1125,6 +1125,61 @@ async function evaluateViaDaemon(
   return daemonResponseToDecision(parsed);
 }
 
+function parseNetworkTarget(input: string): { host: string; port: number; url: string } {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { host: '', port: 0, url: '' };
+  }
+
+  const looksLikeUrl = /^[a-zA-Z][a-zA-Z0-9+-.]*:\/\//.test(trimmed);
+  if (looksLikeUrl) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.hostname) {
+        const port = parsed.port
+          ? Number.parseInt(parsed.port, 10)
+          : (parsed.protocol === 'https:' ? 443 : 80);
+        return { host: parsed.hostname, port, url: trimmed };
+      }
+    } catch {
+      // Fall through to host parsing.
+    }
+  }
+
+  // Accept host, host:port, or host/path style inputs.
+  const end = trimmed.search(/[/?#]/);
+  const hostPort = end === -1 ? trimmed : trimmed.slice(0, end);
+
+  // IPv6: [::1]:443
+  if (hostPort.startsWith('[')) {
+    const close = hostPort.indexOf(']');
+    if (close !== -1) {
+      const host = hostPort.slice(1, close);
+      const rest = hostPort.slice(close + 1);
+      if (rest.startsWith(':')) {
+        const parsedPort = Number.parseInt(rest.slice(1), 10);
+        if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+          return { host, port: parsedPort, url: trimmed };
+        }
+      }
+      return { host, port: 443, url: trimmed };
+    }
+  }
+
+  const lastColon = hostPort.lastIndexOf(':');
+  const hasSingleColon = lastColon > 0 && hostPort.indexOf(':') === lastColon;
+  if (hasSingleColon) {
+    const maybeHost = hostPort.slice(0, lastColon);
+    const maybePort = hostPort.slice(lastColon + 1);
+    const parsedPort = Number.parseInt(maybePort, 10);
+    if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+      return { host: maybeHost, port: parsedPort, url: trimmed };
+    }
+  }
+
+  return { host: hostPort, port: 443, url: trimmed };
+}
+
 // ============================================================
 // ClawdstrikeSession
 // ============================================================
@@ -1240,19 +1295,7 @@ export class ClawdstrikeSession {
    * Check network egress.
    */
   async checkNetwork(url: string): Promise<Decision> {
-    let host: string;
-    let port: number;
-
-    try {
-      const parsed = new URL(url);
-      host = parsed.hostname;
-      port = parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80);
-    } catch {
-      host = url;
-      port = 443;
-    }
-
-    return this.check('network_egress', { host, port, url });
+    return this.check('network_egress', parseNetworkTarget(url));
   }
 
   /**
@@ -1558,19 +1601,7 @@ export class Clawdstrike {
    * ```
    */
   async checkNetwork(url: string): Promise<Decision> {
-    let host: string;
-    let port: number;
-
-    try {
-      const parsed = new URL(url);
-      host = parsed.hostname;
-      port = parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80);
-    } catch {
-      host = url;
-      port = 443;
-    }
-
-    return this.check('network_egress', { host, port, url });
+    return this.check('network_egress', parseNetworkTarget(url));
   }
 
   /**
