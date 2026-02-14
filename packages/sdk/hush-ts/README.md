@@ -27,7 +27,7 @@ npm install @clawdstrike/sdk
 ```typescript
 import { Clawdstrike } from "@clawdstrike/sdk";
 
-// Built-in ruleset aliases: loose, moderate, strict, enterprise
+// Built-in ruleset aliases: loose, moderate, strict, enterprise, permissive, default, ai-agent, cicd
 const cs = Clawdstrike.withDefaults("strict");
 
 const decision = await cs.checkFile("~/.ssh/id_rsa", "read");

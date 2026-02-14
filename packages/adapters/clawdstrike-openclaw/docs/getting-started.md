@@ -28,7 +28,7 @@ openclaw plugins enable clawdstrike-security
 ### From npm (when published)
 
 ```bash
-openclaw plugins install @backbay/clawdstrike-security
+openclaw plugins install @clawdstrike/openclaw
 ```
 
 ## Quick Start

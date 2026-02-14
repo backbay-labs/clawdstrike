@@ -43,4 +43,4 @@ This repo includes a Rust/PyO3 module at `packages/sdk/hush-py/hush-native`, but
 
 ## License
 
-MIT
+Apache-2.0
