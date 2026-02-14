@@ -14,6 +14,7 @@ import type {
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
 import { checkAndConsumeApproval } from '../approval-state.js';
+import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
 
 // ── LRU Decision Cache ──────────────────────────────────────────────
 
@@ -126,17 +127,6 @@ function extractResourceKey(event: PolicyEvent): string {
     default:
       return '';
   }
-}
-
-function normalizeApprovalResource(policyEngine: PolicyEngine, toolName: string, params: Record<string, unknown>): string {
-  const raw = extractPath(params)
-    ?? (typeof params.command === 'string' ? params.command : typeof params.cmd === 'string' ? params.cmd : undefined)
-    ?? toolName;
-  const redacted = policyEngine.redactSecrets(raw).trim();
-
-  const maxChars = 1024;
-  if (redacted.length <= maxChars) return redacted;
-  return redacted.slice(0, maxChars) + '...[truncated]';
 }
 
 /**
@@ -394,32 +384,6 @@ function createEventData(
       };
     }
   }
-}
-
-/**
- * Extract file path from tool params
- */
-function extractPath(params: Record<string, unknown>): string | undefined {
-  // Common parameter names for file paths
-  const pathKeys = ['path', 'file', 'file_path', 'filepath', 'filename', 'target'];
-
-  for (const key of pathKeys) {
-    const value = params[key];
-    if (typeof value === 'string') {
-      return value;
-    }
-  }
-
-  // Check for path in command string
-  if (typeof params.command === 'string') {
-    // Try to extract path from commands like "cat /path/to/file"
-    const match = params.command.match(/(?:cat|head|tail|less|more|vim|nano|read)\s+([^\s|><]+)/);
-    if (match) {
-      return match[1];
-    }
-  }
-
-  return undefined;
 }
 
 function extractFileContent(

@@ -20,6 +20,84 @@ function normalizePathForPrefix(p: string): string {
   return path.resolve(expandHome(p));
 }
 
+function cleanPathToken(t: string): string {
+  return t.trim().replace(/^[("'`]+/, '').replace(/[)"'`;,\]}]+$/, '');
+}
+
+function isRedirectionOp(t: string): boolean {
+  return t === '>' || t === '>>' || t === '1>' || t === '1>>' || t === '2>' || t === '2>>' || t === '<' || t === '<<';
+}
+
+function splitInlineRedirection(t: string): string | null {
+  // Support forms like ">/path", "2>>/path", "<input".
+  const m = t.match(/^(?:\d)?(?:>>|>)\s*(.+)$/);
+  if (m?.[1]) return m[1];
+  const mi = t.match(/^(?:<<|<)\s*(.+)$/);
+  if (mi?.[1]) return mi[1];
+  return null;
+}
+
+function looksLikePathToken(t: string): boolean {
+  if (!t) return false;
+  if (t.includes('://')) return false;
+  if (t.startsWith('/') || t.startsWith('~') || t.startsWith('./') || t.startsWith('../')) return true;
+  if (t === '.env' || t.startsWith('.env.')) return true;
+  if (t.includes('/.ssh/') || t.includes('/.aws/') || t.includes('/.gnupg/') || t.includes('/.kube/')) return true;
+  return false;
+}
+
+function extractCommandPathCandidates(command: string, args: string[]): { reads: string[]; writes: string[] } {
+  const tokens = [command, ...args].map((t) => String(t ?? '')).filter(Boolean);
+  const reads: string[] = [];
+  const writes: string[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+
+    // Redirection operators: treat as write/read targets.
+    if (isRedirectionOp(t)) {
+      const next = tokens[i + 1];
+      if (typeof next === 'string' && next.length > 0) {
+        const cleaned = cleanPathToken(next);
+        if (cleaned) {
+          if (t.startsWith('>') || t === '>' || t === '>>' || t === '1>' || t === '1>>' || t === '2>' || t === '2>>') {
+            writes.push(cleaned);
+          } else {
+            reads.push(cleaned);
+          }
+        }
+      }
+      continue;
+    }
+
+    const inline = splitInlineRedirection(t);
+    if (inline) {
+      const cleaned = cleanPathToken(inline);
+      if (cleaned) {
+        if (t.includes('>')) writes.push(cleaned);
+        else reads.push(cleaned);
+      }
+      continue;
+    }
+
+    // Flags like --output=/path
+    const eq = t.indexOf('=');
+    if (eq > 0) {
+      const rhs = t.slice(eq + 1);
+      if (looksLikePathToken(rhs)) {
+        reads.push(cleanPathToken(rhs));
+      }
+    }
+
+    if (looksLikePathToken(t)) {
+      reads.push(cleanPathToken(t));
+    }
+  }
+
+  const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
+  return { reads: uniq(reads), writes: uniq(writes) };
+}
+
 export class PolicyEngine {
   private readonly config: Required<ClawdstrikeConfig>;
   private readonly policy: Policy;
@@ -176,6 +254,45 @@ export class PolicyEngine {
   }
 
   private checkExecution(event: PolicyEvent): Decision {
+    // Defense in depth: shell/command execution can still touch the filesystem.
+    // Best-effort extract path-like tokens (including redirections) and run them through the
+    // filesystem policy checks (forbidden paths + allowed write roots).
+    if (this.config.guards.forbidden_path && event.data.type === 'command') {
+      const { reads, writes } = extractCommandPathCandidates(event.data.command, event.data.args);
+
+      const maxChecks = 64;
+      let checks = 0;
+
+      // Check likely writes first so allowed_write_roots is enforced.
+      for (const p of writes) {
+        if (checks++ >= maxChecks) break;
+        const synthetic: PolicyEvent = {
+          eventId: `${event.eventId}:cmdwrite:${checks}`,
+          eventType: 'file_write',
+          timestamp: event.timestamp,
+          sessionId: event.sessionId,
+          data: { type: 'file', path: p, operation: 'write' },
+          metadata: { ...event.metadata, derivedFrom: 'command_exec' },
+        };
+        const d = this.checkFilesystem(synthetic);
+        if (d.status === 'deny' || d.status === 'warn') return d;
+      }
+
+      for (const p of reads) {
+        if (checks++ >= maxChecks) break;
+        const synthetic: PolicyEvent = {
+          eventId: `${event.eventId}:cmdread:${checks}`,
+          eventType: 'file_read',
+          timestamp: event.timestamp,
+          sessionId: event.sessionId,
+          data: { type: 'file', path: p, operation: 'read' },
+          metadata: { ...event.metadata, derivedFrom: 'command_exec' },
+        };
+        const d = this.checkFilesystem(synthetic);
+        if (d.status === 'deny' || d.status === 'warn') return d;
+      }
+    }
+
     if (!this.config.guards.patch_integrity) {
       return { status: 'allow' };
     }

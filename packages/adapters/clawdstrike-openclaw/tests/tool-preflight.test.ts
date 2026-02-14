@@ -3,7 +3,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import toolPreflightHandler, { initialize as initPreflight } from '../src/hooks/tool-preflight/handler.js';
 import { recordApproval } from '../src/hooks/approval-state.js';
 import { PolicyEngine } from '../src/policy/engine.js';
@@ -69,6 +71,50 @@ describe('Tool Pre-flight Hook', () => {
 
       expect(event.preventDefault).toBe(true);
       expect(event.messages.some(m => m.includes('blocked'))).toBe(true);
+    });
+
+    it('should block shell command that accesses forbidden paths (defense-in-depth)', async () => {
+      const event = makeToolCallEvent('bash', { command: 'cat ~/.ssh/id_rsa' });
+
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
+      expect(event.messages.some(m => m.includes('.ssh'))).toBe(true);
+    });
+
+    it('should block shell redirection writes outside allowed_write_roots', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'clawdstrike-openclaw-policy-'));
+      const policyPath = join(dir, 'policy.yaml');
+      writeFileSync(policyPath, [
+        'version: "clawdstrike-v1.0"',
+        'filesystem:',
+        '  allowed_write_roots:',
+        `    - \"${dir}\"`,
+        '  forbidden_paths: []',
+        'execution:',
+        '  denied_patterns: []',
+        'on_violation: cancel',
+        '',
+      ].join('\n'), 'utf8');
+
+      initPreflight({ ...config, policy: policyPath });
+
+      const event = makeToolCallEvent('bash', { command: 'echo hello > /tmp/clawdstrike-disallowed.txt' });
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
+      expect(event.messages.some(m => m.includes('Write path not in allowed roots'))).toBe(true);
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('should still block shell forbidden-path access even when patch_integrity is disabled', async () => {
+      initPreflight({ ...config, guards: { patch_integrity: false } });
+
+      const event = makeToolCallEvent('bash', { command: 'cat ~/.ssh/id_rsa' });
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
     });
 
     it('should block write to ~/.aws/credentials', async () => {
