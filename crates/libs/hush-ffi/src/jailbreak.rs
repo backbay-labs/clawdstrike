@@ -33,15 +33,6 @@ impl DetectorCache {
             self.map.remove(&old_key);
         }
     }
-
-    fn evict_if_needed(&mut self) {
-        while self.map.len() > MAX_DETECTOR_CACHE_ENTRIES {
-            let Some(old_key) = self.lru.pop_front() else {
-                break;
-            };
-            self.map.remove(&old_key);
-        }
-    }
 }
 
 static DETECTORS: OnceLock<Mutex<DetectorCache>> = OnceLock::new();
@@ -66,14 +57,11 @@ fn get_or_create_detector(
         return Ok(detector);
     }
 
-    if guard.map.len() >= MAX_DETECTOR_CACHE_ENTRIES {
-        guard.evict_to_make_room();
-    }
+    guard.evict_to_make_room();
 
     let detector = Arc::new(clawdstrike::JailbreakDetector::with_config(cfg));
     guard.map.insert(key.clone(), detector.clone());
     guard.touch(&key);
-    guard.evict_if_needed();
     Ok(detector)
 }
 
