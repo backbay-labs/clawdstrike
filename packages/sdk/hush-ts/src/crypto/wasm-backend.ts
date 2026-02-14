@@ -57,7 +57,11 @@ export function createWasmBackend(wasm: WasmModule): CryptoBackend {
       signature: Uint8Array,
       publicKey: Uint8Array
     ): Promise<boolean> {
-      return wasm.verify_ed25519(toHex(publicKey), message, toHex(signature));
+      try {
+        return wasm.verify_ed25519(toHex(publicKey), message, toHex(signature));
+      } catch {
+        return false;
+      }
     },
 
     async publicKeyFromPrivate(
