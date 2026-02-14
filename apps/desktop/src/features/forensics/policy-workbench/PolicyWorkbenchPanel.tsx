@@ -41,7 +41,16 @@ type WorkbenchTab = "editor" | "test";
 interface PolicyWorkbenchPanelProps {
   daemonUrl: string;
   connected: boolean;
+  variant?: "sidebar" | "shelf";
   className?: string;
+  runtimeSummary?: {
+    connected: boolean;
+    statusLabel: string;
+    statusDetail?: string;
+    nodes: number;
+    presence: number;
+    approvals: number;
+  };
 }
 
 interface PolicyTestHistoryItem {
@@ -61,7 +70,13 @@ const DEFAULT_TEST_FORM: PolicyTestForm = {
   agentId: "",
 };
 
-export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: PolicyWorkbenchPanelProps) {
+export function PolicyWorkbenchPanel({
+  daemonUrl,
+  connected,
+  variant = "sidebar",
+  className,
+  runtimeSummary,
+}: PolicyWorkbenchPanelProps) {
   const client = React.useMemo(() => new PolicyWorkbenchClient(daemonUrl), [daemonUrl]);
   const [tab, setTab] = React.useState<WorkbenchTab>("editor");
   const [state, dispatch] = React.useReducer(policyWorkbenchReducer, initialPolicyWorkbenchState);
@@ -365,35 +380,67 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
     <aside
       data-testid="policy-workbench-panel"
       className={clsx(
-        "w-[460px] border-l border-white/10 bg-black/45 backdrop-blur-md",
+        variant === "sidebar"
+          ? "w-[460px] border-l border-white/10 bg-black/45 backdrop-blur-md"
+          : "policy-workbench-panel policy-workbench-panel--shelf h-full min-h-0 w-full overflow-hidden rounded-xl border border-[rgba(213,173,87,0.3)] bg-[linear-gradient(180deg,rgba(10,13,20,0.95)_0%,rgba(6,9,14,0.96)_100%)] shadow-[0_18px_40px_rgba(0,0,0,0.46)]",
         className
       )}
     >
-      <div className="flex h-full flex-col text-white/90">
-        <GlassHeader className="border-b border-white/10 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold tracking-wide">Policy Workbench</h2>
-            <div className="flex items-center gap-2">
-              {dirty && (
-                <Badge variant="destructive" className="text-[11px]">
-                  Dirty
-                </Badge>
-              )}
-              <ValidationBadge status={state.validation.status} />
+      <div className="flex h-full min-h-0 flex-col overflow-y-auto text-white/90">
+        {variant === "sidebar" ? (
+          <GlassHeader className="border-b border-white/10 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold tracking-wide">Policy Workbench</h2>
+              <div className="flex items-center gap-2">
+                {dirty && (
+                  <Badge variant="destructive" className="text-[11px]">
+                    Dirty
+                  </Badge>
+                )}
+                <ValidationBadge status={state.validation.status} />
+              </div>
+            </div>
+            <p className="mt-1 text-xs text-white/50">
+              {state.loadedVersion ? `Schema ${state.loadedVersion}` : "Policy schema unknown"}
+              {state.loadedHash ? ` · ${state.loadedHash.slice(0, 12)}…` : ""}
+            </p>
+          </GlassHeader>
+        ) : (
+          <div className="policy-workbench-meta-row border-b border-[rgba(213,173,87,0.18)] px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2 text-[11px] font-mono">
+                <span className="rounded-full border border-[rgba(213,173,87,0.35)] px-2 py-0.5 uppercase tracking-[0.12em] text-[rgba(230,214,170,0.95)]">
+                  {runtimeSummary?.statusLabel ?? "OFFLINE"}
+                </span>
+                <span className="truncate text-[rgba(191,196,210,0.82)]">
+                  {runtimeSummary?.statusDetail ?? "Telemetry unavailable"}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <MetricChip label="nodes" value={runtimeSummary?.nodes ?? 0} />
+                <MetricChip label="presence" value={runtimeSummary?.presence ?? 0} />
+                <MetricChip label="approvals" value={runtimeSummary?.approvals ?? 0} />
+                <MetricChip
+                  label="schema"
+                  valueLabel={state.loadedVersion ? `${state.loadedVersion}` : "unknown"}
+                />
+                {dirty && (
+                  <Badge variant="destructive" className="text-[10px]">
+                    Dirty
+                  </Badge>
+                )}
+                <ValidationBadge status={state.validation.status} />
+              </div>
             </div>
           </div>
-          <p className="mt-1 text-xs text-white/50">
-            {state.loadedVersion ? `Schema ${state.loadedVersion}` : "Policy schema unknown"}
-            {state.loadedHash ? ` · ${state.loadedHash.slice(0, 12)}…` : ""}
-          </p>
-        </GlassHeader>
+        )}
 
         <Tabs
           value={tab}
           onValueChange={(next) => setTab((next as WorkbenchTab) ?? "editor")}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <TabsList className="mx-2 mt-2 grid w-auto grid-cols-2 bg-white/8 p-1">
+          <TabsList className="policy-workbench-tabs-list mx-2 mt-2 grid w-auto grid-cols-2 bg-white/8 p-1">
             <TabsTrigger data-testid="policy-workbench-tab-editor" value="editor">
               Editor
             </TabsTrigger>
@@ -402,12 +449,19 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="editor" className="mt-0 flex min-h-0 flex-1 flex-col">
-            <GlassPanel variant="flush" className="mx-2 mt-2 border border-white/10">
-              <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                Editor Actions
-              </GlassHeader>
-              <div className="flex items-center gap-2 px-3 py-2">
+          <TabsContent value="editor" className="mt-0 flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
+            <GlassPanel variant="flush" className="mx-2 mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
+              {variant === "sidebar" ? (
+                <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                  Editor Actions
+                </GlassHeader>
+              ) : null}
+              <div
+                className={clsx(
+                  "flex flex-wrap items-center gap-2 px-3 py-2",
+                  variant === "shelf" ? "border-b border-white/10" : undefined
+                )}
+              >
                 <GlowButton
                   data-testid="policy-editor-reload"
                   variant="secondary"
@@ -434,7 +488,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
               </div>
             </GlassPanel>
 
-            <div className="min-h-0 flex-1 px-2 py-2">
+            <div className="px-2 py-2">
               <YamlEditor
                 value={state.draftYaml}
                 onChange={(yaml) => dispatch({ type: "edit", yaml })}
@@ -444,7 +498,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
 
             <GlassPanel
               variant="flush"
-              className="mx-2 mb-2 max-h-44 overflow-y-auto border border-white/10"
+              className="mx-2 mb-2 overflow-y-auto rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
             >
               <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                 Validation
@@ -486,14 +540,16 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
             </GlassPanel>
           </TabsContent>
 
-          <TabsContent value="test" className="mt-0 flex min-h-0 flex-1 flex-col">
+          <TabsContent value="test" className="mt-0 flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
             <GlassPanel
               variant="flush"
-              className="mx-2 mt-2 border border-white/10"
+              className="mx-2 mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
             >
-              <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                Test Input
-              </GlassHeader>
+              {variant === "sidebar" ? (
+                <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                  Test Input
+                </GlassHeader>
+              ) : null}
               <div className="space-y-2 px-3 py-3">
                 <div>
                   <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Event Type</label>
@@ -506,7 +562,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
                         eventType: event.target.value as PolicyTestEventType,
                       }))
                     }
-                    className="w-full rounded border border-white/20 bg-black/35 px-2 py-1 text-xs"
+                    className="w-full rounded border border-[rgba(213,173,87,0.32)] bg-[rgba(6,9,14,0.82)] px-2 py-1 text-xs text-white/90"
                   >
                     {POLICY_TEST_EVENT_TYPES.map((eventType) => (
                       <option key={eventType} value={eventType}>
@@ -581,8 +637,8 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
               </div>
             </GlassPanel>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-              <GlassPanel variant="flush" className="border border-white/10">
+            <div className="min-h-[220px] flex-1 overflow-y-auto px-2 py-2">
+              <GlassPanel variant="flush" className="rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
                 <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                   Decision Output
                 </GlassHeader>
@@ -604,7 +660,7 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
                 </div>
               </GlassPanel>
 
-              <GlassPanel variant="flush" className="mt-2 border border-white/10">
+              <GlassPanel variant="flush" className="mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
                 <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                   History
                 </GlassHeader>
@@ -697,6 +753,23 @@ export function PolicyWorkbenchPanel({ daemonUrl, connected, className }: Policy
   );
 }
 
+function MetricChip({
+  label,
+  value,
+  valueLabel,
+}: {
+  label: string;
+  value?: number;
+  valueLabel?: string;
+}) {
+  const text = typeof valueLabel === "string" ? valueLabel : `${value ?? 0}`;
+  return (
+    <span className="rounded-full border border-[rgba(213,173,87,0.25)] bg-[rgba(10,14,21,0.72)] px-2 py-0.5 text-[10px] font-mono text-[rgba(191,196,210,0.86)]">
+      {label} {text}
+    </span>
+  );
+}
+
 function ValidationBadge({ status }: { status: "idle" | "running" | "valid" | "invalid" | "error" }) {
   if (status === "running") return <Badge variant="outline">Validating</Badge>;
   if (status === "valid") return <Badge variant="default">Valid</Badge>;
@@ -775,12 +848,12 @@ function YamlEditor({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid h-full min-h-0 grid-rows-2 gap-2">
-      <GlassPanel variant="flush" className="min-h-0 overflow-hidden border border-white/10">
+    <div className="flex min-h-[420px] flex-col gap-2">
+      <GlassPanel variant="flush" className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
         <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
           Editable YAML
         </GlassHeader>
-        <div className="h-[calc(100%-33px)] p-2">
+        <div className="min-h-0 flex-1 p-2">
           <textarea
             data-testid="policy-editor-textarea"
             value={value}
@@ -788,22 +861,22 @@ function YamlEditor({
             spellCheck={false}
             readOnly={disabled}
             aria-readonly={disabled ? true : undefined}
-            className="h-full min-h-[210px] w-full resize-none rounded border border-white/15 bg-black/25 p-3 font-mono text-xs leading-5 text-white/90 outline-none focus:border-white/30"
+            className="h-full min-h-[160px] w-full resize-none rounded border border-white/15 bg-black/25 p-3 font-mono text-xs leading-5 text-white/90 outline-none focus:border-white/30"
           />
         </div>
       </GlassPanel>
 
-      <GlassPanel variant="flush" className="min-h-0 overflow-hidden border border-white/10">
+      <GlassPanel variant="flush" className="flex min-h-[180px] flex-1 flex-col overflow-hidden rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
         <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
           Read-only Preview
         </GlassHeader>
-        <div className="h-[calc(100%-33px)] p-2">
+        <div className="min-h-0 flex-1 p-2">
           <CodeBlock
             code={value}
             language="yaml"
             title="policy.yaml"
             showLineNumbers
-            maxHeight={240}
+            maxHeight={420}
             className="h-full"
           />
         </div>

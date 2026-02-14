@@ -34,7 +34,7 @@ export function NexusHeroOverlay({ visible, onDismiss }: NexusHeroOverlayProps) 
     <div
       className={`nexus-hero-overlay ${isExiting ? "nexus-hero-overlay--exiting" : ""}`}
       role="dialog"
-      aria-label="Enter Cyber Nexus"
+      aria-label="Enter Nexus Labs"
       onClick={handleDismiss}
     >
       <div className="nexus-hero-backdrop" />
@@ -47,7 +47,7 @@ export function NexusHeroOverlay({ visible, onDismiss }: NexusHeroOverlayProps) 
 
         <div>
           <div className="origin-label text-[10px] tracking-[0.18em]">Workspace Surface</div>
-          <h1 className="nexus-hero-title">Cyber Nexus</h1>
+          <h1 className="nexus-hero-title">Nexus Labs</h1>
           <p className="nexus-hero-subtitle">
             Focus labs. Trace signals. Move with intent.
           </p>
@@ -59,7 +59,7 @@ export function NexusHeroOverlay({ visible, onDismiss }: NexusHeroOverlayProps) 
           className="origin-focus-ring origin-glass-button nexus-hero-enter-btn"
           data-active="true"
         >
-          ENTER NEXUS
+          ENTER LABS
         </button>
       </div>
 
@@ -72,4 +72,3 @@ export function NexusHeroOverlay({ visible, onDismiss }: NexusHeroOverlayProps) 
 }
 
 export default NexusHeroOverlay;
-

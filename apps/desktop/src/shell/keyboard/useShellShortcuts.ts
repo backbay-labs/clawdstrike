@@ -3,7 +3,7 @@
  *
  * Shortcuts:
  * - Cmd+1-9: Navigate to view by index
- * - Cmd+,: Settings
+ * - Cmd+,: Operations
  * - Cmd+K: Command palette
  * - Cmd+F: Focus search
  * - Cmd+N: New session
@@ -15,15 +15,15 @@ import type { AppId } from "../plugins/types";
 
 // View mapping for quick number key navigation
 const VIEW_KEYS: Record<string, AppId> = {
-  "1": "cyber-nexus",
-  "2": "security-overview",
-  "3": "threat-radar",
-  "4": "attack-graph",
-  "5": "network-map",
-  "6": "forensics-river",
-  "7": "openclaw",
-  "8": "marketplace",
-  "9": "events",
+  "1": "nexus",
+  "2": "operations",
+  "3": "security-overview",
+  "4": "threat-radar",
+  "5": "attack-graph",
+  "6": "network-map",
+  "7": "marketplace",
+  "8": "events",
+  "9": "policies",
 };
 
 export interface ShellShortcutHandlers {

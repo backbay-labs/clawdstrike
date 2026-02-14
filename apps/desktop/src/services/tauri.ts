@@ -4,7 +4,13 @@
 
 // Check if running in Tauri environment
 export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI__" in window;
+  if (typeof window === "undefined") return false;
+  const win = window as unknown as Record<string, unknown>;
+  return Boolean(
+    "__TAURI__" in win ||
+      "__TAURI_INTERNALS__" in win ||
+      (typeof win.__TAURI_IPC__ === "function")
+  );
 }
 
 // Lazy import Tauri API to avoid errors in browser

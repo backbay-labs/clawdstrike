@@ -77,7 +77,7 @@
   --origin-radius: 10px;
 
   /* Shared tokens used by ported Origin dock CSS */
-  --nav-rail-width: 84px;
+  --nav-rail-width: 220px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -108,10 +108,44 @@
   --nexus-plate-stroke-soft: rgba(213, 173, 87, 0.36);
   --nexus-plate-glow: rgba(213, 173, 87, 0.08);
   --nexus-plate-radius: 16px;
+  --nexus-header-height: 72px;
+
+  /* Override @backbay/glia neon defaults to Clawdstrike gold/steel palette */
+  --glia-color-accent: #d5ad57;
+  --glia-color-accent-secondary: #7e8ba7;
+  --glia-color-accent-destructive: #c45c5c;
+  --glia-color-border: rgba(213, 173, 87, 0.34);
+  --glia-color-bg-body: #07090f;
+  --glia-color-text-primary: #ece7dc;
+  --glia-color-text-soft: #b6b7c1;
+  --glia-glass-card-bg: linear-gradient(180deg, rgba(10, 13, 21, 0.95) 0%, rgba(6, 9, 15, 0.96) 100%);
+  --glia-radius-sm: 8px;
+  --glia-radius-md: 10px;
+  --glia-radius-lg: 14px;
+  --glia-tw-primary: 43 60% 58%;
+  --glia-tw-primary-foreground: 220 20% 6%;
+  --glia-tw-secondary: 221 20% 58%;
+  --glia-tw-secondary-foreground: 220 20% 96%;
+  --glia-tw-border: 43 35% 30%;
+  --glia-tw-input: 220 18% 14%;
+  --glia-tw-ring: 43 66% 58%;
+  --glia-tw-foreground: 43 26% 88%;
+  --glia-tw-muted-foreground: 220 12% 66%;
+  --glia-tw-accent: 43 34% 18%;
+  --glia-tw-accent-foreground: 43 62% 64%;
+  --glia-tw-cyan-neon: 43 66% 58%;
+  --glia-tw-magenta-neon: 220 40% 65%;
+  --glia-tw-emerald-neon: 160 42% 48%;
+  --glia-tw-violet-neon: 242 34% 66%;
+  --glia-tw-yellow-warning: 43 72% 56%;
+  --glia-tw-destructive: 358 52% 56%;
+  --glia-tw-destructive-foreground: 220 20% 94%;
 }
 
 * {
   box-sizing: border-box;
+  --tw-ring-color: rgba(213, 173, 87, 0.42);
+  --tw-ring-offset-color: #05060a;
 }
 
 html,
@@ -721,6 +755,22 @@ body {
     0 0 22px rgba(213, 173, 87, 0.1);
 }
 
+.nexus-layout-dropdown {
+  max-height: min(48vh, 340px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(213, 173, 87, 0.45) transparent;
+}
+
+.nexus-layout-dropdown::-webkit-scrollbar {
+  width: 5px;
+}
+
+.nexus-layout-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(213, 173, 87, 0.35);
+  border-radius: 999px;
+}
+
 .premium-panel--lens {
   border-color: rgba(213, 173, 87, 0.34) !important;
   background: linear-gradient(180deg, rgba(8, 11, 19, 0.97) 0%, rgba(4, 7, 12, 0.95) 100%);
@@ -842,6 +892,32 @@ body {
   background: linear-gradient(180deg, rgba(19, 24, 34, 0.95) 0%, rgba(11, 16, 24, 0.97) 100%);
 }
 
+.policy-workbench-panel--shelf {
+  position: relative;
+}
+
+.policy-workbench-panel--shelf::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(circle at 86% 0%, rgba(213, 173, 87, 0.08) 0%, transparent 42%);
+}
+
+.policy-workbench-meta-row {
+  background:
+    linear-gradient(180deg, rgba(14, 19, 29, 0.88) 0%, rgba(9, 13, 21, 0.9) 100%),
+    radial-gradient(circle at 15% 100%, rgba(126, 139, 167, 0.14) 0%, transparent 52%);
+}
+
+.policy-workbench-tabs-list {
+  border: 1px solid rgba(213, 173, 87, 0.2);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(13, 17, 26, 0.78) 0%, rgba(8, 11, 18, 0.84) 100%) !important;
+  box-shadow: inset 0 0 0 1px rgba(213, 173, 87, 0.08);
+}
+
 .premium-rail-button {
   border-color: rgba(213, 173, 87, 0.48) !important;
   box-shadow: inset 0 0 0 1px rgba(213, 173, 87, 0.16);
@@ -876,6 +952,45 @@ body {
   box-shadow:
     inset 0 0 0 1px rgba(213, 173, 87, 0.22),
     0 0 14px rgba(213, 173, 87, 0.22);
+}
+
+.nexus-app-rail-btn[data-mode="station"] {
+  border-color: rgba(213, 173, 87, 0.56) !important;
+  background:
+    linear-gradient(180deg, rgba(18, 23, 34, 0.94) 0%, rgba(8, 11, 18, 0.95) 100%),
+    radial-gradient(circle at 50% 100%, rgba(126, 139, 167, 0.14) 0%, transparent 62%);
+}
+
+.nexus-app-rail-btn[data-mode="station"] .nexus-app-rail-btn-label {
+  color: rgba(226, 210, 168, 0.93);
+  letter-spacing: 0.1em;
+}
+
+.nexus-app-rail-btn[data-mode="station"] .nexus-app-rail-btn-status {
+  color: rgba(154, 165, 188, 0.86);
+  opacity: 0.88;
+}
+
+.nexus-app-rail-btn[data-mode="station"][data-active="true"] .nexus-app-rail-btn-status {
+  color: rgba(213, 173, 87, 0.96);
+}
+
+.nexus-app-rail-btn[data-mode="station"][data-transitioning="true"] {
+  animation: nexus-station-linking 0.75s ease-in-out infinite;
+}
+
+@keyframes nexus-station-linking {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(213, 173, 87, 0.22),
+      0 0 10px rgba(213, 173, 87, 0.18);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(213, 173, 87, 0.32),
+      0 0 18px rgba(213, 173, 87, 0.3);
+  }
 }
 
 .origin-nav-label {
@@ -1095,6 +1210,10 @@ body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
+}
+
+.strikecell-session-row {
+  box-shadow: inset 0 0 0 1px rgba(213, 173, 87, 0.08);
 }
 
 /* =============================================================================

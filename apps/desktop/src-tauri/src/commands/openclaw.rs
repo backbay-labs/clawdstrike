@@ -27,6 +27,20 @@ fn read_agent_api_port() -> u16 {
 }
 
 fn read_agent_api_token() -> Result<String, String> {
+    for env_key in [
+        "CLAWDSTRIKE_AGENT_API_TOKEN",
+        "SDR_AGENT_API_TOKEN",
+        "OPENCLAW_AGENT_API_TOKEN",
+        "VITE_AGENT_API_TOKEN",
+    ] {
+        if let Ok(raw) = std::env::var(env_key) {
+            let token = raw.trim().to_string();
+            if !token.is_empty() {
+                return Ok(token);
+            }
+        }
+    }
+
     let token_path = clawdstrike_config_dir().join("agent-local-token");
     let raw = std::fs::read_to_string(&token_path)
         .map_err(|e| format!("Failed to read {:?}: {}", token_path, e))?;
@@ -35,6 +49,17 @@ fn read_agent_api_token() -> Result<String, String> {
         return Err(format!("Agent token file {:?} is empty", token_path));
     }
     Ok(token)
+}
+
+fn is_expected_agent_unavailable_error(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    (lower.contains("failed to read") && lower.contains("agent-local-token"))
+        || lower.contains("connection refused")
+        || lower.contains("failed to connect")
+        || lower.contains("tcp connect error")
+        || lower.contains("timed out")
+        || lower.contains("os error 61")
+        || lower.contains("os error 111")
 }
 
 fn direct_mode_enabled() -> bool {
@@ -212,7 +237,17 @@ async fn run_openclaw_json(args: Vec<String>) -> Result<Value, String> {
 #[tauri::command]
 pub async fn openclaw_gateway_discover(timeout_ms: Option<u64>) -> Result<Value, String> {
     if !direct_mode_enabled() {
-        return call_agent_openclaw_endpoint("/api/v1/openclaw/discover", timeout_ms).await;
+        match call_agent_openclaw_endpoint("/api/v1/openclaw/discover", timeout_ms).await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                if !is_expected_agent_unavailable_error(&err) {
+                    eprintln!(
+                        "Agent OpenClaw discover failed, falling back to local CLI probe: {}",
+                        err
+                    );
+                }
+            }
+        }
     }
 
     let mut args = vec![
@@ -232,7 +267,17 @@ pub async fn openclaw_gateway_discover(timeout_ms: Option<u64>) -> Result<Value,
 #[tauri::command]
 pub async fn openclaw_gateway_probe(timeout_ms: Option<u64>) -> Result<Value, String> {
     if !direct_mode_enabled() {
-        return call_agent_openclaw_endpoint("/api/v1/openclaw/probe", timeout_ms).await;
+        match call_agent_openclaw_endpoint("/api/v1/openclaw/probe", timeout_ms).await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                if !is_expected_agent_unavailable_error(&err) {
+                    eprintln!(
+                        "Agent OpenClaw probe failed, falling back to local CLI probe: {}",
+                        err
+                    );
+                }
+            }
+        }
     }
 
     let mut args = vec![
@@ -261,7 +306,10 @@ pub async fn openclaw_agent_request(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_json_payload, is_allowed_agent_path, parse_request_method};
+    use super::{
+        extract_json_payload, is_allowed_agent_path, is_expected_agent_unavailable_error,
+        parse_request_method,
+    };
     use serde_json::json;
 
     #[test]
@@ -316,5 +364,18 @@ mod tests {
         assert!(parse_request_method("put").is_ok());
         assert!(parse_request_method("delete").is_ok());
         assert!(parse_request_method("trace").is_err());
+    }
+
+    #[test]
+    fn classifies_expected_agent_unavailable_errors() {
+        assert!(is_expected_agent_unavailable_error(
+            "Failed to read \"/tmp/agent-local-token\": No such file"
+        ));
+        assert!(is_expected_agent_unavailable_error(
+            "Agent OpenClaw request failed for /api/v1/openclaw/probe: tcp connect error: Connection refused (os error 61)"
+        ));
+        assert!(!is_expected_agent_unavailable_error(
+            "Agent OpenClaw endpoint /api/v1/openclaw/probe returned 401 unauthorized"
+        ));
     }
 }

@@ -4,7 +4,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { KeyboardEvent } from "react";
 import { clsx } from "clsx";
-import { getPlugins } from "../plugins";
+import { getVisiblePlugins } from "../plugins";
 import type { AppId } from "../plugins/types";
 
 interface CommandPaletteProps {
@@ -39,7 +39,7 @@ export function CommandPalette({ isOpen, onClose, onSelectApp, extraCommands = [
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const plugins = getPlugins();
+  const plugins = getVisiblePlugins();
 
   // Build command list
   const commands = useMemo<PaletteCommand[]>(

@@ -7,7 +7,16 @@
  * - Shelf panel when opened
  */
 
-import { useCallback, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { clsx } from "clsx";
 import { useDock } from "./DockContext";
 import { Capsule } from "./Capsule";
 import { SessionRail } from "./SessionRail";
@@ -95,28 +104,244 @@ interface ShelfPanelProps {
 }
 
 const shelfTitles: Record<ShelfMode, string> = {
-  events: "Chronicle",
+  events: "Policy Workbench",
   output: "Echoes",
   artifacts: "Relics",
 };
 
-function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
+type ShelfBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function isFiniteShelfBounds(value: ShelfBounds): boolean {
   return (
-    <div className="dock-shelf-panel">
-      <div className="dock-shelf-header">
-        <h3 className="dock-shelf-title">{shelfTitles[mode]}</h3>
-        <button
-          type="button"
-          className="dock-shelf-close"
-          onClick={onClose}
-          title="Close"
-        >
-          <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
-            <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
-          </svg>
-        </button>
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    Number.isFinite(value.width) &&
+    Number.isFinite(value.height)
+  );
+}
+
+const SHELF_MARGIN_PX = 10;
+const SHELF_MIN_WIDTH_PX = 760;
+const SHELF_MIN_HEIGHT_PX = 320;
+const SHELF_MAX_WIDTH_PX = 1680;
+const SHELF_MAX_HEIGHT_PX = 960;
+const SHELF_RAIL_HEIGHT_PX = 52;
+
+function getNavRailWidthPx(): number {
+  if (typeof window === "undefined") return 220;
+  const cssValue = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue("--nav-rail-width")
+    .trim();
+  const parsed = Number.parseInt(cssValue, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 220;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+function clampShelfBounds(next: ShelfBounds): ShelfBounds {
+  if (typeof window === "undefined") return next;
+  const navRailWidth = getNavRailWidthPx();
+  const maxWidth = clamp(
+    window.innerWidth - navRailWidth - SHELF_MARGIN_PX * 2,
+    SHELF_MIN_WIDTH_PX,
+    SHELF_MAX_WIDTH_PX
+  );
+  const maxHeight = clamp(
+    window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX * 3,
+    SHELF_MIN_HEIGHT_PX,
+    SHELF_MAX_HEIGHT_PX
+  );
+  const width = clamp(next.width, SHELF_MIN_WIDTH_PX, maxWidth);
+  const height = clamp(next.height, SHELF_MIN_HEIGHT_PX, maxHeight);
+  const minX = navRailWidth + SHELF_MARGIN_PX;
+  const maxX = window.innerWidth - SHELF_MARGIN_PX - width;
+  const minY = SHELF_MARGIN_PX;
+  const maxY = window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX - height;
+
+  return {
+    x: clamp(next.x, minX, maxX),
+    y: clamp(next.y, minY, maxY),
+    width,
+    height,
+  };
+}
+
+function defaultShelfBounds(): ShelfBounds {
+  if (typeof window === "undefined") {
+    return { x: 240, y: 130, width: 1200, height: 520 };
+  }
+  const navRailWidth = getNavRailWidthPx();
+  const usableWidth = window.innerWidth - navRailWidth - SHELF_MARGIN_PX * 2;
+  const width = clamp(usableWidth * 0.94, SHELF_MIN_WIDTH_PX, SHELF_MAX_WIDTH_PX);
+  const height = clamp(
+    window.innerHeight * 0.62,
+    SHELF_MIN_HEIGHT_PX,
+    Math.min(SHELF_MAX_HEIGHT_PX, window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX * 3)
+  );
+  const x = navRailWidth + SHELF_MARGIN_PX;
+  const y = window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX - height;
+  return clampShelfBounds({ x, y, width, height });
+}
+
+function expandedShelfBounds(): ShelfBounds {
+  if (typeof window === "undefined") {
+    return { x: 228, y: 8, width: 1520, height: 760 };
+  }
+  const navRailWidth = getNavRailWidthPx();
+  return clampShelfBounds({
+    x: navRailWidth + 8,
+    y: 8,
+    width: window.innerWidth - navRailWidth - 16,
+    height: window.innerHeight - SHELF_RAIL_HEIGHT_PX - 16,
+  });
+}
+
+function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
+  const [bounds, setBounds] = useState<ShelfBounds>(() => defaultShelfBounds());
+  const [expanded, setExpanded] = useState(false);
+  const previousBoundsRef = useRef<ShelfBounds | null>(null);
+  const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    if (!isFiniteShelfBounds(bounds)) {
+      setBounds(defaultShelfBounds());
+      return;
+    }
+    const onResize = () => {
+      setBounds((current) => {
+        if (expanded) return expandedShelfBounds();
+        return clampShelfBounds(current);
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [expanded]);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      if (dragRef.current) {
+        const next = clampShelfBounds({
+          x: event.clientX - dragRef.current.offsetX,
+          y: event.clientY - dragRef.current.offsetY,
+          width: bounds.width,
+          height: bounds.height,
+        });
+        setBounds(next);
+        return;
+      }
+      if (resizeRef.current) {
+        const next = clampShelfBounds({
+          x: bounds.x,
+          y: bounds.y,
+          width: resizeRef.current.width + (event.clientX - resizeRef.current.startX),
+          height: resizeRef.current.height + (event.clientY - resizeRef.current.startY),
+        });
+        setBounds(next);
+      }
+    };
+
+    const onPointerUp = () => {
+      dragRef.current = null;
+      resizeRef.current = null;
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [bounds.height, bounds.width, bounds.x, bounds.y]);
+
+  const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("[data-shelf-control='true']")) return;
+    if (expanded) return;
+    dragRef.current = {
+      offsetX: event.clientX - bounds.x,
+      offsetY: event.clientY - bounds.y,
+    };
+    event.preventDefault();
+  };
+
+  const handleResizePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    resizeRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      width: bounds.width,
+      height: bounds.height,
+    };
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleToggleExpand = () => {
+    if (expanded) {
+      setExpanded(false);
+      setBounds((previousBoundsRef.current ?? defaultShelfBounds()));
+      previousBoundsRef.current = null;
+      return;
+    }
+    previousBoundsRef.current = bounds;
+    setExpanded(true);
+    setBounds(expandedShelfBounds());
+  };
+
+  const normalizedBounds = isFiniteShelfBounds(bounds) ? clampShelfBounds(bounds) : defaultShelfBounds();
+  const showCompactHeader = mode === "events";
+
+  const content = (
+    <div
+      className={clsx("dock-shelf-panel", expanded ? "dock-shelf-panel--expanded" : undefined)}
+      data-testid={`dock-shelf-panel-${mode}`}
+      style={{
+        left: `${normalizedBounds.x}px`,
+        top: `${normalizedBounds.y}px`,
+        width: `${normalizedBounds.width}px`,
+        height: `${normalizedBounds.height}px`,
+        right: "auto",
+        bottom: "auto",
+      }}
+    >
+      <div className="dock-shelf-header" onPointerDown={handleHeaderPointerDown}>
+        <div className="dock-shelf-header-title-wrap">
+          {showCompactHeader ? null : <h3 className="dock-shelf-title">{shelfTitles[mode]}</h3>}
+          <span className="dock-shelf-drag-hint">{showCompactHeader ? "Drag panel" : "Drag to move"}</span>
+        </div>
+        <div className="dock-shelf-header-actions">
+          <button
+            type="button"
+            data-shelf-control="true"
+            className="dock-shelf-expand"
+            onClick={handleToggleExpand}
+            title={expanded ? "Restore panel" : "Expand panel"}
+          >
+            {expanded ? "Restore" : "Expand"}
+          </button>
+          <button
+            type="button"
+            data-shelf-control="true"
+            className="dock-shelf-close"
+            onClick={onClose}
+            title="Close"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+              <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <div className="dock-shelf-content">
+      <div className={clsx("dock-shelf-content", mode === "events" ? "dock-shelf-content--events" : undefined)}>
         {children || (
           <div className="dock-shelf-empty">
             <span className="dock-shelf-empty-icon" aria-hidden="true">
@@ -130,15 +355,27 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
               </svg>
             </span>
             <span>
-              {mode === "events" && "The chronicle is silent"}
+              {mode === "events" && "Policy Workbench is unavailable"}
               {mode === "output" && "No echoes yet"}
               {mode === "artifacts" && "No relics discovered"}
             </span>
           </div>
         )}
       </div>
+      {!expanded ? (
+        <button
+          type="button"
+          data-shelf-control="true"
+          className="dock-shelf-resize-handle"
+          aria-label="Resize shelf panel"
+          onPointerDown={handleResizePointerDown}
+        />
+      ) : null}
     </div>
   );
+
+  if (typeof document === "undefined") return content;
+  return createPortal(content, document.body);
 }
 
 // =============================================================================
@@ -298,7 +535,7 @@ function EventsContent({ capsule }: CapsuleContentProps) {
           ))}
         </ul>
       ) : (
-        <div className="capsule-empty">The chronicle is silent</div>
+        <div className="capsule-empty">Policy workbench is idle</div>
       )}
     </div>
   );
@@ -684,12 +921,33 @@ export function DockSystem({
     closeShelf,
   } = useDock();
 
+  let customShelfContent: ReactNode | undefined;
+  if (shelf.isOpen && shelf.mode) {
+    try {
+      customShelfContent = renderShelfContent?.(shelf.mode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown shelf render error";
+      customShelfContent = (
+        <div className="dock-shelf-empty">
+          <span>Failed to render shelf content</span>
+          <span className="dock-shelf-empty-detail">{message}</span>
+        </div>
+      );
+    }
+  }
+
   const handleToggleViewMode = useCallback(
     (id: string, mode: CapsuleViewMode) => {
       setViewMode(id, mode);
     },
     [setViewMode]
   );
+
+  const shelfContent = shelf.isOpen && shelf.mode ? (
+    <ShelfPanel key={`shelf:${shelf.mode}`} mode={shelf.mode} onClose={closeShelf}>
+      {customShelfContent || (demoMode && getDemoShelfContent(shelf.mode))}
+    </ShelfPanel>
+  ) : null;
 
   return (
     <div className={`dock-system ${className ?? ""}`}>
@@ -704,11 +962,7 @@ export function DockSystem({
       </div>
 
       {/* Shelf panel (slides up from bottom) */}
-      {shelf.isOpen && shelf.mode && (
-        <ShelfPanel mode={shelf.mode} onClose={closeShelf}>
-          {renderShelfContent?.(shelf.mode) || (demoMode && getDemoShelfContent(shelf.mode))}
-        </ShelfPanel>
-      )}
+      {shelfContent}
 
       {/* Session rail (always visible at bottom) */}
       <SessionRail

@@ -3,7 +3,7 @@
  *
  * Shows active sessions (runs, builds, terminals) and minimized capsules.
  * Provides quick access to notifications and shelf panels.
- * Includes dial menus for quick access to agentic capsules (Oracle, Whisper, Coven).
+ * Includes dial menus for Commands, Whisper channels, and Coven capsules.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -11,6 +11,24 @@ import { AnimatePresence, motion } from "motion/react";
 import { useDock } from "./DockContext";
 import { CapsuleTab } from "./Capsule";
 import type { SessionItem, ShelfMode, CapsuleKind } from "./types";
+import { useOpenClaw } from "@/context/OpenClawContext";
+import { isTauri, openclawGatewayProbe } from "@/services/tauri";
+import {
+  loadHotCommands,
+  markHotCommandUsed,
+  removeHotCommand,
+  resolveHotCommandAction,
+  saveHotCommands,
+  sortHotCommands,
+  upsertHotCommand,
+  type HotCommand,
+  type HotCommandScope,
+} from "./hotCommands";
+import {
+  dispatchShellExecuteHotCommand,
+  dispatchShellFocusAgentSession,
+  dispatchShellOpenCommandPalette,
+} from "../events";
 
 // =============================================================================
 // Design Tokens
@@ -305,7 +323,7 @@ interface DialMenuItem {
 
 interface DialMenuProps {
   isOpen: boolean;
-  variant: "oracle" | "whisper" | "coven";
+  variant: "whisper" | "coven";
   items: DialMenuItem[];
   onClose: () => void;
   onSelectItem: (id: string) => void;
@@ -344,7 +362,6 @@ function DialMenu({ isOpen, variant, items, onClose, onSelectItem }: DialMenuPro
   }, [isOpen, onClose]);
 
   const config = {
-    oracle: { title: "Oracle Visions", empty: "No visions awaiting", icon: <OracleIcon /> },
     whisper: { title: "Whisper Channels", empty: "Silence in the ether", icon: <WhisperIcon /> },
     coven: { title: "The Coven", empty: "The coven is quiet", icon: <CovenIcon /> },
   };
@@ -397,6 +414,501 @@ function DialMenu({ isOpen, variant, items, onClose, onSelectItem }: DialMenuPro
   );
 }
 
+interface CommandsDialMenuProps {
+  isOpen: boolean;
+  commands: HotCommand[];
+  feedbackMessage: string | null;
+  onClose: () => void;
+  onExecuteCommand: (command: HotCommand) => void;
+  onSaveCommand: (input: {
+    id?: string;
+    title: string;
+    description?: string;
+    command: string;
+    scope: HotCommandScope;
+    pinned: boolean;
+  }) => void;
+  onDeleteCommand: (id: string) => void;
+  onTogglePinned: (command: HotCommand) => void;
+}
+
+function CommandsDialMenu({
+  isOpen,
+  commands,
+  feedbackMessage,
+  onClose,
+  onExecuteCommand,
+  onSaveCommand,
+  onDeleteCommand,
+  onTogglePinned,
+}: CommandsDialMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [showComposer, setShowComposer] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [command, setCommand] = useState("");
+  const [scope, setScope] = useState<HotCommandScope>("global");
+  const [pinned, setPinned] = useState(false);
+
+  const resetComposer = useCallback(() => {
+    setEditingId(null);
+    setTitle("");
+    setDescription("");
+    setCommand("");
+    setScope("global");
+    setPinned(false);
+    setShowComposer(false);
+  }, []);
+
+  const beginCreate = useCallback(() => {
+    setEditingId(null);
+    setTitle("");
+    setDescription("");
+    setCommand("");
+    setScope("global");
+    setPinned(false);
+    setShowComposer(true);
+  }, []);
+
+  const beginEdit = useCallback((entry: HotCommand) => {
+    setEditingId(entry.id);
+    setTitle(entry.title);
+    setDescription(entry.description ?? "");
+    setCommand(entry.command);
+    setScope(entry.scope);
+    setPinned(entry.pinned);
+    setShowComposer(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      resetComposer();
+      return;
+    }
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        const target = event.target as HTMLElement;
+        if (!target.closest(".agentic-button")) {
+          onClose();
+        }
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const timeout = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 50);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      clearTimeout(timeout);
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen, onClose, resetComposer]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div ref={menuRef} className="dial-menu dial-menu-oracle">
+      <div className="dial-menu-header">
+        <span className="dial-menu-icon">
+          <OracleIcon />
+        </span>
+        <span className="dial-menu-title">Commands</span>
+        {commands.length > 0 ? <span className="dial-menu-count">{commands.length}</span> : null}
+        <button
+          type="button"
+          className="dial-command-add"
+          onClick={() => (showComposer ? resetComposer() : beginCreate())}
+        >
+          {showComposer ? "Cancel" : "Add"}
+        </button>
+      </div>
+
+      {feedbackMessage ? <div className="dial-command-feedback">{feedbackMessage}</div> : null}
+
+      {showComposer ? (
+        <form
+          className="dial-command-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSaveCommand({
+              id: editingId ?? undefined,
+              title,
+              description,
+              command,
+              scope,
+              pinned,
+            });
+            resetComposer();
+          }}
+        >
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Command title"
+            className="dial-command-input"
+          />
+          <input
+            value={command}
+            onChange={(event) => setCommand(event.target.value)}
+            placeholder="Route or keyword (example: /operations?tab=fleet)"
+            className="dial-command-input"
+          />
+          <input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Description (optional)"
+            className="dial-command-input"
+          />
+          <div className="dial-command-controls">
+            <div className="dial-command-scope" role="group" aria-label="Command scope">
+              {(["global", "nexus", "operations"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setScope(option)}
+                  className={`dial-command-scope-option ${scope === option ? "active" : ""}`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <label className="dial-command-checkbox">
+              <input
+                type="checkbox"
+                checked={pinned}
+                onChange={(event) => setPinned(event.target.checked)}
+              />
+              Pin
+            </label>
+            <button type="submit" className="dial-command-submit">
+              {editingId ? "Update" : "Save"}
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      <div className="dial-menu-items">
+        {commands.length === 0 ? (
+          <div className="dial-menu-empty">No commands configured</div>
+        ) : (
+          commands.map((entry) => (
+            <div key={entry.id} className="dial-command-row">
+              <div className="dial-command-row-main">
+                <button
+                  type="button"
+                  className="dial-command-launch"
+                  onClick={() => onExecuteCommand(entry)}
+                >
+                  <div className="dial-item-content">
+                    <span className="dial-item-title">{entry.title}</span>
+                    <span className="dial-item-subtitle">{entry.command}</span>
+                    {entry.description ? (
+                      <span className="dial-command-description">{entry.description}</span>
+                    ) : null}
+                  </div>
+                </button>
+                <div className="dial-command-row-meta">
+                  <span className="dial-item-badge">{entry.scope}</span>
+                  {entry.pinned ? <span className="dial-command-pin-flag">Pinned</span> : null}
+                </div>
+                <div className="dial-command-row-actions">
+                  <button
+                    type="button"
+                    className="dial-command-action"
+                    onClick={() => beginEdit(entry)}
+                    title={`Edit ${entry.title}`}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="dial-command-action"
+                    onClick={() => onTogglePinned(entry)}
+                    title={entry.pinned ? `Unpin ${entry.title}` : `Pin ${entry.title}`}
+                  >
+                    {entry.pinned ? "Unpin" : "Pin"}
+                  </button>
+                  <button
+                    type="button"
+                    className="dial-command-action dial-command-action--danger"
+                    onClick={() => onDeleteCommand(entry.id)}
+                    title={`Delete ${entry.title}`}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+type OpenClawSessionListResponse = {
+  sessions?: Array<{
+    key?: string;
+    displayName?: string;
+    updatedAt?: number;
+    status?: string;
+  }>;
+};
+
+type ProbeCovenEntry = {
+  id: string;
+  title: string;
+  subtitle: string;
+};
+
+function normalizeSessionLabel(sessionKey: string, fallback?: string): string {
+  if (fallback && fallback.trim()) return fallback.trim();
+  const match = /^agent:([^:]+):/.exec(sessionKey);
+  if (match?.[1]) return `Agent ${match[1]}`;
+  return sessionKey.replace(/^agent:/, "");
+}
+
+function parseAgentIdFromSessionKey(sessionKey: string): string | null {
+  const match = /^agent:([^:]+):/.exec(sessionKey);
+  return match?.[1] ?? null;
+}
+
+function extractOpenClawSessionKey(id: string): string | null {
+  let value = id;
+  if (value.startsWith("openclaw:session:")) value = value.slice("openclaw:session:".length);
+  if (value.startsWith("openclaw:probe:")) return value.slice("openclaw:probe:".length) || null;
+  if (!value.startsWith("openclaw:")) return null;
+  const key = value.slice("openclaw:".length);
+  if (!key) return null;
+  if (key.startsWith("node:") || key.startsWith("presence:") || key.startsWith("approval:")) return null;
+  return key;
+}
+
+function normalizeNodeLabel(input: unknown): string {
+  if (typeof input === "string" && input.trim()) return input.trim();
+  return "Node";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function parseProbeSessions(payload: unknown): { sessions: SessionItem[]; coven: ProbeCovenEntry[] } {
+  const root = asRecord(payload);
+  if (!root) return { sessions: [], coven: [] };
+
+  const sessionMap = new Map<string, { item: SessionItem; updatedAt: number }>();
+  const covenByAgent = new Map<string, number>();
+
+  const registerCoven = (agentIdInput: unknown, countHint?: number) => {
+    const agentId = normalizeNodeLabel(agentIdInput);
+    const existing = covenByAgent.get(agentId) ?? 0;
+    if (typeof countHint === "number" && Number.isFinite(countHint)) {
+      covenByAgent.set(agentId, Math.max(existing, Math.max(0, Math.floor(countHint))));
+      return;
+    }
+    covenByAgent.set(agentId, existing + 1);
+  };
+
+  const upsertSession = (row: Record<string, unknown>, agentHint?: string) => {
+    const rowAgentId =
+      typeof row.agentId === "string"
+        ? row.agentId
+        : typeof row.agent_id === "string"
+          ? row.agent_id
+          : undefined;
+    const fallbackAgentId = normalizeNodeLabel(rowAgentId ?? agentHint ?? "unknown");
+    const sessionId =
+      typeof row.sessionId === "string"
+        ? row.sessionId
+        : typeof row.session_id === "string"
+          ? row.session_id
+          : undefined;
+    const key =
+      typeof row.key === "string"
+        ? row.key
+        : typeof row.sessionKey === "string"
+          ? row.sessionKey
+          : typeof row.session_key === "string"
+            ? row.session_key
+            : sessionId
+              ? `agent:${fallbackAgentId}:session:${sessionId}`
+              : "";
+    if (!key) return;
+
+    const updatedAt = asNumber(row.updatedAt) ?? asNumber(row.updated_at) ?? asNumber(row.ts) ?? Date.now();
+    const ageMs = asNumber(row.age) ?? Math.max(0, Date.now() - updatedAt);
+    const existing = sessionMap.get(key);
+    if (existing && existing.updatedAt >= updatedAt) return;
+
+    const displayName =
+      typeof row.displayName === "string"
+        ? row.displayName
+        : typeof row.title === "string"
+          ? row.title
+          : undefined;
+    const status: SessionItem["status"] = ageMs < 30 * 60_000 ? "running" : "idle";
+    sessionMap.set(key, {
+      updatedAt,
+      item: {
+        id: `openclaw:probe:${key}`,
+        kind: "run",
+        title: normalizeSessionLabel(key, displayName),
+        status,
+        route: "/nexus",
+      },
+    });
+
+    const parsedAgent = /^agent:([^:]+):/.exec(key)?.[1];
+    registerCoven(rowAgentId ?? agentHint ?? parsedAgent);
+  };
+
+  const ingestRecentRows = (value: unknown, agentHint?: string) => {
+    const rows = Array.isArray(value) ? value : [];
+    rows.forEach((row) => {
+      const rec = asRecord(row);
+      if (!rec) return;
+      upsertSession(rec, agentHint);
+    });
+  };
+
+  const ingestProbeScope = (scope: Record<string, unknown>) => {
+    const sessionsRecord = asRecord(scope.sessions);
+    ingestRecentRows(sessionsRecord?.recent);
+
+    const summaryRecord = asRecord(scope.summary);
+    const summarySessions = asRecord(summaryRecord?.sessions);
+    ingestRecentRows(summarySessions?.recent);
+
+    const agents = Array.isArray(scope.agents) ? scope.agents : [];
+    agents.forEach((agent, agentIndex) => {
+      const rec = asRecord(agent);
+      if (!rec) return;
+      const agentId = normalizeNodeLabel(rec.agentId ?? rec.name ?? `agent-${agentIndex + 1}`);
+      const agentSessions = asRecord(rec.sessions);
+      const recentRows = Array.isArray(agentSessions?.recent) ? agentSessions.recent : [];
+      const total = asNumber(agentSessions?.count) ?? recentRows.length;
+      registerCoven(agentId, total ?? undefined);
+      ingestRecentRows(recentRows, agentId);
+    });
+
+    const summaryAgents = Array.isArray(summaryRecord?.agents) ? summaryRecord?.agents : [];
+    summaryAgents.forEach((agent) => {
+      const rec = asRecord(agent);
+      if (!rec) return;
+      const agentId = normalizeNodeLabel(rec.agentId ?? rec.name);
+      const total = asNumber(rec.count) ?? asNumber(rec.sessions);
+      registerCoven(agentId, total ?? undefined);
+    });
+  };
+
+  const targets = Array.isArray(root.targets) ? root.targets : [];
+  const activeScopes: Record<string, unknown>[] = [];
+  const passiveScopes: Record<string, unknown>[] = [];
+
+  targets.forEach((target) => {
+    const rec = asRecord(target);
+    if (!rec) return;
+    const bucket = rec.active === true ? activeScopes : passiveScopes;
+    const health = asRecord(rec.health);
+    const summary = asRecord(rec.summary);
+    if (health) bucket.push(health);
+    if (summary) bucket.push(summary);
+  });
+
+  const rootHealth = asRecord(root.health);
+  const rootSummary = asRecord(root.summary);
+  const scopes = [
+    ...activeScopes,
+    ...(rootHealth ? [rootHealth] : []),
+    ...(rootSummary ? [rootSummary] : []),
+    ...passiveScopes,
+  ];
+
+  scopes.forEach((scope) => ingestProbeScope(scope));
+
+  const sessions = Array.from(sessionMap.values())
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((entry) => entry.item)
+    .slice(0, 8);
+
+  const coven = Array.from(covenByAgent.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([agentId, count], index) => ({
+      id: `openclaw:probe-agent:${agentId}:${index}`,
+      title: agentId,
+      subtitle: `${count} session${count === 1 ? "" : "s"} tracked`,
+    }))
+    .slice(0, 24);
+
+  return { sessions, coven };
+}
+
+function buildRuntimeFallbackSessions(
+  runtime: {
+    nodes?: Array<{ nodeId?: string; displayName?: string; connected?: boolean }>;
+    presence?: unknown[];
+    execApprovalQueue?: Array<{ id: string; request: { command: string } }>;
+  } | null | undefined
+): SessionItem[] {
+  const sessions: SessionItem[] = [];
+
+  const connectedNodes = (runtime?.nodes ?? []).filter((node) => node.connected !== false).slice(0, 5);
+  for (const node of connectedNodes) {
+    const nodeId = typeof node.nodeId === "string" ? node.nodeId : "";
+    if (!nodeId) continue;
+    sessions.push({
+      id: `openclaw:node:${nodeId}`,
+      kind: "run",
+      title: `Node · ${normalizeNodeLabel(node.displayName ?? node.nodeId)}`,
+      status: "running",
+      route: "/operations?tab=fleet",
+    });
+  }
+
+  const presenceRows = Array.isArray(runtime?.presence) ? runtime.presence : [];
+  for (let i = 0; i < presenceRows.length && sessions.length < 7; i++) {
+    const rec = asRecord(presenceRows[i]);
+    const source = rec?.client ?? rec?.id ?? rec?.session_key ?? rec?.sessionKey;
+    const label = normalizeNodeLabel(source);
+    sessions.push({
+      id: `openclaw:presence:${i}:${label}`,
+      kind: "run",
+      title: `Presence · ${label}`,
+      status: "running",
+      route: "/operations?tab=fleet",
+    });
+  }
+
+  const approvals = runtime?.execApprovalQueue ?? [];
+  if (approvals.length > 0 && sessions.length < 8) {
+    const approval = approvals[0];
+    sessions.push({
+      id: `openclaw:approval:${approval.id}`,
+      kind: "run",
+      title: `Approval · ${normalizeNodeLabel(approval.request.command)}`,
+      status: "error",
+      route: "/operations?tab=fleet",
+    });
+  }
+
+  return sessions.slice(0, 8);
+}
+
 // =============================================================================
 // Session Rail Component
 // =============================================================================
@@ -414,25 +926,136 @@ export function SessionRail({
   eventsCount = 0,
   className,
 }: SessionRailProps) {
+  const oc = useOpenClaw();
+  const tauriAvailable = isTauri();
+  const runtime = oc.runtimeByGatewayId[oc.activeGatewayId];
   const {
-    sessions,
+    sessions: dockSessions,
     capsules,
     minimizedCapsules,
     shelf,
+    openShelf,
     restoreCapsule,
     closeCapsule,
-    toggleShelf,
     closeShelf,
   } = useDock();
 
   const [activeDial, setActiveDial] = useState<"oracle" | "whisper" | "coven" | null>(null);
+  const [hotCommands, setHotCommands] = useState<HotCommand[]>(() => loadHotCommands());
+  const [commandFeedback, setCommandFeedback] = useState<string | null>(null);
+  const [liveSessions, setLiveSessions] = useState<SessionItem[]>([]);
+  const [probeSessions, setProbeSessions] = useState<SessionItem[]>([]);
+  const [probeCovenEntries, setProbeCovenEntries] = useState<ProbeCovenEntry[]>([]);
+
+  useEffect(() => {
+    saveHotCommands(hotCommands);
+  }, [hotCommands]);
+
+  useEffect(() => {
+    if (activeDial !== "oracle") return;
+    setHotCommands(loadHotCommands());
+  }, [activeDial]);
+
+  useEffect(() => {
+    if (runtime?.status !== "connected") {
+      setLiveSessions([]);
+      return;
+    }
+
+    const fallbackSessions = buildRuntimeFallbackSessions(runtime);
+    let cancelled = false;
+    let inFlight = false;
+    let sessionsMethodUnsupported = false;
+
+    async function tick() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        if (sessionsMethodUnsupported) {
+          if (!cancelled) setLiveSessions(fallbackSessions);
+          return;
+        }
+
+        const response = await oc.request<OpenClawSessionListResponse>("sessions.list");
+        const rows = Array.isArray(response.sessions) ? response.sessions : [];
+        const mapped = rows.reduce<SessionItem[]>((acc, session) => {
+          const key = typeof session.key === "string" ? session.key : "";
+          if (!key) return acc;
+
+          const statusRaw = typeof session.status === "string" ? session.status.toLowerCase() : "running";
+          const status: SessionItem["status"] =
+            statusRaw === "error"
+              ? "error"
+              : statusRaw === "completed" || statusRaw === "success"
+                ? "success"
+                : "running";
+
+          acc.push({
+            id: `openclaw:${key}`,
+            kind: "run",
+            title: normalizeSessionLabel(key, session.displayName),
+            status,
+            route: "/nexus",
+          });
+
+          return acc;
+        }, []).slice(0, 8);
+
+        if (!cancelled) setLiveSessions(mapped.length > 0 ? mapped : fallbackSessions);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : "";
+        if (message.includes("unknown method") || message.includes("method not found")) {
+          sessionsMethodUnsupported = true;
+        }
+        if (!cancelled) setLiveSessions(fallbackSessions);
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), 7000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [oc, runtime]);
+
+  useEffect(() => {
+    if (!tauriAvailable) return;
+
+    let cancelled = false;
+    let inFlight = false;
+
+    async function tick() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const probe = await openclawGatewayProbe(2400);
+        const parsed = parseProbeSessions(probe);
+        if (!cancelled) {
+          setProbeSessions(parsed.sessions);
+          setProbeCovenEntries(parsed.coven);
+        }
+      } catch {
+        if (!cancelled && runtime?.status !== "connected") {
+          setProbeSessions([]);
+          setProbeCovenEntries([]);
+        }
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), 18_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [liveSessions.length, runtime?.status, tauriAvailable]);
 
   // Get capsules by type for dial menus
-  const oracleCapsules = useMemo(() =>
-    capsules.filter((c) => c.kind === "action"),
-    [capsules]
-  );
-
   const whisperCapsules = useMemo(() =>
     capsules.filter((c) => c.kind === "chat"),
     [capsules]
@@ -443,20 +1066,8 @@ export function SessionRail({
     [capsules]
   );
 
-  // Convert capsules to dial menu items
-  const oracleItems: DialMenuItem[] = useMemo(() =>
-    oracleCapsules.map((c) => ({
-      id: c.id,
-      title: c.title,
-      subtitle: c.subtitle,
-      badgeCount: c.badgeCount,
-      priority: (c.sourceData as { priority?: "critical" | "high" | "normal" | "low" })?.priority,
-      kind: c.kind,
-    })),
-    [oracleCapsules]
-  );
-
-  const whisperItems: DialMenuItem[] = useMemo(() =>
+  // Convert capsules to dial menu items (fallback when OpenClaw is disconnected)
+  const whisperCapsuleItems: DialMenuItem[] = useMemo(() =>
     whisperCapsules.map((c) => ({
       id: c.id,
       title: c.title,
@@ -467,7 +1078,7 @@ export function SessionRail({
     [whisperCapsules]
   );
 
-  const covenItems: DialMenuItem[] = useMemo(() =>
+  const covenCapsuleItems: DialMenuItem[] = useMemo(() =>
     covenCapsules.map((c) => ({
       id: c.id,
       title: c.title,
@@ -478,11 +1089,67 @@ export function SessionRail({
     [covenCapsules]
   );
 
-  // Check for critical actions
-  const hasCriticalActions = oracleItems.some((item) => item.priority === "critical");
+  const sessionSource = liveSessions.length > 0 ? liveSessions : probeSessions;
+
+  const whisperLiveItems: DialMenuItem[] = useMemo(() =>
+    sessionSource.map((session) => ({
+      id: `openclaw:session:${session.id}`,
+      title: session.title,
+      subtitle: "Active daemon session",
+      badgeCount: session.status === "error" ? 1 : 0,
+      priority: session.status === "error" ? "critical" : "normal",
+      kind: "chat",
+    })),
+    [sessionSource]
+  );
+
+  const covenLiveItems: DialMenuItem[] = useMemo(() => {
+    const nodes = (runtime?.nodes ?? []).filter((node) => node.connected !== false);
+    if (nodes.length > 0) {
+      return nodes.slice(0, 24).map((node, index) => {
+        const nodeId = typeof node.nodeId === "string" ? node.nodeId : `node-${index}`;
+        const label = normalizeNodeLabel(node.displayName ?? node.nodeId);
+        const detailParts = [node.platform, node.version].filter(
+          (value): value is string => typeof value === "string" && value.trim().length > 0
+        );
+        return {
+          id: `openclaw:node:${nodeId}`,
+          title: label,
+          subtitle: detailParts.length > 0 ? detailParts.join(" · ") : "Connected node",
+          kind: "social" as const,
+        };
+      });
+    }
+
+    if (probeCovenEntries.length > 0) {
+      return probeCovenEntries.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        subtitle: entry.subtitle,
+        kind: "social" as const,
+      }));
+    }
+
+    const presenceRows = Array.isArray(runtime?.presence) ? runtime?.presence : [];
+    return presenceRows.slice(0, 24).map((row, index) => ({
+      id: `openclaw:presence:${index}`,
+      title: normalizeNodeLabel((row as Record<string, unknown>)?.client ?? (row as Record<string, unknown>)?.id),
+      subtitle: "Presence heartbeat",
+      kind: "social" as const,
+    }));
+  }, [probeCovenEntries, runtime?.nodes, runtime?.presence]);
+
+  const whisperItems = whisperLiveItems.length > 0 ? whisperLiveItems : whisperCapsuleItems;
+  const covenItems = covenLiveItems.length > 0 ? covenLiveItems : covenCapsuleItems;
+  const visibleSessions =
+    liveSessions.length > 0
+      ? liveSessions
+      : probeSessions.length > 0
+        ? probeSessions
+        : dockSessions;
 
   // Total badge counts
-  const oracleBadgeCount = oracleItems.reduce((sum, item) => sum + (item.badgeCount || 0), 0) || oracleItems.length;
+  const oracleBadgeCount = hotCommands.length;
   const whisperBadgeCount = whisperItems.reduce((sum, item) => sum + (item.badgeCount || 0), 0) || whisperItems.length;
   const covenBadgeCount = covenItems.reduce((sum, item) => sum + (item.badgeCount || 0), 0) || covenItems.length;
 
@@ -495,9 +1162,91 @@ export function SessionRail({
   }, []);
 
   const handleDialSelect = useCallback((id: string) => {
+    const sessionKey = extractOpenClawSessionKey(id);
+    if (sessionKey) {
+      dispatchShellFocusAgentSession({
+        sessionKey,
+        agentId: parseAgentIdFromSessionKey(sessionKey) ?? undefined,
+      });
+    }
+    if (id.startsWith("openclaw:session:")) {
+      window.location.hash = "#/nexus";
+      setActiveDial(null);
+      return;
+    }
+    if (id.startsWith("openclaw:probe-agent:")) {
+      window.location.hash = "#/nexus";
+      setActiveDial(null);
+      return;
+    }
+    if (
+      id.startsWith("openclaw:node:") ||
+      id.startsWith("openclaw:presence:") ||
+      id.startsWith("openclaw:approval:")
+    ) {
+      window.location.hash = "#/operations?tab=fleet";
+      setActiveDial(null);
+      return;
+    }
     restoreCapsule(id);
     setActiveDial(null);
   }, [restoreCapsule]);
+
+  const handleExecuteHotCommand = useCallback((command: HotCommand) => {
+    const action = resolveHotCommandAction(command.command);
+    if (action.kind === "invalid") {
+      setCommandFeedback(action.reason);
+      return;
+    }
+
+    if (action.kind === "navigate") {
+      window.location.hash = `#${action.path}`;
+      setCommandFeedback(`Navigated to ${action.path}`);
+    } else if (action.kind === "palette") {
+      dispatchShellOpenCommandPalette();
+      setCommandFeedback("Opened command palette");
+    } else {
+      dispatchShellExecuteHotCommand({ id: command.id, payload: action.payload });
+      setCommandFeedback(`Dispatched: ${action.payload}`);
+    }
+
+    setHotCommands((previous) => markHotCommandUsed(previous, command.id));
+    window.setTimeout(() => setCommandFeedback(null), 1200);
+  }, []);
+
+  const handleSaveHotCommand = useCallback(
+    (input: {
+      id?: string;
+      title: string;
+      description?: string;
+      command: string;
+      scope: HotCommandScope;
+      pinned: boolean;
+    }) => {
+      setHotCommands((previous) => upsertHotCommand(previous, input));
+      setCommandFeedback(input.id ? "Command updated" : "Command saved");
+      window.setTimeout(() => setCommandFeedback(null), 1200);
+    },
+    []
+  );
+
+  const handleDeleteHotCommand = useCallback((id: string) => {
+    setHotCommands((previous) => removeHotCommand(previous, id));
+    setCommandFeedback("Command removed");
+    window.setTimeout(() => setCommandFeedback(null), 1200);
+  }, []);
+
+  const handleTogglePinned = useCallback((entry: HotCommand) => {
+    setHotCommands((previous) =>
+      sortHotCommands(
+        previous.map((candidate) =>
+          candidate.id === entry.id
+            ? { ...candidate, pinned: !candidate.pinned, updatedAt: Date.now() }
+            : candidate
+        )
+      )
+    );
+  }, []);
 
   const handleRestoreCapsule = useCallback(
     (id: string) => {
@@ -513,7 +1262,53 @@ export function SessionRail({
     [closeCapsule]
   );
 
-  const hasSessions = sessions.length > 0;
+  const handleToggleShelf = useCallback(
+    (mode: ShelfMode) => {
+      setActiveDial(null);
+      if (shelf.isOpen && shelf.mode === mode) {
+        closeShelf();
+        return;
+      }
+      openShelf(mode);
+    },
+    [closeShelf, openShelf, shelf.isOpen, shelf.mode]
+  );
+
+  const handleOpenSessionPill = useCallback(
+    (id: string) => {
+      const sessionKey = extractOpenClawSessionKey(id);
+      if (sessionKey) {
+        dispatchShellFocusAgentSession({
+          sessionKey,
+          agentId: parseAgentIdFromSessionKey(sessionKey) ?? undefined,
+        });
+      }
+      if (
+        id.startsWith("openclaw:node:") ||
+        id.startsWith("openclaw:presence:") ||
+        id.startsWith("openclaw:approval:")
+      ) {
+        window.location.hash = "#/operations?tab=fleet";
+        return;
+      }
+      if (id.startsWith("openclaw:")) {
+        window.location.hash = "#/nexus";
+        return;
+      }
+      onOpenSession?.(id);
+    },
+    [onOpenSession]
+  );
+
+  const handleCloseSessionPill = useCallback(
+    (id: string) => {
+      if (id.startsWith("openclaw:")) return;
+      onCloseSession?.(id);
+    },
+    [onCloseSession]
+  );
+
+  const hasSessions = visibleSessions.length > 0;
   const hasCapsules = minimizedCapsules.length > 0;
 
   return (
@@ -526,19 +1321,21 @@ export function SessionRail({
         <div className="agentic-dial-wrapper">
           <AgenticButton
             icon={<OracleIcon />}
-            label="Oracle - Agent Decisions"
+            label="Commands - Hot command launcher"
             variant="action"
             badgeCount={oracleBadgeCount > 0 ? oracleBadgeCount : undefined}
-            hasCritical={hasCriticalActions}
             isActive={activeDial === "oracle"}
             onClick={() => handleDialToggle("oracle")}
           />
-          <DialMenu
+          <CommandsDialMenu
             isOpen={activeDial === "oracle"}
-            variant="oracle"
-            items={oracleItems}
+            commands={hotCommands}
+            feedbackMessage={commandFeedback}
             onClose={handleDialClose}
-            onSelectItem={handleDialSelect}
+            onExecuteCommand={handleExecuteHotCommand}
+            onSaveCommand={handleSaveHotCommand}
+            onDeleteCommand={handleDeleteHotCommand}
+            onTogglePinned={handleTogglePinned}
           />
         </div>
 
@@ -586,12 +1383,12 @@ export function SessionRail({
       <div className="session-rail-dock">
         {/* Sessions */}
         <div className="session-rail-sessions">
-          {sessions.map((session) => (
+          {visibleSessions.map((session) => (
             <SessionPill
               key={session.id}
               session={session}
-              onOpen={onOpenSession}
-              onClose={onCloseSession}
+              onOpen={handleOpenSessionPill}
+              onClose={handleCloseSessionPill}
             />
           ))}
 
@@ -635,7 +1432,7 @@ export function SessionRail({
               className="shelf-indicator"
             >
               <span className="shelf-indicator-label">
-                {shelf.mode === "events" && "Chronicle"}
+                {shelf.mode === "events" && "Policy Workbench"}
                 {shelf.mode === "output" && "Echoes"}
                 {shelf.mode === "artifacts" && "Relics"}
               </span>
@@ -657,11 +1454,11 @@ export function SessionRail({
         {/* Shelf buttons - The Archives */}
         <ShelfButton
           icon={<EventsIcon />}
-          label="Chronicle - Event Stream"
+          label="Policy Workbench"
           mode="events"
           badgeCount={eventsCount}
           isActive={shelf.isOpen && shelf.mode === "events"}
-          onClick={() => toggleShelf("events")}
+          onClick={() => handleToggleShelf("events")}
         />
 
         <ShelfButton
@@ -669,7 +1466,7 @@ export function SessionRail({
           label="Echoes - Output Log"
           mode="output"
           isActive={shelf.isOpen && shelf.mode === "output"}
-          onClick={() => toggleShelf("output")}
+          onClick={() => handleToggleShelf("output")}
         />
 
         <ShelfButton
@@ -677,7 +1474,7 @@ export function SessionRail({
           label="Relics - Artifacts"
           mode="artifacts"
           isActive={shelf.isOpen && shelf.mode === "artifacts"}
-          onClick={() => toggleShelf("artifacts")}
+          onClick={() => handleToggleShelf("artifacts")}
         />
       </div>
     </nav>

@@ -1,13 +1,12 @@
 /**
- * NavRail - ModeRail-style navigation with Nexus orb, strikecell labs, and system status sigil.
+ * NavRail - Session-focused rail for Nexus strikecell work.
  */
 import { clsx } from "clsx";
-import type { ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import type { AppId } from "../plugins/types";
 import { useConnectionStatus } from "@/context/ConnectionContext";
-import { dispatchCyberNexusCommand } from "@/features/cyber-nexus/events";
-import type { StrikecellDomainId } from "@/features/cyber-nexus/types";
+import type { StrikecellSessionKind } from "@/shell/sessions";
+import { useActiveSession, useSessionActions, useSessions } from "@/shell/sessions";
 import { CyberNexusOrb } from "./CyberNexusOrb";
 
 interface NavRailProps {
@@ -15,288 +14,159 @@ interface NavRailProps {
   onSelectApp: (appId: AppId) => void;
 }
 
-interface StrikecellNavItem {
-  id: StrikecellDomainId;
-  label: string;
-  icon: StrikecellIcon;
+function sessionStatusClass(status: string): string {
+  switch (status) {
+    case "running":
+      return "bg-sdr-accent-green shadow-[0_0_8px_rgba(61,191,132,0.55)]";
+    case "error":
+      return "bg-sdr-accent-red shadow-[0_0_8px_rgba(196,92,92,0.45)]";
+    case "completed":
+      return "bg-sdr-accent-blue shadow-[0_0_8px_rgba(88,129,214,0.4)]";
+    default:
+      return "bg-sdr-text-muted";
+  }
 }
 
-type StrikecellIcon =
-  | "overview"
-  | "threat"
-  | "attack"
-  | "network"
-  | "river"
-  | "gateway"
-  | "workflows"
-  | "marketplace"
-  | "events"
-  | "policies";
+function liveLabel(connectionStatus: string): string {
+  if (connectionStatus === "connected") return "LIVE";
+  if (connectionStatus === "connecting") return "SYNC";
+  return "OFFLINE";
+}
 
-const STRIKECELL_ITEMS: StrikecellNavItem[] = [
-  { id: "security-overview", label: "Security Overview", icon: "overview" },
-  { id: "threat-radar", label: "Threat Radar", icon: "threat" },
-  { id: "attack-graph", label: "Attack Graph", icon: "attack" },
-  { id: "network-map", label: "Network Map", icon: "network" },
-  { id: "forensics-river", label: "Forensics River", icon: "river" },
-  { id: "workflows", label: "Workflows", icon: "workflows" },
-  { id: "marketplace", label: "Marketplace", icon: "marketplace" },
-  { id: "events", label: "Event Stream", icon: "events" },
-  { id: "policies", label: "Policies", icon: "policies" },
-];
+const STRIKECELL_SESSION_KINDS: StrikecellSessionKind[] = ["chat", "experiment", "red-team"];
+
+function nextStrikecellKind(sessionCount: number): StrikecellSessionKind {
+  return STRIKECELL_SESSION_KINDS[sessionCount % STRIKECELL_SESSION_KINDS.length];
+}
+
+function sessionKindLabel(kind: StrikecellSessionKind | undefined): string {
+  if (kind === "experiment") return "experiment";
+  if (kind === "red-team") return "red-team";
+  return "chat";
+}
+
+function sessionKindClass(kind: StrikecellSessionKind | undefined): string {
+  if (kind === "experiment") {
+    return "border-[rgba(88,129,214,0.45)] text-sdr-accent-blue";
+  }
+  if (kind === "red-team") {
+    return "border-[rgba(196,92,92,0.45)] text-sdr-accent-red";
+  }
+  return "border-[rgba(61,191,132,0.45)] text-sdr-accent-green";
+}
 
 export function NavRail({ activeAppId, onSelectApp }: NavRailProps) {
-  const location = useLocation();
   const navigate = useNavigate();
   const connectionStatus = useConnectionStatus();
-  const focusFromUrl = useMemoStrikecellFocus(location);
+  const sessions = useSessions({ appId: "nexus", archived: false });
+  const activeSession = useActiveSession();
+  const { createSession, setActiveSession } = useSessionActions();
 
-  return (
-    <nav
-      className="relative z-20 flex h-full w-[84px] shrink-0 flex-col border-r bg-[linear-gradient(180deg,rgba(9,11,18,0.98)_0%,rgba(4,6,10,0.99)_100%)] px-2 py-3"
-      style={{ borderRightColor: "rgba(213, 173, 87, 0.3)" }}
-    >
-      <div className="nexus-rail-orb-divider flex flex-col items-center pb-2">
-        <CyberNexusOrb />
-        <div className="nexus-orb-ticks mt-2" aria-hidden="true">
-          <span className="nexus-orb-tick nexus-orb-tick--outer" />
-          <span className="nexus-orb-tick nexus-orb-tick--inner" />
-        </div>
-      </div>
-
-      <div className="premium-panel premium-panel--rail mt-2 flex-1 overflow-hidden rounded-[18px] px-2 py-2">
-        <div className="origin-label text-center text-[9px] tracking-[0.16em]">Strikecells</div>
-        <div className="mt-1 text-center text-[9px] font-mono text-sdr-text-muted">labs</div>
-        <div className="mt-2 flex h-[calc(100%-40px)] flex-col items-center gap-2 overflow-y-auto pb-1">
-          {STRIKECELL_ITEMS.map((item) => (
-            <RailButton
-              key={item.id}
-              icon={item.icon}
-              label={item.label}
-              active={focusFromUrl === item.id}
-              onClick={() => focusStrikecell(navigate, location.pathname, item.id)}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-2 flex justify-center">
-        <RailButton
-          icon="gateway"
-          label="OpenClaw Fleet"
-          active={activeAppId === "openclaw"}
-          onClick={() => onSelectApp("openclaw")}
-        />
-      </div>
-
-      <div className="mt-3 flex justify-center">
-        <RailStatusSigil
-          connectionStatus={connectionStatus}
-          isSettingsActive={activeAppId === "settings"}
-          onOpenSettings={() => onSelectApp("settings")}
-        />
-      </div>
-    </nav>
-  );
-}
-
-const NEXUS_FOCUS_STORAGE_KEY = "sdr:cyber-nexus:lastFocus";
-
-function useMemoStrikecellFocus(location: { pathname: string; search: string }): StrikecellDomainId | null {
-  if (!location.pathname.startsWith("/cyber-nexus")) return null;
-  try {
-    const params = new URLSearchParams(location.search);
-    const fromUrl = params.get("focus") as StrikecellDomainId | null;
-    if (fromUrl) return fromUrl;
-    const stored = localStorage.getItem(NEXUS_FOCUS_STORAGE_KEY) as StrikecellDomainId | null;
-    return stored;
-  } catch {
-    return null;
-  }
-}
-
-function focusStrikecell(
-  navigate: (path: string) => void,
-  pathname: string,
-  strikecellId: StrikecellDomainId
-) {
-  try {
-    localStorage.setItem(NEXUS_FOCUS_STORAGE_KEY, strikecellId);
-  } catch {
-    // Ignore
-  }
-
-  if (pathname.startsWith("/cyber-nexus")) {
-    dispatchCyberNexusCommand({ type: "focus-strikecell", strikecellId });
-    navigate(`/cyber-nexus?focus=${encodeURIComponent(strikecellId)}`);
-    return;
-  }
-
-  navigate(`/cyber-nexus?focus=${encodeURIComponent(strikecellId)}`);
-}
-
-function RailButton({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: StrikecellIcon;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      data-active={active}
-      className="origin-sigil-tile origin-focus-ring"
-    >
-      <RailIcon icon={icon} />
-    </button>
-  );
-}
-
-function RailIcon({ icon }: { icon: StrikecellIcon }) {
-  const paths: Record<StrikecellIcon, ReactNode> = {
-    overview: (
-      <path
-        d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-    threat: (
-      <path
-        d="M22 12h-4l-3 9L9 3l-3 9H2"
-        stroke="currentColor"
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-    attack: (
-      <path
-        d="M4 8h4M16 8h4M8 8a4 4 0 108 0 4 4 0 00-8 0M12 12v4M8 20h8"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-    network: (
-      <>
-        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" fill="none" />
-        <path d="M3 12h18M12 3v18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </>
-    ),
-    river: (
-      <path
-        d="M2 8c2.5-3 5-3 7.5 0s5 3 7.5 0 5-3 7.5 0M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 5-3 7.5 0"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-        strokeLinecap="round"
-      />
-    ),
-    gateway: (
-      <>
-        <rect x="3.5" y="5" width="17" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" fill="none" />
-        <path d="M7 9h10M7 12h5M7 15h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </>
-    ),
-    workflows: (
-      <>
-        <rect x="5" y="5" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.8" fill="none" />
-        <rect x="14" y="5" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.8" fill="none" />
-        <rect x="5" y="14" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.8" fill="none" />
-        <path d="M10 7h4M7 10v4M16 10v4M10 16h4" stroke="currentColor" strokeWidth="1.8" />
-      </>
-    ),
-    marketplace: (
-      <path
-        d="M12 2l8 6-8 6-8-6 8-6zm0 12l8 6-8 6-8-6 8-6z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-    events: (
-      <path
-        d="M6 12h.01M12 12h.01M18 12h.01M6 17h12M6 7h12"
-        stroke="currentColor"
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-      />
-    ),
-    policies: (
-      <path
-        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
+  const createStrikecellSession = () => {
+    const sessionKind = nextStrikecellKind(sessions.length);
+    const session = createSession("nexus", `Strikecell ${sessions.length + 1}`, null, {
+      strikecellId: "nexus",
+      strikecellKind: sessionKind,
+    });
+    setActiveSession(session.id);
+    navigate(`/nexus/${session.id}`);
   };
 
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      {paths[icon]}
-    </svg>
-  );
-}
-
-function RailStatusSigil({
-  connectionStatus,
-  isSettingsActive,
-  onOpenSettings,
-}: {
-  connectionStatus: string;
-  isSettingsActive: boolean;
-  onOpenSettings: () => void;
-}) {
-  const label =
-    connectionStatus === "connected"
-      ? "Live"
-      : connectionStatus === "connecting"
-        ? "Sync"
-        : "Offline";
-
-  return (
-    <button
-      type="button"
-      title="System status"
-      aria-label={`System status ${label}`}
-      onClick={onOpenSettings}
-      data-active={isSettingsActive ? "true" : "false"}
-      className="origin-focus-ring origin-status-sigil"
+    <nav
+      className="relative z-20 flex h-full w-[220px] shrink-0 flex-col border-r bg-[linear-gradient(180deg,rgba(9,11,18,0.98)_0%,rgba(4,6,10,0.99)_100%)] px-3 py-3"
+      style={{ borderRightColor: "rgba(213, 173, 87, 0.3)" }}
     >
-      <span className="origin-status-sigil-core" aria-hidden="true">
-        <span
-          className={clsx(
-            "origin-status-sigil-dot",
-            connectionStatus === "connected"
-              ? "bg-sdr-accent-green shadow-[0_0_8px_rgba(61,191,132,0.65)]"
-              : connectionStatus === "connecting"
-                ? "bg-sdr-accent-amber shadow-[0_0_8px_rgba(212,168,75,0.65)]"
-                : "bg-sdr-accent-red shadow-[0_0_8px_rgba(196,92,92,0.55)]"
+      <div className="nexus-rail-orb-divider flex items-center gap-3 pb-2">
+        <CyberNexusOrb />
+        <div className="min-w-0">
+          <div className="origin-label text-[9px] tracking-[0.16em]">Strikecell</div>
+          <div className="text-[11px] font-mono uppercase text-sdr-text-secondary">Sessions</div>
+        </div>
+      </div>
+
+      <div className="premium-panel premium-panel--rail mt-2 flex min-h-0 flex-1 flex-col rounded-[18px] px-2 py-2">
+        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          <span className="origin-label text-[9px] tracking-[0.14em]">Workspace</span>
+          <button
+            type="button"
+            onClick={createStrikecellSession}
+            className="origin-focus-ring premium-chip premium-chip--control px-2 py-0.5 text-[9px] font-mono uppercase tracking-[0.11em] text-sdr-text-secondary"
+          >
+            +
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pb-1">
+          {sessions.length === 0 ? (
+            <div className="rounded-md border border-sdr-border/50 px-2 py-2 text-[11px] text-sdr-text-muted">
+              No strikecell sessions.
+            </div>
+          ) : (
+            sessions.map((session) => {
+              const isActive = activeAppId === "nexus" && activeSession?.id === session.id;
+              return (
+                <button
+                  key={session.id}
+                  type="button"
+                    onClick={() => {
+                      setActiveSession(session.id);
+                      navigate(`/nexus/${session.id}`);
+                    }}
+                    title={session.title}
+                    data-active={isActive ? "true" : "false"}
+                  className={clsx(
+                    "origin-focus-ring strikecell-session-row w-full rounded-lg border px-2 py-1.5 text-left transition-colors",
+                    isActive
+                      ? "border-[color:var(--origin-gold)] bg-[rgba(213,173,87,0.12)]"
+                      : "border-sdr-border/50 bg-[rgba(8,10,16,0.64)] hover:border-[rgba(213,173,87,0.55)]"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={clsx("h-2 w-2 rounded-full", sessionStatusClass(session.status))} />
+                    <span className="min-w-0 truncate text-[11px] font-mono uppercase tracking-[0.1em] text-sdr-text-primary">
+                      {session.title}
+                    </span>
+                    <span
+                      className={clsx(
+                        "ml-auto rounded-full border px-1.5 py-0.5 text-[8px] font-mono uppercase tracking-[0.08em]",
+                        sessionKindClass(session.strikecellKind)
+                      )}
+                    >
+                      {sessionKindLabel(session.strikecellKind)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
           )}
-        />
-      </span>
-      <span className="origin-status-sigil-label">{label}</span>
-    </button>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          title="Operations"
+          aria-label={`Open operations ${liveLabel(connectionStatus)}`}
+          onClick={() => onSelectApp("operations")}
+          data-active={activeAppId === "operations" ? "true" : "false"}
+          className="origin-focus-ring origin-status-sigil"
+        >
+          <span className="origin-status-sigil-core" aria-hidden="true">
+            <span
+              className={clsx(
+                "origin-status-sigil-dot",
+                connectionStatus === "connected"
+                  ? "bg-sdr-accent-green shadow-[0_0_8px_rgba(61,191,132,0.65)]"
+                  : connectionStatus === "connecting"
+                    ? "bg-sdr-accent-amber shadow-[0_0_8px_rgba(212,168,75,0.65)]"
+                    : "bg-sdr-accent-red shadow-[0_0_8px_rgba(196,92,92,0.55)]"
+              )}
+            />
+          </span>
+          <span className="origin-status-sigil-label">{liveLabel(connectionStatus)}</span>
+        </button>
+      </div>
+    </nav>
   );
 }

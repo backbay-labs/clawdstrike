@@ -38,7 +38,13 @@ import {
   type MarketplaceDiscoveryStatus,
 } from "@/services/tauri";
 
-export function SettingsView() {
+export interface SettingsViewProps {
+  scope?: "all" | "connection" | "preferences";
+}
+
+export function SettingsView({ scope = "all" }: SettingsViewProps) {
+  const showConnectionSections = scope === "all" || scope === "connection";
+  const showPreferenceSections = scope === "all" || scope === "preferences";
   const {
     mode,
     daemonUrl,
@@ -230,12 +236,25 @@ export function SettingsView() {
       <div className="max-w-2xl mx-auto p-6 space-y-8">
         {/* Header */}
         <GlassHeader>
-          <h1 className="text-2xl font-semibold text-sdr-text-primary">Settings</h1>
-          <p className="text-sdr-text-muted mt-1">Configure your SDR Desktop connection</p>
+          <h1 className="text-2xl font-semibold text-sdr-text-primary">
+            {scope === "connection"
+              ? "Connection"
+              : scope === "preferences"
+                ? "Preferences"
+                : "Settings"}
+          </h1>
+          <p className="text-sdr-text-muted mt-1">
+            {scope === "connection"
+              ? "Configure daemon connectivity and runtime mode."
+              : scope === "preferences"
+                ? "Tune marketplace, discovery, provenance, and UI preferences."
+                : "Configure your SDR Desktop connection and platform preferences."}
+          </p>
         </GlassHeader>
 
         {/* Connection Status */}
-        <Section title="Connection Status">
+        {showConnectionSections ? (
+          <Section title="Connection Status">
           <div className="flex items-center gap-4 p-4 bg-sdr-bg-secondary rounded-lg border border-sdr-border">
             <StatusIndicator status={status} />
             <div className="flex-1">
@@ -268,10 +287,12 @@ export function SettingsView() {
               </GlowButton>
             )}
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* Connection Mode */}
-        <Section title="Connection Mode">
+        {showConnectionSections ? (
+          <Section title="Connection Mode">
           <div className="space-y-2">
             {CONNECTION_MODES.map((m) => (
               <ModeOption
@@ -282,10 +303,12 @@ export function SettingsView() {
               />
             ))}
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* Daemon URL */}
-        <Section title="Daemon URL">
+        {showConnectionSections ? (
+          <Section title="Daemon URL">
           <div className="space-y-3">
             <GlowInput
               type="text"
@@ -324,10 +347,12 @@ export function SettingsView() {
               </div>
             )}
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* Marketplace */}
-        <Section title="Marketplace">
+        {showPreferenceSections ? (
+          <Section title="Marketplace">
           <div className="space-y-3">
             <p className="text-sm text-sdr-text-muted">
               Configure signed marketplace feed sources (one per line). Use <code>builtin</code> for the
@@ -359,10 +384,12 @@ export function SettingsView() {
               )}
             </div>
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* Marketplace Discovery */}
-        <Section title="Marketplace Discovery (P2P)">
+        {showPreferenceSections ? (
+          <Section title="Marketplace Discovery (P2P)">
           <div className="space-y-3">
             <p className="text-sm text-sdr-text-muted">
               Optional P2P gossip for new marketplace feed URIs (e.g. <code>ipfs://…</code>). Discovery is
@@ -483,10 +510,12 @@ export function SettingsView() {
               </div>
             </div>
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* Marketplace Provenance */}
-        <Section title="Marketplace Provenance (Notary)">
+        {showPreferenceSections ? (
+          <Section title="Marketplace Provenance (Notary)">
           <div className="space-y-3">
             <p className="text-sm text-sdr-text-muted">
               Optional provenance verification via a notary service (e.g. for EAS attestations). Policies
@@ -565,10 +594,12 @@ export function SettingsView() {
               )}
             </div>
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* Notifications */}
-        <Section title="Notifications">
+        {showPreferenceSections ? (
+          <Section title="Notifications">
           <div className="space-y-3">
             <ToggleSetting
               label="Desktop notifications for blocked events"
@@ -581,10 +612,12 @@ export function SettingsView() {
               defaultChecked={false}
             />
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* Theme */}
-        <Section title="Appearance">
+        {showPreferenceSections ? (
+          <Section title="Appearance">
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-sdr-text-primary mb-2">
@@ -601,10 +634,12 @@ export function SettingsView() {
               </select>
             </div>
           </div>
-        </Section>
+          </Section>
+        ) : null}
 
         {/* About */}
-        <Section title="About">
+        {showPreferenceSections ? (
+          <Section title="About">
           <div className="p-4 bg-sdr-bg-secondary rounded-lg border border-sdr-border">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-lg bg-sdr-accent-blue/20 flex items-center justify-center">
@@ -629,7 +664,8 @@ export function SettingsView() {
               </p>
             </div>
           </div>
-        </Section>
+          </Section>
+        ) : null}
       </div>
     </GlassPanel>
   );

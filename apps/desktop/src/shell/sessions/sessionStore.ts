@@ -2,13 +2,99 @@
  * Session Store - In-memory store with localStorage persistence
  */
 import type { AppId } from "../plugins/types";
-import type { Session, SessionFilter, SessionStatus } from "./types";
+import type { Session, SessionFilter, SessionStatus, StrikecellSessionKind } from "./types";
 
 const STORAGE_KEY = "sdr:sessions";
 const DATA_VERSION = 1;
 
 function generateId(): string {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const KNOWN_APP_IDS = new Set<AppId>([
+  "nexus",
+  "operations",
+  "events",
+  "policies",
+  "policy-tester",
+  "swarm",
+  "marketplace",
+  "workflows",
+  "threat-radar",
+  "attack-graph",
+  "network-map",
+  "security-overview",
+]);
+
+/** Map legacy persisted app IDs from prior versions to current equivalents. */
+const LEGACY_APP_ID_MAP: Record<string, AppId> = {
+  "cyber-nexus": "nexus",
+  "settings": "operations",
+  "forensics": "events",
+  "forensics-river": "events",
+  "policy-workbench": "policies",
+  "strikecell": "swarm",
+};
+
+const KNOWN_SESSION_STATUSES = new Set<SessionStatus>(["idle", "running", "error", "completed"]);
+const KNOWN_STRIKECELL_KINDS = new Set<StrikecellSessionKind>(["chat", "experiment", "red-team"]);
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function asBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asSessionStatus(value: unknown): SessionStatus {
+  return typeof value === "string" && KNOWN_SESSION_STATUSES.has(value as SessionStatus)
+    ? (value as SessionStatus)
+    : "idle";
+}
+
+function asStrikecellKind(value: unknown): StrikecellSessionKind | undefined {
+  return typeof value === "string" && KNOWN_STRIKECELL_KINDS.has(value as StrikecellSessionKind)
+    ? (value as StrikecellSessionKind)
+    : undefined;
+}
+
+function asAppId(value: unknown): AppId | null {
+  if (typeof value !== "string") return null;
+  if (KNOWN_APP_IDS.has(value as AppId)) return value as AppId;
+  // Fall back to legacy mapping so persisted sessions from prior versions are preserved.
+  const mapped = LEGACY_APP_ID_MAP[value];
+  return mapped ?? null;
+}
+
+function normalizeStoredSession(raw: unknown): Session | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+
+  const id = asString(record.id);
+  const appId = asAppId(record.appId);
+  if (!id || !appId) return null;
+
+  const now = Date.now();
+  return {
+    id,
+    appId,
+    title: asString(record.title) ?? `New ${appId} session`,
+    subtitle: asString(record.subtitle) ?? undefined,
+    strikecellId: asString(record.strikecellId) ?? undefined,
+    strikecellKind: asStrikecellKind(record.strikecellKind),
+    pinned: asBoolean(record.pinned),
+    archived: asBoolean(record.archived),
+    status: asSessionStatus(record.status),
+    data: record.data ?? null,
+    createdAt: asNumber(record.createdAt, now),
+    updatedAt: asNumber(record.updatedAt, now),
+    lastOpenedAt: asNumber(record.lastOpenedAt, now),
+  };
 }
 
 export class SessionStore {
@@ -27,14 +113,27 @@ export class SessionStore {
   // === Persistence ===
 
   private load(): void {
+    if (typeof localStorage === "undefined") return;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const data = JSON.parse(raw);
+        const data = JSON.parse(raw) as {
+          version?: number;
+          sessions?: unknown[];
+          activeSessionId?: unknown;
+          activeAppId?: unknown;
+        };
         if (data.version === DATA_VERSION && Array.isArray(data.sessions)) {
-          this.sessions = new Map(data.sessions.map((s: Session) => [s.id, s]));
-          this.activeSessionId = data.activeSessionId ?? null;
-          this.activeAppId = data.activeAppId ?? null;
+          const normalizedSessions = data.sessions
+            .map((entry) => normalizeStoredSession(entry))
+            .filter((entry): entry is Session => entry !== null);
+          this.sessions = new Map(normalizedSessions.map((session) => [session.id, session]));
+
+          const activeSessionId = asString(data.activeSessionId);
+          this.activeSessionId = activeSessionId && this.sessions.has(activeSessionId) ? activeSessionId : null;
+
+          const activeAppId = asAppId(data.activeAppId);
+          this.activeAppId = activeAppId ?? null;
         }
       }
     } catch (e) {
@@ -52,6 +151,7 @@ export class SessionStore {
   }
 
   private saveNow(): void {
+    if (typeof localStorage === "undefined") return;
     try {
       const data = {
         version: DATA_VERSION,
@@ -130,12 +230,19 @@ export class SessionStore {
 
   // === Mutations ===
 
-  createSession(appId: AppId, title?: string, data?: unknown): Session {
+  createSession(
+    appId: AppId,
+    title?: string,
+    data?: unknown,
+    options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind }
+  ): Session {
     const now = Date.now();
     const session: Session = {
       id: generateId(),
       appId,
       title: title || `New ${appId} session`,
+      strikecellId: options?.strikecellId,
+      strikecellKind: options?.strikecellKind,
       pinned: false,
       archived: false,
       status: "idle" as SessionStatus,

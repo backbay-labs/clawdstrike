@@ -7,7 +7,7 @@ import type { BlockerFunction } from "react-router-dom";
 import { NavRail } from "./components/NavRail";
 import { CommandPalette } from "./components/CommandPalette";
 import { SOCBackground } from "./SOCBackground";
-import { getPlugins } from "./plugins";
+import { getPlugins, getVisiblePlugins } from "./plugins";
 import { useActiveApp, useSessionActions } from "./sessions";
 import { useShellShortcuts } from "./keyboard";
 import type { AppId } from "./plugins/types";
@@ -19,12 +19,18 @@ import {
   POLICY_WORKBENCH_DIRTY_EVENT,
   type PolicyWorkbenchDirtyEventDetail,
 } from "@/features/forensics/policy-workbench/events";
+import { ChronicleWorkbenchShelf } from "@/features/forensics/policy-workbench/ChronicleWorkbenchShelf";
+import { isPolicyWorkbenchEnabled } from "@/features/forensics/policy-workbench/featureFlags";
+import { useConnection } from "@/context/ConnectionContext";
 
 export function ShellLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const plugins = useMemo(() => getPlugins(), []);
+  const visiblePlugins = useMemo(() => getVisiblePlugins(), []);
+  const { status: daemonStatus, daemonUrl } = useConnection();
+  const policyWorkbenchEnabled = useMemo(() => isPolicyWorkbenchEnabled(), []);
   const routeAppId = useMemo(() => {
     const seg = location.pathname.split("/").filter(Boolean)[0];
     return seg ?? null;
@@ -37,14 +43,14 @@ export function ShellLayout() {
       storedActiveAppId && plugins.some((p) => p.id === storedActiveAppId)
         ? storedActiveAppId
         : null;
-    return (fromRoute ?? fromStore ?? plugins[0]?.id ?? "cyber-nexus") as AppId;
-  }, [plugins, routeAppId, storedActiveAppId]);
+    return (fromRoute ?? fromStore ?? visiblePlugins[0]?.id ?? plugins[0]?.id ?? "nexus") as AppId;
+  }, [plugins, routeAppId, storedActiveAppId, visiblePlugins]);
 
   const { createSession, setActiveApp } = useSessionActions();
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [hasPolicyWorkbenchDirtyDraft, setHasPolicyWorkbenchDirtyDraft] = useState(false);
-  const unsavedPolicyWarning = "You have unsaved policy changes. Leave Forensics River anyway?";
+  const unsavedPolicyWarning = "You have unsaved policy changes. Leave Nexus anyway?";
   useEffect(() => {
     const open = () => setIsCommandPaletteOpen(true);
     window.addEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
@@ -89,10 +95,10 @@ export function ShellLayout() {
 
   const showAmbientBackground = useMemo(() => {
     const appId = location.pathname.split("/").filter(Boolean)[0] ?? "";
-    return !new Set(["cyber-nexus", "swarm", "threat-radar", "attack-graph", "network-map", "security-overview"]).has(appId);
+    return !new Set(["nexus", "swarm", "threat-radar", "attack-graph", "network-map", "security-overview"]).has(appId);
   }, [location.pathname]);
   const cyberNexusCommands = useMemo(() => {
-    if (activeAppId !== "cyber-nexus") return [];
+    if (activeAppId !== "nexus") return [];
 
     return [
       {
@@ -255,36 +261,54 @@ export function ShellLayout() {
   );
 
   const handleNewSession = useCallback(() => {
-    const session = createSession(activeAppId);
-    navigate(`/${activeAppId}/${session.id}`);
+    createSession(activeAppId);
+    navigate(`/${activeAppId}`);
   }, [activeAppId, createSession, navigate]);
 
   const handleNextApp = useCallback(() => {
-    const currentIndex = plugins.findIndex((p) => p.id === activeAppId);
-    const nextIndex = (currentIndex + 1) % plugins.length;
-    handleSelectApp(plugins[nextIndex].id);
-  }, [plugins, activeAppId, handleSelectApp]);
+    if (visiblePlugins.length === 0) return;
+    const currentIndex = visiblePlugins.findIndex((p) => p.id === activeAppId);
+    const startIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (startIndex + 1) % visiblePlugins.length;
+    handleSelectApp(visiblePlugins[nextIndex].id);
+  }, [visiblePlugins, activeAppId, handleSelectApp]);
 
   const handlePrevApp = useCallback(() => {
-    const currentIndex = plugins.findIndex((p) => p.id === activeAppId);
-    const prevIndex = (currentIndex - 1 + plugins.length) % plugins.length;
-    handleSelectApp(plugins[prevIndex].id);
-  }, [plugins, activeAppId, handleSelectApp]);
+    if (visiblePlugins.length === 0) return;
+    const currentIndex = visiblePlugins.findIndex((p) => p.id === activeAppId);
+    const startIndex = currentIndex >= 0 ? currentIndex : 0;
+    const prevIndex = (startIndex - 1 + visiblePlugins.length) % visiblePlugins.length;
+    handleSelectApp(visiblePlugins[prevIndex].id);
+  }, [visiblePlugins, activeAppId, handleSelectApp]);
 
   // Keyboard shortcuts
   useShellShortcuts({
     onNewSession: handleNewSession,
     onOpenPalette: () => setIsCommandPaletteOpen(true),
     onFocusSearch:
-      activeAppId === "cyber-nexus"
+      activeAppId === "nexus"
         ? () => dispatchCyberNexusCommand({ type: "open-search" })
         : undefined,
     onSelectApp: handleSelectApp,
     onNextApp: handleNextApp,
     onPrevApp: handlePrevApp,
-    onOpenSettings: () => handleSelectApp("settings"),
+    onOpenSettings: () => navigate("/operations?tab=connection"),
     onCloseModal: () => setIsCommandPaletteOpen(false),
   });
+
+  const renderShelfContent = useCallback(
+    (mode: "events" | "output" | "artifacts") => {
+      if (mode !== "events") return undefined;
+      return (
+        <ChronicleWorkbenchShelf
+          daemonUrl={daemonUrl}
+          connected={daemonStatus === "connected"}
+          policyWorkbenchEnabled={policyWorkbenchEnabled}
+        />
+      );
+    },
+    [daemonStatus, daemonUrl, policyWorkbenchEnabled]
+  );
 
   return (
     <DockProvider>
@@ -314,7 +338,7 @@ export function ShellLayout() {
         </div>
 
         {/* Dock system - floating capsules and bottom rail */}
-        <DockSystem demoMode={false} />
+        <DockSystem demoMode={false} renderShelfContent={renderShelfContent} />
 
         {/* Command palette modal */}
         <CommandPalette

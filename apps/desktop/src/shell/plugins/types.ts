@@ -4,16 +4,14 @@
 import type { ReactNode } from "react";
 
 export type AppId =
-  | "cyber-nexus"
+  | "nexus"
+  | "operations"
   | "events"
   | "policies"
   | "policy-tester"
   | "swarm"
-  | "openclaw"
   | "marketplace"
   | "workflows"
-  | "forensics-river"
-  | "settings"
   | "threat-radar"
   | "attack-graph"
   | "network-map"
@@ -40,6 +38,7 @@ export interface AppPlugin {
   order: number;
   routes: PluginRoute[];
   commands?: PluginCommand[];
+  hidden?: boolean;
 }
 
 export type PluginIcon =

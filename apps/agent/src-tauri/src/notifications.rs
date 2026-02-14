@@ -3,10 +3,22 @@
 use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
 use crate::settings::Settings;
+use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(target_os = "macos")]
+use std::sync::Once;
+use tauri::path::BaseDirectory;
+use tauri::Manager;
 use tauri::{AppHandle, Runtime};
+#[cfg(not(target_os = "macos"))]
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::RwLock;
+
+const BRAND_PREFIX: &str = "Clawdstrike // ";
+const NOTIFICATION_ICON_RESOURCES: &[&str] = &["icons/icon.icns", "icons/icon.png"];
+const NOTIFICATION_ICON_DEV_FILES: &[&str] = &["icons/icon.icns", "icons/icon.png"];
+#[cfg(target_os = "macos")]
+static MAC_NOTIFICATION_SOURCE_INIT: Once = Once::new();
 
 /// Severity levels for notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -63,14 +75,95 @@ impl<R: Runtime> NotificationManager<R> {
         drop(settings);
 
         let (title, body) = format_notification(event);
-        if let Err(err) = self
-            .app
+        show_branded_notification(&self.app, &title, &body);
+    }
+}
+
+fn branded_title(title: &str) -> String {
+    format!("{BRAND_PREFIX}{title}")
+}
+
+fn resolve_notification_icon_path<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    for rel in NOTIFICATION_ICON_RESOURCES {
+        if let Ok(path) = app.path().resolve(rel, BaseDirectory::Resource) {
+            if path.is_file() {
+                return Some(path.to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    for rel in NOTIFICATION_ICON_DEV_FILES {
+        let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+        if dev_path.is_file() {
+            return Some(dev_path.to_string_lossy().into_owned());
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn mac_notification_bundle_id<R: Runtime>(app: &AppHandle<R>) -> String {
+    // When launched from raw CLI binary, notifications are attributed to Terminal.
+    // Forcing an uninstalled bundle id logs warnings and can trigger odd OS UX paths.
+    let running_from_app_bundle = std::env::current_exe()
+        .ok()
+        .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
+        .unwrap_or(false);
+    if running_from_app_bundle {
+        app.config().identifier.clone()
+    } else {
+        "com.apple.Terminal".to_string()
+    }
+}
+
+fn show_branded_notification<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        MAC_NOTIFICATION_SOURCE_INIT.call_once(|| {
+            // Avoid mac-notification-sys probing "use_default", which can open a chooser dialog.
+            let bundle_id = mac_notification_bundle_id(app);
+            if let Err(err) = mac_notification_sys::set_application(&bundle_id) {
+                tracing::warn!(
+                    error = %err,
+                    bundle_id,
+                    "Failed to set macOS notification source bundle id"
+                );
+            }
+        });
+
+        let branded = branded_title(title);
+        let mut notification = mac_notification_sys::Notification::new();
+        notification
+            .title(&branded)
+            .message(body)
+            .asynchronous(true);
+
+        let icon_path = resolve_notification_icon_path(app);
+        if let Some(path) = icon_path.as_deref() {
+            notification.app_icon(path);
+        }
+
+        if let Err(err) = notification.send() {
+            tracing::error!(error = %err, "Failed to show notification");
+        }
+
+        return;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut builder = app
             .notification()
             .builder()
-            .title(&title)
-            .body(&body)
-            .show()
-        {
+            .title(branded_title(title))
+            .body(body);
+
+        if let Some(icon_path) = resolve_notification_icon_path(app) {
+            builder = builder.icon(icon_path);
+        }
+
+        if let Err(err) = builder.show() {
             tracing::error!(error = %err, "Failed to show notification");
         }
     }
@@ -106,18 +199,12 @@ fn format_notification(event: &PolicyEvent) -> (String, String) {
 
 /// Simple notification helper for one-off notifications.
 pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
-    if let Err(err) = app.notification().builder().title(title).body(body).show() {
-        tracing::error!(error = %err, "Failed to show notification");
-    }
+    show_branded_notification(app, title, body);
 }
 
 /// Show a notification that the agent has started.
 pub fn show_startup_notification<R: Runtime>(app: &AppHandle<R>) {
-    show_notification(
-        app,
-        "Clawdstrike Agent Started",
-        "Security enforcement is now active",
-    );
+    show_notification(app, "Agent Started", "Security enforcement is now active");
 }
 
 /// Show a notification that enforcement was toggled.
@@ -202,5 +289,13 @@ mod tests {
         assert!(title.contains("BLOCKED"));
         assert!(title.contains("file_access"));
         assert!(body.contains("/etc/passwd"));
+    }
+
+    #[test]
+    fn test_branded_title() {
+        assert_eq!(
+            branded_title("Policy Reloaded"),
+            "Clawdstrike // Policy Reloaded"
+        );
     }
 }

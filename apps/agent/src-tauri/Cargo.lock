@@ -518,6 +518,7 @@ dependencies = [
  "futures",
  "keyring",
  "libc",
+ "mac-notification-sys",
  "reqwest 0.12.28",
  "reqwest-eventsource",
  "serde",
