@@ -102,18 +102,9 @@ impl AgentApiServer {
                 post(import_desktop_gateways),
             )
             .route("/api/v1/openclaw/events", get(openclaw_events))
-            .route(
-                "/api/v1/approval/request",
-                post(create_approval_request),
-            )
-            .route(
-                "/api/v1/approval/{id}/status",
-                get(get_approval_status),
-            )
-            .route(
-                "/api/v1/approval/{id}/resolve",
-                post(resolve_approval),
-            )
+            .route("/api/v1/approval/request", post(create_approval_request))
+            .route("/api/v1/approval/{id}/status", get(get_approval_status))
+            .route("/api/v1/approval/{id}/resolve", post(resolve_approval))
             .route("/api/v1/approval/pending", get(list_pending_approvals))
             .with_state(self.state.clone());
 
@@ -257,9 +248,14 @@ async fn agent_policy_check(
 ) -> Result<Json<PolicyCheckOutput>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
     let session_id = state.session_manager.session_id().await;
-    let output = evaluate_policy_check(state.settings.clone(), &state.http_client, input, session_id)
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let output = evaluate_policy_check(
+        state.settings.clone(),
+        &state.http_client,
+        input,
+        session_id,
+    )
+    .await
+    .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(output))
 }
 
@@ -501,11 +497,12 @@ async fn get_approval_status(
 ) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
 
-    let status = state
-        .approval_queue
-        .get_status(&id)
-        .await
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Approval request not found".to_string()))?;
+    let status = state.approval_queue.get_status(&id).await.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "Approval request not found".to_string(),
+        )
+    })?;
 
     Ok(Json(status))
 }
@@ -523,18 +520,21 @@ async fn resolve_approval(
         .resolve(&id, input.resolution)
         .await
         .map_err(|err| match err {
-            crate::approval::ApprovalError::NotFound => {
-                (StatusCode::NOT_FOUND, "Approval request not found".to_string())
-            }
-            crate::approval::ApprovalError::AlreadyResolved => {
-                (StatusCode::CONFLICT, "Approval request already resolved".to_string())
-            }
+            crate::approval::ApprovalError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "Approval request not found".to_string(),
+            ),
+            crate::approval::ApprovalError::AlreadyResolved => (
+                StatusCode::CONFLICT,
+                "Approval request already resolved".to_string(),
+            ),
             crate::approval::ApprovalError::Expired => {
                 (StatusCode::GONE, "Approval request expired".to_string())
             }
-            crate::approval::ApprovalError::QueueFull => {
-                (StatusCode::SERVICE_UNAVAILABLE, "Approval queue is full".to_string())
-            }
+            crate::approval::ApprovalError::QueueFull => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Approval queue is full".to_string(),
+            ),
         })?;
 
     Ok(Json(result))
@@ -696,10 +696,7 @@ mod tests {
     async fn approval_status_route_matches_uuid_path() {
         let state = Arc::new(test_state());
         let app = Router::new()
-            .route(
-                "/api/v1/approval/{id}/status",
-                get(get_approval_status),
-            )
+            .route("/api/v1/approval/{id}/status", get(get_approval_status))
             .with_state(state);
 
         let request = axum::http::Request::builder()

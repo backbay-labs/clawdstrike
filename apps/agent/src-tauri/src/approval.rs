@@ -230,9 +230,9 @@ impl ApprovalQueue {
             request.resolution = Some(ApprovalResolution::Deny);
             request.resolved_at = Some(Utc::now());
 
-            let _ = self.event_tx.send(ApprovalEvent::Expired {
-                id: id.to_string(),
-            });
+            let _ = self
+                .event_tx
+                .send(ApprovalEvent::Expired { id: id.to_string() });
         }
 
         Some(ApprovalStatusResponse::from(&*request))
@@ -246,9 +246,7 @@ impl ApprovalQueue {
     ) -> Result<ApprovalStatusResponse, ApprovalError> {
         let mut requests = self.requests.lock().await;
 
-        let request = requests
-            .get_mut(id)
-            .ok_or(ApprovalError::NotFound)?;
+        let request = requests.get_mut(id).ok_or(ApprovalError::NotFound)?;
 
         // Check if already resolved or expired.
         if request.status != ApprovalStatus::Pending {
@@ -260,9 +258,9 @@ impl ApprovalQueue {
             request.status = ApprovalStatus::Expired;
             request.resolution = Some(ApprovalResolution::Deny);
             request.resolved_at = Some(Utc::now());
-            let _ = self.event_tx.send(ApprovalEvent::Expired {
-                id: id.to_string(),
-            });
+            let _ = self
+                .event_tx
+                .send(ApprovalEvent::Expired { id: id.to_string() });
             return Err(ApprovalError::Expired);
         }
 
@@ -290,9 +288,9 @@ impl ApprovalQueue {
                     request.status = ApprovalStatus::Expired;
                     request.resolution = Some(ApprovalResolution::Deny);
                     request.resolved_at = Some(now);
-                    let _ = self.event_tx.send(ApprovalEvent::Expired {
-                        id: id.clone(),
-                    });
+                    let _ = self
+                        .event_tx
+                        .send(ApprovalEvent::Expired { id: id.clone() });
                 } else {
                     pending.push(ApprovalStatusResponse::from(&*request));
                 }
@@ -340,9 +338,9 @@ impl ApprovalQueue {
                 request.status = ApprovalStatus::Expired;
                 request.resolution = Some(ApprovalResolution::Deny);
                 request.resolved_at = Some(now);
-                let _ = self.event_tx.send(ApprovalEvent::Expired {
-                    id: id.clone(),
-                });
+                let _ = self
+                    .event_tx
+                    .send(ApprovalEvent::Expired { id: id.clone() });
             }
 
             // GC resolved/expired requests older than 10 minutes.
@@ -445,9 +443,7 @@ mod tests {
         let _ = queue
             .resolve(&request.id, ApprovalResolution::AllowOnce)
             .await;
-        let second = queue
-            .resolve(&request.id, ApprovalResolution::Deny)
-            .await;
+        let second = queue.resolve(&request.id, ApprovalResolution::Deny).await;
         assert!(second.is_err());
     }
 

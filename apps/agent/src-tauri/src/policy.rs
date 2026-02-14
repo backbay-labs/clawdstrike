@@ -138,11 +138,7 @@ pub async fn evaluate_policy_check(
                 "high",
                 "Policy daemon rejected request",
             ),
-            _ => (
-                "hushd_error",
-                "critical",
-                "Policy daemon returned error",
-            ),
+            _ => ("hushd_error", "critical", "Policy daemon returned error"),
         };
 
         tracing::warn!(

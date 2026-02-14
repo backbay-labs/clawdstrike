@@ -71,11 +71,14 @@ impl HushdSessionInfo {
     /// Sum the budget limits across all posture budget counters.
     /// hushd stores budgets at `state["posture"]["budgets"]` as `{ "<name>": { "used": N, "limit": M } }`.
     fn budget_limit(&self) -> Option<u64> {
-        let budgets = self.state.as_ref()
+        let budgets = self
+            .state
+            .as_ref()
             .and_then(|s| s.get("posture"))
             .and_then(|v| v.get("budgets"))
             .and_then(|v| v.as_object())?;
-        let total: u64 = budgets.values()
+        let total: u64 = budgets
+            .values()
             .filter_map(|b| b.get("limit").and_then(|v| v.as_u64()))
             .sum();
         Some(total)
@@ -83,11 +86,14 @@ impl HushdSessionInfo {
 
     /// Sum the budget usage across all posture budget counters.
     fn budget_used(&self) -> Option<u64> {
-        let budgets = self.state.as_ref()
+        let budgets = self
+            .state
+            .as_ref()
             .and_then(|s| s.get("posture"))
             .and_then(|v| v.get("budgets"))
             .and_then(|v| v.as_object())?;
-        let total: u64 = budgets.values()
+        let total: u64 = budgets
+            .values()
             .filter_map(|b| b.get("used").and_then(|v| v.as_u64()))
             .sum();
         Some(total)
@@ -135,11 +141,7 @@ impl SessionManager {
     }
 
     /// Create a new session with hushd.
-    pub async fn create_session(
-        &self,
-        daemon_url: &str,
-        api_key: Option<&str>,
-    ) -> Result<String> {
+    pub async fn create_session(&self, daemon_url: &str, api_key: Option<&str>) -> Result<String> {
         let url = format!("{}/api/v1/session", daemon_url);
 
         let hostname = hostname::get()
@@ -173,7 +175,10 @@ impl SessionManager {
             .with_context(|| "Failed to parse session creation response")?;
 
         let session_id = resp.session.session_id.clone();
-        let posture = resp.session.posture().unwrap_or_else(|| "standard".to_string());
+        let posture = resp
+            .session
+            .posture()
+            .unwrap_or_else(|| "standard".to_string());
         let budget_limit = resp.session.budget_limit().unwrap_or(0);
         {
             let mut state = self.state.write().await;
@@ -188,11 +193,7 @@ impl SessionManager {
     }
 
     /// Terminate the current session.
-    pub async fn terminate_session(
-        &self,
-        daemon_url: &str,
-        api_key: Option<&str>,
-    ) -> Result<()> {
+    pub async fn terminate_session(&self, daemon_url: &str, api_key: Option<&str>) -> Result<()> {
         let session_id = {
             let state = self.state.read().await;
             state.session_id.clone()
@@ -237,6 +238,18 @@ impl SessionManager {
         Ok(())
     }
 
+    async fn with_state_if_current_session_id<T>(
+        &self,
+        expected_session_id: &str,
+        f: impl FnOnce(&mut SessionState) -> T,
+    ) -> Option<T> {
+        let mut state = self.state.write().await;
+        if state.session_id.as_deref() != Some(expected_session_id) {
+            return None;
+        }
+        Some(f(&mut state))
+    }
+
     /// Send a heartbeat to keep the session alive and update state.
     async fn heartbeat(&self, daemon_url: &str, api_key: Option<&str>) -> Result<()> {
         let session_id = {
@@ -262,22 +275,30 @@ impl SessionManager {
         let status_code = response.status();
         if status_code.is_success() {
             if let Ok(resp) = response.json::<GetSessionResponse>().await {
-                let mut state = self.state.write().await;
-                if let Some(posture) = resp.session.posture() {
-                    state.posture = posture;
-                }
-                if let Some(budget_used) = resp.session.budget_used() {
-                    state.budget_used = budget_used;
-                }
-                if let Some(budget_limit) = resp.session.budget_limit() {
-                    state.budget_limit = budget_limit;
-                }
+                // Heartbeat runs concurrently with daemon reconnect handling. Only apply updates
+                // if we're still tracking the same session ID we heartbeated.
+                let _ = self
+                    .with_state_if_current_session_id(&session_id, |state| {
+                        if let Some(posture) = resp.session.posture() {
+                            state.posture = posture;
+                        }
+                        if let Some(budget_used) = resp.session.budget_used() {
+                            state.budget_used = budget_used;
+                        }
+                        if let Some(budget_limit) = resp.session.budget_limit() {
+                            state.budget_limit = budget_limit;
+                        }
+                    })
+                    .await;
             }
         } else if status_code == reqwest::StatusCode::NOT_FOUND {
             // Session expired server-side; clear local state.
             tracing::warn!(session_id = %session_id, "Session expired server-side");
-            let mut state = self.state.write().await;
-            *state = SessionState::default();
+            let _ = self
+                .with_state_if_current_session_id(&session_id, |state| {
+                    *state = SessionState::default();
+                })
+                .await;
         } else {
             anyhow::bail!("Session heartbeat returned {}", status_code);
         }
@@ -369,10 +390,7 @@ mod tests {
             budget_used: 0,
             budget_limit: 0,
         };
-        assert_eq!(
-            state.summary(),
-            "Session: active | Posture: standard"
-        );
+        assert_eq!(state.summary(), "Session: active | Posture: standard");
     }
 
     #[tokio::test]
@@ -381,5 +399,34 @@ mod tests {
         let state = manager.state().await;
         assert!(state.session_id.is_none());
         assert_eq!(state.posture, "unknown");
+    }
+
+    #[tokio::test]
+    async fn heartbeat_does_not_clear_new_session_state() {
+        let manager = SessionManager::new();
+
+        {
+            let mut state = manager.state.write().await;
+            state.session_id = Some("old".to_string());
+            state.posture = "restricted".to_string();
+        }
+
+        // If the session has been replaced since the heartbeat started, the CAS should fail.
+        {
+            let mut state = manager.state.write().await;
+            state.session_id = Some("new".to_string());
+            state.posture = "standard".to_string();
+        }
+
+        let cleared = manager
+            .with_state_if_current_session_id("old", |state| {
+                *state = SessionState::default();
+            })
+            .await;
+        assert!(cleared.is_none());
+
+        let state = manager.state().await;
+        assert_eq!(state.session_id.as_deref(), Some("new"));
+        assert_eq!(state.posture, "standard");
     }
 }

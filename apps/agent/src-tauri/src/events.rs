@@ -323,8 +323,8 @@ impl EventManager {
         // Daemon-level events: hushd sends type via SSE `event:` field.
         match event_type {
             "policy_updated" | "violation" | "session_posture_transition" => {
-                let mut json: serde_json::Value = serde_json::from_str(data)
-                    .with_context(|| {
+                let mut json: serde_json::Value =
+                    serde_json::from_str(data).with_context(|| {
                         format!("Malformed JSON in SSE daemon event ({event_type}): {data}")
                     })?;
                 if let Some(obj) = json.as_object_mut() {
@@ -333,8 +333,10 @@ impl EventManager {
                         serde_json::Value::String(event_type.to_string()),
                     );
                 }
-                let daemon_event: DaemonEvent = serde_json::from_value(json)
-                    .with_context(|| format!("Failed to parse daemon event ({event_type}): {data}"))?;
+                let daemon_event: DaemonEvent =
+                    serde_json::from_value(json).with_context(|| {
+                        format!("Failed to parse daemon event ({event_type}): {data}")
+                    })?;
                 let _ = self.daemon_events_tx.send(daemon_event);
                 return Ok(());
             }
@@ -437,7 +439,9 @@ mod tests {
             .await
             .expect("should dispatch policy_updated");
 
-        let evt = daemon_rx.try_recv().expect("should have received daemon event");
+        let evt = daemon_rx
+            .try_recv()
+            .expect("should have received daemon event");
         assert!(matches!(evt, DaemonEvent::PolicyUpdated { version: Some(v) } if v == "2.0.0"));
 
         // violation with SSE event field
@@ -445,8 +449,12 @@ mod tests {
             .await
             .expect("should dispatch violation");
 
-        let evt = daemon_rx.try_recv().expect("should have received violation event");
-        assert!(matches!(evt, DaemonEvent::Violation { guard: Some(g), .. } if g == "fs_blocklist"));
+        let evt = daemon_rx
+            .try_recv()
+            .expect("should have received violation event");
+        assert!(
+            matches!(evt, DaemonEvent::Violation { guard: Some(g), .. } if g == "fs_blocklist")
+        );
     }
 
     /// Verify that audit events (no special SSE event field) still parse correctly.
@@ -460,7 +468,9 @@ mod tests {
             .await
             .expect("should dispatch audit event");
 
-        let evt = events_rx.try_recv().expect("should have received policy event");
+        let evt = events_rx
+            .try_recv()
+            .expect("should have received policy event");
         assert_eq!(evt.id, "ev-1");
     }
 
@@ -471,7 +481,9 @@ mod tests {
         let mgr = EventManager::new("http://localhost:0".to_string(), None);
         let mut daemon_rx = mgr.subscribe_daemon_events();
 
-        let result = mgr.handle_sse_message("violation", "not valid json{{{").await;
+        let result = mgr
+            .handle_sse_message("violation", "not valid json{{{")
+            .await;
         assert!(result.is_err(), "malformed JSON should be an error");
 
         // No phantom event should have been emitted.

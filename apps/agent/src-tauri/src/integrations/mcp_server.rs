@@ -22,8 +22,16 @@ pub struct McpServer {
 
 impl McpServer {
     /// Create a new MCP server.
-    pub fn new(port: u16, settings: Arc<RwLock<Settings>>, session_manager: Arc<SessionManager>) -> Self {
-        Self { port, settings, session_manager }
+    pub fn new(
+        port: u16,
+        settings: Arc<RwLock<Settings>>,
+        session_manager: Arc<SessionManager>,
+    ) -> Self {
+        Self {
+            port,
+            settings,
+            session_manager,
+        }
     }
 
     /// Start the MCP server.
@@ -241,8 +249,13 @@ async fn handle_call_tool(state: &McpState, params: Option<serde_json::Value>) -
             };
 
             let session_id = state.session_manager.session_id().await;
-            match evaluate_policy_check(state.settings.clone(), &state.http_client, check_params, session_id)
-                .await
+            match evaluate_policy_check(
+                state.settings.clone(),
+                &state.http_client,
+                check_params,
+                session_id,
+            )
+            .await
             {
                 Ok(result) => {
                     let text = match serde_json::to_string_pretty(&result) {

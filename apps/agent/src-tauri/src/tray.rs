@@ -57,10 +57,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
 
     let status_item = MenuItem::with_id(app, menu_ids::STATUS, &status_text, false, None::<&str>)?;
 
-    let session_text = state
-        .session_info
-        .as_deref()
-        .unwrap_or("Session: inactive");
+    let session_text = state.session_info.as_deref().unwrap_or("Session: inactive");
     let session_item = MenuItem::with_id(
         app,
         menu_ids::SESSION_INFO,

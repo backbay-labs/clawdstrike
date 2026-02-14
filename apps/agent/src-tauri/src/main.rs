@@ -24,8 +24,9 @@ mod tray;
 use agent_auth::ensure_local_api_token;
 use api_server::AgentApiServer;
 use approval::ApprovalQueue;
-use daemon::{find_hushd_binary, AuditQueue, DaemonConfig, DaemonManager, DaemonState, PolicyCache};
-use session::SessionManager;
+use daemon::{
+    find_hushd_binary, AuditQueue, DaemonConfig, DaemonManager, DaemonState, PolicyCache,
+};
 use events::EventManager;
 use integrations::{ClaudeCodeIntegration, McpServer};
 use notifications::{
@@ -33,6 +34,7 @@ use notifications::{
     show_toggle_notification, NotificationManager,
 };
 use openclaw::OpenClawManager;
+use session::SessionManager;
 use settings::{ensure_default_policy, Settings};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -283,7 +285,9 @@ async fn run_agent<R: Runtime>(
                 );
                 // Update tray with session info.
                 let session_state = session_manager.state().await;
-                tray_manager.set_session_info(Some(session_state.summary())).await;
+                tray_manager
+                    .set_session_info(Some(session_state.summary()))
+                    .await;
             }
             Err(err) => {
                 tracing::warn!(error = %err, "Failed to create session with hushd (continuing without session)");
@@ -339,7 +343,9 @@ async fn run_agent<R: Runtime>(
                     Ok(session_id) => {
                         tracing::info!(session_id = %session_id, "Session re-established after daemon reconnect");
                         let session_state = session_for_daemon.state().await;
-                        tray_for_daemon.set_session_info(Some(session_state.summary())).await;
+                        tray_for_daemon
+                            .set_session_info(Some(session_state.summary()))
+                            .await;
                     }
                     Err(err) => {
                         tracing::warn!(error = %err, "Failed to re-establish session after daemon reconnect");
@@ -431,16 +437,11 @@ async fn run_agent<R: Runtime>(
                             .map(|g| format!(" ({})", g))
                             .unwrap_or_default()
                     );
-                    let body = message.unwrap_or_else(|| {
-                        target.unwrap_or_else(|| "Unknown target".to_string())
-                    });
+                    let body = message
+                        .unwrap_or_else(|| target.unwrap_or_else(|| "Unknown target".to_string()));
                     notifications::show_notification(&app_for_sse, &title, &body);
                 }
-                DaemonEvent::SessionPostureTransition {
-                    from,
-                    to,
-                    ..
-                } => {
+                DaemonEvent::SessionPostureTransition { from, to, .. } => {
                     let new_posture = to.unwrap_or_else(|| "unknown".to_string());
                     let old_posture = from.unwrap_or_else(|| "unknown".to_string());
                     tracing::info!(
@@ -450,24 +451,14 @@ async fn run_agent<R: Runtime>(
                     );
                     let session_state = session_manager_for_sse.state().await;
                     let summary = if session_state.session_id.is_some() {
-                        format!(
-                            "Session: active | Posture: {}",
-                            new_posture
-                        )
+                        format!("Session: active | Posture: {}", new_posture)
                     } else {
                         format!("Posture: {}", new_posture)
                     };
                     tray_for_sse.set_session_info(Some(summary)).await;
 
-                    let body = format!(
-                        "Posture changed from {} to {}",
-                        old_posture, new_posture
-                    );
-                    notifications::show_notification(
-                        &app_for_sse,
-                        "Posture Transition",
-                        &body,
-                    );
+                    let body = format!("Posture changed from {} to {}", old_posture, new_posture);
+                    notifications::show_notification(&app_for_sse, "Posture Transition", &body);
                 }
             }
         }
@@ -489,7 +480,8 @@ async fn run_agent<R: Runtime>(
                     let count = approval_queue_for_events.pending_count().await;
                     tray_for_approvals.set_approval_badge(count).await;
                 }
-                approval::ApprovalEvent::Resolved { .. } | approval::ApprovalEvent::Expired { .. } => {
+                approval::ApprovalEvent::Resolved { .. }
+                | approval::ApprovalEvent::Expired { .. } => {
                     let count = approval_queue_for_events.pending_count().await;
                     tray_for_approvals.set_approval_badge(count).await;
                 }
