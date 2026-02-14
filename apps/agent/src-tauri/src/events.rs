@@ -12,9 +12,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, Mutex};
 
-const AUDIT_PAGE_SIZE: usize = 50;
-const AUDIT_MAX_PAGES: usize = 40;
-
 /// A policy check event from hushd.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyEvent {
@@ -118,7 +115,8 @@ pub struct EventManager {
     events_tx: broadcast::Sender<PolicyEvent>,
     daemon_events_tx: broadcast::Sender<DaemonEvent>,
     deduper: Arc<Mutex<EventDeduper>>,
-    poll_cursor_id: Arc<Mutex<Option<String>>>,
+    /// Cursor for the polling fallback so we resume from where we left off.
+    poll_cursor: Arc<Mutex<Option<String>>>,
 }
 
 impl EventManager {
@@ -136,7 +134,7 @@ impl EventManager {
             events_tx,
             daemon_events_tx,
             deduper: Arc::new(Mutex::new(EventDeduper::new(2_000))),
-            poll_cursor_id: Arc::new(Mutex::new(None)),
+            poll_cursor: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -243,18 +241,23 @@ impl EventManager {
             events: Vec<PolicyEvent>,
         }
 
-        let url = format!("{}/api/v1/audit", self.daemon_url);
-        let cursor_id = self.poll_cursor_id.lock().await.clone();
-        let mut offset = 0usize;
-        let mut pages = 0usize;
-        let mut found_cursor = false;
-        let mut unseen_desc: Vec<PolicyEvent> = Vec::new();
+        let base_url = format!("{}/api/v1/audit", self.daemon_url);
+        let limit = 50u32;
+        let max_pages = 40u32;
+        let cursor = self.poll_cursor.lock().await.clone();
 
-        while pages < AUDIT_MAX_PAGES {
-            let mut request = self.http_client.get(&url).query(&[
-                ("limit", AUDIT_PAGE_SIZE.to_string()),
-                ("offset", offset.to_string()),
-            ]);
+        let mut all_events: Vec<PolicyEvent> = Vec::new();
+
+        for page in 0..max_pages {
+            let offset = page * limit;
+            let mut request = self
+                .http_client
+                .get(&base_url)
+                .query(&[
+                    ("limit", &limit.to_string()),
+                    ("offset", &offset.to_string()),
+                ]);
+
             if let Some(ref key) = self.api_key {
                 request = request.header("Authorization", format!("Bearer {}", key));
             }
@@ -263,6 +266,7 @@ impl EventManager {
                 .send()
                 .await
                 .with_context(|| "Failed to poll audit events")?;
+
             if !response.status().is_success() {
                 anyhow::bail!("Audit API returned status: {}", response.status());
             }
@@ -271,39 +275,36 @@ impl EventManager {
                 .json()
                 .await
                 .with_context(|| "Failed to parse audit response")?;
-            if audit.events.is_empty() {
-                break;
-            }
 
-            let page_len = audit.events.len();
+            let fetched = audit.events.len();
+
+            // Audit endpoint returns newest-first. Collect until we hit the cursor
+            // (last seen event id) or exhaust the page.
+            let mut hit_cursor = false;
             for event in audit.events {
-                if cursor_id.as_ref().is_some_and(|id| &event.id == id) {
-                    found_cursor = true;
-                    break;
+                if let Some(ref cursor_id) = cursor {
+                    if event.id == *cursor_id {
+                        hit_cursor = true;
+                        break;
+                    }
                 }
-                unseen_desc.push(event);
+                all_events.push(event);
             }
 
-            pages += 1;
-            if found_cursor || page_len < AUDIT_PAGE_SIZE {
+            if hit_cursor || fetched < limit as usize {
                 break;
             }
-            offset += AUDIT_PAGE_SIZE;
         }
 
-        if pages == AUDIT_MAX_PAGES && !found_cursor {
-            tracing::warn!(
-                page_limit = AUDIT_MAX_PAGES,
-                "Audit poll fallback reached pagination cap; some older events may be skipped"
-            );
+        // Emit oldest-first for stable UI ordering.
+        all_events.reverse();
+
+        // Advance cursor to the newest event we've seen.
+        if let Some(newest) = all_events.last() {
+            *self.poll_cursor.lock().await = Some(newest.id.clone());
         }
 
-        if let Some(newest_unseen) = unseen_desc.first() {
-            *self.poll_cursor_id.lock().await = Some(newest_unseen.id.clone());
-        }
-
-        // Audit endpoint is newest-first; emit oldest-first for stable UI ordering.
-        for event in unseen_desc.into_iter().rev() {
+        for event in all_events {
             self.publish_event_if_new(event).await;
         }
 
