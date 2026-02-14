@@ -13,6 +13,7 @@ import type {
   PolicyEvent,
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
+import { checkAndConsumeApproval } from '../approval-state.js';
 
 // ── LRU Decision Cache ──────────────────────────────────────────────
 
@@ -127,6 +128,17 @@ function extractResourceKey(event: PolicyEvent): string {
   }
 }
 
+function normalizeApprovalResource(policyEngine: PolicyEngine, toolName: string, params: Record<string, unknown>): string {
+  const raw = extractPath(params)
+    ?? (typeof params.command === 'string' ? params.command : typeof params.cmd === 'string' ? params.cmd : undefined)
+    ?? toolName;
+  const redacted = policyEngine.redactSecrets(raw).trim();
+
+  const maxChars = 1024;
+  if (redacted.length <= maxChars) return redacted;
+  return redacted.slice(0, maxChars) + '...[truncated]';
+}
+
 /**
  * Hook handler for tool_result_persist events
  */
@@ -137,46 +149,54 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
 
   const toolEvent = event as ToolResultPersistEvent;
   const { toolName, params, result } = toolEvent.context.toolResult;
+  const sessionId = toolEvent.context.sessionId;
   const policyEngine = getEngine();
 
-  // Create policy event from tool result
-  const policyEvent = createPolicyEvent(
-    toolEvent.context.sessionId,
-    toolName,
-    params,
-    result,
-  );
+  // Check if preflight already approved this action — skip policy evaluation
+  // but still run output sanitization below.
+  const resource = normalizeApprovalResource(policyEngine, toolName, params);
+  const priorApproval = checkAndConsumeApproval(sessionId, toolName, resource);
 
-  // Check decision cache (skip for destructive ops and advisory/audit modes)
-  const mode = currentConfig.mode ?? 'deterministic';
-  const useCache = mode === 'deterministic' && !UNCACHEABLE_EVENT_TYPES.has(policyEvent.eventType);
-  const policyVersion = policyEngine.getPolicy().version ?? 'unknown';
-  const cacheKey = useCache
-    ? DecisionCache.key(policyEvent.eventType, extractResourceKey(policyEvent), policyVersion)
-    : '';
+  if (!priorApproval) {
+    // Create policy event from tool result
+    const policyEvent = createPolicyEvent(
+      sessionId,
+      toolName,
+      params,
+      result,
+    );
 
-  let decision = useCache ? decisionCache.get(cacheKey) : undefined;
-  if (!decision) {
-    decision = await policyEngine.evaluate(policyEvent);
-    if (useCache && decision.status === 'allow') {
-      decisionCache.set(cacheKey, decision);
+    // Check decision cache (skip for destructive ops and advisory/audit modes)
+    const mode = currentConfig.mode ?? 'deterministic';
+    const useCache = mode === 'deterministic' && !UNCACHEABLE_EVENT_TYPES.has(policyEvent.eventType);
+    const policyVersion = policyEngine.getPolicy().version ?? 'unknown';
+    const cacheKey = useCache
+      ? DecisionCache.key(policyEvent.eventType, extractResourceKey(policyEvent), policyVersion)
+      : '';
+
+    let decision = useCache ? decisionCache.get(cacheKey) : undefined;
+    if (!decision) {
+      decision = await policyEngine.evaluate(policyEvent);
+      if (useCache && decision.status === 'allow') {
+        decisionCache.set(cacheKey, decision);
+      }
     }
-  }
 
-  if (decision.status === 'deny') {
-    // Block the tool result
-    toolEvent.context.toolResult.error = decision.reason ?? 'Policy violation';
-    toolEvent.messages.push(
-      `[clawdstrike] Blocked by ${decision.guard}: ${decision.reason}`,
-    );
-    return;
-  }
+    if (decision.status === 'deny') {
+      // Block the tool result
+      toolEvent.context.toolResult.error = decision.reason ?? 'Policy violation';
+      toolEvent.messages.push(
+        `[clawdstrike] Blocked by ${decision.guard}: ${decision.reason}`,
+      );
+      return;
+    }
 
-  if (decision.status === 'warn') {
-    // Add warning message
-    toolEvent.messages.push(
-      `[clawdstrike] Warning: ${decision.message ?? decision.reason}`,
-    );
+    if (decision.status === 'warn') {
+      // Add warning message
+      toolEvent.messages.push(
+        `[clawdstrike] Warning: ${decision.message ?? decision.reason}`,
+      );
+    }
   }
 
   function sanitizeUnknown(

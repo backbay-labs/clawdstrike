@@ -212,6 +212,27 @@ export class PolicyEngine {
       }
     }
 
+    // Also check forbidden paths in tool parameters (defense in depth).
+    if (this.config.guards.forbidden_path && event.data.type === 'tool') {
+      const params = event.data.parameters ?? {};
+      const pathKeys = ['path', 'file', 'file_path', 'filepath', 'filename', 'target'];
+      for (const key of pathKeys) {
+        const val = params[key];
+        if (typeof val === 'string' && val.length > 0) {
+          const pathEvent: PolicyEvent = {
+            ...event,
+            eventType: 'file_write',
+            data: { type: 'file', path: val, operation: 'write' },
+          };
+          const pathCheck = this.forbiddenPathGuard.checkSync(pathEvent, this.policy);
+          const pathDecision = this.guardResultToDecision(pathCheck);
+          if (pathDecision.status === 'deny' || pathDecision.status === 'warn') {
+            return this.applyOnViolation(pathDecision);
+          }
+        }
+      }
+    }
+
     if (!this.config.guards.secret_leak) {
       return { status: 'allow' };
     }

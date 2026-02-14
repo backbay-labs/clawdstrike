@@ -342,7 +342,7 @@ fn policy_cache_path() -> PathBuf {
 /// fetched from hushd. Used for quick warm-start on agent restart so that
 /// hushd can re-load policies faster. This is NOT used for inline evaluation
 /// fallback — when hushd is unreachable, policy checks return deny with
-/// reason "hushd_unavailable" (fail-closed).
+/// guard "hushd_unreachable" (fail-closed).
 pub struct PolicyCache {
     http_client: reqwest::Client,
     cached_policy: Mutex<Option<String>>,

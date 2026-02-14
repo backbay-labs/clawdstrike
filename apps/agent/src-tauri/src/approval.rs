@@ -176,6 +176,20 @@ impl ApprovalQueue {
 
         {
             let mut requests = self.requests.lock().await;
+            // Expire stale pending entries before checking capacity.
+            let now_expire = Utc::now();
+            for request_entry in requests.values_mut() {
+                if request_entry.status == ApprovalStatus::Pending
+                    && now_expire >= request_entry.expires_at
+                {
+                    request_entry.status = ApprovalStatus::Expired;
+                    request_entry.resolution = Some(ApprovalResolution::Deny);
+                    request_entry.resolved_at = Some(now_expire);
+                    let _ = self.event_tx.send(ApprovalEvent::Expired {
+                        id: request_entry.id.clone(),
+                    });
+                }
+            }
             // Evict resolved/expired entries first when at capacity.
             if requests.len() >= MAX_QUEUE_SIZE {
                 let to_evict: Vec<String> = requests
@@ -539,5 +553,47 @@ mod tests {
         let parsed: ApprovalResolution = serde_json::from_str(r#""allow-always""#)
             .unwrap_or_else(|e| panic!("deserialize failed: {e}"));
         assert_eq!(parsed, ApprovalResolution::AllowAlways);
+    }
+
+    #[tokio::test]
+    async fn submit_expires_stale_before_capacity_check() {
+        let queue = ApprovalQueue::new();
+
+        // Fill up to near capacity with immediately-expiring requests.
+        for i in 0..MAX_QUEUE_SIZE {
+            queue
+                .submit(ApprovalRequestInput {
+                    tool: "t".to_string(),
+                    resource: format!("/r{}", i),
+                    guard: "g".to_string(),
+                    reason: "r".to_string(),
+                    severity: "high".to_string(),
+                    session_id: None,
+                    ttl_secs: Some(0), // Expires immediately.
+                })
+                .await
+                .unwrap_or_else(|e| panic!("submit {} failed: {e}", i));
+        }
+
+        // Give them time to expire.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Should succeed because submit() now expires stale entries first.
+        let result = queue
+            .submit(ApprovalRequestInput {
+                tool: "t".to_string(),
+                resource: "/fresh".to_string(),
+                guard: "g".to_string(),
+                reason: "r".to_string(),
+                severity: "medium".to_string(),
+                session_id: None,
+                ttl_secs: Some(60),
+            })
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "submit should succeed after expiring stale entries"
+        );
     }
 }

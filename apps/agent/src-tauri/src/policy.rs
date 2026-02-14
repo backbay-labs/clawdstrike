@@ -8,6 +8,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+fn truncate_bytes(s: &str, max_bytes: usize) -> (String, bool) {
+    if s.len() <= max_bytes {
+        return (s.to_string(), false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    (format!("{}...[truncated]", &s[..end]), true)
+}
+
 /// Policy check request payload.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PolicyCheckInput {
@@ -91,14 +102,14 @@ pub async fn evaluate_policy_check(
             );
             return Ok(PolicyCheckOutput {
                 allowed: false,
-                guard: Some("hushd_unavailable".to_string()),
+                guard: Some("hushd_unreachable".to_string()),
                 severity: Some("critical".to_string()),
                 message: Some(format!(
                     "Policy daemon unreachable at {} — action denied (fail-closed)",
                     daemon_url
                 )),
                 details: Some(serde_json::json!({
-                    "reason": "hushd_unavailable",
+                    "reason": "hushd_unreachable",
                     "provenance": { "mode": "offline_deny" },
                     "error": err.to_string(),
                 })),
@@ -109,25 +120,52 @@ pub async fn evaluate_policy_check(
     if !response.status().is_success() {
         let status = response.status();
         let body_text = response.text().await.unwrap_or_default();
+        let (body_preview, body_truncated) = truncate_bytes(&body_text, 4 * 1024);
+
+        let (guard, severity, reason_prefix) = match status.as_u16() {
+            401 | 403 => (
+                "hushd_auth_error",
+                "critical",
+                "Policy daemon authentication failed",
+            ),
+            429 => (
+                "hushd_rate_limited",
+                "high",
+                "Policy daemon rate limit exceeded",
+            ),
+            400 => (
+                "hushd_request_error",
+                "high",
+                "Policy daemon rejected request",
+            ),
+            _ => (
+                "hushd_error",
+                "critical",
+                "Policy daemon returned error",
+            ),
+        };
+
         tracing::warn!(
             action_type = %input.action_type,
             target = %input.target,
             http_status = %status,
+            guard = guard,
             "hushd returned error — denying action"
         );
         return Ok(PolicyCheckOutput {
             allowed: false,
-            guard: Some("hushd_unavailable".to_string()),
-            severity: Some("critical".to_string()),
+            guard: Some(guard.to_string()),
+            severity: Some(severity.to_string()),
             message: Some(format!(
-                "Policy daemon returned {} — action denied (fail-closed)",
-                status
+                "{} ({}) — action denied (fail-closed)",
+                reason_prefix, status
             )),
             details: Some(serde_json::json!({
-                "reason": "hushd_unavailable",
+                "reason": guard,
                 "provenance": { "mode": "offline_deny" },
                 "http_status": status.as_u16(),
-                "body": body_text,
+                "body": body_preview,
+                "body_truncated": body_truncated,
             })),
         });
     }

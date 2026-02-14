@@ -2,9 +2,11 @@
  * @clawdstrike/openclaw - Tool Pre-flight Hook Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { homedir } from 'os';
 import toolPreflightHandler, { initialize as initPreflight } from '../src/hooks/tool-preflight/handler.js';
+import { recordApproval } from '../src/hooks/approval-state.js';
+import { PolicyEngine } from '../src/policy/engine.js';
 import type { ToolCallEvent, ClawdstrikeConfig } from '../src/types.js';
 
 const HOME = homedir();
@@ -34,6 +36,10 @@ describe('Tool Pre-flight Hook', () => {
 
   beforeEach(() => {
     initPreflight(config);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe('destructive operations', () => {
@@ -112,40 +118,47 @@ describe('Tool Pre-flight Hook', () => {
     });
   });
 
-  describe('read-only operations (skipped by pre-flight)', () => {
-    it('should skip pre-flight for read operations', async () => {
+  describe('read-only operations', () => {
+    it('should block file reads targeting forbidden paths (defense-in-depth)', async () => {
       const event = makeToolCallEvent('read', { path: `${HOME}/.ssh/id_rsa` });
 
       await toolPreflightHandler(event);
 
-      // Pre-flight does not block reads; post-execution hook handles sanitization
-      expect(event.preventDefault).toBe(false);
-      expect(event.messages).toHaveLength(0);
+      expect(event.preventDefault).toBe(true);
+      expect(event.messages.some(m => m.includes('blocked'))).toBe(true);
     });
 
-    it('should skip pre-flight for search tools', async () => {
+    it('should allow read-only tools that do not touch forbidden paths', async () => {
       const event = makeToolCallEvent('grep', { pattern: 'password', path: '/project' });
 
       await toolPreflightHandler(event);
 
       expect(event.preventDefault).toBe(false);
     });
+
+    it('should still skip read-only tools with no filesystem target', async () => {
+      const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
+      const event = makeToolCallEvent('status', { verbose: true });
+
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(false);
+      expect(spy).not.toHaveBeenCalled();
+    });
   });
 
   describe('token-based tool classification', () => {
     it('should NOT classify "npm_install" as read-only (install != list substring)', async () => {
-      // Previously "install" matched "list" via substring regex; now uses exact tokens
-      const event = makeToolCallEvent('npm_install', { path: `${HOME}/.ssh/id_rsa`, content: 'malicious' });
+      const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
+
+      // Previously "install" matched "list" via substring regex; now uses exact tokens.
+      // "install" is a destructive token so the tool is evaluated, not skipped.
+      const event = makeToolCallEvent('npm_install', { command: 'npm install left-pad' });
 
       await toolPreflightHandler(event);
 
-      // "install" is a destructive token — tool is evaluated, not skipped.
-      // With sensitive path, it should be blocked (file_write to .ssh is forbidden).
-      // "install" doesn't map to a specific event type, so falls through to 'tool_call'.
-      // tool_call checks deny/allow list + secret_leak, but does NOT check forbidden_path.
-      // The key assertion: it was NOT skipped (which is what the old code did).
-      // The tool reaches the engine (previously it was skipped as "read-only" due to
-      // "install" containing "list" as a substring).
+      expect(event.preventDefault).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
     });
 
     it('should classify "file_list" as read-only via "list" token', async () => {
@@ -186,27 +199,59 @@ describe('Tool Pre-flight Hook', () => {
 
   describe('unknown/unclassified tools', () => {
     it('should evaluate unknown tools through the policy engine (not skip)', async () => {
-      // "mystery_tool" has no read-only or destructive tokens — classified as unknown.
-      // Unknown tools should be sent to the engine as 'tool_call', not skipped.
+      const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
+
       const event = makeToolCallEvent('mystery_tool', { data: 'something' });
 
       await toolPreflightHandler(event);
 
-      // With ai-agent-minimal policy and no secrets, engine allows.
-      // The key point: pre-flight did NOT early-return (old behavior was to skip).
       expect(event.preventDefault).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ eventType: 'tool_call' }));
     });
 
-    it('should block unknown tool that leaks secrets', async () => {
+    it('should not early-return for unknown tools even with high-entropy params', async () => {
+      const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
       const event = makeToolCallEvent('mystery_tool', {
         data: 'AKIAIOSFODNN7EXAMPLE',
       });
 
       await toolPreflightHandler(event);
 
-      // Unknown tool is evaluated → secret_leak guard detects AWS key pattern.
-      // Depending on policy, this might be blocked or warned.
-      // The important thing: it was NOT skipped.
+      expect(event.preventDefault).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should block unknown tool targeting forbidden path', async () => {
+      const event = makeToolCallEvent('custom_action', {
+        path: `${HOME}/.ssh/id_rsa`,
+        data: 'something',
+      });
+
+      await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
+    });
+  });
+
+  describe('approval semantics', () => {
+    it('should honor allow-session approvals to avoid re-prompting (non-critical only)', async () => {
+      const sessionId = 'sess-allow-session';
+      const toolName = 'bash';
+      const command = 'node -e "eval(1)"';
+
+      // Without prior approval this is denied by patch_integrity (high severity).
+      const event1 = makeToolCallEvent(toolName, { command }, sessionId);
+      await toolPreflightHandler(event1);
+      expect(event1.preventDefault).toBe(true);
+
+      // Record a session approval, then re-run the same denied action.
+      recordApproval(sessionId, toolName, command, 'allow-session');
+
+      const event2 = makeToolCallEvent(toolName, { command }, sessionId);
+      await toolPreflightHandler(event2);
+      expect(event2.preventDefault).toBe(false);
+      expect(event2.messages.some(m => m.includes('using prior allow-session approval'))).toBe(true);
     });
   });
 

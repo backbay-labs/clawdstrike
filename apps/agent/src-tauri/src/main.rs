@@ -319,16 +319,33 @@ async fn run_agent<R: Runtime>(
     let audit_queue_for_daemon = audit_queue.clone();
     let policy_cache_for_daemon = policy_cache.clone();
     let settings_for_daemon = settings.clone();
+    let session_for_daemon = session_manager.clone();
     tokio::spawn(async move {
         while let Ok(state) = daemon_rx.recv().await {
             tray_for_daemon.set_daemon_state(state.clone()).await;
 
-            // On reconnect: flush queued audit events and resync policy cache.
+            // On reconnect: re-establish session, flush queued audit events, resync policy cache.
             if state == DaemonState::Running {
                 let (daemon_url, api_key) = {
                     let guard = settings_for_daemon.read().await;
                     (guard.daemon_url(), guard.api_key.clone())
                 };
+
+                // Re-establish session (previous session may have expired on daemon restart).
+                match session_for_daemon
+                    .create_session(&daemon_url, api_key.as_deref())
+                    .await
+                {
+                    Ok(session_id) => {
+                        tracing::info!(session_id = %session_id, "Session re-established after daemon reconnect");
+                        let session_state = session_for_daemon.state().await;
+                        tray_for_daemon.set_session_info(Some(session_state.summary())).await;
+                    }
+                    Err(err) => {
+                        tracing::warn!(error = %err, "Failed to re-establish session after daemon reconnect");
+                    }
+                }
+
                 if audit_queue_for_daemon.len().await > 0 {
                     match audit_queue_for_daemon
                         .flush(&daemon_url, api_key.as_deref())

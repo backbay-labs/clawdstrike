@@ -135,6 +135,9 @@ The desktop agent supports per-action approval for non-critical operations that 
 
 1. A pre-flight guard denies a non-critical action.
 2. If the adapter has `CLAWDSTRIKE_APPROVAL_URL` configured, it submits an approval request to the agent's ApprovalQueue API.
+
+> **Required:** The adapter also needs `CLAWDSTRIKE_AGENT_TOKEN` set to the same bearer token used by the agent's local API (found in `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent-local-token`). Without this token, approval requests will be rejected with 401 Unauthorized.
+
 3. The agent surfaces the request via OS notification and tray badge.
 4. The user resolves the request (allow-once, allow-session, allow-always, or deny).
 5. If the user approves, the action proceeds. If denied, expired, or no approval system is configured, the action is blocked.
@@ -159,10 +162,16 @@ curl -fsS \
 
 ## Behavior When hushd Is Unreachable
 
-When `hushd` is unreachable (transport error or non-success HTTP status), policy checks return **deny** with reason `hushd_unavailable` and `provenance.mode: "offline_deny"`. This is a fail-closed design -- no actions are allowed without a live policy daemon.
+When `hushd` is unreachable or returns an error, policy checks return **deny** (fail-closed):
 
-- All policy check requests return `allowed: false` with guard `hushd_unavailable`.
-- The agent logs a warning with the connection error details.
+- **Transport error** (connection refused, timeout): guard `hushd_unreachable`, severity `critical`.
+- **Auth failure** (401/403): guard `hushd_auth_error`, severity `critical`. Check API key configuration.
+- **Rate limited** (429): guard `hushd_rate_limited`, severity `high`. The daemon is overloaded.
+- **Request error** (400): guard `hushd_request_error`, severity `high`. Check request format.
+- **Other errors**: guard `hushd_error` with the HTTP status code.
+
+All error classes return `allowed: false` with `provenance.mode: "offline_deny"`. No actions are allowed without a successful policy evaluation.
+
 - A policy cache is maintained on disk (`~/.config/clawdstrike/policy-cache.yaml`) for quick warm-start when the agent restarts, but it is **not** used for inline evaluation fallback.
 - The agent logs a warning when secure storage (OS keyring) is unavailable and falls back to memory-only secrets.
 

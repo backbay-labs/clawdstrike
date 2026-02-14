@@ -2,10 +2,11 @@
  * @clawdstrike/openclaw - Tool Pre-flight Hook Handler
  *
  * Intercepts tool calls BEFORE execution and enforces security policy
- * on destructive operations (file_write, file_delete, shell, bash, command).
+ * on risky operations (filesystem access, command execution, patch apply, egress).
  *
- * Read-only operations are skipped here; they are handled by the
- * post-execution tool-guard hook for output sanitization.
+ * Most read-only operations are skipped here and handled by the post-execution
+ * tool-guard hook for output sanitization, but we still preflight-check
+ * forbidden paths when a read targets a sensitive location.
  */
 
 import type {
@@ -17,6 +18,7 @@ import type {
   EventType,
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
+import { peekApproval, recordApproval, type ApprovalResolutionType } from '../approval-state.js';
 
 /** Shared policy engine instance */
 let engine: PolicyEngine | null = null;
@@ -51,6 +53,7 @@ const DESTRUCTIVE_TOKENS = new Set([
   'write', 'delete', 'remove', 'rm', 'kill', 'exec', 'run', 'install',
   'uninstall', 'create', 'update', 'modify', 'patch', 'put', 'post',
   'move', 'mv', 'rename', 'chmod', 'chown', 'drop', 'truncate',
+  'edit', 'command', 'bash', 'save', 'overwrite', 'unlink', 'terminal',
 ]);
 
 /** Destructive token-to-event-type mapping for specific policy routing */
@@ -98,15 +101,20 @@ function classifyTool(tokens: string[]): ToolClassification {
 }
 
 /**
- * Infer the event type for a tool based on its name tokens.
- * Returns null only for confirmed read-only tools.
- * Unknown/unclassified tools return 'tool_call' so they are evaluated.
+ * Infer the event type for a tool based on its name tokens and parameters.
+ *
+ * Returns null for confirmed read-only tools that do not appear to touch the filesystem.
+ * Unknown/unclassified tools are still evaluated (best-effort inference).
  */
-function inferDestructiveEventType(toolName: string): EventType | null {
+function inferPolicyEventType(toolName: string, params: Record<string, unknown>): EventType | null {
   const tokens = tokenize(toolName);
   const classification = classifyTool(tokens);
 
   if (classification === 'read_only') {
+    // Read-only tools can still be dangerous if they target forbidden paths.
+    // If it looks like a filesystem read, evaluate it as file_read.
+    const p = extractPath(params);
+    if (p) return 'file_read';
     return null;
   }
 
@@ -122,7 +130,17 @@ function inferDestructiveEventType(toolName: string): EventType | null {
     return 'network_egress';
   }
 
-  // Unknown or unclassified tools: treat as generic tool_call for evaluation
+  // Unknown/unclassified tools: infer from parameters (do not skip).
+  if (looksLikePatchApply(params)) return 'patch_apply';
+  if (looksLikeCommandExec(params)) return 'command_exec';
+  if (looksLikeNetworkEgress(params)) return 'network_egress';
+
+  const p = extractPath(params);
+  if (p) {
+    return looksLikeFileWrite(params) ? 'file_write' : 'file_read';
+  }
+
+  // Fall back to tool_call so tool allow/deny lists and defense-in-depth checks can run.
   return 'tool_call';
 }
 
@@ -139,6 +157,17 @@ function buildPolicyEvent(
   const timestamp = new Date().toISOString();
 
   switch (eventType) {
+    case 'file_read': {
+      const path = extractPath(params) ?? '';
+      return {
+        eventId,
+        eventType: 'file_read',
+        timestamp,
+        sessionId,
+        data: { type: 'file', path, operation: 'read' },
+        metadata: { toolName, preflight: true },
+      };
+    }
     case 'file_write': {
       const path = extractPath(params) ?? '';
       return {
@@ -207,6 +236,13 @@ function extractPath(params: Record<string, unknown>): string | undefined {
       return value;
     }
   }
+
+  // Best-effort extraction from a command string (e.g., "cat /path/to/file").
+  const cmdLine = typeof params.command === 'string' ? params.command : typeof params.cmd === 'string' ? params.cmd : undefined;
+  if (cmdLine) {
+    const match = cmdLine.match(/(?:cat|head|tail|less|more|vim|nano|read)\s+([^\s|><]+)/);
+    if (match) return match[1];
+  }
   return undefined;
 }
 
@@ -230,6 +266,40 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
   const host = typeof params.host === 'string' ? params.host : 'unknown';
   const port = typeof params.port === 'number' ? params.port : 80;
   return { host, port, url };
+}
+
+function looksLikePatchApply(params: Record<string, unknown>): boolean {
+  return typeof params.patch === 'string'
+    || typeof params.diff === 'string'
+    || typeof params.patchContent === 'string'
+    || typeof params.filePath === 'string';
+}
+
+function looksLikeCommandExec(params: Record<string, unknown>): boolean {
+  if (typeof params.command === 'string' || typeof params.cmd === 'string') return true;
+  if (Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')) return true;
+  if (Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')) return true;
+  return false;
+}
+
+function looksLikeNetworkEgress(params: Record<string, unknown>): boolean {
+  if (typeof params.url === 'string' || typeof params.endpoint === 'string' || typeof params.href === 'string') return true;
+  if (typeof params.host === 'string' || typeof params.hostname === 'string') return true;
+  return false;
+}
+
+function looksLikeFileWrite(params: Record<string, unknown>): boolean {
+  // Common write payload keys used by various tool APIs.
+  if (typeof params.content === 'string') return true;
+  if (typeof params.text === 'string') return true;
+  if (typeof params.contentBase64 === 'string') return true;
+  if (typeof params.base64 === 'string') return true;
+  if (typeof params.patch === 'string' || typeof params.diff === 'string') return true;
+  if (typeof params.operation === 'string') {
+    const op = params.operation.toLowerCase();
+    if (op === 'write' || op === 'append' || op === 'delete' || op === 'remove' || op === 'truncate') return true;
+  }
+  return false;
 }
 
 // Approval flow:
@@ -258,7 +328,7 @@ interface ApprovalStatusResponse {
 
 /**
  * Submit an approval request and poll until resolved or expired.
- * Returns true if the user approved, false otherwise.
+ * Returns the resolved approval status if the user approved, null otherwise.
  */
 async function requestApproval(details: {
   toolName: string;
@@ -267,17 +337,28 @@ async function requestApproval(details: {
   reason: string;
   severity: string;
   sessionId: string;
-}): Promise<boolean> {
+}): Promise<ApprovalStatusResponse | null> {
   const approvalUrl = process.env.CLAWDSTRIKE_APPROVAL_URL;
   if (!approvalUrl) {
-    return false;
+    return null;
   }
+
+  const token = process.env.CLAWDSTRIKE_AGENT_TOKEN;
+  if (!token) {
+    console.warn('[clawdstrike] CLAWDSTRIKE_APPROVAL_URL is set but CLAWDSTRIKE_AGENT_TOKEN is missing — skipping approval request');
+    return null;
+  }
+
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + token,
+  };
 
   let id: string;
   try {
     const submitRes = await fetch(`${approvalUrl}/api/v1/approval/request`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders,
       body: JSON.stringify({
         tool: details.toolName,
         resource: details.resource,
@@ -288,12 +369,12 @@ async function requestApproval(details: {
       }),
     });
     if (!submitRes.ok) {
-      return false;
+      return null;
     }
     const body = (await submitRes.json()) as ApprovalStatusResponse;
     id = body.id;
   } catch {
-    return false;
+    return null;
   }
 
   const deadline = Date.now() + APPROVAL_POLL_TIMEOUT_MS;
@@ -301,24 +382,40 @@ async function requestApproval(details: {
     await new Promise((resolve) => setTimeout(resolve, APPROVAL_POLL_INTERVAL_MS));
 
     try {
-      const pollRes = await fetch(`${approvalUrl}/api/v1/approval/${id}/status`);
+      const pollRes = await fetch(`${approvalUrl}/api/v1/approval/${id}/status`, {
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
       if (!pollRes.ok) {
-        return false;
+        return null;
       }
       const status = (await pollRes.json()) as ApprovalStatusResponse;
 
       if (status.status === 'resolved') {
-        return status.resolution !== null && status.resolution !== 'deny';
+        if (status.resolution !== null && status.resolution !== 'deny') {
+          return status;
+        }
+        return null;
       }
       if (status.status === 'expired') {
-        return false;
+        return null;
       }
     } catch {
-      return false;
+      return null;
     }
   }
 
-  return false;
+  return null;
+}
+
+function normalizeApprovalResource(policyEngine: PolicyEngine, toolName: string, params: Record<string, unknown>): string {
+  const raw = extractPath(params)
+    ?? (typeof params.command === 'string' ? params.command : typeof params.cmd === 'string' ? params.cmd : undefined)
+    ?? toolName;
+  const redacted = policyEngine.redactSecrets(raw).trim();
+
+  const maxChars = 1024;
+  if (redacted.length <= maxChars) return redacted;
+  return redacted.slice(0, maxChars) + '...[truncated]';
 }
 
 /**
@@ -340,7 +437,7 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   const sessionId = toolEvent.context.sessionId;
 
   // Determine if this tool is destructive
-  const eventType = inferDestructiveEventType(toolName);
+  const eventType = inferPolicyEventType(toolName, params);
   if (eventType === null) {
     // Confirmed read-only tool: skip pre-flight, let post-execution handle it
     return;
@@ -351,14 +448,26 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   const decision = await policyEngine.evaluate(policyEvent);
 
   if (decision.status === 'deny') {
-    const resource = extractPath(params) ?? (typeof params.command === 'string' ? params.command : toolName);
+    const resource = normalizeApprovalResource(policyEngine, toolName, params);
     const guard = decision.guard ?? 'unknown';
     const severity = decision.severity ?? 'high';
+
+    // If the user previously approved this exact action for this session (or globally),
+    // honor it and avoid re-prompting.
+    if (severity !== 'critical') {
+      const prior = peekApproval(sessionId, toolName, resource);
+      if (prior) {
+        toolEvent.messages.push(
+          `[clawdstrike] Pre-flight check: using prior ${prior.resolution} approval for ${toolName} on ${resource}`,
+        );
+        return;
+      }
+    }
 
     // If the denial is non-critical and the approval API is configured,
     // submit an approval request and wait for user resolution.
     if (severity !== 'critical' && process.env.CLAWDSTRIKE_APPROVAL_URL) {
-      const approved = await requestApproval({
+      const approvalResult = await requestApproval({
         toolName,
         resource,
         guard,
@@ -366,7 +475,9 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
         severity,
         sessionId,
       });
-      if (approved) {
+      if (approvalResult) {
+        const resolution = approvalResult.resolution as ApprovalResolutionType;
+        recordApproval(sessionId, toolName, resource, resolution);
         toolEvent.messages.push(
           `[clawdstrike] Pre-flight check: ${toolName} on ${resource} was approved by user`,
         );
