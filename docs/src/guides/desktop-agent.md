@@ -142,6 +142,8 @@ The desktop agent supports per-action approval for non-critical operations that 
 4. The user resolves the request (allow-once, allow-session, allow-always, or deny).
 5. If the user approves, the action proceeds. If denied, expired, or no approval system is configured, the action is blocked.
 
+> **Note:** `allow-session` and `allow-always` are currently stored in adapter memory only. `allow-always` does not persist across adapter restarts.
+
 List pending approvals via the local API:
 
 ```bash
