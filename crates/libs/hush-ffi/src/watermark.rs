@@ -28,8 +28,7 @@ fn parse_config_and_key(
         serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {e}"))?;
     let pinned = cfg.private_key.is_none() && cfg.generate_keypair;
 
-    let value =
-        serde_json::to_value(&cfg).map_err(|e| format!("Invalid WatermarkConfig: {e}"))?;
+    let value = serde_json::to_value(&cfg).map_err(|e| format!("Invalid WatermarkConfig: {e}"))?;
     let key = hush_core::canonicalize_json(&value).map_err(|e| e.to_string())?;
     Ok((cfg, key, pinned))
 }

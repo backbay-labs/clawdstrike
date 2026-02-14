@@ -11,11 +11,14 @@ static DETECTORS: OnceLock<Mutex<HashMap<String, Arc<clawdstrike::JailbreakDetec
     OnceLock::new();
 
 fn detector_key(cfg: &clawdstrike::JailbreakGuardConfig) -> Result<String, String> {
-    let value = serde_json::to_value(cfg).map_err(|e| format!("Invalid JailbreakGuardConfig: {e}"))?;
+    let value =
+        serde_json::to_value(cfg).map_err(|e| format!("Invalid JailbreakGuardConfig: {e}"))?;
     hush_core::canonicalize_json(&value).map_err(|e| e.to_string())
 }
 
-fn get_or_create_detector(cfg: clawdstrike::JailbreakGuardConfig) -> Result<Arc<clawdstrike::JailbreakDetector>, String> {
+fn get_or_create_detector(
+    cfg: clawdstrike::JailbreakGuardConfig,
+) -> Result<Arc<clawdstrike::JailbreakDetector>, String> {
     let key = detector_key(&cfg)?;
 
     let map = DETECTORS.get_or_init(|| Mutex::new(HashMap::new()));
