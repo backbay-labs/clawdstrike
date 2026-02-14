@@ -51,9 +51,9 @@ fn get_or_create_detector(
     let mut guard = cache
         .lock()
         .map_err(|_| "jailbreak detector lock poisoned".to_string())?;
-    if let Some(detector) = guard.map.get(&key) {
+    if let Some(detector) = guard.map.get(&key).cloned() {
         guard.touch(&key);
-        return Ok(detector.clone());
+        return Ok(detector);
     }
 
     if guard.map.len() >= MAX_DETECTOR_CACHE_ENTRIES {
