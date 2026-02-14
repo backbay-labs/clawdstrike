@@ -1,6 +1,5 @@
 """Tests for PromptInjectionGuard."""
 
-import pytest
 from clawdstrike.guards.prompt_injection import (
     PromptInjectionGuard,
     PromptInjectionConfig,

@@ -1,6 +1,5 @@
 """Tests for JailbreakGuard."""
 
-import pytest
 from clawdstrike.guards.jailbreak import JailbreakGuard, JailbreakConfig
 from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 

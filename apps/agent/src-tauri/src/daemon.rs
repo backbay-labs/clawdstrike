@@ -477,10 +477,19 @@ impl AuditQueue {
             request = request.header("Authorization", format!("Bearer {}", key));
         }
 
-        let response = request
-            .send()
-            .await
-            .with_context(|| "Failed to flush audit queue to daemon")?;
+        let response = match request.send().await {
+            Ok(resp) => resp,
+            Err(err) => {
+                // Re-queue events so they are not lost.
+                let mut queue = self.queue.lock().await;
+                let new_events = std::mem::take(&mut *queue);
+                let mut restored = events;
+                restored.extend(new_events);
+                restored.truncate(1000);
+                *queue = restored;
+                return Err(err).with_context(|| "Failed to flush audit queue to daemon");
+            }
+        };
 
         if !response.status().is_success() {
             // Re-queue failed events behind any new events that arrived since the drain.

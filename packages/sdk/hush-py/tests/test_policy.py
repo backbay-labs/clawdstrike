@@ -5,7 +5,6 @@ from clawdstrike.policy import (
     Policy,
     PolicyEngine,
     PolicySettings,
-    PolicyResolver,
     GuardConfigs,
     PostureConfig,
 )

@@ -5,7 +5,6 @@ Provides Policy loading from YAML and PolicyEngine for running guards.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -27,8 +26,28 @@ from clawdstrike.guards.jailbreak import JailbreakGuard, JailbreakConfig
 POLICY_SCHEMA_VERSION = "1.2.0"
 POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0"}
 
-# Built-in ruleset directory (relative to this file)
-_RULESETS_DIR = Path(__file__).resolve().parents[5] / "rulesets"
+# Built-in ruleset directory.
+# Try package-relative path first (works in both monorepo and installed layouts),
+# then fall back to importlib.resources for installed packages.
+def _find_rulesets_dir() -> Path:
+    # Relative from this file: packages/sdk/hush-py/src/clawdstrike -> repo root
+    pkg_relative = Path(__file__).resolve().parent / "../../../../../rulesets"
+    if pkg_relative.is_dir():
+        return pkg_relative.resolve()
+    # Fallback: try importlib.resources (rulesets shipped as package data)
+    try:
+        import importlib.resources as _res
+        ref = _res.files("clawdstrike") / "rulesets"
+        p = Path(str(ref))
+        if p.is_dir():
+            return p
+    except Exception:
+        pass
+    # Last resort: return the relative path and let callers handle missing files
+    return pkg_relative.resolve()
+
+
+_RULESETS_DIR = _find_rulesets_dir()
 
 MAX_EXTENDS_DEPTH = 32
 

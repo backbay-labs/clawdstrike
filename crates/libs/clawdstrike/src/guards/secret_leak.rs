@@ -284,11 +284,34 @@ impl SecretLeakConfig {
         // Remove child's remove_patterns
         patterns.retain(|p| !child.remove_patterns.contains(&p.name));
 
-        // If child specifies explicit patterns (non-default), use those as base instead
+        // If child specifies explicit patterns (non-default), start from child's
+        // patterns but still fold in base additional_patterns and child remove_patterns.
         let child_default_patterns = default_patterns();
         let child_has_explicit_patterns = child.patterns != child_default_patterns;
         if child_has_explicit_patterns {
-            patterns = child.effective_patterns();
+            let mut merged = child.patterns.clone();
+
+            // Add base additional_patterns that aren't already present.
+            for p in &self.additional_patterns {
+                if !merged.iter().any(|existing| existing.name == p.name) {
+                    merged.push(p.clone());
+                }
+            }
+
+            // Add child additional_patterns that aren't already present.
+            for p in &child.additional_patterns {
+                if !merged.iter().any(|existing| existing.name == p.name) {
+                    merged.push(p.clone());
+                }
+            }
+
+            // Apply both base and child remove_patterns.
+            merged.retain(|p| {
+                !self.remove_patterns.contains(&p.name)
+                    && !child.remove_patterns.contains(&p.name)
+            });
+
+            patterns = merged;
         }
 
         // Merge skip_paths additively

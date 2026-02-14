@@ -1,5 +1,5 @@
 import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
-import { denyDecision, failClosed, parsePolicyEvalResponse } from '@clawdstrike/adapter-core';
+import { failClosed, parsePolicyEvalResponse } from '@clawdstrike/adapter-core';
 
 export interface StrikeCellOptions {
   baseUrl: string;

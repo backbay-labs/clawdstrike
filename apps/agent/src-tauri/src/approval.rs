@@ -233,6 +233,9 @@ impl ApprovalQueue {
             request.status = ApprovalStatus::Expired;
             request.resolution = Some(ApprovalResolution::Deny);
             request.resolved_at = Some(Utc::now());
+            let _ = self.event_tx.send(ApprovalEvent::Expired {
+                id: id.to_string(),
+            });
             return Err(ApprovalError::Expired);
         }
 
@@ -254,12 +257,15 @@ impl ApprovalQueue {
         let now = Utc::now();
 
         let mut pending = Vec::new();
-        for request in requests.values_mut() {
+        for (id, request) in requests.iter_mut() {
             if request.status == ApprovalStatus::Pending {
                 if now >= request.expires_at {
                     request.status = ApprovalStatus::Expired;
                     request.resolution = Some(ApprovalResolution::Deny);
                     request.resolved_at = Some(now);
+                    let _ = self.event_tx.send(ApprovalEvent::Expired {
+                        id: id.clone(),
+                    });
                 } else {
                     pending.push(ApprovalStatusResponse::from(&*request));
                 }

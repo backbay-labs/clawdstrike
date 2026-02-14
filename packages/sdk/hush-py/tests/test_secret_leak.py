@@ -5,7 +5,6 @@ from clawdstrike.guards.secret_leak import (
     SecretLeakGuard,
     SecretLeakConfig,
     SecretPattern,
-    DEFAULT_SECRET_PATTERNS,
 )
 from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 

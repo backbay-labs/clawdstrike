@@ -7,7 +7,7 @@ matching the Rust JailbreakGuard's behavior.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity

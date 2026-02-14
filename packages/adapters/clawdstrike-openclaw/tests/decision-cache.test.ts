@@ -6,7 +6,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import toolGuardHandler, {
   initialize as initToolGuard,
   DecisionCache,
-  decisionCache,
 } from '../src/hooks/tool-guard/handler.js';
 import type { ToolResultPersistEvent, ClawdstrikeConfig } from '../src/types.js';
 
