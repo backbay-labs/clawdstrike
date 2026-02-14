@@ -1131,24 +1131,44 @@ function parseNetworkTarget(input: string): { host: string; port: number; url: s
     return { host: '', port: 0, url: '' };
   }
 
-  const looksLikeUrl = /^[a-zA-Z][a-zA-Z0-9+-.]*:\/\//.test(trimmed);
-  if (looksLikeUrl) {
+  const schemeSep = trimmed.indexOf('://');
+  const scheme = schemeSep === -1 ? '' : trimmed.slice(0, schemeSep).toLowerCase();
+  const defaultPort = scheme === 'http' ? 80 : 443;
+
+  if (schemeSep !== -1) {
     try {
       const parsed = new URL(trimmed);
       if (parsed.hostname) {
-        const port = parsed.port
-          ? Number.parseInt(parsed.port, 10)
-          : (parsed.protocol === 'https:' ? 443 : 80);
-        return { host: parsed.hostname, port, url: trimmed };
+        let parsedPort: number | undefined;
+        if (parsed.port) {
+          const value = Number.parseInt(parsed.port, 10);
+          if (Number.isFinite(value) && value > 0 && value <= 65535) {
+            parsedPort = value;
+          }
+        }
+        return { host: parsed.hostname, port: parsedPort ?? defaultPort, url: trimmed };
       }
+      // Hostless URIs (file/mailto/data/...) are not valid egress targets; fail closed.
+      return { host: '', port: 0, url: trimmed };
     } catch {
       // Fall through to host parsing.
     }
   }
 
-  // Accept host, host:port, or host/path style inputs.
-  const end = trimmed.search(/[/?#]/);
-  const hostPort = end === -1 ? trimmed : trimmed.slice(0, end);
+  const withoutScheme = schemeSep === -1 ? trimmed : trimmed.slice(schemeSep + 3);
+  const end = withoutScheme.search(/[/?#]/);
+  const hostPortRaw = end === -1 ? withoutScheme : withoutScheme.slice(0, end);
+
+  if (schemeSep === -1 && hostPortRaw.includes('@')) {
+    return { host: '', port: 0, url: trimmed };
+  }
+
+  const atIndex = hostPortRaw.lastIndexOf('@');
+  const hostPort = atIndex === -1 ? hostPortRaw : hostPortRaw.slice(atIndex + 1);
+
+  if (!hostPort) {
+    return { host: '', port: 0, url: trimmed };
+  }
 
   // IPv6: [::1]:443
   if (hostPort.startsWith('[')) {
@@ -1162,22 +1182,31 @@ function parseNetworkTarget(input: string): { host: string; port: number; url: s
           return { host, port: parsedPort, url: trimmed };
         }
       }
-      return { host, port: 443, url: trimmed };
+      return { host, port: defaultPort, url: trimmed };
     }
   }
 
   const lastColon = hostPort.lastIndexOf(':');
   const hasSingleColon = lastColon > 0 && hostPort.indexOf(':') === lastColon;
   if (hasSingleColon) {
-    const maybeHost = hostPort.slice(0, lastColon);
-    const maybePort = hostPort.slice(lastColon + 1);
-    const parsedPort = Number.parseInt(maybePort, 10);
-    if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-      return { host: maybeHost, port: parsedPort, url: trimmed };
+    const host = hostPort.slice(0, lastColon);
+    const portText = hostPort.slice(lastColon + 1);
+
+    if (/^[0-9]+$/.test(portText)) {
+      const parsedPort = Number.parseInt(portText, 10);
+      if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+        return { host, port: parsedPort, url: trimmed };
+      }
+
+      // Drop invalid numeric port suffix before returning host.
+      return { host, port: defaultPort, url: trimmed };
     }
+
+    // Single-colon but non-numeric port suffix (e.g. `mailto:user@example.com`): fail closed.
+    return { host: '', port: 0, url: trimmed };
   }
 
-  return { host: hostPort, port: 443, url: trimmed };
+  return { host: hostPort, port: defaultPort, url: trimmed };
 }
 
 // ============================================================

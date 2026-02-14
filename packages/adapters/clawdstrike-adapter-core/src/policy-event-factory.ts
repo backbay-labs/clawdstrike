@@ -13,6 +13,10 @@ function parseNetworkTarget(target: string): { host: string; port: number } {
   const hostPortRaw = end === -1 ? withoutScheme : withoutScheme.slice(0, end);
 
   // Drop userinfo if present.
+  if (schemeSep === -1 && hostPortRaw.includes('@')) {
+    return { host: '', port: defaultPort };
+  }
+
   const atIndex = hostPortRaw.lastIndexOf('@');
   const hostPort = atIndex === -1 ? hostPortRaw : hostPortRaw.slice(atIndex + 1);
 
@@ -36,10 +40,19 @@ function parseNetworkTarget(target: string): { host: string; port: number } {
   const hasSingleColon = lastColon > 0 && hostPort.indexOf(':') === lastColon;
   if (hasSingleColon) {
     const host = hostPort.slice(0, lastColon);
-    const parsedPort = Number.parseInt(hostPort.slice(lastColon + 1), 10);
-    if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-      return { host, port: parsedPort };
+    const portText = hostPort.slice(lastColon + 1);
+    if (/^[0-9]+$/.test(portText)) {
+      const parsedPort = Number.parseInt(portText, 10);
+      if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+        return { host, port: parsedPort };
+      }
+
+      // Drop invalid numeric port suffix before returning host.
+      return { host, port: defaultPort };
     }
+
+    // Single-colon but non-numeric port suffix (e.g. `mailto:user@example.com`): fail closed.
+    return { host: '', port: defaultPort };
   }
 
   return { host: hostPort, port: defaultPort };

@@ -24,5 +24,37 @@ describe('PolicyEventFactory', () => {
     );
     expect(factory.inferEventType('unknown', { foo: 'bar' })).toBe('tool_call');
   });
-});
 
+  it('drops invalid numeric port suffixes when parsing network targets', () => {
+    const factory = new PolicyEventFactory();
+
+    const event = factory.create('fetch', { url: 'api.example.com:0' });
+    expect(event.eventType).toBe('network_egress');
+    expect(event.data.type).toBe('network');
+
+    if (event.data.type === 'network') {
+      expect(event.data.host).toBe('api.example.com');
+      expect(event.data.port).toBe(443);
+    }
+  });
+
+  it('fails closed for hostless or scheme-only network targets', () => {
+    const factory = new PolicyEventFactory();
+
+    const fileEvent = factory.create('fetch', { url: 'file:///tmp/a' });
+    expect(fileEvent.eventType).toBe('network_egress');
+    expect(fileEvent.data.type).toBe('network');
+
+    if (fileEvent.data.type === 'network') {
+      expect(fileEvent.data.host).toBe('');
+    }
+
+    const mailtoEvent = factory.create('fetch', { url: 'mailto:user@example.com' });
+    expect(mailtoEvent.eventType).toBe('network_egress');
+    expect(mailtoEvent.data.type).toBe('network');
+
+    if (mailtoEvent.data.type === 'network') {
+      expect(mailtoEvent.data.host).toBe('');
+    }
+  });
+});

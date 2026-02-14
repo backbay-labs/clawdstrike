@@ -202,4 +202,43 @@ guards:
     const sessionDecision = await session.checkNetwork("api.example.com:443");
     expect(sessionDecision.status).toBe("allow");
   });
+
+  it("checkNetwork fails closed for hostless URIs (even when default_action=allow)", async () => {
+    const policy = `
+version: "1.2.0"
+name: "hostless uri regression"
+guards:
+  egress_allowlist:
+    enabled: true
+    default_action: allow
+    allow: []
+    block: []
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+
+    const fileDecision = await cs.checkNetwork("file:///tmp/a");
+    expect(fileDecision.status).toBe("deny");
+    expect(fileDecision.guard).toBe("egress_allowlist");
+
+    const mailtoDecision = await cs.checkNetwork("mailto:user@example.com");
+    expect(mailtoDecision.status).toBe("deny");
+    expect(mailtoDecision.guard).toBe("egress_allowlist");
+  });
+
+  it("checkNetwork drops invalid numeric port suffix before egress matching", async () => {
+    const policy = `
+version: "1.2.0"
+name: "invalid port suffix"
+guards:
+  egress_allowlist:
+    enabled: true
+    allow:
+      - "api.example.com"
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const decision = await cs.checkNetwork("api.example.com:0");
+    expect(decision.status).toBe("allow");
+  });
 });
