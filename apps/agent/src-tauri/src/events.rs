@@ -22,7 +22,7 @@ pub struct PolicyEvent {
     pub id: String,
     /// Timestamp.
     pub timestamp: String,
-    /// Action type (e.g., "file_access", "network", "exec").
+    /// Action type (e.g., "file_access", "file_write", "egress", "shell", "mcp_tool", "patch").
     pub action_type: String,
     /// Target (file path, URL, command).
     pub target: Option<String>,

@@ -114,7 +114,7 @@ API_BASE="http://127.0.0.1:9878"
 curl -fsS -X POST \
   -H "Authorization: Bearer ${AGENT_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"action_type":"file","target":"~/.ssh/id_rsa"}' \
+  -d '{"action_type":"file_access","target":"~/.ssh/id_rsa"}' \
   "${API_BASE}/api/v1/agent/policy-check" | jq .
 ```
 

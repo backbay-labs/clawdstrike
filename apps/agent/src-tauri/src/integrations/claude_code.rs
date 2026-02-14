@@ -48,18 +48,37 @@ if [ -z "$TOOL_NAME" ]; then
   exit 0
 fi
 
-# Map tool names to action types
+# Map tool names to hushd /api/v1/check action types.
+CONTENT=""
 case "$TOOL_NAME" in
-  Read|Write|Edit|Glob|Grep)
+  Read)
     ACTION_TYPE="file_access"
-    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // .pattern // empty' 2>/dev/null || true)
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    ;;
+  Glob)
+    ACTION_TYPE="file_access"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.pattern // empty' 2>/dev/null || true)
+    ;;
+  Grep)
+    ACTION_TYPE="file_access"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    ;;
+  Write)
+    ACTION_TYPE="file_write"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    CONTENT=$(echo "$TOOL_INPUT" | jq -er '.content // .text // empty' 2>/dev/null || true)
+    ;;
+  Edit)
+    ACTION_TYPE="file_write"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    CONTENT=$(echo "$TOOL_INPUT" | jq -er '.new_string // .content // empty' 2>/dev/null || true)
     ;;
   Bash)
-    ACTION_TYPE="exec"
+    ACTION_TYPE="shell"
     TARGET=$(echo "$TOOL_INPUT" | jq -er '.command // empty' 2>/dev/null || true)
     ;;
   WebFetch|WebSearch)
-    ACTION_TYPE="network"
+    ACTION_TYPE="egress"
     TARGET=$(echo "$TOOL_INPUT" | jq -er '.url // .query // empty' 2>/dev/null || true)
     ;;
   *)
@@ -74,8 +93,14 @@ if [ -z "${TARGET:-}" ]; then
 fi
 
 # Build JSON safely.
-if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" '{action_type:$action_type,target:$target}' 2>/dev/null); then
-  fail "failed to encode policy request payload"
+if [ -n "${CONTENT:-}" ]; then
+  if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" '{action_type:$action_type,target:$target,content:$content}' 2>/dev/null); then
+    fail "failed to encode policy request payload"
+  fi
+else
+  if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" '{action_type:$action_type,target:$target}' 2>/dev/null); then
+    fail "failed to encode policy request payload"
+  fi
 fi
 
 if [ ! -f "$CLAWDSTRIKE_TOKEN_FILE" ]; then

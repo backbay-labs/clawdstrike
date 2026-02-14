@@ -182,8 +182,8 @@ fn handle_list_tools() -> JsonRpcResponse {
             "properties": {
                 "action_type": {
                     "type": "string",
-                    "description": "Type of action (file_access, network, exec)",
-                    "enum": ["file_access", "network", "exec"]
+                    "description": "Action type for hushd /api/v1/check (file_access, file_write, egress, shell, patch, mcp_tool).",
+                    "enum": ["file_access", "file_write", "egress", "shell", "patch", "mcp_tool"]
                 },
                 "target": {
                     "type": "string",
@@ -192,6 +192,11 @@ fn handle_list_tools() -> JsonRpcResponse {
                 "content": {
                     "type": "string",
                     "description": "Optional content being written or sent"
+                },
+                "args": {
+                    "type": "object",
+                    "description": "Optional args (used for mcp_tool).",
+                    "additionalProperties": true
                 }
             },
             "required": ["action_type", "target"]
@@ -353,8 +358,8 @@ mod tests {
     #[test]
     fn policy_check_input_accepts_args() {
         let json = serde_json::json!({
-            "action_type": "exec",
-            "target": "rm -rf /tmp/demo",
+            "action_type": "mcp_tool",
+            "target": "run_command",
             "args": {
                 "cwd": "/tmp"
             }
@@ -371,12 +376,12 @@ mod tests {
     #[test]
     fn policy_check_input_without_args_deserializes() {
         let parsed = serde_json::from_value::<PolicyCheckInput>(serde_json::json!({
-            "action_type": "network",
-            "target": "https://example.com"
+            "action_type": "egress",
+            "target": "example.com:443"
         }));
         assert!(parsed.is_ok());
         let p = parsed.ok();
-        assert_eq!(p.as_ref().map(|v| v.action_type.as_str()), Some("network"));
+        assert_eq!(p.as_ref().map(|v| v.action_type.as_str()), Some("egress"));
     }
 
     #[test]
@@ -384,8 +389,8 @@ mod tests {
         let mut args: HashMap<String, serde_json::Value> = HashMap::new();
         args.insert("flag".to_string(), serde_json::json!(true));
         let input = PolicyCheckInput {
-            action_type: "exec".to_string(),
-            target: "echo test".to_string(),
+            action_type: "mcp_tool".to_string(),
+            target: "run_command".to_string(),
             content: None,
             args: Some(args),
         };

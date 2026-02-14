@@ -19,6 +19,50 @@ fn truncate_bytes(s: &str, max_bytes: usize) -> (String, bool) {
     (format!("{}...[truncated]", &s[..end]), true)
 }
 
+fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput {
+    let action_type_raw = input.action_type.trim().to_ascii_lowercase();
+    input.action_type = match action_type_raw.as_str() {
+        // Friendly aliases used by local hooks/tools.
+        "file" => {
+            if input.content.is_some() {
+                "file_write".to_string()
+            } else {
+                "file_access".to_string()
+            }
+        }
+        "network" => "egress".to_string(),
+        "exec" | "command" => "shell".to_string(),
+        // Canonical hushd action types.
+        "file_access" | "file_write" | "egress" | "shell" | "mcp_tool" | "patch" => {
+            action_type_raw
+        }
+        // Unknown: pass through as-is so hushd can return a structured error.
+        _ => input.action_type.trim().to_string(),
+    };
+
+    // For egress checks we prefer `host:port` (what hushd expects). If callers pass a URL, parse it.
+    if input.action_type == "egress" {
+        let target = input.target.trim();
+        if let Ok(url) = reqwest::Url::parse(target) {
+            if let Some(host) = url.host_str() {
+                let host = host
+                    .strip_prefix('[')
+                    .and_then(|h| h.strip_suffix(']'))
+                    .unwrap_or(host);
+                let port = url.port_or_known_default().unwrap_or(443);
+                let host_port = if host.contains(':') {
+                    format!("[{}]:{}", host, port)
+                } else {
+                    format!("{}:{}", host, port)
+                };
+                input.target = host_port;
+            }
+        }
+    }
+
+    input
+}
+
 /// Policy check request payload.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PolicyCheckInput {
@@ -51,6 +95,7 @@ pub async fn evaluate_policy_check(
     input: PolicyCheckInput,
     session_id: Option<String>,
 ) -> Result<PolicyCheckOutput> {
+    let input = normalize_policy_check_input(input);
     let (enforced, daemon_url, api_key) = {
         let settings_guard = settings.read().await;
         (
@@ -172,4 +217,87 @@ pub async fn evaluate_policy_check(
         .with_context(|| "Failed to parse daemon policy response")?;
 
     Ok(payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_action_type_aliases() {
+        let input = PolicyCheckInput {
+            action_type: "exec".to_string(),
+            target: "echo hi".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "shell");
+
+        let input = PolicyCheckInput {
+            action_type: "network".to_string(),
+            target: "example.com".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "egress");
+        assert_eq!(normalized.target, "example.com");
+    }
+
+    #[test]
+    fn normalizes_file_alias_to_access_vs_write() {
+        let input = PolicyCheckInput {
+            action_type: "file".to_string(),
+            target: "/tmp/a.txt".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "file_access");
+
+        let input = PolicyCheckInput {
+            action_type: "file".to_string(),
+            target: "/tmp/a.txt".to_string(),
+            content: Some("hello".to_string()),
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "file_write");
+    }
+
+    #[test]
+    fn normalizes_egress_url_target_to_host_port() {
+        let input = PolicyCheckInput {
+            action_type: "egress".to_string(),
+            target: "https://example.com/foo".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "egress");
+        assert_eq!(normalized.target, "example.com:443");
+
+        let input = PolicyCheckInput {
+            action_type: "network".to_string(),
+            target: "http://example.com:8080/path".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "egress");
+        assert_eq!(normalized.target, "example.com:8080");
+    }
+
+    #[test]
+    fn normalizes_egress_ipv6_url_target_to_bracketed_host_port() {
+        let input = PolicyCheckInput {
+            action_type: "egress".to_string(),
+            target: "https://[::1]:8443/".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.target, "[::1]:8443");
+    }
 }
