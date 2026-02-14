@@ -1,14 +1,40 @@
 //! Jailbreak detection FFI function.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::{c_char, CStr};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::{ffi_try, set_last_error};
 use crate::string_to_c;
 
-static DETECTORS: OnceLock<Mutex<HashMap<String, Arc<clawdstrike::JailbreakDetector>>>> =
-    OnceLock::new();
+const MAX_DETECTOR_CACHE_ENTRIES: usize = 128;
+
+#[derive(Default)]
+struct DetectorCache {
+    map: HashMap<String, Arc<clawdstrike::JailbreakDetector>>,
+    // Most-recently-used (back) -> least-recently-used (front).
+    lru: VecDeque<String>,
+}
+
+impl DetectorCache {
+    fn touch(&mut self, key: &str) {
+        if let Some(pos) = self.lru.iter().position(|k| k == key) {
+            self.lru.remove(pos);
+        }
+        self.lru.push_back(key.to_string());
+    }
+
+    fn evict_if_needed(&mut self) {
+        while self.map.len() > MAX_DETECTOR_CACHE_ENTRIES {
+            let Some(old_key) = self.lru.pop_front() else {
+                break;
+            };
+            self.map.remove(&old_key);
+        }
+    }
+}
+
+static DETECTORS: OnceLock<Mutex<DetectorCache>> = OnceLock::new();
 
 fn detector_key(cfg: &clawdstrike::JailbreakGuardConfig) -> Result<String, String> {
     let value =
@@ -21,16 +47,23 @@ fn get_or_create_detector(
 ) -> Result<Arc<clawdstrike::JailbreakDetector>, String> {
     let key = detector_key(&cfg)?;
 
-    let map = DETECTORS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = map
+    let cache = DETECTORS.get_or_init(|| Mutex::new(DetectorCache::default()));
+    let mut guard = cache
         .lock()
         .map_err(|_| "jailbreak detector lock poisoned".to_string())?;
-    if let Some(detector) = guard.get(&key) {
+    if let Some(detector) = guard.map.get(&key) {
+        guard.touch(&key);
         return Ok(detector.clone());
     }
 
+    if guard.map.len() >= MAX_DETECTOR_CACHE_ENTRIES {
+        guard.evict_if_needed();
+    }
+
     let detector = Arc::new(clawdstrike::JailbreakDetector::with_config(cfg));
-    guard.insert(key, detector.clone());
+    guard.map.insert(key.clone(), detector.clone());
+    guard.touch(&key);
+    guard.evict_if_needed();
     Ok(detector)
 }
 
@@ -149,5 +182,19 @@ mod tests {
         let cfg_from_json: clawdstrike::JailbreakGuardConfig = serde_json::from_str("{}").unwrap();
         let d2 = get_or_create_detector(cfg_from_json).unwrap();
         assert!(Arc::ptr_eq(&d1, &d2));
+    }
+
+    #[test]
+    fn test_detector_cache_is_bounded() {
+        // Create more unique configs than the cache limit; we should still remain bounded.
+        for i in 0..(MAX_DETECTOR_CACHE_ENTRIES + 10) {
+            let mut cfg = clawdstrike::JailbreakGuardConfig::default();
+            cfg.block_threshold = i as u8;
+            let _ = get_or_create_detector(cfg).unwrap();
+        }
+
+        let cache = DETECTORS.get().unwrap().lock().unwrap();
+        assert!(cache.map.len() <= MAX_DETECTOR_CACHE_ENTRIES);
+        assert!(cache.lru.len() <= MAX_DETECTOR_CACHE_ENTRIES);
     }
 }
