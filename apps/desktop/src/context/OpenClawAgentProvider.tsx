@@ -347,6 +347,12 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
   const disconnectAll = React.useCallback(() => {
     const client = clientRef.current;
     if (!client) return;
+    const holdUntil = Date.now() + 60_000;
+    for (const gateway of gateways) {
+      autoConnectHoldUntilRef.current[gateway.id] = holdUntil;
+      warmupTriggeredRef.current[gateway.id] = false;
+    }
+
     void Promise.allSettled(gateways.map((gateway) => client.disconnectGateway(gateway.id)))
       .then(() => syncFromAgent())
       .catch(() => {});

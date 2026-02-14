@@ -157,7 +157,11 @@ impl ApprovalQueue {
         let ttl_secs = input.ttl_secs.unwrap_or(DEFAULT_TTL_SECS).min(MAX_TTL_SECS);
         let expires_at = now
             .checked_add_signed(chrono::Duration::seconds(ttl_secs as i64))
-            .unwrap_or(now + chrono::Duration::seconds(DEFAULT_TTL_SECS as i64));
+            .unwrap_or_else(|| {
+                // If the addition ever overflows (e.g., extreme clock skew), clamp to the
+                // max representable time rather than shortening the requested TTL.
+                DateTime::<Utc>::from_timestamp(i64::MAX, 0).unwrap_or(now)
+            });
 
         let request = ApprovalRequest {
             id: id.clone(),

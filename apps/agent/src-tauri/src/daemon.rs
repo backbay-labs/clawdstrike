@@ -94,6 +94,7 @@ pub struct DaemonManager {
     config: DaemonConfig,
     state: Arc<RwLock<DaemonState>>,
     child: Arc<RwLock<Option<Child>>>,
+    lifecycle_lock: Arc<Mutex<()>>,
     restart_count: Arc<RwLock<u32>>,
     external_mode: Arc<AtomicBool>,
     http_client: reqwest::Client,
@@ -112,6 +113,7 @@ impl DaemonManager {
             config,
             state: Arc::new(RwLock::new(DaemonState::Stopped)),
             child: Arc::new(RwLock::new(None)),
+            lifecycle_lock: Arc::new(Mutex::new(())),
             restart_count: Arc::new(RwLock::new(0)),
             external_mode: Arc::new(AtomicBool::new(false)),
             http_client: reqwest::Client::builder()
@@ -164,8 +166,10 @@ impl DaemonManager {
         // If another hushd is already healthy on this port, attach instead of spawning.
         if let Ok(health) = health_check_with_client(&self.config, &self.http_client).await {
             if health.status == "healthy" {
+                let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
                 self.external_mode.store(true, Ordering::SeqCst);
-                *self.child.write().await = None;
+                // Ensure we do not leak a managed child when transitioning into attach mode.
+                let _ = terminate_child_slot(&self.child).await;
                 self.set_state(DaemonState::Running).await;
                 self.start_health_monitor();
                 tracing::info!(
@@ -186,6 +190,7 @@ impl DaemonManager {
     /// Stop the daemon.
     pub async fn stop(&self) -> Result<()> {
         let _ = self.shutdown_tx.send(());
+        let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
         self.terminate_child("stop requested").await;
         self.external_mode.store(false, Ordering::SeqCst);
         self.set_state(DaemonState::Stopped).await;
@@ -206,6 +211,7 @@ impl DaemonManager {
     }
 
     async fn spawn_and_wait_ready(&self) -> Result<()> {
+        let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
         spawn_child_into_slot(&self.config, &self.child).await?;
 
         if let Err(err) = wait_for_ready_with_client(&self.config, &self.http_client).await {
@@ -248,6 +254,7 @@ impl DaemonManager {
 
         let state = Arc::clone(&self.state);
         let child = Arc::clone(&self.child);
+        let lifecycle_lock = Arc::clone(&self.lifecycle_lock);
         let restart_count = Arc::clone(&self.restart_count);
         let external_mode = Arc::clone(&self.external_mode);
         let config = self.config.clone();
@@ -283,7 +290,9 @@ impl DaemonManager {
                                 // external hushd, attach instead of restart-looping.
                                 if let Ok(health) = health_check_with_client(&config, &http_client).await {
                                     if health.status == "healthy" {
+                                        let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
                                         external_mode.store(true, Ordering::SeqCst);
+                                        let _ = terminate_child_slot(&child).await;
                                         consecutive_health_failures = 0;
                                         restart_streak = 0;
                                         last_ready_at = Some(Instant::now());
@@ -319,6 +328,7 @@ impl DaemonManager {
                                     break 'monitor;
                                 }
 
+                                let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
                                 match spawn_child_into_slot(&config, &child).await {
                                     Ok(()) => {
                                         match wait_for_ready_with_client_or_shutdown(
@@ -419,9 +429,10 @@ impl DaemonManager {
                                     consecutive_failures = consecutive_health_failures,
                                     "External hushd unhealthy; falling back to managed daemon"
                                 );
-                                external_mode.store(false, Ordering::SeqCst);
                                 set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
 
+                                let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                external_mode.store(false, Ordering::SeqCst);
                                 match spawn_child_into_slot(&config, &child).await {
                                     Ok(()) => {
                                         match wait_for_ready_with_client_or_shutdown(
@@ -684,6 +695,9 @@ async fn spawn_child_into_slot(
     config: &DaemonConfig,
     child_slot: &Arc<RwLock<Option<Child>>>,
 ) -> Result<()> {
+    // Defensive: if any managed child is already tracked, terminate it before overwriting
+    // the slot to avoid leaking processes.
+    let _ = terminate_child_slot(child_slot).await;
     let mut child = spawn_daemon_process(config).await?;
     attach_child_logs(&mut child);
     *child_slot.write().await = Some(child);

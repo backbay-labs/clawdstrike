@@ -43,19 +43,27 @@ fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput
     // For egress checks we prefer `host:port` (what hushd expects). If callers pass a URL, parse it.
     if input.action_type == "egress" {
         let target = input.target.trim();
-        if let Ok(url) = reqwest::Url::parse(target) {
-            if let Some(host) = url.host_str() {
-                let host = host
-                    .strip_prefix('[')
-                    .and_then(|h| h.strip_suffix(']'))
-                    .unwrap_or(host);
-                let port = url.port_or_known_default().unwrap_or(443);
-                let host_port = if host.contains(':') {
-                    format!("[{}]:{}", host, port)
-                } else {
-                    format!("{}:{}", host, port)
-                };
-                input.target = host_port;
+        let lower = target.to_ascii_lowercase();
+        // Only normalize explicit URL forms. Avoid surprising parses where `Url::parse` treats
+        // `example.com:123` as a scheme and accidentally rewrites the target.
+        if lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("ws://")
+            || lower.starts_with("wss://")
+        {
+            if let Ok(url) = reqwest::Url::parse(target) {
+                if let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) {
+                    let host = host
+                        .strip_prefix('[')
+                        .and_then(|h| h.strip_suffix(']'))
+                        .unwrap_or(host);
+                    let host_port = if host.contains(':') {
+                        format!("[{}]:{}", host, port)
+                    } else {
+                        format!("{}:{}", host, port)
+                    };
+                    input.target = host_port;
+                }
             }
         }
     }

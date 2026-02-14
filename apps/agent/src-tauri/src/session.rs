@@ -326,6 +326,14 @@ impl SessionManager {
         api_key: Option<String>,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) {
+        // Avoid spinning up ensure-session loops when a session already exists.
+        // This is best-effort since `try_read()` may fail under contention.
+        if let Ok(state) = self.state.try_read() {
+            if state.session_id.is_some() {
+                return;
+            }
+        }
+
         if self
             .ensure_loop_running
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -435,9 +443,19 @@ impl SessionManager {
                     })
                     .await;
             }
-        } else if status_code == reqwest::StatusCode::NOT_FOUND {
-            // Session expired server-side; clear local state.
-            tracing::warn!(session_id = %session_id, "Session expired server-side");
+        } else if matches!(
+            status_code,
+            reqwest::StatusCode::NOT_FOUND
+                | reqwest::StatusCode::UNAUTHORIZED
+                | reqwest::StatusCode::FORBIDDEN
+        ) {
+            // Session invalid/expired (or no longer accessible). Clear local state so we don't
+            // keep operating against a stale session_id.
+            tracing::warn!(
+                session_id = %session_id,
+                status = %status_code,
+                "Session invalid during heartbeat; clearing local session state"
+            );
             let _ = self
                 .with_state_if_current_session_id(&session_id, |state| {
                     *state = SessionState::default();
