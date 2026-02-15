@@ -187,8 +187,12 @@ function buildPolicyEvent(
       };
     }
     case 'command_exec': {
-      let command = '';
-      let args: string[] = [];
+      const cmdLine =
+        typeof params.command === 'string'
+          ? params.command
+          : typeof params.cmd === 'string'
+            ? params.cmd
+            : '';
 
       // Some tools pass argv-style params (args/argv) instead of a shell command line.
       const argv =
@@ -198,17 +202,23 @@ function buildPolicyEvent(
             ? (params.args as string[])
             : null;
 
-      if (argv && argv.length > 0) {
-        [command, ...args] = argv;
-      } else {
-        const cmdLine =
-          typeof params.command === 'string'
-            ? params.command
-            : typeof params.cmd === 'string'
-              ? params.cmd
-              : '';
+      let command = '';
+      let args: string[] = [];
+
+      if (cmdLine.trim()) {
         const parts = cmdLine.trim().split(/\s+/).filter(Boolean);
-        [command, ...args] = parts.length > 0 ? parts : [''];
+        command = parts[0] ?? '';
+        const inlineArgs = parts.slice(1);
+
+        if (inlineArgs.length > 0) {
+          // Treat `command`/`cmd` as the full command line when it includes args.
+          args = inlineArgs;
+        } else if (argv && argv.length > 0) {
+          // Otherwise, if args/argv is present, treat it as args unless it redundantly includes the command.
+          args = argv[0] === command ? argv.slice(1) : argv;
+        }
+      } else if (argv && argv.length > 0) {
+        [command, ...args] = argv;
       }
       return {
         eventId,
@@ -265,7 +275,9 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
       const parsed = new URL(url);
       return {
         host: parsed.hostname,
-        port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80),
+        port: parsed.port
+          ? parseInt(parsed.port, 10)
+          : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
         url,
       };
     } catch {
