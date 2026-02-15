@@ -357,7 +357,22 @@ impl DaemonManager {
                                 last_ready_at = None;
                                 restart_streak = restart_streak.saturating_add(1);
 
-                                set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
+                                {
+                                    // Coordinate state transitions with stop()/start() so we don't
+                                    // advertise a restart (or respawn) during shutdown.
+                                    let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                    if shutdown_rx.try_recv().is_ok() {
+                                        tracing::debug!(
+                                            "Shutdown requested while scheduling restart; skipping"
+                                        );
+                                        break 'monitor;
+                                    }
+                                    if state.read().await.clone() == DaemonState::Stopped {
+                                        break 'monitor;
+                                    }
+                                    set_shared_state(&state, &state_tx, DaemonState::Restarting)
+                                        .await;
+                                }
 
                                 let backoff = compute_backoff(restart_streak, next_restart_count);
                                 tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
@@ -367,6 +382,14 @@ impl DaemonManager {
                                 }
 
                                 let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                if shutdown_rx.try_recv().is_ok()
+                                    || state.read().await.clone() == DaemonState::Stopped
+                                {
+                                    tracing::debug!(
+                                        "Shutdown requested while acquiring lifecycle lock; skipping restart"
+                                    );
+                                    break 'monitor;
+                                }
                                 if external_mode.load(Ordering::SeqCst) {
                                     tracing::info!(
                                         "External mode enabled during restart backoff; skipping managed respawn"
@@ -491,9 +514,16 @@ impl DaemonManager {
                                     consecutive_failures = consecutive_health_failures,
                                     "External hushd unhealthy; falling back to managed daemon"
                                 );
-                                set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
-
                                 let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                if shutdown_rx.try_recv().is_ok()
+                                    || state.read().await.clone() == DaemonState::Stopped
+                                {
+                                    tracing::debug!(
+                                        "Shutdown requested while preparing external fallback; skipping respawn"
+                                    );
+                                    break 'monitor;
+                                }
+                                set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
                                 external_mode.store(false, Ordering::SeqCst);
                                 match spawn_child_into_slot(&config, &child).await {
                                     Ok(()) => {

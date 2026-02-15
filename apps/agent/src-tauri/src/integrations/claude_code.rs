@@ -142,8 +142,15 @@ if ! ALLOWED=$(echo "$RESPONSE" | jq -er '.allowed' 2>/dev/null); then
 fi
 
 if [ "$ALLOWED" = "false" ]; then
-  MESSAGE=$(echo "$RESPONSE" | jq -er '.message // "Action blocked by security policy"' 2>/dev/null || echo "Action blocked by security policy")
   GUARD=$(echo "$RESPONSE" | jq -er '.guard // "unknown"' 2>/dev/null || echo "unknown")
+
+  # When the agent returns a well-formed deny due to daemon infrastructure errors,
+  # treat it as a hook failure so CLAWDSTRIKE_HOOK_FAIL_OPEN can apply.
+  if [[ "$GUARD" == hushd_* ]]; then
+    fail "policy daemon error (${GUARD})"
+  fi
+
+  MESSAGE=$(echo "$RESPONSE" | jq -er '.message // "Action blocked by security policy"' 2>/dev/null || echo "Action blocked by security policy")
 
   echo "🚫 BLOCKED by Clawdstrike (${GUARD}): ${MESSAGE}" >&2
   echo "   Target: ${TARGET}" >&2

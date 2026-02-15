@@ -178,7 +178,6 @@ impl SessionManager {
     }
 
     /// Get the current session ID, if any.
-    #[allow(dead_code)]
     pub async fn session_id(&self) -> Option<String> {
         self.state.read().await.session_id.clone()
     }
