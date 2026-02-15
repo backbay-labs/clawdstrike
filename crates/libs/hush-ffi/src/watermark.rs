@@ -11,6 +11,17 @@ use crate::string_to_c;
 
 const MAX_WATERMARKER_CACHE_ENTRIES: usize = 128;
 
+fn watermark_json(wm: &clawdstrike::EncodedWatermark) -> serde_json::Value {
+    serde_json::json!({
+        "payload": &wm.payload,
+        "encoding": &wm.encoding,
+        "encodedDataBase64Url": URL_SAFE_NO_PAD.encode(&wm.encoded_data),
+        "signature": &wm.signature,
+        "publicKey": &wm.public_key,
+        "fingerprint": wm.fingerprint(),
+    })
+}
+
 #[derive(Default)]
 struct WatermarkerCache {
     map: HashMap<String, CachedWatermarker>,
@@ -310,18 +321,10 @@ pub unsafe extern "C" fn hush_watermark_prompt(
                 std::ptr::null_mut()
             );
 
-            let encoded_data_b64 = URL_SAFE_NO_PAD.encode(&out.watermark.encoded_data);
             let v = serde_json::json!({
                 "original": out.original,
                 "watermarked": out.watermarked,
-                "watermark": {
-                    "payload": out.watermark.payload,
-                    "encoding": out.watermark.encoding,
-                    "encodedDataBase64Url": encoded_data_b64,
-                    "signature": out.watermark.signature,
-                    "publicKey": out.watermark.public_key,
-                    "fingerprint": out.watermark.fingerprint(),
-                }
+                "watermark": watermark_json(&out.watermark),
             });
 
             let json = ffi_try!(
@@ -384,15 +387,8 @@ pub unsafe extern "C" fn hush_extract_watermark(
             let extractor = clawdstrike::WatermarkExtractor::new(cfg);
             let r = extractor.extract(text_str);
 
-            let watermark = match r.watermark {
-                Some(wm) => serde_json::json!({
-                    "payload": wm.payload,
-                    "encoding": wm.encoding,
-                    "encodedDataBase64Url": URL_SAFE_NO_PAD.encode(&wm.encoded_data),
-                    "signature": wm.signature,
-                    "publicKey": wm.public_key,
-                    "fingerprint": wm.fingerprint(),
-                }),
+            let watermark = match r.watermark.as_ref() {
+                Some(wm) => watermark_json(wm),
                 None => serde_json::Value::Null,
             };
 

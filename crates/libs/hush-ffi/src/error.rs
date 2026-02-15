@@ -49,7 +49,7 @@ where
 {
     if clear_error_on_entry {
         // Best-effort. Avoid panics unwinding across the FFI boundary from this path.
-        let _ = panic::catch_unwind(|| clear_last_error());
+        let _ = panic::catch_unwind(clear_last_error);
     }
 
     match panic::catch_unwind(f) {

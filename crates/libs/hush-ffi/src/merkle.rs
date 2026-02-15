@@ -7,6 +7,17 @@ use hush_core::merkle::MerkleTree;
 
 use crate::error::{ffi_try, set_last_error};
 
+fn merkle_tree_from_leaf_hashes_json(json_str: &str) -> Result<MerkleTree, String> {
+    let hex_strs: Vec<String> = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+
+    let hashes: Vec<Hash> = hex_strs
+        .iter()
+        .map(|h| Hash::from_hex(h).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    MerkleTree::from_hashes(hashes).map_err(|e| e.to_string())
+}
+
 /// Compute the Merkle root from a JSON array of hex-encoded leaf hashes.
 ///
 /// Returns a hex-encoded root hash with `0x` prefix.
@@ -31,18 +42,10 @@ pub unsafe extern "C" fn hush_merkle_root(leaf_hashes_json: *const c_char) -> *m
                 std::ptr::null_mut()
             );
 
-            let hex_strs: Vec<String> =
-                ffi_try!(serde_json::from_str(json_str), std::ptr::null_mut());
-
-            let hashes: Vec<Hash> = ffi_try!(
-                hex_strs
-                    .iter()
-                    .map(|h| Hash::from_hex(h))
-                    .collect::<Result<Vec<_>, _>>(),
+            let tree = ffi_try!(
+                merkle_tree_from_leaf_hashes_json(json_str),
                 std::ptr::null_mut()
             );
-
-            let tree = ffi_try!(MerkleTree::from_hashes(hashes), std::ptr::null_mut());
 
             crate::string_to_c(tree.root().to_hex_prefixed())
         },
@@ -77,18 +80,10 @@ pub unsafe extern "C" fn hush_merkle_proof(
                 std::ptr::null_mut()
             );
 
-            let hex_strs: Vec<String> =
-                ffi_try!(serde_json::from_str(json_str), std::ptr::null_mut());
-
-            let hashes: Vec<Hash> = ffi_try!(
-                hex_strs
-                    .iter()
-                    .map(|h| Hash::from_hex(h))
-                    .collect::<Result<Vec<_>, _>>(),
+            let tree = ffi_try!(
+                merkle_tree_from_leaf_hashes_json(json_str),
                 std::ptr::null_mut()
             );
-
-            let tree = ffi_try!(MerkleTree::from_hashes(hashes), std::ptr::null_mut());
             let proof = ffi_try!(tree.inclusion_proof(index), std::ptr::null_mut());
             let json = ffi_try!(serde_json::to_string(&proof), std::ptr::null_mut());
             crate::string_to_c(json)
