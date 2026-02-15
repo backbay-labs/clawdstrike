@@ -187,9 +187,29 @@ function buildPolicyEvent(
       };
     }
     case 'command_exec': {
-      const cmdLine = typeof params.command === 'string' ? params.command : typeof params.cmd === 'string' ? params.cmd : '';
-      const parts = cmdLine.trim().split(/\s+/).filter(Boolean);
-      const [command, ...args] = parts.length > 0 ? parts : [''];
+      let command = '';
+      let args: string[] = [];
+
+      // Some tools pass argv-style params (args/argv) instead of a shell command line.
+      const argv =
+        Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')
+          ? (params.argv as string[])
+          : Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')
+            ? (params.args as string[])
+            : null;
+
+      if (argv && argv.length > 0) {
+        [command, ...args] = argv;
+      } else {
+        const cmdLine =
+          typeof params.command === 'string'
+            ? params.command
+            : typeof params.cmd === 'string'
+              ? params.cmd
+              : '';
+        const parts = cmdLine.trim().split(/\s+/).filter(Boolean);
+        [command, ...args] = parts.length > 0 ? parts : [''];
+      }
       return {
         eventId,
         eventType: 'command_exec',
@@ -252,7 +272,12 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
       // Not a valid URL
     }
   }
-  const host = typeof params.host === 'string' ? params.host : 'unknown';
+  const host =
+    typeof params.host === 'string'
+      ? params.host
+      : typeof params.hostname === 'string'
+        ? params.hostname
+        : 'unknown';
   const port = typeof params.port === 'number' ? params.port : 80;
   return { host, port, url };
 }
