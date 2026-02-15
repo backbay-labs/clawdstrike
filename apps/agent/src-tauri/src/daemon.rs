@@ -313,6 +313,11 @@ impl DaemonManager {
                         break;
                     }
                     _ = tokio::time::sleep(check_interval) => {
+                        if shutdown_rx.try_recv().is_ok() {
+                            tracing::debug!("Shutdown requested while health monitor tick was running");
+                            break 'monitor;
+                        }
+
                         let current_state = state.read().await.clone();
                         if current_state == DaemonState::Stopped {
                             continue;
@@ -885,10 +890,15 @@ fn resolve_supported_policy_path(policy_path: &PathBuf) -> Option<PathBuf> {
         }
     };
 
-    if yaml_contains_mapping_key(&doc, "fs_blocklist") {
+    let legacy_guard_keys = ["fs_blocklist", "exec_blocklist", "egress_allowlist"];
+    if let Some(legacy_key) = legacy_guard_keys
+        .into_iter()
+        .find(|key| yaml_contains_mapping_key(&doc, key))
+    {
         tracing::warn!(
             path = %policy_path.display(),
-            "Policy file contains legacy fs_blocklist guard; falling back to default ruleset"
+            legacy_key,
+            "Policy file contains legacy guard key; falling back to default ruleset"
         );
         return None;
     }
@@ -1026,8 +1036,8 @@ async fn health_check_with_client(
 async fn check_process_exit(child_slot: &Arc<RwLock<Option<Child>>>) -> Option<String> {
     let mut guard = child_slot.write().await;
     let Some(ref mut proc) = *guard else {
-        // Child was already taken (e.g., by stop()); not a crash.
-        return None;
+        // Treat missing child as an exit event so the health monitor can attempt recovery.
+        return Some("process handle missing".to_string());
     };
     match proc.try_wait() {
         Ok(Some(status)) => {
