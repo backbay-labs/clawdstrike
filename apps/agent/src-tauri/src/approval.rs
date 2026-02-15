@@ -106,6 +106,9 @@ pub struct ApprovalStatusResponse {
     pub guard: String,
     pub reason: String,
     pub severity: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub resolved_at: Option<DateTime<Utc>>,
 }
 
 impl From<&ApprovalRequest> for ApprovalStatusResponse {
@@ -119,6 +122,9 @@ impl From<&ApprovalRequest> for ApprovalStatusResponse {
             guard: req.guard.clone(),
             reason: req.reason.clone(),
             severity: req.severity.clone(),
+            created_at: req.created_at,
+            expires_at: req.expires_at,
+            resolved_at: req.resolved_at,
         }
     }
 }
