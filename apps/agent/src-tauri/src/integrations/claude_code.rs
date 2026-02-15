@@ -61,7 +61,9 @@ case "$TOOL_NAME" in
     ;;
   Grep)
     ACTION_TYPE="file_access"
-    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    # Grep may be invoked without an explicit path (searching the full workspace). In that case
+    # fall back to `.pattern` so we don't bypass the policy check entirely.
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // .pattern // empty' 2>/dev/null || true)
     ;;
   Write)
     ACTION_TYPE="file_write"
@@ -303,6 +305,14 @@ mod tests {
     fn test_hook_script_handles_unknown_tools_via_mcp_tool_args() {
         assert!(HOOK_SCRIPT.contains("--argjson args \"$TOOL_INPUT\""));
         assert!(HOOK_SCRIPT.contains("Unknown tool: treat as an MCP tool"));
+    }
+
+    #[test]
+    fn test_hook_script_does_not_skip_grep_without_path() {
+        // Grep can be invoked without a path (search full workspace); ensure we still produce a
+        // non-empty TARGET by falling back to the search pattern.
+        assert!(HOOK_SCRIPT.contains("Grep)"));
+        assert!(HOOK_SCRIPT.contains(".file_path // .path // .pattern"));
     }
 
     #[test]
