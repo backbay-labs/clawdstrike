@@ -217,7 +217,8 @@ impl DaemonManager {
             // Await the monitor so the flag guard can run; don't block shutdown indefinitely.
             let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
         } else if self.monitor_started.load(Ordering::SeqCst) {
-            tracing::warn!("Health monitor flag set but no join handle present");
+            tracing::warn!("Health monitor flag set but no join handle present; resetting flag");
+            self.monitor_started.store(false, Ordering::SeqCst);
         }
         Ok(())
     }
@@ -847,7 +848,18 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
     .await
     .with_context(|| "Runtime config write task panicked")??;
 
-    Ok(path)
+        Ok(path)
+}
+
+fn yaml_contains_mapping_key(value: &serde_yaml::Value, needle: &str) -> bool {
+    match value {
+        serde_yaml::Value::Mapping(map) => map.iter().any(|(k, v)| {
+            matches!(k, serde_yaml::Value::String(s) if s == needle)
+                || yaml_contains_mapping_key(v, needle)
+        }),
+        serde_yaml::Value::Sequence(seq) => seq.iter().any(|v| yaml_contains_mapping_key(v, needle)),
+        _ => false,
+    }
 }
 
 fn resolve_supported_policy_path(policy_path: &PathBuf) -> Option<PathBuf> {
@@ -861,7 +873,19 @@ fn resolve_supported_policy_path(policy_path: &PathBuf) -> Option<PathBuf> {
     // Hushd no longer accepts legacy guard keys like `fs_blocklist`.
     // When an incompatible policy is detected, fall back to built-in ruleset
     // so the daemon stays available instead of restart-looping.
-    if raw.contains("fs_blocklist:") {
+    let doc: serde_yaml::Value = match serde_yaml::from_str(&raw) {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                path = %policy_path.display(),
+                error = %err,
+                "Failed to parse policy file; falling back to default ruleset"
+            );
+            return None;
+        }
+    };
+
+    if yaml_contains_mapping_key(&doc, "fs_blocklist") {
         tracing::warn!(
             path = %policy_path.display(),
             "Policy file contains legacy fs_blocklist guard; falling back to default ruleset"

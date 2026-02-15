@@ -344,18 +344,25 @@ impl EventManager {
             _ => {}
         }
 
-        // Fallback: try direct deserialization in case the data payload contains "type".
-        if let Ok(daemon_event) = serde_json::from_str::<DaemonEvent>(data) {
-            let _ = self.daemon_events_tx.send(daemon_event);
-            return Ok(());
+        // Prefer policy audit events when the payload is ambiguous (policy events may also
+        // contain a "type" key).
+        match serde_json::from_str::<PolicyEvent>(data) {
+            Ok(event) => {
+                self.publish_event_if_new(event).await;
+                Ok(())
+            }
+            Err(policy_err) => {
+                // Fallback: try direct daemon-event deserialization in case the data payload
+                // contains "type".
+                if let Ok(daemon_event) = serde_json::from_str::<DaemonEvent>(data) {
+                    let _ = self.daemon_events_tx.send(daemon_event);
+                    return Ok(());
+                }
+
+                Err::<(), _>(policy_err)
+                    .with_context(|| format!("Failed to parse SSE event payload: {}", data))
+            }
         }
-
-        // Otherwise treat as a policy audit event.
-        let event: PolicyEvent = serde_json::from_str(data)
-            .with_context(|| format!("Failed to parse SSE event payload: {}", data))?;
-
-        self.publish_event_if_new(event).await;
-        Ok(())
     }
 
     async fn publish_event_if_new(&self, event: PolicyEvent) {
