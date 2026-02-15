@@ -70,19 +70,58 @@ fn get_or_create_watermarker(
     let (cfg, key, pinned) = parse_config_and_key(config_json)?;
 
     let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::default()));
+    let mut should_cache = true;
+    {
+        // Fast path: cache hit.
+        let mut guard = cache
+            .lock()
+            .map_err(|_| "watermarker lock poisoned".to_string())?;
+        if let Some(entry) = guard.map.get(&key) {
+            let wm = entry.wm.clone();
+            let pinned_entry = entry.pinned;
+            if !pinned_entry {
+                guard.touch_non_pinned(&key);
+            }
+            return Ok(wm);
+        }
+
+        if guard.map.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+            if guard.evict_one_non_pinned() {
+                // ok
+            } else if pinned {
+                return Err(format!(
+                    "watermarker cache full ({MAX_WATERMARKER_CACHE_ENTRIES} entries) and cannot evict \
+                     generate_keypair entries; provide private_key or increase cache size"
+                ));
+            } else {
+                // Deterministic key (private_key provided): safe to skip caching rather than evicting
+                // a pinned entry and silently rotating its key.
+                should_cache = false;
+            }
+        }
+    }
+
+    // Construct outside the global lock to avoid blocking other cache keys.
+    let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{e:?}"))?;
+    let wm = Arc::new(wm);
+
+    if !should_cache {
+        return Ok(wm);
+    }
+
+    // Re-acquire and insert (double-check in case another thread won the race).
     let mut guard = cache
         .lock()
         .map_err(|_| "watermarker lock poisoned".to_string())?;
     if let Some(entry) = guard.map.get(&key) {
-        let wm = entry.wm.clone();
+        let existing = entry.wm.clone();
         let pinned_entry = entry.pinned;
         if !pinned_entry {
             guard.touch_non_pinned(&key);
         }
-        return Ok(wm);
+        return Ok(existing);
     }
 
-    let mut should_cache = true;
     if guard.map.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
         if guard.evict_one_non_pinned() {
             // ok
@@ -92,25 +131,20 @@ fn get_or_create_watermarker(
                  generate_keypair entries; provide private_key or increase cache size"
             ));
         } else {
-            // Deterministic key (private_key provided): safe to skip caching rather than evicting
-            // a pinned entry and silently rotating its key.
-            should_cache = false;
+            // Still safe to skip caching rather than evicting pinned entries.
+            return Ok(wm);
         }
     }
 
-    let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{e:?}"))?;
-    let wm = Arc::new(wm);
-    if should_cache {
-        guard.map.insert(
-            key.clone(),
-            CachedWatermarker {
-                pinned,
-                wm: wm.clone(),
-            },
-        );
-        if !pinned {
-            guard.touch_non_pinned(&key);
-        }
+    guard.map.insert(
+        key.clone(),
+        CachedWatermarker {
+            pinned,
+            wm: wm.clone(),
+        },
+    );
+    if !pinned {
+        guard.touch_non_pinned(&key);
     }
     Ok(wm)
 }

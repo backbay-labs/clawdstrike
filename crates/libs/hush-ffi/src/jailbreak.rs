@@ -49,17 +49,33 @@ fn get_or_create_detector(
     let key = detector_key(&cfg)?;
 
     let cache = DETECTORS.get_or_init(|| Mutex::new(DetectorCache::default()));
+    {
+        // Fast path: cache hit.
+        let mut guard = cache
+            .lock()
+            .map_err(|_| "jailbreak detector lock poisoned".to_string())?;
+        if let Some(detector) = guard.map.get(&key).cloned() {
+            guard.touch(&key);
+            return Ok(detector);
+        }
+
+        // Ensure we have room before releasing the lock to construct.
+        guard.evict_to_make_room();
+    }
+
+    // Construct outside the global lock to avoid blocking other cache keys.
+    let detector = Arc::new(clawdstrike::JailbreakDetector::with_config(cfg));
+
+    // Re-acquire and insert (double-check in case another thread won the race).
     let mut guard = cache
         .lock()
         .map_err(|_| "jailbreak detector lock poisoned".to_string())?;
-    if let Some(detector) = guard.map.get(&key).cloned() {
+    if let Some(existing) = guard.map.get(&key).cloned() {
         guard.touch(&key);
-        return Ok(detector);
+        return Ok(existing);
     }
 
     guard.evict_to_make_room();
-
-    let detector = Arc::new(clawdstrike::JailbreakDetector::with_config(cfg));
     guard.map.insert(key.clone(), detector.clone());
     guard.touch(&key);
     Ok(detector)
