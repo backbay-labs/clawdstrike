@@ -819,13 +819,11 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
 }
 
 async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
-    let parent = config
-        .policy_path
-        .parent()
-        .map(|path| path.to_path_buf())
-        .unwrap_or_else(crate::settings::get_config_dir);
-
-    let runtime_config_path = parent.join("hushd.runtime.yaml");
+    // Keep runtime config files in the agent config directory rather than alongside the
+    // policy file. Users may point policy_path at a repo directory or read-only location.
+    let parent = crate::settings::get_config_dir().join("runtime");
+    let runtime_config_filename = format!("hushd.runtime.{}.yaml", config.port);
+    let runtime_config_path = parent.join(&runtime_config_filename);
     let listen = format!("127.0.0.1:{}", config.port);
     let policy_path = config.policy_path.clone();
 
@@ -853,7 +851,7 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
     .await
     .with_context(|| "Runtime config write task panicked")??;
 
-        Ok(path)
+    Ok(path)
 }
 
 fn yaml_contains_mapping_key(value: &serde_yaml::Value, needle: &str) -> bool {

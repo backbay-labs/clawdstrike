@@ -22,6 +22,7 @@ import { NexusControlStrip } from "@/features/cyber-nexus/components/NexusContro
 import { NexusAppRail } from "@/features/cyber-nexus/components/NexusAppRail";
 import type { NexusLayoutMode, Strikecell, StrikecellDomainId } from "@/features/cyber-nexus/types";
 import { AgentGlyphOverlay } from "@/features/forensics/components/AgentGlyphOverlay";
+import { AgentOrbHud } from "@/features/forensics/components/AgentOrbHud";
 import { useAgentCognitionState } from "@/features/forensics/hooks/useAgentCognitionState";
 import { isTauri, openclawGatewayProbe } from "@/services/tauri";
 
@@ -1121,6 +1122,16 @@ export function ForensicsRiverView() {
     focusedAgentId,
   });
 
+  const focusedGlyph = React.useMemo(
+    () => agentGlyphs.find((glyph) => glyph.isFocused) ?? null,
+    [agentGlyphs]
+  );
+
+  const handleClearFocus = React.useCallback(() => {
+    setSelectedSessionKey("__all__");
+    setFocusedAgentId(null);
+  }, [setFocusedAgentId, setSelectedSessionKey]);
+
   const sceneFeatureFlags = React.useMemo(
     () => ({
       showPolicyRails: sceneMode !== "arena",
@@ -1528,6 +1539,11 @@ export function ForensicsRiverView() {
         />
 
         <AgentGlyphOverlay glyphs={agentGlyphs} />
+        <AgentOrbHud
+          focusedGlyph={focusedGlyph}
+          focusedSessionKey={focusedGlyph?.sessionKey ?? null}
+          onClearFocus={handleClearFocus}
+        />
 
         <NexusAppRail
           strikecells={NEXUS_RAIL_STRIKECELLS}
