@@ -16,6 +16,7 @@ namespace Hush.Crypto
         public static string Canonicalize(string json)
         {
             if (json == null) throw new ArgumentNullException(nameof(json));
+            Utf8Validation.RejectEmbeddedNul(json, nameof(json));
             var ptr = NativeMethods.hush_canonicalize_json(json);
             HushException.ThrowIfNull(ptr);
             using var ns = new NativeString(ptr);

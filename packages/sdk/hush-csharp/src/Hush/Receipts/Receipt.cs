@@ -21,6 +21,10 @@ namespace Hush.Receipts
         {
             if (receiptJson == null) throw new ArgumentNullException(nameof(receiptJson));
             if (signerHex == null) throw new ArgumentNullException(nameof(signerHex));
+            Utf8Validation.RejectEmbeddedNul(receiptJson, nameof(receiptJson));
+            Utf8Validation.RejectEmbeddedNul(signerHex, nameof(signerHex));
+            if (cosignerHex != null)
+                Utf8Validation.RejectEmbeddedNul(cosignerHex, nameof(cosignerHex));
 
             IntPtr cosignerPtr = IntPtr.Zero;
             try
@@ -50,6 +54,7 @@ namespace Hush.Receipts
         {
             if (receiptJson == null) throw new ArgumentNullException(nameof(receiptJson));
             if (keypair == null) throw new ArgumentNullException(nameof(keypair));
+            Utf8Validation.RejectEmbeddedNul(receiptJson, nameof(receiptJson));
 
             var ptr = NativeMethods.hush_sign_receipt(receiptJson, keypair.Handle);
             HushException.ThrowIfNull(ptr);
@@ -67,6 +72,8 @@ namespace Hush.Receipts
         {
             if (receiptJson == null) throw new ArgumentNullException(nameof(receiptJson));
             if (algorithm == null) throw new ArgumentNullException(nameof(algorithm));
+            Utf8Validation.RejectEmbeddedNul(receiptJson, nameof(receiptJson));
+            Utf8Validation.RejectEmbeddedNul(algorithm, nameof(algorithm));
 
             var ptr = NativeMethods.hush_hash_receipt(receiptJson, algorithm);
             HushException.ThrowIfNull(ptr);
@@ -82,6 +89,7 @@ namespace Hush.Receipts
         public static string CanonicalJson(string receiptJson)
         {
             if (receiptJson == null) throw new ArgumentNullException(nameof(receiptJson));
+            Utf8Validation.RejectEmbeddedNul(receiptJson, nameof(receiptJson));
 
             var ptr = NativeMethods.hush_receipt_canonical_json(receiptJson);
             HushException.ThrowIfNull(ptr);

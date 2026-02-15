@@ -16,6 +16,7 @@ namespace Hush.Merkle
         public static string ComputeRoot(string leafHashesJson)
         {
             if (leafHashesJson == null) throw new ArgumentNullException(nameof(leafHashesJson));
+            Utf8Validation.RejectEmbeddedNul(leafHashesJson, nameof(leafHashesJson));
             var ptr = NativeMethods.hush_merkle_root(leafHashesJson);
             HushException.ThrowIfNull(ptr);
             using var ns = new NativeString(ptr);
@@ -31,6 +32,7 @@ namespace Hush.Merkle
         public static string GenerateProof(string leafHashesJson, int index)
         {
             if (leafHashesJson == null) throw new ArgumentNullException(nameof(leafHashesJson));
+            Utf8Validation.RejectEmbeddedNul(leafHashesJson, nameof(leafHashesJson));
             if (index < 0)
                 throw new ArgumentOutOfRangeException(nameof(index), "Index must be non-negative.");
             var ptr = NativeMethods.hush_merkle_proof(leafHashesJson, (UIntPtr)index);
@@ -51,6 +53,9 @@ namespace Hush.Merkle
             if (leafHex == null) throw new ArgumentNullException(nameof(leafHex));
             if (proofJson == null) throw new ArgumentNullException(nameof(proofJson));
             if (rootHex == null) throw new ArgumentNullException(nameof(rootHex));
+            Utf8Validation.RejectEmbeddedNul(leafHex, nameof(leafHex));
+            Utf8Validation.RejectEmbeddedNul(proofJson, nameof(proofJson));
+            Utf8Validation.RejectEmbeddedNul(rootHex, nameof(rootHex));
 
             var rc = NativeMethods.hush_verify_merkle_proof(leafHex, proofJson, rootHex);
             if (rc < 0)

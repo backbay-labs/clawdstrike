@@ -78,6 +78,13 @@ namespace Hush.Tests
         }
 
         [Fact]
+        public void Watermarker_WatermarkPrompt_EmbeddedNul_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                Watermarker.WatermarkPrompt("a\0b", SampleConfig));
+        }
+
+        [Fact]
         public void Watermarker_Extract_NullText_ThrowsArgumentNull()
         {
             Assert.Throws<ArgumentNullException>(() =>

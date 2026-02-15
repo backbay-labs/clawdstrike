@@ -251,6 +251,9 @@ func (kp *Keypair) Close() {
 	defer kp.mu.Unlock()
 
 	if kp.ptr != nil {
+		// Keep hush_last_error thread-local semantics consistent across all FFI calls.
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 		ffiKeypairDestroy(kp.ptr)
 		kp.ptr = nil
 		runtime.SetFinalizer(kp, nil)

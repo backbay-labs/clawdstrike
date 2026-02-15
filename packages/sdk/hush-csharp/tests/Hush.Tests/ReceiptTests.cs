@@ -99,6 +99,13 @@ namespace Hush.Tests
         }
 
         [Fact]
+        public void Receipt_Verify_EmbeddedNul_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                Receipt.Verify("{\"a\":1}\0", "abc"));
+        }
+
+        [Fact]
         public void Receipt_Hash_NullAlgorithm_ThrowsArgumentNull()
         {
             Assert.Throws<ArgumentNullException>(() => Receipt.Hash("{}", null!));

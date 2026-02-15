@@ -199,6 +199,25 @@ namespace Hush.Tests
         }
 
         [Fact]
+        public void CanonicalJson_EmbeddedNul_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() => CanonicalJson.Canonicalize("a\0b"));
+        }
+
+        [Fact]
+        public void Ed25519_Verify_EmbeddedNul_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                Ed25519.Verify("aa\0bb", Array.Empty<byte>(), "cc"));
+        }
+
+        [Fact]
+        public void Keypair_FromHex_EmbeddedNul_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() => Keypair.FromHex("0x00\0ff"));
+        }
+
+        [Fact]
         public void Keypair_Dispose_Twice_NoThrow()
         {
             if (!NativeAvailable()) return;

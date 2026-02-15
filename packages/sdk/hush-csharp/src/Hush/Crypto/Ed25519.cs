@@ -1,4 +1,5 @@
 using System;
+using Hush.Internal;
 
 namespace Hush.Crypto
 {
@@ -19,6 +20,8 @@ namespace Hush.Crypto
             if (publicKeyHex == null) throw new ArgumentNullException(nameof(publicKeyHex));
             if (message == null) throw new ArgumentNullException(nameof(message));
             if (signatureHex == null) throw new ArgumentNullException(nameof(signatureHex));
+            Utf8Validation.RejectEmbeddedNul(publicKeyHex, nameof(publicKeyHex));
+            Utf8Validation.RejectEmbeddedNul(signatureHex, nameof(signatureHex));
 
             var rc = NativeMethods.hush_verify_ed25519(
                 publicKeyHex, message, (UIntPtr)message.Length, signatureHex);

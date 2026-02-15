@@ -17,6 +17,7 @@ namespace Hush.Watermark
         public static string PublicKey(string configJson)
         {
             if (configJson == null) throw new ArgumentNullException(nameof(configJson));
+            Utf8Validation.RejectEmbeddedNul(configJson, nameof(configJson));
             var ptr = NativeMethods.hush_watermark_public_key(configJson);
             HushException.ThrowIfNull(ptr);
             using var ns = new NativeString(ptr);
@@ -35,6 +36,12 @@ namespace Hush.Watermark
         {
             if (prompt == null) throw new ArgumentNullException(nameof(prompt));
             if (configJson == null) throw new ArgumentNullException(nameof(configJson));
+            Utf8Validation.RejectEmbeddedNul(prompt, nameof(prompt));
+            Utf8Validation.RejectEmbeddedNul(configJson, nameof(configJson));
+            if (appId != null)
+                Utf8Validation.RejectEmbeddedNul(appId, nameof(appId));
+            if (sessionId != null)
+                Utf8Validation.RejectEmbeddedNul(sessionId, nameof(sessionId));
 
             IntPtr appIdPtr = IntPtr.Zero;
             IntPtr sessionIdPtr = IntPtr.Zero;
@@ -71,6 +78,8 @@ namespace Hush.Watermark
         {
             if (text == null) throw new ArgumentNullException(nameof(text));
             if (configJson == null) throw new ArgumentNullException(nameof(configJson));
+            Utf8Validation.RejectEmbeddedNul(text, nameof(text));
+            Utf8Validation.RejectEmbeddedNul(configJson, nameof(configJson));
 
             var ptr = NativeMethods.hush_extract_watermark(text, configJson);
             HushException.ThrowIfNull(ptr);

@@ -49,6 +49,13 @@ namespace Hush.Tests
         }
 
         [Fact]
+        public void JailbreakDetector_Detect_EmbeddedNul_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                JailbreakDetector.Detect("a\0b"));
+        }
+
+        [Fact]
         public void OutputSanitizer_Sanitize_CleanText()
         {
             if (!NativeAvailable()) return;

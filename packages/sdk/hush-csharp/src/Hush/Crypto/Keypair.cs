@@ -46,6 +46,7 @@ namespace Hush.Crypto
         public static Keypair FromHex(string hex)
         {
             if (hex == null) throw new ArgumentNullException(nameof(hex));
+            Utf8Validation.RejectEmbeddedNul(hex, nameof(hex));
             var ptr = NativeMethods.hush_keypair_from_hex(hex);
             HushException.ThrowIfNull(ptr);
             return new Keypair(new SafeKeypairHandle(ptr));

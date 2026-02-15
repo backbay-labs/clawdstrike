@@ -19,6 +19,11 @@ namespace Hush.Security
         public static string Detect(string text, string? sessionId = null, string? configJson = null)
         {
             if (text == null) throw new ArgumentNullException(nameof(text));
+            Utf8Validation.RejectEmbeddedNul(text, nameof(text));
+            if (sessionId != null)
+                Utf8Validation.RejectEmbeddedNul(sessionId, nameof(sessionId));
+            if (configJson != null)
+                Utf8Validation.RejectEmbeddedNul(configJson, nameof(configJson));
 
             IntPtr sessionPtr = IntPtr.Zero;
             IntPtr configPtr = IntPtr.Zero;
