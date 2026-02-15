@@ -11,7 +11,10 @@ func MerkleRoot(leafHashesJSON string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cl := allocCString(leafHashesJSON)
+	cl, err := allocCString(leafHashesJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cl)
 
 	p := ffiMerkleRoot(cl)
@@ -31,7 +34,10 @@ func MerkleProof(leafHashesJSON string, index int) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cl := allocCString(leafHashesJSON)
+	cl, err := allocCString(leafHashesJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cl)
 
 	p := ffiMerkleProof(cl, index)
@@ -47,11 +53,20 @@ func VerifyMerkleProof(leafHex, proofJSON, rootHex string) (bool, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	clh := allocCString(leafHex)
+	clh, err := allocCString(leafHex)
+	if err != nil {
+		return false, err
+	}
 	defer freeCString(clh)
-	cpj := allocCString(proofJSON)
+	cpj, err := allocCString(proofJSON)
+	if err != nil {
+		return false, err
+	}
 	defer freeCString(cpj)
-	crh := allocCString(rootHex)
+	crh, err := allocCString(rootHex)
+	if err != nil {
+		return false, err
+	}
 	defer freeCString(crh)
 
 	rc := ffiVerifyMerkleProof(clh, cpj, crh)

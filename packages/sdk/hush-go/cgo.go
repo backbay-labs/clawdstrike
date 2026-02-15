@@ -53,24 +53,30 @@ extern char* hush_watermark_prompt(const char* prompt, const char* config_json, 
 extern char* hush_extract_watermark(const char* text, const char* config_json);
 */
 import "C"
-import "unsafe"
+import (
+	"strings"
+	"unsafe"
+)
 
 // ---------------------------------------------------------------------------
 // C string helpers -- only file with import "C"
 // ---------------------------------------------------------------------------
 
 // allocCString allocates a C string from a Go string. Caller must free with freeCString.
-func allocCString(s string) unsafe.Pointer {
-	return unsafe.Pointer(C.CString(s))
+func allocCString(s string) (unsafe.Pointer, error) {
+	if strings.IndexByte(s, 0) >= 0 {
+		return nil, ErrCStringContainsNUL
+	}
+	return unsafe.Pointer(C.CString(s)), nil
 }
 
 // allocCStringOpt allocates a C string from a Go *string. nil input -> nil pointer.
 // Caller must free non-nil results with freeCString.
-func allocCStringOpt(s *string) unsafe.Pointer {
+func allocCStringOpt(s *string) (unsafe.Pointer, error) {
 	if s == nil {
-		return nil
+		return nil, nil
 	}
-	return unsafe.Pointer(C.CString(*s))
+	return allocCString(*s)
 }
 
 // freeCString frees a C string allocated by allocCString. Safe to call with nil.

@@ -10,6 +10,9 @@ var (
 	ErrKeypairNil = errors.New("hush: keypair is nil")
 	// ErrKeypairClosed is returned when a Keypair has been closed (its native handle is nil).
 	ErrKeypairClosed = errors.New("hush: keypair is closed")
+	// ErrCStringContainsNUL is returned when a string contains an interior NUL byte and cannot be
+	// safely passed to C as a NUL-terminated string.
+	ErrCStringContainsNUL = errors.New("hush: string contains NUL byte")
 )
 
 // HushError represents an error from the native hush-ffi library.

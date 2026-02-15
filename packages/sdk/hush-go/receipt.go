@@ -9,11 +9,20 @@ func VerifyReceipt(receiptJSON, signerHex string, cosignerHex *string) (string, 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cr := allocCString(receiptJSON)
+	cr, err := allocCString(receiptJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cr)
-	cs := allocCString(signerHex)
+	cs, err := allocCString(signerHex)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cs)
-	cc := allocCStringOpt(cosignerHex)
+	cc, err := allocCStringOpt(cosignerHex)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cc)
 
 	p := ffiVerifyReceipt(cr, cs, cc)
@@ -35,7 +44,10 @@ func SignReceipt(receiptJSON string, kp *Keypair) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cr := allocCString(receiptJSON)
+	cr, err := allocCString(receiptJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cr)
 
 	p := ffiSignReceipt(cr, ptr)
@@ -52,9 +64,15 @@ func HashReceipt(receiptJSON, algorithm string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cr := allocCString(receiptJSON)
+	cr, err := allocCString(receiptJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cr)
-	ca := allocCString(algorithm)
+	ca, err := allocCString(algorithm)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(ca)
 
 	p := ffiHashReceipt(cr, ca)
@@ -69,7 +87,10 @@ func ReceiptCanonicalJSON(receiptJSON string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cr := allocCString(receiptJSON)
+	cr, err := allocCString(receiptJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cr)
 
 	p := ffiReceiptCanonicalJSON(cr)

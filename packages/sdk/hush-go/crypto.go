@@ -63,7 +63,10 @@ func CanonicalizeJSON(json string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cj := allocCString(json)
+	cj, err := allocCString(json)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cj)
 	p := ffiCanonicalizeJSON(cj)
 	if p == nil {
@@ -128,7 +131,10 @@ func KeypairFromHex(hex string) (*Keypair, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	ch := allocCString(hex)
+	ch, err := allocCString(hex)
+	if err != nil {
+		return nil, err
+	}
 	defer freeCString(ch)
 	ptr := ffiKeypairFromHex(ch)
 	if err := checkPtr(ptr); err != nil {
@@ -257,9 +263,15 @@ func VerifyEd25519(pubkeyHex string, msg []byte, sigHex string) (bool, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cpk := allocCString(pubkeyHex)
+	cpk, err := allocCString(pubkeyHex)
+	if err != nil {
+		return false, err
+	}
 	defer freeCString(cpk)
-	csig := allocCString(sigHex)
+	csig, err := allocCString(sigHex)
+	if err != nil {
+		return false, err
+	}
 	defer freeCString(csig)
 	rc := ffiVerifyEd25519(cpk, cBytesPtr(msg), len(msg), csig)
 	switch rc {

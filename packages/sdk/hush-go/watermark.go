@@ -7,7 +7,10 @@ func WatermarkPublicKey(configJSON string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cc := allocCString(configJSON)
+	cc, err := allocCString(configJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cc)
 
 	p := ffiWatermarkPublicKey(cc)
@@ -23,13 +26,25 @@ func WatermarkPrompt(prompt, configJSON string, appID, sessionID *string) (strin
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cp := allocCString(prompt)
+	cp, err := allocCString(prompt)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cp)
-	cc := allocCString(configJSON)
+	cc, err := allocCString(configJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cc)
-	ca := allocCStringOpt(appID)
+	ca, err := allocCStringOpt(appID)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(ca)
-	cs := allocCStringOpt(sessionID)
+	cs, err := allocCStringOpt(sessionID)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cs)
 
 	p := ffiWatermarkPrompt(cp, cc, ca, cs)
@@ -45,9 +60,15 @@ func ExtractWatermark(text, configJSON string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	ct := allocCString(text)
+	ct, err := allocCString(text)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(ct)
-	cc := allocCString(configJSON)
+	cc, err := allocCString(configJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cc)
 
 	p := ffiExtractWatermark(ct, cc)

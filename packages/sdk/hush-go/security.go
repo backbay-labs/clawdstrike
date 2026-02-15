@@ -9,11 +9,20 @@ func DetectJailbreak(text string, sessionID, configJSON *string) (string, error)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	ct := allocCString(text)
+	ct, err := allocCString(text)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(ct)
-	cs := allocCStringOpt(sessionID)
+	cs, err := allocCStringOpt(sessionID)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cs)
-	cc := allocCStringOpt(configJSON)
+	cc, err := allocCStringOpt(configJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cc)
 
 	p := ffiDetectJailbreak(ct, cs, cc)
@@ -30,9 +39,15 @@ func SanitizeOutput(text string, configJSON *string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	ct := allocCString(text)
+	ct, err := allocCString(text)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(ct)
-	cc := allocCStringOpt(configJSON)
+	cc, err := allocCStringOpt(configJSON)
+	if err != nil {
+		return "", err
+	}
 	defer freeCString(cc)
 
 	p := ffiSanitizeOutput(ct, cc)

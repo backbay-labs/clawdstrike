@@ -46,6 +46,26 @@ func TestIsAvailable(t *testing.T) {
 	_ = IsAvailable()
 }
 
+func TestCStringRejectsInteriorNUL(t *testing.T) {
+	// These checks happen before any FFI calls, so they should behave consistently
+	// regardless of whether libhush_ffi is available.
+	_, err := CanonicalizeJSON("a\x00b")
+	if !errors.Is(err, ErrCStringContainsNUL) {
+		t.Fatalf("CanonicalizeJSON should reject NUL byte: got %v", err)
+	}
+
+	sessionID := "session\x00id"
+	_, err = DetectJailbreak("hello", &sessionID, nil)
+	if !errors.Is(err, ErrCStringContainsNUL) {
+		t.Fatalf("DetectJailbreak should reject NUL byte in optional args: got %v", err)
+	}
+
+	_, err = WatermarkPrompt("prompt\x00x", sampleWatermarkConfig, nil, nil)
+	if !errors.Is(err, ErrCStringContainsNUL) {
+		t.Fatalf("WatermarkPrompt should reject NUL byte: got %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // SHA-256
 // ---------------------------------------------------------------------------
