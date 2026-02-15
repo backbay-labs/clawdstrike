@@ -123,7 +123,7 @@ pub unsafe extern "C" fn hush_detect_jailbreak(
             };
 
             let detector = ffi_try!(get_or_create_detector(cfg), std::ptr::null_mut());
-            let result = futures::executor::block_on(detector.detect(text_str, session_id_str));
+            let result = detector.detect_sync(text_str, session_id_str);
 
             let json = ffi_try!(
                 serde_json::to_string(&result)
