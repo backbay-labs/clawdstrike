@@ -261,9 +261,13 @@ impl ApprovalQueue {
 
         let request = requests.get_mut(id).ok_or(ApprovalError::NotFound)?;
 
-        // Check if already resolved or expired.
-        if request.status != ApprovalStatus::Pending {
-            return Err(ApprovalError::AlreadyResolved);
+        // Preserve precise semantics for clients:
+        // - Resolved -> 409 (AlreadyResolved)
+        // - Expired -> 410 (Expired)
+        match request.status {
+            ApprovalStatus::Pending => {}
+            ApprovalStatus::Resolved => return Err(ApprovalError::AlreadyResolved),
+            ApprovalStatus::Expired => return Err(ApprovalError::Expired),
         }
 
         // Check if expired.
@@ -491,6 +495,37 @@ mod tests {
         let status = status.unwrap_or_else(|| panic!("expected status"));
         assert_eq!(status.status, ApprovalStatus::Expired);
         assert_eq!(status.resolution, Some(ApprovalResolution::Deny));
+    }
+
+    #[tokio::test]
+    async fn resolve_returns_expired_error_when_request_already_expired() {
+        let queue = ApprovalQueue::new();
+        let request = queue
+            .submit(ApprovalRequestInput {
+                tool: "file_write".to_string(),
+                resource: "/etc/hosts".to_string(),
+                guard: "fs_blocklist".to_string(),
+                reason: "Forbidden path".to_string(),
+                severity: "high".to_string(),
+                session_id: None,
+                ttl_secs: Some(0), // Expires immediately.
+            })
+            .await
+            .unwrap_or_else(|e| panic!("submit failed: {e}"));
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Ensure the request transitions to Expired before resolve() runs.
+        let _ = queue.get_status(&request.id).await;
+
+        let err = queue
+            .resolve(&request.id, ApprovalResolution::AllowOnce)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ApprovalError::Expired),
+            "expected Expired error, got: {err}"
+        );
     }
 
     #[tokio::test]
