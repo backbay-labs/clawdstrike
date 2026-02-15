@@ -260,8 +260,7 @@ async fn agent_policy_check(
         input,
         session_id,
     )
-    .await
-    .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    .await;
     Ok(Json(output))
 }
 

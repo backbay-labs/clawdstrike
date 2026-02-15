@@ -1,7 +1,6 @@
 //! Shared policy-check gate for hook/API/MCP paths.
 
 use crate::settings::Settings;
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -42,7 +41,9 @@ fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput
 
     // For egress checks we prefer `host:port` (what hushd expects). If callers pass a URL, parse it.
     if input.action_type == "egress" {
-        let target = input.target.trim();
+        let target = input.target.trim().to_string();
+        // Always trim whitespace, even when the egress form is already `host:port`.
+        input.target = target.clone();
         let lower = target.to_ascii_lowercase();
         // Only normalize explicit URL forms. Avoid surprising parses where `Url::parse` treats
         // `example.com:123` as a scheme and accidentally rewrites the target.
@@ -51,7 +52,7 @@ fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput
             || lower.starts_with("ws://")
             || lower.starts_with("wss://")
         {
-            if let Ok(url) = reqwest::Url::parse(target) {
+            if let Ok(url) = reqwest::Url::parse(&target) {
                 if let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) {
                     let host = host
                         .strip_prefix('[')
@@ -102,7 +103,7 @@ pub async fn evaluate_policy_check(
     http_client: &reqwest::Client,
     input: PolicyCheckInput,
     session_id: Option<String>,
-) -> Result<PolicyCheckOutput> {
+) -> PolicyCheckOutput {
     let input = normalize_policy_check_input(input);
     let (enforced, daemon_url, api_key, include_error_body) = {
         let settings_guard = settings.read().await;
@@ -120,13 +121,13 @@ pub async fn evaluate_policy_check(
             target = %input.target,
             "Policy check bypassed because enforcement is disabled"
         );
-        return Ok(PolicyCheckOutput {
+        return PolicyCheckOutput {
             allowed: true,
             guard: Some("enforcement_disabled".to_string()),
             severity: Some("info".to_string()),
             message: Some("Policy enforcement disabled by operator".to_string()),
             details: Some(serde_json::json!({ "reason": "enforcement_disabled" })),
-        });
+        };
     }
 
     let url = format!("{}/api/v1/check", daemon_url);
@@ -154,7 +155,7 @@ pub async fn evaluate_policy_check(
                 error = %err,
                 "hushd unreachable — denying action"
             );
-            return Ok(PolicyCheckOutput {
+            return PolicyCheckOutput {
                 allowed: false,
                 guard: Some("hushd_unreachable".to_string()),
                 severity: Some("critical".to_string()),
@@ -167,7 +168,7 @@ pub async fn evaluate_policy_check(
                     "provenance": { "mode": "offline_deny" },
                     "error": err.to_string(),
                 })),
-            });
+            };
         }
     };
 
@@ -220,7 +221,7 @@ pub async fn evaluate_policy_check(
             details["body_truncated"] = serde_json::Value::Bool(truncated);
         }
 
-        return Ok(PolicyCheckOutput {
+        return PolicyCheckOutput {
             allowed: false,
             guard: Some(guard.to_string()),
             severity: Some(severity.to_string()),
@@ -229,14 +230,14 @@ pub async fn evaluate_policy_check(
                 reason_prefix, status
             )),
             details: Some(details),
-        });
+        };
     }
 
     let status = response.status();
     let body_text = response.text().await.unwrap_or_default();
 
     match serde_json::from_str::<PolicyCheckOutput>(&body_text) {
-        Ok(payload) => Ok(payload),
+        Ok(payload) => payload,
         Err(err) => {
             tracing::warn!(
                 action_type = %input.action_type,
@@ -266,7 +267,7 @@ pub async fn evaluate_policy_check(
                 details["body_truncated"] = serde_json::Value::Bool(truncated);
             }
 
-            Ok(PolicyCheckOutput {
+            PolicyCheckOutput {
                 allowed: false,
                 guard: Some("hushd_parse_error".to_string()),
                 severity: Some("critical".to_string()),
@@ -275,7 +276,7 @@ pub async fn evaluate_policy_check(
                         .to_string(),
                 ),
                 details: Some(details),
-            })
+            }
         }
     }
 }
@@ -402,8 +403,7 @@ mod tests {
             },
             None,
         )
-        .await
-        .unwrap();
+        .await;
 
         assert!(!out.allowed);
         let details = out.details.expect("details should be present");
@@ -434,8 +434,7 @@ mod tests {
             },
             None,
         )
-        .await
-        .unwrap();
+        .await;
 
         assert!(!out.allowed);
         let details = out.details.expect("details should be present");

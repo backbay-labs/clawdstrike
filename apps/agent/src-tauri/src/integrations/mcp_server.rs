@@ -254,45 +254,30 @@ async fn handle_call_tool(state: &McpState, params: Option<serde_json::Value>) -
             };
 
             let session_id = state.session_manager.session_id().await;
-            match evaluate_policy_check(
+            let result = evaluate_policy_check(
                 state.settings.clone(),
                 &state.http_client,
                 check_params,
                 session_id,
             )
-            .await
-            {
-                Ok(result) => {
-                    let text = match serde_json::to_string_pretty(&result) {
-                        Ok(value) => value,
-                        Err(err) => {
-                            format!("{{\"error\":\"serialize_failed\",\"message\":\"{}\"}}", err)
-                        }
-                    };
+            .await;
 
-                    JsonRpcResponse {
-                        jsonrpc: "2.0",
-                        result: Some(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": text
-                            }],
-                            "isError": !result.allowed
-                        })),
-                        error: None,
-                        id: None,
-                    }
-                }
-                Err(e) => JsonRpcResponse {
-                    jsonrpc: "2.0",
-                    result: None,
-                    error: Some(JsonRpcError {
-                        code: -32000,
-                        message: format!("Policy check failed: {}", e),
-                        data: None,
-                    }),
-                    id: None,
-                },
+            let text = match serde_json::to_string_pretty(&result) {
+                Ok(value) => value,
+                Err(err) => format!("{{\"error\":\"serialize_failed\",\"message\":\"{}\"}}", err),
+            };
+
+            JsonRpcResponse {
+                jsonrpc: "2.0",
+                result: Some(serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": text
+                    }],
+                    "isError": !result.allowed
+                })),
+                error: None,
+                id: None,
             }
         }
         _ => JsonRpcResponse {
