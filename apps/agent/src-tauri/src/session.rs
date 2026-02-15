@@ -496,7 +496,12 @@ impl SessionManager {
                     _ = tokio::time::sleep(heartbeat_interval) => {
                         match manager.heartbeat(&daemon_url, api_key.as_deref()).await {
                             Ok(HeartbeatOutcome::Updated) => {}
-                            Ok(HeartbeatOutcome::NoSession | HeartbeatOutcome::Invalidated) => {
+                            Ok(HeartbeatOutcome::NoSession) => {
+                                // Heartbeat loop is started once at agent startup. Until a session
+                                // is established (typically by the daemon start/reconnect path),
+                                // there's nothing to do here.
+                            }
+                            Ok(HeartbeatOutcome::Invalidated) => {
                                 manager.start_ensure_session(
                                     daemon_url.clone(),
                                     api_key.clone(),

@@ -257,6 +257,20 @@ async fn run_agent<R: Runtime>(
     agent_api_token: String,
     shutdown_complete: Arc<ShutdownComplete>,
 ) {
+    let (daemon_url, api_key) = {
+        let guard = settings.read().await;
+        (guard.daemon_url(), guard.api_key.clone())
+    };
+
+    // Start heartbeat loop once. It no-ops until a session is established, and it reads the
+    // current session ID from shared state each tick (so daemon reconnect replacements do not
+    // require restarting the loop).
+    session_manager.start_heartbeat(
+        daemon_url.clone(),
+        api_key.clone(),
+        shutdown_tx.subscribe(),
+    );
+
     tracing::info!("Starting hushd daemon...");
     if let Err(e) = daemon_manager.start().await {
         tracing::error!("Failed to start daemon: {}", e);
@@ -264,20 +278,6 @@ async fn run_agent<R: Runtime>(
     } else {
         tray_manager.set_daemon_state(DaemonState::Running).await;
         show_startup_notification(&app);
-
-        let (daemon_url, api_key) = {
-            let guard = settings.read().await;
-            (guard.daemon_url(), guard.api_key.clone())
-        };
-
-        // Start heartbeat loop once. It no-ops until a session is established, and it reads the
-        // current session ID from shared state each tick (so daemon reconnect replacements do not
-        // require restarting the loop).
-        session_manager.start_heartbeat(
-            daemon_url.clone(),
-            api_key.clone(),
-            shutdown_tx.subscribe(),
-        );
 
         // Create session with hushd.
         match session_manager
