@@ -232,12 +232,52 @@ pub async fn evaluate_policy_check(
         });
     }
 
-    let payload: PolicyCheckOutput = response
-        .json()
-        .await
-        .with_context(|| "Failed to parse daemon policy response")?;
+    let status = response.status();
+    let body_text = response.text().await.unwrap_or_default();
 
-    Ok(payload)
+    match serde_json::from_str::<PolicyCheckOutput>(&body_text) {
+        Ok(payload) => Ok(payload),
+        Err(err) => {
+            tracing::warn!(
+                action_type = %input.action_type,
+                target = %input.target,
+                http_status = %status,
+                error = %err,
+                "hushd returned malformed policy response — denying action"
+            );
+
+            let (body_preview, body_truncated) = if include_error_body {
+                let (preview, truncated) = truncate_bytes(&body_text, 4 * 1024);
+                (Some(preview), Some(truncated))
+            } else {
+                (None, None)
+            };
+
+            let mut details = serde_json::json!({
+                "reason": "hushd_parse_error",
+                "provenance": { "mode": "offline_deny" },
+                "http_status": status.as_u16(),
+                "error": err.to_string(),
+            });
+            if let Some(preview) = body_preview {
+                details["body"] = serde_json::Value::String(preview);
+            }
+            if let Some(truncated) = body_truncated {
+                details["body_truncated"] = serde_json::Value::Bool(truncated);
+            }
+
+            Ok(PolicyCheckOutput {
+                allowed: false,
+                guard: Some("hushd_parse_error".to_string()),
+                severity: Some("critical".to_string()),
+                message: Some(
+                    "Policy daemon returned malformed response — action denied (fail-closed)"
+                        .to_string(),
+                ),
+                details: Some(details),
+            })
+        }
+    }
 }
 
 #[cfg(test)]
