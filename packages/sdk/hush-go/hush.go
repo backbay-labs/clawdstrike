@@ -1,7 +1,12 @@
 package hush
 
+import "runtime"
+
 // Version returns the hush-ffi library version string.
 func Version() string {
+	// Ensure hush_last_error thread-local semantics are not disrupted by callers.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	return goStringFromC(ffiVersion())
 }
 

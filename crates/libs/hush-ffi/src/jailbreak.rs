@@ -60,6 +60,9 @@ fn get_or_create_detector(
         }
 
         // Ensure we have room before releasing the lock to construct.
+        //
+        // Note: we also evict again under the lock right before insertion below, so the cache size
+        // remains bounded even when multiple threads construct detectors concurrently.
         guard.evict_to_make_room();
     }
 
@@ -78,6 +81,8 @@ fn get_or_create_detector(
     guard.evict_to_make_room();
     guard.map.insert(key.clone(), detector.clone());
     guard.touch(&key);
+    debug_assert!(guard.map.len() <= MAX_DETECTOR_CACHE_ENTRIES);
+    debug_assert!(guard.lru.len() <= MAX_DETECTOR_CACHE_ENTRIES);
     Ok(detector)
 }
 
