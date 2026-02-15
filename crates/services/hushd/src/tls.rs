@@ -47,6 +47,12 @@ impl TlsListener {
 
         let builder = ServerConfig::builder();
 
+        if tls.require_client_cert && tls.client_ca_path.is_none() {
+            anyhow::bail!(
+                "Invalid TLS config: require_client_cert=true but client_ca_path is not set"
+            );
+        }
+
         let config = if let Some(ref ca_path) = tls.client_ca_path {
             let ca_certs: Vec<CertificateDer<'static>> =
                 CertificateDer::pem_file_iter(ca_path)?.collect::<Result<Vec<_>, _>>()?;
