@@ -17,9 +17,17 @@ struct WatermarkerCache {
     // Tracks only non-pinned entries (pinned entries must not be evicted).
     // Most-recently-used (back) -> least-recently-used (front).
     lru_non_pinned: VecDeque<String>,
+    // Reservations for pinned entries that are being constructed outside the mutex.
+    // This prevents a race where we generate an expensive random keypair, then fail to
+    // insert because other threads filled the cache while we were constructing.
+    in_flight_pinned: usize,
 }
 
 impl WatermarkerCache {
+    fn effective_len(&self) -> usize {
+        self.map.len() + self.in_flight_pinned
+    }
+
     fn touch_non_pinned(&mut self, key: &str) {
         if let Some(pos) = self.lru_non_pinned.iter().position(|k| k == key) {
             self.lru_non_pinned.remove(pos);
@@ -52,6 +60,46 @@ struct CachedWatermarker {
 
 static WATERMARKERS: OnceLock<Mutex<WatermarkerCache>> = OnceLock::new();
 
+struct PinnedReservation<'a> {
+    cache: &'a Mutex<WatermarkerCache>,
+    active: bool,
+}
+
+impl<'a> PinnedReservation<'a> {
+    fn new(cache: &'a Mutex<WatermarkerCache>) -> Self {
+        Self {
+            cache,
+            active: false,
+        }
+    }
+
+    fn reserve(&mut self, guard: &mut WatermarkerCache) {
+        guard.in_flight_pinned = guard.in_flight_pinned.saturating_add(1);
+        self.active = true;
+    }
+
+    fn release_with_guard(&mut self, guard: &mut WatermarkerCache) {
+        if self.active {
+            guard.in_flight_pinned = guard.in_flight_pinned.saturating_sub(1);
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for PinnedReservation<'_> {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        // Best-effort rollback. Never panic from drop.
+        let mut guard = match self.cache.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        guard.in_flight_pinned = guard.in_flight_pinned.saturating_sub(1);
+    }
+}
+
 fn parse_config_and_key(
     config_json: &str,
 ) -> Result<(clawdstrike::WatermarkConfig, String, bool), String> {
@@ -70,6 +118,7 @@ fn get_or_create_watermarker(
     let (cfg, key, pinned) = parse_config_and_key(config_json)?;
 
     let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::default()));
+    let mut reservation = PinnedReservation::new(cache);
     let mut should_cache = true;
     {
         // Fast path: cache hit.
@@ -85,7 +134,7 @@ fn get_or_create_watermarker(
             return Ok(wm);
         }
 
-        if guard.map.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+        if guard.effective_len() >= MAX_WATERMARKER_CACHE_ENTRIES {
             if guard.evict_one_non_pinned() {
                 // ok
             } else if pinned {
@@ -98,6 +147,10 @@ fn get_or_create_watermarker(
                 // a pinned entry and silently rotating its key.
                 should_cache = false;
             }
+        }
+
+        if pinned && should_cache {
+            reservation.reserve(&mut guard);
         }
     }
 
@@ -113,6 +166,7 @@ fn get_or_create_watermarker(
     let mut guard = cache
         .lock()
         .map_err(|_| "watermarker lock poisoned".to_string())?;
+    reservation.release_with_guard(&mut guard);
     if let Some(entry) = guard.map.get(&key) {
         let existing = entry.wm.clone();
         let pinned_entry = entry.pinned;
@@ -122,7 +176,7 @@ fn get_or_create_watermarker(
         return Ok(existing);
     }
 
-    if guard.map.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+    if guard.effective_len() >= MAX_WATERMARKER_CACHE_ENTRIES {
         if guard.evict_one_non_pinned() {
             // ok
         } else if pinned {
@@ -378,6 +432,7 @@ mod tests {
         let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
         cache.map.clear();
         cache.lru_non_pinned.clear();
+        cache.in_flight_pinned = 0;
 
         guard
     }

@@ -14,6 +14,13 @@ thread_local! {
     static LAST_ERROR: RefCell<CString> = RefCell::new(CString::default());
 }
 
+/// Clear the stored error message for this thread.
+pub(crate) fn clear_last_error() {
+    LAST_ERROR.with(|cell| {
+        *cell.borrow_mut() = CString::default();
+    });
+}
+
 /// Store an error message in thread-local storage.
 pub(crate) fn set_last_error(msg: &str) {
     LAST_ERROR.with(|cell| {
@@ -35,11 +42,16 @@ pub(crate) fn panic_to_string(panic: &(dyn Any + Send)) -> String {
     }
 }
 
-pub(crate) fn with_ffi_guard<T, F>(f: F, fallback: T) -> T
+fn with_ffi_guard_inner<T, F>(f: F, fallback: T, clear_error_on_entry: bool) -> T
 where
     F: FnOnce() -> T,
     F: panic::UnwindSafe,
 {
+    if clear_error_on_entry {
+        // Best-effort. Avoid panics unwinding across the FFI boundary from this path.
+        let _ = panic::catch_unwind(|| clear_last_error());
+    }
+
     match panic::catch_unwind(f) {
         Ok(value) => value,
         Err(payload) => {
@@ -53,6 +65,22 @@ where
     }
 }
 
+pub(crate) fn with_ffi_guard<T, F>(f: F, fallback: T) -> T
+where
+    F: FnOnce() -> T,
+    F: panic::UnwindSafe,
+{
+    with_ffi_guard_inner(f, fallback, true)
+}
+
+fn with_ffi_guard_preserve_last_error<T, F>(f: F, fallback: T) -> T
+where
+    F: FnOnce() -> T,
+    F: panic::UnwindSafe,
+{
+    with_ffi_guard_inner(f, fallback, false)
+}
+
 /// Return a pointer to the last error message (static, do **not** free).
 ///
 /// Returns an empty string if no error has been recorded on this thread.
@@ -62,7 +90,7 @@ where
 /// The returned pointer is valid until the next FFI call on the same thread.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hush_last_error() -> *const c_char {
-    crate::error::with_ffi_guard(
+    with_ffi_guard_preserve_last_error(
         || {
             // Reading thread-local state is safe but still wrapped to avoid
             // panics unwinding across the FFI boundary.
@@ -96,3 +124,35 @@ macro_rules! ffi_try {
 }
 
 pub(crate) use ffi_try;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CStr;
+
+    #[test]
+    fn last_error_is_cleared_on_successful_ffi_call() {
+        set_last_error("boom");
+        unsafe {
+            let _ = crate::hush_version();
+            let p = hush_last_error();
+            let s = CStr::from_ptr(p).to_str().unwrap();
+            assert_eq!(s, "");
+        }
+    }
+
+    #[test]
+    fn hush_last_error_does_not_clear_stored_error() {
+        clear_last_error();
+        set_last_error("boom");
+        unsafe {
+            let p1 = hush_last_error();
+            let s1 = CStr::from_ptr(p1).to_str().unwrap();
+            assert_eq!(s1, "boom");
+
+            let p2 = hush_last_error();
+            let s2 = CStr::from_ptr(p2).to_str().unwrap();
+            assert_eq!(s2, "boom");
+        }
+    }
+}
