@@ -227,7 +227,33 @@ fn format_event_label(event: &PolicyEvent) -> String {
         String::new()
     };
 
-    format!("{} {} - {}{}", icon, event.action_type, short_target, attribution)
+    format!(
+        "{} {} - {}{}",
+        icon, event.action_type, short_target, attribution
+    )
+}
+
+fn validate_dashboard_url(candidate: &str) -> Option<String> {
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let parsed = reqwest::Url::parse(trimmed).ok()?;
+    let scheme = parsed.scheme();
+    if (scheme == "http" || scheme == "https") && parsed.host_str().is_some() {
+        Some(parsed.to_string())
+    } else {
+        None
+    }
+}
+
+fn resolve_dashboard_url() -> Option<String> {
+    let configured = Settings::load()
+        .map(|s| s.dashboard_url)
+        .unwrap_or_else(|_| "http://localhost:3100".to_string());
+
+    validate_dashboard_url(&configured).or_else(|| validate_dashboard_url("http://localhost:3100"))
 }
 
 /// Create and setup the tray icon.
@@ -285,9 +311,10 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         }
         menu_ids::OPEN_WEB_UI => {
             tracing::info!("Open Web UI clicked");
-            let url = Settings::load()
-                .map(|s| s.dashboard_url)
-                .unwrap_or_else(|_| "http://localhost:3100".to_string());
+            let Some(url) = resolve_dashboard_url() else {
+                tracing::warn!("Dashboard URL is invalid; refusing to open Web UI");
+                return;
+            };
             #[cfg(target_os = "macos")]
             {
                 let _ = std::process::Command::new("open").arg(&url).spawn();
@@ -298,12 +325,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             }
             #[cfg(target_os = "windows")]
             {
-                let _ = std::process::Command::new("cmd")
-                    // `start` treats the first quoted argument as a window title; pass an
-                    // explicit empty title before the URL so special characters in URLs don't
-                    // get misinterpreted by cmd parsing.
-                    .args(["/c", "start", "", &url])
-                    .spawn();
+                let _ = std::process::Command::new("explorer.exe").arg(&url).spawn();
             }
         }
         menu_ids::QUIT => {
@@ -412,5 +434,30 @@ impl<R: Runtime> TrayManager<R> {
         if let Err(err) = update_tray_menu(&self.app, &self.tray, &state) {
             tracing::error!(error = %err, "Failed to update tray menu");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_dashboard_url;
+
+    #[test]
+    fn validate_dashboard_url_accepts_http_https_with_host() {
+        assert_eq!(
+            validate_dashboard_url("https://example.com/path?q=1").as_deref(),
+            Some("https://example.com/path?q=1")
+        );
+        assert_eq!(
+            validate_dashboard_url("http://localhost:3100").as_deref(),
+            Some("http://localhost:3100/")
+        );
+    }
+
+    #[test]
+    fn validate_dashboard_url_rejects_non_network_or_hostless_urls() {
+        assert!(validate_dashboard_url("urn:isbn:0451450523").is_none());
+        assert!(validate_dashboard_url("javascript:alert(1)").is_none());
+        assert!(validate_dashboard_url("file:///tmp/test").is_none());
+        assert!(validate_dashboard_url("not a url").is_none());
     }
 }

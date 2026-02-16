@@ -1,7 +1,8 @@
-import { useSSE, type SSEEvent } from "../hooks/useSSE";
+import { useSharedSSE } from "../context/SSEContext";
+import type { SSEEvent } from "../hooks/useSSE";
 
 export function Events() {
-  const { events, connected } = useSSE("/api/v1/events");
+  const { events, connected } = useSharedSSE();
 
   return (
     <div className="space-y-4">

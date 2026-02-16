@@ -48,6 +48,10 @@ impl PolicyEvent {
     }
 }
 
+fn should_publish_polled_event(event: &PolicyEvent) -> bool {
+    !matches!(event.normalized_decision(), NormalizedDecision::Allowed)
+}
+
 /// Daemon-level SSE event types beyond audit events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -260,13 +264,10 @@ impl EventManager {
 
         for page in 0..max_pages {
             let offset = page * limit;
-            let mut request = self
-                .http_client
-                .get(&base_url)
-                .query(&[
-                    ("limit", &limit.to_string()),
-                    ("offset", &offset.to_string()),
-                ]);
+            let mut request = self.http_client.get(&base_url).query(&[
+                ("limit", &limit.to_string()),
+                ("offset", &offset.to_string()),
+            ]);
 
             if let Some(ref key) = self.api_key {
                 request = request.header("Authorization", format!("Bearer {}", key));
@@ -315,7 +316,9 @@ impl EventManager {
         }
 
         for event in all_events {
-            self.publish_event_if_new(event).await;
+            if should_publish_polled_event(&event) {
+                self.publish_event_if_new(event).await;
+            }
         }
 
         Ok(())
@@ -344,9 +347,7 @@ impl EventManager {
                 // checks, we only surface blocked checks and all violations.
                 if event_type == "check" || event_type == "violation" {
                     let Some(obj) = json.as_object() else {
-                        anyhow::bail!(
-                            "Expected JSON object for {event_type} event, got: {data}"
-                        );
+                        anyhow::bail!("Expected JSON object for {event_type} event, got: {data}");
                     };
                     let allowed = obj
                         .get("allowed")
@@ -371,15 +372,9 @@ impl EventManager {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string(),
-                            target: obj
-                                .get("target")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
+                            target: obj.get("target").and_then(|v| v.as_str()).map(String::from),
                             decision: decision.to_string(),
-                            guard: obj
-                                .get("guard")
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
+                            guard: obj.get("guard").and_then(|v| v.as_str()).map(String::from),
                             severity: obj
                                 .get("severity")
                                 .and_then(|v| v.as_str())
@@ -647,7 +642,9 @@ mod tests {
                 "non-object JSON should be rejected for {event_type}"
             );
 
-            let result = mgr.handle_sse_message(event_type, r#""just a string""#).await;
+            let result = mgr
+                .handle_sse_message(event_type, r#""just a string""#)
+                .await;
             assert!(
                 result.is_err(),
                 "string JSON should be rejected for {event_type}"
@@ -724,7 +721,8 @@ mod tests {
         let mgr = EventManager::new("http://localhost:0".to_string(), None);
         let mut events_rx = mgr.subscribe();
 
-        let data = r#"{"action_type":"file_access","target":"/tmp/x","allowed":true,"guard":"fs_allow"}"#;
+        let data =
+            r#"{"action_type":"file_access","target":"/tmp/x","allowed":true,"guard":"fs_allow"}"#;
         mgr.handle_sse_message("check", data)
             .await
             .expect("should handle allowed check event");
@@ -773,6 +771,57 @@ mod tests {
         assert!(
             events_rx.try_recv().is_err(),
             "duplicate event should be deduped"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_filter_suppresses_allowed_events_and_keeps_blocks() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        for i in 0..500usize {
+            let allowed = PolicyEvent {
+                id: format!("allow-{i}"),
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+                action_type: "file_access".to_string(),
+                target: Some(format!("/tmp/allowed-{i}")),
+                decision: "allowed".to_string(),
+                guard: Some("fs_allow".to_string()),
+                severity: None,
+                message: None,
+                details: serde_json::Value::Null,
+                session_id: None,
+                agent_id: None,
+            };
+            if should_publish_polled_event(&allowed) {
+                mgr.publish_event_if_new(allowed).await;
+            }
+        }
+
+        let blocked = PolicyEvent {
+            id: "blocked-1".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            action_type: "file_access".to_string(),
+            target: Some("/etc/shadow".to_string()),
+            decision: "blocked".to_string(),
+            guard: Some("fs_blocklist".to_string()),
+            severity: Some("high".to_string()),
+            message: None,
+            details: serde_json::Value::Null,
+            session_id: None,
+            agent_id: None,
+        };
+        if should_publish_polled_event(&blocked) {
+            mgr.publish_event_if_new(blocked).await;
+        }
+
+        let evt = events_rx
+            .try_recv()
+            .expect("blocked event should still be published");
+        assert_eq!(evt.id, "blocked-1");
+        assert!(
+            events_rx.try_recv().is_err(),
+            "allowed poll events should be suppressed"
         );
     }
 }

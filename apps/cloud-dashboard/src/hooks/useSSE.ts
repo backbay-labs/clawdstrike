@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface SSEEvent {
   event_type: string;
@@ -12,14 +12,61 @@ export interface SSEEvent {
   timestamp: string;
 }
 
-export function useSSE(url: string) {
+export type SSEConnectionStatus =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "unauthorized"
+  | "network_error";
+
+export const SSE_CONFIG_CHANGED_EVENT = "clawdstrike:sse-config-changed";
+
+export function notifySSEConfigChanged() {
+  window.dispatchEvent(new Event(SSE_CONFIG_CHANGED_EVENT));
+}
+
+interface UseSSEResult {
+  events: SSEEvent[];
+  connected: boolean;
+  status: SSEConnectionStatus;
+  error: string | null;
+  reconnect: () => void;
+}
+
+export function useSSE(url: string): UseSSEResult {
   const [events, setEvents] = useState<SSEEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState<SSEConnectionStatus>("connecting");
+  const [error, setError] = useState<string | null>(null);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   const sourceRef = useRef<EventSource | null>(null);
+  const reconnect = useCallback(() => {
+    setReconnectNonce((prev) => prev + 1);
+  }, []);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === "hushd_url" || event.key === "hushd_api_key") {
+        reconnect();
+      }
+    };
+    const onConfigChanged = () => reconnect();
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(SSE_CONFIG_CHANGED_EVENT, onConfigChanged);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(SSE_CONFIG_CHANGED_EVENT, onConfigChanged);
+    };
+  }, [reconnect]);
 
   useEffect(() => {
     const apiBase = localStorage.getItem("hushd_url") || "";
     const fullUrl = `${apiBase}${url}`;
+    setConnected(false);
+    setStatus("connecting");
+    setError(null);
 
     // EventSource doesn't support custom headers, so for authenticated
     // hushd deployments we use a fetch-based approach.
@@ -31,14 +78,30 @@ export function useSSE(url: string) {
       let ctrl = new AbortController();
       let cancelled = false;
       const reconnectDelayMs = 3000;
+      let reconnectTimer: number | null = null;
 
-      const scheduleReconnect = () => {
+      const clearReconnectTimer = () => {
+        if (reconnectTimer != null) {
+          window.clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+      };
+
+      const scheduleReconnect = (nextStatus: SSEConnectionStatus, nextError: string) => {
         setConnected(false);
-        if (!cancelled) setTimeout(connect, reconnectDelayMs);
+        setStatus(nextStatus);
+        setError(nextError);
+        if (!cancelled) {
+          clearReconnectTimer();
+          reconnectTimer = window.setTimeout(connect, reconnectDelayMs);
+        }
       };
 
       function connect() {
         if (cancelled) return;
+        clearReconnectTimer();
+        setStatus("connecting");
+        setError(null);
         ctrl = new AbortController();
         fetch(fullUrl, {
           headers: { Authorization: `Bearer ${apiKey}` },
@@ -46,10 +109,18 @@ export function useSSE(url: string) {
         })
           .then((res) => {
             if (!res.ok || !res.body) {
-              scheduleReconnect();
+              if (res.status === 401 || res.status === 403) {
+                setConnected(false);
+                setStatus("unauthorized");
+                setError(`Unauthorized (${res.status})`);
+                return;
+              }
+              scheduleReconnect("network_error", `SSE request failed (${res.status})`);
               return;
             }
             setConnected(true);
+            setStatus("connected");
+            setError(null);
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
@@ -60,7 +131,7 @@ export function useSSE(url: string) {
                 while (!cancelled) {
                   const { done, value } = await reader.read();
                   if (done) {
-                    scheduleReconnect();
+                    scheduleReconnect("disconnected", "SSE stream closed; reconnecting");
                     return;
                   }
                   buffer += decoder.decode(value, { stream: true });
@@ -93,7 +164,10 @@ export function useSSE(url: string) {
               } catch {
                 // read errors (network drop/hushd restart/abort mid-read) should reconnect
                 if (!cancelled && !ctrl.signal.aborted) {
-                  scheduleReconnect();
+                  scheduleReconnect(
+                    "network_error",
+                    "SSE stream read failed; reconnecting"
+                  );
                 }
               } finally {
                 try {
@@ -107,19 +181,36 @@ export function useSSE(url: string) {
             void pump();
           })
           .catch(() => {
-            scheduleReconnect();
+            if (!cancelled && !ctrl.signal.aborted) {
+              scheduleReconnect(
+                "network_error",
+                "SSE connection failed; reconnecting"
+              );
+            }
           });
       }
       connect();
 
-      return () => { cancelled = true; ctrl.abort(); };
+      return () => {
+        cancelled = true;
+        clearReconnectTimer();
+        ctrl.abort();
+      };
     }
 
     source = new EventSource(fullUrl);
     sourceRef.current = source;
 
-    source.onopen = () => setConnected(true);
-    source.onerror = () => setConnected(false);
+    source.onopen = () => {
+      setConnected(true);
+      setStatus("connected");
+      setError(null);
+    };
+    source.onerror = () => {
+      setConnected(false);
+      setStatus("network_error");
+      setError("SSE transport error");
+    };
 
     function handleEvent(eventType: string) {
       return (e: MessageEvent) => {
@@ -162,7 +253,7 @@ export function useSSE(url: string) {
       source.close();
       sourceRef.current = null;
     };
-  }, [url]);
+  }, [url, reconnectNonce]);
 
-  return { events, connected };
+  return { events, connected, status, error, reconnect };
 }

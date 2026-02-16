@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchHealth, fetchAuditStats, type HealthResponse, type AuditStats } from "../api/client";
-import { useSSE, type SSEEvent } from "../hooks/useSSE";
+import { useSharedSSE } from "../context/SSEContext";
+import type { SSEEvent } from "../hooks/useSSE";
 
 export function Dashboard() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [stats, setStats] = useState<AuditStats | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { events, connected } = useSSE("/api/v1/events");
+  const { events, connected } = useSharedSSE();
 
   const refresh = useCallback(async () => {
     try {

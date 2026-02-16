@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { notifySSEConfigChanged } from "../hooks/useSSE";
 
 export function Settings() {
   const [hushdUrl, setHushdUrl] = useState(() => localStorage.getItem("hushd_url") || "");
@@ -16,6 +17,7 @@ export function Settings() {
     } else {
       localStorage.removeItem("hushd_api_key");
     }
+    notifySSEConfigChanged();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
