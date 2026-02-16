@@ -25,6 +25,8 @@ pub struct AuditQuery {
     pub decision: Option<String>,
     /// Filter by session ID
     pub session_id: Option<String>,
+    /// Filter by agent ID
+    pub agent_id: Option<String>,
     /// Maximum events to return
     pub limit: Option<usize>,
     /// Offset for pagination
@@ -61,6 +63,7 @@ pub async fn query_audit(
         action_type: query.action_type,
         decision: query.decision,
         session_id: query.session_id,
+        agent_id: query.agent_id,
         limit: query.limit,
         offset: query.offset,
         ..Default::default()

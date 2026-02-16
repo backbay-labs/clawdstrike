@@ -689,6 +689,8 @@ pub async fn check_action(
             "allowed": result.allowed,
             "guard": &result.guard,
             "policy_hash": &policy_hash,
+            "session_id": &session_id,
+            "agent_id": &agent_id,
         }),
     });
 

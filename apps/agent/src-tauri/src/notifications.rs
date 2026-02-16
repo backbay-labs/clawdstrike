@@ -283,6 +283,8 @@ mod tests {
             severity: Some("high".to_string()),
             message: None,
             details: serde_json::Value::Null,
+            session_id: None,
+            agent_id: None,
         };
 
         let (title, body) = format_notification(&event);

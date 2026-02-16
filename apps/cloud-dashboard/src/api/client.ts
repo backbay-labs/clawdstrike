@@ -1,30 +1,99 @@
-const API_BASE = "/api";
+function getApiBase(): string {
+  return localStorage.getItem("hushd_url") || "";
+}
 
-export async function apiFetch<T>(
-  path: string,
-  options?: RequestInit,
-): Promise<T> {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options?.headers as Record<string, string>),
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+function getHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const apiKey = localStorage.getItem("hushd_api_key");
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
   }
+  return headers;
+}
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+export interface AuditEvent {
+  id: string;
+  timestamp: string;
+  action_type: string;
+  target?: string;
+  decision: string;
+  guard?: string;
+  severity?: string;
+  message?: string;
+  session_id?: string;
+  agent_id?: string;
+}
 
-  if (res.status === 401) {
-    localStorage.removeItem("token");
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
-  }
+export interface AuditResponse {
+  events: AuditEvent[];
+  total: number;
+  limit?: number;
+  offset?: number;
+}
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`API ${res.status}: ${body}`);
-  }
+export interface AuditStats {
+  total_events: number;
+  violations: number;
+  allowed: number;
+  session_id: string;
+  uptime_secs: number;
+}
 
-  return res.json() as Promise<T>;
+export interface HealthResponse {
+  status: string;
+  version?: string;
+  uptime_secs?: number;
+  policy_hash?: string;
+}
+
+export interface PolicyResponse {
+  name?: string;
+  version?: string;
+  hash?: string;
+  source?: string;
+  yaml?: string;
+  policy?: unknown;
+}
+
+export interface AuditFilters {
+  decision?: string;
+  action_type?: string;
+  session_id?: string;
+  agent_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  const res = await fetch(`${getApiBase()}/health`, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAuditEvents(filters?: AuditFilters): Promise<AuditResponse> {
+  const params = new URLSearchParams();
+  if (filters?.decision) params.set("decision", filters.decision);
+  if (filters?.action_type) params.set("action_type", filters.action_type);
+  if (filters?.session_id) params.set("session_id", filters.session_id);
+  if (filters?.agent_id) params.set("agent_id", filters.agent_id);
+  if (filters?.limit) params.set("limit", String(filters.limit));
+  if (filters?.offset) params.set("offset", String(filters.offset));
+
+  const qs = params.toString();
+  const url = `${getApiBase()}/api/v1/audit${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`Audit query failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAuditStats(): Promise<AuditStats> {
+  const res = await fetch(`${getApiBase()}/api/v1/audit/stats`, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`Audit stats failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPolicy(): Promise<PolicyResponse> {
+  const res = await fetch(`${getApiBase()}/api/v1/policy`, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`Policy fetch failed: ${res.status}`);
+  return res.json();
 }

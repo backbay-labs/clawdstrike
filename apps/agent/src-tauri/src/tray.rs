@@ -3,6 +3,7 @@
 use crate::daemon::DaemonState;
 use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
+use crate::settings::Settings;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -17,6 +18,7 @@ pub mod menu_ids {
     pub const TOGGLE_ENABLED: &str = "toggle_enabled";
     pub const EVENT_PREFIX: &str = "event_";
     pub const OPEN_DESKTOP: &str = "open_desktop";
+    pub const OPEN_WEB_UI: &str = "open_web_ui";
     pub const INSTALL_HOOKS: &str = "install_hooks";
     pub const RELOAD_POLICY: &str = "reload_policy";
     pub const QUIT: &str = "quit";
@@ -101,6 +103,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
         true,
         None::<&str>,
     )?;
+    let open_web_ui = MenuItem::with_id(
+        app,
+        menu_ids::OPEN_WEB_UI,
+        "Open Web UI",
+        true,
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, menu_ids::QUIT, "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -115,6 +124,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
             &install_hooks,
             &reload_policy,
             &open_desktop,
+            &open_web_ui,
             &sep3,
             &quit_item,
         ],
@@ -207,7 +217,17 @@ fn format_event_label(event: &PolicyEvent) -> String {
         target.to_string()
     };
 
-    format!("{} {} - {}", icon, event.action_type, short_target)
+    let attribution = if let Some(ref aid) = event.agent_id {
+        let truncated = if aid.len() > 8 { &aid[..8] } else { aid };
+        format!(" [{}]", truncated)
+    } else if let Some(ref sid) = event.session_id {
+        let truncated = if sid.len() > 8 { &sid[..8] } else { sid };
+        format!(" [s:{}]", truncated)
+    } else {
+        String::new()
+    };
+
+    format!("{} {} - {}{}", icon, event.action_type, short_target, attribution)
 }
 
 /// Create and setup the tray icon.
@@ -261,6 +281,20 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             #[cfg(target_os = "linux")]
             {
                 let _ = std::process::Command::new("sdr-desktop").spawn();
+            }
+        }
+        menu_ids::OPEN_WEB_UI => {
+            tracing::info!("Open Web UI clicked");
+            let url = Settings::load()
+                .map(|s| s.dashboard_url)
+                .unwrap_or_else(|_| "http://localhost:3100".to_string());
+            #[cfg(target_os = "macos")]
+            {
+                let _ = std::process::Command::new("open").arg(&url).spawn();
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
             }
         }
         menu_ids::QUIT => {

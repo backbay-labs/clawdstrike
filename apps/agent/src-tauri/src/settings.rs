@@ -79,6 +79,10 @@ pub struct Settings {
     /// Non-secret OpenClaw metadata.
     #[serde(default)]
     pub openclaw: OpenClawSettings,
+
+    /// URL for the local web dashboard.
+    #[serde(default = "default_dashboard_url")]
+    pub dashboard_url: String,
 }
 
 fn default_policy_path() -> PathBuf {
@@ -113,6 +117,10 @@ fn default_notification_severity() -> String {
     "block".to_string()
 }
 
+fn default_dashboard_url() -> String {
+    "http://localhost:3100".to_string()
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -129,6 +137,7 @@ impl Default for Settings {
             hushd_binary_path: None,
             api_key: None,
             openclaw: OpenClawSettings::default(),
+            dashboard_url: default_dashboard_url(),
         }
     }
 }

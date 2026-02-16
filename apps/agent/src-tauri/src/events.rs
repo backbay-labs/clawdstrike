@@ -34,6 +34,12 @@ pub struct PolicyEvent {
     /// Additional details.
     #[serde(default)]
     pub details: serde_json::Value,
+    /// Session that triggered this event.
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// Agent that triggered this event.
+    #[serde(default)]
+    pub agent_id: Option<String>,
 }
 
 impl PolicyEvent {
@@ -323,11 +329,76 @@ impl EventManager {
 
         // Daemon-level events: hushd sends type via SSE `event:` field.
         match event_type {
-            "policy_updated" | "violation" | "session_posture_transition" => {
+            "policy_updated" | "violation" | "check" | "session_posture_transition" => {
                 let mut json: serde_json::Value =
                     serde_json::from_str(data).with_context(|| {
                         format!("Malformed JSON in SSE daemon event ({event_type}): {data}")
                     })?;
+
+                // For check/violation events, also synthesize a PolicyEvent for the tray.
+                // hushd broadcasts {action_type, target, allowed, guard, policy_hash} but
+                // PolicyEvent needs {id, timestamp, decision, ...}.
+                if event_type == "violation" || event_type == "check" {
+                    let obj = json.as_object().cloned().unwrap_or_default();
+                    let allowed = obj
+                        .get("allowed")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let decision = if allowed { "allowed" } else { "blocked" };
+
+                    let policy_event = PolicyEvent {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        action_type: obj
+                            .get("action_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        target: obj
+                            .get("target")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        decision: decision.to_string(),
+                        guard: obj
+                            .get("guard")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        severity: obj
+                            .get("severity")
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .or_else(|| {
+                                if allowed {
+                                    None
+                                } else {
+                                    Some("high".to_string())
+                                }
+                            }),
+                        message: obj
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        details: obj
+                            .get("details")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                        session_id: obj
+                            .get("session_id")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        agent_id: obj
+                            .get("agent_id")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                    };
+                    self.publish_event_if_new(policy_event).await;
+                }
+
+                // "check" events are only for tray display; skip daemon event dispatch.
+                if event_type == "check" {
+                    return Ok(());
+                }
+
                 if let Some(obj) = json.as_object_mut() {
                     obj.insert(
                         "type".to_string(),
@@ -508,5 +579,54 @@ mod tests {
         assert!(deduper.insert_if_new("d"));
         // "a" falls out of the dedupe window and can re-appear if needed.
         assert!(deduper.insert_if_new("a"));
+    }
+
+    #[test]
+    fn policy_event_with_session_and_agent_ids() {
+        let json = r#"{
+            "id": "ev-100",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "action_type": "file_access",
+            "target": "/etc/passwd",
+            "decision": "blocked",
+            "guard": "fs_blocklist",
+            "severity": "high",
+            "session_id": "sess-abc",
+            "agent_id": "agent-xyz"
+        }"#;
+
+        let event: PolicyEvent = serde_json::from_str(json).expect("should parse with ids");
+        assert_eq!(event.session_id.as_deref(), Some("sess-abc"));
+        assert_eq!(event.agent_id.as_deref(), Some("agent-xyz"));
+    }
+
+    #[test]
+    fn policy_event_without_session_and_agent_ids() {
+        let json = r#"{
+            "id": "ev-101",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "action_type": "egress",
+            "decision": "allowed"
+        }"#;
+
+        let event: PolicyEvent = serde_json::from_str(json).expect("should parse without ids");
+        assert!(event.session_id.is_none());
+        assert!(event.agent_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn sse_check_event_propagates_session_agent_ids() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        let data = r#"{"action_type":"file_access","target":"/etc/shadow","allowed":false,"guard":"fs_blocklist","policy_hash":"abc123","session_id":"s-42","agent_id":"a-7"}"#;
+        mgr.handle_sse_message("violation", data)
+            .await
+            .expect("should handle violation with ids");
+
+        let evt = events_rx.try_recv().expect("should have received event");
+        assert_eq!(evt.session_id.as_deref(), Some("s-42"));
+        assert_eq!(evt.agent_id.as_deref(), Some("a-7"));
+        assert_eq!(evt.decision, "blocked");
     }
 }
