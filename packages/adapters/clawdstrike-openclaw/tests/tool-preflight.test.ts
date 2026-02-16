@@ -191,6 +191,16 @@ describe('Tool Pre-flight Hook', () => {
       expect(event.preventDefault).toBe(false);
       expect(spy).not.toHaveBeenCalled();
     });
+
+    it('should classify camel-case network tools as network_egress', async () => {
+      const spy = vi.spyOn(PolicyEngine.prototype, 'evaluate');
+      const event = makeToolCallEvent('WebSearch', { query: 'acme corp breach' });
+
+      await toolPreflightHandler(event);
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ eventType: 'network_egress' }));
+    });
   });
 
   describe('token-based tool classification', () => {

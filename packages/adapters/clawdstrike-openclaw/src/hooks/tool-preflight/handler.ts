@@ -69,10 +69,16 @@ const DESTRUCTIVE_EVENT_MAP: Array<{ tokens: Set<string>; eventType: EventType }
 const NETWORK_TOKENS = new Set(['fetch', 'http', 'web', 'curl', 'request']);
 
 /**
- * Tokenize a tool name by splitting on common delimiters.
+ * Tokenize a tool name by splitting on common delimiters and camel-case boundaries.
  */
 function tokenize(toolName: string): string[] {
-  return toolName.toLowerCase().split(/[_\-/\s.]+/).filter(Boolean);
+  return toolName
+    // Split `fooBar` -> `foo Bar`, `HTTPFetch` -> `HTTP Fetch`
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[_\-/\s.]+/)
+    .filter(Boolean);
 }
 
 type ToolClassification = 'read_only' | 'destructive' | 'unknown';
