@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "cc"
-version = "1.2.55"
+version = "1.2.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47b26a0954ae34af09b50f0de26458fa95369a0d478d8236d3f93082b219bd29"
+checksum = "aebf35691d1bfb0ac386a69bac2fde4dd276fb618cf8bf4f5318fe285e821bb2"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -20,9 +20,9 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "libc"
-version = "0.2.180"
+version = "0.2.182"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
+checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
 
 [[package]]
 name = "paste"
@@ -32,9 +32,9 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.28.0"
+version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "972720a441c91fd9c49f212a1d2d74c6e3803b231ebc8d66c51efbd7ccab11c8"
+checksum = "f9ca0864a7dd3c133a7f3f020cbff2e12e88420da854c35540fd20ce2d60e435"
 dependencies = [
  "python3-dll-a",
  "target-lexicon",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.28.0"
+version = "0.28.1"
 dependencies = [
  "libc",
  "paste",
