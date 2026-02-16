@@ -35,8 +35,8 @@ fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput
         "file_access" | "file_write" | "egress" | "shell" | "mcp_tool" | "patch" => {
             action_type_raw
         }
-        // Unknown: pass through as-is so hushd can return a structured error.
-        _ => input.action_type.trim().to_string(),
+        // Unknown: pass through as lowercase so casing differences don't bypass normalization.
+        _ => action_type_raw,
     };
 
     // For egress checks we prefer `host:port` (what hushd expects). If callers pass a URL, parse it.
@@ -194,7 +194,7 @@ pub async fn evaluate_policy_check(
                 "Policy daemon rate limit exceeded",
             ),
             400 => (
-                "hushd_request_error",
+                "policy_request_error",
                 "high",
                 "Policy daemon rejected request",
             ),
@@ -309,6 +309,24 @@ mod tests {
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "egress");
         assert_eq!(normalized.target, "example.com");
+
+        let input = PolicyCheckInput {
+            action_type: "MCP_TOOL".to_string(),
+            target: "tool".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "mcp_tool");
+
+        let input = PolicyCheckInput {
+            action_type: "CUSTOM_ACTION".to_string(),
+            target: "x".to_string(),
+            content: None,
+            args: None,
+        };
+        let normalized = normalize_policy_check_input(input);
+        assert_eq!(normalized.action_type, "custom_action");
     }
 
     #[test]
@@ -410,6 +428,7 @@ mod tests {
         assert!(details.get("http_status").is_some());
         assert!(details.get("body").is_none());
         assert!(details.get("body_truncated").is_none());
+        assert_eq!(out.guard.as_deref(), Some("policy_request_error"));
     }
 
     #[tokio::test]
