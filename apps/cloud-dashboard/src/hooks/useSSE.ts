@@ -125,6 +125,7 @@ export function useSSE(url: string): UseSSEResult {
             const decoder = new TextDecoder();
             let buffer = "";
             let currentEvent = "";
+            let dataLines: string[] = [];
 
             const pump = async (): Promise<void> => {
               try {
@@ -137,26 +138,37 @@ export function useSSE(url: string): UseSSEResult {
                   buffer += decoder.decode(value, { stream: true });
                   const lines = buffer.split("\n");
                   buffer = lines.pop() ?? "";
-                  for (const line of lines) {
+                  for (const rawLine of lines) {
+                    const line = rawLine.endsWith("\r")
+                      ? rawLine.slice(0, -1)
+                      : rawLine;
                     if (line.startsWith("event:")) {
                       currentEvent = line.slice(6).trim();
                     } else if (line.startsWith("data:")) {
-                      const raw = line.slice(5).trim();
-                      try {
-                        const data = JSON.parse(raw);
-                        if (data === "ping" || raw === "ping") continue;
-                        const eventType = currentEvent || "message";
-                        const event: SSEEvent = {
-                          ...data,
-                          event_type: eventType,
-                          timestamp: data.timestamp ?? new Date().toISOString(),
-                        };
-                        setEvents((prev) => [event, ...prev].slice(0, 500));
-                      } catch {
-                        // skip malformed payloads
-                      }
-                      currentEvent = "";
+                      // SSE allows multiple data lines per event; they are joined with "\n"
+                      // and dispatched when a blank line terminates the event block.
+                      dataLines.push(line.slice(5).trimStart());
+                    } else if (line.startsWith(":")) {
+                      // SSE comment line; ignore.
                     } else if (line.trim() === "") {
+                      if (dataLines.length > 0) {
+                        const raw = dataLines.join("\n");
+                        try {
+                          const data = JSON.parse(raw);
+                          if (data !== "ping" && raw !== "ping") {
+                            const eventType = currentEvent || "message";
+                            const event: SSEEvent = {
+                              ...data,
+                              event_type: eventType,
+                              timestamp: data.timestamp ?? new Date().toISOString(),
+                            };
+                            setEvents((prev) => [event, ...prev].slice(0, 500));
+                          }
+                        } catch {
+                          // skip malformed payloads
+                        }
+                      }
+                      dataLines = [];
                       currentEvent = "";
                     }
                   }

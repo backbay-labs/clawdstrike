@@ -35,7 +35,7 @@ export interface AuditStats {
   total_events: number;
   violations: number;
   allowed: number;
-  session_id: string;
+  session_id?: string;
   uptime_secs: number;
 }
 
