@@ -26,58 +26,74 @@ export function useSSE(url: string) {
     const apiKey = localStorage.getItem("hushd_api_key");
     let source: EventSource;
     if (apiKey) {
-      // Use fetch + ReadableStream to send Authorization header
-      const ctrl = new AbortController();
-      fetch(fullUrl, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: ctrl.signal,
-      })
-        .then((res) => {
-          if (!res.ok || !res.body) {
-            setConnected(false);
-            return;
-          }
-          setConnected(true);
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          let currentEvent = "";
+      // Use fetch + ReadableStream to send Authorization header.
+      // Wrap in a connect() function so we can reconnect on EOF.
+      let ctrl = new AbortController();
+      let cancelled = false;
 
-          function pump(): Promise<void> {
-            return reader.read().then(({ done, value }) => {
-              if (done) { setConnected(false); return; }
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() ?? "";
-              for (const line of lines) {
-                if (line.startsWith("event:")) {
-                  currentEvent = line.slice(6).trim();
-                } else if (line.startsWith("data:")) {
-                  const raw = line.slice(5).trim();
-                  try {
-                    const data = JSON.parse(raw);
-                    if (data === "ping" || raw === "ping") continue;
-                    const eventType = currentEvent || "message";
-                    const event: SSEEvent = {
-                      ...data,
-                      event_type: eventType,
-                      timestamp: data.timestamp ?? new Date().toISOString(),
-                    };
-                    setEvents((prev) => [event, ...prev].slice(0, 500));
-                  } catch { /* skip malformed */ }
-                  currentEvent = "";
-                } else if (line.trim() === "") {
-                  currentEvent = "";
-                }
-              }
-              return pump();
-            });
-          }
-          pump();
+      function connect() {
+        if (cancelled) return;
+        ctrl = new AbortController();
+        fetch(fullUrl, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: ctrl.signal,
         })
-        .catch(() => setConnected(false));
+          .then((res) => {
+            if (!res.ok || !res.body) {
+              setConnected(false);
+              if (!cancelled) setTimeout(connect, 3000);
+              return;
+            }
+            setConnected(true);
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let currentEvent = "";
 
-      return () => { ctrl.abort(); };
+            function pump(): Promise<void> {
+              return reader.read().then(({ done, value }) => {
+                if (done) {
+                  setConnected(false);
+                  if (!cancelled) setTimeout(connect, 3000);
+                  return;
+                }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() ?? "";
+                for (const line of lines) {
+                  if (line.startsWith("event:")) {
+                    currentEvent = line.slice(6).trim();
+                  } else if (line.startsWith("data:")) {
+                    const raw = line.slice(5).trim();
+                    try {
+                      const data = JSON.parse(raw);
+                      if (data === "ping" || raw === "ping") continue;
+                      const eventType = currentEvent || "message";
+                      const event: SSEEvent = {
+                        ...data,
+                        event_type: eventType,
+                        timestamp: data.timestamp ?? new Date().toISOString(),
+                      };
+                      setEvents((prev) => [event, ...prev].slice(0, 500));
+                    } catch { /* skip malformed */ }
+                    currentEvent = "";
+                  } else if (line.trim() === "") {
+                    currentEvent = "";
+                  }
+                }
+                return pump();
+              });
+            }
+            pump();
+          })
+          .catch(() => {
+            setConnected(false);
+            if (!cancelled) setTimeout(connect, 3000);
+          });
+      }
+      connect();
+
+      return () => { cancelled = true; ctrl.abort(); };
     }
 
     source = new EventSource(fullUrl);

@@ -83,8 +83,8 @@ export async function fetchAuditEvents(filters?: AuditFilters): Promise<AuditRes
   if (filters?.action_type) params.set("action_type", filters.action_type);
   if (filters?.session_id) params.set("session_id", filters.session_id);
   if (filters?.agent_id) params.set("agent_id", filters.agent_id);
-  if (filters?.limit) params.set("limit", String(filters.limit));
-  if (filters?.offset) params.set("offset", String(filters.offset));
+  if (filters?.limit != null) params.set("limit", String(filters.limit));
+  if (filters?.offset != null) params.set("offset", String(filters.offset));
 
   const qs = params.toString();
   const url = `${getApiBase()}/api/v1/audit${qs ? `?${qs}` : ""}`;

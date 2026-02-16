@@ -335,10 +335,11 @@ impl EventManager {
                         format!("Malformed JSON in SSE daemon event ({event_type}): {data}")
                     })?;
 
-                // For check/violation events, also synthesize a PolicyEvent for the tray.
-                // hushd broadcasts {action_type, target, allowed, guard, policy_hash} but
-                // PolicyEvent needs {id, timestamp, decision, ...}.
-                if event_type == "violation" || event_type == "check" {
+                // For "check" events, synthesize a PolicyEvent for the tray display.
+                // "violation" events skip this path — they are dispatched as DaemonEvent::Violation
+                // below, which already triggers a notification in main.rs. Synthesizing a
+                // PolicyEvent here too would cause duplicate notifications.
+                if event_type == "check" {
                     let obj = json.as_object().cloned().unwrap_or_default();
                     let allowed = obj
                         .get("allowed")

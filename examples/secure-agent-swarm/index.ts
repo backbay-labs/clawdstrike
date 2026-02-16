@@ -18,13 +18,13 @@ import {
 } from '@clawdstrike/adapter-core';
 import { createStrikeCell } from '@clawdstrike/engine-remote';
 
-const HUSHD_URL = process.env.HUSHD_URL ?? 'http://127.0.0.1:3100';
+const HUSHD_URL = process.env.HUSHD_URL ?? 'http://127.0.0.1:9876';
 const SESSION_ID = `swarm-${Date.now()}`;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
 async function healthCheck(): Promise<void> {
-  const res = await fetch(`${HUSHD_URL}/api/v1/health`);
+  const res = await fetch(`${HUSHD_URL}/health`);
   if (!res.ok) throw new Error(`hushd health check failed: ${res.status}`);
   console.log('[✓] hushd is running\n');
 }

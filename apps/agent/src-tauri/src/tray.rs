@@ -296,6 +296,12 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             {
                 let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
             }
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", &url])
+                    .spawn();
+            }
         }
         menu_ids::QUIT => {
             tracing::info!("Quit clicked");
