@@ -444,26 +444,22 @@ async fn run_agent<R: Runtime>(
                 }
                 DaemonEvent::Violation {
                     guard,
-                    message,
+                    message: _,
                     severity,
                     target,
+                    session_id,
+                    agent_id,
                 } => {
                     tracing::info!(
                         guard = ?guard,
                         severity = ?severity,
                         target = ?target,
+                        session_id = ?session_id,
+                        agent_id = ?agent_id,
                         "Received violation event from hushd"
                     );
-                    let title = format!(
-                        "Security Violation{}",
-                        guard
-                            .as_ref()
-                            .map(|g| format!(" ({})", g))
-                            .unwrap_or_default()
-                    );
-                    let body = message
-                        .unwrap_or_else(|| target.unwrap_or_else(|| "Unknown target".to_string()));
-                    notifications::show_notification(&app_for_sse, &title, &body);
+                    // Notification is handled via PolicyEvent → NotificationManager
+                    // for consistent severity filtering and attribution.
                 }
                 DaemonEvent::SessionPostureTransition {
                     session_id,

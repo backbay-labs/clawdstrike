@@ -67,6 +67,10 @@ pub enum DaemonEvent {
         severity: Option<String>,
         #[serde(default)]
         target: Option<String>,
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        agent_id: Option<String>,
     },
     /// Session posture transitioned (e.g., standard -> restricted).
     SessionPostureTransition {
@@ -335,12 +339,15 @@ impl EventManager {
                         format!("Malformed JSON in SSE daemon event ({event_type}): {data}")
                     })?;
 
-                // For "check" events, synthesize a PolicyEvent for the tray display.
-                // "violation" events skip this path — they are dispatched as DaemonEvent::Violation
-                // below, which already triggers a notification in main.rs. Synthesizing a
-                // PolicyEvent here too would cause duplicate notifications.
-                if event_type == "check" {
-                    let obj = json.as_object().cloned().unwrap_or_default();
+                // Synthesize a PolicyEvent for the tray display from check and violation events.
+                // Violations flow through the same NotificationManager as checks for consistent
+                // severity filtering and attribution.
+                if event_type == "check" || event_type == "violation" {
+                    let Some(obj) = json.as_object() else {
+                        anyhow::bail!(
+                            "Expected JSON object for {event_type} event, got: {data}"
+                        );
+                    };
                     let allowed = obj
                         .get("allowed")
                         .and_then(|v| v.as_bool())
@@ -348,8 +355,16 @@ impl EventManager {
                     let decision = if allowed { "allowed" } else { "blocked" };
 
                     let policy_event = PolicyEvent {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        id: obj
+                            .get("event_id")
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                        timestamp: obj
+                            .get("timestamp")
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
                         action_type: obj
                             .get("action_type")
                             .and_then(|v| v.as_str())
@@ -485,12 +500,44 @@ mod tests {
 
     #[test]
     fn daemon_event_violation_deserializes() {
-        let json = r#"{"type":"violation","guard":"fs_blocklist","severity":"high","target":"/etc/shadow"}"#;
+        let json = r#"{"type":"violation","guard":"fs_blocklist","severity":"high","target":"/etc/shadow","session_id":"s-1","agent_id":"a-1"}"#;
         let event: DaemonEvent = match serde_json::from_str(json) {
             Ok(v) => v,
             Err(err) => panic!("failed to parse violation event: {err}"),
         };
-        assert!(matches!(event, DaemonEvent::Violation { .. }));
+        match event {
+            DaemonEvent::Violation {
+                guard,
+                session_id,
+                agent_id,
+                ..
+            } => {
+                assert_eq!(guard.as_deref(), Some("fs_blocklist"));
+                assert_eq!(session_id.as_deref(), Some("s-1"));
+                assert_eq!(agent_id.as_deref(), Some("a-1"));
+            }
+            other => panic!("expected Violation, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn daemon_event_violation_deserializes_without_attribution() {
+        let json = r#"{"type":"violation","guard":"fs_blocklist","severity":"high"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse violation event: {err}"),
+        };
+        match event {
+            DaemonEvent::Violation {
+                session_id,
+                agent_id,
+                ..
+            } => {
+                assert!(session_id.is_none());
+                assert!(agent_id.is_none());
+            }
+            other => panic!("expected Violation, got {:?}", other),
+        }
     }
 
     #[test]
@@ -512,6 +559,7 @@ mod tests {
     async fn sse_event_field_dispatches_daemon_events() {
         let mgr = EventManager::new("http://localhost:0".to_string(), None);
         let mut daemon_rx = mgr.subscribe_daemon_events();
+        let mut events_rx = mgr.subscribe();
 
         // hushd sends: event: policy_updated\ndata: {"version":"2.0.0"}
         // Note: no "type" key in the JSON payload.
@@ -524,16 +572,29 @@ mod tests {
             .expect("should have received daemon event");
         assert!(matches!(evt, DaemonEvent::PolicyUpdated { version: Some(v) } if v == "2.0.0"));
 
-        // violation with SSE event field
-        mgr.handle_sse_message("violation", r#"{"guard":"fs_blocklist","severity":"high"}"#)
-            .await
-            .expect("should dispatch violation");
+        // violation with SSE event field — should produce both a PolicyEvent and a DaemonEvent
+        mgr.handle_sse_message(
+            "violation",
+            r#"{"event_id":"ev-v7","guard":"fs_blocklist","severity":"high","allowed":false,"action_type":"file_access","target":"/etc/shadow","session_id":"s-1","agent_id":"a-1"}"#,
+        )
+        .await
+        .expect("should dispatch violation");
 
+        // Violation should produce a PolicyEvent via the unified path.
+        let policy_evt = events_rx
+            .try_recv()
+            .expect("violation should produce a PolicyEvent");
+        assert_eq!(policy_evt.id, "ev-v7");
+        assert_eq!(policy_evt.session_id.as_deref(), Some("s-1"));
+        assert_eq!(policy_evt.agent_id.as_deref(), Some("a-1"));
+        assert!(policy_evt.normalized_decision().is_blocked());
+
+        // Violation should also produce a DaemonEvent for logging.
         let evt = daemon_rx
             .try_recv()
             .expect("should have received violation event");
         assert!(
-            matches!(evt, DaemonEvent::Violation { guard: Some(g), .. } if g == "fs_blocklist")
+            matches!(evt, DaemonEvent::Violation { guard: Some(g), session_id: Some(s), .. } if g == "fs_blocklist" && s == "s-1")
         );
     }
 
@@ -568,6 +629,31 @@ mod tests {
 
         // No phantom event should have been emitted.
         assert!(daemon_rx.try_recv().is_err());
+    }
+
+    /// Non-object JSON payloads (arrays, strings) for check/violation must be rejected
+    /// rather than producing a phantom PolicyEvent with action_type="unknown".
+    #[tokio::test]
+    async fn sse_non_object_json_rejects_for_check_and_violation() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        for event_type in &["check", "violation"] {
+            let result = mgr.handle_sse_message(event_type, r#"[1, 2, 3]"#).await;
+            assert!(
+                result.is_err(),
+                "non-object JSON should be rejected for {event_type}"
+            );
+
+            let result = mgr.handle_sse_message(event_type, r#""just a string""#).await;
+            assert!(
+                result.is_err(),
+                "string JSON should be rejected for {event_type}"
+            );
+        }
+
+        // No phantom events should have been emitted.
+        assert!(events_rx.try_recv().is_err());
     }
 
     #[test]
@@ -629,5 +715,46 @@ mod tests {
         assert_eq!(evt.session_id.as_deref(), Some("s-42"));
         assert_eq!(evt.agent_id.as_deref(), Some("a-7"));
         assert_eq!(evt.decision, "blocked");
+    }
+
+    /// Verify that SSE events with a stable event_id from hushd are deduped against the same
+    /// events arriving via poll_once().
+    #[tokio::test]
+    async fn sse_and_poll_dedup_with_stable_event_id() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        // Simulate SSE check event with stable event_id (as hushd now sends).
+        let data = r#"{"event_id":"019abc-v7","action_type":"file_access","target":"/etc/shadow","allowed":false,"guard":"fs_blocklist","session_id":"s-1","agent_id":"a-1"}"#;
+        mgr.handle_sse_message("check", data)
+            .await
+            .expect("should handle check event");
+
+        let evt = events_rx
+            .try_recv()
+            .expect("should have received policy event");
+        assert_eq!(evt.id, "019abc-v7", "should use stable ID from hushd");
+
+        // Simulate the same event arriving via poll_once (audit API returns same ID).
+        let poll_event = PolicyEvent {
+            id: "019abc-v7".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            action_type: "file_access".to_string(),
+            target: Some("/etc/shadow".to_string()),
+            decision: "blocked".to_string(),
+            guard: Some("fs_blocklist".to_string()),
+            severity: Some("high".to_string()),
+            message: None,
+            details: serde_json::Value::Null,
+            session_id: Some("s-1".to_string()),
+            agent_id: Some("a-1".to_string()),
+        };
+        mgr.publish_event_if_new(poll_event).await;
+
+        // Should be deduped — no new event on the channel.
+        assert!(
+            events_rx.try_recv().is_err(),
+            "duplicate event should be deduped"
+        );
     }
 }

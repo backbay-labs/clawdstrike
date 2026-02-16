@@ -238,6 +238,7 @@ async function main(): Promise<void> {
           for (const line of text.split('\n').filter(l => l.startsWith('data:'))) {
             try {
               const data = JSON.parse(line.slice(5).trim());
+              if (data.session_id && data.session_id !== SESSION_ID) continue;
               console.log(`  [${data.agent_id ?? '?'}] ${data.action_type} → ${data.allowed ? 'allow' : 'block'}`);
             } catch { /* skip non-JSON */ }
           }

@@ -145,6 +145,7 @@ struct AgentSettingsResponse {
     auto_start: bool,
     notifications_enabled: bool,
     notification_severity: String,
+    dashboard_url: String,
     debug_include_daemon_error_body: bool,
     openclaw_active_gateway_id: Option<String>,
 }
@@ -155,6 +156,7 @@ struct AgentSettingsUpdate {
     auto_start: Option<bool>,
     notifications_enabled: Option<bool>,
     notification_severity: Option<String>,
+    dashboard_url: Option<String>,
     debug_include_daemon_error_body: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_optional_string_field")]
     openclaw_active_gateway_id: Option<Option<String>>,
@@ -205,6 +207,7 @@ async fn get_settings(
         auto_start: settings.auto_start,
         notifications_enabled: settings.notifications_enabled,
         notification_severity: settings.notification_severity.clone(),
+        dashboard_url: settings.dashboard_url.clone(),
         debug_include_daemon_error_body: settings.debug_include_daemon_error_body,
         openclaw_active_gateway_id: settings.openclaw.active_gateway_id.clone(),
     }))
@@ -231,6 +234,9 @@ async fn update_settings(
         }
         if let Some(value) = input.notification_severity {
             settings.notification_severity = value;
+        }
+        if let Some(value) = input.dashboard_url {
+            settings.dashboard_url = value;
         }
         if let Some(value) = input.debug_include_daemon_error_body {
             settings.debug_include_daemon_error_body = value;
@@ -720,6 +726,71 @@ mod tests {
             response.status(),
             StatusCode::NOT_FOUND,
             "Route should match the UUID path param and return 404 (not found), not a routing error"
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_roundtrip_includes_dashboard_url() {
+        let state = Arc::new(test_state());
+
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/settings",
+                get(get_settings).put(update_settings),
+            )
+            .with_state(state);
+
+        // GET should return default dashboard_url.
+        let get_req = axum::http::Request::builder()
+            .uri("/api/v1/agent/settings")
+            .header("authorization", "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
+
+        let response = app
+            .clone()
+            .oneshot(get_req)
+            .await
+            .unwrap_or_else(|e| panic!("GET request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read response body: {e}"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
+        assert_eq!(
+            json.get("dashboard_url").and_then(|v| v.as_str()),
+            Some("http://localhost:3100"),
+            "GET should return default dashboard_url"
+        );
+
+        // PUT should persist a custom dashboard_url.
+        let put_req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/agent/settings")
+            .header("authorization", "Bearer test-token")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{"dashboard_url":"http://localhost:4200"}"#,
+            ))
+            .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
+
+        let response = app
+            .oneshot(put_req)
+            .await
+            .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read PUT response body: {e}"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
+        assert_eq!(
+            json.get("dashboard_url").and_then(|v| v.as_str()),
+            Some("http://localhost:4200"),
+            "PUT should return updated dashboard_url"
         );
     }
 }

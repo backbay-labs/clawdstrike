@@ -137,11 +137,13 @@ function startBlueTeamListener(
           if (!line.startsWith('data:')) continue;
           try {
             const data = JSON.parse(line.slice(5).trim()) as {
+              session_id?: string;
               agent_id?: string;
               action_type?: string;
               target?: string;
               allowed?: boolean;
             };
+            if (data.session_id && data.session_id !== SESSION_ID) continue;
             const agentId = data.agent_id ?? 'unknown';
             if (!blueReports.has(agentId)) {
               blueReports.set(agentId, { actions: 0, violations: 0, events: [] });

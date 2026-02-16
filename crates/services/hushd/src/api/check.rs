@@ -494,6 +494,8 @@ pub async fn check_action(
         request.session_id.as_deref(),
         request.agent_id.as_deref(),
     );
+    let stable_event_id = audit_event.id.clone();
+    let stable_timestamp = audit_event.timestamp.to_rfc3339();
 
     // Policy resolver metadata.
     {
@@ -684,10 +686,14 @@ pub async fn check_action(
     state.broadcast(DaemonEvent {
         event_type: if result.allowed { "check" } else { "violation" }.to_string(),
         data: serde_json::json!({
+            "event_id": &stable_event_id,
+            "timestamp": &stable_timestamp,
             "action_type": &action_type,
             "target": &target,
             "allowed": result.allowed,
             "guard": &result.guard,
+            "severity": canonical_guard_severity(&result.severity),
+            "message": &result.message,
             "policy_hash": &policy_hash,
             "session_id": &session_id,
             "agent_id": &agent_id,

@@ -104,6 +104,7 @@ function startSSEListener(
           if (!line.startsWith('data:')) continue;
           try {
             const data = JSON.parse(line.slice(5).trim());
+            if (data.session_id && data.session_id !== SESSION_ID) continue;
             events.push({
               agentId: data.agent_id ?? 'unknown',
               actionType: data.action_type ?? '?',
