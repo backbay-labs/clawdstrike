@@ -19,12 +19,68 @@ export function useSSE(url: string) {
 
   useEffect(() => {
     const apiBase = localStorage.getItem("hushd_url") || "";
-    const apiKey = localStorage.getItem("hushd_api_key");
-    const fullUrl = apiKey
-      ? `${apiBase}${url}?token=${encodeURIComponent(apiKey)}`
-      : `${apiBase}${url}`;
+    const fullUrl = `${apiBase}${url}`;
 
-    const source = new EventSource(fullUrl);
+    // EventSource doesn't support custom headers, so for authenticated
+    // hushd deployments we use a fetch-based approach.
+    const apiKey = localStorage.getItem("hushd_api_key");
+    let source: EventSource;
+    if (apiKey) {
+      // Use fetch + ReadableStream to send Authorization header
+      const ctrl = new AbortController();
+      fetch(fullUrl, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: ctrl.signal,
+      })
+        .then((res) => {
+          if (!res.ok || !res.body) {
+            setConnected(false);
+            return;
+          }
+          setConnected(true);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let currentEvent = "";
+
+          function pump(): Promise<void> {
+            return reader.read().then(({ done, value }) => {
+              if (done) { setConnected(false); return; }
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
+                if (line.startsWith("event:")) {
+                  currentEvent = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                  const raw = line.slice(5).trim();
+                  try {
+                    const data = JSON.parse(raw);
+                    if (data === "ping" || raw === "ping") continue;
+                    const eventType = currentEvent || "message";
+                    const event: SSEEvent = {
+                      ...data,
+                      event_type: eventType,
+                      timestamp: data.timestamp ?? new Date().toISOString(),
+                    };
+                    setEvents((prev) => [event, ...prev].slice(0, 500));
+                  } catch { /* skip malformed */ }
+                  currentEvent = "";
+                } else if (line.trim() === "") {
+                  currentEvent = "";
+                }
+              }
+              return pump();
+            });
+          }
+          pump();
+        })
+        .catch(() => setConnected(false));
+
+      return () => { ctrl.abort(); };
+    }
+
+    source = new EventSource(fullUrl);
     sourceRef.current = source;
 
     source.onopen = () => setConnected(true);
@@ -35,9 +91,9 @@ export function useSSE(url: string) {
         try {
           const data = JSON.parse(e.data);
           const event: SSEEvent = {
-            event_type: eventType,
-            timestamp: new Date().toISOString(),
             ...data,
+            event_type: eventType,
+            timestamp: data.timestamp ?? new Date().toISOString(),
           };
           setEvents((prev) => [event, ...prev].slice(0, 500));
         } catch {
@@ -57,9 +113,9 @@ export function useSSE(url: string) {
         const data = JSON.parse(e.data);
         if (data === "ping" || e.data === "ping") return;
         const event: SSEEvent = {
-          event_type: "message",
-          timestamp: new Date().toISOString(),
           ...data,
+          event_type: "message",
+          timestamp: data.timestamp ?? new Date().toISOString(),
         };
         setEvents((prev) => [event, ...prev].slice(0, 500));
       } catch {

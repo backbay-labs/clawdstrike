@@ -46,12 +46,19 @@ export interface HealthResponse {
   policy_hash?: string;
 }
 
+export interface PolicySource {
+  kind: string;
+  path?: string;
+  path_exists?: boolean;
+}
+
 export interface PolicyResponse {
   name?: string;
   version?: string;
-  hash?: string;
-  source?: string;
+  description?: string;
+  policy_hash?: string;
   yaml?: string;
+  source?: PolicySource;
   policy?: unknown;
 }
 

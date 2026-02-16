@@ -39,8 +39,8 @@ export function Policies() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <InfoCard label="Name" value={policy.name ?? "default"} />
             <InfoCard label="Version" value={policy.version ?? "-"} />
-            <InfoCard label="Hash" value={policy.hash ? policy.hash.slice(0, 16) + "..." : "-"} />
-            <InfoCard label="Source" value={policy.source ?? "local"} />
+            <InfoCard label="Hash" value={policy.policy_hash ? policy.policy_hash.slice(0, 16) + "..." : "-"} />
+            <InfoCard label="Source" value={policy.source ? `${policy.source.kind}${policy.source.path ? `: ${policy.source.path}` : ""}` : "local"} />
           </div>
 
           {policy.yaml && (

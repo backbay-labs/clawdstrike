@@ -218,10 +218,10 @@ fn format_event_label(event: &PolicyEvent) -> String {
     };
 
     let attribution = if let Some(ref aid) = event.agent_id {
-        let truncated = if aid.len() > 8 { &aid[..8] } else { aid };
+        let truncated: String = aid.chars().take(8).collect();
         format!(" [{}]", truncated)
     } else if let Some(ref sid) = event.session_id {
-        let truncated = if sid.len() > 8 { &sid[..8] } else { sid };
+        let truncated: String = sid.chars().take(8).collect();
         format!(" [s:{}]", truncated)
     } else {
         String::new()
