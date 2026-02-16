@@ -34,6 +34,7 @@
  * @packageDocumentation
  */
 
+import { parseNetworkTarget } from '@clawdstrike/adapter-core';
 import { EgressAllowlistGuard } from './guards/egress-allowlist.js';
 import { ForbiddenPathGuard } from './guards/forbidden-path.js';
 import { JailbreakGuard } from './guards/jailbreak.js';
@@ -1125,90 +1126,6 @@ async function evaluateViaDaemon(
   return daemonResponseToDecision(parsed);
 }
 
-function parseNetworkTarget(input: string): { host: string; port: number; url: string } {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return { host: '', port: 0, url: '' };
-  }
-
-  const schemeSep = trimmed.indexOf('://');
-  const scheme = schemeSep === -1 ? '' : trimmed.slice(0, schemeSep).toLowerCase();
-  const defaultPort = scheme === 'http' ? 80 : 443;
-
-  if (schemeSep !== -1) {
-    try {
-      const parsed = new URL(trimmed);
-      if (parsed.hostname) {
-        let parsedPort: number | undefined;
-        if (parsed.port) {
-          const value = Number.parseInt(parsed.port, 10);
-          if (Number.isFinite(value) && value > 0 && value <= 65535) {
-            parsedPort = value;
-          }
-        }
-        return { host: parsed.hostname, port: parsedPort ?? defaultPort, url: trimmed };
-      }
-      // Hostless URIs (file/mailto/data/...) are not valid egress targets; fail closed.
-      return { host: '', port: 0, url: trimmed };
-    } catch {
-      // Fall through to host parsing.
-    }
-  }
-
-  const withoutScheme = schemeSep === -1 ? trimmed : trimmed.slice(schemeSep + 3);
-  const end = withoutScheme.search(/[/?#]/);
-  const hostPortRaw = end === -1 ? withoutScheme : withoutScheme.slice(0, end);
-
-  if (schemeSep === -1 && hostPortRaw.includes('@')) {
-    return { host: '', port: 0, url: trimmed };
-  }
-
-  const atIndex = hostPortRaw.lastIndexOf('@');
-  const hostPort = atIndex === -1 ? hostPortRaw : hostPortRaw.slice(atIndex + 1);
-
-  if (!hostPort) {
-    return { host: '', port: 0, url: trimmed };
-  }
-
-  // IPv6: [::1]:443
-  if (hostPort.startsWith('[')) {
-    const close = hostPort.indexOf(']');
-    if (close !== -1) {
-      const host = hostPort.slice(1, close);
-      const rest = hostPort.slice(close + 1);
-      if (rest.startsWith(':')) {
-        const parsedPort = Number.parseInt(rest.slice(1), 10);
-        if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-          return { host, port: parsedPort, url: trimmed };
-        }
-      }
-      return { host, port: defaultPort, url: trimmed };
-    }
-  }
-
-  const lastColon = hostPort.lastIndexOf(':');
-  const hasSingleColon = lastColon > 0 && hostPort.indexOf(':') === lastColon;
-  if (hasSingleColon) {
-    const host = hostPort.slice(0, lastColon);
-    const portText = hostPort.slice(lastColon + 1);
-
-    if (/^[0-9]+$/.test(portText)) {
-      const parsedPort = Number.parseInt(portText, 10);
-      if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-        return { host, port: parsedPort, url: trimmed };
-      }
-
-      // Drop invalid numeric port suffix before returning host.
-      return { host, port: defaultPort, url: trimmed };
-    }
-
-    // Single-colon but non-numeric port suffix (e.g. `mailto:user@example.com`): fail closed.
-    return { host: '', port: 0, url: trimmed };
-  }
-
-  return { host: hostPort, port: defaultPort, url: trimmed };
-}
-
 // ============================================================
 // ClawdstrikeSession
 // ============================================================
@@ -1324,7 +1241,12 @@ export class ClawdstrikeSession {
    * Check network egress.
    */
   async checkNetwork(url: string): Promise<Decision> {
-    return this.check('network_egress', parseNetworkTarget(url));
+    const target = parseNetworkTarget(url);
+    return this.check('network_egress', {
+      host: target.host,
+      port: target.port,
+      url: target.url,
+    });
   }
 
   /**
@@ -1630,7 +1552,12 @@ export class Clawdstrike {
    * ```
    */
   async checkNetwork(url: string): Promise<Decision> {
-    return this.check('network_egress', parseNetworkTarget(url));
+    const target = parseNetworkTarget(url);
+    return this.check('network_egress', {
+      host: target.host,
+      port: target.port,
+      url: target.url,
+    });
   }
 
   /**

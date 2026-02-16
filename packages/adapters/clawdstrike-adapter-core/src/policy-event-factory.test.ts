@@ -78,5 +78,13 @@ describe('PolicyEventFactory', () => {
     if (mailtoEvent.data.type === 'network') {
       expect(mailtoEvent.data.host).toBe('');
     }
+
+    const urnEvent = factory.create('fetch', { url: 'urn:isbn:0451450523' });
+    expect(urnEvent.eventType).toBe('network_egress');
+    expect(urnEvent.data.type).toBe('network');
+
+    if (urnEvent.data.type === 'network') {
+      expect(urnEvent.data.host).toBe('');
+    }
   });
 });

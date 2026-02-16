@@ -54,6 +54,11 @@ export type {
 
 export { BaseToolInterceptor } from './base-tool-interceptor.js';
 export { PolicyEventFactory } from './policy-event-factory.js';
+export type {
+  ParseNetworkTargetOptions,
+  ParsedNetworkTarget,
+} from './network-target.js';
+export { parseNetworkTarget } from './network-target.js';
 
 export type {
   GenericToolBoundaryOptions,

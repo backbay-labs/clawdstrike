@@ -224,6 +224,10 @@ guards:
     const mailtoDecision = await cs.checkNetwork("mailto:user@example.com");
     expect(mailtoDecision.status).toBe("deny");
     expect(mailtoDecision.guard).toBe("egress_allowlist");
+
+    const urnDecision = await cs.checkNetwork("urn:isbn:0451450523");
+    expect(urnDecision.status).toBe("deny");
+    expect(urnDecision.guard).toBe("egress_allowlist");
   });
 
   it("checkNetwork drops invalid numeric port suffix before egress matching", async () => {

@@ -1,4 +1,5 @@
 import type { EventType, PolicyEvent } from './types.js';
+import { parseNetworkTarget } from './network-target.js';
 
 function coerceValidPort(value: unknown): number | null {
   if (typeof value === 'number') {
@@ -16,64 +17,6 @@ function coerceValidPort(value: unknown): number | null {
   }
 
   return null;
-}
-
-function parseNetworkTarget(target: string): { host: string; port: number } {
-  const trimmed = target.trim();
-  if (!trimmed) return { host: '', port: 443 };
-
-  const lower = trimmed.toLowerCase();
-  const defaultPort = lower.startsWith('http://') ? 80 : 443;
-
-  const schemeSep = trimmed.indexOf('://');
-  const withoutScheme = schemeSep === -1 ? trimmed : trimmed.slice(schemeSep + 3);
-  const end = withoutScheme.search(/[/?#]/);
-  const hostPortRaw = end === -1 ? withoutScheme : withoutScheme.slice(0, end);
-
-  // Drop userinfo if present.
-  if (schemeSep === -1 && hostPortRaw.includes('@')) {
-    return { host: '', port: defaultPort };
-  }
-
-  const atIndex = hostPortRaw.lastIndexOf('@');
-  const hostPort = atIndex === -1 ? hostPortRaw : hostPortRaw.slice(atIndex + 1);
-
-  // IPv6: [::1]:443
-  if (hostPort.startsWith('[')) {
-    const close = hostPort.indexOf(']');
-    if (close !== -1) {
-      const host = hostPort.slice(1, close);
-      const rest = hostPort.slice(close + 1);
-      if (rest.startsWith(':')) {
-        const parsedPort = Number.parseInt(rest.slice(1), 10);
-        if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-          return { host, port: parsedPort };
-        }
-      }
-      return { host, port: defaultPort };
-    }
-  }
-
-  const lastColon = hostPort.lastIndexOf(':');
-  const hasSingleColon = lastColon > 0 && hostPort.indexOf(':') === lastColon;
-  if (hasSingleColon) {
-    const host = hostPort.slice(0, lastColon);
-    const portText = hostPort.slice(lastColon + 1);
-    if (/^[0-9]+$/.test(portText)) {
-      const parsedPort = Number.parseInt(portText, 10);
-      if (Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
-        return { host, port: parsedPort };
-      }
-
-      // Drop invalid numeric port suffix before returning host.
-      return { host, port: defaultPort };
-    }
-
-    // Single-colon but non-numeric port suffix (e.g. `mailto:user@example.com`): fail closed.
-    return { host: '', port: defaultPort };
-  }
-
-  return { host: hostPort, port: defaultPort };
 }
 
 export class PolicyEventFactory {
@@ -187,7 +130,7 @@ export class PolicyEventFactory {
         const explicitHost = parameters.host;
         const explicitPort = parameters.port;
 
-        const parsedTarget = parseNetworkTarget(url);
+        const parsedTarget = parseNetworkTarget(url, { emptyPort: 'default' });
         const host = typeof explicitHost === 'string' && explicitHost.length > 0
           ? explicitHost
           : parsedTarget.host;
