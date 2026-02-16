@@ -1,0 +1,11 @@
+schema_version: "1.1.0"
+extends: strict
+name: coder-policy
+description: Coder agent - write access to workspace files
+guards:
+  mcp_tool:
+    enabled: true
+    allow:
+      - write_file
+      - apply_patch
+      - read_file

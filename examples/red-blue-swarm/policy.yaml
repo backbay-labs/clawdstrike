@@ -1,0 +1,21 @@
+schema_version: "1.1.0"
+extends: strict
+name: red-blue-policy
+description: Strict policy for red/blue team exercise
+guards:
+  forbidden_paths:
+    enabled: true
+    paths:
+      - "~/.ssh/*"
+      - "~/.aws/*"
+      - "/etc/passwd"
+      - "/etc/shadow"
+      - "/etc/crontab"
+  egress_allowlist:
+    enabled: true
+    allowed_hosts: []
+  secret_leak:
+    enabled: true
+  mcp_tool:
+    enabled: true
+    allow: []

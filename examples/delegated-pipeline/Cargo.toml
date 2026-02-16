@@ -1,0 +1,12 @@
+[package]
+name = "delegated-pipeline-example"
+version = "0.1.0"
+edition = "2021"
+description = "Example: delegation chains, re-delegation, signed messages, replay protection, revocation"
+
+[dependencies]
+hush-multi-agent = { path = "../../crates/libs/hush-multi-agent" }
+hush-core = { path = "../../crates/libs/hush-core" }
+serde_json = "1.0"
+anyhow = "1.0"
+chrono = "0.4"

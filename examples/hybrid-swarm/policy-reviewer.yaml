@@ -1,0 +1,18 @@
+schema_version: "1.1.0"
+name: reviewer-policy
+description: Reviewer agent - strictly read-only access
+guards:
+  forbidden_paths:
+    enabled: true
+  egress_allowlist:
+    enabled: true
+    allowed_hosts: []
+  secret_leak:
+    enabled: true
+  mcp_tool:
+    enabled: true
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep

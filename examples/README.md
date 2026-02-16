@@ -8,3 +8,8 @@ Representative domains:
 2. `examples/docker-compose/` and `examples/enterprise-deployment/` - infra deployment patterns.
 3. `examples/edr-pipeline/`, `examples/bb-edr/`, and `examples/autonomous-sandbox/` - security pipeline compositions.
 4. `examples/hello-secure-agent/`, `examples/secure-coding-assistant/`, and `examples/multi-agent-orchestration/` - agent workflows.
+5. Swarm examples (multi-agent security enforcement with hushd):
+   - `examples/secure-agent-swarm/` - 3-agent swarm with different adapters (ClaudeAdapter, VercelAIAdapter, FrameworkToolBoundary) + hushd attribution.
+   - `examples/red-blue-swarm/` - Red team attacks vs blue team SSE monitoring with 100% detection.
+   - `examples/delegated-pipeline/` - Full crypto chain: delegation, re-delegation, signed messages, replay protection, revocation (Rust).
+   - `examples/hybrid-swarm/` - Full integration: adapter interception + hushd attribution + SSE + audit queries.

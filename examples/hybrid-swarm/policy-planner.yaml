@@ -1,0 +1,13 @@
+schema_version: "1.1.0"
+extends: ai-agent
+name: planner-policy
+description: Planner agent - read-only tools plus planning
+guards:
+  mcp_tool:
+    enabled: true
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep
+      - create_plan
