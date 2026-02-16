@@ -621,9 +621,9 @@ mod tests {
         let mut events_rx = mgr.subscribe();
 
         let data = r#"{"action_type":"file_access","target":"/etc/shadow","allowed":false,"guard":"fs_blocklist","policy_hash":"abc123","session_id":"s-42","agent_id":"a-7"}"#;
-        mgr.handle_sse_message("violation", data)
+        mgr.handle_sse_message("check", data)
             .await
-            .expect("should handle violation with ids");
+            .expect("should handle check with ids");
 
         let evt = events_rx.try_recv().expect("should have received event");
         assert_eq!(evt.session_id.as_deref(), Some("s-42"));
