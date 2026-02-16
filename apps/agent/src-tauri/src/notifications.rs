@@ -80,7 +80,8 @@ impl<R: Runtime> NotificationManager<R> {
 
     /// Show notification for posture transitions.
     pub async fn notify_posture_transition(&self, from: &str, to: &str) {
-        if !self.should_notify(Severity::Info).await {
+        let notifications_enabled = self.settings.read().await.notifications_enabled;
+        if !notifications_enabled {
             return;
         }
 

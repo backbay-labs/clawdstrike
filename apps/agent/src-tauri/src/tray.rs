@@ -299,7 +299,10 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             #[cfg(target_os = "windows")]
             {
                 let _ = std::process::Command::new("cmd")
-                    .args(["/c", "start", &url])
+                    // `start` treats the first quoted argument as a window title; pass an
+                    // explicit empty title before the URL so special characters in URLs don't
+                    // get misinterpreted by cmd parsing.
+                    .args(["/c", "start", "", &url])
                     .spawn();
             }
         }

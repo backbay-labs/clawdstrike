@@ -340,8 +340,8 @@ impl EventManager {
                     })?;
 
                 // Synthesize a PolicyEvent for the tray display from check and violation events.
-                // Violations flow through the same NotificationManager as checks for consistent
-                // severity filtering and attribution.
+                // To avoid flooding the in-process broadcast channel with high-volume allowed
+                // checks, we only surface blocked checks and all violations.
                 if event_type == "check" || event_type == "violation" {
                     let Some(obj) = json.as_object() else {
                         anyhow::bail!(
@@ -353,61 +353,63 @@ impl EventManager {
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
                     let decision = if allowed { "allowed" } else { "blocked" };
-
-                    let policy_event = PolicyEvent {
-                        id: obj
-                            .get("event_id")
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-                        timestamp: obj
-                            .get("timestamp")
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
-                        action_type: obj
-                            .get("action_type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string(),
-                        target: obj
-                            .get("target")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        decision: decision.to_string(),
-                        guard: obj
-                            .get("guard")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        severity: obj
-                            .get("severity")
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                            .or_else(|| {
-                                if allowed {
-                                    None
-                                } else {
-                                    Some("high".to_string())
-                                }
-                            }),
-                        message: obj
-                            .get("message")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        details: obj
-                            .get("details")
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null),
-                        session_id: obj
-                            .get("session_id")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        agent_id: obj
-                            .get("agent_id")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                    };
-                    self.publish_event_if_new(policy_event).await;
+                    let should_publish = event_type == "violation" || !allowed;
+                    if should_publish {
+                        let policy_event = PolicyEvent {
+                            id: obj
+                                .get("event_id")
+                                .and_then(|v| v.as_str())
+                                .map(String::from)
+                                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                            timestamp: obj
+                                .get("timestamp")
+                                .and_then(|v| v.as_str())
+                                .map(String::from)
+                                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
+                            action_type: obj
+                                .get("action_type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string(),
+                            target: obj
+                                .get("target")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            decision: decision.to_string(),
+                            guard: obj
+                                .get("guard")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            severity: obj
+                                .get("severity")
+                                .and_then(|v| v.as_str())
+                                .map(String::from)
+                                .or_else(|| {
+                                    if allowed {
+                                        None
+                                    } else {
+                                        Some("high".to_string())
+                                    }
+                                }),
+                            message: obj
+                                .get("message")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            details: obj
+                                .get("details")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null),
+                            session_id: obj
+                                .get("session_id")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            agent_id: obj
+                                .get("agent_id")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                        };
+                        self.publish_event_if_new(policy_event).await;
+                    }
                 }
 
                 // "check" events are only for tray display; skip daemon event dispatch.
@@ -715,6 +717,22 @@ mod tests {
         assert_eq!(evt.session_id.as_deref(), Some("s-42"));
         assert_eq!(evt.agent_id.as_deref(), Some("a-7"));
         assert_eq!(evt.decision, "blocked");
+    }
+
+    #[tokio::test]
+    async fn sse_allowed_check_event_is_not_published() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        let data = r#"{"action_type":"file_access","target":"/tmp/x","allowed":true,"guard":"fs_allow"}"#;
+        mgr.handle_sse_message("check", data)
+            .await
+            .expect("should handle allowed check event");
+
+        assert!(
+            events_rx.try_recv().is_err(),
+            "allowed check should not be published to policy channel"
+        );
     }
 
     /// Verify that SSE events with a stable event_id from hushd are deduped against the same

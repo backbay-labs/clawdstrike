@@ -409,9 +409,23 @@ async fn run_agent<R: Runtime>(
     let notification_manager = NotificationManager::new(app.clone(), settings.clone());
     let tray_for_events = tray_manager.clone();
     tokio::spawn(async move {
-        while let Ok(event) = events_rx.recv().await {
-            tray_for_events.add_event(event.clone()).await;
-            notification_manager.notify(&event).await;
+        loop {
+            match events_rx.recv().await {
+                Ok(event) => {
+                    tray_for_events.add_event(event.clone()).await;
+                    notification_manager.notify(&event).await;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        skipped,
+                        "Policy event consumer lagged; skipping dropped events"
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Policy event channel closed");
+                    break;
+                }
+            }
         }
     });
 
@@ -426,7 +440,22 @@ async fn run_agent<R: Runtime>(
     tokio::spawn(async move {
         use crate::events::DaemonEvent;
 
-        while let Ok(event) = daemon_events_rx.recv().await {
+        loop {
+            let event = match daemon_events_rx.recv().await {
+                Ok(event) => event,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        skipped,
+                        "Daemon event consumer lagged; skipping dropped events"
+                    );
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Daemon event channel closed");
+                    break;
+                }
+            };
+
             match event {
                 DaemonEvent::PolicyUpdated { version } => {
                     tracing::info!(version = ?version, "Received policy_updated event from hushd");
@@ -504,7 +533,22 @@ async fn run_agent<R: Runtime>(
     let app_for_approvals = app.clone();
     let approval_queue_for_events = approval_queue.clone();
     tokio::spawn(async move {
-        while let Ok(event) = approval_events_rx.recv().await {
+        loop {
+            let event = match approval_events_rx.recv().await {
+                Ok(event) => event,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        skipped,
+                        "Approval event consumer lagged; skipping dropped events"
+                    );
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Approval event channel closed");
+                    break;
+                }
+            };
+
             match &event {
                 approval::ApprovalEvent::NewRequest { request } => {
                     let title = format!("Approval Required: {}", request.tool);
