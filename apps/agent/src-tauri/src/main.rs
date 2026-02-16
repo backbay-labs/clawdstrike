@@ -422,6 +422,7 @@ async fn run_agent<R: Runtime>(
     let tray_for_sse = tray_manager.clone();
     let app_for_sse = app.clone();
     let settings_for_sse = settings.clone();
+    let notification_manager_for_sse = NotificationManager::new(app.clone(), settings.clone());
     tokio::spawn(async move {
         use crate::events::DaemonEvent;
 
@@ -488,8 +489,9 @@ async fn run_agent<R: Runtime>(
                     };
                     tray_for_sse.set_session_info(Some(summary)).await;
 
-                    let body = format!("Posture changed from {} to {}", old_posture, new_posture);
-                    notifications::show_notification(&app_for_sse, "Posture Transition", &body);
+                    notification_manager_for_sse
+                        .notify_posture_transition(&old_posture, &new_posture)
+                        .await;
                 }
             }
         }

@@ -24,11 +24,9 @@ const MAX_QUEUE_SIZE: usize = 500;
 
 fn compute_expires_at(now: DateTime<Utc>, ttl_secs: u64) -> DateTime<Utc> {
     now.checked_add_signed(chrono::Duration::seconds(ttl_secs as i64))
-        .unwrap_or_else(|| {
-            // If the addition ever overflows (e.g., extreme clock skew), clamp to the max
-            // representable time rather than shortening the requested TTL.
-            DateTime::<Utc>::MAX_UTC
-        })
+        // If the addition ever overflows (e.g., extreme clock skew), clamp to the max
+        // representable time rather than shortening the requested TTL.
+        .unwrap_or(DateTime::<Utc>::MAX_UTC)
 }
 
 /// How the user resolved the approval request.
