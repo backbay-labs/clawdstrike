@@ -30,6 +30,12 @@ export function useSSE(url: string) {
       // Wrap in a connect() function so we can reconnect on EOF.
       let ctrl = new AbortController();
       let cancelled = false;
+      const reconnectDelayMs = 3000;
+
+      const scheduleReconnect = () => {
+        setConnected(false);
+        if (!cancelled) setTimeout(connect, reconnectDelayMs);
+      };
 
       function connect() {
         if (cancelled) return;
@@ -40,8 +46,7 @@ export function useSSE(url: string) {
         })
           .then((res) => {
             if (!res.ok || !res.body) {
-              setConnected(false);
-              if (!cancelled) setTimeout(connect, 3000);
+              scheduleReconnect();
               return;
             }
             setConnected(true);
@@ -50,45 +55,59 @@ export function useSSE(url: string) {
             let buffer = "";
             let currentEvent = "";
 
-            function pump(): Promise<void> {
-              return reader.read().then(({ done, value }) => {
-                if (done) {
-                  setConnected(false);
-                  if (!cancelled) setTimeout(connect, 3000);
-                  return;
-                }
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split("\n");
-                buffer = lines.pop() ?? "";
-                for (const line of lines) {
-                  if (line.startsWith("event:")) {
-                    currentEvent = line.slice(6).trim();
-                  } else if (line.startsWith("data:")) {
-                    const raw = line.slice(5).trim();
-                    try {
-                      const data = JSON.parse(raw);
-                      if (data === "ping" || raw === "ping") continue;
-                      const eventType = currentEvent || "message";
-                      const event: SSEEvent = {
-                        ...data,
-                        event_type: eventType,
-                        timestamp: data.timestamp ?? new Date().toISOString(),
-                      };
-                      setEvents((prev) => [event, ...prev].slice(0, 500));
-                    } catch { /* skip malformed */ }
-                    currentEvent = "";
-                  } else if (line.trim() === "") {
-                    currentEvent = "";
+            const pump = async (): Promise<void> => {
+              try {
+                while (!cancelled) {
+                  const { done, value } = await reader.read();
+                  if (done) {
+                    scheduleReconnect();
+                    return;
+                  }
+                  buffer += decoder.decode(value, { stream: true });
+                  const lines = buffer.split("\n");
+                  buffer = lines.pop() ?? "";
+                  for (const line of lines) {
+                    if (line.startsWith("event:")) {
+                      currentEvent = line.slice(6).trim();
+                    } else if (line.startsWith("data:")) {
+                      const raw = line.slice(5).trim();
+                      try {
+                        const data = JSON.parse(raw);
+                        if (data === "ping" || raw === "ping") continue;
+                        const eventType = currentEvent || "message";
+                        const event: SSEEvent = {
+                          ...data,
+                          event_type: eventType,
+                          timestamp: data.timestamp ?? new Date().toISOString(),
+                        };
+                        setEvents((prev) => [event, ...prev].slice(0, 500));
+                      } catch {
+                        // skip malformed payloads
+                      }
+                      currentEvent = "";
+                    } else if (line.trim() === "") {
+                      currentEvent = "";
+                    }
                   }
                 }
-                return pump();
-              });
-            }
-            pump();
+              } catch {
+                // read errors (network drop/hushd restart/abort mid-read) should reconnect
+                if (!cancelled && !ctrl.signal.aborted) {
+                  scheduleReconnect();
+                }
+              } finally {
+                try {
+                  reader.releaseLock();
+                } catch {
+                  // ignore lock release errors
+                }
+              }
+            };
+
+            void pump();
           })
           .catch(() => {
-            setConnected(false);
-            if (!cancelled) setTimeout(connect, 3000);
+            scheduleReconnect();
           });
       }
       connect();
