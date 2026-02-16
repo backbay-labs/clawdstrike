@@ -13,3 +13,7 @@ Representative domains:
    - `examples/red-blue-swarm/` - Red team attacks vs blue team SSE monitoring with 100% detection.
    - `examples/delegated-pipeline/` - Full crypto chain: delegation, re-delegation, signed messages, replay protection, revocation (Rust).
    - `examples/hybrid-swarm/` - Full integration: adapter interception + hushd attribution + SSE + audit queries.
+6. Feature-specific examples:
+   - `examples/jailbreak-detection/` - 4-layer jailbreak detection with session aggregation, LLM-judge, and layer breakdown.
+   - `examples/output-sanitization/` - Secrets/PII/internal data redaction with streaming, allowlist/denylist, and category toggling.
+   - `examples/prompt-watermarking/` - Signed provenance markers with multi-agent attribution, trust verification, and fingerprint correlation.
