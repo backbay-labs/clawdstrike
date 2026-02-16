@@ -1,5 +1,23 @@
 import type { EventType, PolicyEvent } from './types.js';
 
+function coerceValidPort(value: unknown): number | null {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    const port = Math.trunc(value);
+    if (port > 0 && port <= 65535) return port;
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!/^[0-9]+$/.test(trimmed)) return null;
+    const port = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(port) && port > 0 && port <= 65535) return port;
+  }
+
+  return null;
+}
+
 function parseNetworkTarget(target: string): { host: string; port: number } {
   const trimmed = target.trim();
   if (!trimmed) return { host: '', port: 443 };
@@ -174,15 +192,7 @@ export class PolicyEventFactory {
           ? explicitHost
           : parsedTarget.host;
 
-        let port = parsedTarget.port;
-        if (typeof explicitPort === 'number' && Number.isFinite(explicitPort)) {
-          port = explicitPort;
-        } else if (typeof explicitPort === 'string') {
-          const parsedPort = Number.parseInt(explicitPort, 10);
-          if (Number.isFinite(parsedPort)) {
-            port = parsedPort;
-          }
-        }
+        const port = coerceValidPort(explicitPort) ?? parsedTarget.port;
 
         return {
           type: 'network',

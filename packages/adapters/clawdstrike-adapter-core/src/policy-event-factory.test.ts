@@ -38,6 +38,28 @@ describe('PolicyEventFactory', () => {
     }
   });
 
+  it('rejects invalid explicit port overrides and keeps parsed/default port', () => {
+    const factory = new PolicyEventFactory();
+
+    const invalidOverrides = [0, -1, 65536, '0', '70000', '443abc', 'abc'];
+    for (const override of invalidOverrides) {
+      const event = factory.create('fetch', { url: 'api.example.com', port: override });
+      expect(event.eventType).toBe('network_egress');
+      expect(event.data.type).toBe('network');
+
+      if (event.data.type === 'network') {
+        expect(event.data.host).toBe('api.example.com');
+        expect(event.data.port).toBe(443);
+      }
+    }
+
+    const valid = factory.create('fetch', { url: 'api.example.com', port: '8080' });
+    expect(valid.data.type).toBe('network');
+    if (valid.data.type === 'network') {
+      expect(valid.data.port).toBe(8080);
+    }
+  });
+
   it('fails closed for hostless or scheme-only network targets', () => {
     const factory = new PolicyEventFactory();
 
