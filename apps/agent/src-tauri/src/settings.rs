@@ -210,7 +210,11 @@ fn default_notification_severity() -> String {
 }
 
 fn default_dashboard_url() -> String {
-    format!("http://127.0.0.1:{}/ui", default_agent_api_port())
+    default_dashboard_url_for_port(default_agent_api_port())
+}
+
+fn default_dashboard_url_for_port(agent_api_port: u16) -> String {
+    format!("http://127.0.0.1:{}/ui", agent_api_port)
 }
 
 fn default_ota_enabled() -> bool {
@@ -269,8 +273,15 @@ impl Settings {
         if path.exists() {
             let contents = std::fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read settings from {:?}", path))?;
-            let settings: Settings =
+            let settings_json: serde_json::Value =
                 serde_json::from_str(&contents).with_context(|| "Failed to parse settings JSON")?;
+            let mut settings: Settings = serde_json::from_value(settings_json.clone())
+                .with_context(|| "Failed to parse settings JSON")?;
+            let dashboard_url_present = settings_json
+                .as_object()
+                .map(|obj| obj.contains_key("dashboard_url"))
+                .unwrap_or(false);
+            backfill_dashboard_url_if_missing(&mut settings, dashboard_url_present);
             Ok(settings)
         } else {
             let settings = Settings::default();
@@ -299,6 +310,12 @@ impl Settings {
     /// Get the daemon URL based on current settings.
     pub fn daemon_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.daemon_port)
+    }
+}
+
+fn backfill_dashboard_url_if_missing(settings: &mut Settings, dashboard_url_present: bool) {
+    if !dashboard_url_present || settings.dashboard_url.trim().is_empty() {
+        settings.dashboard_url = default_dashboard_url_for_port(settings.agent_api_port);
     }
 }
 
@@ -358,6 +375,28 @@ mod tests {
         assert_eq!(settings.integrations.siem.provider, "datadog");
         assert!(!settings.integrations.siem.enabled);
         assert!(!settings.integrations.webhooks.enabled);
+    }
+
+    #[test]
+    fn backfills_dashboard_url_from_loaded_agent_port_when_missing() {
+        let mut settings = Settings::default();
+        settings.agent_api_port = 21111;
+        settings.dashboard_url = String::new();
+
+        backfill_dashboard_url_if_missing(&mut settings, false);
+
+        assert_eq!(settings.dashboard_url, "http://127.0.0.1:21111/ui");
+    }
+
+    #[test]
+    fn preserves_dashboard_url_when_explicitly_present() {
+        let mut settings = Settings::default();
+        settings.agent_api_port = 21111;
+        settings.dashboard_url = "http://localhost:3100".to_string();
+
+        backfill_dashboard_url_if_missing(&mut settings, true);
+
+        assert_eq!(settings.dashboard_url, "http://localhost:3100");
     }
 
     #[test]

@@ -185,24 +185,34 @@ impl HushdUpdater {
             Ok(manifest) => manifest,
             Err(err) => {
                 let msg = format!("OTA check failed: {err}");
-                self.set_failure(&msg).await;
-                let now = now_rfc3339();
-                if let Err(persist_err) = self.persist_status_fields(&now, &msg, None).await {
-                    tracing::warn!(
-                        error = %persist_err,
-                        "Failed to persist OTA failure status after manifest verification error"
-                    );
-                }
+                self.record_check_failure(&msg, None).await;
                 return Err(err);
             }
         };
 
-        let artifact = select_platform_artifact(&verified_manifest.manifest)
-            .with_context(|| format!("No OTA artifact for platform {}", current_platform_id()))?;
+        let artifact = match select_platform_artifact(&verified_manifest.manifest)
+            .with_context(|| format!("No OTA artifact for platform {}", current_platform_id()))
+        {
+            Ok(artifact) => artifact,
+            Err(err) => {
+                let msg = format!("OTA check failed: {err}");
+                self.record_check_failure(&msg, None).await;
+                return Err(err);
+            }
+        };
 
         let current_version = self.resolve_current_version(&settings_snapshot).await;
         let latest_version = verified_manifest.manifest.release_version.clone();
-        let update_available = is_update_available(current_version.as_deref(), &latest_version)?;
+        let update_available =
+            match is_update_available(current_version.as_deref(), &latest_version) {
+                Ok(update_available) => update_available,
+                Err(err) => {
+                    let msg = format!("OTA check failed: {err}");
+                    self.record_check_failure(&msg, current_version.as_deref())
+                        .await;
+                    return Err(err);
+                }
+            };
         let now = now_rfc3339();
         let source_url = Some(verified_manifest.source_url.clone());
 
@@ -267,17 +277,8 @@ impl HushdUpdater {
             }
             Err(err) => {
                 let msg = format!("Failed to apply hushd update {release_version}: {err}");
-                self.set_failure(&msg).await;
-                let now = now_rfc3339();
-                if let Err(persist_err) = self
-                    .persist_status_fields(&now, &msg, current_version.as_deref())
-                    .await
-                {
-                    tracing::warn!(
-                        error = %persist_err,
-                        "Failed to persist OTA failure status after apply error"
-                    );
-                }
+                self.record_check_failure(&msg, current_version.as_deref())
+                    .await;
                 return Err(err);
             }
         }
@@ -601,6 +602,20 @@ impl HushdUpdater {
         status.state = "failed".to_string();
         status.last_error = Some(message.to_string());
         status.last_result = Some(message.to_string());
+    }
+
+    async fn record_check_failure(&self, message: &str, current_version: Option<&str>) {
+        self.set_failure(message).await;
+        let now = now_rfc3339();
+        if let Err(persist_err) = self
+            .persist_status_fields(&now, message, current_version)
+            .await
+        {
+            tracing::warn!(
+                error = %persist_err,
+                "Failed to persist OTA failure status"
+            );
+        }
     }
 }
 
