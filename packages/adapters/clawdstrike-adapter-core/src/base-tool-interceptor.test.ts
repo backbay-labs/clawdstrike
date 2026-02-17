@@ -27,6 +27,31 @@ describe('BaseToolInterceptor', () => {
     expect(context.auditEvents.some(e => e.type === 'tool_call_blocked')).toBe(true);
   });
 
+  it('propagates security context metadata into policy events for attribution', async () => {
+    let seenEvent: unknown = null;
+    const engine: PolicyEngineLike = {
+      evaluate: (event) => {
+        seenEvent = event;
+        return { status: 'allow' };
+      },
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {});
+    const context = createSecurityContext({
+      contextId: 'ctx-attr-1',
+      sessionId: 'sess-attr-1',
+      metadata: { agentId: 'green-runner', swarmRole: 'benign' },
+    });
+
+    await interceptor.beforeExecute('bash', { cmd: 'echo hello' }, context);
+
+    expect(seenEvent).not.toBeNull();
+    expect(seenEvent).toMatchObject({
+      sessionId: 'sess-attr-1',
+      metadata: { agentId: 'green-runner', swarmRole: 'benign' },
+    });
+  });
+
   it('sanitizes outputs using engine redaction when enabled', async () => {
     const engine: PolicyEngineLike = {
       evaluate: () => ({ status: 'allow' }),

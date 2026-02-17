@@ -564,6 +564,95 @@ async fn test_eval_policy_event() {
 }
 
 #[tokio::test]
+async fn test_eval_sse_includes_session_and_agent_attribution() {
+    use std::time::Duration;
+
+    let (client, url) = test_setup();
+
+    // Establish SSE connection first.
+    let resp = client
+        .get(format!("{}/api/v1/events", url))
+        .send()
+        .await
+        .expect("Failed to connect to events");
+
+    assert!(resp.status().is_success());
+
+    let session_id = format!("sess-eval-sse-{}", uuid::Uuid::new_v4());
+    let agent_id = format!("agent-eval-sse-{}", uuid::Uuid::new_v4());
+    let event_id = format!("evt-eval-sse-{}", uuid::Uuid::new_v4());
+
+    // Trigger a canonical eval with explicit session + agent attribution.
+    let eval_resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": event_id,
+                "eventType": "file_read",
+                "timestamp": "2026-02-11T00:00:24Z",
+                "sessionId": session_id,
+                "data": {
+                    "type": "file",
+                    "path": "/app/src/main.rs",
+                    "operation": "read"
+                },
+                "metadata": { "agentId": agent_id }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(eval_resp.status().is_success());
+
+    // Read SSE stream until we observe the matching event payload.
+    use futures::StreamExt as _;
+    let mut stream = resp.bytes_stream();
+    let mut buffer = String::new();
+
+    let got = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let chunk = stream
+                .next()
+                .await
+                .expect("SSE stream ended unexpectedly")
+                .expect("Failed reading SSE bytes");
+
+            buffer.push_str(std::str::from_utf8(&chunk).unwrap_or(""));
+            let mut lines: Vec<String> = buffer.split('\n').map(|s| s.to_string()).collect();
+            buffer = lines.pop().unwrap_or_default();
+
+            for line in lines {
+                if !line.starts_with("data:") {
+                    continue;
+                }
+                let raw = line.trim_start_matches("data:").trim();
+                let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) else {
+                    continue;
+                };
+
+                if json.get("event_id").and_then(|v| v.as_str()) != Some(event_id.as_str()) {
+                    continue;
+                }
+                if json.get("session_id").and_then(|v| v.as_str()) != Some(session_id.as_str()) {
+                    continue;
+                }
+
+                return json;
+            }
+        }
+    })
+    .await
+    .expect("Timed out waiting for matching SSE event");
+
+    assert_eq!(got["session_id"].as_str(), Some(session_id.as_str()));
+    assert_eq!(got["agent_id"].as_str(), Some(agent_id.as_str()));
+    assert!(got.get("action_type").is_some());
+    assert!(got.get("target").is_some());
+    assert!(got.get("timestamp").is_some());
+}
+
+#[tokio::test]
 async fn test_eval_policy_event_regression_blocks_path_traversal_target() {
     let (client, url) = test_setup();
 

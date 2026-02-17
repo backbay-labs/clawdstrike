@@ -221,7 +221,15 @@ pub async fn eval_policy_event(
         });
     }
 
-    // Broadcast event
+    // Broadcast event (SSE) for real-time monitoring + attribution.
+    //
+    // Keep the payload close to `/api/v1/check` so clients can build a unified
+    // attribution stream across both endpoints.
+    let action_type = mapped.action.action_type();
+    let target = mapped.action.target().unwrap_or_default();
+    let session_id = mapped.context.session_id.clone();
+    let agent_id = mapped.context.agent_id.clone();
+
     state.broadcast(DaemonEvent {
         event_type: if decision.allowed {
             "eval"
@@ -231,9 +239,16 @@ pub async fn eval_policy_event(
         .to_string(),
         data: serde_json::json!({
             "event_id": event.event_id,
+            "timestamp": event.timestamp,
+            "action_type": action_type,
+            "target": target,
             "event_type": event.event_type.as_str(),
             "allowed": decision.allowed,
             "guard": report.overall.guard,
+            "severity": canonical_guard_severity(&report.overall.severity),
+            "message": report.overall.message,
+            "session_id": session_id,
+            "agent_id": agent_id,
         }),
     });
 

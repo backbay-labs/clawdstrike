@@ -790,15 +790,19 @@ async fn update_settings(
 
 async fn get_integrations_settings(
     State(state): State<Arc<AgentApiState>>,
-) -> Json<IntegrationSettings> {
+    headers: HeaderMap,
+) -> Result<Json<IntegrationSettings>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
     let settings = state.settings.read().await;
-    Json(settings.integrations.clone())
+    Ok(Json(settings.integrations.clone()))
 }
 
 async fn update_integrations_settings(
     State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
     Json(input): Json<IntegrationsSettingsUpdateInput>,
 ) -> Result<Json<IntegrationsApplyResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
     {
         let mut settings = state.settings.write().await;
         let mut next_integrations = settings.integrations.clone();
@@ -1378,6 +1382,7 @@ mod tests {
         let put_req = axum::http::Request::builder()
             .method("PUT")
             .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
             .header("content-type", "application/json")
             .body(axum::body::Body::from(
                 r#"{
@@ -1401,6 +1406,7 @@ mod tests {
 
         let get_req = axum::http::Request::builder()
             .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
         let response = app
@@ -1441,6 +1447,7 @@ mod tests {
         let put_req = axum::http::Request::builder()
             .method("PUT")
             .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
             .header("content-type", "application/json")
             .body(axum::body::Body::from(
                 r#"{
@@ -1464,6 +1471,7 @@ mod tests {
 
         let get_req = axum::http::Request::builder()
             .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
         let response = app
@@ -1503,6 +1511,41 @@ mod tests {
             .unwrap_or_else(|e| panic!("request failed: {e}"));
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn integrations_routes_require_auth() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/integrations",
+                get(get_integrations_settings).put(update_integrations_settings),
+            )
+            .with_state(state);
+
+        let get_req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/v1/agent/integrations")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
+        let get_response = app
+            .clone()
+            .oneshot(get_req)
+            .await
+            .unwrap_or_else(|e| panic!("GET request failed: {e}"));
+        assert_eq!(get_response.status(), StatusCode::UNAUTHORIZED);
+
+        let put_req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/agent/integrations")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(r#"{"apply":false}"#))
+            .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
+        let put_response = app
+            .oneshot(put_req)
+            .await
+            .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
+        assert_eq!(put_response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]

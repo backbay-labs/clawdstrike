@@ -39,6 +39,12 @@ export class BaseToolInterceptor implements ToolInterceptor {
     const normalizedName = this.config.normalizeToolName?.(toolName) ?? toolName;
     const params = this.normalizeParams(input);
     const event = this.eventFactory.create(normalizedName, params, context.sessionId);
+    // Ensure downstream policy engines (e.g. hushd `/api/v1/eval`) can attribute actions
+    // to the correct agent/session by propagating the runtime security context metadata.
+    event.metadata = {
+      ...(context.metadata ?? {}),
+      ...(event.metadata ?? {}),
+    };
 
     const toolCall: GenericToolCall = {
       id: event.eventId,
