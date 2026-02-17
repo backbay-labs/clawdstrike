@@ -280,6 +280,11 @@ pub async fn evaluate_policy_check(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::field_reassign_with_default
+)]
 mod tests {
     use super::*;
     use axum::{http::StatusCode, routing::post, Router};

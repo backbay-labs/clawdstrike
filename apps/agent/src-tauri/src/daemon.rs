@@ -1237,6 +1237,7 @@ pub fn find_hushd_binary() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
