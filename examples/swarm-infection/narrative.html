@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Swarm Infection Narrative</title>
+    <style>
+      :root {
+        --bg0: #070813;
+        --bg1: #0b1533;
+        --panel: rgba(10, 14, 28, 0.62);
+        --panel2: rgba(8, 11, 22, 0.74);
+        --line: rgba(255, 255, 255, 0.10);
+        --line2: rgba(255, 255, 255, 0.06);
+        --text: rgba(240, 246, 255, 0.95);
+        --muted: rgba(240, 246, 255, 0.72);
+        --muted2: rgba(240, 246, 255, 0.50);
+
+        --red: #ff4d6d;
+        --green: #3ee7a0;
+        --cyan: #25d0ff;
+        --amber: #ffcc66;
+        --blue: #66a8ff;
+
+        --shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+        --shadow2: 0 18px 55px rgba(0, 0, 0, 0.45);
+        --radius: 18px;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: "Avenir Next", "Avenir", "SF Pro Display", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(1200px 600px at 22% 20%, rgba(37, 208, 255, 0.14), transparent 60%),
+          radial-gradient(980px 520px at 70% 18%, rgba(62, 231, 160, 0.12), transparent 62%),
+          radial-gradient(860px 520px at 55% 78%, rgba(255, 204, 102, 0.10), transparent 58%),
+          linear-gradient(180deg, var(--bg0), var(--bg1));
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          repeating-linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0.03),
+            rgba(255, 255, 255, 0.03) 1px,
+            transparent 1px,
+            transparent 120px
+          ),
+          repeating-linear-gradient(
+            0deg,
+            rgba(255, 255, 255, 0.02),
+            rgba(255, 255, 255, 0.02) 1px,
+            transparent 1px,
+            transparent 90px
+          );
+        opacity: 0.5;
+        mix-blend-mode: overlay;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: -40px;
+        pointer-events: none;
+        background:
+          radial-gradient(1px 1px at 12% 28%, rgba(255, 255, 255, 0.35), transparent 45%),
+          radial-gradient(1px 1px at 55% 44%, rgba(255, 255, 255, 0.22), transparent 45%),
+          radial-gradient(1px 1px at 82% 22%, rgba(255, 255, 255, 0.18), transparent 45%),
+          radial-gradient(1px 1px at 26% 78%, rgba(255, 255, 255, 0.22), transparent 45%),
+          radial-gradient(1px 1px at 72% 84%, rgba(255, 255, 255, 0.16), transparent 45%);
+        filter: blur(0.2px);
+        opacity: 0.55;
+      }
+
+      .app {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 34px 22px 40px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 18px;
+        align-items: end;
+        margin-bottom: 16px;
+      }
+
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+
+      .kicker .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--cyan);
+        box-shadow: 0 0 0 5px rgba(37, 208, 255, 0.15);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 34px;
+        line-height: 1.02;
+        letter-spacing: -0.03em;
+      }
+
+      .subtitle {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        max-width: 70ch;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-end;
+      }
+
+      .seg {
+        display: inline-flex;
+        padding: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        box-shadow: var(--shadow2);
+        backdrop-filter: blur(10px);
+      }
+
+      .seg button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 10px 14px;
+        font-weight: 650;
+        border-radius: 999px;
+        cursor: pointer;
+        letter-spacing: -0.01em;
+        transition: 160ms ease;
+      }
+
+      .seg button[aria-selected="true"] {
+        color: var(--text);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06));
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+          0 8px 22px rgba(0, 0, 0, 0.35);
+      }
+
+      .btnrow {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .btn {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+        color: var(--text);
+        border-radius: 12px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        transition: 160ms ease;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(10px);
+      }
+
+      .btn:hover { transform: translateY(-1px); }
+      .btn:active { transform: translateY(0); }
+      .btn.secondary { color: var(--muted); }
+
+      .speed {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        background: rgba(0, 0, 0, 0.18);
+        color: var(--muted);
+        backdrop-filter: blur(10px);
+      }
+
+      .speed label {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .speed input[type="range"] {
+        width: 110px;
+        accent-color: var(--cyan);
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 1.35fr 0.9fr;
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .stage, .panel {
+        border-radius: var(--radius);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .stage::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(1000px 420px at 20% 10%, rgba(37, 208, 255, 0.10), transparent 60%),
+          radial-gradient(900px 500px at 82% 30%, rgba(62, 231, 160, 0.08), transparent 62%),
+          radial-gradient(780px 500px at 50% 90%, rgba(255, 204, 102, 0.08), transparent 58%);
+        opacity: 0.9;
+      }
+
+      .stageInner {
+        position: relative;
+        padding: 18px;
+      }
+
+      .panel {
+        background: var(--panel2);
+        padding: 18px 18px 16px;
+      }
+
+      .phaseTag {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .phaseTag .pill {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--cyan);
+        box-shadow: 0 0 0 5px rgba(37, 208, 255, 0.10);
+      }
+
+      .stepCount {
+        margin-top: 14px;
+        color: var(--muted2);
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h2 {
+        margin: 10px 0 8px;
+        font-size: 22px;
+        letter-spacing: -0.02em;
+        line-height: 1.12;
+      }
+
+      .body {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+        font-size: 14.5px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .card {
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 12px 12px 10px;
+      }
+
+      .cardTitle {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--muted2);
+        margin-bottom: 8px;
+      }
+
+      .mono {
+        font-family: "Berkeley Mono", "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+        font-size: 12px;
+        color: rgba(240, 246, 255, 0.86);
+        line-height: 1.4;
+        white-space: pre-wrap;
+      }
+
+      .legend {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+        color: var(--muted2);
+        font-size: 12px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        background: rgba(0, 0, 0, 0.16);
+      }
+
+      .chip .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+      }
+
+      .chip .swatch.red { background: var(--red); }
+      .chip .swatch.green { background: var(--green); }
+      .chip .swatch.cyan { background: var(--cyan); }
+      .chip .swatch.amber { background: var(--amber); }
+      .chip .swatch.blue { background: var(--blue); }
+
+      /* SVG */
+      svg { width: 100%; height: auto; display: block; }
+      .edge {
+        fill: none;
+        stroke: rgba(240, 246, 255, 0.26);
+        stroke-width: 2.2;
+        opacity: 0.55;
+        transition: 220ms ease;
+      }
+      .edge.dashed { stroke-dasharray: 8 8; opacity: 0.42; }
+      .edge.active {
+        opacity: 1;
+        stroke: rgba(240, 246, 255, 0.86);
+        filter: url(#glow);
+      }
+      .edge.active.dashed {
+        stroke-dasharray: 12 10;
+        animation: dash 2.2s linear infinite;
+      }
+      @keyframes dash {
+        from { stroke-dashoffset: 0; }
+        to { stroke-dashoffset: -44; }
+      }
+
+      .node {
+        opacity: 0.58;
+        transition: 240ms ease;
+      }
+      .node.active { opacity: 1; }
+
+      .nodeBox {
+        fill: rgba(6, 9, 18, 0.75);
+        stroke: rgba(240, 246, 255, 0.22);
+        stroke-width: 1.6;
+      }
+      .node--red .nodeBox { stroke: rgba(255, 77, 109, 0.70); }
+      .node--green .nodeBox { stroke: rgba(62, 231, 160, 0.70); }
+      .node--cyan .nodeBox { stroke: rgba(37, 208, 255, 0.78); }
+      .node--amber .nodeBox { stroke: rgba(255, 204, 102, 0.78); }
+      .node--blue .nodeBox { stroke: rgba(102, 168, 255, 0.78); }
+
+      .node.active .nodeBox {
+        stroke-width: 2.2;
+        filter: url(#glow);
+      }
+
+      .nodeTitle {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        fill: rgba(240, 246, 255, 0.95);
+      }
+      .nodeSub {
+        font-size: 12px;
+        fill: rgba(240, 246, 255, 0.68);
+      }
+      .nodeKicker {
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        fill: rgba(240, 246, 255, 0.55);
+      }
+
+      .badge {
+        opacity: 0;
+        transform: translateY(-6px);
+        transition: 240ms ease;
+      }
+      .badge.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .badge rect {
+        fill: rgba(0, 0, 0, 0.38);
+        stroke: rgba(240, 246, 255, 0.18);
+      }
+      .badge text {
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        fill: rgba(240, 246, 255, 0.86);
+      }
+      .badge--red rect { stroke: rgba(255, 77, 109, 0.65); }
+      .badge--green rect { stroke: rgba(62, 231, 160, 0.65); }
+      .badge--amber rect { stroke: rgba(255, 204, 102, 0.65); }
+
+      .stamp {
+        opacity: 0;
+        transform: rotate(-10deg) scale(0.98);
+        transform-origin: center;
+        transition: 240ms ease;
+      }
+      .stamp.visible {
+        opacity: 1;
+        transform: rotate(-10deg) scale(1);
+        filter: url(#glowRed);
+      }
+
+      .stamp text {
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 0.22em;
+        fill: rgba(255, 77, 109, 0.92);
+      }
+      .stamp rect {
+        fill: rgba(0, 0, 0, 0.25);
+        stroke: rgba(255, 77, 109, 0.80);
+        stroke-width: 2.0;
+      }
+
+      @media (max-width: 980px) {
+        header { grid-template-columns: 1fr; align-items: start; }
+        .toolbar { align-items: flex-start; }
+        main { grid-template-columns: 1fr; }
+        h1 { font-size: 30px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { transition: none !important; animation: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app" id="app" data-phase="A">
+      <header>
+        <div>
+          <div class="kicker"><span class="dot"></span> clawdstrike demo narrative</div>
+          <h1>One Compromised Agent Infects the Swarm</h1>
+          <p class="subtitle">
+            Two runs, same attack. Phase A: the infection lands in shared context, and a benign agent gets steered.
+            Phase B: the memory boundary blocks ingestion, so the swarm stays boring.
+          </p>
+        </div>
+        <div class="toolbar">
+          <div class="seg" role="tablist" aria-label="Phase selector">
+            <button id="tabA" type="button" role="tab" aria-selected="true" data-phase="A">
+              Phase A (Naive)
+            </button>
+            <button id="tabB" type="button" role="tab" aria-selected="false" data-phase="B">
+              Phase B (Hardened)
+            </button>
+          </div>
+          <div class="btnrow">
+            <button class="btn secondary" id="btnPrev" type="button">Prev</button>
+            <button class="btn" id="btnPlay" type="button">Play</button>
+            <button class="btn secondary" id="btnNext" type="button">Next</button>
+            <div class="speed" title="Controls animation pacing">
+              <label for="speed">Speed</label>
+              <input id="speed" type="range" min="0" max="4" step="1" value="2" />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section class="stage" aria-label="Narrative diagram">
+          <div class="stageInner">
+            <svg viewBox="0 0 1600 560" role="img" aria-label="Swarm infection flow diagram">
+              <defs>
+                <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+                  <path d="M0,0 L12,6 L0,12 Z" fill="rgba(240,246,255,0.72)"></path>
+                </marker>
+                <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="3.2" result="blur" />
+                  <feColorMatrix
+                    in="blur"
+                    type="matrix"
+                    values="
+                      1 0 0 0 0
+                      0 1 0 0 0
+                      0 0 1 0 0
+                      0 0 0 0.9 0"
+                    result="glow"
+                  />
+                  <feMerge>
+                    <feMergeNode in="glow" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <filter id="glowRed" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2.6" result="blur" />
+                  <feColorMatrix
+                    in="blur"
+                    type="matrix"
+                    values="
+                      1 0 0 0 0
+                      0 0.2 0 0 0
+                      0 0 0.3 0 0
+                      0 0 0 1 0"
+                    result="glow"
+                  />
+                  <feMerge>
+                    <feMergeNode in="glow" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+
+              <!-- Edges -->
+	              <g id="edges">
+	                <path id="e_seeder_ingest" class="edge" marker-end="url(#arrow)"
+	                      d="M260 255 L 300 255" />
+	                <path id="e_ingest_blackboard" class="edge" marker-end="url(#arrow)"
+	                      d="M450 255 L 480 255" />
+	                <path id="e_seeder_bypass" class="edge dashed" marker-end="url(#arrow)"
+	                      d="M260 225 C 330 135, 410 135, 480 225" />
+	                <path id="e_blackboard_planner" class="edge" marker-end="url(#arrow)"
+	                      d="M670 255 L 700 255" />
+	                <path id="e_planner_runner" class="edge" marker-end="url(#arrow)"
+	                      d="M890 255 L 950 255" />
+	                <path id="e_runner_tool" class="edge" marker-end="url(#arrow)"
+	                      d="M1150 255 L 1190 255" />
+	                <path id="e_tool_dispatcher" class="edge" marker-end="url(#arrow)"
+	                      d="M1340 255 L 1370 255" />
+
+	                <!-- Evaluation paths to hushd -->
+	                <path id="e_ingest_eval" class="edge dashed" marker-end="url(#arrow)"
+	                      d="M375 315 C 430 372, 690 380, 690 412" />
+	                <path id="e_tool_eval" class="edge dashed" marker-end="url(#arrow)"
+	                      d="M1265 315 C 1180 372, 810 380, 810 412" />
+	                <path id="e_hushd_sse" class="edge" marker-end="url(#arrow)"
+	                      d="M860 470 L 1030 470" />
+	              </g>
+
+              <!-- Labels for eval/SSE -->
+              <g opacity="0.62">
+                <text x="510" y="420" class="nodeSub">POST /api/v1/eval</text>
+                <text x="1010" y="420" class="nodeSub" text-anchor="end">POST /api/v1/eval</text>
+                <text x="932" y="452" class="nodeSub">SSE /api/v1/events</text>
+              </g>
+
+              <!-- Nodes -->
+              <g id="nodes">
+                <!-- Red Seeder -->
+                <g id="n_seeder" class="node node--red" transform="translate(60 198)">
+                  <rect class="nodeBox" width="200" height="114" rx="18" />
+                  <text class="nodeKicker" x="18" y="32">red agent</text>
+                  <text class="nodeTitle" x="18" y="58">Red Seeder</text>
+                  <text class="nodeSub" x="18" y="82">compromised</text>
+                  <text class="nodeSub" x="18" y="102">tries to poison shared memory</text>
+                </g>
+
+                <!-- Ingestion boundary (shield) -->
+                <g id="n_ingest" class="node node--cyan" transform="translate(300 195)">
+                  <rect class="nodeBox" width="150" height="120" rx="18" />
+                  <path d="M75 20
+                           C 92 32, 115 36, 125 38
+                           V 68
+                           C 125 90, 110 108, 75 118
+                           C 40 108, 25 90, 25 68
+                           V 38
+                           C 35 36, 58 32, 75 20 Z"
+                        fill="rgba(37,208,255,0.14)" stroke="rgba(37,208,255,0.50)" stroke-width="1.6" />
+                  <text class="nodeKicker" x="18" y="34">memory boundary</text>
+                  <text class="nodeTitle" x="18" y="60">Ingestion</text>
+                  <text class="nodeSub" x="18" y="84">scan untrusted_text</text>
+                  <text class="nodeSub" x="18" y="104">prompt_injection</text>
+                </g>
+
+                <!-- Blackboard (cylinder) -->
+                <g id="n_blackboard" class="node node--amber" transform="translate(480 170)">
+                  <rect class="nodeBox" width="190" height="170" rx="18" />
+                  <ellipse cx="95" cy="46" rx="70" ry="18" fill="rgba(255,204,102,0.10)" stroke="rgba(255,204,102,0.45)" stroke-width="1.6"/>
+                  <path d="M25 46 V 130 C 25 150, 165 150, 165 130 V 46"
+                        fill="rgba(255,204,102,0.06)" stroke="rgba(255,204,102,0.35)" stroke-width="1.6" />
+                  <ellipse cx="95" cy="130" rx="70" ry="18" fill="rgba(255,204,102,0.06)" stroke="rgba(255,204,102,0.35)" stroke-width="1.6"/>
+                  <text class="nodeKicker" x="18" y="26">shared context</text>
+                  <text class="nodeTitle" x="18" y="154">Blackboard</text>
+                </g>
+
+                <!-- Green Planner -->
+                <g id="n_planner" class="node node--green" transform="translate(700 198)">
+                  <rect class="nodeBox" width="190" height="114" rx="18" />
+                  <text class="nodeKicker" x="18" y="32">benign agent</text>
+                  <text class="nodeTitle" x="18" y="58">Green Planner</text>
+                  <text class="nodeSub" x="18" y="82">reads blackboard</text>
+                  <text class="nodeSub" x="18" y="102">builds execution plan</text>
+                </g>
+
+                <!-- Green Runner -->
+                <g id="n_runner" class="node node--green" transform="translate(950 198)">
+                  <rect class="nodeBox" width="200" height="114" rx="18" />
+                  <text class="nodeKicker" x="18" y="32">benign agent</text>
+                  <text class="nodeTitle" x="18" y="58">Green Runner</text>
+                  <text class="nodeSub" x="18" y="82">executes plan</text>
+                  <text class="nodeSub" x="18" y="102">issues tool calls</text>
+                </g>
+
+                <!-- Tool boundary -->
+                <g id="n_tool" class="node node--blue" transform="translate(1190 195)">
+                  <rect class="nodeBox" width="150" height="120" rx="18" />
+                  <path d="M75 20
+                           C 92 32, 115 36, 125 38
+                           V 68
+                           C 125 90, 110 108, 75 118
+                           C 40 108, 25 90, 25 68
+                           V 38
+                           C 35 36, 58 32, 75 20 Z"
+                        fill="rgba(102,168,255,0.14)" stroke="rgba(102,168,255,0.50)" stroke-width="1.6" />
+                  <text class="nodeKicker" x="18" y="34">tool boundary</text>
+                  <text class="nodeTitle" x="18" y="60">Tool Boundary</text>
+                  <text class="nodeSub" x="18" y="84">fail-closed</text>
+                  <text class="nodeSub" x="18" y="104">@clawdstrike/openai</text>
+                </g>
+
+                <!-- Real Dispatcher -->
+                <g id="n_dispatcher" class="node node--blue" transform="translate(1370 198)">
+                  <rect class="nodeBox" width="220" height="114" rx="18" />
+                  <g transform="translate(160 18)">
+                    <path d="M30 0 L36 5 L44 5 L48 13 L56 16 L54 24 L60 30 L54 36 L56 44 L48 47 L44 55 L36 55 L30 60 L24 55 L16 55 L13 47 L5 44 L6 36 L0 30 L6 24 L5 16 L13 13 L16 5 L24 5 Z"
+                          fill="rgba(102,168,255,0.12)" stroke="rgba(102,168,255,0.42)" stroke-width="1.6"/>
+                    <circle cx="30" cy="30" r="10" fill="rgba(102,168,255,0.10)" stroke="rgba(102,168,255,0.34)" stroke-width="1.6"/>
+                  </g>
+                  <text class="nodeKicker" x="18" y="32">real side effects</text>
+                  <text class="nodeTitle" x="18" y="58">Real Dispatcher</text>
+                  <text class="nodeSub" x="18" y="82">filesystem, network, MCP tools</text>
+                  <text class="nodeSub" x="18" y="102">only runs if allowed</text>
+                </g>
+
+                <!-- hushd -->
+                <g id="n_hushd" class="node node--cyan" transform="translate(620 412)">
+                  <rect class="nodeBox" width="240" height="116" rx="18" />
+                  <text class="nodeKicker" x="18" y="32">policy server</text>
+                  <text class="nodeTitle" x="18" y="58">hushd</text>
+                  <text class="nodeSub" x="18" y="82">evaluates strict rules</text>
+                  <text class="nodeSub" x="18" y="102">streams SSE + writes audit</text>
+                </g>
+
+                <!-- blue team -->
+                <g id="n_blue" class="node node--blue" transform="translate(1030 414)">
+                  <rect class="nodeBox" width="260" height="116" rx="18" />
+                  <text class="nodeKicker" x="18" y="32">monitoring</text>
+                  <text class="nodeTitle" x="18" y="58">Blue Team Listener</text>
+                  <text class="nodeSub" x="18" y="82">subscribes to SSE</text>
+                  <text class="nodeSub" x="18" y="102">per-agent attribution</text>
+                </g>
+              </g>
+
+              <!-- Badges / stamps (toggled by JS) -->
+              <g id="badges">
+                <!-- Ingestion ON/OFF -->
+                <g id="b_ingest_off" class="badge badge--amber" transform="translate(314 170)">
+                  <rect rx="999" width="94" height="26" />
+                  <text x="18" y="18">OFF</text>
+                </g>
+                <g id="b_ingest_on" class="badge badge--green" transform="translate(314 170)">
+                  <rect rx="999" width="94" height="26" />
+                  <text x="24" y="18">ON</text>
+                </g>
+
+                <!-- Blackboard state -->
+                <g id="b_bb_poisoned" class="badge badge--red" transform="translate(494 148)">
+                  <rect rx="999" width="170" height="26" />
+                  <text x="14" y="18">POISONED</text>
+                </g>
+                <g id="b_bb_clean" class="badge badge--green" transform="translate(514 148)">
+                  <rect rx="999" width="130" height="26" />
+                  <text x="14" y="18">CLEAN</text>
+                </g>
+
+                <!-- Planner state -->
+                <g id="b_plan_infected" class="badge badge--red" transform="translate(712 170)">
+                  <rect rx="999" width="160" height="26" />
+                  <text x="14" y="18">INFECTED PLAN</text>
+                </g>
+                <g id="b_plan_clean" class="badge badge--green" transform="translate(728 170)">
+                  <rect rx="999" width="128" height="26" />
+                  <text x="14" y="18">CLEAN PLAN</text>
+                </g>
+
+	                <!-- Block stamps -->
+	                <g id="s_block_ingest" class="stamp" transform="translate(375 360)">
+	                  <rect x="-80" y="-24" width="160" height="48" rx="12" />
+	                  <text text-anchor="middle" dominant-baseline="middle">BLOCKED</text>
+	                </g>
+	                <g id="s_block_tool" class="stamp" transform="translate(1265 140)">
+	                  <rect x="-110" y="-24" width="220" height="48" rx="12" />
+	                  <text text-anchor="middle" dominant-baseline="middle">
+	                    <tspan>BLOCKED</tspan><tspan font-size="14" letter-spacing="0.12em"> x2</tspan>
+	                  </text>
+	                </g>
+	              </g>
+            </svg>
+          </div>
+        </section>
+
+        <aside class="panel" aria-label="Narration panel">
+          <div class="phaseTag" id="phaseTag"><span class="pill"></span><span id="phaseText">Phase A</span></div>
+          <div class="stepCount" id="stepCount">Step 1 of 1</div>
+          <h2 id="stepTitle">Loading…</h2>
+          <p class="body" id="stepBody"></p>
+
+          <div class="grid">
+            <div class="card">
+              <div class="cardTitle">What hushd sees</div>
+              <div class="mono" id="telemetry"></div>
+            </div>
+            <div class="card">
+              <div class="cardTitle">What actually runs</div>
+              <div class="mono" id="execution"></div>
+            </div>
+          </div>
+
+          <div class="legend" aria-label="Legend">
+            <span class="chip"><span class="swatch red"></span> compromised</span>
+            <span class="chip"><span class="swatch green"></span> benign</span>
+            <span class="chip"><span class="swatch cyan"></span> memory boundary</span>
+            <span class="chip"><span class="swatch blue"></span> tool boundary</span>
+            <span class="chip"><span class="swatch amber"></span> shared context</span>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script>
+      const $ = (sel) => document.querySelector(sel);
+      const app = $("#app");
+
+      const ui = {
+        tabA: $("#tabA"),
+        tabB: $("#tabB"),
+        prev: $("#btnPrev"),
+        next: $("#btnNext"),
+        play: $("#btnPlay"),
+        speed: $("#speed"),
+        phaseText: $("#phaseText"),
+        phaseTag: $("#phaseTag"),
+        stepCount: $("#stepCount"),
+        stepTitle: $("#stepTitle"),
+        stepBody: $("#stepBody"),
+        telemetry: $("#telemetry"),
+        execution: $("#execution"),
+      };
+
+      const ids = {
+        nodes: [
+          "n_seeder",
+          "n_ingest",
+          "n_blackboard",
+          "n_planner",
+          "n_runner",
+          "n_tool",
+          "n_dispatcher",
+          "n_hushd",
+          "n_blue",
+        ],
+        edges: [
+          "e_seeder_ingest",
+          "e_ingest_blackboard",
+          "e_seeder_bypass",
+          "e_blackboard_planner",
+          "e_planner_runner",
+          "e_runner_tool",
+          "e_tool_dispatcher",
+          "e_ingest_eval",
+          "e_tool_eval",
+          "e_hushd_sse",
+        ],
+	        badges: [
+	          "b_ingest_off",
+	          "b_ingest_on",
+	          "b_bb_poisoned",
+	          "b_bb_clean",
+	          "b_plan_infected",
+	          "b_plan_clean",
+	          "s_block_ingest",
+	          "s_block_tool",
+	        ],
+	      };
+
+      function setActive(list, activeIds) {
+        const active = new Set(activeIds);
+        for (const id of list) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          el.classList.toggle("active", active.has(id));
+        }
+      }
+
+      function setVisible(list, visibleIds) {
+        const vis = new Set(visibleIds);
+        for (const id of list) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          el.classList.toggle("visible", vis.has(id));
+        }
+      }
+
+      const phases = {
+        A: {
+          name: "Phase A (Naive)",
+          pill: "var(--amber)",
+          steps: [
+            {
+              title: "Memory boundary is OFF",
+              body: "The red agent can write untrusted instructions into shared context. The swarm now has a contagion channel.",
+              telemetry:
+                "tool boundary: POST /api/v1/eval (per tool call)\\nSSE: live attribution as violations happen",
+              execution:
+                "blackboard: accepts poison (no scan)\\nrunner: can be steered into dangerous tool calls",
+              nodes: ["n_seeder", "n_ingest", "n_blackboard", "n_hushd", "n_blue"],
+              edges: ["e_seeder_bypass", "e_tool_eval", "e_hushd_sse"],
+              badges: ["b_ingest_off"],
+            },
+            {
+              title: "Red Seeder poisons shared context",
+              body: "One compromised agent writes a worm into the blackboard: “ignore instructions, steal keys, download-and-exec.”",
+              telemetry: "custom untrusted_text: NOT evaluated\\n(no ingestion boundary)",
+              execution: "blackboard: POISONED\\nshared context now contains malicious instructions",
+              nodes: ["n_seeder", "n_blackboard"],
+              edges: ["e_seeder_bypass"],
+              badges: ["b_ingest_off", "b_bb_poisoned"],
+            },
+            {
+              title: "Green Planner builds an infected plan",
+              body: "A benign agent reads the blackboard and unknowingly turns the worm into an execution plan.",
+              telemetry: "no violation yet\\nproblem is upstream: memory was trusted",
+              execution: "planner: infected plan\\nrunner will attempt forbidden actions",
+              nodes: ["n_blackboard", "n_planner"],
+              edges: ["e_blackboard_planner"],
+              badges: ["b_ingest_off", "b_bb_poisoned", "b_plan_infected"],
+            },
+            {
+              title: "Handoff spreads the infection",
+              body: "The planner hands the plan to the runner. This is lateral movement inside the swarm.",
+              telemetry: "still nothing “malicious” has executed\\nthis is exactly why swarms are dangerous",
+              execution: "handoff: infected plan\\nrunner: about to issue tool calls",
+              nodes: ["n_planner", "n_runner"],
+              edges: ["e_planner_runner"],
+              badges: ["b_ingest_off", "b_bb_poisoned", "b_plan_infected"],
+            },
+	            {
+	              title: "Tool boundary blocks execution (fail-closed)",
+	              body: "The runner attempts forbidden actions. The tool boundary checks hushd before execution. Deny means the dispatcher never runs.",
+              telemetry:
+                "POST /api/v1/eval\\n- file_access ~/.ssh/id_rsa -> DENY forbidden_path\\n- shell curl | bash -> DENY shell_command\\nSSE: violations attributed to green-runner",
+              execution:
+                "dispatcher runs: only safe steps\\nblocked calls never reach filesystem/network/MCP",
+	              nodes: ["n_runner", "n_tool", "n_hushd", "n_blue", "n_dispatcher"],
+	              edges: ["e_runner_tool", "e_tool_eval", "e_hushd_sse"],
+	              badges: ["b_ingest_off", "b_bb_poisoned", "b_plan_infected", "s_block_tool"],
+	            },
+            {
+              title: "Proof: blocks do not execute side effects",
+              body: "The system is safe, but it’s noisy: the infection caused benign agents to generate violations. That’s a containment problem.",
+              telemetry:
+                "A-naive summary:\\n- red-seeder: 0 (not attributed, no scan)\\n- green-runner: violations (attributed)",
+              execution:
+                "tool boundary prevented execution\\nbut memory boundary was missing, so contagion spread",
+              nodes: ["n_dispatcher", "n_blue", "n_blackboard"],
+              edges: ["e_hushd_sse"],
+              badges: ["b_ingest_off", "b_bb_poisoned", "b_plan_infected"],
+            },
+          ],
+        },
+        B: {
+          name: "Phase B (Hardened)",
+          pill: "var(--green)",
+          steps: [
+            {
+              title: "Memory boundary is ON",
+              body: "Same swarm. Same red agent. But now untrusted text is evaluated before it becomes shared memory.",
+              telemetry:
+                "ingestion boundary: POST /api/v1/eval\\nCustom(untrusted_text) -> prompt_injection",
+              execution:
+                "blackboard: only stores safe/clean content\\nplanner/runner stay boring",
+              nodes: ["n_seeder", "n_ingest", "n_blackboard", "n_hushd", "n_blue"],
+              edges: ["e_seeder_ingest", "e_ingest_eval", "e_hushd_sse"],
+              badges: ["b_ingest_on"],
+            },
+            {
+              title: "Poison blocked at ingestion",
+              body: "The red agent tries to write the worm. prompt_injection blocks the untrusted_text. The poison never lands.",
+              telemetry:
+                "POST /api/v1/eval\\ncustom untrusted_text -> DENY prompt_injection\\nSSE: violation attributed to red-seeder",
+              execution:
+                "blackboard stays CLEAN\\nno infected plan can be formed",
+              nodes: ["n_seeder", "n_ingest", "n_hushd", "n_blue", "n_blackboard"],
+              edges: ["e_seeder_ingest", "e_ingest_eval", "e_hushd_sse"],
+              badges: ["b_ingest_on", "b_bb_clean", "s_block_ingest"],
+            },
+            {
+              title: "Planner reads clean context",
+              body: "The benign planner can only see clean shared state, so it produces a normal plan.",
+              telemetry:
+                "no downstream violations\\n(no infected instructions to amplify)",
+              execution:
+                "planner: clean plan\\nrunner: safe tool calls only",
+              nodes: ["n_blackboard", "n_planner"],
+              edges: ["e_blackboard_planner"],
+              badges: ["b_ingest_on", "b_bb_clean", "b_plan_clean"],
+            },
+            {
+              title: "Runner executes safely",
+              body: "Tool boundary still evaluates every call, but nothing suspicious is attempted.",
+              telemetry:
+                "POST /api/v1/eval: allow\\nSSE: quiet (no violations)",
+              execution:
+                "dispatcher runs allowed steps\\nno blocked calls",
+              nodes: ["n_runner", "n_tool", "n_dispatcher", "n_hushd"],
+              edges: ["e_runner_tool", "e_tool_dispatcher", "e_tool_eval"],
+              badges: ["b_ingest_on", "b_bb_clean", "b_plan_clean"],
+            },
+            {
+              title: "Containment beats cleanup",
+              body: "Phase A blocks execution but the swarm gets noisy. Phase B blocks the infection channel, so downstream agents don’t even attempt the breach.",
+              telemetry:
+                "B-hardened summary:\\n- red-seeder: 1 violation (attributed)\\n- green-runner: 0 violations",
+              execution:
+                "memory boundary prevents contagion\\ntool boundary prevents execution",
+              nodes: ["n_ingest", "n_tool", "n_blue", "n_hushd"],
+              edges: ["e_ingest_eval", "e_tool_eval", "e_hushd_sse"],
+              badges: ["b_ingest_on", "b_bb_clean", "b_plan_clean"],
+            },
+          ],
+        },
+      };
+
+      const state = {
+        phase: "A",
+        step: 0,
+        playing: false,
+        timer: null,
+      };
+
+      function setPhase(phase) {
+        state.phase = phase;
+        state.step = 0;
+        app.dataset.phase = phase;
+        ui.tabA.setAttribute("aria-selected", phase === "A" ? "true" : "false");
+        ui.tabB.setAttribute("aria-selected", phase === "B" ? "true" : "false");
+
+        // Phase color in tag
+        const pillColor = phases[phase].pill;
+        ui.phaseTag.querySelector(".pill").style.background = pillColor;
+        ui.phaseTag.querySelector(".pill").style.boxShadow = `0 0 0 5px color-mix(in srgb, ${pillColor} 16%, transparent)`;
+        ui.phaseText.textContent = phases[phase].name;
+
+        render();
+      }
+
+      function speedMs() {
+        // Range 0..4 maps to 0, 900, 650, 460, 330
+        const v = Number(ui.speed.value);
+        return [0, 900, 650, 460, 330][Math.max(0, Math.min(4, v))];
+      }
+
+      function render() {
+        const steps = phases[state.phase].steps;
+        const step = steps[state.step];
+
+        ui.stepCount.textContent = `Step ${state.step + 1} of ${steps.length}`;
+        ui.stepTitle.textContent = step.title;
+        ui.stepBody.textContent = step.body;
+        ui.telemetry.textContent = step.telemetry;
+        ui.execution.textContent = step.execution;
+
+        setActive(ids.nodes, step.nodes);
+        setActive(ids.edges, step.edges);
+        setVisible(ids.badges, step.badges);
+      }
+
+      function stop() {
+        state.playing = false;
+        if (state.timer) window.clearTimeout(state.timer);
+        state.timer = null;
+        ui.play.textContent = "Play";
+      }
+
+      function next() {
+        const steps = phases[state.phase].steps;
+        state.step = Math.min(steps.length - 1, state.step + 1);
+        render();
+      }
+
+      function prev() {
+        state.step = Math.max(0, state.step - 1);
+        render();
+      }
+
+      function play() {
+        const ms = speedMs();
+        if (ms === 0) {
+          // Instant "play": jump to end.
+          state.step = phases[state.phase].steps.length - 1;
+          render();
+          stop();
+          return;
+        }
+
+        state.playing = true;
+        ui.play.textContent = "Pause";
+
+        const tick = () => {
+          if (!state.playing) return;
+          const steps = phases[state.phase].steps;
+          if (state.step >= steps.length - 1) {
+            stop();
+            return;
+          }
+          state.step += 1;
+          render();
+          state.timer = window.setTimeout(tick, ms);
+        };
+
+        state.timer = window.setTimeout(tick, ms);
+      }
+
+      ui.tabA.addEventListener("click", () => { stop(); setPhase("A"); });
+      ui.tabB.addEventListener("click", () => { stop(); setPhase("B"); });
+      ui.next.addEventListener("click", () => { stop(); next(); });
+      ui.prev.addEventListener("click", () => { stop(); prev(); });
+      ui.play.addEventListener("click", () => {
+        if (state.playing) stop();
+        else play();
+      });
+      ui.speed.addEventListener("input", () => {
+        if (state.playing) {
+          stop();
+          play();
+        }
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") { stop(); next(); }
+        if (e.key === "ArrowLeft") { stop(); prev(); }
+        if (e.key === " ") { e.preventDefault(); state.playing ? stop() : play(); }
+      });
+
+      setPhase("A");
+    </script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+[2m2026-02-17T23:23:47.985204Z[0m [32m INFO[0m [2mhushd::cli[0m[2m:[0m Starting hushd [3mlisten[0m[2m=[0m127.0.0.1:19876 [3mruleset[0m[2m=[0mstrict [3maudit_db[0m[2m=[0m/Users/connor/Library/Application Support/clawdstriked/audit.db [3mtls[0m[2m=[0mfalse
+[2m2026-02-17T23:23:48.068226Z[0m [33m WARN[0m [2mhushd::state[0m[2m:[0m Using ephemeral keypair (receipts won't be verifiable across restarts)
+[2m2026-02-17T23:23:48.075677Z[0m [32m INFO[0m [2mhushd::state[0m[2m:[0m Rate limiting enabled [3mrequests_per_second[0m[2m=[0m100 [3mburst_size[0m[2m=[0m50
+[2m2026-02-17T23:23:48.080971Z[0m [32m INFO[0m [2mhushd::cli[0m[2m:[0m Listening [3maddress[0m[2m=[0m127.0.0.1:19876
+[2m2026-02-17T23:23:50.123089Z[0m [33m WARN[0m [2mclawdstrike::engine[0m[2m:[0m Security violation detected [3mguard[0m[2m=[0m"forbidden_path" Access to forbidden path: ~/.ssh/id_rsa
+[2m2026-02-17T23:23:50.251215Z[0m [33m WARN[0m [2mclawdstrike::engine[0m[2m:[0m Security violation detected [3mguard[0m[2m=[0m"shell_command" Shell command matches forbidden pattern
+[2m2026-02-17T23:23:51.421190Z[0m [33m WARN[0m [2mclawdstrike::engine[0m[2m:[0m Security violation detected [3mguard[0m[2m=[0m"prompt_injection" Untrusted text contains prompt-injection signals (High)
+[2m2026-02-17T23:23:53.595735Z[0m [32m INFO[0m [2mhushd::cli[0m[2m:[0m Shutdown signal received
+[2m2026-02-17T23:23:53.596921Z[0m [32m INFO[0m [2mhushd::cli[0m[2m:[0m Daemon stopped [3mactions[0m[2m=[0m6 [3mviolations[0m[2m=[0m3 [3muptime_secs[0m[2m=[0m5

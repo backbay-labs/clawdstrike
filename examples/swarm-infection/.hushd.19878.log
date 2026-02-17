@@ -1,0 +1,9 @@
+2026-02-17T23:20:02.451805Z  INFO hushd::cli: Starting hushd listen=127.0.0.1:19878 ruleset=strict audit_db=/Users/connor/Library/Application Support/clawdstriked/audit.db tls=false
+2026-02-17T23:20:02.530654Z  WARN hushd::state: Using ephemeral keypair (receipts won't be verifiable across restarts)
+2026-02-17T23:20:02.538184Z  INFO hushd::state: Rate limiting enabled requests_per_second=100 burst_size=50
+2026-02-17T23:20:02.543565Z  INFO hushd::cli: Listening address=127.0.0.1:19878
+2026-02-17T23:20:04.131788Z  WARN clawdstrike::engine: Security violation detected guard="forbidden_path" Access to forbidden path: ~/.ssh/id_rsa
+2026-02-17T23:20:04.138465Z  WARN clawdstrike::engine: Security violation detected guard="shell_command" Shell command matches forbidden pattern
+2026-02-17T23:20:04.595737Z  WARN clawdstrike::engine: Security violation detected guard="prompt_injection" Untrusted text contains prompt-injection signals (High)
+2026-02-17T23:20:05.435645Z  INFO hushd::cli: Shutdown signal received
+2026-02-17T23:20:05.436400Z  INFO hushd::cli: Daemon stopped actions=6 violations=3 uptime_secs=2

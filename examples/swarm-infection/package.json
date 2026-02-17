@@ -1,0 +1,19 @@
+{
+  "name": "clawdstrike-swarm-infection-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts",
+    "demo": "bash run.sh"
+  },
+  "dependencies": {
+    "@clawdstrike/openai": "file:../../packages/adapters/clawdstrike-openai",
+    "@clawdstrike/adapter-core": "file:../../packages/adapters/clawdstrike-adapter-core",
+    "@clawdstrike/engine-remote": "file:../../packages/adapters/clawdstrike-hushd-engine"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0"
+  }
+}
+
