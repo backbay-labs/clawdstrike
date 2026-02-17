@@ -442,18 +442,26 @@ async fn proxy_http_response(
 
 async fn proxy_daemon_get(
     State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
+    mut headers: HeaderMap,
     uri: Uri,
 ) -> Result<Response, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    // Do not forward the local agent auth token to hushd; use explicit daemon auth
+    // from request (if separately provided) or configured daemon API key fallback.
+    headers.remove(AUTHORIZATION);
     let response = send_daemon_get_request(&state, &headers, &uri).await?;
     proxy_http_response(response).await
 }
 
 async fn proxy_daemon_events(
     State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
+    mut headers: HeaderMap,
     uri: Uri,
 ) -> Result<Response, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    // Do not forward the local agent auth token to hushd; use explicit daemon auth
+    // from request (if separately provided) or configured daemon API key fallback.
+    headers.remove(AUTHORIZATION);
     let response = send_daemon_get_request(&state, &headers, &uri).await?;
     let status =
         StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -793,37 +801,39 @@ async fn update_integrations_settings(
 ) -> Result<Json<IntegrationsApplyResponse>, (StatusCode, String)> {
     {
         let mut settings = state.settings.write().await;
+        let mut next_integrations = settings.integrations.clone();
 
         if let Some(siem) = input.siem {
             if let Some(value) = siem.provider {
-                settings.integrations.siem.provider = value;
+                next_integrations.siem.provider = value;
             }
             if let Some(value) = siem.endpoint {
-                settings.integrations.siem.endpoint = value;
+                next_integrations.siem.endpoint = value;
             }
             if let Some(value) = siem.api_key {
-                settings.integrations.siem.api_key = value;
+                next_integrations.siem.api_key = value;
             }
             if let Some(value) = siem.enabled {
-                settings.integrations.siem.enabled = value;
+                next_integrations.siem.enabled = value;
             }
         }
 
         if let Some(webhooks) = input.webhooks {
             if let Some(value) = webhooks.url {
-                settings.integrations.webhooks.url = value;
+                next_integrations.webhooks.url = value;
             }
             if let Some(value) = webhooks.secret {
-                settings.integrations.webhooks.secret = value;
+                next_integrations.webhooks.secret = value;
             }
             if let Some(value) = webhooks.enabled {
-                settings.integrations.webhooks.enabled = value;
+                next_integrations.webhooks.enabled = value;
             }
         }
 
-        normalize_integration_settings(&mut settings.integrations);
-        validate_integration_settings(&settings.integrations)
+        normalize_integration_settings(&mut next_integrations);
+        validate_integration_settings(&next_integrations)
             .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+        settings.integrations = next_integrations;
 
         settings
             .save()
@@ -1416,6 +1426,83 @@ mod tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+    }
+
+    #[tokio::test]
+    async fn integrations_invalid_update_does_not_mutate_state() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/integrations",
+                get(get_integrations_settings).put(update_integrations_settings),
+            )
+            .with_state(state.clone());
+
+        let put_req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/agent/integrations")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{
+                    "siem": {
+                        "provider": "not-supported",
+                        "endpoint": "https://example.invalid",
+                        "api_key": "abc123",
+                        "enabled": true
+                    },
+                    "apply": false
+                }"#,
+            ))
+            .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
+
+        let response = app
+            .clone()
+            .oneshot(put_req)
+            .await
+            .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let get_req = axum::http::Request::builder()
+            .uri("/api/v1/agent/integrations")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
+        let response = app
+            .oneshot(get_req)
+            .await
+            .unwrap_or_else(|e| panic!("GET request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read response body: {e}"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
+        assert_eq!(
+            json.get("siem")
+                .and_then(|v| v.get("provider"))
+                .and_then(|v| v.as_str()),
+            Some("datadog"),
+            "Rejected update should not mutate in-memory integrations provider"
+        );
+    }
+
+    #[tokio::test]
+    async fn daemon_proxy_route_requires_auth() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route("/api/v1/audit", get(proxy_daemon_get))
+            .with_state(state);
+
+        let request = axum::http::Request::builder()
+            .uri("/api/v1/audit")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+        let response = app
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]
