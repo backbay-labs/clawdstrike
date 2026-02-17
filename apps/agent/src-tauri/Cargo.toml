@@ -41,6 +41,8 @@ thiserror = "1"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+
+# Versioning
 semver = "1"
 
 # UUID
@@ -52,6 +54,8 @@ keyring = "3"
 
 # Process utilities
 which = "6"
+
+# Shared crypto/data primitives
 hush-core = { path = "../../../crates/libs/hush-core" }
 
 # Logging
