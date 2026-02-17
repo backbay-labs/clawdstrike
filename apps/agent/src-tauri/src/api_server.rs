@@ -14,9 +14,12 @@ use crate::settings::{IntegrationSettings, Settings};
 use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
 use axum::body::Body;
-use axum::extract::{Path, State};
-use axum::http::header::{ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE};
+use axum::extract::{Path, Request, State};
+use axum::http::header::{
+    ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, SET_COOKIE,
+};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
+use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::Html;
 use axum::response::{IntoResponse, Response};
@@ -35,6 +38,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tower_http::services::{ServeDir, ServeFile};
 
 const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
+const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
 
 #[derive(Clone)]
 pub struct AgentApiServer {
@@ -140,17 +144,27 @@ impl AgentApiServer {
                 "Serving cloud dashboard from bundled assets"
             );
             let index_file = dashboard_dist.join("index.html");
-            app = app.nest_service(
-                "/ui",
-                ServeDir::new(dashboard_dist).not_found_service(ServeFile::new(index_file)),
-            );
+            let ui_router = Router::new()
+                .fallback_service(
+                    ServeDir::new(dashboard_dist).not_found_service(ServeFile::new(index_file)),
+                )
+                .layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    attach_ui_auth_cookie,
+                ));
+            app = app.nest("/ui", ui_router);
         } else {
             tracing::warn!(
                 "Cloud dashboard assets were not found; serving fallback diagnostics page at /ui"
             );
-            app = app
-                .route("/ui", get(agent_web_ui_fallback))
-                .route("/ui/{*path}", get(agent_web_ui_fallback));
+            let ui_router = Router::new()
+                .route("/", get(agent_web_ui_fallback))
+                .route("/{*path}", get(agent_web_ui_fallback))
+                .layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    attach_ui_auth_cookie,
+                ));
+            app = app.nest("/ui", ui_router);
         }
 
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
@@ -398,6 +412,30 @@ fn merged_authorization_header(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|key| format!("Bearer {}", key))
+}
+
+fn auth_cookie_header_value(auth_token: &str) -> String {
+    format!(
+        "{}={}; Path=/; HttpOnly; SameSite=Strict",
+        AGENT_AUTH_COOKIE_NAME, auth_token
+    )
+}
+
+async fn attach_ui_auth_cookie(
+    State(state): State<Arc<AgentApiState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    match HeaderValue::from_str(&auth_cookie_header_value(&state.auth_token)) {
+        Ok(value) => {
+            response.headers_mut().append(SET_COOKIE, value);
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "Failed to build UI auth cookie header");
+        }
+    }
+    response
 }
 
 async fn send_daemon_get_request(
@@ -1251,29 +1289,46 @@ async fn list_pending_approvals(
     Ok(Json(pending))
 }
 
+fn auth_token_from_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(COOKIE)?.to_str().ok()?;
+    for cookie in cookie_header.split(';') {
+        let Some((name, value)) = cookie.trim().split_once('=') else {
+            continue;
+        };
+        if name.trim() == AGENT_AUTH_COOKIE_NAME {
+            let token = value.trim();
+            if !token.is_empty() {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (StatusCode, String)> {
-    let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "missing authorization header".to_string(),
-        ));
-    };
+    let auth_header = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim);
 
-    let Some(token) = auth.strip_prefix("Bearer ") else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "invalid authorization scheme".to_string(),
-        ));
-    };
-
-    if token.trim() != state.auth_token {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "invalid authorization token".to_string(),
-        ));
+    if let Some(auth) = auth_header {
+        if let Some(token) = auth.strip_prefix("Bearer ") {
+            if token.trim() == state.auth_token {
+                return Ok(());
+            }
+        }
     }
 
-    Ok(())
+    if auth_token_from_cookie(headers).as_deref() == Some(state.auth_token.as_str()) {
+        return Ok(());
+    }
+
+    let err = match auth_header {
+        None => "missing authorization header".to_string(),
+        Some(auth) if !auth.starts_with("Bearer ") => "invalid authorization scheme".to_string(),
+        Some(_) => "invalid authorization token".to_string(),
+    };
+    Err((StatusCode::UNAUTHORIZED, err))
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, String) {
@@ -1368,6 +1423,42 @@ mod tests {
 
         let result = require_auth(&headers, &state);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn auth_accepts_cookie_token_without_authorization_header() {
+        let state = test_state();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            format!("{}={}", AGENT_AUTH_COOKIE_NAME, state.auth_token)
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build cookie header")),
+        );
+
+        let result = require_auth(&headers, &state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn auth_allows_cookie_fallback_when_authorization_is_invalid() {
+        let state = test_state();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            "Bearer wrong-token"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build authorization header")),
+        );
+        headers.insert(
+            COOKIE,
+            format!("{}={}", AGENT_AUTH_COOKIE_NAME, state.auth_token)
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build cookie header")),
+        );
+
+        let result = require_auth(&headers, &state);
+        assert!(result.is_ok());
     }
 
     #[test]

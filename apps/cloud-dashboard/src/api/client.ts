@@ -4,8 +4,10 @@ function getApiBase(): string {
 
 function getHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const apiBase = getApiBase();
   const apiKey = localStorage.getItem("hushd_api_key");
-  if (apiKey) {
+  // In same-origin mode (empty apiBase), agent auth is bootstrapped by cookie.
+  if (apiBase && apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
   return headers;

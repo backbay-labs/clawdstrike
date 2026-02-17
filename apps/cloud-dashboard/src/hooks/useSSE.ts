@@ -71,8 +71,9 @@ export function useSSE(url: string): UseSSEResult {
     // EventSource doesn't support custom headers, so for authenticated
     // hushd deployments we use a fetch-based approach.
     const apiKey = localStorage.getItem("hushd_api_key");
+    const useHeaderAuth = Boolean(apiBase) && Boolean(apiKey);
     let source: EventSource;
-    if (apiKey) {
+    if (useHeaderAuth) {
       // Use fetch + ReadableStream to send Authorization header.
       // Wrap in a connect() function so we can reconnect on EOF.
       let ctrl = new AbortController();
