@@ -28,7 +28,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 reqwest = { version = "0.12", features = ["json"] }
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 
 # SSE client
 reqwest-eventsource = "0.6"

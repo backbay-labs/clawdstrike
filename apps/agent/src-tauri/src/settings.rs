@@ -23,6 +23,54 @@ pub struct OpenClawSettings {
     pub active_gateway_id: Option<String>,
 }
 
+/// SIEM integration settings configured from the dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiemIntegrationSettings {
+    #[serde(default = "default_siem_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+impl Default for SiemIntegrationSettings {
+    fn default() -> Self {
+        Self {
+            provider: default_siem_provider(),
+            endpoint: String::new(),
+            api_key: String::new(),
+            enabled: false,
+        }
+    }
+}
+
+fn default_siem_provider() -> String {
+    "datadog".to_string()
+}
+
+/// Webhook integration settings configured from the dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WebhookIntegrationSettings {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub secret: String,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// Integration settings configured from dashboard pages.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IntegrationSettings {
+    #[serde(default)]
+    pub siem: SiemIntegrationSettings,
+    #[serde(default)]
+    pub webhooks: WebhookIntegrationSettings,
+}
+
 /// Agent settings persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -83,6 +131,10 @@ pub struct Settings {
     /// URL for the local web dashboard.
     #[serde(default = "default_dashboard_url")]
     pub dashboard_url: String,
+
+    /// Integration settings synchronized from the local dashboard.
+    #[serde(default)]
+    pub integrations: IntegrationSettings,
 
     /// Enable automatic hushd OTA checks and updates.
     #[serde(default = "default_ota_enabled")]
@@ -194,6 +246,7 @@ impl Default for Settings {
             api_key: None,
             openclaw: OpenClawSettings::default(),
             dashboard_url: default_dashboard_url(),
+            integrations: IntegrationSettings::default(),
             ota_enabled: default_ota_enabled(),
             ota_mode: default_ota_mode(),
             ota_channel: default_ota_channel(),
@@ -302,6 +355,9 @@ mod tests {
         assert_eq!(settings.ota_mode, "auto");
         assert_eq!(settings.ota_channel, "stable");
         assert_eq!(settings.ota_check_interval_minutes, 360);
+        assert_eq!(settings.integrations.siem.provider, "datadog");
+        assert!(!settings.integrations.siem.enabled);
+        assert!(!settings.integrations.webhooks.enabled);
     }
 
     #[test]

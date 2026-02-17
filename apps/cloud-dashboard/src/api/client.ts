@@ -71,6 +71,50 @@ export interface AuditFilters {
   offset?: number;
 }
 
+export interface IntegrationSiemSettings {
+  provider: string;
+  endpoint: string;
+  api_key: string;
+  enabled: boolean;
+}
+
+export interface IntegrationWebhookSettings {
+  url: string;
+  secret: string;
+  enabled: boolean;
+}
+
+export interface IntegrationSettings {
+  siem: IntegrationSiemSettings;
+  webhooks: IntegrationWebhookSettings;
+}
+
+export interface IntegrationSettingsUpdate {
+  siem?: Partial<IntegrationSiemSettings>;
+  webhooks?: Partial<IntegrationWebhookSettings>;
+  apply?: boolean;
+}
+
+export interface IntegrationApplyResponse {
+  integrations: IntegrationSettings;
+  restarted: boolean;
+  daemon?: {
+    state?: string;
+  };
+  exporter_status?: {
+    enabled?: boolean;
+    exporters?: Array<{
+      name?: string;
+      health?: {
+        running?: boolean;
+        exported_total?: number;
+        failed_total?: number;
+      };
+    }>;
+  };
+  warning?: string;
+}
+
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${getApiBase()}/health`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
@@ -102,5 +146,26 @@ export async function fetchAuditStats(): Promise<AuditStats> {
 export async function fetchPolicy(): Promise<PolicyResponse> {
   const res = await fetch(`${getApiBase()}/api/v1/policy`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Policy fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchIntegrationSettings(): Promise<IntegrationSettings> {
+  const res = await fetch("/api/v1/agent/integrations", { headers: getHeaders() });
+  if (!res.ok) throw new Error(`Integration settings fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveIntegrationSettings(
+  input: IntegrationSettingsUpdate,
+): Promise<IntegrationApplyResponse> {
+  const res = await fetch("/api/v1/agent/integrations", {
+    method: "PUT",
+    headers: getHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Integration settings update failed: ${res.status}`);
+  }
   return res.json();
 }

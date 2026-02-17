@@ -279,6 +279,22 @@ pub fn show_hooks_installed_notification<R: Runtime>(app: &AppHandle<R>, success
     show_notification(app, title, body);
 }
 
+/// Show a notification for OpenClaw plugin installation.
+pub fn show_openclaw_plugin_installed_notification<R: Runtime>(app: &AppHandle<R>, success: bool) {
+    let (title, body) = if success {
+        (
+            "OpenClaw Plugin Installed",
+            "Clawdstrike security plugin is now active in OpenClaw",
+        )
+    } else {
+        (
+            "OpenClaw Plugin Installation Failed",
+            "Failed to install OpenClaw plugin. Check logs for details.",
+        )
+    };
+    show_notification(app, title, body);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

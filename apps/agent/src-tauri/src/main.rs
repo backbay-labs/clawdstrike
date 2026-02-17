@@ -30,10 +30,11 @@ use daemon::{
     DaemonState, PolicyCache,
 };
 use events::EventManager;
-use integrations::{ClaudeCodeIntegration, McpServer};
+use integrations::{ClaudeCodeIntegration, McpServer, OpenClawPluginIntegration};
 use notifications::{
-    show_hooks_installed_notification, show_policy_reload_notification, show_startup_notification,
-    show_toggle_notification, NotificationManager,
+    show_hooks_installed_notification, show_openclaw_plugin_installed_notification,
+    show_policy_reload_notification, show_startup_notification, show_toggle_notification,
+    NotificationManager,
 };
 use openclaw::OpenClawManager;
 use session::SessionManager;
@@ -676,6 +677,31 @@ async fn run_agent<R: Runtime>(
         });
     });
 
+    let app_for_openclaw = app.clone();
+    let openclaw_handler = app.listen("install_openclaw_plugin", move |_| {
+        let app = app_for_openclaw.clone();
+
+        tauri::async_runtime::spawn(async move {
+            let integration = OpenClawPluginIntegration::new();
+            if !integration.is_cli_available() {
+                tracing::warn!("OpenClaw CLI not detected on PATH");
+                show_openclaw_plugin_installed_notification(&app, false);
+                return;
+            }
+
+            match integration.install_plugin().await {
+                Ok(_) => {
+                    tracing::info!("OpenClaw plugin installed successfully");
+                    show_openclaw_plugin_installed_notification(&app, true);
+                }
+                Err(err) => {
+                    tracing::error!("Failed to install OpenClaw plugin: {}", err);
+                    show_openclaw_plugin_installed_notification(&app, false);
+                }
+            }
+        });
+    });
+
     let app_for_reload = app.clone();
     let reload_handler = app.listen("reload_policy", move |_| {
         let app = app_for_reload.clone();
@@ -695,7 +721,12 @@ async fn run_agent<R: Runtime>(
         });
     });
 
-    let _handlers = (toggle_handler, hooks_handler, reload_handler);
+    let _handlers = (
+        toggle_handler,
+        hooks_handler,
+        openclaw_handler,
+        reload_handler,
+    );
 
     let mut shutdown_rx = shutdown_tx.subscribe();
     let _ = shutdown_rx.recv().await;

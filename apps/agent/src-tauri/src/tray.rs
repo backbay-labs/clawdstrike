@@ -24,6 +24,10 @@ pub mod menu_ids {
     pub const OPEN_DESKTOP: &str = "open_desktop";
     pub const OPEN_WEB_UI: &str = "open_web_ui";
     pub const INSTALL_HOOKS: &str = "install_hooks";
+    pub const INTEGRATIONS_INSTALL_HOOKS: &str = "integrations_install_hooks";
+    pub const INTEGRATIONS_INSTALL_OPENCLAW: &str = "integrations_install_openclaw";
+    pub const INTEGRATIONS_CONFIGURE_SIEM: &str = "integrations_configure_siem";
+    pub const INTEGRATIONS_CONFIGURE_WEBHOOKS: &str = "integrations_configure_webhooks";
     pub const RELOAD_POLICY: &str = "reload_policy";
     pub const QUIT: &str = "quit";
 }
@@ -86,13 +90,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
 
-    let install_hooks = MenuItem::with_id(
-        app,
-        menu_ids::INSTALL_HOOKS,
-        "Install Claude Code Hooks",
-        true,
-        None::<&str>,
-    )?;
+    let integrations_submenu = build_integrations_submenu(app)?;
     let reload_policy = MenuItem::with_id(
         app,
         menu_ids::RELOAD_POLICY,
@@ -125,7 +123,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
             &sep1,
             &events_submenu,
             &sep2,
-            &install_hooks,
+            &integrations_submenu,
             &reload_policy,
             &open_desktop,
             &open_web_ui,
@@ -171,6 +169,51 @@ fn build_events_submenu<R: Runtime>(
         .collect();
 
     Submenu::with_items(app, &title, true, &item_refs)
+}
+
+fn build_integrations_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
+    let install_hooks = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_INSTALL_HOOKS,
+        "Install Claude Code Hooks",
+        true,
+        None::<&str>,
+    )?;
+    let install_openclaw = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_INSTALL_OPENCLAW,
+        "Install OpenClaw Plugin",
+        true,
+        None::<&str>,
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let configure_siem = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_CONFIGURE_SIEM,
+        "Configure SIEM Export",
+        true,
+        None::<&str>,
+    )?;
+    let configure_webhooks = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_CONFIGURE_WEBHOOKS,
+        "Configure Webhooks",
+        true,
+        None::<&str>,
+    )?;
+
+    Submenu::with_items(
+        app,
+        "Integrations",
+        true,
+        &[
+            &install_hooks as &dyn tauri::menu::IsMenuItem<R>,
+            &install_openclaw,
+            &separator,
+            &configure_siem,
+            &configure_webhooks,
+        ],
+    )
 }
 
 fn format_status_text(state: &TrayState) -> String {
@@ -256,6 +299,15 @@ fn default_local_dashboard_url(agent_api_port: u16) -> String {
     format!("http://127.0.0.1:{}/ui", agent_api_port)
 }
 
+fn is_local_dashboard_url(candidate: &str) -> bool {
+    let parsed = match reqwest::Url::parse(candidate) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+    let host = parsed.host_str().unwrap_or_default();
+    matches!(host, "localhost" | "127.0.0.1")
+}
+
 fn is_legacy_local_dev_dashboard_url(candidate: &str) -> bool {
     let parsed = match reqwest::Url::parse(candidate) {
         Ok(url) => url,
@@ -303,15 +355,45 @@ async fn resolve_dashboard_url(settings: &Settings) -> Option<String> {
     };
 
     let validated = validate_dashboard_url(&configured)?;
-    if is_legacy_local_dev_dashboard_url(&validated) && !url_is_reachable(&validated).await {
-        tracing::warn!(
-            configured_url = %validated,
-            fallback_url = %fallback,
-            "Dashboard URL points to localhost:3100, but no service is listening; using local agent UI fallback"
-        );
+    if is_local_dashboard_url(&validated) && !url_is_reachable(&validated).await {
+        if is_legacy_local_dev_dashboard_url(&validated) {
+            tracing::warn!(
+                configured_url = %validated,
+                fallback_url = %fallback,
+                "Dashboard URL points to localhost:3100, but no service is listening; using local agent UI fallback"
+            );
+        } else {
+            tracing::warn!(
+                configured_url = %validated,
+                fallback_url = %fallback,
+                "Configured local dashboard URL is unreachable; using local agent UI fallback"
+            );
+        }
         return validate_dashboard_url(&fallback);
     }
     Some(validated)
+}
+
+fn build_dashboard_settings_url(base_url: &str, section: &str) -> Option<String> {
+    let section = section.trim().trim_matches('/');
+    if section.is_empty() {
+        return None;
+    }
+
+    let mut parsed = reqwest::Url::parse(base_url).ok()?;
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+
+    let base_path = parsed.path().trim_end_matches('/');
+    let target_path = if base_path.is_empty() || base_path == "/" {
+        format!("/settings/{}", section)
+    } else if base_path.ends_with("/settings") {
+        format!("{}/{}", base_path, section)
+    } else {
+        format!("{}/settings/{}", base_path, section)
+    };
+    parsed.set_path(&target_path);
+    Some(parsed.to_string())
 }
 
 fn open_dashboard_url(url: &str) {
@@ -360,9 +442,49 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             tracing::info!("Toggle enabled clicked");
             let _ = app.emit("toggle_enabled", ());
         }
-        menu_ids::INSTALL_HOOKS => {
-            tracing::info!("Install hooks clicked");
+        menu_ids::INTEGRATIONS_INSTALL_HOOKS => {
+            tracing::info!("Install hooks clicked (via Integrations menu)");
             let _ = app.emit("install_hooks", ());
+        }
+        menu_ids::INTEGRATIONS_INSTALL_OPENCLAW => {
+            tracing::info!("Install OpenClaw plugin clicked");
+            let _ = app.emit("install_openclaw_plugin", ());
+        }
+        menu_ids::INTEGRATIONS_CONFIGURE_SIEM => {
+            tracing::info!("Configure SIEM export clicked");
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
+                    tracing::warn!("Dashboard URL is invalid; refusing to open SIEM config");
+                    return;
+                };
+                let Some(target) = build_dashboard_settings_url(&url, "siem") else {
+                    tracing::warn!("Failed to build SIEM settings URL; refusing to open");
+                    return;
+                };
+                tracing::debug!(url = %target, "Opening SIEM config");
+                open_dashboard_url(&target);
+            });
+        }
+        menu_ids::INTEGRATIONS_CONFIGURE_WEBHOOKS => {
+            tracing::info!("Configure webhooks clicked");
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
+                    tracing::warn!("Dashboard URL is invalid; refusing to open webhook config");
+                    return;
+                };
+                let Some(target) = build_dashboard_settings_url(&url, "webhooks") else {
+                    tracing::warn!("Failed to build webhook settings URL; refusing to open");
+                    return;
+                };
+                tracing::debug!(url = %target, "Opening webhook config");
+                open_dashboard_url(&target);
+            });
         }
         menu_ids::RELOAD_POLICY => {
             tracing::info!("Reload policy clicked");
@@ -508,7 +630,8 @@ impl<R: Runtime> TrayManager<R> {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_local_dashboard_url, is_legacy_local_dev_dashboard_url, validate_dashboard_url,
+        build_dashboard_settings_url, default_local_dashboard_url,
+        is_legacy_local_dev_dashboard_url, is_local_dashboard_url, validate_dashboard_url,
     };
 
     #[test]
@@ -536,6 +659,35 @@ mod tests {
         assert_eq!(
             default_local_dashboard_url(9878),
             "http://127.0.0.1:9878/ui"
+        );
+    }
+
+    #[test]
+    fn local_dashboard_url_detection_is_precise() {
+        assert!(is_local_dashboard_url("http://127.0.0.1:4200"));
+        assert!(is_local_dashboard_url("https://localhost:3100/path"));
+        assert!(!is_local_dashboard_url("https://example.com/settings"));
+    }
+
+    #[test]
+    fn build_dashboard_settings_url_uses_path_routes() {
+        assert_eq!(
+            build_dashboard_settings_url("http://127.0.0.1:3100", "siem").as_deref(),
+            Some("http://127.0.0.1:3100/settings/siem")
+        );
+        assert_eq!(
+            build_dashboard_settings_url("https://dashboard.example.com/app/", "webhooks")
+                .as_deref(),
+            Some("https://dashboard.example.com/app/settings/webhooks")
+        );
+        assert_eq!(
+            build_dashboard_settings_url("https://dashboard.example.com/settings", "siem")
+                .as_deref(),
+            Some("https://dashboard.example.com/settings/siem")
+        );
+        assert_eq!(
+            build_dashboard_settings_url("http://127.0.0.1:9878/ui", "webhooks").as_deref(),
+            Some("http://127.0.0.1:9878/ui/settings/webhooks")
         );
     }
 

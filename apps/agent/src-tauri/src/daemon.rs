@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -81,6 +81,101 @@ struct HushdRuntimeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     policy_path: Option<PathBuf>,
     ruleset: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    siem: Option<HushdRuntimeSiemConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSiemConfig {
+    enabled: bool,
+    exporters: HushdRuntimeExportersConfig,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct HushdRuntimeExportersConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    splunk: Option<HushdRuntimeExporterSettings<HushdRuntimeSplunkConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    elastic: Option<HushdRuntimeExporterSettings<HushdRuntimeElasticConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    datadog: Option<HushdRuntimeExporterSettings<HushdRuntimeDatadogConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sumo_logic: Option<HushdRuntimeExporterSettings<HushdRuntimeSumoLogicConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    webhooks: Option<HushdRuntimeExporterSettings<HushdRuntimeWebhookExporterConfig>>,
+}
+
+impl HushdRuntimeExportersConfig {
+    fn has_any(&self) -> bool {
+        self.splunk.is_some()
+            || self.elastic.is_some()
+            || self.datadog.is_some()
+            || self.sumo_logic.is_some()
+            || self.webhooks.is_some()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeExporterSettings<T> {
+    enabled: bool,
+    #[serde(flatten)]
+    config: T,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSplunkConfig {
+    hec_url: String,
+    hec_token: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeElasticConfig {
+    base_url: String,
+    index: String,
+    auth: HushdRuntimeElasticAuthConfig,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeElasticAuthConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    api_key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeDatadogConfig {
+    api_key: String,
+    site: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSumoLogicConfig {
+    http_source_url: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeWebhookExporterConfig {
+    webhooks: Vec<HushdRuntimeGenericWebhookConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeGenericWebhookConfig {
+    url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method: Option<String>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    headers: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<HushdRuntimeWebhookAuthConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeWebhookAuthConfig {
+    #[serde(rename = "type")]
+    auth_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
 }
 
 impl DaemonConfig {
@@ -872,6 +967,7 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
             listen,
             policy_path,
             ruleset: "default".to_string(),
+            siem: resolve_runtime_siem_config(),
         };
         let serialized = serde_yaml::to_string(&runtime)
             .with_context(|| "Failed to serialize hushd runtime config")?;
@@ -888,6 +984,200 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
     .with_context(|| "Runtime config write task panicked")??;
 
     Ok(path)
+}
+
+fn resolve_runtime_siem_config() -> Option<HushdRuntimeSiemConfig> {
+    let settings = match crate::settings::Settings::load() {
+        Ok(settings) => settings,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "Failed to load agent settings while generating hushd runtime config"
+            );
+            return None;
+        }
+    };
+
+    build_runtime_siem_config(&settings)
+}
+
+fn build_runtime_siem_config(
+    settings: &crate::settings::Settings,
+) -> Option<HushdRuntimeSiemConfig> {
+    let mut exporters = HushdRuntimeExportersConfig::default();
+
+    let siem = &settings.integrations.siem;
+    let provider = siem.provider.trim().to_ascii_lowercase();
+    let endpoint = siem.endpoint.trim();
+    let api_key = siem.api_key.trim();
+    let siem_requested = siem.enabled || !endpoint.is_empty() || !api_key.is_empty();
+
+    if siem_requested {
+        match provider.as_str() {
+            "datadog" => {
+                if !endpoint.is_empty() && !api_key.is_empty() {
+                    exporters.datadog = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeDatadogConfig {
+                            api_key: api_key.to_string(),
+                            site: normalize_datadog_site(endpoint),
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider datadog requires both endpoint and API key; exporter not enabled"
+                    );
+                }
+            }
+            "splunk" => {
+                if !endpoint.is_empty() && !api_key.is_empty() {
+                    exporters.splunk = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeSplunkConfig {
+                            hec_url: endpoint.to_string(),
+                            hec_token: api_key.to_string(),
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider splunk requires both endpoint and API key; exporter not enabled"
+                    );
+                }
+            }
+            "elastic" => {
+                if !endpoint.is_empty() && !api_key.is_empty() {
+                    exporters.elastic = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeElasticConfig {
+                            base_url: endpoint.to_string(),
+                            index: "clawdstrike-security".to_string(),
+                            auth: HushdRuntimeElasticAuthConfig {
+                                api_key: Some(api_key.to_string()),
+                            },
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider elastic requires both endpoint and API key; exporter not enabled"
+                    );
+                }
+            }
+            "sumo_logic" => {
+                if !endpoint.is_empty() {
+                    exporters.sumo_logic = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeSumoLogicConfig {
+                            http_source_url: endpoint.to_string(),
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider sumo_logic requires an endpoint; exporter not enabled"
+                    );
+                }
+            }
+            "custom" => {
+                if !endpoint.is_empty() {
+                    let webhook = build_generic_webhook_exporter(endpoint, Some(api_key));
+                    exporters.webhooks = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeWebhookExporterConfig {
+                            webhooks: vec![webhook],
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider custom requires an endpoint; exporter not enabled"
+                    );
+                }
+            }
+            other => {
+                tracing::warn!(
+                    provider = %other,
+                    "Unknown SIEM provider in settings; exporter not enabled"
+                );
+            }
+        }
+    }
+
+    let webhooks = &settings.integrations.webhooks;
+    let webhook_url = webhooks.url.trim();
+    let webhook_secret = webhooks.secret.trim();
+    let webhooks_requested = webhooks.enabled || !webhook_url.is_empty();
+    if webhooks_requested && !webhook_url.is_empty() {
+        let exporter = exporters
+            .webhooks
+            .get_or_insert(HushdRuntimeExporterSettings {
+                enabled: true,
+                config: HushdRuntimeWebhookExporterConfig { webhooks: vec![] },
+            });
+
+        exporter
+            .config
+            .webhooks
+            .push(build_generic_webhook_exporter(
+                webhook_url,
+                Some(webhook_secret),
+            ));
+    }
+
+    if !exporters.has_any() {
+        return None;
+    }
+
+    Some(HushdRuntimeSiemConfig {
+        enabled: true,
+        exporters,
+    })
+}
+
+fn build_generic_webhook_exporter(
+    url: &str,
+    token: Option<&str>,
+) -> HushdRuntimeGenericWebhookConfig {
+    let token = token.map(str::trim).unwrap_or_default();
+    let auth = if token.is_empty() {
+        None
+    } else {
+        Some(HushdRuntimeWebhookAuthConfig {
+            auth_type: "bearer".to_string(),
+            token: Some(token.to_string()),
+        })
+    };
+
+    HushdRuntimeGenericWebhookConfig {
+        url: url.to_string(),
+        method: Some("POST".to_string()),
+        headers: HashMap::new(),
+        auth,
+        content_type: Some("application/json".to_string()),
+    }
+}
+
+fn normalize_datadog_site(endpoint: &str) -> String {
+    let trimmed = endpoint.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "datadoghq.com".to_string();
+    }
+
+    if let Ok(parsed) = reqwest::Url::parse(trimmed) {
+        if let Some(host) = parsed.host_str() {
+            return host.trim_start_matches("http-intake.logs.").to_string();
+        }
+    }
+
+    let host_port = trimmed
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("datadoghq.com");
+    host_port
+        .split(':')
+        .next()
+        .unwrap_or("datadoghq.com")
+        .trim_start_matches("http-intake.logs.")
+        .to_string()
 }
 
 fn yaml_contains_mapping_key(value: &serde_yaml::Value, needle: &str) -> bool {
@@ -1252,6 +1542,56 @@ mod tests {
     fn backoff_is_bounded() {
         let backoff = compute_backoff(10, 10);
         assert!(backoff <= Duration::from_millis(20_500));
+    }
+
+    #[test]
+    fn normalize_datadog_site_accepts_host_or_intake_url() {
+        assert_eq!(
+            normalize_datadog_site("https://us5.datadoghq.com"),
+            "us5.datadoghq.com"
+        );
+        assert_eq!(
+            normalize_datadog_site("https://http-intake.logs.datadoghq.eu/api/v2/logs"),
+            "datadoghq.eu"
+        );
+    }
+
+    #[test]
+    fn runtime_siem_config_is_generated_for_datadog_and_webhooks() {
+        let mut settings = crate::settings::Settings::default();
+        settings.integrations.siem.provider = "datadog".to_string();
+        settings.integrations.siem.endpoint = "https://us5.datadoghq.com".to_string();
+        settings.integrations.siem.api_key = "dd-key".to_string();
+        settings.integrations.siem.enabled = true;
+        settings.integrations.webhooks.url = "https://hooks.example.com/security".to_string();
+        settings.integrations.webhooks.secret = "hook-secret".to_string();
+        settings.integrations.webhooks.enabled = true;
+
+        let config = build_runtime_siem_config(&settings)
+            .unwrap_or_else(|| panic!("expected runtime SIEM config"));
+
+        assert!(config.exporters.datadog.is_some());
+        let datadog = config
+            .exporters
+            .datadog
+            .as_ref()
+            .unwrap_or_else(|| panic!("missing datadog exporter"));
+        assert_eq!(datadog.config.site, "us5.datadoghq.com");
+        assert_eq!(datadog.config.api_key, "dd-key");
+
+        let webhooks = config
+            .exporters
+            .webhooks
+            .as_ref()
+            .unwrap_or_else(|| panic!("missing webhooks exporter"));
+        assert_eq!(webhooks.config.webhooks.len(), 1);
+        assert_eq!(
+            webhooks.config.webhooks[0]
+                .auth
+                .as_ref()
+                .and_then(|auth| auth.token.as_deref()),
+            Some("hook-secret")
+        );
     }
 
     #[tokio::test]
