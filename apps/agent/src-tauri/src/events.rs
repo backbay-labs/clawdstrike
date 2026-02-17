@@ -52,6 +52,23 @@ fn should_publish_polled_event(event: &PolicyEvent) -> bool {
     !matches!(event.normalized_decision(), NormalizedDecision::Allowed)
 }
 
+fn decision_from_allowed_and_severity(allowed: bool, severity: Option<&str>) -> &'static str {
+    if !allowed {
+        return "blocked";
+    }
+
+    let is_warning = severity
+        .map(|value| value.trim().to_ascii_lowercase())
+        .map(|value| matches!(value.as_str(), "warn" | "warning" | "medium"))
+        .unwrap_or(false);
+
+    if is_warning {
+        "warn"
+    } else {
+        "allowed"
+    }
+}
+
 /// Daemon-level SSE event types beyond audit events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -353,8 +370,16 @@ impl EventManager {
                         .get("allowed")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    let decision = if allowed { "allowed" } else { "blocked" };
-                    let should_publish = event_type == "violation" || !allowed;
+                    let severity = obj.get("severity").and_then(|v| v.as_str());
+                    let decision = if event_type == "violation" {
+                        "blocked"
+                    } else {
+                        decision_from_allowed_and_severity(allowed, severity)
+                    };
+                    let should_publish = !matches!(
+                        NormalizedDecision::from_str(decision),
+                        NormalizedDecision::Allowed
+                    );
                     if should_publish {
                         let policy_event = PolicyEvent {
                             id: obj
@@ -375,17 +400,13 @@ impl EventManager {
                             target: obj.get("target").and_then(|v| v.as_str()).map(String::from),
                             decision: decision.to_string(),
                             guard: obj.get("guard").and_then(|v| v.as_str()).map(String::from),
-                            severity: obj
-                                .get("severity")
-                                .and_then(|v| v.as_str())
-                                .map(String::from)
-                                .or_else(|| {
-                                    if allowed {
-                                        None
-                                    } else {
-                                        Some("high".to_string())
-                                    }
-                                }),
+                            severity: severity.map(String::from).or_else(|| {
+                                if allowed {
+                                    None
+                                } else {
+                                    Some("high".to_string())
+                                }
+                            }),
                             message: obj
                                 .get("message")
                                 .and_then(|v| v.as_str())
@@ -732,6 +753,22 @@ mod tests {
             events_rx.try_recv().is_err(),
             "allowed check should not be published to policy channel"
         );
+    }
+
+    #[tokio::test]
+    async fn sse_allowed_warning_check_event_is_published_as_warn() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        let data = r#"{"action_type":"file_access","target":"/tmp/x","allowed":true,"guard":"fs_allow","severity":"warning"}"#;
+        mgr.handle_sse_message("check", data)
+            .await
+            .expect("should handle warning check event");
+
+        let evt = events_rx
+            .try_recv()
+            .expect("warning check should be published");
+        assert_eq!(evt.decision, "warn");
     }
 
     /// Verify that SSE events with a stable event_id from hushd are deduped against the same

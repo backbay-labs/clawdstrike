@@ -34,6 +34,8 @@ use tokio::sync::{broadcast, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
 use tower_http::services::{ServeDir, ServeFile};
 
+const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
+
 #[derive(Clone)]
 pub struct AgentApiServer {
     port: u16,
@@ -375,6 +377,15 @@ fn merged_authorization_header(
     daemon_api_key: Option<&str>,
 ) -> Option<String> {
     if let Some(value) = request_headers
+        .get(HUSHD_AUTHORIZATION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(value.to_string());
+    }
+
+    if let Some(value) = request_headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
@@ -446,8 +457,9 @@ async fn proxy_daemon_get(
     uri: Uri,
 ) -> Result<Response, (StatusCode, String)> {
     require_auth(&headers, &state)?;
-    // Do not forward the local agent auth token to hushd; use explicit daemon auth
-    // from request (if separately provided) or configured daemon API key fallback.
+    // Do not forward the local agent auth token to hushd.
+    // A caller can provide a daemon token via `X-Hushd-Authorization`; otherwise we
+    // fall back to the configured daemon API key from settings.
     headers.remove(AUTHORIZATION);
     let response = send_daemon_get_request(&state, &headers, &uri).await?;
     proxy_http_response(response).await
@@ -459,8 +471,9 @@ async fn proxy_daemon_events(
     uri: Uri,
 ) -> Result<Response, (StatusCode, String)> {
     require_auth(&headers, &state)?;
-    // Do not forward the local agent auth token to hushd; use explicit daemon auth
-    // from request (if separately provided) or configured daemon API key fallback.
+    // Do not forward the local agent auth token to hushd.
+    // A caller can provide a daemon token via `X-Hushd-Authorization`; otherwise we
+    // fall back to the configured daemon API key from settings.
     headers.remove(AUTHORIZATION);
     let response = send_daemon_get_request(&state, &headers, &uri).await?;
     let status =
@@ -1562,7 +1575,27 @@ mod tests {
     }
 
     #[test]
-    fn merged_authorization_header_prefers_request_header() {
+    fn merged_authorization_header_prefers_explicit_hushd_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HUSHD_AUTHORIZATION_HEADER,
+            "Bearer daemon-from-request"
+                .parse()
+                .unwrap_or_else(|err| panic!("failed to parse daemon auth header: {err}")),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            "Bearer local-agent-token"
+                .parse()
+                .unwrap_or_else(|err| panic!("failed to parse auth header: {err}")),
+        );
+
+        let merged = merged_authorization_header(&headers, Some("from-settings"));
+        assert_eq!(merged.as_deref(), Some("Bearer daemon-from-request"));
+    }
+
+    #[test]
+    fn merged_authorization_header_uses_request_authorization_when_present() {
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
