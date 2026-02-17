@@ -29,6 +29,14 @@ proptest! {
         name in "[a-z0-9_]{1,20}",
         ext in "[a-z]{1,4}",
     ) {
+        // Exclude values that intentionally match default forbidden patterns.
+        // This property is meant to validate obviously safe, generic paths.
+        prop_assume!(prefix != "pass");
+        prop_assume!(ext != "reg");
+        prop_assume!(!name.starts_with("id_rsa"));
+        prop_assume!(!name.starts_with("id_ed25519"));
+        prop_assume!(!name.starts_with("id_ecdsa"));
+
         let path = format!("/tmp/{prefix}/{name}.{ext}");
         let guard = ForbiddenPathGuard::new();
         // Generic paths without sensitive patterns should be allowed
