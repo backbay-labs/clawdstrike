@@ -4,13 +4,15 @@ use crate::daemon::DaemonState;
 use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
 use crate::settings::Settings;
-use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tauri::Manager;
 use tauri::{AppHandle, Emitter, Runtime};
+use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::RwLock;
+use tokio::time::timeout;
 
 /// Menu item IDs.
 #[allow(dead_code)]
@@ -266,7 +268,7 @@ fn is_legacy_local_dev_dashboard_url(candidate: &str) -> bool {
         && (parsed.path() == "/" || parsed.path().is_empty())
 }
 
-fn url_is_reachable(candidate: &str) -> bool {
+async fn url_is_reachable(candidate: &str) -> bool {
     let parsed = match reqwest::Url::parse(candidate) {
         Ok(url) => url,
         Err(_) => return false,
@@ -279,26 +281,29 @@ fn url_is_reachable(candidate: &str) -> bool {
         Some(port) => port,
         None => return false,
     };
-    let timeout = Duration::from_millis(150);
-    let addresses = match (host, port).to_socket_addrs() {
+    let timeout_duration = Duration::from_millis(150);
+    let addresses = match lookup_host((host, port)).await {
         Ok(addresses) => addresses,
         Err(_) => return false,
     };
-    addresses
-        .take(4)
-        .any(|address| TcpStream::connect_timeout(&address, timeout).is_ok())
+    for address in addresses.take(4) {
+        if let Ok(Ok(_)) = timeout(timeout_duration, TcpStream::connect(address)).await {
+            return true;
+        }
+    }
+    false
 }
 
-fn resolve_dashboard_url() -> Option<String> {
-    let settings = Settings::load().ok();
-    let agent_api_port = settings.as_ref().map_or(9878, |s| s.agent_api_port);
-    let fallback = default_local_dashboard_url(agent_api_port);
-    let configured = settings
-        .map(|s| s.dashboard_url)
-        .unwrap_or_else(|| fallback.clone());
+async fn resolve_dashboard_url(settings: &Settings) -> Option<String> {
+    let fallback = default_local_dashboard_url(settings.agent_api_port);
+    let configured = if settings.dashboard_url.trim().is_empty() {
+        fallback.clone()
+    } else {
+        settings.dashboard_url.clone()
+    };
 
     let validated = validate_dashboard_url(&configured)?;
-    if is_legacy_local_dev_dashboard_url(&validated) && !url_is_reachable(&validated) {
+    if is_legacy_local_dev_dashboard_url(&validated) && !url_is_reachable(&validated).await {
         tracing::warn!(
             configured_url = %validated,
             fallback_url = %fallback,
@@ -307,6 +312,21 @@ fn resolve_dashboard_url() -> Option<String> {
         return validate_dashboard_url(&fallback);
     }
     Some(validated)
+}
+
+fn open_dashboard_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(url).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer.exe").arg(url).spawn();
+    }
 }
 
 /// Create and setup the tray icon.
@@ -364,22 +384,17 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         }
         menu_ids::OPEN_WEB_UI => {
             tracing::info!("Open Web UI clicked");
-            let Some(url) = resolve_dashboard_url() else {
-                tracing::warn!("Dashboard URL is invalid; refusing to open Web UI");
-                return;
-            };
-            #[cfg(target_os = "macos")]
-            {
-                let _ = std::process::Command::new("open").arg(&url).spawn();
-            }
-            #[cfg(target_os = "linux")]
-            {
-                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-            }
-            #[cfg(target_os = "windows")]
-            {
-                let _ = std::process::Command::new("explorer.exe").arg(&url).spawn();
-            }
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
+                    tracing::warn!("Dashboard URL is invalid; refusing to open Web UI");
+                    return;
+                };
+                tracing::debug!(url, "Opening Web UI");
+                open_dashboard_url(&url);
+            });
         }
         menu_ids::QUIT => {
             tracing::info!("Quit clicked");

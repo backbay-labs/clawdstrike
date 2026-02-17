@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -1160,10 +1160,6 @@ fn bundled_hushd_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-fn file_size(path: &Path) -> Option<u64> {
-    std::fs::metadata(path).ok().map(|meta| meta.len())
-}
-
 /// Ensure a writable managed hushd binary is available under user config.
 ///
 /// Returns `Ok(Some(path))` when a bundled hushd was found and prepared,
@@ -1177,10 +1173,9 @@ pub fn prepare_managed_hushd_binary() -> Result<Option<PathBuf>> {
     };
 
     let managed_path = managed_hushd_path();
-    let copy_needed = match (file_size(&source_path), file_size(&managed_path)) {
-        (Some(src_size), Some(dst_size)) => src_size != dst_size,
-        _ => true,
-    };
+    // Seed the managed binary once. Do not overwrite an existing managed binary
+    // on startup, so OTA-applied updates remain persistent across app relaunches.
+    let copy_needed = !managed_path.is_file();
 
     if copy_needed {
         if let Some(parent) = managed_path.parent() {
@@ -1195,6 +1190,11 @@ pub fn prepare_managed_hushd_binary() -> Result<Option<PathBuf>> {
                 source_path, managed_path
             )
         })?;
+    } else {
+        tracing::debug!(
+            managed_path = %managed_path.display(),
+            "Managed hushd already exists; preserving current binary"
+        );
     }
 
     #[cfg(unix)]

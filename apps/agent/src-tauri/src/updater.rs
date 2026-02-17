@@ -187,7 +187,12 @@ impl HushdUpdater {
                 let msg = format!("OTA check failed: {err}");
                 self.set_failure(&msg).await;
                 let now = now_rfc3339();
-                self.persist_status_fields(&now, &msg, None).await?;
+                if let Err(persist_err) = self.persist_status_fields(&now, &msg, None).await {
+                    tracing::warn!(
+                        error = %persist_err,
+                        "Failed to persist OTA failure status after manifest verification error"
+                    );
+                }
                 return Err(err);
             }
         };
@@ -264,8 +269,15 @@ impl HushdUpdater {
                 let msg = format!("Failed to apply hushd update {release_version}: {err}");
                 self.set_failure(&msg).await;
                 let now = now_rfc3339();
-                self.persist_status_fields(&now, &msg, current_version.as_deref())
-                    .await?;
+                if let Err(persist_err) = self
+                    .persist_status_fields(&now, &msg, current_version.as_deref())
+                    .await
+                {
+                    tracing::warn!(
+                        error = %persist_err,
+                        "Failed to persist OTA failure status after apply error"
+                    );
+                }
                 return Err(err);
             }
         }
