@@ -83,6 +83,46 @@ pub struct Settings {
     /// URL for the local web dashboard.
     #[serde(default = "default_dashboard_url")]
     pub dashboard_url: String,
+
+    /// Enable automatic hushd OTA checks and updates.
+    #[serde(default = "default_ota_enabled")]
+    pub ota_enabled: bool,
+
+    /// OTA behavior mode: "auto" or "manual".
+    #[serde(default = "default_ota_mode")]
+    pub ota_mode: String,
+
+    /// OTA release channel ("stable" or "beta").
+    #[serde(default = "default_ota_channel")]
+    pub ota_channel: String,
+
+    /// Optional override URL for signed OTA manifest.
+    #[serde(default)]
+    pub ota_manifest_url: Option<String>,
+
+    /// Whether manifest override is allowed to fall back to default URL.
+    #[serde(default)]
+    pub ota_allow_fallback_to_default: bool,
+
+    /// Periodic OTA check interval in minutes.
+    #[serde(default = "default_ota_check_interval_minutes")]
+    pub ota_check_interval_minutes: u32,
+
+    /// Additional trusted OTA signer keys (hex-encoded Ed25519 public keys).
+    #[serde(default)]
+    pub ota_pinned_public_keys: Vec<String>,
+
+    /// RFC3339 timestamp of the last OTA check attempt.
+    #[serde(default)]
+    pub ota_last_check_at: Option<String>,
+
+    /// Human-readable summary of the last OTA action result.
+    #[serde(default)]
+    pub ota_last_result: Option<String>,
+
+    /// Current hushd version observed/applied by OTA.
+    #[serde(default)]
+    pub ota_current_hushd_version: Option<String>,
 }
 
 fn default_policy_path() -> PathBuf {
@@ -118,7 +158,23 @@ fn default_notification_severity() -> String {
 }
 
 fn default_dashboard_url() -> String {
-    "http://localhost:3100".to_string()
+    format!("http://127.0.0.1:{}/ui", default_agent_api_port())
+}
+
+fn default_ota_enabled() -> bool {
+    true
+}
+
+fn default_ota_mode() -> String {
+    "auto".to_string()
+}
+
+fn default_ota_channel() -> String {
+    "stable".to_string()
+}
+
+fn default_ota_check_interval_minutes() -> u32 {
+    360
 }
 
 impl Default for Settings {
@@ -138,6 +194,16 @@ impl Default for Settings {
             api_key: None,
             openclaw: OpenClawSettings::default(),
             dashboard_url: default_dashboard_url(),
+            ota_enabled: default_ota_enabled(),
+            ota_mode: default_ota_mode(),
+            ota_channel: default_ota_channel(),
+            ota_manifest_url: None,
+            ota_allow_fallback_to_default: false,
+            ota_check_interval_minutes: default_ota_check_interval_minutes(),
+            ota_pinned_public_keys: Vec::new(),
+            ota_last_check_at: None,
+            ota_last_result: None,
+            ota_current_hushd_version: None,
         }
     }
 }
@@ -232,6 +298,10 @@ mod tests {
         assert!(settings.enabled);
         assert!(settings.notifications_enabled);
         assert!(!settings.debug_include_daemon_error_body);
+        assert!(settings.ota_enabled);
+        assert_eq!(settings.ota_mode, "auto");
+        assert_eq!(settings.ota_channel, "stable");
+        assert_eq!(settings.ota_check_interval_minutes, 360);
     }
 
     #[test]

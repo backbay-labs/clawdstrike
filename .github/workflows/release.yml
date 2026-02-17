@@ -469,10 +469,54 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
+  build-hushd-binaries:
+    name: Build hushd Binaries
+    runs-on: ${{ matrix.os }}
+    needs: preflight
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: hushd-linux-x86_64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: hushd-darwin-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: hushd-darwin-aarch64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: hushd-windows-x86_64.exe
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release hushd binary
+        run: cargo build --release --target ${{ matrix.target }} -p hushd
+
+      - name: Rename hushd binary (Unix)
+        if: runner.os != 'Windows'
+        run: cp target/${{ matrix.target }}/release/hushd ${{ matrix.artifact }}
+
+      - name: Rename hushd binary (Windows)
+        if: runner.os == 'Windows'
+        run: cp target/${{ matrix.target }}/release/hushd.exe ${{ matrix.artifact }}
+
+      - name: Upload hushd artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [resolve-version, build-binaries, publish-crates, publish-npm, publish-wasm-npm, publish-pypi]
+    needs: [resolve-version, build-binaries, build-hushd-binaries, publish-crates, publish-npm, publish-wasm-npm, publish-pypi]
     permissions:
       contents: write
     steps:
@@ -526,6 +570,52 @@ jobs:
         run: |
           mkdir -p release-files
           find artifacts -type f -exec mv {} release-files/ \;
+
+      - name: Generate and sign hushd OTA manifests
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+          RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
+          HUSHD_OTA_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.HUSHD_OTA_SIGNING_PRIVATE_KEY_PEM }}
+          HUSHD_OTA_SIGNING_PUBLIC_KEY_HEX: ${{ secrets.HUSHD_OTA_SIGNING_PUBLIC_KEY_HEX }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${HUSHD_OTA_SIGNING_PRIVATE_KEY_PEM:-}" ]]; then
+            echo "Missing required secret: HUSHD_OTA_SIGNING_PRIVATE_KEY_PEM" >&2
+            exit 1
+          fi
+
+          pub_args=()
+          if [[ -n "${HUSHD_OTA_SIGNING_PUBLIC_KEY_HEX:-}" ]]; then
+            pub_args=(--public-key "${HUSHD_OTA_SIGNING_PUBLIC_KEY_HEX}")
+          fi
+
+          scripts/generate-hushd-ota-manifest.sh \
+            --version "${RELEASE_VERSION}" \
+            --tag "${RELEASE_TAG}" \
+            --channel stable \
+            --assets-dir release-files \
+            --output release-files/hushd-ota-manifest-stable.unsigned.json \
+            "${pub_args[@]}"
+          scripts/sign-hushd-ota-manifest.sh \
+            --input release-files/hushd-ota-manifest-stable.unsigned.json \
+            --output release-files/hushd-ota-manifest-stable.json \
+            "${pub_args[@]}"
+          rm -f release-files/hushd-ota-manifest-stable.unsigned.json
+
+          scripts/generate-hushd-ota-manifest.sh \
+            --version "${RELEASE_VERSION}" \
+            --tag "${RELEASE_TAG}" \
+            --channel beta \
+            --assets-dir release-files \
+            --output release-files/hushd-ota-manifest-beta.unsigned.json \
+            "${pub_args[@]}"
+          scripts/sign-hushd-ota-manifest.sh \
+            --input release-files/hushd-ota-manifest-beta.unsigned.json \
+            --output release-files/hushd-ota-manifest-beta.json \
+            "${pub_args[@]}"
+          rm -f release-files/hushd-ota-manifest-beta.unsigned.json
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2

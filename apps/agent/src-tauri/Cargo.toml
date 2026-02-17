@@ -41,6 +41,7 @@ thiserror = "1"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+semver = "1"
 
 # UUID
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -51,6 +52,7 @@ keyring = "3"
 
 # Process utilities
 which = "6"
+hush-core = { path = "../../../crates/libs/hush-core" }
 
 # Logging
 tracing = "0.1"

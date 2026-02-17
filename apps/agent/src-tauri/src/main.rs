@@ -20,12 +20,14 @@ mod policy;
 mod session;
 mod settings;
 mod tray;
+mod updater;
 
 use agent_auth::ensure_local_api_token;
-use api_server::AgentApiServer;
+use api_server::{AgentApiServer, AgentApiServerDeps};
 use approval::ApprovalQueue;
 use daemon::{
-    find_hushd_binary, AuditQueue, DaemonConfig, DaemonManager, DaemonState, PolicyCache,
+    find_hushd_binary, prepare_managed_hushd_binary, AuditQueue, DaemonConfig, DaemonManager,
+    DaemonState, PolicyCache,
 };
 use events::EventManager;
 use integrations::{ClaudeCodeIntegration, McpServer};
@@ -42,6 +44,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Listener, Manager, RunEvent, Runtime};
 use tokio::sync::{broadcast, Notify, RwLock};
 use tray::{setup_tray, TrayManager};
+use updater::HushdUpdater;
 
 /// Bundled default policy.
 const DEFAULT_POLICY: &str = include_str!("../resources/default-policy.yaml");
@@ -56,6 +59,7 @@ struct AppState {
     approval_queue: Arc<ApprovalQueue>,
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
+    updater: Arc<HushdUpdater>,
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
     shutdown_complete: Arc<ShutdownComplete>,
@@ -118,16 +122,30 @@ fn main() {
         }
     };
 
+    let bundled_hushd_path = if settings.hushd_binary_path.is_none() {
+        match prepare_managed_hushd_binary() {
+            Ok(path) => path,
+            Err(err) => {
+                tracing::warn!(error = %err, "Failed to prepare bundled hushd binary");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let hushd_path = settings
         .hushd_binary_path
         .clone()
+        .or(bundled_hushd_path)
         .or_else(find_hushd_binary)
         .unwrap_or_else(|| {
             tracing::error!(
-                "Could not find hushd binary. Please install hushd or set hushd_binary_path."
+                "Could not find hushd binary. Install hushd or set hushd_binary_path in agent settings."
             );
             std::path::PathBuf::from("hushd")
         });
+    tracing::info!(path = %hushd_path.display(), "Using hushd binary path");
 
     let daemon_config = DaemonConfig {
         binary_path: hushd_path,
@@ -147,6 +165,7 @@ fn main() {
     let approval_queue = Arc::new(ApprovalQueue::new());
     let policy_cache = Arc::new(PolicyCache::new());
     let audit_queue = Arc::new(AuditQueue::new());
+    let updater = Arc::new(HushdUpdater::new(settings.clone(), daemon_manager.clone()));
     let (shutdown_tx, _) = broadcast::channel::<()>(4);
     let shutdown_complete = Arc::new(ShutdownComplete::new());
 
@@ -159,6 +178,7 @@ fn main() {
         approval_queue,
         policy_cache,
         audit_queue,
+        updater,
         shutdown_tx: shutdown_tx.clone(),
         agent_api_token,
         shutdown_complete: shutdown_complete.clone(),
@@ -175,6 +195,7 @@ fn main() {
         .manage(app_state.approval_queue.clone())
         .manage(app_state.policy_cache.clone())
         .manage(app_state.audit_queue.clone())
+        .manage(app_state.updater.clone())
         .manage(app_state.shutdown_tx.clone())
         .manage(app_state.shutdown_complete.clone())
         .setup(move |app| {
@@ -191,6 +212,7 @@ fn main() {
             let approval_queue = app_state.approval_queue.clone();
             let policy_cache = app_state.policy_cache.clone();
             let audit_queue = app_state.audit_queue.clone();
+            let updater = app_state.updater.clone();
             let settings = app_state.settings.clone();
             let shutdown_tx = app_state.shutdown_tx.clone();
             let agent_api_token = app_state.agent_api_token.clone();
@@ -206,6 +228,7 @@ fn main() {
                     approval_queue,
                     policy_cache,
                     audit_queue,
+                    updater,
                     tray_manager,
                     settings,
                     shutdown_tx,
@@ -251,6 +274,7 @@ async fn run_agent<R: Runtime>(
     approval_queue: Arc<ApprovalQueue>,
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
+    updater: Arc<HushdUpdater>,
     tray_manager: Arc<TrayManager<R>>,
     settings: Arc<RwLock<Settings>>,
     shutdown_tx: broadcast::Sender<()>,
@@ -265,16 +289,18 @@ async fn run_agent<R: Runtime>(
     // Start heartbeat loop once. It no-ops until a session is established, and it reads the
     // current session ID from shared state each tick (so daemon reconnect replacements do not
     // require restarting the loop).
-    session_manager.start_heartbeat(
-        daemon_url.clone(),
-        api_key.clone(),
-        shutdown_tx.subscribe(),
-    );
+    session_manager.start_heartbeat(daemon_url.clone(), api_key.clone(), shutdown_tx.subscribe());
+    updater.start_background(shutdown_tx.subscribe());
 
     tracing::info!("Starting hushd daemon...");
     if let Err(e) = daemon_manager.start().await {
         tracing::error!("Failed to start daemon: {}", e);
         tray_manager.set_daemon_state(DaemonState::Stopped).await;
+        tray_manager
+            .set_session_info(Some(
+                "Daemon failed to start (check hushd install)".to_string(),
+            ))
+            .await;
     } else {
         tray_manager.set_daemon_state(DaemonState::Running).await;
         show_startup_notification(&app);
@@ -507,7 +533,10 @@ async fn run_agent<R: Runtime>(
                     // Keep the exposed session state in sync with SSE posture updates so the agent
                     // health endpoint doesn't lag behind the tray display until the next heartbeat.
                     let _ = session_manager_for_sse
-                        .update_posture_from_daemon_event(session_id.as_deref(), new_posture.clone())
+                        .update_posture_from_daemon_event(
+                            session_id.as_deref(),
+                            new_posture.clone(),
+                        )
                         .await;
 
                     let session_state = session_manager_for_sse.state().await;
@@ -581,12 +610,15 @@ async fn run_agent<R: Runtime>(
 
     let api_server = AgentApiServer::new(
         api_port,
-        settings.clone(),
-        daemon_manager.clone(),
-        session_manager.clone(),
-        approval_queue.clone(),
-        openclaw_manager.clone(),
-        agent_api_token,
+        AgentApiServerDeps {
+            settings: settings.clone(),
+            daemon_manager: daemon_manager.clone(),
+            session_manager: session_manager.clone(),
+            approval_queue: approval_queue.clone(),
+            openclaw: openclaw_manager.clone(),
+            updater: updater.clone(),
+            auth_token: agent_api_token,
+        },
     );
     let api_shutdown = shutdown_tx.subscribe();
     tokio::spawn(async move {

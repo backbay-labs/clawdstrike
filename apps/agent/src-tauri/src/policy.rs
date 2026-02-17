@@ -32,9 +32,7 @@ fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput
         "network" => "egress".to_string(),
         "exec" | "command" => "shell".to_string(),
         // Canonical hushd action types.
-        "file_access" | "file_write" | "egress" | "shell" | "mcp_tool" | "patch" => {
-            action_type_raw
-        }
+        "file_access" | "file_write" | "egress" | "shell" | "mcp_tool" | "patch" => action_type_raw,
         // Unknown: pass through as lowercase so casing differences don't bypass normalization.
         _ => action_type_raw,
     };
@@ -286,8 +284,8 @@ mod tests {
     use super::*;
     use axum::{http::StatusCode, routing::post, Router};
     use std::sync::Arc;
-    use tokio::sync::RwLock;
     use tokio::net::TcpListener;
+    use tokio::sync::RwLock;
 
     #[test]
     fn normalizes_action_type_aliases() {
@@ -386,10 +384,7 @@ mod tests {
     }
 
     async fn start_test_check_server(status: StatusCode, body: &'static str) -> u16 {
-        let app = Router::new().route(
-            "/api/v1/check",
-            post(move || async move { (status, body) }),
-        );
+        let app = Router::new().route("/api/v1/check", post(move || async move { (status, body) }));
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -457,7 +452,10 @@ mod tests {
 
         assert!(!out.allowed);
         let details = out.details.expect("details should be present");
-        assert_eq!(details.get("http_status").and_then(|v| v.as_u64()), Some(400));
+        assert_eq!(
+            details.get("http_status").and_then(|v| v.as_u64()),
+            Some(400)
+        );
         assert_eq!(
             details.get("body").and_then(|v| v.as_str()),
             Some("SENSITIVE_INTERNAL_ERROR")

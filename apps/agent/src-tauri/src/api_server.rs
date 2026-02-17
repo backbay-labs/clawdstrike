@@ -11,10 +11,12 @@ use crate::openclaw::{
 use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
 use crate::session::SessionManager;
 use crate::settings::Settings;
+use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::Html;
 use axum::response::IntoResponse;
 use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
@@ -35,35 +37,40 @@ pub struct AgentApiServer {
 }
 
 #[derive(Clone)]
+pub struct AgentApiServerDeps {
+    pub settings: Arc<RwLock<Settings>>,
+    pub daemon_manager: Arc<DaemonManager>,
+    pub session_manager: Arc<SessionManager>,
+    pub approval_queue: Arc<ApprovalQueue>,
+    pub openclaw: OpenClawManager,
+    pub updater: Arc<HushdUpdater>,
+    pub auth_token: String,
+}
+
+#[derive(Clone)]
 struct AgentApiState {
     settings: Arc<RwLock<Settings>>,
     daemon_manager: Arc<DaemonManager>,
     session_manager: Arc<SessionManager>,
     approval_queue: Arc<ApprovalQueue>,
     openclaw: OpenClawManager,
+    updater: Arc<HushdUpdater>,
     auth_token: String,
     http_client: reqwest::Client,
 }
 
 impl AgentApiServer {
-    pub fn new(
-        port: u16,
-        settings: Arc<RwLock<Settings>>,
-        daemon_manager: Arc<DaemonManager>,
-        session_manager: Arc<SessionManager>,
-        approval_queue: Arc<ApprovalQueue>,
-        openclaw: OpenClawManager,
-        auth_token: String,
-    ) -> Self {
+    pub fn new(port: u16, deps: AgentApiServerDeps) -> Self {
         Self {
             port,
             state: Arc::new(AgentApiState {
-                settings,
-                daemon_manager,
-                session_manager,
-                approval_queue,
-                openclaw,
-                auth_token,
+                settings: deps.settings,
+                daemon_manager: deps.daemon_manager,
+                session_manager: deps.session_manager,
+                approval_queue: deps.approval_queue,
+                openclaw: deps.openclaw,
+                updater: deps.updater,
+                auth_token: deps.auth_token,
                 http_client: reqwest::Client::new(),
             }),
         }
@@ -71,11 +78,15 @@ impl AgentApiServer {
 
     pub async fn start(self, mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
         let app = Router::new()
+            .route("/ui", get(agent_web_ui))
             .route("/api/v1/agent/health", get(agent_health))
             .route(
                 "/api/v1/agent/settings",
                 get(get_settings).put(update_settings),
             )
+            .route("/api/v1/agent/ota/status", get(get_ota_status))
+            .route("/api/v1/agent/ota/check", post(trigger_ota_check))
+            .route("/api/v1/agent/ota/apply", post(trigger_ota_apply))
             .route("/api/v1/agent/policy-check", post(agent_policy_check))
             .route(
                 "/api/v1/openclaw/gateways",
@@ -127,6 +138,65 @@ impl AgentApiServer {
     }
 }
 
+async fn agent_web_ui() -> Html<&'static str> {
+    Html(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clawdstrike Agent Web UI</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #8b949e;
+      --accent: #2f81f7;
+      --card: #161b22;
+      --line: #30363d;
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    h1 { margin-top: 0; font-size: 1.4rem; }
+    p { color: var(--muted); line-height: 1.5; }
+    code {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    ul { margin: 0.75rem 0 0; padding-left: 1.2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Clawdstrike Agent Web UI</h1>
+    <p>The agent is running. If you expected the cloud dashboard on <code>localhost:3100</code>, start it manually during development.</p>
+    <ul>
+      <li>Agent health (auth required): <a href="/api/v1/agent/health"><code>/api/v1/agent/health</code></a></li>
+      <li>Agent settings (auth required): <a href="/api/v1/agent/settings"><code>/api/v1/agent/settings</code></a></li>
+    </ul>
+  </main>
+</body>
+</html>"#,
+    )
+}
+
 #[derive(Debug, Serialize)]
 struct AgentHealthResponse {
     status: &'static str,
@@ -148,6 +218,16 @@ struct AgentSettingsResponse {
     dashboard_url: String,
     debug_include_daemon_error_body: bool,
     openclaw_active_gateway_id: Option<String>,
+    ota_enabled: bool,
+    ota_mode: String,
+    ota_channel: String,
+    ota_manifest_url: Option<String>,
+    ota_allow_fallback_to_default: bool,
+    ota_check_interval_minutes: u32,
+    ota_pinned_public_keys: Vec<String>,
+    ota_last_check_at: Option<String>,
+    ota_last_result: Option<String>,
+    ota_current_hushd_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,6 +238,16 @@ struct AgentSettingsUpdate {
     notification_severity: Option<String>,
     dashboard_url: Option<String>,
     debug_include_daemon_error_body: Option<bool>,
+    ota_enabled: Option<bool>,
+    ota_mode: Option<String>,
+    ota_channel: Option<String>,
+    ota_manifest_url: Option<Option<String>>,
+    ota_allow_fallback_to_default: Option<bool>,
+    ota_check_interval_minutes: Option<u32>,
+    ota_pinned_public_keys: Option<Vec<String>>,
+    ota_last_check_at: Option<Option<String>>,
+    ota_last_result: Option<Option<String>>,
+    ota_current_hushd_version: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_string_field")]
     openclaw_active_gateway_id: Option<Option<String>>,
 }
@@ -210,6 +300,16 @@ async fn get_settings(
         dashboard_url: settings.dashboard_url.clone(),
         debug_include_daemon_error_body: settings.debug_include_daemon_error_body,
         openclaw_active_gateway_id: settings.openclaw.active_gateway_id.clone(),
+        ota_enabled: settings.ota_enabled,
+        ota_mode: settings.ota_mode.clone(),
+        ota_channel: settings.ota_channel.clone(),
+        ota_manifest_url: settings.ota_manifest_url.clone(),
+        ota_allow_fallback_to_default: settings.ota_allow_fallback_to_default,
+        ota_check_interval_minutes: settings.ota_check_interval_minutes,
+        ota_pinned_public_keys: settings.ota_pinned_public_keys.clone(),
+        ota_last_check_at: settings.ota_last_check_at.clone(),
+        ota_last_result: settings.ota_last_result.clone(),
+        ota_current_hushd_version: settings.ota_current_hushd_version.clone(),
     }))
 }
 
@@ -241,6 +341,36 @@ async fn update_settings(
         if let Some(value) = input.debug_include_daemon_error_body {
             settings.debug_include_daemon_error_body = value;
         }
+        if let Some(value) = input.ota_enabled {
+            settings.ota_enabled = value;
+        }
+        if let Some(value) = input.ota_mode {
+            settings.ota_mode = value;
+        }
+        if let Some(value) = input.ota_channel {
+            settings.ota_channel = value;
+        }
+        if let Some(value) = input.ota_manifest_url {
+            settings.ota_manifest_url = value;
+        }
+        if let Some(value) = input.ota_allow_fallback_to_default {
+            settings.ota_allow_fallback_to_default = value;
+        }
+        if let Some(value) = input.ota_check_interval_minutes {
+            settings.ota_check_interval_minutes = value;
+        }
+        if let Some(value) = input.ota_pinned_public_keys {
+            settings.ota_pinned_public_keys = value;
+        }
+        if let Some(value) = input.ota_last_check_at {
+            settings.ota_last_check_at = value;
+        }
+        if let Some(value) = input.ota_last_result {
+            settings.ota_last_result = value;
+        }
+        if let Some(value) = input.ota_current_hushd_version {
+            settings.ota_current_hushd_version = value;
+        }
         if let Some(value) = input.openclaw_active_gateway_id {
             settings.openclaw.active_gateway_id = value;
         }
@@ -251,6 +381,40 @@ async fn update_settings(
     }
 
     get_settings(State(state), headers).await
+}
+
+async fn get_ota_status(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<OtaStatus>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    Ok(Json(state.updater.status().await))
+}
+
+async fn trigger_ota_check(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<OtaStatus>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    state
+        .updater
+        .check_now()
+        .await
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn trigger_ota_apply(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<OtaStatus>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    state
+        .updater
+        .apply_now()
+        .await
+        .map(Json)
+        .map_err(internal_error)
 }
 
 async fn agent_policy_check(
@@ -624,6 +788,10 @@ mod tests {
         let session_manager = Arc::new(crate::session::SessionManager::new());
         let approval_queue = Arc::new(crate::approval::ApprovalQueue::new());
         let openclaw = OpenClawManager::new(settings.clone());
+        let updater = Arc::new(crate::updater::HushdUpdater::new(
+            settings.clone(),
+            daemon_manager.clone(),
+        ));
 
         AgentApiState {
             settings,
@@ -631,6 +799,7 @@ mod tests {
             session_manager,
             approval_queue,
             openclaw,
+            updater,
             auth_token: "test-token".to_string(),
             http_client: reqwest::Client::new(),
         }
@@ -761,8 +930,13 @@ mod tests {
             serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
         assert_eq!(
             json.get("dashboard_url").and_then(|v| v.as_str()),
-            Some("http://localhost:3100"),
+            Some("http://127.0.0.1:9878/ui"),
             "GET should return default dashboard_url"
+        );
+        assert_eq!(
+            json.get("ota_enabled").and_then(|v| v.as_bool()),
+            Some(true),
+            "GET should return default ota_enabled"
         );
 
         // PUT should persist a custom dashboard_url.

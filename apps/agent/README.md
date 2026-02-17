@@ -16,8 +16,10 @@ A lightweight system tray application that provides security policy enforcement 
 ## Prerequisites
 
 - macOS 10.15+ (Linux support planned)
-- [hushd](../../crates/services/hushd) daemon binary installed
 - For Claude Code: Claude Code CLI installed
+
+The packaged app bundles `hushd` and manages it automatically. A separate
+`hushd` install is only needed for advanced external-daemon setups.
 
 ## Installation
 
@@ -28,6 +30,7 @@ cd apps/agent
 cargo tauri build
 ```
 
+The build step compiles and bundles `hushd` into the app automatically.
 The built app will be in `src-tauri/target/release/bundle/`.
 
 ### Development
@@ -99,6 +102,17 @@ Settings are stored in `~/.config/clawdstrike/agent.json`:
   "auto_start": true,
   "notifications_enabled": true,
   "notification_severity": "block",
+  "dashboard_url": "http://127.0.0.1:9878/ui",
+  "ota_enabled": true,
+  "ota_mode": "auto",
+  "ota_channel": "stable",
+  "ota_manifest_url": null,
+  "ota_allow_fallback_to_default": false,
+  "ota_check_interval_minutes": 360,
+  "ota_pinned_public_keys": [],
+  "ota_last_check_at": null,
+  "ota_last_result": null,
+  "ota_current_hushd_version": null,
   "openclaw": {
     "gateways": [],
     "active_gateway_id": null
@@ -109,6 +123,25 @@ Settings are stored in `~/.config/clawdstrike/agent.json`:
 ### Default Policy
 
 The agent bundles a default policy at `resources/default-policy.yaml` that will be copied to `~/.config/clawdstrike/policy.yaml` on first run.
+
+### Signed hushd OTA updates
+
+The agent can verify and apply signed `hushd` updates from release manifests:
+
+- Status: `GET /api/v1/agent/ota/status`
+- Check now: `POST /api/v1/agent/ota/check`
+- Apply now: `POST /api/v1/agent/ota/apply`
+
+Release automation:
+
+- `scripts/generate-hushd-ota-manifest.sh` creates per-channel manifests from `hushd-*` release artifacts.
+- `scripts/sign-hushd-ota-manifest.sh` signs manifests with Ed25519.
+- `.github/workflows/release.yml` publishes `hushd-ota-manifest-stable.json` and `hushd-ota-manifest-beta.json`.
+
+Release workflow secret:
+
+- `HUSHD_OTA_SIGNING_PRIVATE_KEY_PEM` (required)
+- `HUSHD_OTA_SIGNING_PUBLIC_KEY_HEX` (optional override; otherwise derived from the private key)
 
 ## Architecture
 
@@ -157,7 +190,8 @@ The agent bundles a default policy at `resources/default-policy.yaml` that will 
 ## Troubleshooting
 
 ### Daemon won't start
-- Check if hushd binary is in PATH or set `hushd_binary_path` in settings
+- Check agent logs for bundled `hushd` copy/start errors
+- For external daemon mode, set `hushd_binary_path` in settings
 - Check if port 9876 is available: `lsof -i :9876`
 - View logs: `Console.app` > search "clawdstrike"
 

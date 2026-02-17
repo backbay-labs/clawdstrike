@@ -4,7 +4,9 @@ use crate::daemon::DaemonState;
 use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
 use crate::settings::Settings;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Runtime};
@@ -248,12 +250,63 @@ fn validate_dashboard_url(candidate: &str) -> Option<String> {
     }
 }
 
-fn resolve_dashboard_url() -> Option<String> {
-    let configured = Settings::load()
-        .map(|s| s.dashboard_url)
-        .unwrap_or_else(|_| "http://localhost:3100".to_string());
+fn default_local_dashboard_url(agent_api_port: u16) -> String {
+    format!("http://127.0.0.1:{}/ui", agent_api_port)
+}
 
-    validate_dashboard_url(&configured).or_else(|| validate_dashboard_url("http://localhost:3100"))
+fn is_legacy_local_dev_dashboard_url(candidate: &str) -> bool {
+    let parsed = match reqwest::Url::parse(candidate) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+    let host = parsed.host_str().unwrap_or_default();
+    parsed.scheme() == "http"
+        && matches!(host, "localhost" | "127.0.0.1")
+        && parsed.port_or_known_default() == Some(3100)
+        && (parsed.path() == "/" || parsed.path().is_empty())
+}
+
+fn url_is_reachable(candidate: &str) -> bool {
+    let parsed = match reqwest::Url::parse(candidate) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+    let host = match parsed.host_str() {
+        Some(host) => host,
+        None => return false,
+    };
+    let port = match parsed.port_or_known_default() {
+        Some(port) => port,
+        None => return false,
+    };
+    let timeout = Duration::from_millis(150);
+    let addresses = match (host, port).to_socket_addrs() {
+        Ok(addresses) => addresses,
+        Err(_) => return false,
+    };
+    addresses
+        .take(4)
+        .any(|address| TcpStream::connect_timeout(&address, timeout).is_ok())
+}
+
+fn resolve_dashboard_url() -> Option<String> {
+    let settings = Settings::load().ok();
+    let agent_api_port = settings.as_ref().map_or(9878, |s| s.agent_api_port);
+    let fallback = default_local_dashboard_url(agent_api_port);
+    let configured = settings
+        .map(|s| s.dashboard_url)
+        .unwrap_or_else(|| fallback.clone());
+
+    let validated = validate_dashboard_url(&configured)?;
+    if is_legacy_local_dev_dashboard_url(&validated) && !url_is_reachable(&validated) {
+        tracing::warn!(
+            configured_url = %validated,
+            fallback_url = %fallback,
+            "Dashboard URL points to localhost:3100, but no service is listening; using local agent UI fallback"
+        );
+        return validate_dashboard_url(&fallback);
+    }
+    Some(validated)
 }
 
 /// Create and setup the tray icon.
@@ -439,7 +492,9 @@ impl<R: Runtime> TrayManager<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_dashboard_url;
+    use super::{
+        default_local_dashboard_url, is_legacy_local_dev_dashboard_url, validate_dashboard_url,
+    };
 
     #[test]
     fn validate_dashboard_url_accepts_http_https_with_host() {
@@ -459,5 +514,24 @@ mod tests {
         assert!(validate_dashboard_url("javascript:alert(1)").is_none());
         assert!(validate_dashboard_url("file:///tmp/test").is_none());
         assert!(validate_dashboard_url("not a url").is_none());
+    }
+
+    #[test]
+    fn local_dashboard_url_uses_agent_api_port() {
+        assert_eq!(
+            default_local_dashboard_url(9878),
+            "http://127.0.0.1:9878/ui"
+        );
+    }
+
+    #[test]
+    fn legacy_local_dev_dashboard_url_detection_is_precise() {
+        assert!(is_legacy_local_dev_dashboard_url("http://localhost:3100"));
+        assert!(is_legacy_local_dev_dashboard_url("http://127.0.0.1:3100/"));
+        assert!(!is_legacy_local_dev_dashboard_url("http://localhost:4200"));
+        assert!(!is_legacy_local_dev_dashboard_url("https://localhost:3100"));
+        assert!(!is_legacy_local_dev_dashboard_url(
+            "http://example.com:3100"
+        ));
     }
 }

@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -133,6 +133,11 @@ impl DaemonManager {
         self.state_tx.subscribe()
     }
 
+    /// Return the configured hushd binary path.
+    pub fn binary_path(&self) -> PathBuf {
+        self.config.binary_path.clone()
+    }
+
     /// Get current status with health info.
     pub async fn status(&self) -> DaemonStatus {
         let state = self.state.read().await.clone();
@@ -182,7 +187,10 @@ impl DaemonManager {
             }
         }
 
-        self.spawn_and_wait_ready().await?;
+        if let Err(err) = self.spawn_and_wait_ready().await {
+            self.set_state(DaemonState::Stopped).await;
+            return Err(err);
+        }
         self.set_state(DaemonState::Running).await;
         self.start_health_monitor().await;
         tracing::info!("hushd daemon started on port {}", self.config.port);
@@ -833,9 +841,7 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
     let runtime_config_path = write_runtime_config_file(config).await?;
 
     let mut cmd = Command::new(&config.binary_path);
-    cmd.arg("start")
-        .arg("--config")
-        .arg(&runtime_config_path);
+    cmd.arg("start").arg("--config").arg(&runtime_config_path);
 
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -890,7 +896,9 @@ fn yaml_contains_mapping_key(value: &serde_yaml::Value, needle: &str) -> bool {
             matches!(k, serde_yaml::Value::String(s) if s == needle)
                 || yaml_contains_mapping_key(v, needle)
         }),
-        serde_yaml::Value::Sequence(seq) => seq.iter().any(|v| yaml_contains_mapping_key(v, needle)),
+        serde_yaml::Value::Sequence(seq) => {
+            seq.iter().any(|v| yaml_contains_mapping_key(v, needle))
+        }
         _ => false,
     }
 }
@@ -1097,34 +1105,141 @@ fn compute_backoff(restart_streak: u32, restart_count: u32) -> Duration {
     Duration::from_millis(capped_ms.saturating_add(jitter_ms))
 }
 
-/// Find the hushd binary.
-pub fn find_hushd_binary() -> Option<PathBuf> {
-    let candidates = [
-        which::which("hushd").ok(),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("hushd"))),
-        std::env::var("CARGO_MANIFEST_DIR")
-            .ok()
-            .map(|p| PathBuf::from(p).join("../../target/release/hushd")),
-        std::env::var("CARGO_MANIFEST_DIR")
-            .ok()
-            .map(|p| PathBuf::from(p).join("../../target/debug/hushd")),
-        Some(PathBuf::from("/usr/local/bin/hushd")),
-        Some(PathBuf::from("/opt/clawdstrike/bin/hushd")),
-        dirs::home_dir().map(|p| p.join(".local/bin/hushd")),
-        dirs::home_dir().map(|p| p.join(".cargo/bin/hushd")),
-    ];
+fn hushd_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "hushd.exe"
+    } else {
+        "hushd"
+    }
+}
+
+pub fn managed_hushd_path() -> PathBuf {
+    crate::settings::get_config_dir()
+        .join("bin")
+        .join(hushd_binary_name())
+}
+
+fn bundled_hushd_candidates() -> Vec<PathBuf> {
+    let binary = hushd_binary_name();
+    let mut candidates = Vec::new();
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            // Local dev/build target dir.
+            candidates.push(exe_dir.join(binary));
+
+            // macOS app bundle locations.
+            if let Some(contents_dir) = exe_dir.parent() {
+                candidates.push(contents_dir.join("Resources").join(binary));
+                candidates.push(contents_dir.join("Resources").join("bin").join(binary));
+                candidates.push(
+                    contents_dir
+                        .join("Resources")
+                        .join("resources")
+                        .join(binary),
+                );
+                candidates.push(
+                    contents_dir
+                        .join("Resources")
+                        .join("resources")
+                        .join("bin")
+                        .join(binary),
+                );
+            }
+        }
+    }
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let root = PathBuf::from(manifest_dir);
+        candidates.push(root.join("resources").join(binary));
+        candidates.push(root.join("resources").join("bin").join(binary));
+        candidates.push(root.join("../../target/release").join(binary));
+        candidates.push(root.join("../../target/debug").join(binary));
+    }
 
     candidates
+}
+
+fn file_size(path: &Path) -> Option<u64> {
+    std::fs::metadata(path).ok().map(|meta| meta.len())
+}
+
+/// Ensure a writable managed hushd binary is available under user config.
+///
+/// Returns `Ok(Some(path))` when a bundled hushd was found and prepared,
+/// `Ok(None)` when no bundled hushd candidate is present.
+pub fn prepare_managed_hushd_binary() -> Result<Option<PathBuf>> {
+    let Some(source_path) = bundled_hushd_candidates()
         .into_iter()
-        .flatten()
-        .find(|candidate| candidate.exists())
+        .find(|candidate| candidate.is_file())
+    else {
+        return Ok(None);
+    };
+
+    let managed_path = managed_hushd_path();
+    let copy_needed = match (file_size(&source_path), file_size(&managed_path)) {
+        (Some(src_size), Some(dst_size)) => src_size != dst_size,
+        _ => true,
+    };
+
+    if copy_needed {
+        if let Some(parent) = managed_path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create managed hushd directory {:?}", parent)
+            })?;
+        }
+
+        std::fs::copy(&source_path, &managed_path).with_context(|| {
+            format!(
+                "Failed to copy bundled hushd from {:?} to {:?}",
+                source_path, managed_path
+            )
+        })?;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&managed_path)
+            .with_context(|| format!("Failed to stat managed hushd at {:?}", managed_path))?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&managed_path, perms).with_context(|| {
+            format!(
+                "Failed to set executable permissions on managed hushd at {:?}",
+                managed_path
+            )
+        })?;
+    }
+
+    Ok(Some(managed_path))
+}
+
+/// Find the hushd binary.
+pub fn find_hushd_binary() -> Option<PathBuf> {
+    let binary = hushd_binary_name();
+    let mut candidates = vec![managed_hushd_path()];
+    candidates.extend(bundled_hushd_candidates());
+    candidates.extend(
+        [
+            which::which("hushd").ok(),
+            Some(PathBuf::from("/usr/local/bin").join(binary)),
+            Some(PathBuf::from("/opt/homebrew/bin").join(binary)),
+            Some(PathBuf::from("/opt/clawdstrike/bin").join(binary)),
+            dirs::home_dir().map(|p| p.join(".local/bin").join(binary)),
+            dirs::home_dir().map(|p| p.join(".cargo/bin").join(binary)),
+        ]
+        .into_iter()
+        .flatten(),
+    );
+
+    candidates.into_iter().find(|candidate| candidate.exists())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn daemon_state_as_str() {
@@ -1156,6 +1271,21 @@ mod tests {
                 .await;
         }
         assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+    }
+
+    #[tokio::test]
+    async fn failed_start_resets_state_to_stopped() {
+        let manager = DaemonManager::new(DaemonConfig {
+            binary_path: PathBuf::from("/tmp/does-not-exist/hushd"),
+            port: 0,
+            policy_path: PathBuf::from("/tmp/policy.yaml"),
+        });
+
+        let result = manager.start().await;
+        assert!(result.is_err());
+
+        let status = manager.status().await;
+        assert_eq!(status.state, "stopped");
     }
 
     #[tokio::test]

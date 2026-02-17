@@ -4,11 +4,11 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, RwLock};
 use tokio::sync::Mutex;
+use tokio::sync::{broadcast, RwLock};
 
 /// Session state exposed to the tray and other components.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -375,7 +375,10 @@ impl SessionManager {
                     break;
                 }
 
-                match manager.create_session(&daemon_url, api_key.as_deref()).await {
+                match manager
+                    .create_session(&daemon_url, api_key.as_deref())
+                    .await
+                {
                     Ok(session_id) => {
                         tracing::info!(session_id = %session_id, "Session established after retry");
                         break;
@@ -547,7 +550,12 @@ mod hostname {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{extract::Path, http::StatusCode, routing::{delete, post}, Json, Router};
+    use axum::{
+        extract::Path,
+        http::StatusCode,
+        routing::{delete, post},
+        Json, Router,
+    };
     use std::sync::Mutex as StdMutex;
     use tokio::net::TcpListener;
 
