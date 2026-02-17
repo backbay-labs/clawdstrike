@@ -24,7 +24,7 @@ const OTA_DEFAULT_MANIFEST_BETA_URL: &str =
     "https://github.com/backbay-labs/clawdstrike/releases/latest/download/hushd-ota-manifest-beta.json";
 const OTA_TRUST_ENV_VAR: &str = "CLAWDSTRIKE_HUSHD_OTA_TRUSTED_KEYS";
 const OTA_DEFAULT_TRUSTED_KEYS_HEX: &[&str] =
-    &["b51f6b9b8b2fcf77fb365f8a191579483c92af88ed914d6f79f08784699411ed"];
+    &["25dac855f4df93b016fa3e03c7e8775f235dbcd8ecea0b0fecf5299511ce6bb4"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OtaStatus {
