@@ -179,6 +179,12 @@ fn remote_desktop_strict_disables_all_side_channels() {
         !sc.session_share_enabled,
         "strict: session_share must be disabled"
     );
+    assert!(!sc.audio_enabled, "strict: audio must be disabled");
+    assert!(
+        !sc.drive_mapping_enabled,
+        "strict: drive mapping must be disabled"
+    );
+    assert!(!sc.printing_enabled, "strict: printing must be disabled");
 }
 
 #[test]
@@ -230,6 +236,12 @@ fn remote_desktop_permissive_enables_all_channels() {
         sc.session_share_enabled,
         "permissive: session_share must be enabled"
     );
+    assert!(sc.audio_enabled, "permissive: audio must be enabled");
+    assert!(
+        sc.drive_mapping_enabled,
+        "permissive: drive mapping must be enabled"
+    );
+    assert!(sc.printing_enabled, "permissive: printing must be enabled");
 }
 
 #[test]

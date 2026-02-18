@@ -17,6 +17,9 @@ guards:
   remote_desktop_side_channel:
     clipboard_enabled: false
     file_transfer_enabled: false
+    audio_enabled: false
+    drive_mapping_enabled: false
+    printing_enabled: false
     session_share_enabled: false
 
   input_injection_capability:

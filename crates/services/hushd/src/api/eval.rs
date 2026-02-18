@@ -3,7 +3,7 @@
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
-use clawdstrike::{GuardReport, GuardResult, Severity};
+use clawdstrike::{decision_taxonomy::summarize_decision, GuardReport, GuardResult, Severity};
 use hush_certification::audit::NewAuditEventV2;
 
 use crate::api::v1::V1Error;
@@ -84,85 +84,21 @@ fn canonical_guard_severity(severity: &Severity) -> &'static str {
     }
 }
 
-fn canonical_severity_for_decision(result: &GuardResult) -> Option<String> {
-    if result.allowed && result.severity == Severity::Info {
-        return None;
-    }
-
-    Some(
-        match result.severity {
-            Severity::Info => "low",
-            Severity::Warning => "medium",
-            Severity::Error => "high",
-            Severity::Critical => "critical",
-        }
-        .to_string(),
-    )
-}
-
-fn normalize_reason_code(reason: &str) -> Option<String> {
-    let trimmed = reason.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let mut normalized = String::with_capacity(trimmed.len() + 4);
-    for ch in trimmed.chars() {
-        if ch.is_ascii_alphanumeric() {
-            normalized.push(ch.to_ascii_uppercase());
-        } else {
-            normalized.push('_');
-        }
-    }
-    let normalized = normalized.trim_matches('_').to_string();
-    if normalized.is_empty() {
-        return None;
-    }
-
-    if normalized.starts_with("ADC_")
-        || normalized.starts_with("HSH_")
-        || normalized.starts_with("OCLAW_")
-        || normalized.starts_with("PRV_")
-    {
-        return Some(normalized);
-    }
-
-    Some(format!("HSH_{normalized}"))
-}
-
-fn canonical_reason_code_for_decision(
-    overall: &GuardResult,
-    reason_override: Option<&str>,
-) -> String {
-    if let Some(code) = reason_override.and_then(normalize_reason_code) {
-        return code;
-    }
-
-    if !overall.allowed {
-        "ADC_POLICY_DENY".to_string()
-    } else if overall.severity == Severity::Warning {
-        "ADC_POLICY_WARN".to_string()
-    } else {
-        "ADC_POLICY_ALLOW".to_string()
-    }
-}
-
 fn decision_from_report(report: &GuardReport, reason_override: Option<String>) -> DecisionJson {
     let overall = &report.overall;
-    let warn = overall.allowed && overall.severity == Severity::Warning;
-    let denied = !overall.allowed;
+    let summary = summarize_decision(overall, reason_override.as_deref());
 
     DecisionJson {
         allowed: overall.allowed,
-        denied,
-        warn,
-        reason_code: canonical_reason_code_for_decision(overall, reason_override.as_deref()),
+        denied: summary.denied,
+        warn: summary.warn,
+        reason_code: summary.reason_code,
         guard: if overall.allowed && overall.severity == Severity::Info {
             None
         } else {
             Some(overall.guard.clone())
         },
-        severity: canonical_severity_for_decision(overall),
+        severity: summary.severity,
         message: Some(overall.message.clone()),
         reason: reason_override,
     }

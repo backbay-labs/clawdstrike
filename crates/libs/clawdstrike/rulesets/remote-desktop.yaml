@@ -21,6 +21,9 @@ guards:
   remote_desktop_side_channel:
     clipboard_enabled: true
     file_transfer_enabled: true
+    audio_enabled: false
+    drive_mapping_enabled: false
+    printing_enabled: false
     session_share_enabled: false
     max_transfer_size_bytes: 104857600  # 100MB
 

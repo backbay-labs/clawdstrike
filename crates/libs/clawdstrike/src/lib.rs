@@ -45,6 +45,7 @@
 
 pub mod async_guards;
 pub mod curator_config;
+pub mod decision_taxonomy;
 pub mod engine;
 pub mod error;
 pub mod guards;
