@@ -68,6 +68,8 @@ pub struct GatewayConnectParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth: Option<GatewayAuth>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<GatewayDeviceProof>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
@@ -95,7 +97,18 @@ pub struct GatewayAuth {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub device_token: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayDeviceProof {
+    pub id: String,
+    pub public_key: String,
+    pub signature: String,
+    pub signed_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<String>,
 }
 
 pub fn create_request_id(prefix: &str) -> String {

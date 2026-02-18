@@ -98,7 +98,7 @@ require_cmd jq
 if [[ "$START_LOCAL_GATEWAY" -eq 1 ]]; then
   require_cmd "$OPENCLAW_BIN"
   if [[ -z "$GATEWAY_TOKEN" ]]; then
-    GATEWAY_TOKEN="smoke-token"
+    GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-smoke-token}"
   fi
 fi
 

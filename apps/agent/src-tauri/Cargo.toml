@@ -57,6 +57,8 @@ which = "6"
 
 # Shared crypto/data primitives
 hush-core = { path = "../../../crates/libs/hush-core" }
+base64 = "0.22"
+ed25519-dalek = { version = "2.2", features = ["pem", "pkcs8"] }
 
 # Logging
 tracing = "0.1"
