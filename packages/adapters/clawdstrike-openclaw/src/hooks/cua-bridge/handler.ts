@@ -156,6 +156,11 @@ export function buildCuaEvent(
   if (typeof params.postconditionProbeHash === 'string') {
     extraData.postconditionProbeHash = params.postconditionProbeHash;
   }
+  // Preserve input_type so the InputInjectionCapabilityGuard (fail-closed on
+  // missing input_type) receives it through the canonical CUA event data.
+  if (typeof params.input_type === 'string') {
+    (extraData as Record<string, unknown>).input_type = params.input_type;
+  }
 
   switch (kind) {
     case 'connect':

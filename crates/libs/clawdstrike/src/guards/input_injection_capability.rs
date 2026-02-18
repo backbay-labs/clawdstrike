@@ -106,8 +106,13 @@ impl Guard for InputInjectionCapabilityGuard {
             _ => return GuardResult::allow(&self.name),
         };
 
-        // Check input type — must be present and in the allowed list (fail-closed)
-        if let Some(input_type) = data.get("input_type").and_then(|v| v.as_str()) {
+        // Check input type — must be present and in the allowed list (fail-closed).
+        // Accept both snake_case and camelCase since the CUA pipeline may use either.
+        if let Some(input_type) = data
+            .get("input_type")
+            .or_else(|| data.get("inputType"))
+            .and_then(|v| v.as_str())
+        {
             if !self.allowed_types.contains(input_type) {
                 return GuardResult::block(
                     &self.name,
@@ -138,8 +143,11 @@ impl Guard for InputInjectionCapabilityGuard {
 
         // Check postcondition probe requirement
         if self.require_postcondition_probe {
+            // Accept both snake_case and camelCase since CUA events are
+            // serialized as camelCase through the Rust/TS pipeline.
             let has_probe = data
                 .get("postcondition_probe_hash")
+                .or_else(|| data.get("postconditionProbeHash"))
                 .and_then(|v| v.as_str())
                 .is_some_and(|s| !s.is_empty());
 
