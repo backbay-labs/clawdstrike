@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.83"
 name = "pyo3"
-version = "0.28.1"
+version = "0.28.2"
 authors = ["PyO3 Project and Contributors <https://github.com/PyO3>"]
 build = "build.rs"
 exclude = [
@@ -446,10 +446,10 @@ version = "0.12"
 optional = true
 
 [dependencies.pyo3-ffi]
-version = "=0.28.1"
+version = "=0.28.2"
 
 [dependencies.pyo3-macros]
-version = "=0.28.1"
+version = "=0.28.2"
 optional = true
 
 [dependencies.rust_decimal]
@@ -522,7 +522,7 @@ version = "1.10.0"
 features = ["v4"]
 
 [build-dependencies.pyo3-build-config]
-version = "=0.28.1"
+version = "=0.28.2"
 features = ["resolve-config"]
 
 [target.'cfg(not(target_has_atomic = "64"))'.dependencies.portable-atomic]

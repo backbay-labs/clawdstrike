@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.83"
 name = "pyo3-ffi"
-version = "0.28.1"
+version = "0.28.2"
 authors = ["PyO3 Project and Contributors <https://github.com/PyO3>"]
 build = "build.rs"
 links = "python"
@@ -95,7 +95,7 @@ version = "0.2.62"
 version = "1"
 
 [build-dependencies.pyo3-build-config]
-version = "=0.28.1"
+version = "=0.28.2"
 features = ["resolve-config"]
 
 [lints.clippy]

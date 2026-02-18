@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.83"
 name = "pyo3-macros"
-version = "0.28.1"
+version = "0.28.2"
 authors = ["PyO3 Project and Contributors <https://github.com/PyO3>"]
 build = false
 autolib = false
@@ -52,7 +52,7 @@ version = "1.0.60"
 default-features = false
 
 [dependencies.pyo3-macros-backend]
-version = "=0.28.1"
+version = "=0.28.2"
 
 [dependencies.quote]
 version = "1"
