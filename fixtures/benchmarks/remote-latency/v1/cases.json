@@ -1,0 +1,250 @@
+{
+  "harness": "docs/roadmaps/cua/research/repeatable_latency_harness.yaml",
+  "evaluation_context": {
+    "timestamp": "2026-02-18T01:00:00Z"
+  },
+  "cases": [
+    {
+      "case_id": "ci_h264_sw_720p_warm_passes",
+      "description": "CI runner, H264 software, 720p warm cache - passes variance check",
+      "host_class": "ci_runner",
+      "codec": "h264_sw",
+      "frame_size": "720p",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "ci_runner",
+        "os": "ubuntu-22.04",
+        "cpu_model": "Intel Xeon E5-2673 v4",
+        "cpu_cores": 2,
+        "memory_gb": 7,
+        "codec_version": "libx264 164",
+        "timestamp": "2026-02-18T01:00:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 4.2, "decode_ms": 2.1, "round_trip_ms": 6.3, "jitter_ms": 0.30},
+        {"encode_ms": 4.4, "decode_ms": 2.0, "round_trip_ms": 6.4, "jitter_ms": 0.31},
+        {"encode_ms": 4.1, "decode_ms": 2.2, "round_trip_ms": 6.3, "jitter_ms": 0.29},
+        {"encode_ms": 4.3, "decode_ms": 2.1, "round_trip_ms": 6.4, "jitter_ms": 0.30},
+        {"encode_ms": 4.2, "decode_ms": 2.0, "round_trip_ms": 6.2, "jitter_ms": 0.30}
+      ],
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["ci", "h264", "software", "720p", "warm"]
+    },
+    {
+      "case_id": "ci_h264_sw_720p_cold_passes",
+      "description": "CI runner, H264 software, 720p cold cache - passes with higher threshold",
+      "host_class": "ci_runner",
+      "codec": "h264_sw",
+      "frame_size": "720p",
+      "scenario": "cold_cache",
+      "environment": {
+        "host_class": "ci_runner",
+        "os": "ubuntu-22.04",
+        "cpu_model": "Intel Xeon E5-2673 v4",
+        "cpu_cores": 2,
+        "memory_gb": 7,
+        "codec_version": "libx264 164",
+        "timestamp": "2026-02-18T01:01:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 12.0, "decode_ms": 5.5, "round_trip_ms": 17.5, "jitter_ms": 1.2},
+        {"encode_ms": 14.0, "decode_ms": 6.0, "round_trip_ms": 20.0, "jitter_ms": 1.8},
+        {"encode_ms": 13.0, "decode_ms": 5.8, "round_trip_ms": 18.8, "jitter_ms": 1.5},
+        {"encode_ms": 11.5, "decode_ms": 5.2, "round_trip_ms": 16.7, "jitter_ms": 1.0},
+        {"encode_ms": 13.5, "decode_ms": 5.9, "round_trip_ms": 19.4, "jitter_ms": 1.6}
+      ],
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["ci", "h264", "software", "720p", "cold"]
+    },
+    {
+      "case_id": "dev_vp9_sw_1080p_warm_passes",
+      "description": "Developer workstation, VP9, 1080p warm - passes",
+      "host_class": "developer_workstation",
+      "codec": "vp9_sw",
+      "frame_size": "1080p",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "developer_workstation",
+        "os": "macos-14.3",
+        "cpu_model": "Apple M2 Pro",
+        "cpu_cores": 10,
+        "memory_gb": 32,
+        "codec_version": "libvpx 1.13.1",
+        "timestamp": "2026-02-18T01:02:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 6.1, "decode_ms": 3.0, "round_trip_ms": 9.1, "jitter_ms": 0.40},
+        {"encode_ms": 6.3, "decode_ms": 3.1, "round_trip_ms": 9.4, "jitter_ms": 0.42},
+        {"encode_ms": 6.0, "decode_ms": 2.9, "round_trip_ms": 8.9, "jitter_ms": 0.39},
+        {"encode_ms": 6.2, "decode_ms": 3.0, "round_trip_ms": 9.2, "jitter_ms": 0.41},
+        {"encode_ms": 6.1, "decode_ms": 3.1, "round_trip_ms": 9.2, "jitter_ms": 0.40}
+      ],
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["developer", "vp9", "software", "1080p", "warm"]
+    },
+    {
+      "case_id": "prod_h264_hw_1080p_warm_passes",
+      "description": "Production edge, H264 hardware, 1080p warm - passes",
+      "host_class": "production_edge",
+      "codec": "h264_hw",
+      "frame_size": "1080p",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "production_edge",
+        "os": "ubuntu-22.04",
+        "cpu_model": "AMD EPYC 7763",
+        "cpu_cores": 16,
+        "memory_gb": 64,
+        "codec_version": "nvenc 12.1",
+        "timestamp": "2026-02-18T01:03:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 1.1, "decode_ms": 0.8, "round_trip_ms": 1.9, "jitter_ms": 0.1},
+        {"encode_ms": 1.0, "decode_ms": 0.9, "round_trip_ms": 1.9, "jitter_ms": 0.1},
+        {"encode_ms": 1.1, "decode_ms": 0.8, "round_trip_ms": 1.9, "jitter_ms": 0.1},
+        {"encode_ms": 1.0, "decode_ms": 0.8, "round_trip_ms": 1.8, "jitter_ms": 0.1},
+        {"encode_ms": 1.1, "decode_ms": 0.9, "round_trip_ms": 2.0, "jitter_ms": 0.1}
+      ],
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["production", "h264", "hardware", "1080p", "warm"]
+    },
+    {
+      "case_id": "ci_av1_sw_4k_warm_high_variance_fails",
+      "description": "AV1 software 4K with high variance - fails LAT_VARIANCE_EXCEEDED",
+      "host_class": "ci_runner",
+      "codec": "av1_sw",
+      "frame_size": "4k",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "ci_runner",
+        "os": "ubuntu-22.04",
+        "cpu_model": "Intel Xeon E5-2673 v4",
+        "cpu_cores": 2,
+        "memory_gb": 7,
+        "codec_version": "libaom 3.8.0",
+        "timestamp": "2026-02-18T01:04:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 80.0, "decode_ms": 30.0, "round_trip_ms": 110.0, "jitter_ms": 5.0},
+        {"encode_ms": 150.0, "decode_ms": 55.0, "round_trip_ms": 205.0, "jitter_ms": 12.0},
+        {"encode_ms": 95.0, "decode_ms": 35.0, "round_trip_ms": 130.0, "jitter_ms": 7.0},
+        {"encode_ms": 200.0, "decode_ms": 70.0, "round_trip_ms": 270.0, "jitter_ms": 18.0},
+        {"encode_ms": 120.0, "decode_ms": 45.0, "round_trip_ms": 165.0, "jitter_ms": 9.0}
+      ],
+      "expected_outcome": "fail",
+      "expected_error_code": "LAT_VARIANCE_EXCEEDED",
+      "tags": ["ci", "av1", "software", "4k", "warm", "high-variance"]
+    },
+    {
+      "case_id": "unknown_host_class_fails_closed",
+      "description": "Unknown host_class 'quantum_cloud' fails closed",
+      "host_class": "quantum_cloud",
+      "codec": "h264_sw",
+      "frame_size": "720p",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "quantum_cloud",
+        "os": "ubuntu-22.04",
+        "cpu_model": "QPU-1000",
+        "cpu_cores": 128,
+        "memory_gb": 512,
+        "codec_version": "libx264 164",
+        "timestamp": "2026-02-18T01:05:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 1.0, "decode_ms": 0.5, "round_trip_ms": 1.5, "jitter_ms": 0.1},
+        {"encode_ms": 1.0, "decode_ms": 0.5, "round_trip_ms": 1.5, "jitter_ms": 0.1},
+        {"encode_ms": 1.0, "decode_ms": 0.5, "round_trip_ms": 1.5, "jitter_ms": 0.1},
+        {"encode_ms": 1.0, "decode_ms": 0.5, "round_trip_ms": 1.5, "jitter_ms": 0.1},
+        {"encode_ms": 1.0, "decode_ms": 0.5, "round_trip_ms": 1.5, "jitter_ms": 0.1}
+      ],
+      "expected_outcome": "fail",
+      "expected_error_code": "LAT_HOST_UNKNOWN",
+      "tags": ["fail-closed", "unknown-host"]
+    },
+    {
+      "case_id": "unknown_codec_fails_closed",
+      "description": "Unknown codec 'hevc_experimental' fails closed",
+      "host_class": "ci_runner",
+      "codec": "hevc_experimental",
+      "frame_size": "1080p",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "ci_runner",
+        "os": "ubuntu-22.04",
+        "cpu_model": "Intel Xeon E5-2673 v4",
+        "cpu_cores": 2,
+        "memory_gb": 7,
+        "codec_version": "hevc-exp 0.1.0",
+        "timestamp": "2026-02-18T01:06:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 5.0, "decode_ms": 2.5, "round_trip_ms": 7.5, "jitter_ms": 0.3},
+        {"encode_ms": 5.0, "decode_ms": 2.5, "round_trip_ms": 7.5, "jitter_ms": 0.3},
+        {"encode_ms": 5.0, "decode_ms": 2.5, "round_trip_ms": 7.5, "jitter_ms": 0.3},
+        {"encode_ms": 5.0, "decode_ms": 2.5, "round_trip_ms": 7.5, "jitter_ms": 0.3},
+        {"encode_ms": 5.0, "decode_ms": 2.5, "round_trip_ms": 7.5, "jitter_ms": 0.3}
+      ],
+      "expected_outcome": "fail",
+      "expected_error_code": "LAT_CODEC_UNKNOWN",
+      "tags": ["fail-closed", "unknown-codec"]
+    },
+    {
+      "case_id": "unknown_frame_size_fails_closed",
+      "description": "Unknown frame_size '8k' fails closed",
+      "host_class": "production_edge",
+      "codec": "h264_hw",
+      "frame_size": "8k",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "production_edge",
+        "os": "ubuntu-22.04",
+        "cpu_model": "AMD EPYC 7763",
+        "cpu_cores": 16,
+        "memory_gb": 64,
+        "codec_version": "nvenc 12.1",
+        "timestamp": "2026-02-18T01:07:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 2.0, "decode_ms": 1.0, "round_trip_ms": 3.0, "jitter_ms": 0.1},
+        {"encode_ms": 2.0, "decode_ms": 1.0, "round_trip_ms": 3.0, "jitter_ms": 0.1},
+        {"encode_ms": 2.0, "decode_ms": 1.0, "round_trip_ms": 3.0, "jitter_ms": 0.1},
+        {"encode_ms": 2.0, "decode_ms": 1.0, "round_trip_ms": 3.0, "jitter_ms": 0.1},
+        {"encode_ms": 2.0, "decode_ms": 1.0, "round_trip_ms": 3.0, "jitter_ms": 0.1}
+      ],
+      "expected_outcome": "fail",
+      "expected_error_code": "LAT_FRAME_UNKNOWN",
+      "tags": ["fail-closed", "unknown-frame"]
+    },
+    {
+      "case_id": "missing_env_metadata_fails_closed",
+      "description": "Missing cpu_model field in environment metadata fails closed",
+      "host_class": "ci_runner",
+      "codec": "h264_sw",
+      "frame_size": "720p",
+      "scenario": "warm_cache",
+      "environment": {
+        "host_class": "ci_runner",
+        "os": "ubuntu-22.04",
+        "cpu_cores": 2,
+        "memory_gb": 7,
+        "codec_version": "libx264 164",
+        "timestamp": "2026-02-18T01:08:00Z"
+      },
+      "simulated_runs": [
+        {"encode_ms": 4.2, "decode_ms": 2.1, "round_trip_ms": 6.3, "jitter_ms": 0.3},
+        {"encode_ms": 4.3, "decode_ms": 2.0, "round_trip_ms": 6.3, "jitter_ms": 0.3},
+        {"encode_ms": 4.1, "decode_ms": 2.1, "round_trip_ms": 6.2, "jitter_ms": 0.2},
+        {"encode_ms": 4.2, "decode_ms": 2.0, "round_trip_ms": 6.2, "jitter_ms": 0.3},
+        {"encode_ms": 4.3, "decode_ms": 2.1, "round_trip_ms": 6.4, "jitter_ms": 0.3}
+      ],
+      "expected_outcome": "fail",
+      "expected_error_code": "LAT_ENV_INCOMPLETE",
+      "tags": ["fail-closed", "missing-metadata"]
+    }
+  ]
+}

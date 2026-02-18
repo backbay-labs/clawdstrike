@@ -1,0 +1,137 @@
+matrix_id: remote-desktop-policy-matrix
+matrix_version: 1
+updated_at: "2026-02-18T00:00:00Z"
+
+# Workstream B1 (P1): protocol side-channel defaults by threat tier and mode.
+# This matrix is designed to be transformed directly into policy events + guard decisions.
+
+required_features:
+  - clipboard
+  - file_transfer
+  - audio
+  - drive_mapping
+  - printing
+  - session_share
+
+required_modes:
+  - observe
+  - guardrail
+  - fail_closed
+
+required_threat_tiers:
+  - dev
+  - internal_prod
+  - internet_exposed_multi_tenant
+
+feature_definitions:
+  clipboard:
+    policy_event: remote.clipboard
+    guard: remote_desktop_side_channel
+    audit_event: remote.clipboard.decision
+  file_transfer:
+    policy_event: remote.file_transfer
+    guard: remote_desktop_side_channel
+    audit_event: remote.file_transfer.decision
+  audio:
+    policy_event: remote.audio
+    guard: remote_desktop_side_channel
+    audit_event: remote.audio.decision
+  drive_mapping:
+    policy_event: remote.drive_mapping
+    guard: remote_desktop_side_channel
+    audit_event: remote.drive_mapping.decision
+  printing:
+    policy_event: remote.printing
+    guard: remote_desktop_side_channel
+    audit_event: remote.printing.decision
+  session_share:
+    policy_event: remote.session_share
+    guard: remote_desktop_side_channel
+    audit_event: remote.session_share.decision
+
+decision_to_guard:
+  allow: allow
+  deny: deny
+  require_approval: needs_approval
+
+threat_tiers:
+  dev:
+    assumptions:
+      - Single-tenant or developer-owned runtime.
+      - Non-production data and short-lived sessions.
+    modes:
+      observe:
+        clipboard: allow
+        file_transfer: require_approval
+        audio: allow
+        drive_mapping: require_approval
+        printing: require_approval
+        session_share: require_approval
+      guardrail:
+        clipboard: deny
+        file_transfer: deny
+        audio: allow
+        drive_mapping: deny
+        printing: deny
+        session_share: deny
+      fail_closed:
+        clipboard: deny
+        file_transfer: deny
+        audio: deny
+        drive_mapping: deny
+        printing: deny
+        session_share: deny
+
+  internal_prod:
+    assumptions:
+      - Production-adjacent systems with authenticated internal users.
+      - Higher data sensitivity and auditable operator accountability.
+    modes:
+      observe:
+        clipboard: deny
+        file_transfer: deny
+        audio: allow
+        drive_mapping: deny
+        printing: deny
+        session_share: deny
+      guardrail:
+        clipboard: deny
+        file_transfer: deny
+        audio: deny
+        drive_mapping: deny
+        printing: deny
+        session_share: deny
+      fail_closed:
+        clipboard: deny
+        file_transfer: deny
+        audio: deny
+        drive_mapping: deny
+        printing: deny
+        session_share: deny
+
+  internet_exposed_multi_tenant:
+    assumptions:
+      - Untrusted network perimeter and cross-tenant attack surface.
+      - Highest exfiltration and privilege-escalation risk profile.
+    modes:
+      observe:
+        clipboard: deny
+        file_transfer: deny
+        audio: deny
+        drive_mapping: deny
+        printing: deny
+        session_share: deny
+      guardrail:
+        clipboard: deny
+        file_transfer: deny
+        audio: deny
+        drive_mapping: deny
+        printing: deny
+        session_share: deny
+      fail_closed:
+        clipboard: deny
+        file_transfer: deny
+        audio: deny
+        drive_mapping: deny
+        printing: deny
+        session_share: deny

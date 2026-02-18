@@ -1,0 +1,36 @@
+# Remote Desktop Agent Ruleset
+# Moderate CUA security policy for remote desktop AI agents
+version: "1.2.0"
+name: Remote Desktop Agent
+description: Security rules for AI agents operating via remote desktop (CUA)
+extends: ai-agent
+
+guards:
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - "remote.session.connect"
+      - "remote.session.disconnect"
+      - "remote.session.reconnect"
+      - "input.inject"
+      - "remote.clipboard"
+      - "remote.file_transfer"
+      - "remote.session_share"
+
+  remote_desktop_side_channel:
+    clipboard_enabled: true
+    file_transfer_enabled: true
+    session_share_enabled: false
+    max_transfer_size_bytes: 104857600  # 100MB
+
+  input_injection_capability:
+    allowed_input_types:
+      - "keyboard"
+      - "mouse"
+    require_postcondition_probe: false
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 7200  # 2 hours

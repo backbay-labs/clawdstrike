@@ -1,0 +1,131 @@
+{
+  "matrix": "docs/roadmaps/cua/research/remote_desktop_policy_matrix.yaml",
+  "cases": [
+    {
+      "id": "dev_observe_audio_allow",
+      "query": {
+        "threat_tier": "dev",
+        "mode": "observe",
+        "feature": "audio"
+      },
+      "expected": {
+        "result": "pass",
+        "decision": "allow",
+        "policy_event": "remote.audio",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "allow"
+      }
+    },
+    {
+      "id": "dev_observe_file_transfer_requires_approval",
+      "query": {
+        "threat_tier": "dev",
+        "mode": "observe",
+        "feature": "file_transfer"
+      },
+      "expected": {
+        "result": "pass",
+        "decision": "require_approval",
+        "policy_event": "remote.file_transfer",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "needs_approval"
+      }
+    },
+    {
+      "id": "dev_guardrail_clipboard_denied",
+      "query": {
+        "threat_tier": "dev",
+        "mode": "guardrail",
+        "feature": "clipboard"
+      },
+      "expected": {
+        "result": "pass",
+        "decision": "deny",
+        "policy_event": "remote.clipboard",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny"
+      }
+    },
+    {
+      "id": "internal_prod_observe_audio_allow",
+      "query": {
+        "threat_tier": "internal_prod",
+        "mode": "observe",
+        "feature": "audio"
+      },
+      "expected": {
+        "result": "pass",
+        "decision": "allow",
+        "policy_event": "remote.audio",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "allow"
+      }
+    },
+    {
+      "id": "internal_prod_fail_closed_audio_denied",
+      "query": {
+        "threat_tier": "internal_prod",
+        "mode": "fail_closed",
+        "feature": "audio"
+      },
+      "expected": {
+        "result": "pass",
+        "decision": "deny",
+        "policy_event": "remote.audio",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny"
+      }
+    },
+    {
+      "id": "internet_exposed_observe_printing_denied",
+      "query": {
+        "threat_tier": "internet_exposed_multi_tenant",
+        "mode": "observe",
+        "feature": "printing"
+      },
+      "expected": {
+        "result": "pass",
+        "decision": "deny",
+        "policy_event": "remote.printing",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny"
+      }
+    },
+    {
+      "id": "unknown_tier_fails_closed",
+      "query": {
+        "threat_tier": "unknown",
+        "mode": "observe",
+        "feature": "clipboard"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "RDPM_THREAT_TIER_UNKNOWN"
+      }
+    },
+    {
+      "id": "unknown_mode_fails_closed",
+      "query": {
+        "threat_tier": "dev",
+        "mode": "audit_only",
+        "feature": "clipboard"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "RDPM_MODE_UNKNOWN"
+      }
+    },
+    {
+      "id": "unknown_feature_fails_closed",
+      "query": {
+        "threat_tier": "dev",
+        "mode": "observe",
+        "feature": "screen_capture"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "RDPM_FEATURE_UNKNOWN"
+      }
+    }
+  ]
+}

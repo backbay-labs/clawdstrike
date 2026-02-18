@@ -1,0 +1,214 @@
+{
+  "suite": "docs/roadmaps/cua/research/session_recording_evidence_suite.yaml",
+  "evaluation_context": {
+    "timestamp": "2026-02-18T01:00:00Z"
+  },
+  "cases": [
+    {
+      "case_id": "raw_frame_with_hash_passes",
+      "description": "A raw frame artifact with a valid sha256 hash and complete capture config passes validation.",
+      "artifact": {
+        "type": "raw_frame",
+        "hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "capture_mode": "pre_post_action",
+        "capture_config": {
+          "tool_version": "ffmpeg-7.1",
+          "codec": "png",
+          "codec_params": "lossless",
+          "frame_cadence_ms": 0,
+          "timestamp_source": "system_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "raw_frame", "pre_post_action"]
+    },
+    {
+      "case_id": "redacted_frame_with_provenance_passes",
+      "description": "A redacted frame with full provenance chain (rule_id, method, pre_hash, post_hash) passes.",
+      "artifact": {
+        "type": "redacted_frame",
+        "hash": "sha256:d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592",
+        "capture_mode": "pre_post_action",
+        "capture_config": {
+          "tool_version": "ffmpeg-7.1",
+          "codec": "png",
+          "codec_params": "lossless",
+          "frame_cadence_ms": 0,
+          "timestamp_source": "system_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false,
+        "redaction_provenance": {
+          "rule_id": "pii_ssn_detector_v2",
+          "method": "blur",
+          "pre_hash": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+          "post_hash": "sha256:d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592"
+        }
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "redacted_frame", "redaction_provenance"]
+    },
+    {
+      "case_id": "video_segment_continuous_mode_passes",
+      "description": "A video segment artifact in continuous capture mode with full config passes.",
+      "artifact": {
+        "type": "video_segment",
+        "hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "capture_mode": "continuous",
+        "capture_config": {
+          "tool_version": "ffmpeg-7.1",
+          "codec": "h264",
+          "codec_params": "crf=23,preset=ultrafast,pix_fmt=yuv420p",
+          "frame_cadence_ms": 100,
+          "timestamp_source": "system_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "video_segment", "continuous"]
+    },
+    {
+      "case_id": "protocol_log_with_manifest_passes",
+      "description": "A protocol log artifact referenced by a capture manifest with valid digest passes.",
+      "artifact": {
+        "type": "protocol_log",
+        "hash": "sha256:4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "capture_mode": "continuous",
+        "capture_config": {
+          "tool_version": "guacamole-1.6.0",
+          "codec": "guac_protocol",
+          "codec_params": "include_keys=true,exclude_output=false",
+          "frame_cadence_ms": 0,
+          "timestamp_source": "server_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false,
+        "manifest_ref": {
+          "manifest_hash": "sha256:computed_manifest_digest_placeholder",
+          "recomputed_hash": "sha256:computed_manifest_digest_placeholder"
+        }
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "protocol_log", "manifest"]
+    },
+    {
+      "case_id": "unknown_artifact_type_fails_closed",
+      "description": "An artifact with an unrecognised type 'audio_capture' is rejected fail-closed.",
+      "artifact": {
+        "type": "audio_capture",
+        "hash": "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+        "capture_mode": "continuous",
+        "capture_config": {
+          "tool_version": "ffmpeg-7.1",
+          "codec": "aac",
+          "codec_params": "bitrate=128k",
+          "frame_cadence_ms": 0,
+          "timestamp_source": "system_clock_utc",
+          "resolution": "n/a"
+        },
+        "lossy_before_hash": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "REC_ARTIFACT_TYPE_UNKNOWN",
+      "tags": ["fail-closed", "unknown_type"]
+    },
+    {
+      "case_id": "missing_hash_fails_closed",
+      "description": "A raw frame artifact without a hash field is rejected fail-closed.",
+      "artifact": {
+        "type": "raw_frame",
+        "capture_mode": "pre_post_action",
+        "capture_config": {
+          "tool_version": "ffmpeg-7.1",
+          "codec": "png",
+          "codec_params": "lossless",
+          "frame_cadence_ms": 0,
+          "timestamp_source": "system_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "REC_HASH_MISSING",
+      "tags": ["fail-closed", "missing_hash"]
+    },
+    {
+      "case_id": "incomplete_capture_config_fails_closed",
+      "description": "A video segment artifact missing 'codec_params' in capture_config is rejected.",
+      "artifact": {
+        "type": "video_segment",
+        "hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "capture_mode": "continuous",
+        "capture_config": {
+          "tool_version": "ffmpeg-7.1",
+          "codec": "h264",
+          "frame_cadence_ms": 100,
+          "timestamp_source": "system_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "REC_CAPTURE_CONFIG_INCOMPLETE",
+      "tags": ["fail-closed", "incomplete_config"]
+    },
+    {
+      "case_id": "redaction_without_provenance_fails_closed",
+      "description": "A redacted frame missing 'rule_id' in its redaction provenance is rejected.",
+      "artifact": {
+        "type": "redacted_frame",
+        "hash": "sha256:d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592",
+        "capture_mode": "pre_post_action",
+        "capture_config": {
+          "tool_version": "ffmpeg-7.1",
+          "codec": "png",
+          "codec_params": "lossless",
+          "frame_cadence_ms": 0,
+          "timestamp_source": "system_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false,
+        "redaction_provenance": {
+          "method": "mask",
+          "pre_hash": "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+          "post_hash": "sha256:d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592"
+        }
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "REC_REDACTION_PROVENANCE_MISSING",
+      "tags": ["fail-closed", "missing_provenance"]
+    },
+    {
+      "case_id": "manifest_digest_mismatch_fails",
+      "description": "A protocol log whose recomputed manifest digest does not match the declared manifest hash.",
+      "artifact": {
+        "type": "protocol_log",
+        "hash": "sha256:4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "capture_mode": "continuous",
+        "capture_config": {
+          "tool_version": "guacamole-1.6.0",
+          "codec": "guac_protocol",
+          "codec_params": "include_keys=true,exclude_output=false",
+          "frame_cadence_ms": 0,
+          "timestamp_source": "server_clock_utc",
+          "resolution": "1920x1080"
+        },
+        "lossy_before_hash": false,
+        "manifest_ref": {
+          "manifest_hash": "sha256:declared_digest_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "recomputed_hash": "sha256:recomputed_digest_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "REC_MANIFEST_DIGEST_MISMATCH",
+      "tags": ["fail-closed", "manifest_mismatch"]
+    }
+  ]
+}

@@ -8,10 +8,13 @@ use globset::GlobBuilder;
 
 use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
 use crate::guards::{
-    EgressAllowlistConfig, EgressAllowlistGuard, ForbiddenPathConfig, ForbiddenPathGuard, Guard,
-    JailbreakConfig, JailbreakGuard, McpToolConfig, McpToolGuard, PatchIntegrityConfig,
-    PatchIntegrityGuard, PathAllowlistConfig, PathAllowlistGuard, PromptInjectionConfig,
-    PromptInjectionGuard, SecretLeakConfig, SecretLeakGuard, ShellCommandConfig, ShellCommandGuard,
+    ComputerUseConfig, ComputerUseGuard, EgressAllowlistConfig, EgressAllowlistGuard,
+    ForbiddenPathConfig, ForbiddenPathGuard, Guard, InputInjectionCapabilityConfig,
+    InputInjectionCapabilityGuard, JailbreakConfig, JailbreakGuard, McpToolConfig, McpToolGuard,
+    PatchIntegrityConfig, PatchIntegrityGuard, PathAllowlistConfig, PathAllowlistGuard,
+    PromptInjectionConfig, PromptInjectionGuard, RemoteDesktopSideChannelConfig,
+    RemoteDesktopSideChannelGuard, SecretLeakConfig, SecretLeakGuard, ShellCommandConfig,
+    ShellCommandGuard,
 };
 use crate::placeholders::env_var_for_placeholder;
 use crate::posture::{validate_posture_config, PostureConfig};
@@ -251,6 +254,15 @@ pub struct GuardConfigs {
     /// Jailbreak detection guard config
     #[serde(default)]
     pub jailbreak: Option<JailbreakConfig>,
+    /// Computer use (CUA) guard config
+    #[serde(default)]
+    pub computer_use: Option<ComputerUseConfig>,
+    /// Remote desktop side channel guard config
+    #[serde(default)]
+    pub remote_desktop_side_channel: Option<RemoteDesktopSideChannelConfig>,
+    /// Input injection capability guard config
+    #[serde(default)]
+    pub input_injection_capability: Option<InputInjectionCapabilityConfig>,
     /// Custom (plugin-shaped) guards.
     ///
     /// Note: for now, only a small reserved set of built-in packages is supported. Unknown
@@ -311,6 +323,18 @@ impl GuardConfigs {
                 .clone()
                 .or_else(|| self.prompt_injection.clone()),
             jailbreak: child.jailbreak.clone().or_else(|| self.jailbreak.clone()),
+            computer_use: child
+                .computer_use
+                .clone()
+                .or_else(|| self.computer_use.clone()),
+            remote_desktop_side_channel: child
+                .remote_desktop_side_channel
+                .clone()
+                .or_else(|| self.remote_desktop_side_channel.clone()),
+            input_injection_capability: child
+                .input_injection_capability
+                .clone()
+                .or_else(|| self.input_injection_capability.clone()),
             custom: if !child.custom.is_empty() {
                 child.custom.clone()
             } else {
@@ -1095,6 +1119,24 @@ impl Policy {
                 .clone()
                 .map(JailbreakGuard::with_config)
                 .unwrap_or_default(),
+            computer_use: self
+                .guards
+                .computer_use
+                .clone()
+                .map(ComputerUseGuard::with_config)
+                .unwrap_or_default(),
+            remote_desktop_side_channel: self
+                .guards
+                .remote_desktop_side_channel
+                .clone()
+                .map(RemoteDesktopSideChannelGuard::with_config)
+                .unwrap_or_default(),
+            input_injection_capability: self
+                .guards
+                .input_injection_capability
+                .clone()
+                .map(InputInjectionCapabilityGuard::with_config)
+                .unwrap_or_default(),
         }
     }
 }
@@ -1562,6 +1604,9 @@ pub(crate) struct PolicyGuards {
     pub mcp_tool: McpToolGuard,
     pub prompt_injection: PromptInjectionGuard,
     pub jailbreak: JailbreakGuard,
+    pub computer_use: ComputerUseGuard,
+    pub remote_desktop_side_channel: RemoteDesktopSideChannelGuard,
+    pub input_injection_capability: InputInjectionCapabilityGuard,
 }
 
 impl PolicyGuards {
@@ -1577,6 +1622,9 @@ impl PolicyGuards {
             &self.mcp_tool as &dyn Guard,
             &self.prompt_injection as &dyn Guard,
             &self.jailbreak as &dyn Guard,
+            &self.computer_use as &dyn Guard,
+            &self.remote_desktop_side_channel as &dyn Guard,
+            &self.input_injection_capability as &dyn Guard,
         ]
         .into_iter()
     }
@@ -1606,6 +1654,13 @@ impl RuleSet {
             "ai-agent-posture" => Some(include_str!("../rulesets/ai-agent-posture.yaml")),
             "cicd" => Some(include_str!("../rulesets/cicd.yaml")),
             "permissive" => Some(include_str!("../rulesets/permissive.yaml")),
+            "remote-desktop" => Some(include_str!("../rulesets/remote-desktop.yaml")),
+            "remote-desktop-strict" => {
+                Some(include_str!("../rulesets/remote-desktop-strict.yaml"))
+            }
+            "remote-desktop-permissive" => {
+                Some(include_str!("../rulesets/remote-desktop-permissive.yaml"))
+            }
             _ => None,
         }?;
 
@@ -1634,6 +1689,9 @@ impl RuleSet {
             "ai-agent-posture",
             "cicd",
             "permissive",
+            "remote-desktop",
+            "remote-desktop-strict",
+            "remote-desktop-permissive",
         ]
     }
 }

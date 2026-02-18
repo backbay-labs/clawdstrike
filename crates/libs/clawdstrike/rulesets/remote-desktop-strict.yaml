@@ -1,0 +1,30 @@
+# Remote Desktop Strict Ruleset
+# Maximum CUA security for high-security environments
+version: "1.2.0"
+name: Remote Desktop Strict
+description: Strict CUA security rules for high-security remote desktop environments
+extends: remote-desktop
+
+guards:
+  computer_use:
+    enabled: true
+    mode: fail_closed
+    allowed_actions:
+      - "remote.session.connect"
+      - "remote.session.disconnect"
+      - "input.inject"
+
+  remote_desktop_side_channel:
+    clipboard_enabled: false
+    file_transfer_enabled: false
+    session_share_enabled: false
+
+  input_injection_capability:
+    allowed_input_types:
+      - "keyboard"
+    require_postcondition_probe: true
+
+settings:
+  fail_fast: true
+  verbose_logging: false
+  session_timeout_secs: 1800  # 30 minutes

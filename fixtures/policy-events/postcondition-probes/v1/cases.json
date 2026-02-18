@@ -1,0 +1,150 @@
+{
+  "suite": "docs/roadmaps/cua/research/postcondition_probe_suite.yaml",
+  "evaluation_context": {
+    "timestamp": "2026-02-18T01:00:00Z"
+  },
+  "cases": [
+    {
+      "id": "click_verified_probe_pass",
+      "query": {
+        "action_kind": "click",
+        "scenario": "verified_probe_pass",
+        "backend_id": "rdp_protocol_bridge",
+        "target_mode": "protocol"
+      },
+      "expected": {
+        "result": "pass",
+        "outcome": {
+          "state": "verified",
+          "reason_code": "RC_OK_VERIFIED"
+        }
+      }
+    },
+    {
+      "id": "type_api_accept_only",
+      "query": {
+        "action_kind": "type",
+        "scenario": "api_accept_only",
+        "backend_id": "windows_sendinput",
+        "target_mode": "coordinate"
+      },
+      "expected": {
+        "result": "pass",
+        "outcome": {
+          "state": "accepted",
+          "reason_code": "RC_OK_ACCEPTED"
+        }
+      }
+    },
+    {
+      "id": "scroll_ui_applied_without_probe",
+      "query": {
+        "action_kind": "scroll",
+        "scenario": "ui_applied_without_probe",
+        "backend_id": "linux_x11_xtest",
+        "target_mode": "coordinate"
+      },
+      "expected": {
+        "result": "pass",
+        "outcome": {
+          "state": "applied",
+          "reason_code": "RC_OK_APPLIED"
+        }
+      }
+    },
+    {
+      "id": "key_chord_focus_stolen_denied",
+      "query": {
+        "action_kind": "key_chord",
+        "scenario": "focus_stolen",
+        "backend_id": "windows_sendinput",
+        "target_mode": "coordinate"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "state": "denied",
+          "reason_code": "RC_FOCUS_STOLEN"
+        }
+      }
+    },
+    {
+      "id": "click_ambiguous_target_denied",
+      "query": {
+        "action_kind": "click",
+        "scenario": "ambiguous_target",
+        "backend_id": "linux_wayland_portal_libei",
+        "target_mode": "coordinate"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "state": "denied",
+          "reason_code": "RC_AMBIGUOUS_TARGET"
+        }
+      }
+    },
+    {
+      "id": "type_permission_revoked_mid_session",
+      "query": {
+        "action_kind": "type",
+        "scenario": "permission_revoked_mid_session",
+        "backend_id": "macos_quartz_events",
+        "target_mode": "coordinate"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "state": "denied",
+          "reason_code": "RC_PERMISSION_DENIED"
+        }
+      }
+    },
+    {
+      "id": "scroll_timeout_unknown",
+      "query": {
+        "action_kind": "scroll",
+        "scenario": "timeout_after_injection",
+        "backend_id": "linux_uinput",
+        "target_mode": "coordinate"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "state": "unknown",
+          "reason_code": "RC_TIMEOUT"
+        }
+      }
+    },
+    {
+      "id": "unknown_action_fails_closed",
+      "query": {
+        "action_kind": "drag",
+        "scenario": "verified_probe_pass",
+        "backend_id": "rdp_protocol_bridge",
+        "target_mode": "protocol"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRB_ACTION_UNKNOWN"
+      }
+    },
+    {
+      "id": "unknown_scenario_fails_closed",
+      "query": {
+        "action_kind": "click",
+        "scenario": "stale_ui_snapshot",
+        "backend_id": "rdp_protocol_bridge",
+        "target_mode": "protocol"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRB_SCENARIO_UNKNOWN"
+      }
+    }
+  ]
+}

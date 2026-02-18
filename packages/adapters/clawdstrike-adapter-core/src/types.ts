@@ -29,7 +29,14 @@ export type EventType =
   | 'tool_call'
   | 'patch_apply'
   | 'secret_access'
-  | 'custom';
+  | 'custom'
+  | 'remote.session.connect'
+  | 'remote.session.disconnect'
+  | 'remote.session.reconnect'
+  | 'input.inject'
+  | 'remote.clipboard'
+  | 'remote.file_transfer'
+  | 'remote.session_share';
 
 export interface PolicyEvent {
   eventId: string;
@@ -47,7 +54,8 @@ export type EventData =
   | ToolEventData
   | PatchEventData
   | SecretEventData
-  | CustomEventData;
+  | CustomEventData
+  | CuaEventData;
 
 export interface FileEventData {
   type: 'file';
@@ -96,6 +104,15 @@ export interface SecretEventData {
 export interface CustomEventData {
   type: 'custom';
   customType: string;
+  [key: string]: unknown;
+}
+
+export interface CuaEventData {
+  type: 'cua';
+  cuaAction: string;
+  direction?: 'read' | 'write' | 'upload' | 'download';
+  continuityPrevSessionHash?: string;
+  postconditionProbeHash?: string;
   [key: string]: unknown;
 }
 

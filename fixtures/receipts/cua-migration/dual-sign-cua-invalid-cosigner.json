@@ -1,0 +1,73 @@
+{
+  "receipt": {
+    "content_hash": "0x2020202020202020202020202020202020202020202020202020202020202020",
+    "metadata": {
+      "cua": {
+        "chain": {
+          "action_summary": [
+            {
+              "count": 2,
+              "kind": "click"
+            },
+            {
+              "count": 1,
+              "kind": "type"
+            }
+          ],
+          "final_event_hash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "genesis_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "total_events": 3
+        },
+        "events_ref": "cas://sha256:9999999999999999999999999999999999999999999999999999999999999999/events.jsonl",
+        "gateway": {
+          "attestation": {
+            "claims": {
+              "build_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+              "extensions": {
+                "environment": "prod"
+              },
+              "runtime_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+              "session_nonce": "nonce_20260218_000501"
+            },
+            "expires_at": "2026-02-18T00:15:00Z",
+            "issued_at": "2026-02-18T00:05:01Z",
+            "issuer": "https://attest.aws.example.com/nitro",
+            "nonce": "nonce_20260218_000501",
+            "not_before": "2026-02-18T00:05:00Z",
+            "report_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "type": "nitro_enclave"
+          },
+          "gateway_id": "gw-prod-01",
+          "key_id": "kid:gw-prod-2026q1"
+        },
+        "session": {
+          "ended_at": "2026-02-18T00:06:10Z",
+          "event_count": 3,
+          "mode": "guardrail",
+          "run_id": "run_cua_migration_001",
+          "session_id": "sess_cua_migration_001",
+          "started_at": "2026-02-18T00:04:55Z"
+        }
+      },
+      "cua_schema_version": "1.0.0",
+      "receipt_profile": "cua.v1"
+    },
+    "provenance": {
+      "clawdstrike_version": "0.2.0",
+      "policy_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "provider": "cua-gateway",
+      "ruleset": "cua-default"
+    },
+    "receipt_id": "cua-migration-cua-001",
+    "timestamp": "2026-02-18T00:06:10Z",
+    "verdict": {
+      "gate_id": "cua-gate",
+      "passed": true
+    },
+    "version": "1.0.0"
+  },
+  "signatures": {
+    "cosigner": "a6b49074884f741c469bd04797b7cf05dae396afaecbb8e414453f4a8c842c4128a1137e0922d0fa080d3a0d06d4693e7034f97d836793714683567ced403800",
+    "signer": "d6276f8950c8ba699e9b8288339ba0628b76708d35e35a3e7dc63d9e94d99d334dfb95b8499b5a05da993ed533324d248699b49fddc430c5ff1831bafa117108"
+  }
+}

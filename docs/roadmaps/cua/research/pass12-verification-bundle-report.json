@@ -1,0 +1,149 @@
+{
+  "results": [
+    {
+      "actual": {
+        "details": {
+          "attestation_type": "none"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "complete_bundle_software_only",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "attestation_type": "tpm2_quote"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "complete_bundle_tpm2",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "attestation_type": "nitro_enclave"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "complete_bundle_nitro",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "attestation_type": "sev_snp"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "transcript_all_checkpoints_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "reason": "receipt_null_or_missing"
+        },
+        "error_code": "BDL_RECEIPT_MISSING",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BDL_RECEIPT_MISSING",
+        "result": "fail"
+      },
+      "id": "missing_receipt_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "missing": [
+            "attestation_verification",
+            "nonce_freshness",
+            "policy_evaluation",
+            "signature_verification",
+            "timestamp_check"
+          ],
+          "reason": "missing_checkpoint_types"
+        },
+        "error_code": "BDL_TRANSCRIPT_INCOMPLETE",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BDL_TRANSCRIPT_INCOMPLETE",
+        "result": "fail"
+      },
+      "id": "incomplete_transcript_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "attestation_type": "quantum_proof"
+        },
+        "error_code": "BDL_ATTESTATION_TYPE_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BDL_ATTESTATION_TYPE_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_attestation_type_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "checkpoint_type": "policy_evaluation",
+          "reason": "checkpoint_status_fail"
+        },
+        "error_code": "BDL_CHECKPOINT_FAILED",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BDL_CHECKPOINT_FAILED",
+        "result": "fail"
+      },
+      "id": "checkpoint_failure_propagates",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "reason": "policy_ref_absent"
+        },
+        "error_code": "BDL_POLICY_REF_MISSING",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BDL_POLICY_REF_MISSING",
+        "result": "fail"
+      },
+      "id": "missing_policy_ref_fails_closed",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/verification_bundle_format.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

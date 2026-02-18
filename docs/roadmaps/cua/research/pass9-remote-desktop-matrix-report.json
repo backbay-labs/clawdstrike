@@ -1,0 +1,154 @@
+{
+  "matrix": "docs/roadmaps/cua/research/remote_desktop_policy_matrix.yaml",
+  "results": [
+    {
+      "actual": {
+        "decision": "allow",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "allow",
+        "policy_event": "remote.audio",
+        "result": "pass"
+      },
+      "expected": {
+        "decision": "allow",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "allow",
+        "policy_event": "remote.audio",
+        "result": "pass"
+      },
+      "id": "dev_observe_audio_allow",
+      "ok": true
+    },
+    {
+      "actual": {
+        "decision": "require_approval",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "needs_approval",
+        "policy_event": "remote.file_transfer",
+        "result": "pass"
+      },
+      "expected": {
+        "decision": "require_approval",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "needs_approval",
+        "policy_event": "remote.file_transfer",
+        "result": "pass"
+      },
+      "id": "dev_observe_file_transfer_requires_approval",
+      "ok": true
+    },
+    {
+      "actual": {
+        "decision": "deny",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny",
+        "policy_event": "remote.clipboard",
+        "result": "pass"
+      },
+      "expected": {
+        "decision": "deny",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny",
+        "policy_event": "remote.clipboard",
+        "result": "pass"
+      },
+      "id": "dev_guardrail_clipboard_denied",
+      "ok": true
+    },
+    {
+      "actual": {
+        "decision": "allow",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "allow",
+        "policy_event": "remote.audio",
+        "result": "pass"
+      },
+      "expected": {
+        "decision": "allow",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "allow",
+        "policy_event": "remote.audio",
+        "result": "pass"
+      },
+      "id": "internal_prod_observe_audio_allow",
+      "ok": true
+    },
+    {
+      "actual": {
+        "decision": "deny",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny",
+        "policy_event": "remote.audio",
+        "result": "pass"
+      },
+      "expected": {
+        "decision": "deny",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny",
+        "policy_event": "remote.audio",
+        "result": "pass"
+      },
+      "id": "internal_prod_fail_closed_audio_denied",
+      "ok": true
+    },
+    {
+      "actual": {
+        "decision": "deny",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny",
+        "policy_event": "remote.printing",
+        "result": "pass"
+      },
+      "expected": {
+        "decision": "deny",
+        "guard": "remote_desktop_side_channel",
+        "guard_decision": "deny",
+        "policy_event": "remote.printing",
+        "result": "pass"
+      },
+      "id": "internet_exposed_observe_printing_denied",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "RDPM_THREAT_TIER_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "RDPM_THREAT_TIER_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_tier_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "RDPM_MODE_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "RDPM_MODE_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_mode_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "RDPM_FEATURE_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "RDPM_FEATURE_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_feature_fails_closed",
+      "ok": true
+    }
+  ],
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

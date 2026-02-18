@@ -1,0 +1,252 @@
+{
+  "suite": "docs/roadmaps/cua/research/envelope_semantic_equivalence_suite.yaml",
+  "cases": [
+    {
+      "case_id": "bare_payload_verifies",
+      "description": "Bare canonical payload passes verification without any envelope wrapper.",
+      "wrapper_type": "bare",
+      "payload": {
+        "receipt_id": "env-equiv-001",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": null,
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["bare", "happy-path"]
+    },
+    {
+      "case_id": "cose_sign1_wraps_identical_payload",
+      "description": "COSE Sign1 wrapper with identical canonical payload fields passes.",
+      "wrapper_type": "cose_sign1",
+      "payload": {
+        "receipt_id": "env-equiv-001",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": {
+        "protected_header": "oQEoIgEhWCDQSrIydLtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3h3Nw",
+        "wrapper_payload": "eyJyZWNlaXB0X2lkIjoiZW52LWVxdWl2LTAwMSIsInRpbWVzdGFtcCI6IjIwMjYtMDItMThUMDA6MDA6MDBaIiwiY29udGVudF9oYXNoIjoiMHhhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5IiwidmVyZGljdCI6eyJwYXNzZWQiOnRydWUsImdhdGVfaWQiOiJlcXVpdmFsZW5jZS1nYXRlIn0sInByb3ZlbmFuY2UiOnsiY2xhd2RzdHJpa2VfdmVyc2lvbiI6IjAuMi4wIiwicHJvdmlkZXIiOiJjdWEtZ2F0ZXdheSIsInJ1bGVzZXQiOiJjdWEtZGVmYXVsdCJ9fQ",
+        "signature": "MEUCIQC3xGz7k1a2B9Fj5vQ8R0x1Y2c4d5e6f7a8b9c0d1e2f3AIEY4z7k1a2B9Fj5vQ8R0x1Y2c4d5e6f7a8b9c0d1e2f3"
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["cose_sign1", "happy-path"]
+    },
+    {
+      "case_id": "jws_compact_wraps_identical_payload",
+      "description": "JWS compact serialization wrapper with identical canonical payload passes.",
+      "wrapper_type": "jws_compact",
+      "payload": {
+        "receipt_id": "env-equiv-001",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": {
+        "compact_token": "eyJhbGciOiJFZERTQSIsInR5cCI6InJlY2VpcHQrand0In0.eyJyZWNlaXB0X2lkIjoiZW52LWVxdWl2LTAwMSIsInRpbWVzdGFtcCI6IjIwMjYtMDItMThUMDA6MDA6MDBaIiwiY29udGVudF9oYXNoIjoiMHhhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5IiwidmVyZGljdCI6eyJwYXNzZWQiOnRydWUsImdhdGVfaWQiOiJlcXVpdmFsZW5jZS1nYXRlIn0sInByb3ZlbmFuY2UiOnsiY2xhd2RzdHJpa2VfdmVyc2lvbiI6IjAuMi4wIiwicHJvdmlkZXIiOiJjdWEtZ2F0ZXdheSIsInJ1bGVzZXQiOiJjdWEtZGVmYXVsdCJ9fQ.c12fd0598f3c1ab76bbea1227d5128ae93503d3d39189302ec32a75812ab2007"
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["jws_compact", "happy-path"]
+    },
+    {
+      "case_id": "jws_json_wraps_identical_payload",
+      "description": "JWS JSON serialization wrapper with identical canonical payload passes.",
+      "wrapper_type": "jws_json",
+      "payload": {
+        "receipt_id": "env-equiv-001",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": {
+        "payload": "eyJyZWNlaXB0X2lkIjoiZW52LWVxdWl2LTAwMSIsInRpbWVzdGFtcCI6IjIwMjYtMDItMThUMDA6MDA6MDBaIiwiY29udGVudF9oYXNoIjoiMHhhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5IiwidmVyZGljdCI6eyJwYXNzZWQiOnRydWUsImdhdGVfaWQiOiJlcXVpdmFsZW5jZS1nYXRlIn0sInByb3ZlbmFuY2UiOnsiY2xhd2RzdHJpa2VfdmVyc2lvbiI6IjAuMi4wIiwicHJvdmlkZXIiOiJjdWEtZ2F0ZXdheSIsInJ1bGVzZXQiOiJjdWEtZGVmYXVsdCJ9fQ",
+        "signatures": [
+          {
+            "protected": "eyJhbGciOiJFZERTQSJ9",
+            "signature": "c12fd0598f3c1ab76bbea1227d5128ae93503d3d39189302ec32a75812ab2007"
+          }
+        ]
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["jws_json", "happy-path"]
+    },
+    {
+      "case_id": "cross_wrapper_verdict_parity",
+      "description": "Same payload in bare and cose_sign1 wrappers yields same verdict extraction.",
+      "wrapper_type": "cose_sign1",
+      "payload": {
+        "receipt_id": "env-equiv-002",
+        "timestamp": "2026-02-18T00:05:00Z",
+        "content_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "verdict": {
+          "passed": false,
+          "gate_id": "deny-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "strict"
+        }
+      },
+      "envelope": {
+        "protected_header": "oQEoIgEhWCDQSrIydLtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3h3Nw",
+        "wrapper_payload": "eyJyZWNlaXB0X2lkIjoiZW52LWVxdWl2LTAwMiIsInRpbWVzdGFtcCI6IjIwMjYtMDItMThUMDA6MDU6MDBaIiwiY29udGVudF9oYXNoIjoiMHgxMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExIiwidmVyZGljdCI6eyJwYXNzZWQiOmZhbHNlLCJnYXRlX2lkIjoiZGVueS1nYXRlIn0sInByb3ZlbmFuY2UiOnsiY2xhd2RzdHJpa2VfdmVyc2lvbiI6IjAuMi4wIiwicHJvdmlkZXIiOiJjdWEtZ2F0ZXdheSIsInJ1bGVzZXQiOiJzdHJpY3QifX0",
+        "signature": "MEUCIQC3xGz7k1a2B9Fj5vQ8R0x1Y2c4d5e6f7a8b9c0d1e2f3AIEY4z7k1a2B9Fj5vQ8R0x1Y2c4d5e6f7a8b9c0d1e2f3"
+      },
+      "cross_reference_bare": {
+        "receipt_id": "env-equiv-002",
+        "timestamp": "2026-02-18T00:05:00Z",
+        "content_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "verdict": {
+          "passed": false,
+          "gate_id": "deny-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "strict"
+        }
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["cross-wrapper", "verdict-parity"]
+    },
+    {
+      "case_id": "unknown_wrapper_fails_closed",
+      "description": "Unrecognized wrapper type 'protobuf_experimental' is rejected with ENV_WRAPPER_UNKNOWN.",
+      "wrapper_type": "protobuf_experimental",
+      "payload": {
+        "receipt_id": "env-equiv-003",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": null,
+      "expected_outcome": "fail",
+      "expected_error_code": "ENV_WRAPPER_UNKNOWN",
+      "tags": ["fail-closed", "unknown-wrapper"]
+    },
+    {
+      "case_id": "version_mismatch_fails_closed",
+      "description": "Receipt version '99.0.0' is rejected with ENV_VERSION_MISMATCH.",
+      "wrapper_type": "bare",
+      "payload": {
+        "receipt_id": "env-equiv-004",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": null,
+      "receipt_version_override": "99.0.0",
+      "expected_outcome": "fail",
+      "expected_error_code": "ENV_VERSION_MISMATCH",
+      "tags": ["fail-closed", "version-mismatch"]
+    },
+    {
+      "case_id": "payload_divergence_detected",
+      "description": "Wrapper contains a different content_hash than the declared payload, detected as ENV_PAYLOAD_DIVERGENCE.",
+      "wrapper_type": "jws_compact",
+      "payload": {
+        "receipt_id": "env-equiv-005",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": {
+        "compact_token": "eyJhbGciOiJFZERTQSIsInR5cCI6InJlY2VpcHQrand0In0.eyJyZWNlaXB0X2lkIjoiZW52LWVxdWl2LTAwNSIsInRpbWVzdGFtcCI6IjIwMjYtMDItMThUMDA6MDA6MDBaIiwiY29udGVudF9oYXNoIjoiMHhERUFEQkVFRjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwidmVyZGljdCI6eyJwYXNzZWQiOnRydWUsImdhdGVfaWQiOiJlcXVpdmFsZW5jZS1nYXRlIn0sInByb3ZlbmFuY2UiOnsiY2xhd2RzdHJpa2VfdmVyc2lvbiI6IjAuMi4wIiwicHJvdmlkZXIiOiJjdWEtZ2F0ZXdheSIsInJ1bGVzZXQiOiJjdWEtZGVmYXVsdCJ9fQ.c12fd0598f3c1ab76bbea1227d5128ae93503d3d39189302ec32a75812ab2007"
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "ENV_PAYLOAD_DIVERGENCE",
+      "tags": ["fail-closed", "payload-divergence"]
+    },
+    {
+      "case_id": "invalid_signature_fails",
+      "description": "Corrupted signature in COSE Sign1 envelope is rejected with ENV_SIGNATURE_INVALID.",
+      "wrapper_type": "cose_sign1",
+      "payload": {
+        "receipt_id": "env-equiv-006",
+        "timestamp": "2026-02-18T00:00:00Z",
+        "content_hash": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "verdict": {
+          "passed": true,
+          "gate_id": "equivalence-gate"
+        },
+        "provenance": {
+          "clawdstrike_version": "0.2.0",
+          "provider": "cua-gateway",
+          "ruleset": "cua-default"
+        }
+      },
+      "envelope": {
+        "protected_header": "oQEoIgEhWCDQSrIydLtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3h3Nw",
+        "wrapper_payload": "eyJyZWNlaXB0X2lkIjoiZW52LWVxdWl2LTAwNiIsInRpbWVzdGFtcCI6IjIwMjYtMDItMThUMDA6MDA6MDBaIiwiY29udGVudF9oYXNoIjoiMHhhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5IiwidmVyZGljdCI6eyJwYXNzZWQiOnRydWUsImdhdGVfaWQiOiJlcXVpdmFsZW5jZS1nYXRlIn0sInByb3ZlbmFuY2UiOnsiY2xhd2RzdHJpa2VfdmVyc2lvbiI6IjAuMi4wIiwicHJvdmlkZXIiOiJjdWEtZ2F0ZXdheSIsInJ1bGVzZXQiOiJjdWEtZGVmYXVsdCJ9fQ",
+        "signature": "CORRUPTED_INVALID_SIGNATURE_DATA_0000000000000000000000000000000000000000"
+      },
+      "signature_corrupted": true,
+      "expected_outcome": "fail",
+      "expected_error_code": "ENV_SIGNATURE_INVALID",
+      "tags": ["fail-closed", "invalid-signature"]
+    }
+  ]
+}

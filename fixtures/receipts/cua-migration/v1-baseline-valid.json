@@ -1,0 +1,24 @@
+{
+  "receipt": {
+    "content_hash": "0x1010101010101010101010101010101010101010101010101010101010101010",
+    "metadata": {
+      "fixture": "baseline_v1_valid"
+    },
+    "provenance": {
+      "clawdstrike_version": "0.2.0",
+      "policy_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "provider": "cua-gateway",
+      "ruleset": "cua-default"
+    },
+    "receipt_id": "cua-migration-baseline-001",
+    "timestamp": "2026-02-18T00:00:00Z",
+    "verdict": {
+      "gate_id": "baseline-gate",
+      "passed": true
+    },
+    "version": "1.0.0"
+  },
+  "signatures": {
+    "signer": "c12fd0598f3c1ab76bbea1227d5128ae93503d3d39189302ec32a75812ab20072f3b1f5bf534d70b4ba0f8ae57f40a270a790f12b429d5206a60bf87e88b9e0d"
+  }
+}

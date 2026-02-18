@@ -9,6 +9,7 @@ import type { ClawdstrikeConfig, CommandBuilder, HookHandler, PolicyEvent } from
 import toolPreflightHandler, { initialize as initPreflight } from "./hooks/tool-preflight/handler.js";
 import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
 import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agent-bootstrap/handler.js";
+import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
 
 // Re-export existing utilities for external use
 export * from "./index.js";
@@ -161,12 +162,15 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   initPreflight(config);
   initToolGuard(config);
   initBootstrap(config);
+  initCuaBridge(config);
 
   if (typeof api.registerHook === 'function') {
+    api.registerHook('tool_call', cuaBridgeHandler);
     api.registerHook('tool_call', toolPreflightHandler);
     api.registerHook('tool_result_persist', toolGuardHandler);
     api.registerHook('agent:bootstrap', agentBootstrapHandler);
   } else if (typeof api.on === 'function') {
+    api.on('tool_call', cuaBridgeHandler);
     api.on('tool_call', toolPreflightHandler);
     api.on('tool_result_persist', toolGuardHandler);
     api.on('agent:bootstrap', agentBootstrapHandler);

@@ -1,0 +1,101 @@
+suite_id: orchestration-isolation-suite
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+research_ref: docs/roadmaps/cua/research/06-orchestration.md
+
+isolation_tiers:
+  - process
+  - container_runc
+  - sandboxed_container_gvisor
+  - microvm_firecracker
+  - full_vm_qemu
+
+session_lifecycle_states:
+  - pending_launch
+  - validating
+  - running
+  - teardown
+  - disposed
+
+launch_validation_fields:
+  - runtime_policy_digest
+  - image_digest
+  - network_profile
+  - isolation_tier
+
+side_effect_channels:
+  broker_path:
+    allowed: true
+    description: "Primary communication channel between gateway and session"
+  direct_filesystem:
+    allowed: false
+    description: "Direct host filesystem access from session runtime"
+  direct_network:
+    allowed: false
+    description: "Unsanctioned network egress bypassing broker"
+  direct_process:
+    allowed: false
+    description: "Direct host process namespace access from session runtime"
+
+teardown_artifacts:
+  - workspace_disposal_marker
+  - data_wipe_hash
+  - cleanup_timestamp
+
+scenarios:
+  valid_container_launch:
+    isolation_tier: container_runc
+    lifecycle_end_state: running
+    expected_result: pass
+    reason_code: ORC_LAUNCH_OK
+  valid_microvm_launch:
+    isolation_tier: microvm_firecracker
+    lifecycle_end_state: running
+    expected_result: pass
+    reason_code: ORC_LAUNCH_OK
+  valid_gvisor_broker_only:
+    isolation_tier: sandboxed_container_gvisor
+    lifecycle_end_state: running
+    expected_result: pass
+    reason_code: ORC_LAUNCH_OK
+  valid_teardown_complete:
+    isolation_tier: container_runc
+    lifecycle_end_state: disposed
+    expected_result: pass
+    reason_code: ORC_TEARDOWN_OK
+  unknown_tier:
+    isolation_tier: bare_metal
+    lifecycle_end_state: pending_launch
+    expected_result: fail
+    reason_code: ORC_TIER_UNKNOWN
+  image_digest_mismatch:
+    isolation_tier: container_runc
+    lifecycle_end_state: validating
+    expected_result: fail
+    reason_code: ORC_IMAGE_DIGEST_MISMATCH
+  direct_io_denied:
+    isolation_tier: sandboxed_container_gvisor
+    lifecycle_end_state: running
+    expected_result: fail
+    reason_code: ORC_DIRECT_IO_DENIED
+  teardown_incomplete:
+    isolation_tier: microvm_firecracker
+    lifecycle_end_state: teardown
+    expected_result: fail
+    reason_code: ORC_TEARDOWN_INCOMPLETE
+  namespace_breakout:
+    isolation_tier: container_runc
+    lifecycle_end_state: running
+    expected_result: fail
+    reason_code: ORC_BREAKOUT_DETECTED
+
+fail_closed_codes:
+  suite_invalid: ORC_SUITE_INVALID
+  tier_unknown: ORC_TIER_UNKNOWN
+  launch_validation_failed: ORC_LAUNCH_VALIDATION_FAILED
+  direct_io_denied: ORC_DIRECT_IO_DENIED
+  teardown_incomplete: ORC_TEARDOWN_INCOMPLETE
+  breakout_detected: ORC_BREAKOUT_DETECTED
+  image_digest_mismatch: ORC_IMAGE_DIGEST_MISMATCH
+  scenario_unknown: ORC_SCENARIO_UNKNOWN

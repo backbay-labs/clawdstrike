@@ -21,27 +21,33 @@
 //! # })
 //! ```
 
+mod computer_use;
 mod custom;
 mod egress_allowlist;
 mod forbidden_path;
+mod input_injection_capability;
 mod jailbreak;
 mod mcp_tool;
 mod patch_integrity;
 mod path_allowlist;
 mod path_normalization;
 mod prompt_injection;
+mod remote_desktop_side_channel;
 mod secret_leak;
 mod shell_command;
 
+pub use computer_use::{ComputerUseConfig, ComputerUseGuard, ComputerUseMode};
 pub use custom::{CustomGuardFactory, CustomGuardRegistry};
 pub use egress_allowlist::{EgressAllowlistConfig, EgressAllowlistGuard};
 pub use forbidden_path::{ForbiddenPathConfig, ForbiddenPathGuard};
+pub use input_injection_capability::{InputInjectionCapabilityConfig, InputInjectionCapabilityGuard};
 pub use jailbreak::{JailbreakConfig, JailbreakGuard};
 pub use mcp_tool::{McpDefaultAction, McpToolConfig, McpToolGuard};
 pub use patch_integrity::{PatchIntegrityConfig, PatchIntegrityGuard};
 pub use path_allowlist::{PathAllowlistConfig, PathAllowlistGuard};
 pub use path_normalization::normalize_path_for_policy;
 pub use prompt_injection::{PromptInjectionConfig, PromptInjectionGuard};
+pub use remote_desktop_side_channel::{RemoteDesktopSideChannelConfig, RemoteDesktopSideChannelGuard};
 pub use secret_leak::{SecretLeakConfig, SecretLeakGuard, SecretPattern};
 pub use shell_command::{ShellCommandConfig, ShellCommandGuard};
 

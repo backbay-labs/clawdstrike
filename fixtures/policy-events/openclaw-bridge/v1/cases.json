@@ -1,0 +1,188 @@
+{
+  "suite": "docs/roadmaps/cua/research/openclaw_cua_bridge_suite.yaml",
+  "cases": [
+    {
+      "id": "openclaw_connect_event",
+      "description": "CUA connect action from OpenClaw tool produces canonical remote.session.connect event",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "cua_connect",
+        "params": {},
+        "session_id": "sess-oc-001",
+        "expected_event_type": "remote.session.connect",
+        "expected_cua_action": "session.connect",
+        "expected_data_type": "cua"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "event_type": "remote.session.connect",
+        "cua_action": "session.connect",
+        "decision": "allow"
+      }
+    },
+    {
+      "id": "openclaw_input_inject_click",
+      "description": "CUA click action from OpenClaw tool produces canonical input.inject event",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "cua_click",
+        "params": {"x": 100, "y": 200},
+        "session_id": "sess-oc-002",
+        "expected_event_type": "input.inject",
+        "expected_cua_action": "input.inject",
+        "expected_data_type": "cua"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "event_type": "input.inject",
+        "cua_action": "input.inject",
+        "decision": "allow"
+      }
+    },
+    {
+      "id": "openclaw_clipboard_read",
+      "description": "CUA clipboard read from OpenClaw produces canonical remote.clipboard event with direction=read",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "computer_use_clipboard_read",
+        "params": {},
+        "session_id": "sess-oc-003",
+        "expected_event_type": "remote.clipboard",
+        "expected_cua_action": "clipboard",
+        "expected_data_type": "cua",
+        "expected_direction": "read"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "event_type": "remote.clipboard",
+        "cua_action": "clipboard",
+        "decision": "allow",
+        "direction": "read"
+      }
+    },
+    {
+      "id": "openclaw_file_upload",
+      "description": "CUA file upload from OpenClaw produces canonical remote.file_transfer event with direction=upload",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "rdp_upload",
+        "params": {"file": "/tmp/report.pdf"},
+        "session_id": "sess-oc-004",
+        "expected_event_type": "remote.file_transfer",
+        "expected_cua_action": "file_transfer",
+        "expected_data_type": "cua",
+        "expected_direction": "upload"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "event_type": "remote.file_transfer",
+        "cua_action": "file_transfer",
+        "decision": "allow",
+        "direction": "upload"
+      }
+    },
+    {
+      "id": "openclaw_disconnect",
+      "description": "CUA disconnect from OpenClaw produces canonical remote.session.disconnect event",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "cua.close",
+        "params": {},
+        "session_id": "sess-oc-005",
+        "expected_event_type": "remote.session.disconnect",
+        "expected_cua_action": "session.disconnect",
+        "expected_data_type": "cua"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "event_type": "remote.session.disconnect",
+        "cua_action": "session.disconnect",
+        "decision": "allow"
+      }
+    },
+    {
+      "id": "openclaw_unknown_cua_action_fail_closed",
+      "description": "Unknown CUA action type 'screen_record' fails closed with stable error code",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "cua_screen_record",
+        "params": {},
+        "session_id": "sess-oc-006",
+        "expected_event_type": null,
+        "expected_cua_action": null,
+        "expected_data_type": null
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "OCLAW_CUA_UNKNOWN_ACTION",
+        "event_type": null,
+        "cua_action": null,
+        "decision": "deny"
+      }
+    },
+    {
+      "id": "openclaw_missing_cua_metadata_fail_closed",
+      "description": "CUA tool with __cua flag but no extractable action fails closed",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "generic_tool",
+        "params": {"__cua": true},
+        "session_id": "sess-oc-007",
+        "expected_event_type": null,
+        "expected_cua_action": null,
+        "expected_data_type": null
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "OCLAW_CUA_MISSING_METADATA",
+        "event_type": null,
+        "cua_action": null,
+        "decision": "deny"
+      }
+    },
+    {
+      "id": "openclaw_adapter_core_parity",
+      "description": "Same CUA connect action via adapter-core and OpenClaw bridge produce equivalent events",
+      "query": {
+        "source": "parity",
+        "tool_name": "cua_connect",
+        "params": {},
+        "session_id": "sess-oc-008",
+        "parity_fields": ["eventType", "data.type", "data.cuaAction"]
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "parity": true,
+        "matched_fields": ["eventType", "data.type", "data.cuaAction"]
+      }
+    },
+    {
+      "id": "openclaw_reconnect_with_continuity_hash",
+      "description": "CUA reconnect with continuity hash produces canonical event with hash preserved",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "cua_reconnect",
+        "params": {"continuityPrevSessionHash": "sha256:abc123def456"},
+        "session_id": "sess-oc-009",
+        "expected_event_type": "remote.session.reconnect",
+        "expected_cua_action": "session.reconnect",
+        "expected_data_type": "cua",
+        "expected_continuity_hash": "sha256:abc123def456"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "event_type": "remote.session.reconnect",
+        "cua_action": "session.reconnect",
+        "decision": "allow",
+        "continuity_hash": "sha256:abc123def456"
+      }
+    }
+  ]
+}

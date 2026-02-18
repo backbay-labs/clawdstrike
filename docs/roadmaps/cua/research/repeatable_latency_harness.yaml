@@ -1,0 +1,75 @@
+schema_version: "1.0.0"
+harness_id: repeatable-latency-harness
+harness_version: 1
+updated_at: "2026-02-18T00:00:00Z"
+
+host_classes:
+  ci_runner:
+    description: GitHub Actions baseline runner
+    typical_cores: 2
+    typical_memory_gb: 7
+  developer_workstation:
+    description: Developer local workstation
+    typical_cores: 8
+    typical_memory_gb: 32
+  production_edge:
+    description: Production edge deployment node
+    typical_cores: 16
+    typical_memory_gb: 64
+
+codecs:
+  h264_sw:
+    description: H.264 software encode/decode
+    acceleration: software
+  h264_hw:
+    description: H.264 hardware-accelerated encode/decode
+    acceleration: hardware
+  vp9_sw:
+    description: VP9 software encode/decode
+    acceleration: software
+  av1_sw:
+    description: AV1 software encode/decode
+    acceleration: software
+
+frame_sizes:
+  720p:
+    width: 1280
+    height: 720
+  1080p:
+    width: 1920
+    height: 1080
+  4k:
+    width: 3840
+    height: 2160
+
+scenarios:
+  warm_cache:
+    description: Codec pipeline warmed with prior frames
+  cold_cache:
+    description: First frame after codec initialization
+
+metrics:
+  - encode_ms
+  - decode_ms
+  - round_trip_ms
+  - jitter_ms
+
+reproducibility_thresholds:
+  cv_max_warm: 0.15
+  cv_max_cold: 0.25
+
+required_environment_metadata:
+  - host_class
+  - os
+  - cpu_model
+  - cpu_cores
+  - memory_gb
+  - codec_version
+  - timestamp
+
+fail_closed_codes:
+  host_unknown: LAT_HOST_UNKNOWN
+  codec_unknown: LAT_CODEC_UNKNOWN
+  frame_unknown: LAT_FRAME_UNKNOWN
+  variance_exceeded: LAT_VARIANCE_EXCEEDED
+  env_incomplete: LAT_ENV_INCOMPLETE

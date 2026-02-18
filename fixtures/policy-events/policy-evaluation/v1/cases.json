@@ -1,0 +1,216 @@
+{
+  "suite": "docs/roadmaps/cua/research/cua_policy_evaluation_suite.yaml",
+  "cases": [
+    {
+      "id": "connect_resolves_fast_and_std_path",
+      "description": "connect action resolves to egress_allowlist (fast) + computer_use (std) and passes",
+      "query": {
+        "action": "connect",
+        "context": {
+          "session_id": "sess-001",
+          "agent_id": "agent-001",
+          "enforcement_mode": "fail_closed"
+        },
+        "approval": null
+      },
+      "expected": {
+        "result": "pass",
+        "stages_resolved": {
+          "fast_path": ["egress_allowlist"],
+          "std_path": ["computer_use"],
+          "deep_path": []
+        },
+        "error_code": null
+      }
+    },
+    {
+      "id": "input_resolves_std_path_with_probe",
+      "description": "input action resolves to computer_use + input_injection_capability (std) and passes",
+      "query": {
+        "action": "input",
+        "context": {
+          "session_id": "sess-002",
+          "agent_id": "agent-002",
+          "enforcement_mode": "fail_closed"
+        },
+        "approval": null
+      },
+      "expected": {
+        "result": "pass",
+        "stages_resolved": {
+          "fast_path": [],
+          "std_path": ["computer_use", "input_injection_capability"],
+          "deep_path": []
+        },
+        "error_code": null
+      }
+    },
+    {
+      "id": "clipboard_write_resolves_with_redaction",
+      "description": "clipboard_write resolves with computer_use + remote_desktop_side_channel and passes with redaction artifacts",
+      "query": {
+        "action": "clipboard_write",
+        "context": {
+          "session_id": "sess-003",
+          "agent_id": "agent-003",
+          "enforcement_mode": "guardrail"
+        },
+        "approval": null
+      },
+      "expected": {
+        "result": "pass",
+        "stages_resolved": {
+          "fast_path": [],
+          "std_path": ["computer_use", "remote_desktop_side_channel"],
+          "deep_path": []
+        },
+        "error_code": null
+      }
+    },
+    {
+      "id": "approval_token_valid_bindings",
+      "description": "approval with matching digest, fresh expiry, correct policy hash, matching action intent passes",
+      "query": {
+        "action": "file_transfer_upload",
+        "context": {
+          "session_id": "sess-004",
+          "agent_id": "agent-004",
+          "enforcement_mode": "fail_closed"
+        },
+        "approval": {
+          "evidence_digest": "sha256:abc123def456789012345678901234567890123456789012345678901234abcd",
+          "policy_hash": "sha256:pol987654321098765432109876543210987654321098765432109876543210fe",
+          "action_intent": "file_transfer_upload",
+          "expiry_window_secs": 300,
+          "approver_identity": "human-reviewer-01",
+          "issued_at_epoch": 1739836800,
+          "current_epoch": 1739836900,
+          "current_evidence_digest": "sha256:abc123def456789012345678901234567890123456789012345678901234abcd",
+          "current_policy_hash": "sha256:pol987654321098765432109876543210987654321098765432109876543210fe"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "stages_resolved": {
+          "fast_path": ["forbidden_path"],
+          "std_path": ["computer_use", "remote_desktop_side_channel"],
+          "deep_path": []
+        },
+        "error_code": null
+      }
+    },
+    {
+      "id": "unknown_action_fails_closed",
+      "description": "action 'screen_record' is not in the action_paths list and fails closed",
+      "query": {
+        "action": "screen_record",
+        "context": {
+          "session_id": "sess-005",
+          "agent_id": "agent-005",
+          "enforcement_mode": "fail_closed"
+        },
+        "approval": null
+      },
+      "expected": {
+        "result": "fail",
+        "stages_resolved": null,
+        "error_code": "POL_ACTION_UNKNOWN"
+      }
+    },
+    {
+      "id": "missing_policy_context_fails_closed",
+      "description": "no session_id or agent_id in context fails closed",
+      "query": {
+        "action": "connect",
+        "context": {},
+        "approval": null
+      },
+      "expected": {
+        "result": "fail",
+        "stages_resolved": null,
+        "error_code": "POL_CONTEXT_MISSING"
+      }
+    },
+    {
+      "id": "expired_approval_fails_closed",
+      "description": "approval token past expiry window fails closed",
+      "query": {
+        "action": "file_transfer_upload",
+        "context": {
+          "session_id": "sess-007",
+          "agent_id": "agent-007",
+          "enforcement_mode": "fail_closed"
+        },
+        "approval": {
+          "evidence_digest": "sha256:abc123def456789012345678901234567890123456789012345678901234abcd",
+          "policy_hash": "sha256:pol987654321098765432109876543210987654321098765432109876543210fe",
+          "action_intent": "file_transfer_upload",
+          "expiry_window_secs": 300,
+          "approver_identity": "human-reviewer-01",
+          "issued_at_epoch": 1739836800,
+          "current_epoch": 1739837200,
+          "current_evidence_digest": "sha256:abc123def456789012345678901234567890123456789012345678901234abcd",
+          "current_policy_hash": "sha256:pol987654321098765432109876543210987654321098765432109876543210fe"
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "stages_resolved": null,
+        "error_code": "POL_APPROVAL_EXPIRED"
+      }
+    },
+    {
+      "id": "approval_digest_mismatch_fails_closed",
+      "description": "evidence changed after approval — current digest does not match token digest",
+      "query": {
+        "action": "file_transfer_upload",
+        "context": {
+          "session_id": "sess-008",
+          "agent_id": "agent-008",
+          "enforcement_mode": "fail_closed"
+        },
+        "approval": {
+          "evidence_digest": "sha256:abc123def456789012345678901234567890123456789012345678901234abcd",
+          "policy_hash": "sha256:pol987654321098765432109876543210987654321098765432109876543210fe",
+          "action_intent": "file_transfer_upload",
+          "expiry_window_secs": 300,
+          "approver_identity": "human-reviewer-01",
+          "issued_at_epoch": 1739836800,
+          "current_epoch": 1739836900,
+          "current_evidence_digest": "sha256:ffff00001111222233334444555566667777888899990000aaaabbbbccccdddd",
+          "current_policy_hash": "sha256:pol987654321098765432109876543210987654321098765432109876543210fe"
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "stages_resolved": null,
+        "error_code": "POL_APPROVAL_DIGEST_MISMATCH"
+      }
+    },
+    {
+      "id": "unresolved_stage_fails_closed",
+      "description": "action maps to no guard in any stage — stage resolution is empty",
+      "query": {
+        "action": "disconnect",
+        "context": {
+          "session_id": "sess-009",
+          "agent_id": "agent-009",
+          "enforcement_mode": "fail_closed"
+        },
+        "approval": null,
+        "override_stage_map": {
+          "disconnect": {
+            "fast_path": [],
+            "std_path": [],
+            "deep_path": []
+          }
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "stages_resolved": null,
+        "error_code": "POL_STAGE_UNRESOLVED"
+      }
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+suite_id: provider-conformance-suite
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+# Supported provider translators.
+providers:
+  - openai
+  - claude
+  - openclaw
+
+# Canonical CUA intents that all provider translators must support.
+canonical_intents:
+  - click_element
+  - type_text
+  - navigate_url
+  - take_screenshot
+  - read_clipboard
+  - transfer_file
+
+# Required parity fields: these canonical output fields must be identical
+# across all providers for the same intent.
+parity_fields:
+  - eventType
+  - data.cuaAction
+  - data.direction
+
+# Intent-to-canonical-event mapping.
+# Each intent maps to a canonical eventType and cuaAction used by the policy engine.
+intent_canonical_map:
+  click_element:
+    eventType: input.inject
+    cuaAction: click
+    direction: null
+  type_text:
+    eventType: input.inject
+    cuaAction: type
+    direction: null
+  navigate_url:
+    eventType: remote.session.connect
+    cuaAction: navigate
+    direction: outbound
+  take_screenshot:
+    eventType: remote.clipboard
+    cuaAction: screenshot
+    direction: read
+  read_clipboard:
+    eventType: remote.clipboard
+    cuaAction: clipboard_read
+    direction: read
+  transfer_file:
+    eventType: remote.file_transfer
+    cuaAction: file_transfer
+    direction: upload
+
+# Provider-specific input schemas.
+# Each provider sends actions in its own format; the translator normalizes them.
+provider_input_schemas:
+  openai:
+    tool_name: computer_use
+    action_field: action
+    action_values:
+      click_element: click
+      type_text: type
+      navigate_url: navigate
+      take_screenshot: screenshot
+      read_clipboard: clipboard_read
+      transfer_file: file_transfer
+    coordinate_fields:
+      x: x
+      y: y
+    text_field: text
+    url_field: url
+  claude:
+    tool_name: computer
+    action_field: action
+    action_values:
+      click_element: mouse_click
+      type_text: key_type
+      navigate_url: navigate
+      take_screenshot: screenshot
+      read_clipboard: clipboard_read
+      transfer_file: file_transfer
+    coordinate_fields:
+      x: coordinate_x
+      y: coordinate_y
+    text_field: text
+    url_field: url
+  openclaw:
+    tool_name: cua_action
+    action_field: intent
+    action_values:
+      click_element: click
+      type_text: type
+      navigate_url: navigate
+      take_screenshot: screenshot
+      read_clipboard: clipboard_read
+      transfer_file: file_transfer
+    coordinate_fields:
+      x: x
+      y: y
+    text_field: text
+    url_field: url
+
+# Fail-closed error codes.
+fail_closed_codes:
+  provider_unknown: PRV_PROVIDER_UNKNOWN
+  intent_unknown: PRV_INTENT_UNKNOWN
+  parity_violation: PRV_PARITY_VIOLATION
+  translation_error: PRV_TRANSLATION_ERROR
+  missing_required_field: PRV_MISSING_REQUIRED_FIELD

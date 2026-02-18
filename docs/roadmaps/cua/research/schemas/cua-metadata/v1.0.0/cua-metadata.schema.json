@@ -1,0 +1,280 @@
+{
+  "$id": "https://clawdstrike.dev/schemas/cua-metadata/v1.0.0/cua-metadata.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Clawdstrike CUA Metadata Extension v1.0.0",
+  "description": "Schema for receipt.metadata when receipt_profile is cua.v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_profile",
+    "cua_schema_version",
+    "cua"
+  ],
+  "properties": {
+    "receipt_profile": {
+      "const": "cua.v1"
+    },
+    "cua_schema_version": {
+      "const": "1.0.0"
+    },
+    "cua": {
+      "$ref": "#/$defs/cua_envelope"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^(sha256:[0-9a-f]{64}|0x[0-9a-f]{64})$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "observe",
+        "guardrail",
+        "fail_closed"
+      ]
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$"
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "action_kind": {
+      "type": "string",
+      "enum": [
+        "navigate",
+        "click",
+        "type",
+        "scroll",
+        "key_chord",
+        "drag",
+        "upload",
+        "download",
+        "approval_request"
+      ]
+    },
+    "action_summary_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "count"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/action_kind"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "attestation_claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_digest",
+        "build_digest",
+        "session_nonce"
+      ],
+      "properties": {
+        "runtime_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "build_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "session_nonce": {
+          "$ref": "#/$defs/nonce"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "issuer",
+        "nonce",
+        "issued_at",
+        "not_before",
+        "expires_at",
+        "report_digest",
+        "claims"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "nitro_enclave",
+            "tpm2_quote",
+            "sev_snp",
+            "tdx_quote"
+          ]
+        },
+        "issuer": {
+          "type": "string",
+          "format": "uri"
+        },
+        "nonce": {
+          "$ref": "#/$defs/nonce"
+        },
+        "issued_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "not_before": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "report_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "claims": {
+          "$ref": "#/$defs/attestation_claims"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gateway_id",
+        "key_id",
+        "attestation"
+      ],
+      "properties": {
+        "gateway_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attestation": {
+          "$ref": "#/$defs/attestation"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "run_id",
+        "mode",
+        "started_at",
+        "ended_at",
+        "event_count"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "$ref": "#/$defs/mode"
+        },
+        "started_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "event_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "genesis_hash",
+        "final_event_hash",
+        "total_events",
+        "action_summary"
+      ],
+      "properties": {
+        "genesis_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "final_event_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "total_events": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action_summary": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/action_summary_item"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "cua_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gateway",
+        "session",
+        "chain",
+        "events_ref"
+      ],
+      "properties": {
+        "gateway": {
+          "$ref": "#/$defs/gateway"
+        },
+        "session": {
+          "$ref": "#/$defs/session"
+        },
+        "chain": {
+          "$ref": "#/$defs/chain"
+        },
+        "events_ref": {
+          "type": "string",
+          "pattern": "^cas://sha256:[0-9a-f]{64}/.+$"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    }
+  }
+}

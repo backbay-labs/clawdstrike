@@ -1,0 +1,116 @@
+{
+  "mapping": "docs/roadmaps/cua/research/policy_event_mapping.yaml",
+  "results": [
+    {
+      "actual": {
+        "details": {
+          "final_chain_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "required_transition": "reconnect",
+          "scenario": "reconnect_chain_continuity"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "result": "pass"
+      },
+      "id": "reconnect_chain_continuity_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "final_chain_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "required_transition": "packet_loss_recover",
+          "scenario": "packet_loss_chain_continuity"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "result": "pass"
+      },
+      "id": "packet_loss_chain_continuity_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "final_chain_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "required_transition": "gateway_restart_recover",
+          "scenario": "gateway_restart_chain_continuity"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "result": "pass"
+      },
+      "id": "gateway_restart_chain_continuity_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "index": 2,
+          "scenario": "reconnect_chain_break"
+        },
+        "error_code": "CONT_CHAIN_BREAK",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "CONT_CHAIN_BREAK",
+        "result": "fail"
+      },
+      "id": "reconnect_chain_break_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "index": 3,
+          "scenario": "orphan_action_after_reconnect"
+        },
+        "error_code": "CONT_ORPHAN_ACTION_DETECTED",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "CONT_ORPHAN_ACTION_DETECTED",
+        "result": "fail"
+      },
+      "id": "orphan_action_after_reconnect_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "index": 2,
+          "scenario": "packet_loss_missing_audit"
+        },
+        "error_code": "CONT_AUDIT_INCOMPLETE",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "CONT_AUDIT_INCOMPLETE",
+        "result": "fail"
+      },
+      "id": "packet_loss_missing_audit_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "CONT_SCENARIO_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "CONT_SCENARIO_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_scenario_fails_closed",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/remote_session_continuity_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 7,
+    "total": 7
+  }
+}

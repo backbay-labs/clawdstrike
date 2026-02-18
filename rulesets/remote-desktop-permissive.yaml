@@ -1,0 +1,28 @@
+# Remote Desktop Permissive Ruleset
+# Development-friendly CUA policy: allows all channels, observe-only enforcement
+version: "1.2.0"
+name: Remote Desktop Permissive
+description: Permissive CUA security rules for development and testing
+extends: remote-desktop
+
+guards:
+  computer_use:
+    enabled: true
+    mode: observe
+
+  remote_desktop_side_channel:
+    clipboard_enabled: true
+    file_transfer_enabled: true
+    session_share_enabled: true
+
+  input_injection_capability:
+    allowed_input_types:
+      - "keyboard"
+      - "mouse"
+      - "touch"
+    require_postcondition_probe: false
+
+settings:
+  fail_fast: false
+  verbose_logging: true
+  session_timeout_secs: 7200  # 2 hours

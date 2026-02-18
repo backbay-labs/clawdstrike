@@ -1,0 +1,18 @@
+{
+  "package": "cua-metadata",
+  "description": "Versioned schema package for receipt.metadata when receipt_profile is cua.v1.",
+  "default_version": "1.0.0",
+  "supported": [
+    {
+      "version": "1.0.0",
+      "receipt_profile": "cua.v1",
+      "schema": "./v1.0.0/cua-metadata.schema.json",
+      "status": "active"
+    }
+  ],
+  "fail_closed": {
+    "unknown_receipt_profile": true,
+    "unknown_schema_version": true,
+    "unknown_action_kind": true
+  }
+}

@@ -1,0 +1,70 @@
+suite_id: remote-session-continuity-suite
+suite_version: 1
+updated_at: "2026-02-18T00:00:00Z"
+
+mapping_ref: docs/roadmaps/cua/research/policy_event_mapping.yaml
+
+required_transitions:
+  - reconnect
+  - packet_loss_recover
+  - gateway_restart_recover
+
+allowed_events:
+  - connect
+  - input
+  - reconnect
+  - packet_loss_recover
+  - gateway_restart_recover
+  - disconnect
+
+event_contracts:
+  connect:
+    policy_event: remote.session.connect
+    audit_event: audit.remote.session.connect
+  input:
+    policy_event: input.inject
+    audit_event: audit.input.inject
+  reconnect:
+    policy_event: remote.session.reconnect
+    audit_event: audit.remote.session.reconnect
+    requires_continuity_hashes: true
+  packet_loss_recover:
+    policy_event: remote.session.reconnect
+    audit_event: audit.remote.session.reconnect
+  gateway_restart_recover:
+    policy_event: remote.session.reconnect
+    audit_event: audit.remote.session.reconnect
+    requires_continuity_hashes: true
+  disconnect:
+    policy_event: remote.session.disconnect
+    audit_event: audit.remote.session.disconnect
+
+scenarios:
+  reconnect_chain_continuity:
+    required_transition: reconnect
+    expected_result: pass
+  packet_loss_chain_continuity:
+    required_transition: packet_loss_recover
+    expected_result: pass
+  gateway_restart_chain_continuity:
+    required_transition: gateway_restart_recover
+    expected_result: pass
+  reconnect_chain_break:
+    required_transition: reconnect
+    expected_result: fail
+    expected_error_code: CONT_CHAIN_BREAK
+  orphan_action_after_reconnect:
+    required_transition: reconnect
+    expected_result: fail
+    expected_error_code: CONT_ORPHAN_ACTION_DETECTED
+  packet_loss_missing_audit:
+    required_transition: packet_loss_recover
+    expected_result: fail
+    expected_error_code: CONT_AUDIT_INCOMPLETE
+
+fail_closed_codes:
+  suite_invalid: CONT_SUITE_INVALID
+  scenario_unknown: CONT_SCENARIO_UNKNOWN
+  chain_break: CONT_CHAIN_BREAK
+  orphan_action_detected: CONT_ORPHAN_ACTION_DETECTED
+  audit_incomplete: CONT_AUDIT_INCOMPLETE

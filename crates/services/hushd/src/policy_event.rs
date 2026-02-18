@@ -16,6 +16,14 @@ pub enum PolicyEventType {
     ToolCall,
     SecretAccess,
     Custom,
+    // CUA (Computer Use Agent) event types
+    RemoteSessionConnect,
+    RemoteSessionDisconnect,
+    RemoteSessionReconnect,
+    InputInject,
+    ClipboardTransfer,
+    FileTransfer,
+    SessionShare,
     Other(String),
 }
 
@@ -30,6 +38,13 @@ impl PolicyEventType {
             Self::ToolCall => "tool_call",
             Self::SecretAccess => "secret_access",
             Self::Custom => "custom",
+            Self::RemoteSessionConnect => "remote.session.connect",
+            Self::RemoteSessionDisconnect => "remote.session.disconnect",
+            Self::RemoteSessionReconnect => "remote.session.reconnect",
+            Self::InputInject => "input.inject",
+            Self::ClipboardTransfer => "remote.clipboard",
+            Self::FileTransfer => "remote.file_transfer",
+            Self::SessionShare => "remote.session_share",
             Self::Other(s) => s.as_str(),
         }
     }
@@ -68,6 +83,13 @@ impl Clone for PolicyEventType {
             Self::ToolCall => Self::ToolCall,
             Self::SecretAccess => Self::SecretAccess,
             Self::Custom => Self::Custom,
+            Self::RemoteSessionConnect => Self::RemoteSessionConnect,
+            Self::RemoteSessionDisconnect => Self::RemoteSessionDisconnect,
+            Self::RemoteSessionReconnect => Self::RemoteSessionReconnect,
+            Self::InputInject => Self::InputInject,
+            Self::ClipboardTransfer => Self::ClipboardTransfer,
+            Self::FileTransfer => Self::FileTransfer,
+            Self::SessionShare => Self::SessionShare,
             Self::Other(s) => Self::Other(s.clone()),
         }
     }
@@ -88,6 +110,13 @@ impl<'de> Deserialize<'de> for PolicyEventType {
             "tool_call" => Self::ToolCall,
             "secret_access" => Self::SecretAccess,
             "custom" => Self::Custom,
+            "remote.session.connect" => Self::RemoteSessionConnect,
+            "remote.session.disconnect" => Self::RemoteSessionDisconnect,
+            "remote.session.reconnect" => Self::RemoteSessionReconnect,
+            "input.inject" => Self::InputInject,
+            "remote.clipboard" => Self::ClipboardTransfer,
+            "remote.file_transfer" => Self::FileTransfer,
+            "remote.session_share" => Self::SessionShare,
             other => Self::Other(other.to_string()),
         })
     }
@@ -134,6 +163,13 @@ impl PolicyEvent {
             (PolicyEventType::ToolCall, PolicyEventData::Tool(_)) => {}
             (PolicyEventType::SecretAccess, PolicyEventData::Secret(_)) => {}
             (PolicyEventType::Custom, PolicyEventData::Custom(_)) => {}
+            (PolicyEventType::RemoteSessionConnect, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteSessionDisconnect, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteSessionReconnect, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::InputInject, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::ClipboardTransfer, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::FileTransfer, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::SessionShare, PolicyEventData::Cua(_)) => {}
             (PolicyEventType::Other(_), _) => {}
             (event_type, data) => {
                 anyhow::bail!(
@@ -165,6 +201,7 @@ pub enum PolicyEventData {
     Tool(ToolEventData),
     Secret(SecretEventData),
     Custom(CustomEventData),
+    Cua(CuaEventData),
     Other {
         type_name: String,
         value: serde_json::Value,
@@ -181,6 +218,7 @@ impl PolicyEventData {
             Self::Tool(_) => "tool",
             Self::Secret(_) => "secret",
             Self::Custom(_) => "custom",
+            Self::Cua(_) => "cua",
             Self::Other { type_name, .. } => type_name.as_str(),
         }
     }
@@ -212,6 +250,9 @@ impl Serialize for PolicyEventData {
             }
             Self::Custom(inner) => {
                 serialize_typed_data("custom", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Cua(inner) => {
+                serialize_typed_data("cua", inner).map_err(serde::ser::Error::custom)?
             }
             Self::Other { value, .. } => value.clone(),
         };
@@ -255,6 +296,9 @@ impl<'de> Deserialize<'de> for PolicyEventData {
                 .map_err(serde::de::Error::custom),
             "custom" => serde_json::from_value::<CustomEventData>(value)
                 .map(Self::Custom)
+                .map_err(serde::de::Error::custom),
+            "cua" => serde_json::from_value::<CuaEventData>(value)
+                .map(Self::Cua)
                 .map_err(serde::de::Error::custom),
             other => Ok(Self::Other {
                 type_name: other.to_string(),
@@ -355,6 +399,34 @@ pub struct SecretEventData {
 pub struct CustomEventData {
     #[serde(alias = "custom_type")]
     pub custom_type: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CuaEventData {
+    /// CUA sub-type: "connect", "disconnect", "reconnect", "inject", "clipboard", "file_transfer"
+    #[serde(alias = "cua_action")]
+    pub cua_action: String,
+    /// Direction for clipboard/file ops: "read", "write", "upload", "download"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    /// Session continuity hash from previous session (reconnect flows)
+    #[serde(
+        default,
+        alias = "continuity_prev_session_hash",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub continuity_prev_session_hash: Option<String>,
+    /// Post-condition probe result hash
+    #[serde(
+        default,
+        alias = "postcondition_probe_hash",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub postcondition_probe_hash: Option<String>,
+    /// Additional CUA-specific fields
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -576,6 +648,22 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
             },
             None,
         ),
+        (
+            PolicyEventType::RemoteSessionConnect
+            | PolicyEventType::RemoteSessionDisconnect
+            | PolicyEventType::RemoteSessionReconnect
+            | PolicyEventType::InputInject
+            | PolicyEventType::ClipboardTransfer
+            | PolicyEventType::FileTransfer
+            | PolicyEventType::SessionShare,
+            PolicyEventData::Cua(_),
+        ) => (
+            MappedGuardAction::Custom {
+                custom_type: event.event_type.as_str().to_string(),
+                data: data_json,
+            },
+            None,
+        ),
         (PolicyEventType::Other(event_type), _) => {
             anyhow::bail!("unsupported eventType: {}", event_type);
         }
@@ -651,4 +739,274 @@ fn is_safe_shell_word(word: &str) -> bool {
                 | b','
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
+    use super::*;
+    use chrono::Utc;
+
+    fn cua_event(event_type: &str, cua_data: CuaEventData) -> PolicyEvent {
+        PolicyEvent {
+            event_id: "test-001".to_string(),
+            event_type: serde_json::from_value(serde_json::Value::String(event_type.to_string()))
+                .unwrap(),
+            timestamp: Utc::now(),
+            session_id: Some("sess-001".to_string()),
+            data: PolicyEventData::Cua(cua_data),
+            metadata: None,
+            context: None,
+        }
+    }
+
+    fn base_cua_data(cua_action: &str) -> CuaEventData {
+        CuaEventData {
+            cua_action: cua_action.to_string(),
+            direction: None,
+            continuity_prev_session_hash: None,
+            postcondition_probe_hash: None,
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    #[test]
+    fn test_cua_connect_event_maps_to_custom_action() {
+        let event = cua_event("remote.session.connect", base_cua_data("connect"));
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.session.connect");
+                assert_eq!(data["cuaAction"], "connect");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_reconnect_preserves_continuity_hash() {
+        let mut data = base_cua_data("reconnect");
+        data.continuity_prev_session_hash = Some("sha256:abc123".to_string());
+
+        let event = cua_event("remote.session.reconnect", data);
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.session.reconnect");
+                assert_eq!(data["continuityPrevSessionHash"], "sha256:abc123");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_input_preserves_probe_hash() {
+        let mut data = base_cua_data("inject");
+        data.postcondition_probe_hash = Some("sha256:probe999".to_string());
+
+        let event = cua_event("input.inject", data);
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "input.inject");
+                assert_eq!(data["postconditionProbeHash"], "sha256:probe999");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_clipboard_preserves_direction() {
+        let mut data = base_cua_data("clipboard");
+        data.direction = Some("read".to_string());
+
+        let event = cua_event("remote.clipboard", data);
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.clipboard");
+                assert_eq!(data["direction"], "read");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_file_transfer_preserves_direction() {
+        let mut data = base_cua_data("file_transfer");
+        data.direction = Some("upload".to_string());
+
+        let event = cua_event("remote.file_transfer", data);
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.file_transfer");
+                assert_eq!(data["direction"], "upload");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_unknown_cua_subtype_still_maps() {
+        // Unknown cua_action values should still map through Custom since
+        // the event type itself is recognized.
+        let data = base_cua_data("unknown_subtype");
+        let event = cua_event("remote.session.connect", data);
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.session.connect");
+                assert_eq!(data["cuaAction"], "unknown_subtype");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_event_type_mismatch_rejected() {
+        // RemoteSessionConnect with File data should fail validation.
+        let event = PolicyEvent {
+            event_id: "test-mismatch".to_string(),
+            event_type: PolicyEventType::RemoteSessionConnect,
+            timestamp: Utc::now(),
+            session_id: None,
+            data: PolicyEventData::File(FileEventData {
+                path: "/etc/passwd".to_string(),
+                operation: None,
+                content_base64: None,
+                content: None,
+                content_hash: None,
+            }),
+            metadata: None,
+            context: None,
+        };
+
+        let err = map_policy_event(&event).unwrap_err();
+        assert!(
+            err.to_string().contains("does not match"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_cua_event_roundtrip_serialization() {
+        let mut data = base_cua_data("connect");
+        data.direction = Some("write".to_string());
+        data.continuity_prev_session_hash = Some("sha256:prev".to_string());
+        data.postcondition_probe_hash = Some("sha256:probe".to_string());
+        data.extra
+            .insert("customField".to_string(), serde_json::json!("value"));
+
+        let event = cua_event("remote.session.connect", data);
+        let json = serde_json::to_value(&event).unwrap();
+        let roundtripped: PolicyEvent = serde_json::from_value(json).unwrap();
+
+        // Core fields must match exactly.
+        assert_eq!(event.event_id, roundtripped.event_id);
+        assert_eq!(event.event_type, roundtripped.event_type);
+        assert_eq!(event.session_id, roundtripped.session_id);
+
+        // Verify the CUA data fields survive roundtrip (the `type` discriminator
+        // ends up in `extra` after deserialization, so compare field-by-field).
+        match (&event.data, &roundtripped.data) {
+            (PolicyEventData::Cua(orig), PolicyEventData::Cua(rt)) => {
+                assert_eq!(orig.cua_action, rt.cua_action);
+                assert_eq!(orig.direction, rt.direction);
+                assert_eq!(
+                    orig.continuity_prev_session_hash,
+                    rt.continuity_prev_session_hash
+                );
+                assert_eq!(orig.postcondition_probe_hash, rt.postcondition_probe_hash);
+                assert_eq!(orig.extra.get("customField"), rt.extra.get("customField"));
+            }
+            _ => panic!("expected Cua data in both original and roundtripped"),
+        }
+    }
+
+    #[test]
+    fn test_cua_disconnect_maps_correctly() {
+        let event = cua_event("remote.session.disconnect", base_cua_data("disconnect"));
+        let mapped = map_policy_event(&event).unwrap();
+        assert_eq!(mapped.action.action_type(), "custom");
+        assert_eq!(mapped.action.target(), Some("remote.session.disconnect".to_string()));
+    }
+
+    #[test]
+    fn test_cua_session_share_maps_correctly() {
+        let event = cua_event("remote.session_share", base_cua_data("session_share"));
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.session_share");
+                assert_eq!(data["cuaAction"], "session_share");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_event_type_as_str_roundtrips() {
+        let types = vec![
+            PolicyEventType::RemoteSessionConnect,
+            PolicyEventType::RemoteSessionDisconnect,
+            PolicyEventType::RemoteSessionReconnect,
+            PolicyEventType::InputInject,
+            PolicyEventType::ClipboardTransfer,
+            PolicyEventType::FileTransfer,
+            PolicyEventType::SessionShare,
+        ];
+        let expected_strs = vec![
+            "remote.session.connect",
+            "remote.session.disconnect",
+            "remote.session.reconnect",
+            "input.inject",
+            "remote.clipboard",
+            "remote.file_transfer",
+            "remote.session_share",
+        ];
+
+        for (et, expected) in types.iter().zip(expected_strs.iter()) {
+            assert_eq!(et.as_str(), *expected);
+            // Deserialize the string representation and verify it matches.
+            let json = serde_json::Value::String(expected.to_string());
+            let deserialized: PolicyEventType = serde_json::from_value(json).unwrap();
+            assert_eq!(deserialized, *et);
+        }
+    }
+
+    #[test]
+    fn test_cua_data_deserializes_with_snake_case_aliases() {
+        let json = serde_json::json!({
+            "type": "cua",
+            "cua_action": "reconnect",
+            "continuity_prev_session_hash": "sha256:prev_alias",
+            "postcondition_probe_hash": "sha256:probe_alias"
+        });
+
+        let data: PolicyEventData = serde_json::from_value(json).unwrap();
+        match data {
+            PolicyEventData::Cua(cua) => {
+                assert_eq!(cua.cua_action, "reconnect");
+                assert_eq!(
+                    cua.continuity_prev_session_hash.as_deref(),
+                    Some("sha256:prev_alias")
+                );
+                assert_eq!(
+                    cua.postcondition_probe_hash.as_deref(),
+                    Some("sha256:probe_alias")
+                );
+            }
+            other => panic!("expected Cua data, got {:?}", other),
+        }
+    }
 }

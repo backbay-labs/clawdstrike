@@ -1,0 +1,198 @@
+{
+  "results": [
+    {
+      "actual": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [
+            "egress_allowlist"
+          ],
+          "std_path": [
+            "computer_use"
+          ]
+        }
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [
+            "egress_allowlist"
+          ],
+          "std_path": [
+            "computer_use"
+          ]
+        }
+      },
+      "id": "connect_resolves_fast_and_std_path",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [],
+          "std_path": [
+            "computer_use",
+            "input_injection_capability"
+          ]
+        }
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [],
+          "std_path": [
+            "computer_use",
+            "input_injection_capability"
+          ]
+        }
+      },
+      "id": "input_resolves_std_path_with_probe",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [],
+          "std_path": [
+            "computer_use",
+            "remote_desktop_side_channel"
+          ]
+        }
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [],
+          "std_path": [
+            "computer_use",
+            "remote_desktop_side_channel"
+          ]
+        }
+      },
+      "id": "clipboard_write_resolves_with_redaction",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [
+            "forbidden_path"
+          ],
+          "std_path": [
+            "computer_use",
+            "remote_desktop_side_channel"
+          ]
+        }
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass",
+        "stages_resolved": {
+          "deep_path": [],
+          "fast_path": [
+            "forbidden_path"
+          ],
+          "std_path": [
+            "computer_use",
+            "remote_desktop_side_channel"
+          ]
+        }
+      },
+      "id": "approval_token_valid_bindings",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "POL_ACTION_UNKNOWN",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "expected": {
+        "error_code": "POL_ACTION_UNKNOWN",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "id": "unknown_action_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "POL_CONTEXT_MISSING",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "expected": {
+        "error_code": "POL_CONTEXT_MISSING",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "id": "missing_policy_context_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "POL_APPROVAL_EXPIRED",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "expected": {
+        "error_code": "POL_APPROVAL_EXPIRED",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "id": "expired_approval_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "POL_APPROVAL_DIGEST_MISMATCH",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "expected": {
+        "error_code": "POL_APPROVAL_DIGEST_MISMATCH",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "id": "approval_digest_mismatch_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "POL_STAGE_UNRESOLVED",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "expected": {
+        "error_code": "POL_STAGE_UNRESOLVED",
+        "result": "fail",
+        "stages_resolved": null
+      },
+      "id": "unresolved_stage_fails_closed",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/cua_policy_evaluation_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

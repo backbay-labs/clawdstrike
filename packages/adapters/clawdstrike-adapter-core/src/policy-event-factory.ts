@@ -1,4 +1,4 @@
-import type { EventType, PolicyEvent } from './types.js';
+import type { CuaEventData, EventType, PolicyEvent } from './types.js';
 import { parseNetworkTarget } from './network-target.js';
 
 function coerceValidPort(value: unknown): number | null {
@@ -90,6 +90,90 @@ export class PolicyEventFactory {
 
   registerMapping(pattern: RegExp, eventType: EventType): void {
     this.toolTypeMapping.set(pattern, eventType);
+  }
+
+  createCuaConnectEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.session.connect', 'session.connect', sessionId, data);
+  }
+
+  createCuaDisconnectEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.session.disconnect', 'session.disconnect', sessionId, data);
+  }
+
+  createCuaReconnectEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.session.reconnect', 'session.reconnect', sessionId, data);
+  }
+
+  createCuaInputInjectEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('input.inject', 'input.inject', sessionId, data);
+  }
+
+  createCuaClipboardEvent(
+    sessionId: string,
+    direction: CuaEventData['direction'],
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction' | 'direction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.clipboard', 'clipboard', sessionId, { ...data, direction });
+  }
+
+  createCuaFileTransferEvent(
+    sessionId: string,
+    direction: CuaEventData['direction'],
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction' | 'direction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.file_transfer', 'file_transfer', sessionId, { ...data, direction });
+  }
+
+  createCuaSessionShareEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.session_share', 'session_share', sessionId, data);
+  }
+
+  private buildCuaEvent(
+    eventType: EventType,
+    cuaAction: string,
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    const raw = data ?? {};
+    const direction = raw.direction as CuaEventData['direction'];
+    const continuityPrevSessionHash = raw.continuityPrevSessionHash as string | undefined;
+    const postconditionProbeHash = raw.postconditionProbeHash as string | undefined;
+    const { direction: _d, continuityPrevSessionHash: _c, postconditionProbeHash: _p, ...extra } = raw;
+    const eventData: CuaEventData = {
+      type: 'cua',
+      cuaAction,
+      ...(direction !== undefined && { direction }),
+      ...(continuityPrevSessionHash !== undefined && { continuityPrevSessionHash }),
+      ...(postconditionProbeHash !== undefined && { postconditionProbeHash }),
+      ...extra,
+    };
+
+    return {
+      eventId: this.generateEventId(),
+      eventType,
+      timestamp: new Date().toISOString(),
+      sessionId,
+      data: eventData,
+      metadata: {
+        source: 'adapter-core',
+        cuaAction,
+      },
+    };
   }
 
   private createEventData(

@@ -21,6 +21,7 @@ export { checkPolicy, policyCheckTool } from './tools/policy-check.js';
 // Hooks
 export { default as agentBootstrapHandler } from './hooks/agent-bootstrap/handler.js';
 export { default as toolPreflightHandler } from './hooks/tool-preflight/handler.js';
+export { default as cuaBridgeHandler, isCuaToolCall, CUA_ERROR_CODES } from './hooks/cua-bridge/handler.js';
 
 // Audit
 export { AuditStore, type AuditEvent } from './audit/store.js';

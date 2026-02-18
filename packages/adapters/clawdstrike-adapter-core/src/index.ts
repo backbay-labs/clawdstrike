@@ -8,6 +8,7 @@ export type { PolicyEngineLike } from './engine.js';
 
 export type {
   ClawdstrikeConfig,
+  CuaEventData,
   Decision,
   DecisionStatus,
   EvaluationMode,

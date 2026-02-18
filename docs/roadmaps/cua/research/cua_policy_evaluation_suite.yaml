@@ -1,0 +1,154 @@
+suite_id: cua-policy-evaluation
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+description: >
+  Defines the CUA-specific policy evaluation model for Clawdstrike. Every CUA
+  action path resolves to a deterministic evaluation stage pipeline and guard
+  result set. Approval tokens bind to immutable evidence digests, policy hashes,
+  action intents, and expiry windows. Unknown action types, missing context, and
+  stale or mismatched approvals fail closed with stable error codes. Policy
+  evaluation output is reproducible across Rust and TypeScript integration
+  boundaries for the same canonical input.
+
+policy_event_mapping_ref: docs/roadmaps/cua/research/policy_event_mapping.yaml
+research_doc_ref: docs/roadmaps/cua/research/08-policy-engine.md
+
+action_paths:
+  - connect
+  - input
+  - clipboard_read
+  - clipboard_write
+  - file_transfer_upload
+  - file_transfer_download
+  - session_share
+  - reconnect
+  - disconnect
+
+evaluation_stages:
+  fast_path:
+    description: "Path and egress guards — low-latency, synchronous checks"
+    guards:
+      - forbidden_path
+      - path_allowlist
+      - egress_allowlist
+      - secret_leak
+  std_path:
+    description: "Computer-use, side-channel, and injection guards — standard synchronous checks"
+    guards:
+      - computer_use
+      - remote_desktop_side_channel
+      - input_injection_capability
+      - patch_integrity
+      - shell_command
+      - mcp_tool
+  deep_path:
+    description: "Optional async guards — LLM judges, external scanners"
+    guards:
+      - prompt_injection
+      - jailbreak
+      - virus_total
+      - safe_browsing
+
+action_stage_map:
+  connect:
+    fast_path:
+      - egress_allowlist
+    std_path:
+      - computer_use
+    deep_path: []
+  input:
+    fast_path: []
+    std_path:
+      - computer_use
+      - input_injection_capability
+    deep_path: []
+  clipboard_read:
+    fast_path: []
+    std_path:
+      - computer_use
+      - remote_desktop_side_channel
+    deep_path: []
+  clipboard_write:
+    fast_path: []
+    std_path:
+      - computer_use
+      - remote_desktop_side_channel
+    deep_path: []
+  file_transfer_upload:
+    fast_path:
+      - forbidden_path
+    std_path:
+      - computer_use
+      - remote_desktop_side_channel
+    deep_path: []
+  file_transfer_download:
+    fast_path:
+      - egress_allowlist
+      - forbidden_path
+    std_path:
+      - computer_use
+      - remote_desktop_side_channel
+    deep_path: []
+  session_share:
+    fast_path: []
+    std_path:
+      - computer_use
+      - remote_desktop_side_channel
+    deep_path: []
+  reconnect:
+    fast_path: []
+    std_path:
+      - computer_use
+    deep_path: []
+  disconnect:
+    fast_path: []
+    std_path:
+      - computer_use
+    deep_path: []
+
+approval_token:
+  description: >
+    Approval tokens bind to immutable evidence. A token is valid only when its
+    evidence_digest matches the current evidence state, the policy_hash matches
+    the active policy, the action_intent matches the proposed action, the
+    expiry_window_secs has not elapsed, and the approver_identity is a known
+    principal.
+  required_fields:
+    - evidence_digest
+    - policy_hash
+    - action_intent
+    - expiry_window_secs
+    - approver_identity
+  evidence_digest_algorithm: sha256
+  digest_binding: mandatory
+
+enforcement_modes:
+  - observe
+  - guardrail
+  - fail_closed
+
+cross_language_parity:
+  description: >
+    For the same canonical JSON input, the policy evaluation must produce the
+    same verdict, guard results, and error codes in both the Rust engine and
+    the TypeScript SDK. Canonical JSON follows RFC 8785.
+  requirement: same_canonical_input_same_decision
+  canonical_json: rfc8785
+
+fail_closed_codes:
+  action_unknown: POL_ACTION_UNKNOWN
+  context_missing: POL_CONTEXT_MISSING
+  approval_expired: POL_APPROVAL_EXPIRED
+  approval_digest_mismatch: POL_APPROVAL_DIGEST_MISMATCH
+  stage_unresolved: POL_STAGE_UNRESOLVED
+  parity_violation: POL_PARITY_VIOLATION
+
+context_requirements:
+  required_fields:
+    - session_id
+    - agent_id
+  optional_fields:
+    - policy_hash
+    - posture_state
+    - enforcement_mode

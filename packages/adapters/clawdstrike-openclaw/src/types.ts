@@ -39,7 +39,15 @@ export type EventType =
   | 'network_egress'
   | 'tool_call'
   | 'patch_apply'
-  | 'secret_access';
+  | 'secret_access'
+  | 'custom'
+  | 'remote.session.connect'
+  | 'remote.session.disconnect'
+  | 'remote.session.reconnect'
+  | 'input.inject'
+  | 'remote.clipboard'
+  | 'remote.file_transfer'
+  | 'remote.session_share';
 
 /**
  * Plugin configuration schema
@@ -93,7 +101,8 @@ export type EventData =
   | NetworkEventData
   | ToolEventData
   | PatchEventData
-  | SecretEventData;
+  | SecretEventData
+  | CuaEventData;
 
 /**
  * File read/write event data
@@ -175,6 +184,18 @@ export interface SecretEventData {
   secretName: string;
   /** Scope (environment, file, etc.) */
   scope: string;
+}
+
+/**
+ * CUA (Computer Use Agent) event data
+ */
+export interface CuaEventData {
+  type: 'cua';
+  cuaAction: string;
+  direction?: 'read' | 'write' | 'upload' | 'download';
+  continuityPrevSessionHash?: string;
+  postconditionProbeHash?: string;
+  [key: string]: unknown;
 }
 
 /**

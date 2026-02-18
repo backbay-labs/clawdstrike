@@ -1,0 +1,182 @@
+suite_id: trycua-connector-suite
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+description: >
+  Defines the trycua/cua connector compatibility matrix against the canonical
+  adapter-core CUA contract. Maps trycua action types to canonical flow surfaces,
+  declares support status for each flow, and specifies fail-closed codes for
+  unsupported or ambiguous mappings. This suite is consumed by the connector
+  validator harness.
+
+canonical_contract_ref: docs/roadmaps/cua/research/canonical_adapter_cua_contract.yaml
+evaluation_doc_ref: docs/roadmaps/cua/research/trycua-connector-evaluation.md
+
+# The 8 canonical flow surfaces from the adapter-core contract.
+canonical_flow_surfaces:
+  - connect
+  - disconnect
+  - reconnect
+  - input
+  - clipboard_read
+  - clipboard_write
+  - file_transfer_upload
+  - file_transfer_download
+
+# trycua action types that the connector knows how to translate.
+trycua_known_actions:
+  - click
+  - type
+  - mouse_move
+  - screenshot
+  - vm_start
+  - vm_stop
+  - clipboard_sync
+  - file_copy
+
+# Mapping from trycua action to canonical flow surface and expected policy event.
+action_flow_map:
+  click:
+    canonical_flow: input
+    policy_event_ref: input.inject
+    cuaAction: click
+    direction: null
+    status: compatible
+  type:
+    canonical_flow: input
+    policy_event_ref: input.inject
+    cuaAction: type
+    direction: null
+    status: compatible
+  mouse_move:
+    canonical_flow: input
+    policy_event_ref: input.inject
+    cuaAction: mouse_move
+    direction: null
+    status: compatible
+  screenshot:
+    canonical_flow: clipboard_read
+    policy_event_ref: remote.clipboard
+    cuaAction: screenshot
+    direction: read
+    status: compatible
+  vm_start:
+    canonical_flow: connect
+    policy_event_ref: remote.session.connect
+    cuaAction: vm_start
+    direction: outbound
+    status: partial
+    note: "trycua emits no structured connect event; connector synthesizes from VM lifecycle"
+  vm_stop:
+    canonical_flow: disconnect
+    policy_event_ref: remote.session.disconnect
+    cuaAction: vm_stop
+    direction: null
+    status: partial
+    note: "trycua emits no structured disconnect event; connector synthesizes from VM lifecycle"
+  clipboard_sync:
+    canonical_flow: null
+    policy_event_ref: remote.clipboard
+    cuaAction: clipboard_sync
+    direction: null
+    status: partial
+    note: "Bidirectional sync without explicit direction; connector must infer or fail closed"
+  file_copy:
+    canonical_flow: null
+    policy_event_ref: remote.file_transfer
+    cuaAction: file_copy
+    direction: null
+    status: partial
+    note: "Missing structured metadata (path, hash, size); connector must enrich or fail closed"
+
+# Flow surfaces with no trycua equivalent.
+unsupported_flows:
+  - reconnect
+
+# Flow surface support summary.
+flow_support_matrix:
+  connect:
+    status: partial
+    trycua_action: vm_start
+    guard_expectations:
+      - egress_allowlist
+      - computer_use
+    notes: "Synthesized from VM lifecycle; no native connect event"
+  disconnect:
+    status: partial
+    trycua_action: vm_stop
+    guard_expectations:
+      - computer_use
+    notes: "Synthesized from VM lifecycle; no native disconnect event"
+  reconnect:
+    status: unsupported
+    trycua_action: null
+    guard_expectations:
+      - computer_use
+    notes: "No trycua reconnect primitive; fails closed"
+  input:
+    status: compatible
+    trycua_actions:
+      - click
+      - type
+      - mouse_move
+    guard_expectations:
+      - computer_use
+      - input_injection_capability
+    notes: "Direct mapping; coordinates and text payloads translate cleanly"
+  clipboard_read:
+    status: partial
+    trycua_action: clipboard_sync
+    guard_expectations:
+      - computer_use
+      - remote_desktop_side_channel
+    notes: "Direction must be inferred from context; fails closed if ambiguous"
+  clipboard_write:
+    status: partial
+    trycua_action: clipboard_sync
+    guard_expectations:
+      - computer_use
+      - remote_desktop_side_channel
+    notes: "Same clipboard_sync action; direction inference required"
+  file_transfer_upload:
+    status: partial
+    trycua_action: file_copy
+    guard_expectations:
+      - forbidden_path
+      - computer_use
+      - remote_desktop_side_channel
+    notes: "Missing path/hash/size metadata; connector must enrich"
+  file_transfer_download:
+    status: partial
+    trycua_action: file_copy
+    guard_expectations:
+      - egress_allowlist
+      - forbidden_path
+      - computer_use
+      - remote_desktop_side_channel
+    notes: "Same file_copy action; direction and egress metadata required"
+
+# Required canonical output fields (from adapter-core contract).
+required_output_fields:
+  - flow
+  - outcome
+  - reason_code
+  - policy_event_ref
+  - guard_results
+  - audit_ref
+
+# Connector-specific fail-closed error codes.
+fail_closed_codes:
+  action_unknown: TCC_ACTION_UNKNOWN
+  flow_unsupported: TCC_FLOW_UNSUPPORTED
+  direction_ambiguous: TCC_DIRECTION_AMBIGUOUS
+  evidence_missing: TCC_EVIDENCE_MISSING
+  session_id_missing: TCC_SESSION_ID_MISSING
+
+# Canonical adapter-core fail-closed codes (inherited).
+inherited_fail_closed_codes:
+  flow_unknown: ADC_FLOW_UNKNOWN
+  outcome_invalid: ADC_OUTCOME_INVALID
+  missing_policy_ref: ADC_MISSING_POLICY_REF
+  guard_result_malformed: ADC_GUARD_RESULT_MALFORMED
+  reason_code_unknown: ADC_REASON_CODE_UNKNOWN

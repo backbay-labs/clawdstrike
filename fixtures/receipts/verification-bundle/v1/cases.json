@@ -1,0 +1,505 @@
+{
+  "suite": "docs/roadmaps/cua/research/verification_bundle_format.yaml",
+  "cases": [
+    {
+      "case_id": "complete_bundle_software_only",
+      "description": "Full verification bundle with software-only (none) attestation passes all checks.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-001",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T00:00:00Z",
+          "content_hash": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+          "verdict": {
+            "passed": true,
+            "gate_id": "cua-default"
+          },
+          "signatures": {
+            "signer": "ed25519:abc123def456"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "none",
+          "issued_at": "2026-02-18T00:00:00Z",
+          "note": "Software-only signing, no hardware attestation"
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-default.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T00:00:01Z"
+            },
+            {
+              "checkpoint_type": "signature_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T00:00:02Z"
+            },
+            {
+              "checkpoint_type": "policy_evaluation",
+              "status": "pass",
+              "timestamp": "2026-02-18T00:00:03Z"
+            },
+            {
+              "checkpoint_type": "attestation_verification",
+              "status": "skip",
+              "timestamp": "2026-02-18T00:00:04Z"
+            },
+            {
+              "checkpoint_type": "timestamp_check",
+              "status": "pass",
+              "timestamp": "2026-02-18T00:00:05Z"
+            },
+            {
+              "checkpoint_type": "nonce_freshness",
+              "status": "skip",
+              "timestamp": "2026-02-18T00:00:06Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "software-only", "none"]
+    },
+    {
+      "case_id": "complete_bundle_tpm2",
+      "description": "Full verification bundle with TPM2 hardware attestation passes all checks.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-002",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T01:00:00Z",
+          "content_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "verdict": {
+            "passed": true,
+            "gate_id": "cua-strict"
+          },
+          "signatures": {
+            "signer": "ed25519:tpm2sealed789"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "tpm2_quote",
+          "issued_at": "2026-02-18T01:00:00Z",
+          "pcr_digest": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+          "pcr_selection": [0, 1, 7, 16],
+          "quote_signature": "ed25519:quotesig001"
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-strict.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T01:00:01Z"
+            },
+            {
+              "checkpoint_type": "signature_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T01:00:02Z"
+            },
+            {
+              "checkpoint_type": "policy_evaluation",
+              "status": "pass",
+              "timestamp": "2026-02-18T01:00:03Z"
+            },
+            {
+              "checkpoint_type": "attestation_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T01:00:04Z"
+            },
+            {
+              "checkpoint_type": "timestamp_check",
+              "status": "pass",
+              "timestamp": "2026-02-18T01:00:05Z"
+            },
+            {
+              "checkpoint_type": "nonce_freshness",
+              "status": "pass",
+              "timestamp": "2026-02-18T01:00:06Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "tpm2_quote", "hardware"]
+    },
+    {
+      "case_id": "complete_bundle_nitro",
+      "description": "Full verification bundle with AWS Nitro enclave attestation passes all checks.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-003",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T02:00:00Z",
+          "content_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "verdict": {
+            "passed": true,
+            "gate_id": "cua-enclave"
+          },
+          "signatures": {
+            "signer": "ed25519:nitrokey456"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "nitro_enclave",
+          "issued_at": "2026-02-18T02:00:00Z",
+          "module_id": "i-0abc123-enc0abc123",
+          "pcr0": "sha384:enclave_image_hash_placeholder",
+          "pcr2": "sha384:application_code_hash_placeholder",
+          "nonce": "nonce-vb003-fresh",
+          "certificate_chain": ["leaf-cert-der-b64", "intermediate-cert-der-b64"]
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-enclave.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T02:00:01Z"
+            },
+            {
+              "checkpoint_type": "signature_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T02:00:02Z"
+            },
+            {
+              "checkpoint_type": "policy_evaluation",
+              "status": "pass",
+              "timestamp": "2026-02-18T02:00:03Z"
+            },
+            {
+              "checkpoint_type": "attestation_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T02:00:04Z"
+            },
+            {
+              "checkpoint_type": "timestamp_check",
+              "status": "pass",
+              "timestamp": "2026-02-18T02:00:05Z"
+            },
+            {
+              "checkpoint_type": "nonce_freshness",
+              "status": "pass",
+              "timestamp": "2026-02-18T02:00:06Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "nitro_enclave", "hardware"]
+    },
+    {
+      "case_id": "transcript_all_checkpoints_pass",
+      "description": "Bundle with all 6 checkpoint types present and passing verifies successfully.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-004",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T03:00:00Z",
+          "content_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "verdict": {
+            "passed": true,
+            "gate_id": "cua-full-check"
+          },
+          "signatures": {
+            "signer": "ed25519:fullcheck789"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "sev_snp",
+          "issued_at": "2026-02-18T03:00:00Z",
+          "launch_digest": "sha384:sev_snp_measurement_placeholder",
+          "vmpl": 0,
+          "report_data": "nonce-vb004"
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-full-check.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T03:00:01Z"
+            },
+            {
+              "checkpoint_type": "signature_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T03:00:02Z"
+            },
+            {
+              "checkpoint_type": "policy_evaluation",
+              "status": "pass",
+              "timestamp": "2026-02-18T03:00:03Z"
+            },
+            {
+              "checkpoint_type": "attestation_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T03:00:04Z"
+            },
+            {
+              "checkpoint_type": "timestamp_check",
+              "status": "pass",
+              "timestamp": "2026-02-18T03:00:05Z"
+            },
+            {
+              "checkpoint_type": "nonce_freshness",
+              "status": "pass",
+              "timestamp": "2026-02-18T03:00:06Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy-path", "all-checkpoints", "sev_snp"]
+    },
+    {
+      "case_id": "missing_receipt_fails_closed",
+      "description": "Bundle with no receipt is rejected with BDL_RECEIPT_MISSING.",
+      "bundle": {
+        "receipt": null,
+        "attestation_evidence": {
+          "attestation_type": "none",
+          "issued_at": "2026-02-18T04:00:00Z"
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-default.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T04:00:01Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BDL_RECEIPT_MISSING",
+      "tags": ["fail-closed", "missing-receipt"]
+    },
+    {
+      "case_id": "incomplete_transcript_fails_closed",
+      "description": "Bundle with transcript missing required checkpoints is rejected with BDL_TRANSCRIPT_INCOMPLETE.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-006",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T05:00:00Z",
+          "content_hash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "verdict": {
+            "passed": true,
+            "gate_id": "cua-default"
+          },
+          "signatures": {
+            "signer": "ed25519:incomplete001"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "none",
+          "issued_at": "2026-02-18T05:00:00Z"
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-default.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T05:00:01Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BDL_TRANSCRIPT_INCOMPLETE",
+      "tags": ["fail-closed", "incomplete-transcript"]
+    },
+    {
+      "case_id": "unknown_attestation_type_fails_closed",
+      "description": "Bundle with unknown attestation type 'quantum_proof' is rejected with BDL_ATTESTATION_TYPE_UNKNOWN.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-007",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T06:00:00Z",
+          "content_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "verdict": {
+            "passed": true,
+            "gate_id": "cua-default"
+          },
+          "signatures": {
+            "signer": "ed25519:quantum001"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "quantum_proof",
+          "issued_at": "2026-02-18T06:00:00Z",
+          "quantum_state": "entangled"
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-default.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T06:00:01Z"
+            },
+            {
+              "checkpoint_type": "signature_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T06:00:02Z"
+            },
+            {
+              "checkpoint_type": "policy_evaluation",
+              "status": "pass",
+              "timestamp": "2026-02-18T06:00:03Z"
+            },
+            {
+              "checkpoint_type": "attestation_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T06:00:04Z"
+            },
+            {
+              "checkpoint_type": "timestamp_check",
+              "status": "pass",
+              "timestamp": "2026-02-18T06:00:05Z"
+            },
+            {
+              "checkpoint_type": "nonce_freshness",
+              "status": "pass",
+              "timestamp": "2026-02-18T06:00:06Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BDL_ATTESTATION_TYPE_UNKNOWN",
+      "tags": ["fail-closed", "unknown-attestation"]
+    },
+    {
+      "case_id": "checkpoint_failure_propagates",
+      "description": "Bundle where one checkpoint has status 'fail' is rejected with BDL_CHECKPOINT_FAILED.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-008",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T07:00:00Z",
+          "content_hash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "verdict": {
+            "passed": false,
+            "gate_id": "cua-strict"
+          },
+          "signatures": {
+            "signer": "ed25519:failprop001"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "tpm2_quote",
+          "issued_at": "2026-02-18T07:00:00Z",
+          "pcr_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "verification_transcript": {
+          "policy_ref": "rulesets/cua-strict.yaml",
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T07:00:01Z"
+            },
+            {
+              "checkpoint_type": "signature_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T07:00:02Z"
+            },
+            {
+              "checkpoint_type": "policy_evaluation",
+              "status": "fail",
+              "timestamp": "2026-02-18T07:00:03Z"
+            },
+            {
+              "checkpoint_type": "attestation_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T07:00:04Z"
+            },
+            {
+              "checkpoint_type": "timestamp_check",
+              "status": "pass",
+              "timestamp": "2026-02-18T07:00:05Z"
+            },
+            {
+              "checkpoint_type": "nonce_freshness",
+              "status": "pass",
+              "timestamp": "2026-02-18T07:00:06Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BDL_CHECKPOINT_FAILED",
+      "tags": ["fail-closed", "checkpoint-failure"]
+    },
+    {
+      "case_id": "missing_policy_ref_fails_closed",
+      "description": "Bundle with transcript missing policy_ref is rejected with BDL_POLICY_REF_MISSING.",
+      "bundle": {
+        "receipt": {
+          "receipt_id": "vb-009",
+          "version": "1.0.0",
+          "timestamp": "2026-02-18T08:00:00Z",
+          "content_hash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "verdict": {
+            "passed": true,
+            "gate_id": "cua-default"
+          },
+          "signatures": {
+            "signer": "ed25519:nopolicy001"
+          }
+        },
+        "attestation_evidence": {
+          "attestation_type": "none",
+          "issued_at": "2026-02-18T08:00:00Z"
+        },
+        "verification_transcript": {
+          "checkpoints": [
+            {
+              "checkpoint_type": "schema_validation",
+              "status": "pass",
+              "timestamp": "2026-02-18T08:00:01Z"
+            },
+            {
+              "checkpoint_type": "signature_verification",
+              "status": "pass",
+              "timestamp": "2026-02-18T08:00:02Z"
+            },
+            {
+              "checkpoint_type": "policy_evaluation",
+              "status": "pass",
+              "timestamp": "2026-02-18T08:00:03Z"
+            },
+            {
+              "checkpoint_type": "attestation_verification",
+              "status": "skip",
+              "timestamp": "2026-02-18T08:00:04Z"
+            },
+            {
+              "checkpoint_type": "timestamp_check",
+              "status": "pass",
+              "timestamp": "2026-02-18T08:00:05Z"
+            },
+            {
+              "checkpoint_type": "nonce_freshness",
+              "status": "skip",
+              "timestamp": "2026-02-18T08:00:06Z"
+            }
+          ]
+        }
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BDL_POLICY_REF_MISSING",
+      "tags": ["fail-closed", "missing-policy-ref"]
+    }
+  ]
+}

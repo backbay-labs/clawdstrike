@@ -1,0 +1,150 @@
+{
+  "results": [
+    {
+      "actual": {
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK",
+        "result": "pass"
+      },
+      "id": "container_launch_valid_digests_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK",
+        "result": "pass"
+      },
+      "id": "microvm_launch_valid_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK",
+        "result": "pass"
+      },
+      "id": "sandboxed_gvisor_with_broker_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "lifecycle_state": "disposed",
+        "reason_code": "ORC_TEARDOWN_OK",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "lifecycle_state": "disposed",
+        "reason_code": "ORC_TEARDOWN_OK",
+        "result": "pass"
+      },
+      "id": "teardown_with_disposal_markers_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ORC_TIER_UNKNOWN",
+        "lifecycle_state": "pending_launch",
+        "reason_code": "ORC_TIER_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ORC_TIER_UNKNOWN",
+        "lifecycle_state": "pending_launch",
+        "reason_code": "ORC_TIER_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_isolation_tier_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ORC_IMAGE_DIGEST_MISMATCH",
+        "lifecycle_state": "validating",
+        "reason_code": "ORC_IMAGE_DIGEST_MISMATCH",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ORC_IMAGE_DIGEST_MISMATCH",
+        "lifecycle_state": "validating",
+        "reason_code": "ORC_IMAGE_DIGEST_MISMATCH",
+        "result": "fail"
+      },
+      "id": "image_digest_mismatch_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ORC_DIRECT_IO_DENIED",
+        "lifecycle_state": "running",
+        "reason_code": "ORC_DIRECT_IO_DENIED",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ORC_DIRECT_IO_DENIED",
+        "lifecycle_state": "running",
+        "reason_code": "ORC_DIRECT_IO_DENIED",
+        "result": "fail"
+      },
+      "id": "direct_filesystem_io_denied",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ORC_TEARDOWN_INCOMPLETE",
+        "lifecycle_state": "teardown",
+        "reason_code": "ORC_TEARDOWN_INCOMPLETE",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ORC_TEARDOWN_INCOMPLETE",
+        "lifecycle_state": "teardown",
+        "reason_code": "ORC_TEARDOWN_INCOMPLETE",
+        "result": "fail"
+      },
+      "id": "teardown_missing_markers_fails",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ORC_BREAKOUT_DETECTED",
+        "lifecycle_state": "running",
+        "reason_code": "ORC_BREAKOUT_DETECTED",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ORC_BREAKOUT_DETECTED",
+        "lifecycle_state": "running",
+        "reason_code": "ORC_BREAKOUT_DETECTED",
+        "result": "fail"
+      },
+      "id": "namespace_breakout_attempt_detected",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/orchestration_isolation_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

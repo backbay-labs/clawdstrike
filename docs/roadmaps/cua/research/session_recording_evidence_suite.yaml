@@ -1,0 +1,70 @@
+suite_id: session-recording-evidence-suite
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+# ---------------------------------------------------------------------------
+# Artifact types recognised by the evidence pipeline.  Anything outside this
+# set triggers REC_ARTIFACT_TYPE_UNKNOWN (fail-closed).
+# ---------------------------------------------------------------------------
+artifact_types:
+  - raw_frame
+  - redacted_frame
+  - video_segment
+  - protocol_log
+  - capture_manifest
+
+# ---------------------------------------------------------------------------
+# Canonical hash configuration.
+# Hash MUST be computed on the raw bytes of the artifact BEFORE any lossy
+# transcoding.  Violating this invariant triggers REC_LOSSY_BEFORE_HASH.
+# ---------------------------------------------------------------------------
+hash_algorithm: sha256
+
+# ---------------------------------------------------------------------------
+# Capture configuration fields.  Every artifact's capture_config object MUST
+# contain all of these keys; omitting any triggers
+# REC_CAPTURE_CONFIG_INCOMPLETE.
+# ---------------------------------------------------------------------------
+capture_config_fields:
+  - tool_version
+  - codec
+  - codec_params
+  - frame_cadence_ms
+  - timestamp_source
+  - resolution
+
+# ---------------------------------------------------------------------------
+# Redaction provenance fields.  A redacted_frame artifact MUST include a
+# provenance object with all of these keys; omitting any triggers
+# REC_REDACTION_PROVENANCE_MISSING.
+# ---------------------------------------------------------------------------
+redaction_provenance_fields:
+  - rule_id
+  - method        # blur | mask | replace
+  - pre_hash      # sha256 of pre-redaction bytes
+  - post_hash     # sha256 of post-redaction bytes
+
+# Allowed redaction methods
+redaction_methods:
+  - blur
+  - mask
+  - replace
+
+# ---------------------------------------------------------------------------
+# Capture modes
+# ---------------------------------------------------------------------------
+capture_modes:
+  - pre_post_action   # screenshot pairs bracketing each agent action
+  - continuous        # video stream for full session recording
+  - on_demand         # single frame captured at operator/agent request
+
+# ---------------------------------------------------------------------------
+# Fail-closed error codes
+# ---------------------------------------------------------------------------
+fail_closed_codes:
+  artifact_type_unknown: REC_ARTIFACT_TYPE_UNKNOWN
+  hash_missing: REC_HASH_MISSING
+  capture_config_incomplete: REC_CAPTURE_CONFIG_INCOMPLETE
+  redaction_provenance_missing: REC_REDACTION_PROVENANCE_MISSING
+  manifest_digest_mismatch: REC_MANIFEST_DIGEST_MISMATCH
+  lossy_before_hash: REC_LOSSY_BEFORE_HASH

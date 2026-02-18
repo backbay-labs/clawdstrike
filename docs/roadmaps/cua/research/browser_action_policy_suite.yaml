@@ -1,0 +1,54 @@
+suite_id: browser-action-policy-suite
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+# Browser action types recognized by the CUA gateway.
+browser_action_types:
+  - navigate
+  - click
+  - type
+  - scroll
+  - select
+  - screenshot
+  - evaluate
+
+# Ordered selector fallback strategies.
+# The gateway tries each strategy in order; the first unambiguous match wins.
+# If all strategies fail or are ambiguous, the action is denied.
+selector_strategies:
+  - ax_query
+  - stable_test_id
+  - css_selector
+  - coordinate
+
+# Evidence fields required on every browser action outcome.
+required_evidence_fields:
+  - pre_hash
+  - action_record
+  - post_hash
+  - policy_decision_id
+  - selector_strategy_used
+  - selector_strategy_reason
+
+# Supported protocol transports for browser communication.
+protocol_types:
+  - cdp
+  - webdriver_bidi
+  - webdriver_classic
+
+# Fail-closed error codes.  Each maps to a distinct, machine-parseable audit outcome.
+fail_closed_codes:
+  action_unknown: BRW_ACTION_UNKNOWN
+  selector_ambiguous: BRW_SELECTOR_AMBIGUOUS
+  protocol_unsupported: BRW_PROTOCOL_UNSUPPORTED
+  evidence_incomplete: BRW_EVIDENCE_INCOMPLETE
+  replay_mismatch: BRW_REPLAY_MISMATCH
+  transport_failure: BRW_TRANSPORT_FAILURE
+
+# Redaction requirement: artifacts are sensitive-by-default.
+# Redaction policy runs before persistence and before external transport.
+redaction:
+  default_sensitivity: sensitive
+  policy_runs_before:
+    - persistence
+    - external_transport

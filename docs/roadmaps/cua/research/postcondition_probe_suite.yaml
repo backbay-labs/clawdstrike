@@ -1,0 +1,76 @@
+suite_id: postcondition-probe-suite
+suite_version: 1
+updated_at: "2026-02-18T00:00:00Z"
+
+schema_ref: docs/roadmaps/cua/research/injection_outcome_schema.json
+capability_manifest_ref: docs/roadmaps/cua/research/injection_backend_capabilities.yaml
+
+required_action_kinds:
+  - click
+  - type
+  - scroll
+  - key_chord
+
+state_classification:
+  success_states:
+    - accepted
+    - applied
+    - verified
+  failure_states:
+    - denied
+    - unknown
+
+scenarios:
+  api_accept_only:
+    final_state: accepted
+    reason_code: RC_OK_ACCEPTED
+    probe_status: skipped
+  ui_applied_without_probe:
+    final_state: applied
+    reason_code: RC_OK_APPLIED
+    probe_status: skipped
+  verified_probe_pass:
+    final_state: verified
+    reason_code: RC_OK_VERIFIED
+    probe_status: pass
+  ambiguous_target:
+    final_state: denied
+    reason_code: RC_AMBIGUOUS_TARGET
+    probe_status: fail
+  focus_stolen:
+    final_state: denied
+    reason_code: RC_FOCUS_STOLEN
+    probe_status: fail
+  permission_revoked_mid_session:
+    final_state: denied
+    reason_code: RC_PERMISSION_DENIED
+    probe_status: fail
+  timeout_after_injection:
+    final_state: unknown
+    reason_code: RC_TIMEOUT
+    probe_status: fail
+
+fail_closed_codes:
+  suite_invalid: PRB_SUITE_INVALID
+  action_unknown: PRB_ACTION_UNKNOWN
+  scenario_unknown: PRB_SCENARIO_UNKNOWN
+  invalid_outcome: PRB_INVALID_OUTCOME
+  outcome_not_success: PRB_OUTCOME_NOT_SUCCESS
+
+probe_profiles:
+  click:
+    required_probe_checks:
+      - target_hit_test
+      - frame_hash_delta
+  type:
+    required_probe_checks:
+      - text_buffer_diff
+      - focus_check
+  scroll:
+    required_probe_checks:
+      - scroll_position_delta
+      - frame_hash_delta
+  key_chord:
+    required_probe_checks:
+      - key_state_transition
+      - focus_check

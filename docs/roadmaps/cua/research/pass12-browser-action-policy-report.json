@@ -1,0 +1,110 @@
+{
+  "results": [
+    {
+      "actual": {
+        "result": "pass"
+      },
+      "expected": {
+        "result": "pass"
+      },
+      "id": "click_ax_query_full_evidence",
+      "ok": true
+    },
+    {
+      "actual": {
+        "result": "pass"
+      },
+      "expected": {
+        "result": "pass"
+      },
+      "id": "type_stable_id_with_redaction",
+      "ok": true
+    },
+    {
+      "actual": {
+        "result": "pass"
+      },
+      "expected": {
+        "result": "pass"
+      },
+      "id": "navigate_cdp_protocol_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "result": "pass"
+      },
+      "expected": {
+        "result": "pass"
+      },
+      "id": "scroll_coordinate_fallback_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "BRW_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BRW_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_action_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "BRW_SELECTOR_AMBIGUOUS",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BRW_SELECTOR_AMBIGUOUS",
+        "result": "fail"
+      },
+      "id": "ambiguous_selector_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "BRW_PROTOCOL_UNSUPPORTED",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BRW_PROTOCOL_UNSUPPORTED",
+        "result": "fail"
+      },
+      "id": "unsupported_protocol_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "BRW_EVIDENCE_INCOMPLETE",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BRW_EVIDENCE_INCOMPLETE",
+        "result": "fail"
+      },
+      "id": "missing_evidence_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "BRW_REPLAY_MISMATCH",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "BRW_REPLAY_MISMATCH",
+        "result": "fail"
+      },
+      "id": "replay_hash_mismatch_fails",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/browser_action_policy_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

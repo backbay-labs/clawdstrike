@@ -1,0 +1,72 @@
+policy_id: cua-attestation-verifier
+policy_version: 1
+updated_at: "2026-02-18T00:00:00Z"
+
+# This policy is authoritative for attestation acceptance.
+# Verifiers MUST NOT apply hidden defaults outside this file.
+decision:
+  default: deny
+  on_missing_input: deny
+  on_unknown_issuer: deny
+  on_unknown_attestation_type: deny
+  on_unknown_claim_schema_version: deny
+
+clock:
+  source: verifier_utc
+  max_skew_seconds: 60
+  require_not_before: true
+  require_expires_at: true
+
+nonce:
+  required: true
+  max_age_seconds: 300
+  max_future_skew_seconds: 15
+  replay_cache_ttl_seconds: 900
+  replay_scope: issuer_plus_nonce
+  bind_fields:
+    - receipt.receipt_id
+    - receipt.content_hash
+
+claims:
+  required_paths:
+    - metadata.cua.gateway.attestation.claims.runtime_digest
+    - metadata.cua.gateway.attestation.claims.build_digest
+    - metadata.cua.gateway.attestation.claims.session_nonce
+  schema_version_path: metadata.cua_schema_version
+  allowed_schema_versions:
+    - "1.0.0"
+  enforce_claim_equals_nonce:
+    claim_path: metadata.cua.gateway.attestation.claims.session_nonce
+    nonce_path: metadata.cua.gateway.attestation.nonce
+
+issuers:
+  allowlist:
+    - id: aws-nitro-prod
+      issuer: https://attest.aws.example.com/nitro
+      attestation_types:
+        - nitro_enclave
+      allowed_key_ids:
+        - kid:gw-prod-2026q1
+      required_claims:
+        environment: prod
+    - id: aws-nitro-staging
+      issuer: https://attest.aws.example.com/nitro-staging
+      attestation_types:
+        - nitro_enclave
+      allowed_key_ids:
+        - kid:gw-staging-2026q1
+      required_claims:
+        environment: staging
+
+error_codes:
+  unknown_issuer: AVP_UNKNOWN_ISSUER
+  attestation_type_not_allowed: AVP_TYPE_NOT_ALLOWED
+  key_id_not_allowed: AVP_KEY_ID_NOT_ALLOWED
+  missing_required_claim: AVP_REQUIRED_CLAIM_MISSING
+  claim_nonce_mismatch: AVP_NONCE_CLAIM_MISMATCH
+  nonce_stale: AVP_NONCE_STALE
+  nonce_from_future: AVP_NONCE_FROM_FUTURE
+  nonce_replay_detected: AVP_NONCE_REPLAY
+  clock_skew_exceeded: AVP_CLOCK_SKEW_EXCEEDED
+  attestation_not_yet_valid: AVP_NOT_BEFORE_VIOLATION
+  attestation_expired: AVP_EXPIRED

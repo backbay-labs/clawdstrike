@@ -1,0 +1,71 @@
+{
+  "receipt": {
+    "content_hash": "0x2525252525252525252525252525252525252525252525252525252525252525",
+    "metadata": {
+      "cua": {
+        "chain": {
+          "action_summary": [
+            {
+              "count": 2,
+              "kind": "click"
+            },
+            {
+              "count": 1,
+              "kind": "type"
+            }
+          ],
+          "final_event_hash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "genesis_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "total_events": 3
+        },
+        "events_ref": "cas://sha256:9999999999999999999999999999999999999999999999999999999999999999/events.jsonl",
+        "gateway": {
+          "attestation": {
+            "claims": {
+              "build_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+              "extensions": {
+                "environment": "prod"
+              },
+              "runtime_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+              "session_nonce": "nonce_20260218_000501"
+            },
+            "expires_at": "2026-02-18T00:15:00Z",
+            "issued_at": "2026-02-18T00:05:01Z",
+            "issuer": "https://attest.evil.example/rogue",
+            "nonce": "nonce_20260218_000501",
+            "not_before": "2026-02-18T00:05:00Z",
+            "report_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "type": "nitro_enclave"
+          },
+          "gateway_id": "gw-prod-01",
+          "key_id": "kid:gw-prod-2026q1"
+        },
+        "session": {
+          "ended_at": "2026-02-18T00:06:10Z",
+          "event_count": 3,
+          "mode": "guardrail",
+          "run_id": "run_cua_migration_001",
+          "session_id": "sess_cua_migration_001",
+          "started_at": "2026-02-18T00:04:55Z"
+        }
+      },
+      "cua_schema_version": "1.0.0",
+      "receipt_profile": "cua.v1"
+    },
+    "provenance": {
+      "clawdstrike_version": "0.2.0",
+      "policy_hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "provider": "cua-gateway",
+      "ruleset": "cua-default"
+    },
+    "receipt_id": "cua-migration-malformed-issuer",
+    "timestamp": "2026-02-18T00:06:24Z",
+    "verdict": {
+      "passed": true
+    },
+    "version": "1.0.0"
+  },
+  "signatures": {
+    "signer": "c992c92ea526aa16f8eb514f17faf7f1402ac41c7f651bb2afd19744c15fb9f89c31174be4db84d5ddbf59213b750ca13b61642c12f408c93e3b6edfe8357108"
+  }
+}

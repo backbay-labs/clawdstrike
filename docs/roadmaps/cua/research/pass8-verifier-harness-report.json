@@ -1,0 +1,213 @@
+{
+  "results": [
+    {
+      "checks": [
+        {
+          "actual": {
+            "result": "pass",
+            "verdict_passed": true
+          },
+          "expected": {
+            "result": "pass"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "v1-baseline-valid.json",
+      "id": "baseline_v1_valid"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "result": "pass",
+            "verdict_passed": true
+          },
+          "expected": {
+            "result": "pass"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "v1-cua-valid.json",
+      "id": "cua_v1_valid"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "error_code": "VFY_PROFILE_UNKNOWN",
+            "result": "fail"
+          },
+          "expected": {
+            "error_code": "VFY_PROFILE_UNKNOWN",
+            "result": "fail"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "malformed-unknown-profile.json",
+      "id": "malformed_unknown_profile"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "error_code": "VFY_CUA_SCHEMA_VERSION_UNSUPPORTED",
+            "result": "fail"
+          },
+          "expected": {
+            "error_code": "VFY_CUA_SCHEMA_VERSION_UNSUPPORTED",
+            "result": "fail"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "malformed-unknown-cua-schema-version.json",
+      "id": "malformed_unknown_cua_schema_version"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "error_code": "VFY_CUA_SCHEMA_INVALID",
+            "result": "fail"
+          },
+          "expected": {
+            "error_code": "VFY_CUA_SCHEMA_INVALID",
+            "result": "fail"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "malformed-unknown-action-kind.json",
+      "id": "malformed_unknown_action_kind"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "error_code": "VFY_CUA_SCHEMA_INVALID",
+            "result": "fail"
+          },
+          "expected": {
+            "error_code": "VFY_CUA_SCHEMA_INVALID",
+            "result": "fail"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "malformed-missing-attestation-claim.json",
+      "id": "malformed_missing_attestation_claim"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "error_code": "VFY_ATTESTATION_POLICY_DENY",
+            "policy_subcode": "AVP_UNKNOWN_ISSUER",
+            "result": "fail"
+          },
+          "expected": {
+            "error_code": "VFY_ATTESTATION_POLICY_DENY",
+            "policy_subcode": "AVP_UNKNOWN_ISSUER",
+            "result": "fail"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "malformed-wrong-attestation-issuer.json",
+      "id": "malformed_wrong_attestation_issuer"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "error_code": "VFY_ATTESTATION_POLICY_DENY",
+            "policy_subcode": "AVP_NONCE_STALE",
+            "result": "fail"
+          },
+          "expected": {
+            "error_code": "VFY_ATTESTATION_POLICY_DENY",
+            "policy_subcode": "AVP_NONCE_STALE",
+            "result": "fail"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "malformed-stale-nonce.json",
+      "id": "malformed_stale_nonce"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "result": "pass",
+            "verdict_passed": true
+          },
+          "expected": {
+            "result": "pass"
+          },
+          "mode": "legacy",
+          "ok": true
+        },
+        {
+          "actual": {
+            "result": "pass",
+            "verdict_passed": true
+          },
+          "expected": {
+            "result": "pass"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "dual-sign-cua-valid.json",
+      "id": "dual_sign_cua_valid"
+    },
+    {
+      "checks": [
+        {
+          "actual": {
+            "result": "pass",
+            "verdict_passed": true
+          },
+          "expected": {
+            "result": "pass"
+          },
+          "mode": "legacy",
+          "ok": true
+        },
+        {
+          "actual": {
+            "error_code": "VFY_COSIGNATURE_INVALID",
+            "result": "fail"
+          },
+          "expected": {
+            "error_code": "VFY_COSIGNATURE_INVALID",
+            "result": "fail"
+          },
+          "mode": "updated",
+          "ok": true
+        }
+      ],
+      "fixture": "dual-sign-cua-invalid-cosigner.json",
+      "id": "dual_sign_cua_invalid_cosigner"
+    }
+  ],
+  "summary": {
+    "failed": 0,
+    "passed": 12,
+    "total": 12
+  },
+  "verified_at": "2026-02-18T00:10:00Z"
+}

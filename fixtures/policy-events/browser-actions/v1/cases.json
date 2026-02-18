@@ -1,0 +1,191 @@
+{
+  "suite": "docs/roadmaps/cua/research/browser_action_policy_suite.yaml",
+  "evaluation_context": {
+    "timestamp": "2026-02-18T01:00:00Z"
+  },
+  "cases": [
+    {
+      "id": "click_ax_query_full_evidence",
+      "description": "Click via AX query with all evidence fields present passes validation.",
+      "action": {
+        "action_type": "click",
+        "protocol": "cdp",
+        "selector_strategy_used": "ax_query",
+        "selector_strategy_reason": "ax_query matched unique role=button name=Submit",
+        "evidence": {
+          "pre_hash": "sha256:aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233",
+          "action_record": {"type": "click", "target": "role=button[name=Submit]", "timestamp": "2026-02-18T01:00:01Z"},
+          "post_hash": "sha256:11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd",
+          "policy_decision_id": "pdid-001"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy_path", "ax_query", "click", "cdp"]
+    },
+    {
+      "id": "type_stable_id_with_redaction",
+      "description": "Type action via stable test id with redaction applied passes validation.",
+      "action": {
+        "action_type": "type",
+        "protocol": "cdp",
+        "selector_strategy_used": "stable_test_id",
+        "selector_strategy_reason": "stable_test_id matched data-testid=email-input",
+        "evidence": {
+          "pre_hash": "sha256:00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd",
+          "action_record": {"type": "type", "target": "data-testid=email-input", "text_redacted": true, "timestamp": "2026-02-18T01:00:02Z"},
+          "post_hash": "sha256:aabb00112233ccddaabb00112233ccddaabb00112233ccddaabb00112233ccdd",
+          "policy_decision_id": "pdid-002"
+        },
+        "redaction_applied": true
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy_path", "stable_test_id", "type", "redaction", "cdp"]
+    },
+    {
+      "id": "navigate_cdp_protocol_pass",
+      "description": "Navigation via CDP with full evidence passes validation.",
+      "action": {
+        "action_type": "navigate",
+        "protocol": "cdp",
+        "selector_strategy_used": null,
+        "selector_strategy_reason": "navigation actions do not require a selector",
+        "evidence": {
+          "pre_hash": "sha256:deadbeef00112233deadbeef00112233deadbeef00112233deadbeef00112233",
+          "action_record": {"type": "navigate", "url": "https://example.com/dashboard", "timestamp": "2026-02-18T01:00:03Z"},
+          "post_hash": "sha256:cafebabe00112233cafebabe00112233cafebabe00112233cafebabe00112233",
+          "policy_decision_id": "pdid-003"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy_path", "navigate", "cdp"]
+    },
+    {
+      "id": "scroll_coordinate_fallback_pass",
+      "description": "Scroll with coordinate fallback and reason code present passes validation.",
+      "action": {
+        "action_type": "scroll",
+        "protocol": "webdriver_bidi",
+        "selector_strategy_used": "coordinate",
+        "selector_strategy_reason": "ax_query returned zero matches; stable_test_id absent; css_selector ambiguous (3 matches); fell back to coordinate",
+        "evidence": {
+          "pre_hash": "sha256:1111111100112233111111110011223311111111001122331111111100112233",
+          "action_record": {"type": "scroll", "x": 400, "y": 300, "delta_y": -120, "timestamp": "2026-02-18T01:00:04Z"},
+          "post_hash": "sha256:2222222200112233222222220011223322222222001122332222222200112233",
+          "policy_decision_id": "pdid-004"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "pass",
+      "expected_error_code": null,
+      "tags": ["happy_path", "coordinate", "scroll", "fallback", "webdriver_bidi"]
+    },
+    {
+      "id": "unknown_action_fails_closed",
+      "description": "Unrecognized action type 'drag_drop' is rejected with BRW_ACTION_UNKNOWN.",
+      "action": {
+        "action_type": "drag_drop",
+        "protocol": "cdp",
+        "selector_strategy_used": "ax_query",
+        "selector_strategy_reason": "ax_query matched unique role=listitem name=Item1",
+        "evidence": {
+          "pre_hash": "sha256:aaaa000011112222aaaa000011112222aaaa000011112222aaaa000011112222",
+          "action_record": {"type": "drag_drop", "from": [100, 200], "to": [300, 400], "timestamp": "2026-02-18T01:00:05Z"},
+          "post_hash": "sha256:bbbb000011112222bbbb000011112222bbbb000011112222bbbb000011112222",
+          "policy_decision_id": "pdid-005"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BRW_ACTION_UNKNOWN",
+      "tags": ["fail_closed", "unknown_action"]
+    },
+    {
+      "id": "ambiguous_selector_fails_closed",
+      "description": "Multiple AX matches with no stable id and ambiguous CSS selector is denied.",
+      "action": {
+        "action_type": "click",
+        "protocol": "cdp",
+        "selector_strategy_used": null,
+        "selector_strategy_reason": "ax_query returned 3 matches; stable_test_id absent; css_selector returned 3 matches; coordinate not attempted (ambiguity policy)",
+        "evidence": {
+          "pre_hash": "sha256:cccc000011112222cccc000011112222cccc000011112222cccc000011112222",
+          "action_record": {"type": "click", "target": null, "timestamp": "2026-02-18T01:00:06Z"},
+          "post_hash": "sha256:dddd000011112222dddd000011112222dddd000011112222dddd000011112222",
+          "policy_decision_id": "pdid-006"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BRW_SELECTOR_AMBIGUOUS",
+      "tags": ["fail_closed", "ambiguous_selector"]
+    },
+    {
+      "id": "unsupported_protocol_fails_closed",
+      "description": "Protocol 'custom_rpc' is not in the supported list and is rejected.",
+      "action": {
+        "action_type": "click",
+        "protocol": "custom_rpc",
+        "selector_strategy_used": "ax_query",
+        "selector_strategy_reason": "ax_query matched unique role=button name=OK",
+        "evidence": {
+          "pre_hash": "sha256:eeee000011112222eeee000011112222eeee000011112222eeee000011112222",
+          "action_record": {"type": "click", "target": "role=button[name=OK]", "timestamp": "2026-02-18T01:00:07Z"},
+          "post_hash": "sha256:ffff000011112222ffff000011112222ffff000011112222ffff000011112222",
+          "policy_decision_id": "pdid-007"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BRW_PROTOCOL_UNSUPPORTED",
+      "tags": ["fail_closed", "unsupported_protocol"]
+    },
+    {
+      "id": "missing_evidence_fails_closed",
+      "description": "Click action without post_hash is rejected for incomplete evidence.",
+      "action": {
+        "action_type": "click",
+        "protocol": "cdp",
+        "selector_strategy_used": "css_selector",
+        "selector_strategy_reason": "ax_query returned zero matches; stable_test_id absent; css_selector matched unique #submit-btn",
+        "evidence": {
+          "pre_hash": "sha256:abcd000011112222abcd000011112222abcd000011112222abcd000011112222",
+          "action_record": {"type": "click", "target": "#submit-btn", "timestamp": "2026-02-18T01:00:08Z"},
+          "post_hash": null,
+          "policy_decision_id": "pdid-008"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BRW_EVIDENCE_INCOMPLETE",
+      "tags": ["fail_closed", "missing_evidence"]
+    },
+    {
+      "id": "replay_hash_mismatch_fails",
+      "description": "Replay produces different post_hash than the original, indicating nondeterminism.",
+      "action": {
+        "action_type": "screenshot",
+        "protocol": "cdp",
+        "selector_strategy_used": null,
+        "selector_strategy_reason": "screenshot actions do not require a selector",
+        "evidence": {
+          "pre_hash": "sha256:1234000011112222123400001111222212340000111122221234000011112222",
+          "action_record": {"type": "screenshot", "viewport": {"width": 1280, "height": 720}, "timestamp": "2026-02-18T01:00:09Z"},
+          "post_hash": "sha256:5678000011112222567800001111222256780000111122225678000011112222",
+          "policy_decision_id": "pdid-009"
+        },
+        "replay_evidence": {
+          "post_hash": "sha256:9abc000011112222567800001111222256780000111122225678000011112222"
+        },
+        "redaction_applied": false
+      },
+      "expected_outcome": "fail",
+      "expected_error_code": "BRW_REPLAY_MISMATCH",
+      "tags": ["fail_closed", "replay_mismatch", "nondeterminism"]
+    }
+  ]
+}

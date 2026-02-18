@@ -1,0 +1,184 @@
+{
+  "results": [
+    {
+      "actual": {
+        "cua_action": "session.connect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.connect",
+        "result": "pass"
+      },
+      "expected": {
+        "cua_action": "session.connect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.connect",
+        "result": "pass"
+      },
+      "id": "openclaw_connect_event",
+      "ok": true
+    },
+    {
+      "actual": {
+        "cua_action": "input.inject",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "input.inject",
+        "result": "pass"
+      },
+      "expected": {
+        "cua_action": "input.inject",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "input.inject",
+        "result": "pass"
+      },
+      "id": "openclaw_input_inject_click",
+      "ok": true
+    },
+    {
+      "actual": {
+        "cua_action": "clipboard",
+        "decision": "allow",
+        "direction": "read",
+        "error_code": null,
+        "event_type": "remote.clipboard",
+        "result": "pass"
+      },
+      "expected": {
+        "cua_action": "clipboard",
+        "decision": "allow",
+        "direction": "read",
+        "error_code": null,
+        "event_type": "remote.clipboard",
+        "result": "pass"
+      },
+      "id": "openclaw_clipboard_read",
+      "ok": true
+    },
+    {
+      "actual": {
+        "cua_action": "file_transfer",
+        "decision": "allow",
+        "direction": "upload",
+        "error_code": null,
+        "event_type": "remote.file_transfer",
+        "result": "pass"
+      },
+      "expected": {
+        "cua_action": "file_transfer",
+        "decision": "allow",
+        "direction": "upload",
+        "error_code": null,
+        "event_type": "remote.file_transfer",
+        "result": "pass"
+      },
+      "id": "openclaw_file_upload",
+      "ok": true
+    },
+    {
+      "actual": {
+        "cua_action": "session.disconnect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.disconnect",
+        "result": "pass"
+      },
+      "expected": {
+        "cua_action": "session.disconnect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.disconnect",
+        "result": "pass"
+      },
+      "id": "openclaw_disconnect",
+      "ok": true
+    },
+    {
+      "actual": {
+        "cua_action": null,
+        "decision": "deny",
+        "error_code": "OCLAW_CUA_UNKNOWN_ACTION",
+        "event_type": null,
+        "result": "fail"
+      },
+      "expected": {
+        "cua_action": null,
+        "decision": "deny",
+        "error_code": "OCLAW_CUA_UNKNOWN_ACTION",
+        "event_type": null,
+        "result": "fail"
+      },
+      "id": "openclaw_unknown_cua_action_fail_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "cua_action": null,
+        "decision": "deny",
+        "error_code": "OCLAW_CUA_MISSING_METADATA",
+        "event_type": null,
+        "result": "fail"
+      },
+      "expected": {
+        "cua_action": null,
+        "decision": "deny",
+        "error_code": "OCLAW_CUA_MISSING_METADATA",
+        "event_type": null,
+        "result": "fail"
+      },
+      "id": "openclaw_missing_cua_metadata_fail_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "matched_fields": [
+          "data.cuaAction",
+          "data.type",
+          "eventType"
+        ],
+        "parity": true,
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "matched_fields": [
+          "eventType",
+          "data.type",
+          "data.cuaAction"
+        ],
+        "parity": true,
+        "result": "pass"
+      },
+      "id": "openclaw_adapter_core_parity",
+      "ok": true
+    },
+    {
+      "actual": {
+        "continuity_hash": "sha256:abc123def456",
+        "cua_action": "session.reconnect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.reconnect",
+        "result": "pass"
+      },
+      "expected": {
+        "continuity_hash": "sha256:abc123def456",
+        "cua_action": "session.reconnect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.reconnect",
+        "result": "pass"
+      },
+      "id": "openclaw_reconnect_with_continuity_hash",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/openclaw_cua_bridge_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

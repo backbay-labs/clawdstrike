@@ -880,6 +880,28 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+          python -m pip install "jsonschema>=4,<5"
+
+      - name: Run CUA roadmap fixture harnesses
+        working-directory: ${{ github.workspace }}
+        run: |
+          python docs/roadmaps/cua/research/verify_cua_migration_fixtures.py
+          python docs/roadmaps/cua/research/verify_remote_desktop_policy_matrix.py
+          python docs/roadmaps/cua/research/verify_injection_capabilities.py
+          python docs/roadmaps/cua/research/verify_policy_event_mapping.py
+          python docs/roadmaps/cua/research/verify_postcondition_probes.py
+          python docs/roadmaps/cua/research/verify_remote_session_continuity.py
+          python docs/roadmaps/cua/research/verify_envelope_semantic_equivalence.py
+          python docs/roadmaps/cua/research/verify_repeatable_latency_harness.py
+          python docs/roadmaps/cua/research/verify_verification_bundle.py
+          python docs/roadmaps/cua/research/verify_browser_action_policy.py
+          python docs/roadmaps/cua/research/verify_session_recording_evidence.py
+          python docs/roadmaps/cua/research/verify_orchestration_isolation.py
+          python docs/roadmaps/cua/research/verify_cua_policy_evaluation.py
+          python docs/roadmaps/cua/research/verify_canonical_adapter_contract.py
+          python docs/roadmaps/cua/research/verify_provider_conformance.py
+          python docs/roadmaps/cua/research/verify_openclaw_cua_bridge.py
+          python docs/roadmaps/cua/research/verify_trycua_connector.py
 
       - name: Run tests
         run: python -m pytest

@@ -1,0 +1,160 @@
+{
+  "schema": "docs/roadmaps/cua/research/injection_outcome_schema.json",
+  "manifest": "docs/roadmaps/cua/research/injection_backend_capabilities.yaml",
+  "evaluation_context": {
+    "timestamp": "2026-02-18T00:40:00Z"
+  },
+  "cases": [
+    {
+      "id": "wayland_libei_verified",
+      "query": {
+        "backend_id": "linux_wayland_portal_libei",
+        "action_kind": "click",
+        "target_mode": "coordinate",
+        "permissions": [
+          "portal_remote_desktop",
+          "compositor_eis"
+        ]
+      },
+      "expected": {
+        "result": "pass",
+        "outcome": {
+          "state": "verified",
+          "reason_code": "RC_OK_VERIFIED"
+        }
+      }
+    },
+    {
+      "id": "wayland_libei_missing_portal_permission",
+      "query": {
+        "backend_id": "linux_wayland_portal_libei",
+        "action_kind": "click",
+        "target_mode": "coordinate",
+        "permissions": [
+          "compositor_eis"
+        ]
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "INJCAP_PERMISSION_MISSING",
+        "outcome": {
+          "state": "denied",
+          "reason_code": "RC_PORTAL_PERMISSION_DENIED"
+        }
+      }
+    },
+    {
+      "id": "xtest_semantic_unsupported",
+      "query": {
+        "backend_id": "linux_x11_xtest",
+        "action_kind": "click",
+        "target_mode": "semantic",
+        "permissions": [
+          "x11_display_access"
+        ]
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "INJCAP_COMBINATION_UNSUPPORTED",
+        "outcome": {
+          "state": "denied",
+          "reason_code": "RC_UNSUPPORTED_CAPABILITY_COMBINATION"
+        }
+      }
+    },
+    {
+      "id": "windows_sendinput_applied",
+      "query": {
+        "backend_id": "windows_sendinput",
+        "action_kind": "type",
+        "target_mode": "coordinate",
+        "permissions": [
+          "windows_input_access"
+        ]
+      },
+      "expected": {
+        "result": "pass",
+        "outcome": {
+          "state": "applied",
+          "reason_code": "RC_OK_APPLIED"
+        }
+      }
+    },
+    {
+      "id": "rdp_protocol_bridge_verified",
+      "query": {
+        "backend_id": "rdp_protocol_bridge",
+        "action_kind": "drag",
+        "target_mode": "protocol",
+        "permissions": []
+      },
+      "expected": {
+        "result": "pass",
+        "outcome": {
+          "state": "verified",
+          "reason_code": "RC_OK_VERIFIED"
+        }
+      }
+    },
+    {
+      "id": "macos_quartz_missing_accessibility_permission",
+      "query": {
+        "backend_id": "macos_quartz_events",
+        "action_kind": "click",
+        "target_mode": "coordinate",
+        "permissions": []
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "INJCAP_PERMISSION_MISSING",
+        "outcome": {
+          "state": "denied",
+          "reason_code": "RC_ACCESSIBILITY_PERMISSION_MISSING"
+        }
+      }
+    },
+    {
+      "id": "unknown_backend_fails_closed",
+      "query": {
+        "backend_id": "linux_wayland_magic",
+        "action_kind": "click",
+        "target_mode": "coordinate",
+        "permissions": []
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "INJCAP_BACKEND_UNKNOWN"
+      }
+    },
+    {
+      "id": "unknown_action_fails_closed",
+      "query": {
+        "backend_id": "linux_x11_xtest",
+        "action_kind": "paste",
+        "target_mode": "coordinate",
+        "permissions": [
+          "x11_display_access"
+        ]
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "INJCAP_ACTION_UNKNOWN"
+      }
+    },
+    {
+      "id": "unknown_target_mode_fails_closed",
+      "query": {
+        "backend_id": "linux_x11_xtest",
+        "action_kind": "click",
+        "target_mode": "gesture",
+        "permissions": [
+          "x11_display_access"
+        ]
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "INJCAP_TARGET_MODE_UNKNOWN"
+      }
+    }
+  ]
+}

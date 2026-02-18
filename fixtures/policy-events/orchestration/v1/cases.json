@@ -1,0 +1,210 @@
+{
+  "suite": "docs/roadmaps/cua/research/orchestration_isolation_suite.yaml",
+  "evaluation_context": {
+    "timestamp": "2026-02-18T02:00:00Z"
+  },
+  "cases": [
+    {
+      "id": "container_launch_valid_digests_pass",
+      "query": {
+        "scenario": "valid_container_launch",
+        "launch": {
+          "isolation_tier": "container_runc",
+          "runtime_policy_digest": "sha256:aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd",
+          "image_digest": "sha256:1122334411223344112233441122334411223344112233441122334411223344",
+          "network_profile": "egress_allowlist_strict"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": null,
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK"
+      }
+    },
+    {
+      "id": "microvm_launch_valid_pass",
+      "query": {
+        "scenario": "valid_microvm_launch",
+        "launch": {
+          "isolation_tier": "microvm_firecracker",
+          "runtime_policy_digest": "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "image_digest": "sha256:cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe",
+          "network_profile": "egress_deny_all"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": null,
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK"
+      }
+    },
+    {
+      "id": "sandboxed_gvisor_with_broker_pass",
+      "query": {
+        "scenario": "valid_gvisor_broker_only",
+        "launch": {
+          "isolation_tier": "sandboxed_container_gvisor",
+          "runtime_policy_digest": "sha256:0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+          "image_digest": "sha256:abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01abcdef01",
+          "network_profile": "broker_only"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": null,
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "lifecycle_state": "running",
+        "reason_code": "ORC_LAUNCH_OK"
+      }
+    },
+    {
+      "id": "teardown_with_disposal_markers_pass",
+      "query": {
+        "scenario": "valid_teardown_complete",
+        "launch": {
+          "isolation_tier": "container_runc",
+          "runtime_policy_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "network_profile": "egress_allowlist_strict"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": {
+          "workspace_disposal_marker": true,
+          "data_wipe_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "cleanup_timestamp": "2026-02-18T02:05:00Z"
+        },
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "lifecycle_state": "disposed",
+        "reason_code": "ORC_TEARDOWN_OK"
+      }
+    },
+    {
+      "id": "unknown_isolation_tier_fails_closed",
+      "query": {
+        "scenario": "unknown_tier",
+        "launch": {
+          "isolation_tier": "bare_metal",
+          "runtime_policy_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "network_profile": "egress_deny_all"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": null,
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ORC_TIER_UNKNOWN",
+        "lifecycle_state": "pending_launch",
+        "reason_code": "ORC_TIER_UNKNOWN"
+      }
+    },
+    {
+      "id": "image_digest_mismatch_fails_closed",
+      "query": {
+        "scenario": "image_digest_mismatch",
+        "launch": {
+          "isolation_tier": "container_runc",
+          "runtime_policy_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "image_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "expected_image_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "network_profile": "egress_allowlist_strict"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": null,
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ORC_IMAGE_DIGEST_MISMATCH",
+        "lifecycle_state": "validating",
+        "reason_code": "ORC_IMAGE_DIGEST_MISMATCH"
+      }
+    },
+    {
+      "id": "direct_filesystem_io_denied",
+      "query": {
+        "scenario": "direct_io_denied",
+        "launch": {
+          "isolation_tier": "sandboxed_container_gvisor",
+          "runtime_policy_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "network_profile": "broker_only"
+        },
+        "side_effect_channel": "direct_filesystem",
+        "teardown": null,
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ORC_DIRECT_IO_DENIED",
+        "lifecycle_state": "running",
+        "reason_code": "ORC_DIRECT_IO_DENIED"
+      }
+    },
+    {
+      "id": "teardown_missing_markers_fails",
+      "query": {
+        "scenario": "teardown_incomplete",
+        "launch": {
+          "isolation_tier": "microvm_firecracker",
+          "runtime_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "image_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "network_profile": "egress_deny_all"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": {
+          "workspace_disposal_marker": false,
+          "data_wipe_hash": null,
+          "cleanup_timestamp": null
+        },
+        "breakout_attempt": null
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ORC_TEARDOWN_INCOMPLETE",
+        "lifecycle_state": "teardown",
+        "reason_code": "ORC_TEARDOWN_INCOMPLETE"
+      }
+    },
+    {
+      "id": "namespace_breakout_attempt_detected",
+      "query": {
+        "scenario": "namespace_breakout",
+        "launch": {
+          "isolation_tier": "container_runc",
+          "runtime_policy_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "network_profile": "egress_allowlist_strict"
+        },
+        "side_effect_channel": "broker_path",
+        "teardown": null,
+        "breakout_attempt": {
+          "type": "process_namespace_escape",
+          "target": "/proc/1/ns/pid",
+          "description": "Attempt to access host PID namespace via /proc/1/ns/pid"
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ORC_BREAKOUT_DETECTED",
+        "lifecycle_state": "running",
+        "reason_code": "ORC_BREAKOUT_DETECTED"
+      }
+    }
+  ]
+}

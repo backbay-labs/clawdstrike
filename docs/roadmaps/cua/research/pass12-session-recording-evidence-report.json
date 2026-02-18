@@ -1,0 +1,111 @@
+{
+  "cases": "fixtures/policy-events/session-recording/v1/cases.json",
+  "results": [
+    {
+      "actual": {
+        "outcome": "pass"
+      },
+      "expected": {
+        "outcome": "pass"
+      },
+      "id": "raw_frame_with_hash_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "outcome": "pass"
+      },
+      "expected": {
+        "outcome": "pass"
+      },
+      "id": "redacted_frame_with_provenance_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "outcome": "pass"
+      },
+      "expected": {
+        "outcome": "pass"
+      },
+      "id": "video_segment_continuous_mode_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "outcome": "pass"
+      },
+      "expected": {
+        "outcome": "pass"
+      },
+      "id": "protocol_log_with_manifest_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "REC_ARTIFACT_TYPE_UNKNOWN",
+        "outcome": "fail"
+      },
+      "expected": {
+        "error_code": "REC_ARTIFACT_TYPE_UNKNOWN",
+        "outcome": "fail"
+      },
+      "id": "unknown_artifact_type_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "REC_HASH_MISSING",
+        "outcome": "fail"
+      },
+      "expected": {
+        "error_code": "REC_HASH_MISSING",
+        "outcome": "fail"
+      },
+      "id": "missing_hash_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "REC_CAPTURE_CONFIG_INCOMPLETE",
+        "outcome": "fail"
+      },
+      "expected": {
+        "error_code": "REC_CAPTURE_CONFIG_INCOMPLETE",
+        "outcome": "fail"
+      },
+      "id": "incomplete_capture_config_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "REC_REDACTION_PROVENANCE_MISSING",
+        "outcome": "fail"
+      },
+      "expected": {
+        "error_code": "REC_REDACTION_PROVENANCE_MISSING",
+        "outcome": "fail"
+      },
+      "id": "redaction_without_provenance_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "REC_MANIFEST_DIGEST_MISMATCH",
+        "outcome": "fail"
+      },
+      "expected": {
+        "error_code": "REC_MANIFEST_DIGEST_MISMATCH",
+        "outcome": "fail"
+      },
+      "id": "manifest_digest_mismatch_fails",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/session_recording_evidence_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

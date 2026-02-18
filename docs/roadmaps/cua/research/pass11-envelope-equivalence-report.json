@@ -1,0 +1,140 @@
+{
+  "results": [
+    {
+      "actual": {
+        "details": {
+          "wrapper_type": "bare"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "bare_payload_verifies",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "wrapper_type": "cose_sign1"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "cose_sign1_wraps_identical_payload",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "wrapper_type": "jws_compact"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "jws_compact_wraps_identical_payload",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "wrapper_type": "jws_json"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "jws_json_wraps_identical_payload",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "wrapper_type": "cose_sign1"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "cross_wrapper_verdict_parity",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "wrapper_type": "protobuf_experimental"
+        },
+        "error_code": "ENV_WRAPPER_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ENV_WRAPPER_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_wrapper_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "receipt_version": "99.0.0"
+        },
+        "error_code": "ENV_VERSION_MISMATCH",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ENV_VERSION_MISMATCH",
+        "result": "fail"
+      },
+      "id": "version_mismatch_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "reason": "canonical_field_mismatch"
+        },
+        "error_code": "ENV_PAYLOAD_DIVERGENCE",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ENV_PAYLOAD_DIVERGENCE",
+        "result": "fail"
+      },
+      "id": "payload_divergence_detected",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "wrapper_type": "cose_sign1"
+        },
+        "error_code": "ENV_SIGNATURE_INVALID",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ENV_SIGNATURE_INVALID",
+        "result": "fail"
+      },
+      "id": "invalid_signature_fails",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/envelope_semantic_equivalence_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

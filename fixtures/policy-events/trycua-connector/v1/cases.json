@@ -1,0 +1,169 @@
+{
+  "suite": "docs/roadmaps/cua/research/trycua_connector_suite.yaml",
+  "cases": [
+    {
+      "id": "trycua_click_maps_to_input_inject",
+      "description": "trycua click action maps to canonical input.inject flow surface",
+      "query": {
+        "trycua_action": "click",
+        "trycua_input": {
+          "x": 150,
+          "y": 300
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "flow": "input",
+          "eventType": "input.inject",
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "trycua_type_maps_to_input_inject",
+      "description": "trycua type action maps to canonical input.inject flow surface",
+      "query": {
+        "trycua_action": "type",
+        "trycua_input": {
+          "text": "hello world"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "flow": "input",
+          "eventType": "input.inject",
+          "data": {
+            "cuaAction": "type",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "trycua_vm_start_maps_to_connect",
+      "description": "trycua vm_start action maps to canonical connect flow surface (partial support)",
+      "query": {
+        "trycua_action": "vm_start",
+        "trycua_input": {
+          "os_type": "macos",
+          "provider": "lume"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "flow": "connect",
+          "eventType": "remote.session.connect",
+          "data": {
+            "cuaAction": "vm_start",
+            "direction": "outbound"
+          }
+        }
+      }
+    },
+    {
+      "id": "trycua_vm_stop_maps_to_disconnect",
+      "description": "trycua vm_stop action maps to canonical disconnect flow surface (partial support)",
+      "query": {
+        "trycua_action": "vm_stop",
+        "trycua_input": {}
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "flow": "disconnect",
+          "eventType": "remote.session.disconnect",
+          "data": {
+            "cuaAction": "vm_stop",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "trycua_clipboard_sync_direction_ambiguous_fails_closed",
+      "description": "trycua clipboard_sync without explicit direction fails closed with TCC_DIRECTION_AMBIGUOUS",
+      "query": {
+        "trycua_action": "clipboard_sync",
+        "trycua_input": {
+          "content": "some clipboard text"
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "TCC_DIRECTION_AMBIGUOUS"
+      }
+    },
+    {
+      "id": "trycua_file_copy_evidence_missing_fails_closed",
+      "description": "trycua file_copy without path/hash/size evidence fails closed with TCC_EVIDENCE_MISSING",
+      "query": {
+        "trycua_action": "file_copy",
+        "trycua_input": {
+          "filename": "document.pdf"
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "TCC_EVIDENCE_MISSING"
+      }
+    },
+    {
+      "id": "trycua_unknown_action_fails_closed",
+      "description": "Unknown trycua action type 'drag_drop' fails closed with TCC_ACTION_UNKNOWN",
+      "query": {
+        "trycua_action": "drag_drop",
+        "trycua_input": {
+          "from_x": 100,
+          "from_y": 200,
+          "to_x": 300,
+          "to_y": 400
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "TCC_ACTION_UNKNOWN"
+      }
+    },
+    {
+      "id": "trycua_reconnect_flow_unsupported_fails_closed",
+      "description": "Attempt to map any trycua action to reconnect flow fails closed with TCC_FLOW_UNSUPPORTED",
+      "query": {
+        "trycua_action": "vm_start",
+        "trycua_input": {
+          "os_type": "macos",
+          "provider": "lume"
+        },
+        "force_flow": "reconnect"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "TCC_FLOW_UNSUPPORTED"
+      }
+    },
+    {
+      "id": "trycua_screenshot_maps_to_clipboard_read",
+      "description": "trycua screenshot action maps to canonical clipboard_read flow surface with read direction",
+      "query": {
+        "trycua_action": "screenshot",
+        "trycua_input": {}
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "flow": "clipboard_read",
+          "eventType": "remote.clipboard",
+          "data": {
+            "cuaAction": "screenshot",
+            "direction": "read"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,208 @@
+{
+  "cases": "fixtures/benchmarks/remote-latency/v1/cases.json",
+  "harness": "docs/roadmaps/cua/research/repeatable_latency_harness.yaml",
+  "results": [
+    {
+      "actual": {
+        "details": {
+          "codec": "h264_sw",
+          "frame_size": "720p",
+          "host_class": "ci_runner",
+          "metric_cvs": {
+            "decode_ms": 0.040224,
+            "encode_ms": 0.026891,
+            "jitter_ms": 0.02357,
+            "round_trip_ms": 0.013238
+          },
+          "scenario": "warm_cache"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "ci_h264_sw_720p_warm_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "codec": "h264_sw",
+          "frame_size": "720p",
+          "host_class": "ci_runner",
+          "metric_cvs": {
+            "decode_ms": 0.05759,
+            "encode_ms": 0.081002,
+            "jitter_ms": 0.224912,
+            "round_trip_ms": 0.073541
+          },
+          "scenario": "cold_cache"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "ci_h264_sw_720p_cold_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "codec": "vp9_sw",
+          "frame_size": "1080p",
+          "host_class": "developer_workstation",
+          "metric_cvs": {
+            "decode_ms": 0.027704,
+            "encode_ms": 0.01857,
+            "jitter_ms": 0.028222,
+            "round_trip_ms": 0.019832
+          },
+          "scenario": "warm_cache"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "dev_vp9_sw_1080p_warm_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "codec": "h264_hw",
+          "frame_size": "1080p",
+          "host_class": "production_edge",
+          "metric_cvs": {
+            "decode_ms": 0.065205,
+            "encode_ms": 0.051672,
+            "jitter_ms": 0.0,
+            "round_trip_ms": 0.037216
+          },
+          "scenario": "warm_cache"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "result": "pass"
+      },
+      "id": "prod_h264_hw_1080p_warm_passes",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "exceeded": [
+            {
+              "cv": 0.37015,
+              "metric": "encode_ms",
+              "threshold": 0.15
+            },
+            {
+              "cv": 0.341421,
+              "metric": "decode_ms",
+              "threshold": 0.15
+            },
+            {
+              "cv": 0.362369,
+              "metric": "round_trip_ms",
+              "threshold": 0.15
+            },
+            {
+              "cv": 0.497011,
+              "metric": "jitter_ms",
+              "threshold": 0.15
+            }
+          ],
+          "metric_cvs": {
+            "decode_ms": 0.341421,
+            "encode_ms": 0.37015,
+            "jitter_ms": 0.497011,
+            "round_trip_ms": 0.362369
+          },
+          "scenario": "warm_cache"
+        },
+        "error_code": "LAT_VARIANCE_EXCEEDED",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "LAT_VARIANCE_EXCEEDED",
+        "result": "fail"
+      },
+      "id": "ci_av1_sw_4k_warm_high_variance_fails",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "host_class": "quantum_cloud"
+        },
+        "error_code": "LAT_HOST_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "LAT_HOST_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_host_class_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "codec": "hevc_experimental"
+        },
+        "error_code": "LAT_CODEC_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "LAT_CODEC_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_codec_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "frame_size": "8k"
+        },
+        "error_code": "LAT_FRAME_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "LAT_FRAME_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_frame_size_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "details": {
+          "missing_fields": [
+            "cpu_model"
+          ]
+        },
+        "error_code": "LAT_ENV_INCOMPLETE",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "LAT_ENV_INCOMPLETE",
+        "result": "fail"
+      },
+      "id": "missing_env_metadata_fails_closed",
+      "ok": true
+    }
+  ],
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

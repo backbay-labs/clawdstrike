@@ -1,0 +1,188 @@
+{
+  "results": [
+    {
+      "actual": {
+        "canonical": {
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          },
+          "eventType": "input.inject",
+          "flow": "input"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "canonical": {
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          },
+          "eventType": "input.inject",
+          "flow": "input"
+        },
+        "result": "pass"
+      },
+      "id": "trycua_click_maps_to_input_inject",
+      "ok": true
+    },
+    {
+      "actual": {
+        "canonical": {
+          "data": {
+            "cuaAction": "type",
+            "direction": null
+          },
+          "eventType": "input.inject",
+          "flow": "input"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "canonical": {
+          "data": {
+            "cuaAction": "type",
+            "direction": null
+          },
+          "eventType": "input.inject",
+          "flow": "input"
+        },
+        "result": "pass"
+      },
+      "id": "trycua_type_maps_to_input_inject",
+      "ok": true
+    },
+    {
+      "actual": {
+        "canonical": {
+          "data": {
+            "cuaAction": "vm_start",
+            "direction": "outbound"
+          },
+          "eventType": "remote.session.connect",
+          "flow": "connect"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "canonical": {
+          "data": {
+            "cuaAction": "vm_start",
+            "direction": "outbound"
+          },
+          "eventType": "remote.session.connect",
+          "flow": "connect"
+        },
+        "result": "pass"
+      },
+      "id": "trycua_vm_start_maps_to_connect",
+      "ok": true
+    },
+    {
+      "actual": {
+        "canonical": {
+          "data": {
+            "cuaAction": "vm_stop",
+            "direction": null
+          },
+          "eventType": "remote.session.disconnect",
+          "flow": "disconnect"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "canonical": {
+          "data": {
+            "cuaAction": "vm_stop",
+            "direction": null
+          },
+          "eventType": "remote.session.disconnect",
+          "flow": "disconnect"
+        },
+        "result": "pass"
+      },
+      "id": "trycua_vm_stop_maps_to_disconnect",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "TCC_DIRECTION_AMBIGUOUS",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "TCC_DIRECTION_AMBIGUOUS",
+        "result": "fail"
+      },
+      "id": "trycua_clipboard_sync_direction_ambiguous_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "TCC_EVIDENCE_MISSING",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "TCC_EVIDENCE_MISSING",
+        "result": "fail"
+      },
+      "id": "trycua_file_copy_evidence_missing_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "TCC_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "TCC_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "trycua_unknown_action_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "TCC_FLOW_UNSUPPORTED",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "TCC_FLOW_UNSUPPORTED",
+        "result": "fail"
+      },
+      "id": "trycua_reconnect_flow_unsupported_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "canonical": {
+          "data": {
+            "cuaAction": "screenshot",
+            "direction": "read"
+          },
+          "eventType": "remote.clipboard",
+          "flow": "clipboard_read"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "canonical": {
+          "data": {
+            "cuaAction": "screenshot",
+            "direction": "read"
+          },
+          "eventType": "remote.clipboard",
+          "flow": "clipboard_read"
+        },
+        "result": "pass"
+      },
+      "id": "trycua_screenshot_maps_to_clipboard_read",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/trycua_connector_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

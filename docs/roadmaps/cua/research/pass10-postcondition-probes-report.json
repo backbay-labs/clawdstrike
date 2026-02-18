@@ -1,0 +1,170 @@
+{
+  "manifest": "docs/roadmaps/cua/research/injection_backend_capabilities.yaml",
+  "results": [
+    {
+      "actual": {
+        "outcome": {
+          "reason_code": "RC_OK_VERIFIED",
+          "state": "verified"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "outcome": {
+          "reason_code": "RC_OK_VERIFIED",
+          "state": "verified"
+        },
+        "result": "pass"
+      },
+      "id": "click_verified_probe_pass",
+      "ok": true
+    },
+    {
+      "actual": {
+        "outcome": {
+          "reason_code": "RC_OK_ACCEPTED",
+          "state": "accepted"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "outcome": {
+          "reason_code": "RC_OK_ACCEPTED",
+          "state": "accepted"
+        },
+        "result": "pass"
+      },
+      "id": "type_api_accept_only",
+      "ok": true
+    },
+    {
+      "actual": {
+        "outcome": {
+          "reason_code": "RC_OK_APPLIED",
+          "state": "applied"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "outcome": {
+          "reason_code": "RC_OK_APPLIED",
+          "state": "applied"
+        },
+        "result": "pass"
+      },
+      "id": "scroll_ui_applied_without_probe",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_FOCUS_STOLEN",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_FOCUS_STOLEN",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "id": "key_chord_focus_stolen_denied",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_AMBIGUOUS_TARGET",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_AMBIGUOUS_TARGET",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "id": "click_ambiguous_target_denied",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_PERMISSION_DENIED",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_PERMISSION_DENIED",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "id": "type_permission_revoked_mid_session",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_TIMEOUT",
+          "state": "unknown"
+        },
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PRB_OUTCOME_NOT_SUCCESS",
+        "outcome": {
+          "reason_code": "RC_TIMEOUT",
+          "state": "unknown"
+        },
+        "result": "fail"
+      },
+      "id": "scroll_timeout_unknown",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PRB_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PRB_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_action_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PRB_SCENARIO_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PRB_SCENARIO_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_scenario_fails_closed",
+      "ok": true
+    }
+  ],
+  "schema": "docs/roadmaps/cua/research/injection_outcome_schema.json",
+  "suite": "docs/roadmaps/cua/research/postcondition_probe_suite.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

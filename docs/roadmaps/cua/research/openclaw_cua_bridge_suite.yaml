@@ -1,0 +1,77 @@
+suite_id: openclaw-cua-bridge
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+description: >
+  Defines the OpenClaw CUA bridge contract for Clawdstrike. The bridge detects
+  CUA actions in OpenClaw tool calls and emits canonical CUA policy events via
+  PolicyEventFactory from adapter-core. Every recognized CUA action maps to a
+  deterministic event type, CUA action label, and data type. Unknown actions
+  and missing metadata fail closed with stable error codes. Parity with direct
+  adapter-core event creation is required.
+
+policy_event_mapping_ref: docs/roadmaps/cua/research/policy_event_mapping.yaml
+adapter_core_contract_ref: docs/roadmaps/cua/research/canonical_adapter_cua_contract.yaml
+
+cua_action_kinds:
+  - connect
+  - disconnect
+  - reconnect
+  - input_inject
+  - clipboard_read
+  - clipboard_write
+  - file_upload
+  - file_download
+
+event_type_map:
+  connect:
+    event_type: remote.session.connect
+    cua_action: session.connect
+  disconnect:
+    event_type: remote.session.disconnect
+    cua_action: session.disconnect
+  reconnect:
+    event_type: remote.session.reconnect
+    cua_action: session.reconnect
+  input_inject:
+    event_type: input.inject
+    cua_action: input.inject
+  clipboard_read:
+    event_type: remote.clipboard
+    cua_action: clipboard
+    direction: read
+  clipboard_write:
+    event_type: remote.clipboard
+    cua_action: clipboard
+    direction: write
+  file_upload:
+    event_type: remote.file_transfer
+    cua_action: file_transfer
+    direction: upload
+  file_download:
+    event_type: remote.file_transfer
+    cua_action: file_transfer
+    direction: download
+
+tool_prefixes:
+  - cua_
+  - cua.
+  - computer_use_
+  - computer_use.
+  - remote_desktop_
+  - remote_desktop.
+  - rdp_
+  - rdp.
+
+fail_closed_codes:
+  unknown_action: OCLAW_CUA_UNKNOWN_ACTION
+  missing_metadata: OCLAW_CUA_MISSING_METADATA
+  session_missing: OCLAW_CUA_SESSION_MISSING
+
+parity_requirements:
+  - field: eventType
+    description: Event type must match between OpenClaw bridge and direct adapter-core
+  - field: data.type
+    description: Data type must be 'cua' in both paths
+  - field: data.cuaAction
+    description: CUA action label must match between both paths

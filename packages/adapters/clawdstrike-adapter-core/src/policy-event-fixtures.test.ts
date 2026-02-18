@@ -18,6 +18,12 @@ const KNOWN_EVENT_TYPES: EventType[] = [
   'tool_call',
   'secret_access',
   'custom',
+  'remote.session.connect',
+  'remote.session.disconnect',
+  'remote.session.reconnect',
+  'input.inject',
+  'remote.clipboard',
+  'remote.file_transfer',
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -54,6 +60,15 @@ function assertPolicyEventShape(value: unknown): asserts value is PolicyEvent {
     expect(dataType).toBe('secret');
   } else if (eventType === 'custom') {
     expect(dataType).toBe('custom');
+  } else if (
+    eventType === 'remote.session.connect' ||
+    eventType === 'remote.session.disconnect' ||
+    eventType === 'remote.session.reconnect' ||
+    eventType === 'input.inject' ||
+    eventType === 'remote.clipboard' ||
+    eventType === 'remote.file_transfer'
+  ) {
+    expect(dataType).toBe('cua');
   }
 }
 

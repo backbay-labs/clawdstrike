@@ -1,0 +1,45 @@
+suite_id: envelope-semantic-equivalence-suite
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+description: >
+  Validates that receipt payloads maintain semantic equivalence across
+  envelope wrapper types. A canonical bare payload wrapped in any supported
+  envelope format must preserve identical receipt_id, timestamp, content_hash,
+  verdict, and provenance fields. Unknown wrappers and version mismatches
+  fail closed.
+
+supported_wrappers:
+  - bare
+  - cose_sign1
+  - jws_compact
+  - jws_json
+
+canonical_payload_fields:
+  - receipt_id
+  - timestamp
+  - content_hash
+  - verdict
+  - provenance
+
+receipt_version: "1.0.0"
+
+verification_outcomes:
+  bare:
+    description: "Raw canonical JSON payload, no envelope wrapper"
+    expected: pass
+  cose_sign1:
+    description: "CBOR Object Signing and Encryption Sign1 envelope"
+    expected: pass
+  jws_compact:
+    description: "JWS Compact Serialization (RFC 7515 Section 3.1)"
+    expected: pass
+  jws_json:
+    description: "JWS JSON Serialization (RFC 7515 Section 3.2)"
+    expected: pass
+
+fail_closed_codes:
+  wrapper_unknown: ENV_WRAPPER_UNKNOWN
+  version_mismatch: ENV_VERSION_MISMATCH
+  payload_divergence: ENV_PAYLOAD_DIVERGENCE
+  signature_invalid: ENV_SIGNATURE_INVALID

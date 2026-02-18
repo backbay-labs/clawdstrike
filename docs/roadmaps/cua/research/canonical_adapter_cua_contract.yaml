@@ -1,0 +1,98 @@
+suite_id: canonical-adapter-cua-contract
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+description: >
+  Defines the canonical adapter-core CUA contract for Clawdstrike. Every CUA
+  flow surface maps to a deterministic adapter output with a normalized outcome,
+  stable reason code, policy event reference, guard result set, and audit
+  reference. Unknown flows, invalid outcomes, missing policy references, and
+  unrecognized reason codes fail closed with stable error codes. Adapter output
+  is the single source of truth consumed by downstream policy evaluation,
+  receipt signing, and audit pipelines.
+
+policy_event_mapping_ref: docs/roadmaps/cua/research/policy_event_mapping.yaml
+research_doc_ref: docs/roadmaps/cua/research/09-ecosystem-integrations.md
+
+flow_surfaces:
+  - connect
+  - input
+  - clipboard_read
+  - clipboard_write
+  - file_transfer_upload
+  - file_transfer_download
+  - reconnect
+  - disconnect
+
+canonical_outcomes:
+  - accepted
+  - applied
+  - verified
+  - denied
+  - unknown
+
+reason_codes:
+  - ADC_POLICY_ALLOW
+  - ADC_POLICY_DENY
+  - ADC_GUARD_ERROR
+  - ADC_PROBE_VERIFIED
+  - ADC_PROBE_FAILED
+  - ADC_UNKNOWN_FLOW
+
+required_adapter_output_fields:
+  - flow
+  - outcome
+  - reason_code
+  - policy_event_ref
+  - guard_results
+  - audit_ref
+
+flow_policy_event_map:
+  connect:
+    policy_event_ref: remote.session.connect
+    guard_expectations:
+      - egress_allowlist
+      - computer_use
+  input:
+    policy_event_ref: input.inject
+    guard_expectations:
+      - computer_use
+      - input_injection_capability
+  clipboard_read:
+    policy_event_ref: remote.clipboard
+    guard_expectations:
+      - computer_use
+      - remote_desktop_side_channel
+  clipboard_write:
+    policy_event_ref: remote.clipboard
+    guard_expectations:
+      - computer_use
+      - remote_desktop_side_channel
+  file_transfer_upload:
+    policy_event_ref: remote.file_transfer
+    guard_expectations:
+      - forbidden_path
+      - computer_use
+      - remote_desktop_side_channel
+  file_transfer_download:
+    policy_event_ref: remote.file_transfer
+    guard_expectations:
+      - egress_allowlist
+      - forbidden_path
+      - computer_use
+      - remote_desktop_side_channel
+  reconnect:
+    policy_event_ref: remote.session.reconnect
+    guard_expectations:
+      - computer_use
+  disconnect:
+    policy_event_ref: remote.session.disconnect
+    guard_expectations:
+      - computer_use
+
+fail_closed_codes:
+  flow_unknown: ADC_FLOW_UNKNOWN
+  outcome_invalid: ADC_OUTCOME_INVALID
+  missing_policy_ref: ADC_MISSING_POLICY_REF
+  guard_result_malformed: ADC_GUARD_RESULT_MALFORMED
+  reason_code_unknown: ADC_REASON_CODE_UNKNOWN

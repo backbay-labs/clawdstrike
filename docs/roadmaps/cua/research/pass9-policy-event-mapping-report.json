@@ -1,0 +1,209 @@
+{
+  "mapping": "docs/roadmaps/cua/research/policy_event_mapping.yaml",
+  "results": [
+    {
+      "actual": {
+        "audit_event": "audit.remote.session.connect",
+        "flow": "connect",
+        "guards": [
+          "egress_allowlist",
+          "computer_use"
+        ],
+        "policy_event": "remote.session.connect",
+        "receipt_artifacts": [
+          "connection_id",
+          "transport_profile",
+          "frame_hash_pre",
+          "frame_hash_post",
+          "policy_decision_digest"
+        ],
+        "result": "pass",
+        "side_effect": "session_connect"
+      },
+      "expected": {
+        "audit_event": "audit.remote.session.connect",
+        "guards": [
+          "egress_allowlist",
+          "computer_use"
+        ],
+        "policy_event": "remote.session.connect",
+        "result": "pass"
+      },
+      "id": "connect_flow_has_preflight_and_audit",
+      "ok": true
+    },
+    {
+      "actual": {
+        "audit_event": "audit.input.inject",
+        "flow": "input",
+        "guards": [
+          "computer_use",
+          "input_injection_capability"
+        ],
+        "policy_event": "input.inject",
+        "receipt_artifacts": [
+          "action_id",
+          "input_event_hash",
+          "frame_hash_pre",
+          "frame_hash_post",
+          "postcondition_probe_result"
+        ],
+        "result": "pass",
+        "side_effect": "input_injection"
+      },
+      "expected": {
+        "audit_event": "audit.input.inject",
+        "policy_event": "input.inject",
+        "required_artifact": "postcondition_probe_result",
+        "result": "pass"
+      },
+      "id": "input_flow_has_probe_artifact",
+      "ok": true
+    },
+    {
+      "actual": {
+        "audit_event": "audit.remote.clipboard.write",
+        "flow": "clipboard_write",
+        "guards": [
+          "computer_use",
+          "remote_desktop_side_channel"
+        ],
+        "policy_event": "remote.clipboard",
+        "receipt_artifacts": [
+          "clipboard_payload_hash",
+          "redaction_rule_hashes",
+          "policy_decision_digest"
+        ],
+        "result": "pass",
+        "side_effect": "clipboard_write"
+      },
+      "expected": {
+        "audit_event": "audit.remote.clipboard.write",
+        "policy_event": "remote.clipboard",
+        "required_artifact": "redaction_rule_hashes",
+        "result": "pass"
+      },
+      "id": "clipboard_write_direction_guarded",
+      "ok": true
+    },
+    {
+      "actual": {
+        "audit_event": "audit.remote.file_transfer.download",
+        "flow": "file_transfer_download",
+        "guards": [
+          "egress_allowlist",
+          "forbidden_path",
+          "computer_use",
+          "remote_desktop_side_channel"
+        ],
+        "policy_event": "remote.file_transfer",
+        "receipt_artifacts": [
+          "transfer_manifest_hash",
+          "file_digest",
+          "quarantine_location_hash",
+          "policy_decision_digest"
+        ],
+        "result": "pass",
+        "side_effect": "file_download"
+      },
+      "expected": {
+        "policy_event": "remote.file_transfer",
+        "required_artifact": "quarantine_location_hash",
+        "required_guard": "egress_allowlist",
+        "result": "pass"
+      },
+      "id": "file_download_has_egress_and_quarantine_artifact",
+      "ok": true
+    },
+    {
+      "actual": {
+        "audit_event": "audit.remote.session.reconnect",
+        "flow": "reconnect",
+        "guards": [
+          "computer_use"
+        ],
+        "policy_event": "remote.session.reconnect",
+        "receipt_artifacts": [
+          "reconnect_attempt",
+          "continuity_prev_session_hash",
+          "continuity_new_session_hash",
+          "policy_decision_digest"
+        ],
+        "result": "pass",
+        "side_effect": "session_reconnect"
+      },
+      "expected": {
+        "policy_event": "remote.session.reconnect",
+        "required_artifact": "continuity_prev_session_hash",
+        "result": "pass"
+      },
+      "id": "reconnect_has_continuity_artifact",
+      "ok": true
+    },
+    {
+      "actual": {
+        "audit_event": "audit.remote.session.disconnect",
+        "flow": "disconnect",
+        "guards": [
+          "computer_use"
+        ],
+        "policy_event": "remote.session.disconnect",
+        "receipt_artifacts": [
+          "disconnect_reason",
+          "final_session_hash",
+          "policy_decision_digest"
+        ],
+        "result": "pass",
+        "side_effect": "session_disconnect"
+      },
+      "expected": {
+        "policy_event": "remote.session.disconnect",
+        "required_artifact": "final_session_hash",
+        "result": "pass"
+      },
+      "id": "disconnect_has_final_hash_artifact",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PEMAP_FLOW_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PEMAP_FLOW_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_flow_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PEMAP_SIDE_EFFECT_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PEMAP_SIDE_EFFECT_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_side_effect_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "PEMAP_FLOW_SIDE_EFFECT_MISMATCH",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "PEMAP_FLOW_SIDE_EFFECT_MISMATCH",
+        "result": "fail"
+      },
+      "id": "flow_side_effect_mismatch_fails_closed",
+      "ok": true
+    }
+  ],
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

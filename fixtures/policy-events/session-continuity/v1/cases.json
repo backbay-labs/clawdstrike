@@ -1,0 +1,308 @@
+{
+  "suite": "docs/roadmaps/cua/research/remote_session_continuity_suite.yaml",
+  "evaluation_context": {
+    "timestamp": "2026-02-18T01:20:00Z"
+  },
+  "cases": [
+    {
+      "id": "reconnect_chain_continuity_pass",
+      "query": {
+        "scenario": "reconnect_chain_continuity",
+        "transcript": [
+          {
+            "event": "connect",
+            "session_id": "sess-alpha",
+            "chain_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "prev_chain_hash": null,
+            "policy_event": "remote.session.connect",
+            "audit_event": "audit.remote.session.connect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-alpha",
+            "action_id": "act-alpha-1",
+            "chain_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "prev_chain_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "reconnect",
+            "session_id": "sess-beta",
+            "chain_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "prev_chain_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "continuity_prev_session_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "continuity_new_session_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "policy_event": "remote.session.reconnect",
+            "audit_event": "audit.remote.session.reconnect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-beta",
+            "action_id": "act-beta-1",
+            "chain_hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "prev_chain_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "disconnect",
+            "session_id": "sess-beta",
+            "chain_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "prev_chain_hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "policy_event": "remote.session.disconnect",
+            "audit_event": "audit.remote.session.disconnect"
+          }
+        ]
+      },
+      "expected": {
+        "result": "pass"
+      }
+    },
+    {
+      "id": "packet_loss_chain_continuity_pass",
+      "query": {
+        "scenario": "packet_loss_chain_continuity",
+        "transcript": [
+          {
+            "event": "connect",
+            "session_id": "sess-loss",
+            "chain_hash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "prev_chain_hash": null,
+            "policy_event": "remote.session.connect",
+            "audit_event": "audit.remote.session.connect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-loss",
+            "action_id": "act-loss-1",
+            "chain_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "prev_chain_hash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "packet_loss_recover",
+            "session_id": "sess-loss",
+            "loss_packets": 12,
+            "chain_hash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "prev_chain_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "policy_event": "remote.session.reconnect",
+            "audit_event": "audit.remote.session.reconnect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-loss",
+            "action_id": "act-loss-2",
+            "chain_hash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "prev_chain_hash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "disconnect",
+            "session_id": "sess-loss",
+            "chain_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "prev_chain_hash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "policy_event": "remote.session.disconnect",
+            "audit_event": "audit.remote.session.disconnect"
+          }
+        ]
+      },
+      "expected": {
+        "result": "pass"
+      }
+    },
+    {
+      "id": "gateway_restart_chain_continuity_pass",
+      "query": {
+        "scenario": "gateway_restart_chain_continuity",
+        "transcript": [
+          {
+            "event": "connect",
+            "session_id": "sess-gw-old",
+            "chain_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "prev_chain_hash": null,
+            "policy_event": "remote.session.connect",
+            "audit_event": "audit.remote.session.connect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-gw-old",
+            "action_id": "act-gw-1",
+            "chain_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "prev_chain_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "gateway_restart_recover",
+            "session_id": "sess-gw-new",
+            "chain_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "prev_chain_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "continuity_prev_session_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "continuity_new_session_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "policy_event": "remote.session.reconnect",
+            "audit_event": "audit.remote.session.reconnect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-gw-new",
+            "action_id": "act-gw-2",
+            "chain_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "prev_chain_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "disconnect",
+            "session_id": "sess-gw-new",
+            "chain_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "prev_chain_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "policy_event": "remote.session.disconnect",
+            "audit_event": "audit.remote.session.disconnect"
+          }
+        ]
+      },
+      "expected": {
+        "result": "pass"
+      }
+    },
+    {
+      "id": "reconnect_chain_break_fails_closed",
+      "query": {
+        "scenario": "reconnect_chain_break",
+        "transcript": [
+          {
+            "event": "connect",
+            "session_id": "sess-break",
+            "chain_hash": "sha256:1010101010101010101010101010101010101010101010101010101010101010",
+            "prev_chain_hash": null,
+            "policy_event": "remote.session.connect",
+            "audit_event": "audit.remote.session.connect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-break",
+            "action_id": "act-break-1",
+            "chain_hash": "sha256:2020202020202020202020202020202020202020202020202020202020202020",
+            "prev_chain_hash": "sha256:1010101010101010101010101010101010101010101010101010101010101010",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "reconnect",
+            "session_id": "sess-break-new",
+            "chain_hash": "sha256:3030303030303030303030303030303030303030303030303030303030303030",
+            "prev_chain_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "continuity_prev_session_hash": "sha256:2020202020202020202020202020202020202020202020202020202020202020",
+            "continuity_new_session_hash": "sha256:3030303030303030303030303030303030303030303030303030303030303030",
+            "policy_event": "remote.session.reconnect",
+            "audit_event": "audit.remote.session.reconnect"
+          }
+        ]
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "CONT_CHAIN_BREAK"
+      }
+    },
+    {
+      "id": "orphan_action_after_reconnect_fails_closed",
+      "query": {
+        "scenario": "orphan_action_after_reconnect",
+        "transcript": [
+          {
+            "event": "connect",
+            "session_id": "sess-orphan-old",
+            "chain_hash": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+            "prev_chain_hash": null,
+            "policy_event": "remote.session.connect",
+            "audit_event": "audit.remote.session.connect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-orphan-old",
+            "action_id": "act-orphan-1",
+            "chain_hash": "sha256:2323232323232323232323232323232323232323232323232323232323232323",
+            "prev_chain_hash": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "reconnect",
+            "session_id": "sess-orphan-new",
+            "chain_hash": "sha256:3434343434343434343434343434343434343434343434343434343434343434",
+            "prev_chain_hash": "sha256:2323232323232323232323232323232323232323232323232323232323232323",
+            "continuity_prev_session_hash": "sha256:2323232323232323232323232323232323232323232323232323232323232323",
+            "continuity_new_session_hash": "sha256:3434343434343434343434343434343434343434343434343434343434343434",
+            "policy_event": "remote.session.reconnect",
+            "audit_event": "audit.remote.session.reconnect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-orphan-ghost",
+            "action_id": "act-orphan-ghost",
+            "chain_hash": "sha256:4545454545454545454545454545454545454545454545454545454545454545",
+            "prev_chain_hash": "sha256:3434343434343434343434343434343434343434343434343434343434343434",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          }
+        ]
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "CONT_ORPHAN_ACTION_DETECTED"
+      }
+    },
+    {
+      "id": "packet_loss_missing_audit_fails_closed",
+      "query": {
+        "scenario": "packet_loss_missing_audit",
+        "transcript": [
+          {
+            "event": "connect",
+            "session_id": "sess-audit",
+            "chain_hash": "sha256:5656565656565656565656565656565656565656565656565656565656565656",
+            "prev_chain_hash": null,
+            "policy_event": "remote.session.connect",
+            "audit_event": "audit.remote.session.connect"
+          },
+          {
+            "event": "input",
+            "session_id": "sess-audit",
+            "action_id": "act-audit-1",
+            "chain_hash": "sha256:6767676767676767676767676767676767676767676767676767676767676767",
+            "prev_chain_hash": "sha256:5656565656565656565656565656565656565656565656565656565656565656",
+            "policy_event": "input.inject",
+            "audit_event": "audit.input.inject"
+          },
+          {
+            "event": "packet_loss_recover",
+            "session_id": "sess-audit",
+            "loss_packets": 6,
+            "chain_hash": "sha256:7878787878787878787878787878787878787878787878787878787878787878",
+            "prev_chain_hash": "sha256:6767676767676767676767676767676767676767676767676767676767676767",
+            "policy_event": "remote.session.reconnect",
+            "audit_event": "audit.remote.session.recover"
+          }
+        ]
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "CONT_AUDIT_INCOMPLETE"
+      }
+    },
+    {
+      "id": "unknown_scenario_fails_closed",
+      "query": {
+        "scenario": "stale_gateway_snapshot",
+        "transcript": []
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "CONT_SCENARIO_UNKNOWN"
+      }
+    }
+  ]
+}

@@ -1,0 +1,209 @@
+mapping_id: cua-policy-event-mapping
+mapping_version: 1
+updated_at: "2026-02-18T00:00:00Z"
+
+guard_model_refs:
+  - docs/roadmaps/cua/research/08-policy-engine.md
+  - crates/libs/clawdstrike/src/engine.rs
+
+required_flows:
+  - connect
+  - input
+  - clipboard_read
+  - clipboard_write
+  - file_transfer_upload
+  - file_transfer_download
+  - session_share
+  - reconnect
+  - disconnect
+
+required_side_effects:
+  - session_connect
+  - input_injection
+  - clipboard_read
+  - clipboard_write
+  - file_upload
+  - file_download
+  - session_share
+  - session_reconnect
+  - session_disconnect
+
+fail_closed_codes:
+  mapping_invalid: PEMAP_MAPPING_INVALID
+  mapping_incomplete: PEMAP_MAPPING_INCOMPLETE
+  flow_unknown: PEMAP_FLOW_UNKNOWN
+  side_effect_unknown: PEMAP_SIDE_EFFECT_UNKNOWN
+  flow_side_effect_mismatch: PEMAP_FLOW_SIDE_EFFECT_MISMATCH
+
+defaults:
+  decision_on_guard_error: deny
+  decision_on_missing_mapping: deny
+
+flow_mappings:
+  connect:
+    side_effect: session_connect
+    preflight:
+      policy_event: remote.session.connect
+      guard_checks:
+        - guard: egress_allowlist
+          stage: fast_path
+        - guard: computer_use
+          stage: std_path
+      fail_closed: true
+    post_action:
+      audit_event: audit.remote.session.connect
+      receipt_artifacts:
+        - connection_id
+        - transport_profile
+        - frame_hash_pre
+        - frame_hash_post
+        - policy_decision_digest
+
+  input:
+    side_effect: input_injection
+    preflight:
+      policy_event: input.inject
+      guard_checks:
+        - guard: computer_use
+          stage: std_path
+        - guard: input_injection_capability
+          stage: std_path
+      fail_closed: true
+    post_action:
+      audit_event: audit.input.inject
+      receipt_artifacts:
+        - action_id
+        - input_event_hash
+        - frame_hash_pre
+        - frame_hash_post
+        - postcondition_probe_result
+
+  clipboard_read:
+    side_effect: clipboard_read
+    preflight:
+      policy_event: remote.clipboard
+      guard_checks:
+        - guard: computer_use
+          stage: std_path
+        - guard: remote_desktop_side_channel
+          stage: std_path
+      fail_closed: true
+      metadata_requirements:
+        direction: read
+    post_action:
+      audit_event: audit.remote.clipboard.read
+      receipt_artifacts:
+        - clipboard_payload_hash
+        - policy_decision_digest
+
+  clipboard_write:
+    side_effect: clipboard_write
+    preflight:
+      policy_event: remote.clipboard
+      guard_checks:
+        - guard: computer_use
+          stage: std_path
+        - guard: remote_desktop_side_channel
+          stage: std_path
+      fail_closed: true
+      metadata_requirements:
+        direction: write
+    post_action:
+      audit_event: audit.remote.clipboard.write
+      receipt_artifacts:
+        - clipboard_payload_hash
+        - redaction_rule_hashes
+        - policy_decision_digest
+
+  file_transfer_upload:
+    side_effect: file_upload
+    preflight:
+      policy_event: remote.file_transfer
+      guard_checks:
+        - guard: forbidden_path
+          stage: fast_path
+        - guard: computer_use
+          stage: std_path
+        - guard: remote_desktop_side_channel
+          stage: std_path
+      fail_closed: true
+      metadata_requirements:
+        direction: upload
+    post_action:
+      audit_event: audit.remote.file_transfer.upload
+      receipt_artifacts:
+        - transfer_manifest_hash
+        - file_digest
+        - policy_decision_digest
+
+  file_transfer_download:
+    side_effect: file_download
+    preflight:
+      policy_event: remote.file_transfer
+      guard_checks:
+        - guard: egress_allowlist
+          stage: fast_path
+        - guard: forbidden_path
+          stage: fast_path
+        - guard: computer_use
+          stage: std_path
+        - guard: remote_desktop_side_channel
+          stage: std_path
+      fail_closed: true
+      metadata_requirements:
+        direction: download
+    post_action:
+      audit_event: audit.remote.file_transfer.download
+      receipt_artifacts:
+        - transfer_manifest_hash
+        - file_digest
+        - quarantine_location_hash
+        - policy_decision_digest
+
+  session_share:
+    side_effect: session_share
+    preflight:
+      policy_event: remote.session_share
+      guard_checks:
+        - guard: computer_use
+          stage: std_path
+        - guard: remote_desktop_side_channel
+          stage: std_path
+      fail_closed: true
+    post_action:
+      audit_event: audit.remote.session_share
+      receipt_artifacts:
+        - peer_identity_digest
+        - share_scope
+        - policy_decision_digest
+
+  reconnect:
+    side_effect: session_reconnect
+    preflight:
+      policy_event: remote.session.reconnect
+      guard_checks:
+        - guard: computer_use
+          stage: std_path
+      fail_closed: true
+    post_action:
+      audit_event: audit.remote.session.reconnect
+      receipt_artifacts:
+        - reconnect_attempt
+        - continuity_prev_session_hash
+        - continuity_new_session_hash
+        - policy_decision_digest
+
+  disconnect:
+    side_effect: session_disconnect
+    preflight:
+      policy_event: remote.session.disconnect
+      guard_checks:
+        - guard: computer_use
+          stage: std_path
+      fail_closed: true
+    post_action:
+      audit_event: audit.remote.session.disconnect
+      receipt_artifacts:
+        - disconnect_reason
+        - final_session_hash
+        - policy_decision_digest

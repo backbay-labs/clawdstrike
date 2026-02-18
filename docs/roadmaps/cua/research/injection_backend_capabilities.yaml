@@ -1,0 +1,243 @@
+manifest_id: injection-backend-capabilities
+manifest_version: 1
+updated_at: "2026-02-18T00:00:00Z"
+
+schema_ref: docs/roadmaps/cua/research/injection_outcome_schema.json
+
+states:
+  - accepted
+  - applied
+  - verified
+  - denied
+  - unknown
+
+actions:
+  - click
+  - type
+  - scroll
+  - key_chord
+  - drag
+
+target_modes:
+  - coordinate
+  - semantic
+  - protocol
+
+fail_closed_codes:
+  unknown_backend: INJCAP_BACKEND_UNKNOWN
+  unknown_action: INJCAP_ACTION_UNKNOWN
+  unknown_target_mode: INJCAP_TARGET_MODE_UNKNOWN
+  unsupported_combination: INJCAP_COMBINATION_UNSUPPORTED
+  missing_required_permission: INJCAP_PERMISSION_MISSING
+  invalid_manifest: INJCAP_MANIFEST_INVALID
+  invalid_outcome: INJCAP_OUTCOME_SCHEMA_INVALID
+
+success_reason_by_state:
+  accepted: RC_OK_ACCEPTED
+  applied: RC_OK_APPLIED
+  verified: RC_OK_VERIFIED
+
+permissions_catalog:
+  x11_display_access:
+    missing_reason_code: RC_PERMISSION_DENIED
+  uinput_device_access:
+    missing_reason_code: RC_PERMISSION_DENIED
+  portal_remote_desktop:
+    missing_reason_code: RC_PORTAL_PERMISSION_DENIED
+  compositor_eis:
+    missing_reason_code: RC_PORTAL_SESSION_REQUIRED
+  windows_input_access:
+    missing_reason_code: RC_PERMISSION_DENIED
+  windows_uia_access:
+    missing_reason_code: RC_PERMISSION_DENIED
+  macos_accessibility_permission:
+    missing_reason_code: RC_ACCESSIBILITY_PERMISSION_MISSING
+
+threat_tier_defaults:
+  dev:
+    preferred_backends:
+      - rdp_protocol_bridge
+      - linux_x11_xtest
+      - windows_sendinput
+      - macos_quartz_events
+  internal_prod:
+    preferred_backends:
+      - rdp_protocol_bridge
+      - linux_wayland_portal_libei
+      - windows_uia
+      - macos_axuielement
+  internet_exposed_multi_tenant:
+    preferred_backends:
+      - rdp_protocol_bridge
+      - linux_wayland_portal_libei
+    disallowed_backends:
+      - linux_uinput
+      - linux_x11_xtest
+      - windows_sendinput
+      - macos_quartz_events
+
+backends:
+  rdp_protocol_bridge:
+    platform: cross_platform
+    runtime: remote_desktop_gateway
+    risk_level: protocol_mediated
+    requires_isolation: true
+    requires_permissions: []
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+        - drag
+      target_modes:
+        - protocol
+      default_success_state: verified
+      postcondition_probes:
+        - frame_hash_delta
+        - focus_check
+
+  linux_wayland_portal_libei:
+    platform: linux
+    runtime: wayland
+    risk_level: protocol_mediated
+    requires_isolation: true
+    requires_permissions:
+      - portal_remote_desktop
+      - compositor_eis
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+      target_modes:
+        - coordinate
+      default_success_state: verified
+      postcondition_probes:
+        - frame_hash_delta
+        - focus_check
+    limits:
+      unsupported_reason_code: RC_UNSUPPORTED_CAPABILITY_COMBINATION
+
+  linux_x11_xtest:
+    platform: linux
+    runtime: x11
+    risk_level: host_level
+    requires_isolation: true
+    requires_permissions:
+      - x11_display_access
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+        - drag
+      target_modes:
+        - coordinate
+      default_success_state: applied
+      postcondition_probes:
+        - frame_hash_delta
+    limits:
+      unsupported_reason_code: RC_UNSUPPORTED_CAPABILITY_COMBINATION
+
+  linux_uinput:
+    platform: linux
+    runtime: evdev
+    risk_level: host_level
+    requires_isolation: true
+    requires_permissions:
+      - uinput_device_access
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+      target_modes:
+        - coordinate
+      default_success_state: applied
+      postcondition_probes:
+        - frame_hash_delta
+
+  windows_sendinput:
+    platform: windows
+    runtime: win32
+    risk_level: host_level
+    requires_isolation: true
+    requires_permissions:
+      - windows_input_access
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+        - drag
+      target_modes:
+        - coordinate
+      default_success_state: applied
+      postcondition_probes:
+        - frame_hash_delta
+    limits:
+      known_denials:
+        - RC_UIPI_BLOCKED
+
+  windows_uia:
+    platform: windows
+    runtime: uia
+    risk_level: semantic_control
+    requires_isolation: false
+    requires_permissions:
+      - windows_uia_access
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+      target_modes:
+        - semantic
+      default_success_state: verified
+      postcondition_probes:
+        - ui_tree_assertion
+
+  macos_quartz_events:
+    platform: macos
+    runtime: quartz
+    risk_level: host_level
+    requires_isolation: true
+    requires_permissions:
+      - macos_accessibility_permission
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+        - drag
+      target_modes:
+        - coordinate
+      default_success_state: applied
+      postcondition_probes:
+        - frame_hash_delta
+
+  macos_axuielement:
+    platform: macos
+    runtime: accessibility
+    risk_level: semantic_control
+    requires_isolation: false
+    requires_permissions:
+      - macos_accessibility_permission
+    supports:
+      actions:
+        - click
+        - type
+        - scroll
+        - key_chord
+      target_modes:
+        - semantic
+      default_success_state: verified
+      postcondition_probes:
+        - accessibility_tree_assertion

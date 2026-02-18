@@ -1,0 +1,103 @@
+{
+  "attestation_policy": "docs/roadmaps/cua/research/attestation_verifier_policy.yaml",
+  "cases": [
+    {
+      "expected": {
+        "result": "pass"
+      },
+      "fixture": "v1-baseline-valid.json",
+      "id": "baseline_v1_valid"
+    },
+    {
+      "expected": {
+        "result": "pass"
+      },
+      "fixture": "v1-cua-valid.json",
+      "id": "cua_v1_valid"
+    },
+    {
+      "expected": {
+        "error_code": "VFY_PROFILE_UNKNOWN",
+        "result": "fail"
+      },
+      "fixture": "malformed-unknown-profile.json",
+      "id": "malformed_unknown_profile"
+    },
+    {
+      "expected": {
+        "error_code": "VFY_CUA_SCHEMA_VERSION_UNSUPPORTED",
+        "result": "fail"
+      },
+      "fixture": "malformed-unknown-cua-schema-version.json",
+      "id": "malformed_unknown_cua_schema_version"
+    },
+    {
+      "expected": {
+        "error_code": "VFY_CUA_SCHEMA_INVALID",
+        "result": "fail"
+      },
+      "fixture": "malformed-unknown-action-kind.json",
+      "id": "malformed_unknown_action_kind"
+    },
+    {
+      "expected": {
+        "error_code": "VFY_CUA_SCHEMA_INVALID",
+        "result": "fail"
+      },
+      "fixture": "malformed-missing-attestation-claim.json",
+      "id": "malformed_missing_attestation_claim"
+    },
+    {
+      "expected": {
+        "error_code": "VFY_ATTESTATION_POLICY_DENY",
+        "policy_subcode": "AVP_UNKNOWN_ISSUER",
+        "result": "fail"
+      },
+      "fixture": "malformed-wrong-attestation-issuer.json",
+      "id": "malformed_wrong_attestation_issuer"
+    },
+    {
+      "expected": {
+        "error_code": "VFY_ATTESTATION_POLICY_DENY",
+        "policy_subcode": "AVP_NONCE_STALE",
+        "result": "fail"
+      },
+      "fixture": "malformed-stale-nonce.json",
+      "id": "malformed_stale_nonce"
+    },
+    {
+      "expected": {
+        "legacy_verifier": {
+          "result": "pass"
+        },
+        "updated_verifier": {
+          "result": "pass"
+        }
+      },
+      "fixture": "dual-sign-cua-valid.json",
+      "id": "dual_sign_cua_valid"
+    },
+    {
+      "expected": {
+        "legacy_verifier": {
+          "result": "pass"
+        },
+        "updated_verifier": {
+          "error_code": "VFY_COSIGNATURE_INVALID",
+          "result": "fail"
+        }
+      },
+      "fixture": "dual-sign-cua-invalid-cosigner.json",
+      "id": "dual_sign_cua_invalid_cosigner"
+    }
+  ],
+  "evaluation_context": {
+    "note": "Use this timestamp for deterministic nonce freshness vectors.",
+    "verified_at": "2026-02-18T00:10:00Z"
+  },
+  "public_keys": {
+    "cosigner": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+    "signer": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737"
+  },
+  "schema_package": "docs/roadmaps/cua/research/schemas/cua-metadata/schema-package.json"
+}

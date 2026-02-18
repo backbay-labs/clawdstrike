@@ -1,0 +1,226 @@
+{
+  "suite": "docs/roadmaps/cua/research/provider_conformance_suite.yaml",
+  "cases": [
+    {
+      "id": "openai_click_translates_to_input_inject",
+      "description": "OpenAI click action translates to canonical input.inject event",
+      "query": {
+        "provider": "openai",
+        "intent": "click_element",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "click",
+          "x": 150,
+          "y": 300
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "input.inject",
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_click_translates_to_input_inject",
+      "description": "Claude click action translates to canonical input.inject event (parity with OpenAI)",
+      "query": {
+        "provider": "claude",
+        "intent": "click_element",
+        "provider_input": {
+          "tool": "computer",
+          "action": "mouse_click",
+          "coordinate_x": 150,
+          "coordinate_y": 300
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "input.inject",
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_type_translates_to_input_inject",
+      "description": "OpenAI type action translates to canonical input.inject event",
+      "query": {
+        "provider": "openai",
+        "intent": "type_text",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "type",
+          "text": "hello world"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "input.inject",
+          "data": {
+            "cuaAction": "type",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_navigate_translates_to_connect",
+      "description": "Claude navigate action translates to canonical remote.session.connect event",
+      "query": {
+        "provider": "claude",
+        "intent": "navigate_url",
+        "provider_input": {
+          "tool": "computer",
+          "action": "navigate",
+          "url": "https://example.com"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.session.connect",
+          "data": {
+            "cuaAction": "navigate",
+            "direction": "outbound"
+          }
+        }
+      }
+    },
+    {
+      "id": "cross_provider_click_parity_holds",
+      "description": "Same click intent through OpenAI and Claude produces identical canonical parity fields",
+      "query": {
+        "type": "parity_check",
+        "intent": "click_element",
+        "provider_a": {
+          "provider": "openai",
+          "provider_input": {
+            "tool": "computer_use",
+            "action": "click",
+            "x": 200,
+            "y": 400
+          }
+        },
+        "provider_b": {
+          "provider": "claude",
+          "provider_input": {
+            "tool": "computer",
+            "action": "mouse_click",
+            "coordinate_x": 200,
+            "coordinate_y": 400
+          }
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "parity": true
+      }
+    },
+    {
+      "id": "unknown_provider_fails_closed",
+      "description": "Unknown provider 'gemini' fails closed with PRV_PROVIDER_UNKNOWN",
+      "query": {
+        "provider": "gemini",
+        "intent": "click_element",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "click",
+          "x": 100,
+          "y": 200
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRV_PROVIDER_UNKNOWN"
+      }
+    },
+    {
+      "id": "unknown_intent_fails_closed",
+      "description": "Unknown intent 'drag_drop' fails closed with PRV_INTENT_UNKNOWN",
+      "query": {
+        "provider": "openai",
+        "intent": "drag_drop",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "drag",
+          "x": 100,
+          "y": 200
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRV_INTENT_UNKNOWN"
+      }
+    },
+    {
+      "id": "parity_violation_detected",
+      "description": "OpenAI and Claude produce different eventType for same intent triggers PRV_PARITY_VIOLATION",
+      "query": {
+        "type": "parity_check",
+        "intent": "click_element",
+        "provider_a": {
+          "provider": "openai",
+          "provider_input": {
+            "tool": "computer_use",
+            "action": "click",
+            "x": 50,
+            "y": 75
+          }
+        },
+        "provider_b": {
+          "provider": "claude",
+          "provider_input": {
+            "tool": "computer",
+            "action": "mouse_click",
+            "coordinate_x": 50,
+            "coordinate_y": 75
+          }
+        },
+        "override_canonical_b": {
+          "eventType": "remote.session.connect",
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          }
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRV_PARITY_VIOLATION"
+      }
+    },
+    {
+      "id": "missing_required_field_fails_closed",
+      "description": "Provider output missing cuaAction field fails closed with PRV_MISSING_REQUIRED_FIELD",
+      "query": {
+        "provider": "openai",
+        "intent": "click_element",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "click",
+          "x": 100,
+          "y": 200
+        },
+        "override_canonical": {
+          "eventType": "input.inject",
+          "data": {
+            "direction": null
+          }
+        }
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "PRV_MISSING_REQUIRED_FIELD"
+      }
+    }
+  ]
+}

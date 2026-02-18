@@ -1,0 +1,337 @@
+{
+  "$id": "https://clawdstrike.dev/schemas/injection-outcome/v1/injection-outcome.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CUA Injection Outcome Schema v1.0.0",
+  "description": "Machine-parseable result contract for backend input injection attempts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "outcome_version",
+    "backend_id",
+    "platform",
+    "action_kind",
+    "target_mode",
+    "state",
+    "reason_code",
+    "timestamp",
+    "evidence"
+  ],
+  "properties": {
+    "outcome_version": {
+      "const": "1.0.0"
+    },
+    "backend_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "platform": {
+      "type": "string",
+      "enum": [
+        "linux",
+        "windows",
+        "macos",
+        "cross_platform"
+      ]
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action_kind": {
+      "type": "string",
+      "enum": [
+        "click",
+        "type",
+        "scroll",
+        "key_chord",
+        "drag"
+      ]
+    },
+    "target_mode": {
+      "type": "string",
+      "enum": [
+        "coordinate",
+        "semantic",
+        "protocol"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "applied",
+        "verified",
+        "denied",
+        "unknown"
+      ]
+    },
+    "reason_code": {
+      "$ref": "#/$defs/reason_code"
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "timing_ms": {
+      "$ref": "#/$defs/timing"
+    },
+    "probe": {
+      "$ref": "#/$defs/probe"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidence"
+    },
+    "details": {
+      "$ref": "#/$defs/details"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^(sha256:[0-9a-f]{64}|0x[0-9a-f]{64})$"
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "RC_OK_ACCEPTED",
+        "RC_OK_APPLIED",
+        "RC_OK_VERIFIED",
+        "RC_POLICY_DENIED",
+        "RC_PERMISSION_DENIED",
+        "RC_PRIVILEGE_BOUNDARY",
+        "RC_TARGET_MISMATCH",
+        "RC_TIMEOUT",
+        "RC_BACKEND_UNAVAILABLE",
+        "RC_BACKEND_NOT_READY",
+        "RC_POSTCONDITION_FAILED",
+        "RC_FOCUS_STOLEN",
+        "RC_AMBIGUOUS_TARGET",
+        "RC_PORTAL_SESSION_REQUIRED",
+        "RC_PORTAL_PERMISSION_DENIED",
+        "RC_UIPI_BLOCKED",
+        "RC_ACCESSIBILITY_PERMISSION_MISSING",
+        "RC_UNSUPPORTED_CAPABILITY_COMBINATION",
+        "RC_UNKNOWN_ERROR"
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "decision"
+      ],
+      "properties": {
+        "event": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "require_approval"
+          ]
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "type": "number",
+          "minimum": 0
+        },
+        "applied": {
+          "type": "number",
+          "minimum": 0
+        },
+        "verified": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pre_action_hash"
+      ],
+      "properties": {
+        "pre_action_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "post_action_hash": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "backend_trace_id": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "accepted"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reason_code": {
+            "const": "RC_OK_ACCEPTED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "applied"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reason_code": {
+            "const": "RC_OK_APPLIED"
+          },
+          "evidence": {
+            "required": [
+              "pre_action_hash",
+              "post_action_hash"
+            ]
+          }
+        },
+        "required": [
+          "evidence"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "verified"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reason_code": {
+            "const": "RC_OK_VERIFIED"
+          },
+          "probe": {
+            "required": [
+              "name",
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "pass"
+              }
+            }
+          },
+          "evidence": {
+            "required": [
+              "pre_action_hash",
+              "post_action_hash"
+            ]
+          }
+        },
+        "required": [
+          "probe"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "denied"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "not": {
+          "properties": {
+            "reason_code": {
+              "enum": [
+                "RC_OK_ACCEPTED",
+                "RC_OK_APPLIED",
+                "RC_OK_VERIFIED"
+              ]
+            }
+          },
+          "required": [
+            "reason_code"
+          ]
+        }
+      }
+    }
+  ]
+}

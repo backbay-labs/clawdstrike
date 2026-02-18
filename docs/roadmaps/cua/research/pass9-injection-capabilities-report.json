@@ -1,0 +1,161 @@
+{
+  "manifest": "docs/roadmaps/cua/research/injection_backend_capabilities.yaml",
+  "results": [
+    {
+      "actual": {
+        "outcome": {
+          "reason_code": "RC_OK_VERIFIED",
+          "state": "verified"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "outcome": {
+          "reason_code": "RC_OK_VERIFIED",
+          "state": "verified"
+        },
+        "result": "pass"
+      },
+      "id": "wayland_libei_verified",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "INJCAP_PERMISSION_MISSING",
+        "outcome": {
+          "reason_code": "RC_PORTAL_PERMISSION_DENIED",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "INJCAP_PERMISSION_MISSING",
+        "outcome": {
+          "reason_code": "RC_PORTAL_PERMISSION_DENIED",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "id": "wayland_libei_missing_portal_permission",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "INJCAP_COMBINATION_UNSUPPORTED",
+        "outcome": {
+          "reason_code": "RC_UNSUPPORTED_CAPABILITY_COMBINATION",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "INJCAP_COMBINATION_UNSUPPORTED",
+        "outcome": {
+          "reason_code": "RC_UNSUPPORTED_CAPABILITY_COMBINATION",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "id": "xtest_semantic_unsupported",
+      "ok": true
+    },
+    {
+      "actual": {
+        "outcome": {
+          "reason_code": "RC_OK_APPLIED",
+          "state": "applied"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "outcome": {
+          "reason_code": "RC_OK_APPLIED",
+          "state": "applied"
+        },
+        "result": "pass"
+      },
+      "id": "windows_sendinput_applied",
+      "ok": true
+    },
+    {
+      "actual": {
+        "outcome": {
+          "reason_code": "RC_OK_VERIFIED",
+          "state": "verified"
+        },
+        "result": "pass"
+      },
+      "expected": {
+        "outcome": {
+          "reason_code": "RC_OK_VERIFIED",
+          "state": "verified"
+        },
+        "result": "pass"
+      },
+      "id": "rdp_protocol_bridge_verified",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "INJCAP_PERMISSION_MISSING",
+        "outcome": {
+          "reason_code": "RC_ACCESSIBILITY_PERMISSION_MISSING",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "INJCAP_PERMISSION_MISSING",
+        "outcome": {
+          "reason_code": "RC_ACCESSIBILITY_PERMISSION_MISSING",
+          "state": "denied"
+        },
+        "result": "fail"
+      },
+      "id": "macos_quartz_missing_accessibility_permission",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "INJCAP_BACKEND_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "INJCAP_BACKEND_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_backend_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "INJCAP_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "INJCAP_ACTION_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_action_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "INJCAP_TARGET_MODE_UNKNOWN",
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "INJCAP_TARGET_MODE_UNKNOWN",
+        "result": "fail"
+      },
+      "id": "unknown_target_mode_fails_closed",
+      "ok": true
+    }
+  ],
+  "schema": "docs/roadmaps/cua/research/injection_outcome_schema.json",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}

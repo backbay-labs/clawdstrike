@@ -1,0 +1,193 @@
+{
+  "suite": "docs/roadmaps/cua/research/canonical_adapter_cua_contract.yaml",
+  "cases": [
+    {
+      "id": "connect_accepted_policy_allow",
+      "description": "connect flow with policy allow produces accepted outcome",
+      "query": {
+        "flow": "connect",
+        "outcome": "accepted",
+        "reason_code": "ADC_POLICY_ALLOW",
+        "policy_event_ref": "remote.session.connect",
+        "guard_results": [
+          {"guard": "egress_allowlist", "decision": "allow"},
+          {"guard": "computer_use", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:connect:001"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "resolved_policy_event": "remote.session.connect",
+        "resolved_guards": ["egress_allowlist", "computer_use"]
+      }
+    },
+    {
+      "id": "input_applied_with_probe",
+      "description": "input flow with probe verification produces applied outcome",
+      "query": {
+        "flow": "input",
+        "outcome": "applied",
+        "reason_code": "ADC_PROBE_VERIFIED",
+        "policy_event_ref": "input.inject",
+        "guard_results": [
+          {"guard": "computer_use", "decision": "allow"},
+          {"guard": "input_injection_capability", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:input:002"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "resolved_policy_event": "input.inject",
+        "resolved_guards": ["computer_use", "input_injection_capability"]
+      }
+    },
+    {
+      "id": "clipboard_denied_by_guard",
+      "description": "clipboard_write flow denied by side channel guard",
+      "query": {
+        "flow": "clipboard_write",
+        "outcome": "denied",
+        "reason_code": "ADC_POLICY_DENY",
+        "policy_event_ref": "remote.clipboard",
+        "guard_results": [
+          {"guard": "computer_use", "decision": "allow"},
+          {"guard": "remote_desktop_side_channel", "decision": "deny"}
+        ],
+        "audit_ref": "audit:adc:clipboard_write:003"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "resolved_policy_event": "remote.clipboard",
+        "resolved_guards": ["computer_use", "remote_desktop_side_channel"]
+      }
+    },
+    {
+      "id": "file_transfer_verified_download",
+      "description": "file_transfer_download flow with quarantine passed produces verified outcome",
+      "query": {
+        "flow": "file_transfer_download",
+        "outcome": "verified",
+        "reason_code": "ADC_PROBE_VERIFIED",
+        "policy_event_ref": "remote.file_transfer",
+        "guard_results": [
+          {"guard": "egress_allowlist", "decision": "allow"},
+          {"guard": "forbidden_path", "decision": "allow"},
+          {"guard": "computer_use", "decision": "allow"},
+          {"guard": "remote_desktop_side_channel", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:file_transfer_download:004"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "resolved_policy_event": "remote.file_transfer",
+        "resolved_guards": ["egress_allowlist", "forbidden_path", "computer_use", "remote_desktop_side_channel"]
+      }
+    },
+    {
+      "id": "reconnect_accepted_with_continuity",
+      "description": "reconnect flow with continuity hash validated produces accepted outcome",
+      "query": {
+        "flow": "reconnect",
+        "outcome": "accepted",
+        "reason_code": "ADC_POLICY_ALLOW",
+        "policy_event_ref": "remote.session.reconnect",
+        "guard_results": [
+          {"guard": "computer_use", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:reconnect:005"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "resolved_policy_event": "remote.session.reconnect",
+        "resolved_guards": ["computer_use"]
+      }
+    },
+    {
+      "id": "unknown_flow_fails_closed",
+      "description": "flow 'screen_record' is not a valid flow surface and fails closed",
+      "query": {
+        "flow": "screen_record",
+        "outcome": "accepted",
+        "reason_code": "ADC_POLICY_ALLOW",
+        "policy_event_ref": "remote.screen_record",
+        "guard_results": [
+          {"guard": "computer_use", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:screen_record:006"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ADC_FLOW_UNKNOWN",
+        "resolved_policy_event": null,
+        "resolved_guards": null
+      }
+    },
+    {
+      "id": "invalid_outcome_fails_closed",
+      "description": "outcome 'partial' is not a canonical outcome and fails closed",
+      "query": {
+        "flow": "connect",
+        "outcome": "partial",
+        "reason_code": "ADC_POLICY_ALLOW",
+        "policy_event_ref": "remote.session.connect",
+        "guard_results": [
+          {"guard": "egress_allowlist", "decision": "allow"},
+          {"guard": "computer_use", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:connect:007"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ADC_OUTCOME_INVALID",
+        "resolved_policy_event": null,
+        "resolved_guards": null
+      }
+    },
+    {
+      "id": "missing_policy_ref_fails_closed",
+      "description": "no policy_event_ref provided and fails closed",
+      "query": {
+        "flow": "input",
+        "outcome": "accepted",
+        "reason_code": "ADC_POLICY_ALLOW",
+        "policy_event_ref": null,
+        "guard_results": [
+          {"guard": "computer_use", "decision": "allow"},
+          {"guard": "input_injection_capability", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:input:008"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ADC_MISSING_POLICY_REF",
+        "resolved_policy_event": null,
+        "resolved_guards": null
+      }
+    },
+    {
+      "id": "unknown_reason_code_fails_closed",
+      "description": "reason code 'CUSTOM_123' is not in the canonical reason codes and fails closed",
+      "query": {
+        "flow": "disconnect",
+        "outcome": "accepted",
+        "reason_code": "CUSTOM_123",
+        "policy_event_ref": "remote.session.disconnect",
+        "guard_results": [
+          {"guard": "computer_use", "decision": "allow"}
+        ],
+        "audit_ref": "audit:adc:disconnect:009"
+      },
+      "expected": {
+        "result": "fail",
+        "error_code": "ADC_REASON_CODE_UNKNOWN",
+        "resolved_policy_event": null,
+        "resolved_guards": null
+      }
+    }
+  ]
+}

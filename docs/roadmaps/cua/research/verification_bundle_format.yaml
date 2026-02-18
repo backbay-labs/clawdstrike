@@ -1,0 +1,64 @@
+suite_id: verification-bundle-format
+suite_version: "1.0.0"
+updated_at: "2026-02-18T00:00:00Z"
+
+description: >
+  Defines the end-to-end verification bundle format for Clawdstrike CUA receipts.
+  A bundle packages a signed receipt, hardware/enclave attestation evidence, and
+  a verification transcript into a single self-contained artifact that a third-party
+  verifier can validate without hidden context. The transcript captures ordered
+  pass/fail/skip checkpoints and references the policy used for evaluation.
+  Unknown attestation types and missing required fields fail closed.
+
+bundle_structure:
+  receipt:
+    description: "The signed receipt containing verdict, provenance, and content hash"
+    required_fields:
+      - receipt_id
+      - version
+      - timestamp
+      - content_hash
+      - verdict
+      - signatures
+
+  attestation_evidence:
+    description: "Hardware or enclave attestation binding the signing environment to the receipt"
+    required_fields:
+      - attestation_type
+      - issued_at
+    supported_types:
+      - tpm2_quote
+      - nitro_enclave
+      - sgx_quote
+      - sev_snp
+      - none
+
+  verification_transcript:
+    description: "Ordered list of verification checkpoints with pass/fail/skip status and policy reference"
+    required_fields:
+      - policy_ref
+      - checkpoints
+    checkpoint_types:
+      - schema_validation
+      - signature_verification
+      - policy_evaluation
+      - attestation_verification
+      - timestamp_check
+      - nonce_freshness
+
+checkpoint_schema:
+  required_fields:
+    - checkpoint_type
+    - status
+    - timestamp
+  allowed_statuses:
+    - pass
+    - fail
+    - skip
+
+fail_closed_codes:
+  receipt_missing: BDL_RECEIPT_MISSING
+  transcript_incomplete: BDL_TRANSCRIPT_INCOMPLETE
+  attestation_type_unknown: BDL_ATTESTATION_TYPE_UNKNOWN
+  checkpoint_failed: BDL_CHECKPOINT_FAILED
+  policy_ref_missing: BDL_POLICY_REF_MISSING

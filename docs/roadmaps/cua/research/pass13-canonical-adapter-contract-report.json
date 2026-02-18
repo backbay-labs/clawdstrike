@@ -1,0 +1,186 @@
+{
+  "results": [
+    {
+      "actual": {
+        "error_code": null,
+        "resolved_guards": [
+          "egress_allowlist",
+          "computer_use"
+        ],
+        "resolved_policy_event": "remote.session.connect",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "resolved_guards": [
+          "egress_allowlist",
+          "computer_use"
+        ],
+        "resolved_policy_event": "remote.session.connect",
+        "result": "pass"
+      },
+      "id": "connect_accepted_policy_allow",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "resolved_guards": [
+          "computer_use",
+          "input_injection_capability"
+        ],
+        "resolved_policy_event": "input.inject",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "resolved_guards": [
+          "computer_use",
+          "input_injection_capability"
+        ],
+        "resolved_policy_event": "input.inject",
+        "result": "pass"
+      },
+      "id": "input_applied_with_probe",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "resolved_guards": [
+          "computer_use",
+          "remote_desktop_side_channel"
+        ],
+        "resolved_policy_event": "remote.clipboard",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "resolved_guards": [
+          "computer_use",
+          "remote_desktop_side_channel"
+        ],
+        "resolved_policy_event": "remote.clipboard",
+        "result": "pass"
+      },
+      "id": "clipboard_denied_by_guard",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "resolved_guards": [
+          "egress_allowlist",
+          "forbidden_path",
+          "computer_use",
+          "remote_desktop_side_channel"
+        ],
+        "resolved_policy_event": "remote.file_transfer",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "resolved_guards": [
+          "egress_allowlist",
+          "forbidden_path",
+          "computer_use",
+          "remote_desktop_side_channel"
+        ],
+        "resolved_policy_event": "remote.file_transfer",
+        "result": "pass"
+      },
+      "id": "file_transfer_verified_download",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": null,
+        "resolved_guards": [
+          "computer_use"
+        ],
+        "resolved_policy_event": "remote.session.reconnect",
+        "result": "pass"
+      },
+      "expected": {
+        "error_code": null,
+        "resolved_guards": [
+          "computer_use"
+        ],
+        "resolved_policy_event": "remote.session.reconnect",
+        "result": "pass"
+      },
+      "id": "reconnect_accepted_with_continuity",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ADC_FLOW_UNKNOWN",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ADC_FLOW_UNKNOWN",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "id": "unknown_flow_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ADC_OUTCOME_INVALID",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ADC_OUTCOME_INVALID",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "id": "invalid_outcome_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ADC_MISSING_POLICY_REF",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ADC_MISSING_POLICY_REF",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "id": "missing_policy_ref_fails_closed",
+      "ok": true
+    },
+    {
+      "actual": {
+        "error_code": "ADC_REASON_CODE_UNKNOWN",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "expected": {
+        "error_code": "ADC_REASON_CODE_UNKNOWN",
+        "resolved_guards": null,
+        "resolved_policy_event": null,
+        "result": "fail"
+      },
+      "id": "unknown_reason_code_fails_closed",
+      "ok": true
+    }
+  ],
+  "suite": "docs/roadmaps/cua/research/canonical_adapter_cua_contract.yaml",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "total": 9
+  }
+}
