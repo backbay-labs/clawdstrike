@@ -5,7 +5,7 @@
 ## Source Report
 - [Deep Research Report](./deep-research-report.md) — 2026 landscape and MVP blueprint
 - [Review Log](./research/REVIEW-LOG.md) — dated reviewer interventions while agents continue writing
-- [Execution Backlog](./research/EXECUTION-BACKLOG.md) — pass-five prioritized implementation plan
+- [Execution Backlog](./research/EXECUTION-BACKLOG.md) — execution and closure status across passes #5-#17
 - [Execution Agent Handoff Prompt](./research/EXECUTION-AGENT-HANDOFF-PROMPT.md) — ready-to-run prompt for implementation pass
 - [Pass #14 Handoff Prompt](./research/EXECUTION-AGENT-HANDOFF-PROMPT-PASS14.md) — E3/E4/code-review team execution prompt
 - [Verifier Flow Spec](./research/verifier-flow-spec.md) — pass-seven normative verifier order and error taxonomy

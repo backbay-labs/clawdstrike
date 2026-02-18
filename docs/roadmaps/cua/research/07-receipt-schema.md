@@ -49,10 +49,10 @@ CUA event model, hash-chain semantics, signature envelope strategy, verifier beh
 
 ## Pass #4 implementation TODO block
 
-- [ ] Publish a versioned JSON Schema package for CUA metadata extensions with compatibility tests.
-- [ ] Implement a reference verifier flow spec with mandatory check order and error codes.
-- [ ] Add fixture corpus for schema migration (`v1 baseline`, `v1 + cua`, malformed variants).
-- [ ] Add equivalence tests proving envelope wrappers preserve canonical payload semantics.
+- [x] Publish a versioned JSON Schema package for CUA metadata extensions with compatibility tests. *(`./schemas/cua-metadata/schema-package.json`, Pass #7)*
+- [x] Implement a reference verifier flow spec with mandatory check order and error codes. *(`./verifier-flow-spec.md`, Pass #7)*
+- [x] Add fixture corpus for schema migration (`v1 baseline`, `v1 + cua`, malformed variants). *(`../../../../fixtures/receipts/cua-migration/cases.json`, Pass #7/#8)*
+- [x] Add equivalence tests proving envelope wrappers preserve canonical payload semantics. *(`./envelope_semantic_equivalence_suite.yaml`, `../../../../fixtures/receipts/envelope-equivalence/v1/cases.json`, Pass #11)*
 
 ## Suggested experiments
 

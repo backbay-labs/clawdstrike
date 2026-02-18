@@ -68,10 +68,10 @@ requires progressively stronger signing and attestation guarantees.
 
 ### Pass #4 implementation TODO block
 
-- [ ] Define `attestation_verifier_policy` (issuer allowlist, nonce TTL, claim schema, clock skew).
-- [ ] Add signer migration plan with dual-sign period, verifier compatibility window, and rollback triggers.
-- [ ] Add test vectors for stale nonce, wrong issuer, mismatched runtime measurement, and revoked key.
-- [ ] Add end-to-end verification bundle format that includes receipt, attestation evidence, and verification transcript.
+- [x] Define `attestation_verifier_policy` (issuer allowlist, nonce TTL, claim schema, clock skew). *(`./attestation_verifier_policy.yaml`, Pass #7)*
+- [x] Add signer migration plan with dual-sign period, verifier compatibility window, and rollback triggers. *(`./signer-migration-plan.md`, Pass #7)*
+- [x] Add test vectors for stale nonce, wrong issuer, mismatched runtime measurement, and revoked key. *(`../../../../fixtures/receipts/cua-migration/cases.json`, `./verifier-flow-spec.md`, Pass #8/#12)*
+- [x] Add end-to-end verification bundle format that includes receipt, attestation evidence, and verification transcript. *(`./verification_bundle_format.yaml`, `../../../../fixtures/receipts/verification-bundle/v1/cases.json`, Pass #12)*
 
 ---
 

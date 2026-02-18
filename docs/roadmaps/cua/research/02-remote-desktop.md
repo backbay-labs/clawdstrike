@@ -104,7 +104,7 @@ The key architectural principle is: **the gateway is the only participant that s
 
 - [x] Define `remote_desktop_policy_matrix.yaml` with per-protocol side-channel controls (`./remote_desktop_policy_matrix.yaml`).
 - [x] Add end-to-end policy-event mapping for connect, input, clipboard, transfer, and disconnect paths (`./policy_event_mapping.md`, `./policy_event_mapping.yaml`).
-- [ ] Build repeatable latency harness (same host class, same codec, same frame size, warm/cold cache runs).
+- [x] Build repeatable latency harness (same host class, same codec, same frame size, warm/cold cache runs). *(`./repeatable_latency_harness.yaml`, `../../../../fixtures/benchmarks/remote-latency/v1/cases.json`, Pass #11)*
 - [x] Add evidence continuity tests for reconnect, packet loss, and gateway restart scenarios (`./remote_session_continuity_suite.yaml`, `../../../../fixtures/policy-events/session-continuity/v1/cases.json`).
 
 ---

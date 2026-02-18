@@ -36,7 +36,7 @@ Primary targets:
 
 - Extend adapter-core event model to support CUA-native flow surfaces:
   - `connect`, `input`, `clipboard_read`, `clipboard_write`,
-  - `file_transfer_upload`, `file_transfer_download`,
+  - `file_transfer_upload`, `file_transfer_download`, `session_share`,
   - `reconnect`, `disconnect`.
 - Define canonical outcome normalization:
   - `accepted`, `applied`, `verified`, `denied`, `unknown` + stable reason codes.
@@ -74,8 +74,8 @@ Primary targets:
 ## Implementation TODO block
 
 - [x] Add canonical CUA contract and normalization layer in adapter-core. *(Pass #13 — E1)*
-- [ ] Add OpenAI computer-use translator with conformance fixtures.
-- [ ] Add Claude computer-use translator with conformance fixtures.
+- [x] Add OpenAI computer-use translator with conformance fixtures. *(Pass #15 — runtime translator path; Pass #17 — full-flow conformance fixtures)*
+- [x] Add Claude computer-use translator with conformance fixtures. *(Pass #15 — runtime translator path; Pass #17 — full-flow conformance fixtures)*
 - [x] Align OpenClaw hooks to canonical CUA event/outcome mapping. *(Pass #14 — E3)*
 - [x] Produce `trycua/cua` connector prototype report + compatibility matrix. *(Pass #14 — E4)*
 

@@ -1,6 +1,6 @@
-# CUA Execution Backlog (Pass #5)
+# CUA Execution Backlog (Passes #5-#17)
 
-This backlog consolidates implementation TODO items from pass-four review across:
+This backlog originated from pass-four review and tracks implementation + closure status across passes #5-#17 for:
 
 - `02-remote-desktop.md`
 - `03-input-injection.md`

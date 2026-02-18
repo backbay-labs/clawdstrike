@@ -67,11 +67,11 @@ Policy language and enforcement workflow for CUA actions, including approvals, r
 
 ## Pass #11 integration TODO block
 
-- [ ] Define canonical CUA event/outcome adapter contract in `packages/adapters/clawdstrike-adapter-core/src/`.
-- [ ] Add OpenAI and Claude CUA translator layers that normalize provider payloads into canonical events.
-- [ ] Align `@clawdstrike/openclaw` hook path to emit canonical CUA events where supported.
-- [ ] Add cross-provider conformance fixtures and fail-closed drift tests.
-- [ ] Track external runtime connector evaluation (`trycua/cua`) against canonical contract constraints (`./09-ecosystem-integrations.md`).
+- [x] Define canonical CUA event/outcome adapter contract in `packages/adapters/clawdstrike-adapter-core/src/`. *(Pass #13 — E1)*
+- [x] Add OpenAI and Claude CUA translator layers that normalize provider payloads into canonical events. *(Pass #15 — runtime translators; Pass #17 — parity hardening)*
+- [x] Align `@clawdstrike/openclaw` hook path to emit canonical CUA events where supported. *(Pass #14 — E3; Pass #15 — runtime enforcement closure)*
+- [x] Add cross-provider conformance fixtures and fail-closed drift tests. *(Pass #13 baseline; Pass #17 full canonical flow surface)*
+- [x] Track external runtime connector evaluation (`trycua/cua`) against canonical contract constraints (`./09-ecosystem-integrations.md`). *(Pass #14 — E4)*
 
 ---
 
