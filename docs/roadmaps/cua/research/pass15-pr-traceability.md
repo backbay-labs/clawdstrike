@@ -153,3 +153,101 @@ Targeted validation for this PR scope passed:
 - `python3 docs/roadmaps/cua/research/verify_canonical_adapter_contract.py`
 - `python3 docs/roadmaps/cua/research/verify_provider_conformance.py`
 - `python3 docs/roadmaps/cua/research/verify_openclaw_cua_bridge.py`
+
+## Pass #17 Addendum: Runtime Hardening + Contract Parity
+
+Date: 2026-02-18
+
+### Gap 1: hushd CUA side-channel parity for emitted events
+
+Resolution:
+- Added hushd support for:
+  - `remote.audio`
+  - `remote.drive_mapping`
+  - `remote.printing`
+- Updated policy-event mapping/roundtrip logic to handle these event types consistently.
+
+Changed files:
+- `crates/services/hushd/src/policy_event.rs`
+- `crates/services/hushd/tests/cua_policy_events.rs`
+
+Tests:
+- `cargo test -p hushd policy_event -- --nocapture`
+- `cargo test -p hushd -q tests::cua_policy_events`
+
+### Gap 2: deterministic `reason_code` at runtime decision boundaries
+
+Resolution:
+- Adapter-core decision contract now requires `reason_code` for non-allow decisions.
+- OpenClaw policy engine now emits deterministic reason codes across deny/warn paths.
+- hushd/hush-cli policy-eval JSON now includes `decision.reason_code`.
+- Fail-closed paths normalized to `ADC_GUARD_ERROR`.
+
+Changed files:
+- `packages/adapters/clawdstrike-adapter-core/src/types.ts`
+- `packages/adapters/clawdstrike-adapter-core/src/engine-response.ts`
+- `packages/adapters/clawdstrike-adapter-core/src/base-tool-interceptor.ts`
+- `packages/adapters/clawdstrike-openclaw/src/types.ts`
+- `packages/adapters/clawdstrike-openclaw/src/policy/engine.ts`
+- `crates/services/hushd/src/api/eval.rs`
+- `crates/services/hush-cli/src/policy_pac.rs`
+
+Tests/fixtures:
+- `crates/services/hush-cli/src/tests.rs`
+- `crates/services/hushd/tests/integration.rs`
+- `fixtures/policy-events/v1/expected/default.decisions.json`
+
+### Gap 3: provider conformance coverage breadth and runtime scope
+
+Resolution:
+- Provider conformance suite expanded to full canonical flow surface.
+- Runtime fixture set expanded accordingly.
+- Provider scope clarified to OpenAI/Claude for E2 (OpenClaw covered by dedicated bridge suite).
+
+Changed files:
+- `docs/roadmaps/cua/research/provider_conformance_suite.yaml`
+- `fixtures/policy-events/provider-conformance/v1/cases.json`
+- `packages/adapters/clawdstrike-openai/src/provider-conformance-runtime.test.ts`
+
+Validation:
+- `python3 docs/roadmaps/cua/research/verify_provider_conformance.py`
+
+### Gap 4: matrix-to-ruleset drift
+
+Resolution:
+- Aligned `rulesets/remote-desktop.yaml` with matrix-required channel posture.
+- Added fixture-driven ruleset alignment verifier.
+- Wired verifier into CI.
+
+Changed files:
+- `rulesets/remote-desktop.yaml`
+- `fixtures/policy-events/remote-desktop-ruleset-alignment/v1/cases.json`
+- `docs/roadmaps/cua/research/verify_remote_desktop_ruleset_alignment.py`
+- `.github/workflows/ci.yml`
+
+Validation:
+- `python3 docs/roadmaps/cua/research/verify_remote_desktop_ruleset_alignment.py`
+
+### Gap 5: verifier taxonomy (`VFY_*`) implementation
+
+Resolution:
+- `hush-core` verify path now emits deterministic verifier error codes.
+- CLI verify JSON/text output now surfaces structured `error_code` for parse/shape/signature failures.
+
+Changed files:
+- `crates/libs/hush-core/src/receipt.rs`
+- `crates/services/hush-cli/src/main.rs`
+- `crates/services/hush-cli/src/tests.rs`
+
+Validation:
+- `cargo test -p hush-core`
+- `cargo test -p hush-cli`
+
+### Full platform status for this addendum
+
+Executed:
+- `mise run ci`
+- `bash scripts/test-platform.sh`
+
+Result:
+- Both commands pass end-to-end after the above changes.

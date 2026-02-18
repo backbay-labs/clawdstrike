@@ -896,6 +896,16 @@ struct ReceiptSummary {
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
+struct VerifyJsonError {
+    kind: &'static str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_subcode: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
 struct VerifyJsonOutput {
     version: u8,
     command: &'static str,
@@ -908,7 +918,7 @@ struct VerifyJsonOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     receipt_summary: Option<ReceiptSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<CliJsonError>,
+    error: Option<VerifyJsonError>,
 }
 
 async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -1401,11 +1411,13 @@ fn cmd_verify(
                 &format!("Failed to read receipt: {}", e),
                 None,
                 None,
+                Some("VFY_INTERNAL_UNEXPECTED"),
+                None,
             );
         }
     };
 
-    let signed: SignedReceipt = match serde_json::from_str(&receipt_json) {
+    let raw_receipt_value: serde_json::Value = match serde_json::from_str(&receipt_json) {
         Ok(v) => v,
         Err(e) => {
             return emit_verify_error(
@@ -1420,6 +1432,49 @@ fn cmd_verify(
                 "config_error",
                 &format!("Invalid receipt JSON: {}", e),
                 None,
+                None,
+                Some("VFY_PARSE_INVALID_JSON"),
+                None,
+            );
+        }
+    };
+
+    if !raw_receipt_value.is_object() {
+        return emit_verify_error(
+            VerifyErrorOutput {
+                json,
+                receipt: &receipt,
+                pubkey: &pubkey,
+                stdout,
+                stderr,
+            },
+            ExitCode::ConfigError,
+            "config_error",
+            "Invalid receipt JSON: top-level value must be an object",
+            None,
+            None,
+            Some("VFY_PARSE_INVALID_JSON"),
+            None,
+        );
+    }
+
+    let signed: SignedReceipt = match serde_json::from_value(raw_receipt_value) {
+        Ok(v) => v,
+        Err(e) => {
+            return emit_verify_error(
+                VerifyErrorOutput {
+                    json,
+                    receipt: &receipt,
+                    pubkey: &pubkey,
+                    stdout,
+                    stderr,
+                },
+                ExitCode::ConfigError,
+                "config_error",
+                &format!("Invalid SignedReceipt shape: {}", e),
+                None,
+                None,
+                Some("VFY_SIGNED_RECEIPT_SHAPE_INVALID"),
                 None,
             );
         }
@@ -1449,6 +1504,8 @@ fn cmd_verify(
                 &format!("Failed to read pubkey: {}", e),
                 None,
                 Some(summary),
+                Some("VFY_INTERNAL_UNEXPECTED"),
+                None,
             );
         }
     };
@@ -1469,6 +1526,8 @@ fn cmd_verify(
                 &format!("Invalid pubkey: {}", e),
                 None,
                 Some(summary),
+                Some("VFY_INTERNAL_UNEXPECTED"),
+                None,
             );
         }
     };
@@ -1527,6 +1586,7 @@ fn cmd_verify(
     code
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_verify_error(
     out: VerifyErrorOutput<'_>,
     code: ExitCode,
@@ -1534,6 +1594,8 @@ fn emit_verify_error(
     message: &str,
     signature: Option<hush_core::receipt::VerificationResult>,
     receipt_summary: Option<ReceiptSummary>,
+    error_code: Option<&str>,
+    policy_subcode: Option<&str>,
 ) -> ExitCode {
     if out.json {
         let output = VerifyJsonOutput {
@@ -1545,9 +1607,11 @@ fn emit_verify_error(
             exit_code: code.as_i32(),
             signature,
             receipt_summary,
-            error: Some(CliJsonError {
+            error: Some(VerifyJsonError {
                 kind: error_kind,
                 message: message.to_string(),
+                error_code: error_code.map(ToString::to_string),
+                policy_subcode: policy_subcode.map(ToString::to_string),
             }),
         };
         let _ = writeln!(
@@ -1558,7 +1622,11 @@ fn emit_verify_error(
         return code;
     }
 
-    let _ = writeln!(out.stderr, "Error: {}", message);
+    if let Some(code) = error_code {
+        let _ = writeln!(out.stderr, "Error [{code}]: {}", message);
+    } else {
+        let _ = writeln!(out.stderr, "Error: {}", message);
+    }
     code
 }
 

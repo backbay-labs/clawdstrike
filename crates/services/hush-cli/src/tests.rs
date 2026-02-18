@@ -1700,6 +1700,78 @@ guards:
                 .and_then(|v| v.as_bool()),
             Some(false)
         );
+        assert_eq!(
+            v.get("signature")
+                .and_then(|s| s.get("error_codes"))
+                .and_then(|codes| codes.as_array())
+                .and_then(|codes| codes.first())
+                .and_then(|code| code.as_str()),
+            Some("VFY_SIGNATURE_INVALID")
+        );
+    }
+
+    #[test]
+    fn verify_json_invalid_receipt_json_emits_vfy_parse_invalid_json() {
+        let receipt_path = temp_path("receipt_parse_invalid.json");
+        let pubkey_path = temp_path("pubkey_parse_invalid.hex");
+
+        std::fs::write(&receipt_path, "not-json").expect("write");
+        std::fs::write(&pubkey_path, Keypair::generate().public_key().to_hex()).expect("write");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_verify(
+            receipt_path.to_string_lossy().to_string(),
+            pubkey_path.to_string_lossy().to_string(),
+            true,
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(code, ExitCode::ConfigError);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("error"));
+        assert_eq!(
+            v.get("error")
+                .and_then(|e| e.get("error_code"))
+                .and_then(|c| c.as_str()),
+            Some("VFY_PARSE_INVALID_JSON")
+        );
+    }
+
+    #[test]
+    fn verify_json_invalid_signed_receipt_shape_emits_vfy_shape_invalid() {
+        let receipt_path = temp_path("receipt_shape_invalid.json");
+        let pubkey_path = temp_path("pubkey_shape_invalid.hex");
+
+        std::fs::write(&receipt_path, r#"{"hello":"world"}"#).expect("write");
+        std::fs::write(&pubkey_path, Keypair::generate().public_key().to_hex()).expect("write");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        let code = cmd_verify(
+            receipt_path.to_string_lossy().to_string(),
+            pubkey_path.to_string_lossy().to_string(),
+            true,
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(code, ExitCode::ConfigError);
+        assert!(err.is_empty());
+
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
+        assert_eq!(v.get("outcome").and_then(|v| v.as_str()), Some("error"));
+        assert_eq!(
+            v.get("error")
+                .and_then(|e| e.get("error_code"))
+                .and_then(|c| c.as_str()),
+            Some("VFY_SIGNED_RECEIPT_SHAPE_INVALID")
+        );
     }
 }
 
@@ -1989,7 +2061,14 @@ mod policy_pac_contract {
         );
         let decision = v.get("decision").expect("decision");
         for key in [
-            "allowed", "denied", "warn", "guard", "severity", "message", "reason",
+            "allowed",
+            "denied",
+            "warn",
+            "reason_code",
+            "guard",
+            "severity",
+            "message",
+            "reason",
         ] {
             assert!(decision.get(key).is_some(), "missing decision.{key}");
         }
@@ -2091,7 +2170,14 @@ mod policy_pac_contract {
         let first = &results[0];
         let decision = first.get("decision").expect("decision");
         for key in [
-            "allowed", "denied", "warn", "guard", "severity", "message", "reason",
+            "allowed",
+            "denied",
+            "warn",
+            "reason_code",
+            "guard",
+            "severity",
+            "message",
+            "reason",
         ] {
             assert!(decision.get(key).is_some(), "missing decision.{key}");
         }

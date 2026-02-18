@@ -887,6 +887,7 @@ jobs:
         run: |
           python docs/roadmaps/cua/research/verify_cua_migration_fixtures.py
           python docs/roadmaps/cua/research/verify_remote_desktop_policy_matrix.py
+          python docs/roadmaps/cua/research/verify_remote_desktop_ruleset_alignment.py
           python docs/roadmaps/cua/research/verify_injection_capabilities.py
           python docs/roadmaps/cua/research/verify_policy_event_mapping.py
           python docs/roadmaps/cua/research/verify_postcondition_probes.py

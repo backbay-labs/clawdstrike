@@ -329,24 +329,33 @@ impl SignedReceipt {
 
     /// Verify all signatures
     pub fn verify(&self, public_keys: &PublicKeySet) -> VerificationResult {
-        if let Err(e) = self.receipt.validate_version() {
-            return VerificationResult {
+        fn fail_result(code: &str, message: String) -> VerificationResult {
+            VerificationResult {
                 valid: false,
                 signer_valid: false,
                 cosigner_valid: None,
-                errors: vec![e.to_string()],
+                errors: vec![message],
+                error_codes: vec![code.to_string()],
+                policy_subcode: None,
+            }
+        }
+
+        if let Err(e) = self.receipt.validate_version() {
+            let code = match e {
+                Error::InvalidReceiptVersion { .. } => "VFY_RECEIPT_VERSION_INVALID",
+                Error::UnsupportedReceiptVersion { .. } => "VFY_RECEIPT_VERSION_UNSUPPORTED",
+                _ => "VFY_INTERNAL_UNEXPECTED",
             };
+            return fail_result(code, e.to_string());
         }
 
         let canonical = match self.receipt.to_canonical_json() {
             Ok(c) => c,
             Err(e) => {
-                return VerificationResult {
-                    valid: false,
-                    signer_valid: false,
-                    cosigner_valid: None,
-                    errors: vec![format!("Failed to serialize receipt: {}", e)],
-                };
+                return fail_result(
+                    "VFY_INTERNAL_UNEXPECTED",
+                    format!("Failed to serialize receipt: {}", e),
+                );
             }
         };
         let message = canonical.as_bytes();
@@ -356,6 +365,8 @@ impl SignedReceipt {
             signer_valid: false,
             cosigner_valid: None,
             errors: vec![],
+            error_codes: vec![],
+            policy_subcode: None,
         };
 
         // Verify primary signature (required)
@@ -364,6 +375,7 @@ impl SignedReceipt {
         if !result.signer_valid {
             result.valid = false;
             result.errors.push("Invalid signer signature".to_string());
+            result.error_codes.push("VFY_SIGNATURE_INVALID".to_string());
         }
 
         // Verify co-signer signature (optional)
@@ -373,6 +385,9 @@ impl SignedReceipt {
             if !valid {
                 result.valid = false;
                 result.errors.push("Invalid cosigner signature".to_string());
+                result
+                    .error_codes
+                    .push("VFY_COSIGNATURE_INVALID".to_string());
             }
         }
 
@@ -426,6 +441,12 @@ pub struct VerificationResult {
     pub cosigner_valid: Option<bool>,
     /// Error messages
     pub errors: Vec<String>,
+    /// Stable verifier error codes (VFY_* taxonomy)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub error_codes: Vec<String>,
+    /// Optional attestation-policy subcode (AVP_*)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_subcode: Option<String>,
 }
 
 #[cfg(test)]
@@ -499,6 +520,9 @@ mod tests {
         assert!(result
             .errors
             .contains(&"Invalid signer signature".to_string()));
+        assert!(result
+            .error_codes
+            .contains(&"VFY_SIGNATURE_INVALID".to_string()));
     }
 
     #[test]
@@ -525,6 +549,10 @@ mod tests {
         assert!(!result.valid);
         assert_eq!(result.errors.len(), 1);
         assert!(result.errors[0].contains("Unsupported receipt version"));
+        assert_eq!(
+            result.error_codes,
+            vec!["VFY_RECEIPT_VERSION_UNSUPPORTED".to_string()]
+        );
     }
 
     #[test]

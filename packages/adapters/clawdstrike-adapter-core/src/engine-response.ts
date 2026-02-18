@@ -52,7 +52,18 @@ export function parseDecision(value: unknown): Decision | null {
     return null;
   }
 
-  const decision: Decision = { status };
+  const reasonCode = typeof value.reason_code === 'string'
+    ? value.reason_code
+    : typeof value.reasonCode === 'string'
+      ? value.reasonCode
+      : null;
+  if (status !== 'allow' && !reasonCode) {
+    return null;
+  }
+
+  const decision: Decision = status === 'allow'
+    ? { status }
+    : { status, reason_code: reasonCode as string };
 
   if (typeof value.reason === 'string') {
     decision.reason = value.reason;
@@ -77,6 +88,7 @@ export function failClosed(error: unknown): Decision {
   const message = error instanceof Error ? error.message : String(error);
   return {
     status: 'deny',
+    reason_code: 'ADC_GUARD_ERROR',
     reason: 'engine_error',
     message,
   };

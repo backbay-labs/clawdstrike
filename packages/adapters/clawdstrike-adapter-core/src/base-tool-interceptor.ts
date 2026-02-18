@@ -55,6 +55,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
       const translationError = error instanceof Error ? error : new Error(String(error));
       const decision: Decision = {
         status: 'deny',
+        reason_code: 'ADC_GUARD_ERROR',
         guard: 'provider_translator',
         severity: 'high',
         reason: `Policy event translation failed: ${translationError.message}`,

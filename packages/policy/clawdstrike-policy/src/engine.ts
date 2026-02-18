@@ -162,16 +162,21 @@ function decisionFromOverall(overall: GuardResult): Decision {
       : 'allow'
     : 'deny';
 
-  const out: Decision = { status };
-
-  // Align with hush JSON: omit guard/severity for plain allow.
-  if (status !== 'allow') {
-    out.guard = overall.guard;
-    out.severity = overall.severity as any;
+  if (status === 'allow') {
+    return {
+      status: 'allow',
+      reason_code: 'ADC_POLICY_ALLOW',
+      message: overall.message,
+    };
   }
 
-  out.message = overall.message;
-  return out;
+  return {
+    status,
+    reason_code: status === 'warn' ? 'ADC_POLICY_WARN' : 'ADC_POLICY_DENY',
+    guard: overall.guard,
+    severity: overall.severity as any,
+    message: overall.message,
+  };
 }
 
 function aggregateOverall(results: GuardResult[]): GuardResult {

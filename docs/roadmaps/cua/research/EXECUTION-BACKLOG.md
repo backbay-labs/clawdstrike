@@ -86,7 +86,8 @@ Date: 2026-02-18
   - threat-tier assumptions (`dev`, `internal_prod`, `internet_exposed_multi_tenant`).
 - Acceptance:
   - matrix can be transformed directly into policy events and guard decisions,
-  - no feature path remains undefined for any mode.
+  - no feature path remains undefined for any mode,
+  - matrix-to-ruleset drift is checked in CI via fixture harness.
 
 ### B2. Injection outcome schema and capability manifest
 
@@ -197,7 +198,8 @@ Date: 2026-02-18
 - Scope:
   - OpenAI computer-use tool request/response mapping,
   - Claude computer-use tool request/response mapping,
-  - normalization of action kinds and post-condition outcomes.
+  - normalization of action kinds and post-condition outcomes,
+  - OpenClaw validation remains in E3 bridge runtime fixtures (separate scope).
 - Acceptance:
   - canonical output parity holds across equivalent OpenAI/Claude action vectors,
   - translator regressions fail CI via fixture-driven conformance tests.
@@ -248,7 +250,7 @@ Date: 2026-02-18
 - [x] Evidence and attestation bundles are independently verifiable from stored artifacts.
 - [x] All `P1` ecosystem adapter integrations (E1–E4) complete with passing harnesses.
 - [x] Code review of all CUA implementation passes completed with critical issues resolved.
-- [x] CI runs 17 roadmap harnesses on every PR/push.
+- [x] CI runs roadmap harnesses on every PR/push.
 
 ### Completion status (Pass #15)
 
@@ -269,3 +271,12 @@ Pass #15 closes the remaining production gaps from code review:
 Pass #16 closes two follow-up runtime confidence gaps discovered after Pass #15:
 - `remote.session.connect` now enforces egress allowlist in the OpenClaw runtime path and fails closed when destination metadata is missing.
 - OpenClaw bridge now supports plain `computer_use`/`computer` tool-call shape with `action` metadata, with fixture + validator coverage.
+
+### Runtime hardening status (Pass #17)
+
+Pass #17 closes additional production-hardening gaps discovered after Pass #16:
+- `hushd` canonical policy-event support now includes `remote.audio`, `remote.drive_mapping`, and `remote.printing` end-to-end.
+- Runtime policy decision payloads now emit deterministic `reason_code` values (`ADC_POLICY_*` + normalized mapped codes), including Rust eval boundaries consumed by adapter-core engines.
+- Provider conformance suite/runtime fixtures now cover the full canonical flow surface (`connect`, `input`, `clipboard_read/write`, upload/download transfer, `session_share`, `reconnect`, `disconnect`) for OpenAI + Claude.
+- OpenClaw provider scope is now explicitly separated from E2 conformance and covered by the dedicated OpenClaw bridge runtime fixture suite.
+- Added fixture-driven matrix-to-ruleset drift harness (`verify_remote_desktop_ruleset_alignment.py`) and wired it into CI.

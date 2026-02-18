@@ -34,11 +34,12 @@ canonical_outcomes:
 
 reason_codes:
   - ADC_POLICY_ALLOW
+  - ADC_POLICY_WARN
   - ADC_POLICY_DENY
   - ADC_GUARD_ERROR
   - ADC_PROBE_VERIFIED
   - ADC_PROBE_FAILED
-  - ADC_UNKNOWN_FLOW
+  - ADC_FLOW_UNKNOWN
 
 required_adapter_output_fields:
   - flow

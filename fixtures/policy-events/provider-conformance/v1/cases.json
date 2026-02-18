@@ -2,82 +2,34 @@
   "suite": "docs/roadmaps/cua/research/provider_conformance_suite.yaml",
   "cases": [
     {
-      "id": "openai_click_translates_to_input_inject",
-      "description": "OpenAI click action translates to canonical input.inject event",
+      "id": "openai_connect_translates_to_remote_session_connect",
+      "description": "OpenAI connect action translates to canonical remote.session.connect event",
       "query": {
         "provider": "openai",
-        "intent": "click_element",
+        "intent": "connect",
         "provider_input": {
           "tool": "computer_use",
-          "action": "click",
-          "x": 150,
-          "y": 300
+          "action": "navigate",
+          "url": "https://example.com"
         }
       },
       "expected": {
         "result": "pass",
         "canonical": {
-          "eventType": "input.inject",
+          "eventType": "remote.session.connect",
           "data": {
-            "cuaAction": "click",
-            "direction": null
+            "cuaAction": "navigate",
+            "direction": "outbound"
           }
         }
       }
     },
     {
-      "id": "claude_click_translates_to_input_inject",
-      "description": "Claude click action translates to canonical input.inject event (parity with OpenAI)",
+      "id": "claude_connect_translates_to_remote_session_connect",
+      "description": "Claude connect action translates to canonical remote.session.connect event",
       "query": {
         "provider": "claude",
-        "intent": "click_element",
-        "provider_input": {
-          "tool": "computer",
-          "action": "mouse_click",
-          "coordinate_x": 150,
-          "coordinate_y": 300
-        }
-      },
-      "expected": {
-        "result": "pass",
-        "canonical": {
-          "eventType": "input.inject",
-          "data": {
-            "cuaAction": "click",
-            "direction": null
-          }
-        }
-      }
-    },
-    {
-      "id": "openai_type_translates_to_input_inject",
-      "description": "OpenAI type action translates to canonical input.inject event",
-      "query": {
-        "provider": "openai",
-        "intent": "type_text",
-        "provider_input": {
-          "tool": "computer_use",
-          "action": "type",
-          "text": "hello world"
-        }
-      },
-      "expected": {
-        "result": "pass",
-        "canonical": {
-          "eventType": "input.inject",
-          "data": {
-            "cuaAction": "type",
-            "direction": null
-          }
-        }
-      }
-    },
-    {
-      "id": "claude_navigate_translates_to_connect",
-      "description": "Claude navigate action translates to canonical remote.session.connect event",
-      "query": {
-        "provider": "claude",
-        "intent": "navigate_url",
+        "intent": "connect",
         "provider_input": {
           "tool": "computer",
           "action": "navigate",
@@ -96,27 +48,439 @@
       }
     },
     {
-      "id": "cross_provider_click_parity_holds",
-      "description": "Same click intent through OpenAI and Claude produces identical canonical parity fields",
+      "id": "openai_input_translates_to_input_inject",
+      "description": "OpenAI input action translates to canonical input.inject event",
+      "query": {
+        "provider": "openai",
+        "intent": "input",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "click",
+          "x": 120,
+          "y": 240
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "input.inject",
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_input_translates_to_input_inject",
+      "description": "Claude input action translates to canonical input.inject event",
+      "query": {
+        "provider": "claude",
+        "intent": "input",
+        "provider_input": {
+          "tool": "computer",
+          "action": "mouse_click",
+          "coordinate_x": 120,
+          "coordinate_y": 240
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "input.inject",
+          "data": {
+            "cuaAction": "click",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_clipboard_read_translates",
+      "description": "OpenAI clipboard read action translates to canonical remote.clipboard read event",
+      "query": {
+        "provider": "openai",
+        "intent": "clipboard_read",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "clipboard_read"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.clipboard",
+          "data": {
+            "cuaAction": "clipboard_read",
+            "direction": "read"
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_clipboard_read_translates",
+      "description": "Claude clipboard read action translates to canonical remote.clipboard read event",
+      "query": {
+        "provider": "claude",
+        "intent": "clipboard_read",
+        "provider_input": {
+          "tool": "computer",
+          "action": "clipboard_read"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.clipboard",
+          "data": {
+            "cuaAction": "clipboard_read",
+            "direction": "read"
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_clipboard_write_translates",
+      "description": "OpenAI clipboard write action translates to canonical remote.clipboard write event",
+      "query": {
+        "provider": "openai",
+        "intent": "clipboard_write",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "clipboard_write",
+          "text": "hello"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.clipboard",
+          "data": {
+            "cuaAction": "clipboard_write",
+            "direction": "write"
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_clipboard_write_translates",
+      "description": "Claude clipboard write action translates to canonical remote.clipboard write event",
+      "query": {
+        "provider": "claude",
+        "intent": "clipboard_write",
+        "provider_input": {
+          "tool": "computer",
+          "action": "clipboard_write",
+          "text": "hello"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.clipboard",
+          "data": {
+            "cuaAction": "clipboard_write",
+            "direction": "write"
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_file_transfer_upload_translates",
+      "description": "OpenAI upload action translates to canonical remote.file_transfer upload event",
+      "query": {
+        "provider": "openai",
+        "intent": "file_transfer_upload",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "file_upload",
+          "transfer_size": 1024
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.file_transfer",
+          "data": {
+            "cuaAction": "file_transfer",
+            "direction": "upload"
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_file_transfer_upload_translates",
+      "description": "Claude upload action translates to canonical remote.file_transfer upload event",
+      "query": {
+        "provider": "claude",
+        "intent": "file_transfer_upload",
+        "provider_input": {
+          "tool": "computer",
+          "action": "file_upload",
+          "transfer_size": 1024
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.file_transfer",
+          "data": {
+            "cuaAction": "file_transfer",
+            "direction": "upload"
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_file_transfer_download_translates",
+      "description": "OpenAI download action translates to canonical remote.file_transfer download event",
+      "query": {
+        "provider": "openai",
+        "intent": "file_transfer_download",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "file_download",
+          "transfer_size": 2048
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.file_transfer",
+          "data": {
+            "cuaAction": "file_transfer",
+            "direction": "download"
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_file_transfer_download_translates",
+      "description": "Claude download action translates to canonical remote.file_transfer download event",
+      "query": {
+        "provider": "claude",
+        "intent": "file_transfer_download",
+        "provider_input": {
+          "tool": "computer",
+          "action": "file_download",
+          "transfer_size": 2048
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.file_transfer",
+          "data": {
+            "cuaAction": "file_transfer",
+            "direction": "download"
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_session_share_translates",
+      "description": "OpenAI session share action translates to canonical remote.session_share event",
+      "query": {
+        "provider": "openai",
+        "intent": "session_share",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "session_share"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.session_share",
+          "data": {
+            "cuaAction": "session_share",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_session_share_translates",
+      "description": "Claude session share action translates to canonical remote.session_share event",
+      "query": {
+        "provider": "claude",
+        "intent": "session_share",
+        "provider_input": {
+          "tool": "computer",
+          "action": "session_share"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.session_share",
+          "data": {
+            "cuaAction": "session_share",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_reconnect_translates",
+      "description": "OpenAI reconnect action translates to canonical remote.session.reconnect event",
+      "query": {
+        "provider": "openai",
+        "intent": "reconnect",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "reconnect"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.session.reconnect",
+          "data": {
+            "cuaAction": "reconnect",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_reconnect_translates",
+      "description": "Claude reconnect action translates to canonical remote.session.reconnect event",
+      "query": {
+        "provider": "claude",
+        "intent": "reconnect",
+        "provider_input": {
+          "tool": "computer",
+          "action": "reconnect"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.session.reconnect",
+          "data": {
+            "cuaAction": "reconnect",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "openai_disconnect_translates",
+      "description": "OpenAI disconnect action translates to canonical remote.session.disconnect event",
+      "query": {
+        "provider": "openai",
+        "intent": "disconnect",
+        "provider_input": {
+          "tool": "computer_use",
+          "action": "disconnect"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.session.disconnect",
+          "data": {
+            "cuaAction": "disconnect",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "claude_disconnect_translates",
+      "description": "Claude disconnect action translates to canonical remote.session.disconnect event",
+      "query": {
+        "provider": "claude",
+        "intent": "disconnect",
+        "provider_input": {
+          "tool": "computer",
+          "action": "disconnect"
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "canonical": {
+          "eventType": "remote.session.disconnect",
+          "data": {
+            "cuaAction": "disconnect",
+            "direction": null
+          }
+        }
+      }
+    },
+    {
+      "id": "cross_provider_connect_parity_holds",
+      "description": "OpenAI and Claude connect actions produce identical parity fields",
       "query": {
         "type": "parity_check",
-        "intent": "click_element",
+        "intent": "connect",
         "provider_a": {
           "provider": "openai",
           "provider_input": {
             "tool": "computer_use",
-            "action": "click",
-            "x": 200,
-            "y": 400
+            "action": "navigate",
+            "url": "https://example.com"
           }
         },
         "provider_b": {
           "provider": "claude",
           "provider_input": {
             "tool": "computer",
-            "action": "mouse_click",
-            "coordinate_x": 200,
-            "coordinate_y": 400
+            "action": "navigate",
+            "url": "https://example.com"
+          }
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "parity": true
+      }
+    },
+    {
+      "id": "cross_provider_file_transfer_download_parity_holds",
+      "description": "OpenAI and Claude download actions produce identical parity fields",
+      "query": {
+        "type": "parity_check",
+        "intent": "file_transfer_download",
+        "provider_a": {
+          "provider": "openai",
+          "provider_input": {
+            "tool": "computer_use",
+            "action": "file_download"
+          }
+        },
+        "provider_b": {
+          "provider": "claude",
+          "provider_input": {
+            "tool": "computer",
+            "action": "file_download"
+          }
+        }
+      },
+      "expected": {
+        "result": "pass",
+        "parity": true
+      }
+    },
+    {
+      "id": "cross_provider_disconnect_parity_holds",
+      "description": "OpenAI and Claude disconnect actions produce identical parity fields",
+      "query": {
+        "type": "parity_check",
+        "intent": "disconnect",
+        "provider_a": {
+          "provider": "openai",
+          "provider_input": {
+            "tool": "computer_use",
+            "action": "disconnect"
+          }
+        },
+        "provider_b": {
+          "provider": "claude",
+          "provider_input": {
+            "tool": "computer",
+            "action": "disconnect"
           }
         }
       },
@@ -127,15 +491,13 @@
     },
     {
       "id": "unknown_provider_fails_closed",
-      "description": "Unknown provider 'gemini' fails closed with PRV_PROVIDER_UNKNOWN",
+      "description": "Unknown provider fails closed with PRV_PROVIDER_UNKNOWN",
       "query": {
         "provider": "gemini",
-        "intent": "click_element",
+        "intent": "input",
         "provider_input": {
           "tool": "computer_use",
-          "action": "click",
-          "x": 100,
-          "y": 200
+          "action": "click"
         }
       },
       "expected": {
@@ -145,15 +507,13 @@
     },
     {
       "id": "unknown_intent_fails_closed",
-      "description": "Unknown intent 'drag_drop' fails closed with PRV_INTENT_UNKNOWN",
+      "description": "Unknown intent fails closed with PRV_INTENT_UNKNOWN",
       "query": {
         "provider": "openai",
         "intent": "drag_drop",
         "provider_input": {
           "tool": "computer_use",
-          "action": "drag",
-          "x": 100,
-          "y": 200
+          "action": "drag"
         }
       },
       "expected": {
@@ -163,26 +523,22 @@
     },
     {
       "id": "parity_violation_detected",
-      "description": "OpenAI and Claude produce different eventType for same intent triggers PRV_PARITY_VIOLATION",
+      "description": "Forced parity mismatch fails closed with PRV_PARITY_VIOLATION",
       "query": {
         "type": "parity_check",
-        "intent": "click_element",
+        "intent": "input",
         "provider_a": {
           "provider": "openai",
           "provider_input": {
             "tool": "computer_use",
-            "action": "click",
-            "x": 50,
-            "y": 75
+            "action": "click"
           }
         },
         "provider_b": {
           "provider": "claude",
           "provider_input": {
             "tool": "computer",
-            "action": "mouse_click",
-            "coordinate_x": 50,
-            "coordinate_y": 75
+            "action": "mouse_click"
           }
         },
         "override_canonical_b": {
@@ -200,15 +556,13 @@
     },
     {
       "id": "missing_required_field_fails_closed",
-      "description": "Provider output missing cuaAction field fails closed with PRV_MISSING_REQUIRED_FIELD",
+      "description": "Missing canonical cuaAction fails closed with PRV_MISSING_REQUIRED_FIELD",
       "query": {
         "provider": "openai",
-        "intent": "click_element",
+        "intent": "input",
         "provider_input": {
           "tool": "computer_use",
-          "action": "click",
-          "x": 100,
-          "y": 200
+          "action": "click"
         },
         "override_canonical": {
           "eventType": "input.inject",

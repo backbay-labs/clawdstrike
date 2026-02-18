@@ -95,12 +95,16 @@ describe('createStrikeCell', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { status: 'deny', reason: 'blocked' },
+        decision: { status: 'deny', reason_code: 'ADC_POLICY_DENY', reason: 'blocked' },
       }),
     );
     child.emit('close', 0, null);
 
-    await expect(pending).resolves.toMatchObject({ status: 'deny', reason: 'blocked' });
+    await expect(pending).resolves.toMatchObject({
+      status: 'deny',
+      reason_code: 'ADC_POLICY_DENY',
+      reason: 'blocked',
+    });
   });
 
   it('returns warn decision when policy warns', async () => {
@@ -114,12 +118,22 @@ describe('createStrikeCell', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { status: 'warn', message: 'heads up' },
+        decision: {
+          status: 'warn',
+          reason_code: 'ADC_POLICY_WARN',
+          reason: 'warned',
+          message: 'heads up',
+        },
       }),
     );
     child.emit('close', 0, null);
 
-    await expect(pending).resolves.toMatchObject({ status: 'warn', message: 'heads up' });
+    await expect(pending).resolves.toMatchObject({
+      status: 'warn',
+      reason_code: 'ADC_POLICY_WARN',
+      reason: 'warned',
+      message: 'heads up',
+    });
   });
 
   it('parses decision even when hush exits with warn (code 1)', async () => {
@@ -133,12 +147,16 @@ describe('createStrikeCell', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { status: 'warn', reason: 'warned' },
+        decision: { status: 'warn', reason_code: 'ADC_POLICY_WARN', reason: 'warned' },
       }),
     );
     child.emit('close', 1, null);
 
-    await expect(pending).resolves.toMatchObject({ status: 'warn', reason: 'warned' });
+    await expect(pending).resolves.toMatchObject({
+      status: 'warn',
+      reason_code: 'ADC_POLICY_WARN',
+      reason: 'warned',
+    });
   });
 
   it('parses decision even when hush exits with blocked (code 2)', async () => {
@@ -152,12 +170,16 @@ describe('createStrikeCell', () => {
       JSON.stringify({
         version: 1,
         command: 'policy_eval',
-        decision: { status: 'deny', reason: 'blocked' },
+        decision: { status: 'deny', reason_code: 'ADC_POLICY_DENY', reason: 'blocked' },
       }),
     );
     child.emit('close', 2, null);
 
-    await expect(pending).resolves.toMatchObject({ status: 'deny', reason: 'blocked' });
+    await expect(pending).resolves.toMatchObject({
+      status: 'deny',
+      reason_code: 'ADC_POLICY_DENY',
+      reason: 'blocked',
+    });
   });
 
   it('fails closed on malformed JSON', async () => {
@@ -173,6 +195,7 @@ describe('createStrikeCell', () => {
 
     await expect(pending).resolves.toMatchObject({
       status: 'deny',
+      reason_code: 'ADC_GUARD_ERROR',
       reason: 'engine_error',
     });
   });
@@ -187,6 +210,7 @@ describe('createStrikeCell', () => {
 
     expect(decision).toMatchObject({
       status: 'deny',
+      reason_code: 'ADC_GUARD_ERROR',
       reason: 'engine_error',
     });
   });

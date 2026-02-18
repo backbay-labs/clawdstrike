@@ -6,16 +6,20 @@ updated_at: "2026-02-18T00:00:00Z"
 providers:
   - openai
   - claude
-  - openclaw
+  # OpenClaw is validated by a dedicated runtime bridge suite:
+  # fixtures/policy-events/openclaw-bridge/v1/cases.json
 
 # Canonical CUA intents that all provider translators must support.
 canonical_intents:
-  - click_element
-  - type_text
-  - navigate_url
-  - take_screenshot
-  - read_clipboard
-  - transfer_file
+  - connect
+  - input
+  - clipboard_read
+  - clipboard_write
+  - file_transfer_upload
+  - file_transfer_download
+  - session_share
+  - reconnect
+  - disconnect
 
 # Required parity fields: these canonical output fields must be identical
 # across all providers for the same intent.
@@ -27,30 +31,42 @@ parity_fields:
 # Intent-to-canonical-event mapping.
 # Each intent maps to a canonical eventType and cuaAction used by the policy engine.
 intent_canonical_map:
-  click_element:
-    eventType: input.inject
-    cuaAction: click
-    direction: null
-  type_text:
-    eventType: input.inject
-    cuaAction: type
-    direction: null
-  navigate_url:
+  connect:
     eventType: remote.session.connect
     cuaAction: navigate
     direction: outbound
-  take_screenshot:
-    eventType: remote.clipboard
-    cuaAction: screenshot
-    direction: read
-  read_clipboard:
+  input:
+    eventType: input.inject
+    cuaAction: click
+    direction: null
+  clipboard_read:
     eventType: remote.clipboard
     cuaAction: clipboard_read
     direction: read
-  transfer_file:
+  clipboard_write:
+    eventType: remote.clipboard
+    cuaAction: clipboard_write
+    direction: write
+  file_transfer_upload:
     eventType: remote.file_transfer
     cuaAction: file_transfer
     direction: upload
+  file_transfer_download:
+    eventType: remote.file_transfer
+    cuaAction: file_transfer
+    direction: download
+  session_share:
+    eventType: remote.session_share
+    cuaAction: session_share
+    direction: null
+  reconnect:
+    eventType: remote.session.reconnect
+    cuaAction: reconnect
+    direction: null
+  disconnect:
+    eventType: remote.session.disconnect
+    cuaAction: disconnect
+    direction: null
 
 # Provider-specific input schemas.
 # Each provider sends actions in its own format; the translator normalizes them.
@@ -59,12 +75,15 @@ provider_input_schemas:
     tool_name: computer_use
     action_field: action
     action_values:
-      click_element: click
-      type_text: type
-      navigate_url: navigate
-      take_screenshot: screenshot
-      read_clipboard: clipboard_read
-      transfer_file: file_transfer
+      connect: navigate
+      input: click
+      clipboard_read: clipboard_read
+      clipboard_write: clipboard_write
+      file_transfer_upload: file_upload
+      file_transfer_download: file_download
+      session_share: session_share
+      reconnect: reconnect
+      disconnect: disconnect
     coordinate_fields:
       x: x
       y: y
@@ -74,33 +93,20 @@ provider_input_schemas:
     tool_name: computer
     action_field: action
     action_values:
-      click_element: mouse_click
-      type_text: key_type
-      navigate_url: navigate
-      take_screenshot: screenshot
-      read_clipboard: clipboard_read
-      transfer_file: file_transfer
+      connect: navigate
+      input: mouse_click
+      clipboard_read: clipboard_read
+      clipboard_write: clipboard_write
+      file_transfer_upload: file_upload
+      file_transfer_download: file_download
+      session_share: session_share
+      reconnect: reconnect
+      disconnect: disconnect
     coordinate_fields:
       x: coordinate_x
       y: coordinate_y
     text_field: text
     url_field: url
-  openclaw:
-    tool_name: cua_action
-    action_field: intent
-    action_values:
-      click_element: click
-      type_text: type
-      navigate_url: navigate
-      take_screenshot: screenshot
-      read_clipboard: clipboard_read
-      transfer_file: file_transfer
-    coordinate_fields:
-      x: x
-      y: y
-    text_field: text
-    url_field: url
-
 # Fail-closed error codes.
 fail_closed_codes:
   provider_unknown: PRV_PROVIDER_UNKNOWN

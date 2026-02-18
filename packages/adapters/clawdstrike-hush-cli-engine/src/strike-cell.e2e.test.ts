@@ -78,7 +78,15 @@ describeE2E('hush-cli-engine (e2e)', () => {
 });
 
 function normalizeDecision(value: any): any {
-  const out: any = { status: toStatus(value) };
+  const status = toStatus(value);
+  const out: any = { status };
+
+  if (status !== 'allow') {
+    const reasonCode = value?.reason_code;
+    if (reasonCode !== null && reasonCode !== undefined) {
+      out.reason_code = reasonCode;
+    }
+  }
 
   for (const k of ['reason', 'guard', 'severity', 'message'] as const) {
     const v = value?.[k];

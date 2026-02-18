@@ -1,0 +1,38 @@
+{
+  "matrix": "docs/roadmaps/cua/research/remote_desktop_policy_matrix.yaml",
+  "ruleset": "rulesets/remote-desktop.yaml",
+  "tier": "dev",
+  "mode": "guardrail",
+  "cases": [
+    {
+      "id": "clipboard_matches_matrix_guardrail_dev",
+      "query": { "feature": "clipboard" },
+      "expected": { "result": "pass", "decision": "deny" }
+    },
+    {
+      "id": "file_transfer_matches_matrix_guardrail_dev",
+      "query": { "feature": "file_transfer" },
+      "expected": { "result": "pass", "decision": "deny" }
+    },
+    {
+      "id": "audio_matches_matrix_guardrail_dev",
+      "query": { "feature": "audio" },
+      "expected": { "result": "pass", "decision": "allow" }
+    },
+    {
+      "id": "drive_mapping_matches_matrix_guardrail_dev",
+      "query": { "feature": "drive_mapping" },
+      "expected": { "result": "pass", "decision": "deny" }
+    },
+    {
+      "id": "printing_matches_matrix_guardrail_dev",
+      "query": { "feature": "printing" },
+      "expected": { "result": "pass", "decision": "deny" }
+    },
+    {
+      "id": "session_share_matches_matrix_guardrail_dev",
+      "query": { "feature": "session_share" },
+      "expected": { "result": "pass", "decision": "deny" }
+    }
+  ]
+}

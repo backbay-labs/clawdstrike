@@ -131,17 +131,9 @@ export interface CuaEventData {
  */
 export type DecisionStatus = 'allow' | 'warn' | 'deny';
 
-/**
- * Decision returned from policy evaluation.
- *
- * Use the `status` field to determine the outcome:
- * - `status === 'allow'`: Operation permitted
- * - `status === 'warn'`: Operation permitted with warning
- * - `status === 'deny'`: Operation blocked
- */
-export interface Decision {
-  /** The decision status: 'allow', 'warn', or 'deny' */
-  status: DecisionStatus;
+export type DecisionReasonCode = string;
+
+interface DecisionBase {
   /** Name of the guard that made this decision */
   guard?: string;
   /** Severity level of the violation */
@@ -155,11 +147,56 @@ export interface Decision {
 }
 
 /**
+ * Decision returned from policy evaluation.
+ *
+ * Use the `status` field to determine the outcome:
+ * - `status === 'allow'`: Operation permitted
+ * - `status === 'warn'`: Operation permitted with warning
+ * - `status === 'deny'`: Operation blocked
+ */
+export type Decision =
+  | (DecisionBase & {
+      /** The decision status: 'allow' */
+      status: 'allow';
+      /** Optional machine-readable code for allow results */
+      reason_code?: DecisionReasonCode;
+    })
+  | (DecisionBase & {
+      /** The decision status: 'warn' or 'deny' */
+      status: 'warn' | 'deny';
+      /** Required machine-readable code for non-allow results */
+      reason_code: DecisionReasonCode;
+    });
+
+/**
  * Create a Decision.
  */
 export function createDecision(
+  status: 'allow',
+  options?: {
+    reason_code?: DecisionReasonCode;
+    guard?: string;
+    severity?: Severity;
+    message?: string;
+    reason?: string;
+    details?: unknown;
+  },
+): Decision;
+export function createDecision(
+  status: 'warn' | 'deny',
+  options: {
+    reason_code: DecisionReasonCode;
+    guard?: string;
+    severity?: Severity;
+    message?: string;
+    reason?: string;
+    details?: unknown;
+  },
+): Decision;
+export function createDecision(
   status: DecisionStatus,
   options: {
+    reason_code?: DecisionReasonCode;
     guard?: string;
     severity?: Severity;
     message?: string;
@@ -167,8 +204,23 @@ export function createDecision(
     details?: unknown;
   } = {},
 ): Decision {
+  if (status !== 'allow' && (!options.reason_code || options.reason_code.trim().length === 0)) {
+    throw new Error(`Decision reason_code is required for status '${status}'`);
+  }
+  if (status === 'allow') {
+    return {
+      status: 'allow',
+      ...(options.reason_code !== undefined && { reason_code: options.reason_code }),
+      guard: options.guard,
+      severity: options.severity,
+      message: options.message,
+      reason: options.reason,
+      details: options.details,
+    };
+  }
   return {
     status,
+    reason_code: options.reason_code as DecisionReasonCode,
     guard: options.guard,
     severity: options.severity,
     message: options.message,
@@ -188,6 +240,7 @@ export function allowDecision(options: { guard?: string; message?: string } = {}
  * Helper to create a deny decision.
  */
 export function denyDecision(options: {
+  reason_code: DecisionReasonCode;
   guard?: string;
   severity?: Severity;
   message?: string;
@@ -201,6 +254,7 @@ export function denyDecision(options: {
  * Helper to create a warn decision.
  */
 export function warnDecision(options: {
+  reason_code: DecisionReasonCode;
   guard?: string;
   severity?: Severity;
   message?: string;

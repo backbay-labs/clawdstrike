@@ -560,6 +560,7 @@ async fn test_eval_policy_event() {
     assert_eq!(json["decision"]["allowed"], true);
     assert_eq!(json["decision"]["denied"], false);
     assert_eq!(json["decision"]["warn"], false);
+    assert_eq!(json["decision"]["reason_code"], "ADC_POLICY_ALLOW");
     assert_eq!(json["report"]["overall"]["allowed"], true);
 }
 
@@ -679,6 +680,7 @@ async fn test_eval_policy_event_regression_blocks_path_traversal_target() {
     let json: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(json["decision"]["allowed"], false);
     assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["reason_code"], "ADC_POLICY_DENY");
     assert_eq!(json["decision"]["guard"], "forbidden_path");
     assert_eq!(json["decision"]["severity"], "critical");
     assert_eq!(json["report"]["overall"]["guard"], "forbidden_path");
@@ -713,6 +715,7 @@ async fn test_eval_policy_event_regression_blocks_userinfo_spoofed_egress_host()
     let json: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(json["decision"]["allowed"], false);
     assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["reason_code"], "ADC_POLICY_DENY");
     assert_eq!(json["decision"]["guard"], "egress_allowlist");
     assert_eq!(json["decision"]["severity"], "high");
     assert_eq!(json["report"]["overall"]["guard"], "egress_allowlist");
@@ -750,6 +753,7 @@ async fn test_eval_policy_event_regression_blocks_private_ip_egress() {
     let json: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(json["decision"]["allowed"], false);
     assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["reason_code"], "ADC_POLICY_DENY");
     assert_eq!(json["decision"]["guard"], "egress_allowlist");
     assert_eq!(json["report"]["overall"]["guard"], "egress_allowlist");
     assert_eq!(json["report"]["overall"]["details"]["host"], "127.0.0.1");

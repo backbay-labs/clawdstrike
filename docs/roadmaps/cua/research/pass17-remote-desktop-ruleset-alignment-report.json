@@ -1,0 +1,101 @@
+{
+  "matrix": "docs/roadmaps/cua/research/remote_desktop_policy_matrix.yaml",
+  "ruleset": "rulesets/remote-desktop.yaml",
+  "tier": "dev",
+  "mode": "guardrail",
+  "total": 6,
+  "passed": 6,
+  "failed": 0,
+  "results": [
+    {
+      "id": "clipboard_matches_matrix_guardrail_dev",
+      "expected": {
+        "result": "pass",
+        "decision": "deny"
+      },
+      "actual": {
+        "result": "pass",
+        "feature": "clipboard",
+        "matrix_decision": "deny",
+        "actual_decision": "deny",
+        "event_type": "remote.clipboard"
+      },
+      "pass": true
+    },
+    {
+      "id": "file_transfer_matches_matrix_guardrail_dev",
+      "expected": {
+        "result": "pass",
+        "decision": "deny"
+      },
+      "actual": {
+        "result": "pass",
+        "feature": "file_transfer",
+        "matrix_decision": "deny",
+        "actual_decision": "deny",
+        "event_type": "remote.file_transfer"
+      },
+      "pass": true
+    },
+    {
+      "id": "audio_matches_matrix_guardrail_dev",
+      "expected": {
+        "result": "pass",
+        "decision": "allow"
+      },
+      "actual": {
+        "result": "pass",
+        "feature": "audio",
+        "matrix_decision": "allow",
+        "actual_decision": "allow",
+        "event_type": "remote.audio"
+      },
+      "pass": true
+    },
+    {
+      "id": "drive_mapping_matches_matrix_guardrail_dev",
+      "expected": {
+        "result": "pass",
+        "decision": "deny"
+      },
+      "actual": {
+        "result": "pass",
+        "feature": "drive_mapping",
+        "matrix_decision": "deny",
+        "actual_decision": "deny",
+        "event_type": "remote.drive_mapping"
+      },
+      "pass": true
+    },
+    {
+      "id": "printing_matches_matrix_guardrail_dev",
+      "expected": {
+        "result": "pass",
+        "decision": "deny"
+      },
+      "actual": {
+        "result": "pass",
+        "feature": "printing",
+        "matrix_decision": "deny",
+        "actual_decision": "deny",
+        "event_type": "remote.printing"
+      },
+      "pass": true
+    },
+    {
+      "id": "session_share_matches_matrix_guardrail_dev",
+      "expected": {
+        "result": "pass",
+        "decision": "deny"
+      },
+      "actual": {
+        "result": "pass",
+        "feature": "session_share",
+        "matrix_decision": "deny",
+        "actual_decision": "deny",
+        "event_type": "remote.session_share"
+      },
+      "pass": true
+    }
+  ]
+}

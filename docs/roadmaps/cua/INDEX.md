@@ -138,6 +138,6 @@
 | Orchestration | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
 | Receipt Schema | Pass #11 Envelope Equivalence (`C3`) + Harness-Validated | 2026-02-18 |
 | Policy Engine | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
-| Ecosystem Integrations | Pass #16 Runtime Follow-up (connect egress + plain computer_use action shape) + Harness-Validated | 2026-02-18 |
+| Ecosystem Integrations | Pass #17 Runtime Hardening (full provider conformance surface + reason-code parity + matrix/ruleset drift guard) + Harness-Validated | 2026-02-18 |
 
-Program status: Pass #16 extends production-readiness remediation with runtime enforcement + fixture closure for the remaining ecosystem gaps: `remote.session.connect` now enforces egress policy in the OpenClaw runtime path (fail-closed on missing destination metadata), and OpenClaw bridge now supports plain `computer_use`/`computer` tool-call shape using `action` metadata. CI remains at 17 roadmap harnesses on every PR/push with fixture suites passing, and package/runtime test suites pass for the remediated paths.
+Program status: Pass #17 extends production-readiness remediation with runtime enforcement + fixture closure for remaining ecosystem gaps: `hushd` now supports all emitted remote side-channel events (`audio`, `drive_mapping`, `printing`), runtime decisions now carry deterministic `reason_code` values across adapter/Rust boundaries, provider conformance now covers all canonical OpenAI/Claude CUA flow surfaces, and CI now includes matrix-to-ruleset drift validation for `rulesets/remote-desktop.yaml`.

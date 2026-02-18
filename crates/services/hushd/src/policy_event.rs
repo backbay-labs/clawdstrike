@@ -23,6 +23,9 @@ pub enum PolicyEventType {
     InputInject,
     ClipboardTransfer,
     FileTransfer,
+    RemoteAudio,
+    RemoteDriveMapping,
+    RemotePrinting,
     SessionShare,
     Other(String),
 }
@@ -44,6 +47,9 @@ impl PolicyEventType {
             Self::InputInject => "input.inject",
             Self::ClipboardTransfer => "remote.clipboard",
             Self::FileTransfer => "remote.file_transfer",
+            Self::RemoteAudio => "remote.audio",
+            Self::RemoteDriveMapping => "remote.drive_mapping",
+            Self::RemotePrinting => "remote.printing",
             Self::SessionShare => "remote.session_share",
             Self::Other(s) => s.as_str(),
         }
@@ -89,6 +95,9 @@ impl Clone for PolicyEventType {
             Self::InputInject => Self::InputInject,
             Self::ClipboardTransfer => Self::ClipboardTransfer,
             Self::FileTransfer => Self::FileTransfer,
+            Self::RemoteAudio => Self::RemoteAudio,
+            Self::RemoteDriveMapping => Self::RemoteDriveMapping,
+            Self::RemotePrinting => Self::RemotePrinting,
             Self::SessionShare => Self::SessionShare,
             Self::Other(s) => Self::Other(s.clone()),
         }
@@ -116,6 +125,9 @@ impl<'de> Deserialize<'de> for PolicyEventType {
             "input.inject" => Self::InputInject,
             "remote.clipboard" => Self::ClipboardTransfer,
             "remote.file_transfer" => Self::FileTransfer,
+            "remote.audio" => Self::RemoteAudio,
+            "remote.drive_mapping" => Self::RemoteDriveMapping,
+            "remote.printing" => Self::RemotePrinting,
             "remote.session_share" => Self::SessionShare,
             other => Self::Other(other.to_string()),
         })
@@ -169,6 +181,9 @@ impl PolicyEvent {
             (PolicyEventType::InputInject, PolicyEventData::Cua(_)) => {}
             (PolicyEventType::ClipboardTransfer, PolicyEventData::Cua(_)) => {}
             (PolicyEventType::FileTransfer, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteAudio, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteDriveMapping, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemotePrinting, PolicyEventData::Cua(_)) => {}
             (PolicyEventType::SessionShare, PolicyEventData::Cua(_)) => {}
             (PolicyEventType::Other(_), _) => {}
             (event_type, data) => {
@@ -655,6 +670,9 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
             | PolicyEventType::InputInject
             | PolicyEventType::ClipboardTransfer
             | PolicyEventType::FileTransfer
+            | PolicyEventType::RemoteAudio
+            | PolicyEventType::RemoteDriveMapping
+            | PolicyEventType::RemotePrinting
             | PolicyEventType::SessionShare,
             PolicyEventData::Cua(_),
         ) => (
@@ -958,6 +976,48 @@ mod tests {
     }
 
     #[test]
+    fn test_cua_audio_maps_correctly() {
+        let event = cua_event("remote.audio", base_cua_data("audio"));
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.audio");
+                assert_eq!(data["cuaAction"], "audio");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_drive_mapping_maps_correctly() {
+        let event = cua_event("remote.drive_mapping", base_cua_data("drive_mapping"));
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.drive_mapping");
+                assert_eq!(data["cuaAction"], "drive_mapping");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cua_printing_maps_correctly() {
+        let event = cua_event("remote.printing", base_cua_data("printing"));
+        let mapped = map_policy_event(&event).unwrap();
+
+        match &mapped.action {
+            MappedGuardAction::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "remote.printing");
+                assert_eq!(data["cuaAction"], "printing");
+            }
+            other => panic!("expected Custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_cua_event_type_as_str_roundtrips() {
         let types = vec![
             PolicyEventType::RemoteSessionConnect,
@@ -966,6 +1026,9 @@ mod tests {
             PolicyEventType::InputInject,
             PolicyEventType::ClipboardTransfer,
             PolicyEventType::FileTransfer,
+            PolicyEventType::RemoteAudio,
+            PolicyEventType::RemoteDriveMapping,
+            PolicyEventType::RemotePrinting,
             PolicyEventType::SessionShare,
         ];
         let expected_strs = vec![
@@ -975,6 +1038,9 @@ mod tests {
             "input.inject",
             "remote.clipboard",
             "remote.file_transfer",
+            "remote.audio",
+            "remote.drive_mapping",
+            "remote.printing",
             "remote.session_share",
         ];
 

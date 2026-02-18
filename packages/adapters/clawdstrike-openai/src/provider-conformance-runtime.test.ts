@@ -32,12 +32,15 @@ const CASES_PATH = resolve(THIS_DIR, '../../../../fixtures/policy-events/provide
 const CASES = JSON.parse(readFileSync(CASES_PATH, 'utf8')) as CaseDoc;
 
 const KNOWN_INTENTS = new Set([
-  'click_element',
-  'type_text',
-  'navigate_url',
-  'take_screenshot',
-  'read_clipboard',
-  'transfer_file',
+  'connect',
+  'input',
+  'clipboard_read',
+  'clipboard_write',
+  'file_transfer_upload',
+  'file_transfer_download',
+  'session_share',
+  'reconnect',
+  'disconnect',
 ]);
 
 function normalizeCanonical(value: CanonicalLike): { eventType: unknown; data: { cuaAction: unknown; direction: unknown } } {

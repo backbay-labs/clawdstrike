@@ -241,21 +241,40 @@ export interface PolicyGuards extends GuardToggles {
  */
 export type DecisionStatus = 'allow' | 'warn' | 'deny';
 
+export type DecisionReasonCode = string;
+
 /**
  * Result of policy evaluation
  */
-export interface Decision {
-  /** The decision status: 'allow', 'warn', or 'deny' */
-  status: DecisionStatus;
-  /** Reason for denial (if denied) */
-  reason?: string;
-  /** Guard that made the decision */
-  guard?: string;
-  /** Severity of the violation */
-  severity?: Severity;
-  /** Additional message */
-  message?: string;
-}
+export type Decision =
+  | {
+      /** The decision status: 'allow' */
+      status: 'allow';
+      /** Optional machine-readable reason code */
+      reason_code?: DecisionReasonCode;
+      /** Reason for allow/observe outcome */
+      reason?: string;
+      /** Guard that made the decision */
+      guard?: string;
+      /** Severity of the violation */
+      severity?: Severity;
+      /** Additional message */
+      message?: string;
+    }
+  | {
+      /** The decision status: 'warn' or 'deny' */
+      status: 'warn' | 'deny';
+      /** Required machine-readable reason code for non-allow outcomes */
+      reason_code: DecisionReasonCode;
+      /** Human-readable reason */
+      reason?: string;
+      /** Guard that made the decision */
+      guard?: string;
+      /** Severity of the violation */
+      severity?: Severity;
+      /** Additional message */
+      message?: string;
+    };
 
 /**
  * Result from a single guard check

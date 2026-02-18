@@ -82,8 +82,14 @@ def validate_suite_structure(suite: Dict[str, Any]) -> Optional[str]:
     reason_codes = suite.get("reason_codes")
     if not isinstance(reason_codes, list) or not reason_codes:
         return "SUITE_STRUCTURE_INVALID"
-    for rc in ("ADC_POLICY_ALLOW", "ADC_POLICY_DENY", "ADC_GUARD_ERROR",
-               "ADC_PROBE_VERIFIED", "ADC_PROBE_FAILED", "ADC_UNKNOWN_FLOW"):
+    for rc in (
+        "ADC_POLICY_ALLOW",
+        "ADC_POLICY_WARN",
+        "ADC_POLICY_DENY",
+        "ADC_GUARD_ERROR",
+        "ADC_PROBE_VERIFIED",
+        "ADC_PROBE_FAILED",
+    ):
         if rc not in reason_codes:
             return "SUITE_STRUCTURE_INVALID"
 

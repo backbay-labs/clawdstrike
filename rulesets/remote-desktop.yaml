@@ -16,11 +16,18 @@ guards:
       - "input.inject"
       - "remote.clipboard"
       - "remote.file_transfer"
+      - "remote.audio"
+      - "remote.drive_mapping"
+      - "remote.printing"
       - "remote.session_share"
 
   remote_desktop_side_channel:
-    clipboard_enabled: true
-    file_transfer_enabled: true
+    # Matrix-aligned defaults for tier=dev, mode=guardrail.
+    clipboard_enabled: false
+    file_transfer_enabled: false
+    audio_enabled: true
+    drive_mapping_enabled: false
+    printing_enabled: false
     session_share_enabled: false
     max_transfer_size_bytes: 104857600  # 100MB
 

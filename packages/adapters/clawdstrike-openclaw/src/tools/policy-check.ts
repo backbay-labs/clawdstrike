@@ -10,10 +10,10 @@ export type PolicyCheckAction =
   | 'command_exec'
   | 'tool_call';
 
-export interface PolicyCheckResult extends Decision {
+export type PolicyCheckResult = Decision & {
   message: string;
   suggestion?: string;
-}
+};
 
 function parseNetworkTarget(target: string): { host: string; port: number; url?: string } {
   const trimmed = target.trim();

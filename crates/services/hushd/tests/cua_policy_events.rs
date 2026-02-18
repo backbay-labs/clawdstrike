@@ -41,6 +41,9 @@ fn cua_events_map_to_custom_guard_action() {
         ("input.inject", "inject"),
         ("remote.clipboard", "clipboard"),
         ("remote.file_transfer", "file_transfer"),
+        ("remote.audio", "audio"),
+        ("remote.drive_mapping", "drive_mapping"),
+        ("remote.printing", "printing"),
     ];
 
     for (event_type, cua_action) in cases {
