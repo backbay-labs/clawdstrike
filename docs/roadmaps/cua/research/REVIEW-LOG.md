@@ -296,6 +296,20 @@ This log tracks reviewer interventions made while autonomous research agents con
   - `bash scripts/test-platform.sh` passes end-to-end (Rust/TS/Python/docs).
   - Path lint false-positive against URL references was fixed in `scripts/path-lint.sh` by excluding URL matches from stale-path checks.
 
+## 2026-02-18 (Pass #16 — Findings #1/#2 Runtime Closure)
+
+- Closed connect-time egress enforcement gap for CUA events:
+  - OpenAI + Claude CUA translators now preserve destination metadata for connect actions (`host`, `port`, `url`, `protocol`).
+  - OpenClaw policy engine now evaluates `remote.session.connect` CUA events against egress allowlist by deriving a synthetic `network_egress` event.
+  - Connect path now fails closed when destination metadata is missing and egress cannot be evaluated.
+- Closed OpenClaw bridge gap for plain `computer_use` action shape:
+  - Bridge now classifies plain provider tool names (`computer_use`, `computer.use`, `computer-use`, `computer`) and extracts action from `params.action`.
+  - Bridge connect event builder now preserves destination metadata for downstream egress enforcement.
+- Expanded runtime/fixture coverage and documentation alignment:
+  - Added fixture case `openclaw_computer_use_action_connect`.
+  - Updated bridge suite contract + validator for plain-tool detection semantics.
+  - Added connect metadata requirements to canonical adapter contract and policy-event mapping docs.
+
 ## Ongoing review protocol
 
 - Keep agent-authored text where defensible; annotate rather than overwrite unless clearly wrong.

@@ -20,6 +20,24 @@
     },
     {
       "actual": {
+        "cua_action": "session.connect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.connect",
+        "result": "pass"
+      },
+      "expected": {
+        "cua_action": "session.connect",
+        "decision": "allow",
+        "error_code": null,
+        "event_type": "remote.session.connect",
+        "result": "pass"
+      },
+      "id": "openclaw_computer_use_action_connect",
+      "ok": true
+    },
+    {
+      "actual": {
         "cua_action": "input.inject",
         "decision": "allow",
         "error_code": null,
@@ -178,7 +196,7 @@
   "suite": "docs/roadmaps/cua/research/openclaw_cua_bridge_suite.yaml",
   "summary": {
     "failed": 0,
-    "passed": 9,
-    "total": 9
+    "passed": 10,
+    "total": 10
   }
 }

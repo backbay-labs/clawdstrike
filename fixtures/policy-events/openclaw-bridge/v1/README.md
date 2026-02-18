@@ -7,6 +7,7 @@ Test fixtures for the OpenClaw CUA bridge handler (`@clawdstrike/openclaw`).
 | ID | Description |
 |---|---|
 | `openclaw_connect_event` | CUA connect from OpenClaw produces `remote.session.connect` |
+| `openclaw_computer_use_action_connect` | Plain `computer_use` + `action=connect` maps to `remote.session.connect` and preserves destination metadata |
 | `openclaw_input_inject_click` | CUA click from OpenClaw produces `input.inject` |
 | `openclaw_clipboard_read` | Clipboard read produces `remote.clipboard` with `direction=read` |
 | `openclaw_file_upload` | File upload produces `remote.file_transfer` with `direction=upload` |

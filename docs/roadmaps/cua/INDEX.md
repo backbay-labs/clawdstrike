@@ -81,7 +81,7 @@
 - [OpenClaw CUA Bridge Suite](./research/openclaw_cua_bridge_suite.yaml) — pass-fourteen `E3` OpenClaw CUA bridge event mapping contract
 - [OpenClaw Bridge Fixtures](../../../fixtures/policy-events/openclaw-bridge/v1/cases.json) — pass-fourteen `E3` fixture corpus
 - [Pass #14 OpenClaw Bridge Harness](./research/verify_openclaw_cua_bridge.py) — fixture-driven OpenClaw bridge validator
-- [Pass #14 OpenClaw Bridge Report](./research/openclaw_cua_bridge_report.json) — latest local run results (9/9 pass)
+- [Pass #14 OpenClaw Bridge Report](./research/openclaw_cua_bridge_report.json) — latest local run results (10/10 pass)
 - [trycua Connector Evaluation](./research/trycua-connector-evaluation.md) — pass-fourteen `E4` trycua/cua runtime connector evaluation
 - [trycua Connector Suite](./research/trycua_connector_suite.yaml) — pass-fourteen `E4` connector compatibility contract
 - [trycua Connector Fixtures](../../../fixtures/policy-events/trycua-connector/v1/cases.json) — pass-fourteen `E4` fixture corpus
@@ -138,6 +138,6 @@
 | Orchestration | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
 | Receipt Schema | Pass #11 Envelope Equivalence (`C3`) + Harness-Validated | 2026-02-18 |
 | Policy Engine | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
-| Ecosystem Integrations | Pass #15 Runtime Translator/Guard Enforcement Remediation + Harness-Validated | 2026-02-18 |
+| Ecosystem Integrations | Pass #16 Runtime Follow-up (connect egress + plain computer_use action shape) + Harness-Validated | 2026-02-18 |
 
-Program status: Pass #15 moved prior “complete” artifacts to production-ready runtime behavior. OpenClaw now enforces canonical CUA guard configs directly (`computer_use`, `remote_desktop_side_channel`, `input_injection_capability`), OpenAI/Claude now execute provider-specific CUA translators in runtime paths (adapter + tool boundary), and Rust side-channel guard scope now includes `remote.audio`, `remote.drive_mapping`, and `remote.printing`. CI remains at 17 roadmap harnesses on every PR/push with fixture suites passing, and package/runtime test suites pass for the remediated paths.
+Program status: Pass #16 extends production-readiness remediation with runtime enforcement + fixture closure for the remaining ecosystem gaps: `remote.session.connect` now enforces egress policy in the OpenClaw runtime path (fail-closed on missing destination metadata), and OpenClaw bridge now supports plain `computer_use`/`computer` tool-call shape using `action` metadata. CI remains at 17 roadmap harnesses on every PR/push with fixture suites passing, and package/runtime test suites pass for the remediated paths.

@@ -101,6 +101,11 @@ describe('openclaw bridge runtime fixtures', () => {
     writeFileSync(policyPath, `
 version: "1.2.0"
 guards:
+  egress_allowlist:
+    enabled: true
+    default_action: allow
+    allow:
+      - "*"
   computer_use:
     enabled: true
     mode: guardrail
@@ -207,6 +212,18 @@ guards:
 
         if (query.expected_direction !== undefined) {
           expect(canonicalEvent.data.direction).toBe(query.expected_direction);
+        }
+
+        if (query.expected_host !== undefined) {
+          expect(canonicalEvent.data.host).toBe(query.expected_host);
+        }
+
+        if (query.expected_port !== undefined) {
+          expect(canonicalEvent.data.port).toBe(query.expected_port);
+        }
+
+        if (query.expected_url !== undefined) {
+          expect(canonicalEvent.data.url).toBe(query.expected_url);
         }
 
         if (query.expected_continuity_hash !== undefined) {

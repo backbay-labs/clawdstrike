@@ -263,3 +263,9 @@ Pass #15 closes the remaining production gaps from code review:
 - OpenClaw now enforces canonical CUA guard configs at runtime (no CUA default-allow fallthrough).
 - OpenAI/Claude adapters now run provider-specific CUA translators in the runtime path (not fixture-only mapping).
 - Remote desktop side-channel runtime scope now includes audio/drive-mapping/printing in Rust guard enforcement.
+
+### Follow-up completion status (Pass #16)
+
+Pass #16 closes two follow-up runtime confidence gaps discovered after Pass #15:
+- `remote.session.connect` now enforces egress allowlist in the OpenClaw runtime path and fails closed when destination metadata is missing.
+- OpenClaw bridge now supports plain `computer_use`/`computer` tool-call shape with `action` metadata, with fixture + validator coverage.

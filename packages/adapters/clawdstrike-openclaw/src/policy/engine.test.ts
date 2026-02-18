@@ -192,6 +192,102 @@ guards:
     expect(deniedDecision.guard).toBe('computer_use');
   });
 
+  it('enforces egress policy on CUA connect with destination metadata', async () => {
+    const policyPath = join(testDir, 'cua-connect-egress-policy.yaml');
+    writeFileSync(policyPath, `
+version: "1.2.0"
+guards:
+  egress_allowlist:
+    enabled: true
+    default_action: block
+    allow:
+      - "*.example.com"
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - "remote.session.connect"
+`);
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: 'deterministic',
+      logLevel: 'error',
+    });
+
+    const allowedConnect: PolicyEvent = {
+      eventId: 'cua-connect-egress-allow',
+      eventType: 'remote.session.connect',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'session.connect',
+        direction: 'outbound',
+        host: 'desk.example.com',
+        port: 443,
+        url: 'https://desk.example.com/session',
+      },
+    };
+    const allowedDecision = await engine.evaluate(allowedConnect);
+    expect(allowedDecision.status).toBe('allow');
+
+    const deniedConnect: PolicyEvent = {
+      eventId: 'cua-connect-egress-deny',
+      eventType: 'remote.session.connect',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'session.connect',
+        direction: 'outbound',
+        host: 'evil.invalid',
+        port: 443,
+        url: 'https://evil.invalid/session',
+      },
+    };
+    const deniedDecision = await engine.evaluate(deniedConnect);
+    expect(deniedDecision.status).toBe('deny');
+    expect(deniedDecision.guard).toBe('egress');
+  });
+
+  it('fails closed for CUA connect when egress guard cannot evaluate destination', async () => {
+    const policyPath = join(testDir, 'cua-connect-metadata-policy.yaml');
+    writeFileSync(policyPath, `
+version: "1.2.0"
+guards:
+  egress_allowlist:
+    enabled: true
+    default_action: block
+    allow:
+      - "*.example.com"
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - "remote.session.connect"
+`);
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: 'deterministic',
+      logLevel: 'error',
+    });
+
+    const missingDestination: PolicyEvent = {
+      eventId: 'cua-connect-metadata-deny',
+      eventType: 'remote.session.connect',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'session.connect',
+        direction: 'outbound',
+      },
+    };
+    const decision = await engine.evaluate(missingDestination);
+    expect(decision.status).toBe('deny');
+    expect(decision.guard).toBe('egress');
+    expect(decision.reason).toContain('missing destination');
+  });
+
   it('returns warn in observe mode when CUA action is outside allowed_actions', async () => {
     const policyPath = join(testDir, 'cua-observe-policy.yaml');
     writeFileSync(policyPath, `

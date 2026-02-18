@@ -97,6 +97,41 @@ Tests:
 2. OpenClaw role: enforce canonical CUA guard configs directly or only emit CUA audit events?
 - Resolved: enforce directly. OpenClaw policy engine now enforces canonical CUA guards in deterministic evaluation.
 
+## Follow-up Patch: Findings #1 + #2 (Runtime + Fixtures + Docs)
+
+Date: 2026-02-18
+
+Finding #1 follow-up (CUA connect egress enforcement gap):
+- OpenAI/Claude CUA translators now preserve connect destination metadata (`host`, `port`, `url`, `protocol`) when available.
+- OpenClaw policy engine now enforces egress policy on `remote.session.connect` CUA events via synthetic `network_egress` evaluation.
+- Connect events now fail closed when destination metadata is missing and egress evaluation cannot be performed.
+
+Changed files:
+- `packages/adapters/clawdstrike-openai/src/openai-cua-translator.ts`
+- `packages/adapters/clawdstrike-openai/src/openai-cua-translator.test.ts`
+- `packages/adapters/clawdstrike-claude/src/claude-cua-translator.ts`
+- `packages/adapters/clawdstrike-claude/src/claude-cua-translator.test.ts`
+- `packages/adapters/clawdstrike-openclaw/src/policy/engine.ts`
+- `packages/adapters/clawdstrike-openclaw/src/policy/engine.test.ts`
+
+Finding #2 follow-up (OpenClaw bridge plain `computer_use` tool shape gap):
+- OpenClaw CUA bridge now detects plain provider tool names (`computer_use`, `computer.use`, `computer-use`, `computer`) and resolves actions from `params.action`.
+- OpenClaw bridge now preserves connect destination metadata in canonical CUA connect events.
+- Added fixture case coverage for plain `computer_use` + `action=connect`.
+
+Changed files:
+- `packages/adapters/clawdstrike-openclaw/src/hooks/cua-bridge/handler.ts`
+- `packages/adapters/clawdstrike-openclaw/src/hooks/cua-bridge/handler.test.ts`
+- `packages/adapters/clawdstrike-openclaw/src/hooks/cua-bridge/fixture-runtime.test.ts`
+- `fixtures/policy-events/openclaw-bridge/v1/cases.json`
+- `fixtures/policy-events/openclaw-bridge/v1/README.md`
+
+Docs/validator alignment:
+- `docs/roadmaps/cua/research/openclaw_cua_bridge_suite.yaml`
+- `docs/roadmaps/cua/research/verify_openclaw_cua_bridge.py`
+- `docs/roadmaps/cua/research/canonical_adapter_cua_contract.yaml`
+- `docs/roadmaps/cua/research/policy_event_mapping.yaml`
+
 ## CI-Equivalent Pre-Merge Status
 
 Executed:

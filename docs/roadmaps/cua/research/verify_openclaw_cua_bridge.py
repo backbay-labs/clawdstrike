@@ -61,6 +61,7 @@ def validate_suite_structure(suite: Dict[str, Any]) -> Optional[str]:
         "cua_action_kinds",
         "event_type_map",
         "tool_prefixes",
+        "tool_names",
         "fail_closed_codes",
     }
     if not required_top.issubset(suite.keys()):
@@ -90,6 +91,12 @@ def validate_suite_structure(suite: Dict[str, Any]) -> Optional[str]:
         if not isinstance(fail_closed_codes.get(key), str) or not fail_closed_codes.get(key):
             return "SUITE_STRUCTURE_INVALID"
 
+    tool_names = suite.get("tool_names")
+    if not isinstance(tool_names, list) or not tool_names:
+        return "SUITE_STRUCTURE_INVALID"
+    if not all(isinstance(name, str) and name for name in tool_names):
+        return "SUITE_STRUCTURE_INVALID"
+
     return None
 
 
@@ -99,12 +106,18 @@ def classify_cua_action(suite: Dict[str, Any], tool_name: str, params: Dict[str,
     Returns (kind, error_code). If kind is None, error_code explains why.
     """
     prefixes = suite.get("tool_prefixes", [])
+    tool_names = set(name.lower() for name in suite.get("tool_names", []))
     cua_action_kinds = suite.get("cua_action_kinds", [])
 
     # Check if it's a CUA tool
     lower = tool_name.lower()
     is_cua = False
     action_token = None
+
+    if lower in tool_names:
+        is_cua = True
+        if isinstance(params.get("action"), str) and params["action"].strip():
+            action_token = params["action"].strip().lower()
 
     for prefix in prefixes:
         if lower.startswith(prefix):

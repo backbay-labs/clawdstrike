@@ -13,6 +13,7 @@
  */
 
 import {
+  parseNetworkTarget,
   PolicyEventFactory,
   type CuaEventData,
   type Decision,
@@ -43,6 +44,7 @@ const CUA_TOOL_PREFIXES = [
   'cua_', 'cua.', 'computer_use_', 'computer_use.',
   'remote_desktop_', 'remote_desktop.', 'rdp_', 'rdp.',
 ] as const;
+const CUA_TOOL_NAMES = new Set(['computer', 'computer_use', 'computer.use', 'computer-use']);
 
 /** Maps recognized CUA action tokens to factory method selectors. */
 type CuaActionKind =
@@ -100,6 +102,9 @@ export function isCuaToolCall(
   params: Record<string, unknown>,
 ): boolean {
   const lower = toolName.toLowerCase();
+  if (CUA_TOOL_NAMES.has(lower)) {
+    return true;
+  }
   if (CUA_TOOL_PREFIXES.some((p) => lower.startsWith(p))) {
     return true;
   }
@@ -119,6 +124,12 @@ function extractActionToken(
   // Explicit action from params takes precedence
   if (typeof params.cua_action === 'string' && params.cua_action.trim()) {
     return params.cua_action.trim().toLowerCase();
+  }
+
+  if (CUA_TOOL_NAMES.has(toolName.toLowerCase())) {
+    if (typeof params.action === 'string' && params.action.trim()) {
+      return params.action.trim().toLowerCase();
+    }
   }
 
   // Strip known CUA prefix and use remaining as action token
@@ -181,8 +192,10 @@ export function buildCuaEvent(
   }
 
   switch (kind) {
-    case 'connect':
-      return factory.createCuaConnectEvent(sessionId, extraData);
+    case 'connect': {
+      const connectMeta = extractConnectMetadata(params);
+      return factory.createCuaConnectEvent(sessionId, { ...extraData, ...connectMeta });
+    }
     case 'disconnect':
       return factory.createCuaDisconnectEvent(sessionId, extraData);
     case 'reconnect':
@@ -324,4 +337,67 @@ function coerceTransferSize(value: unknown): number | null {
     }
   }
   return null;
+}
+
+function coercePort(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const port = Math.trunc(value);
+    if (port > 0 && port <= 65535) return port;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^[0-9]+$/.test(trimmed)) {
+      const parsed = Number.parseInt(trimmed, 10);
+      if (Number.isFinite(parsed) && parsed > 0 && parsed <= 65535) return parsed;
+    }
+  }
+  return null;
+}
+
+function firstNonEmptyString(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return null;
+}
+
+function extractConnectMetadata(params: Record<string, unknown>): Partial<CuaEventData> {
+  const url = firstNonEmptyString([
+    params.url,
+    params.endpoint,
+    params.href,
+    params.target_url,
+    params.targetUrl,
+  ]);
+  const parsed = parseNetworkTarget(url ?? '', { emptyPort: 'default' });
+  const host = firstNonEmptyString([
+    params.host,
+    params.hostname,
+    params.remote_host,
+    params.remoteHost,
+    params.destination_host,
+    params.destinationHost,
+    parsed.host,
+  ])?.toLowerCase();
+  const protocol = firstNonEmptyString([params.protocol, params.scheme])?.toLowerCase();
+  const explicitPort = coercePort(
+    params.port
+      ?? params.remote_port
+      ?? params.remotePort
+      ?? params.destination_port
+      ?? params.destinationPort,
+  );
+
+  const out: Partial<CuaEventData> = {};
+  if (host) (out as Record<string, unknown>).host = host;
+  if (explicitPort !== null) {
+    (out as Record<string, unknown>).port = explicitPort;
+  } else if (parsed.host) {
+    (out as Record<string, unknown>).port = parsed.port;
+  }
+  if (url) (out as Record<string, unknown>).url = url;
+  if (protocol) (out as Record<string, unknown>).protocol = protocol;
+  return out;
 }

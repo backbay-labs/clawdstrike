@@ -7,11 +7,42 @@
       "query": {
         "source": "openclaw",
         "tool_name": "cua_connect",
-        "params": {},
+        "params": {
+          "url": "https://example.com"
+        },
         "session_id": "sess-oc-001",
         "expected_event_type": "remote.session.connect",
         "expected_cua_action": "session.connect",
-        "expected_data_type": "cua"
+        "expected_data_type": "cua",
+        "expected_host": "example.com",
+        "expected_port": 443,
+        "expected_url": "https://example.com"
+      },
+      "expected": {
+        "result": "pass",
+        "error_code": null,
+        "event_type": "remote.session.connect",
+        "cua_action": "session.connect",
+        "decision": "allow"
+      }
+    },
+    {
+      "id": "openclaw_computer_use_action_connect",
+      "description": "Plain computer_use tool with action=connect maps to canonical remote.session.connect and preserves destination metadata",
+      "query": {
+        "source": "openclaw",
+        "tool_name": "computer_use",
+        "params": {
+          "action": "connect",
+          "url": "https://desk.example.com/session"
+        },
+        "session_id": "sess-oc-001b",
+        "expected_event_type": "remote.session.connect",
+        "expected_cua_action": "session.connect",
+        "expected_data_type": "cua",
+        "expected_host": "desk.example.com",
+        "expected_port": 443,
+        "expected_url": "https://desk.example.com/session"
       },
       "expected": {
         "result": "pass",

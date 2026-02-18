@@ -51,6 +51,38 @@ describe('openAICuaTranslator', () => {
     if (translated?.data.type === 'cua') {
       expect(translated.data.cuaAction).toBe('navigate');
       expect(translated.data.direction).toBe('outbound');
+      expect(translated.data.host).toBe('example.com');
+      expect(translated.data.port).toBe(443);
+      expect(translated.data.url).toBe('https://example.com');
+    }
+  });
+
+  it('prefers explicit host/port metadata for connect actions', () => {
+    const translated = openAICuaTranslator({
+      framework: 'openai',
+      toolName: 'computer_use',
+      parameters: {
+        action: 'connect',
+        host: 'rdp.internal.example',
+        port: 3389,
+      },
+      rawInput: {
+        action: 'connect',
+        host: 'rdp.internal.example',
+        port: 3389,
+      },
+      sessionId: 'sess-3b',
+      contextMetadata: {},
+    });
+
+    expect(translated).not.toBeNull();
+    expect(translated?.eventType).toBe('remote.session.connect');
+    expect(translated?.data.type).toBe('cua');
+    if (translated?.data.type === 'cua') {
+      expect(translated.data.cuaAction).toBe('connect');
+      expect(translated.data.direction).toBe('outbound');
+      expect(translated.data.host).toBe('rdp.internal.example');
+      expect(translated.data.port).toBe(3389);
     }
   });
 

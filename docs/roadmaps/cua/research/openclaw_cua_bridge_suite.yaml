@@ -1,5 +1,5 @@
 suite_id: openclaw-cua-bridge
-suite_version: "1.0.0"
+suite_version: "1.1.0"
 updated_at: "2026-02-18T00:00:00Z"
 
 description: >
@@ -8,7 +8,9 @@ description: >
   PolicyEventFactory from adapter-core. Every recognized CUA action maps to a
   deterministic event type, CUA action label, and data type. Unknown actions
   and missing metadata fail closed with stable error codes. Parity with direct
-  adapter-core event creation is required.
+  adapter-core event creation is required. Detection supports both prefix-based
+  tool names (for example cua_click, computer_use_connect) and plain provider
+  tool names (for example computer_use/computer) when action metadata is present.
 
 policy_event_mapping_ref: docs/roadmaps/cua/research/policy_event_mapping.yaml
 adapter_core_contract_ref: docs/roadmaps/cua/research/canonical_adapter_cua_contract.yaml
@@ -27,6 +29,10 @@ event_type_map:
   connect:
     event_type: remote.session.connect
     cua_action: session.connect
+    metadata_requirements:
+      any_of:
+        - host
+        - url
   disconnect:
     event_type: remote.session.disconnect
     cua_action: session.disconnect
@@ -62,6 +68,12 @@ tool_prefixes:
   - remote_desktop.
   - rdp_
   - rdp.
+
+tool_names:
+  - computer
+  - computer_use
+  - computer.use
+  - computer-use
 
 fail_closed_codes:
   unknown_action: OCLAW_CUA_UNKNOWN_ACTION

@@ -54,6 +54,10 @@ flow_policy_event_map:
     guard_expectations:
       - egress_allowlist
       - computer_use
+    metadata_requirements:
+      any_of:
+        - host
+        - url
   input:
     policy_event_ref: input.inject
     guard_expectations:

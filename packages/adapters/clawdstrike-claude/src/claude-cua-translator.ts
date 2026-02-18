@@ -1,4 +1,5 @@
 import {
+  parseNetworkTarget,
   PolicyEventFactory,
   type CuaEventData,
   type PolicyEvent,
@@ -112,6 +113,71 @@ function maybeTransferSize(parameters: Record<string, unknown>): number | undefi
   return undefined;
 }
 
+function maybePort(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const port = Math.trunc(value);
+    if (port > 0 && port <= 65535) return port;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^[0-9]+$/.test(trimmed)) {
+      const parsed = Number.parseInt(trimmed, 10);
+      if (Number.isFinite(parsed) && parsed > 0 && parsed <= 65535) {
+        return parsed;
+      }
+    }
+  }
+  return undefined;
+}
+
+function firstNonEmptyString(values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return undefined;
+}
+
+function deriveConnectMetadata(parameters: Record<string, unknown>): Partial<CuaEventData> {
+  const url = firstNonEmptyString([
+    parameters.url,
+    parameters.endpoint,
+    parameters.href,
+    parameters.target_url,
+    parameters.targetUrl,
+  ]);
+  const parsed = parseNetworkTarget(url ?? '', { emptyPort: 'default' });
+  const host = firstNonEmptyString([
+    parameters.host,
+    parameters.hostname,
+    parameters.remote_host,
+    parameters.remoteHost,
+    parameters.destination_host,
+    parameters.destinationHost,
+    parsed.host,
+  ])?.toLowerCase();
+  const explicitPort = maybePort(
+    parameters.port
+      ?? parameters.remote_port
+      ?? parameters.remotePort
+      ?? parameters.destination_port
+      ?? parameters.destinationPort,
+  );
+  const protocol = firstNonEmptyString([parameters.protocol, parameters.scheme])?.toLowerCase();
+
+  const extra: Partial<CuaEventData> = { direction: 'outbound' };
+  if (host) (extra as Record<string, unknown>).host = host;
+  if (explicitPort !== undefined) {
+    (extra as Record<string, unknown>).port = explicitPort;
+  } else if (parsed.host) {
+    (extra as Record<string, unknown>).port = parsed.port;
+  }
+  if (url) (extra as Record<string, unknown>).url = url;
+  if (protocol) (extra as Record<string, unknown>).protocol = protocol;
+  return extra;
+}
+
 function failUnknownAction(action: string): never {
   throw new Error(`Claude CUA translator does not support action '${action}'`);
 }
@@ -162,9 +228,8 @@ export const claudeCuaTranslator: ToolCallTranslator = (input) => {
   }
 
   if (action === 'navigate' || action === 'connect') {
-    return withAction(factory.createCuaConnectEvent(sessionId, { direction: 'outbound' }), 'navigate', {
-      direction: 'outbound',
-    });
+    const connectMeta = deriveConnectMetadata(params);
+    return withAction(factory.createCuaConnectEvent(sessionId, connectMeta), 'navigate', connectMeta);
   }
 
   switch (action) {

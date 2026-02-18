@@ -50,6 +50,10 @@ flow_mappings:
         - guard: computer_use
           stage: std_path
       fail_closed: true
+      metadata_requirements:
+        any_of:
+          - host
+          - url
     post_action:
       audit_event: audit.remote.session.connect
       receipt_artifacts:

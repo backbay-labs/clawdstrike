@@ -43,6 +43,11 @@ describe('CUA Bridge Handler', () => {
     writeFileSync(policyPath, `
 version: "1.2.0"
 guards:
+  egress_allowlist:
+    enabled: true
+    default_action: allow
+    allow:
+      - "*"
   computer_use:
     enabled: true
     mode: guardrail
@@ -84,6 +89,10 @@ guards:
       expect(isCuaToolCall('computer_use_connect', {})).toBe(true);
     });
 
+    it('detects plain computer_use tool shape', () => {
+      expect(isCuaToolCall('computer_use', { action: 'connect' })).toBe(true);
+    });
+
     it('detects remote_desktop_ prefix', () => {
       expect(isCuaToolCall('remote_desktop_click', {})).toBe(true);
     });
@@ -116,6 +125,10 @@ guards:
 
     it('extracts from computer_use_ prefix', () => {
       expect(extractActionToken('computer_use_connect', {})).toBe('connect');
+    });
+
+    it('extracts from plain computer_use action param', () => {
+      expect(extractActionToken('computer_use', { action: 'click' })).toBe('click');
     });
 
     it('prefers explicit cua_action param', () => {
@@ -188,6 +201,19 @@ guards:
       expect(event.sessionId).toBe('sess-1');
       expect(event.data.type).toBe('cua');
       expect((event.data as any).cuaAction).toBe('session.connect');
+    });
+
+    it('preserves connect destination metadata for egress checks', () => {
+      const event = buildCuaEvent('sess-1', 'connect', {
+        url: 'https://desk.example.com/session',
+      });
+      expect(event.eventType).toBe('remote.session.connect');
+      expect(event.data.type).toBe('cua');
+      if (event.data.type === 'cua') {
+        expect(event.data.host).toBe('desk.example.com');
+        expect(event.data.port).toBe(443);
+        expect(event.data.url).toBe('https://desk.example.com/session');
+      }
     });
 
     it('builds disconnect event', () => {
@@ -273,9 +299,8 @@ guards:
     });
 
     it('allows recognized CUA connect action', async () => {
-      const event = makeToolCallEvent('cua_connect', {});
+      const event = makeToolCallEvent('cua_connect', { url: 'https://example.com' });
       await handler(event);
-      // Default policy engine allows (no guards configured)
       expect(event.preventDefault).toBe(false);
       expect(event.messages.some((m) => m.includes('CUA connect allowed'))).toBe(true);
     });
@@ -313,6 +338,13 @@ guards:
       await handler(event);
       expect(event.preventDefault).toBe(false);
       expect(event.messages.some((m) => m.includes('CUA input_inject allowed'))).toBe(true);
+    });
+
+    it('handles plain computer_use + action shape', async () => {
+      const event = makeToolCallEvent('computer_use', { action: 'connect', url: 'https://example.com' });
+      await handler(event);
+      expect(event.preventDefault).toBe(false);
+      expect(event.messages.some((m) => m.includes('CUA connect allowed'))).toBe(true);
     });
 
     it('handles clipboard via computer_use_ prefix', async () => {

@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 
 import type { PolicyEngineLike as CanonicalPolicyEngineLike, PolicyEvent as CanonicalPolicyEvent } from '@clawdstrike/adapter-core';
+import { parseNetworkTarget } from '@clawdstrike/adapter-core';
 import { createPolicyEngineFromPolicy, type Policy as CanonicalPolicy } from '@clawdstrike/policy';
 
 import { mergeConfig } from '../config.js';
@@ -267,6 +268,11 @@ export class PolicyEngine {
     }
     const cuaData = event.data;
 
+    const connectEgressDecision = this.checkCuaConnectEgress(event, cuaData);
+    if (connectEgressDecision.status === 'deny' || connectEgressDecision.status === 'warn') {
+      return connectEgressDecision;
+    }
+
     const computerUse = this.policy.guards?.computer_use;
     if (!computerUse) {
       return this.applyOnViolation({
@@ -328,6 +334,46 @@ export class PolicyEngine {
     }
 
     return { status: 'allow' };
+  }
+
+  private checkCuaConnectEgress(event: PolicyEvent, data: CuaEventData): Decision {
+    if (event.eventType !== 'remote.session.connect') {
+      return { status: 'allow' };
+    }
+
+    if (!this.config.guards.egress) {
+      return { status: 'allow' };
+    }
+
+    const target = extractCuaNetworkTarget(data);
+    if (!target) {
+      return this.applyOnViolation({
+        status: 'deny',
+        reason: "CUA connect action denied: missing destination host/url metadata required for egress evaluation",
+        guard: 'egress',
+        severity: 'high',
+      });
+    }
+
+    const egressEvent: PolicyEvent = {
+      eventId: `${event.eventId}:cua-connect-egress`,
+      eventType: 'network_egress',
+      timestamp: event.timestamp,
+      sessionId: event.sessionId,
+      data: {
+        type: 'network',
+        host: target.host,
+        port: target.port,
+        ...(target.protocol ? { protocol: target.protocol } : {}),
+        ...(target.url ? { url: target.url } : {}),
+      },
+      metadata: {
+        ...(event.metadata ?? {}),
+        derivedFrom: event.eventType,
+      },
+    };
+
+    return this.checkEgress(egressEvent);
   }
 
   private checkRemoteDesktopSideChannel(event: PolicyEvent, data: CuaEventData): Decision {
@@ -707,6 +753,78 @@ function extractTransferSize(data: CuaEventData): number | null {
   }
 
   return null;
+}
+
+function parsePort(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const port = Math.trunc(value);
+    if (port > 0 && port <= 65535) return port;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^[0-9]+$/.test(trimmed)) {
+      const parsed = Number.parseInt(trimmed, 10);
+      if (Number.isFinite(parsed) && parsed > 0 && parsed <= 65535) return parsed;
+    }
+  }
+  return null;
+}
+
+function firstNonEmptyString(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return null;
+}
+
+type CuaNetworkTarget = {
+  host: string;
+  port: number;
+  protocol?: string;
+  url?: string;
+};
+
+function extractCuaNetworkTarget(data: CuaEventData): CuaNetworkTarget | null {
+  const url = firstNonEmptyString([
+    data.url,
+    data.endpoint,
+    data.href,
+    data.target_url,
+    data.targetUrl,
+  ]);
+  const parsed = parseNetworkTarget(url ?? '', { emptyPort: 'default' });
+
+  const host = firstNonEmptyString([
+    data.host,
+    data.hostname,
+    data.remote_host,
+    data.remoteHost,
+    data.destination_host,
+    data.destinationHost,
+    parsed.host,
+  ])?.toLowerCase();
+  if (!host) {
+    return null;
+  }
+
+  const protocol = firstNonEmptyString([data.protocol, data.scheme])?.toLowerCase();
+  const explicitPort = parsePort(
+    data.port
+      ?? data.remote_port
+      ?? data.remotePort
+      ?? data.destination_port
+      ?? data.destinationPort,
+  );
+  const port = explicitPort ?? (parsed.host ? parsed.port : protocol === 'http' ? 80 : 443);
+
+  return {
+    host,
+    port,
+    ...(protocol ? { protocol } : {}),
+    ...(url ? { url } : {}),
+  };
 }
 
 type SideChannelFlag =
