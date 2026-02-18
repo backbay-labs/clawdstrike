@@ -8,6 +8,7 @@ const VALID_EGRESS_MODES = new Set(['allowlist', 'denylist', 'open', 'deny_all']
 const VALID_VIOLATION_ACTIONS = new Set(['cancel', 'warn', 'isolate', 'escalate']);
 const VALID_TIMEOUT_BEHAVIORS = new Set(['allow', 'deny', 'warn', 'defer']);
 const VALID_EXECUTION_MODES = new Set(['parallel', 'sequential', 'background']);
+const VALID_COMPUTER_USE_MODES = new Set(['observe', 'guardrail', 'fail_closed']);
 
 const PLACEHOLDER_RE = /\$\{([^}]+)\}/g;
 
@@ -34,7 +35,33 @@ const FILESYSTEM_KEYS = new Set(['allowed_write_roots', 'allowed_read_paths', 'f
 const EXECUTION_KEYS = new Set(['allowed_commands', 'denied_patterns']);
 const TOOLS_KEYS = new Set(['allowed', 'denied']);
 const LIMITS_KEYS = new Set(['max_execution_seconds', 'max_memory_mb', 'max_output_bytes']);
-const GUARDS_KEYS = new Set(['forbidden_path', 'egress', 'secret_leak', 'patch_integrity', 'mcp_tool', 'custom']);
+const GUARDS_KEYS = new Set([
+  'forbidden_path',
+  'egress',
+  'secret_leak',
+  'patch_integrity',
+  'mcp_tool',
+  'custom',
+  'computer_use',
+  'remote_desktop_side_channel',
+  'input_injection_capability',
+]);
+const COMPUTER_USE_KEYS = new Set(['enabled', 'mode', 'allowed_actions']);
+const REMOTE_DESKTOP_SIDE_CHANNEL_KEYS = new Set([
+  'enabled',
+  'clipboard_enabled',
+  'file_transfer_enabled',
+  'audio_enabled',
+  'drive_mapping_enabled',
+  'printing_enabled',
+  'session_share_enabled',
+  'max_transfer_size_bytes',
+]);
+const INPUT_INJECTION_CAPABILITY_KEYS = new Set([
+  'enabled',
+  'allowed_input_types',
+  'require_postcondition_probe',
+]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -102,6 +129,17 @@ function ensurePositiveNumber(
   if (value === undefined) return;
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     errors.push(`${field} must be a positive number`);
+  }
+}
+
+function ensureFiniteNumber(
+  value: unknown,
+  field: string,
+  errors: string[],
+): void {
+  if (value === undefined) return;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    errors.push(`${field} must be a finite number`);
   }
 }
 
@@ -227,6 +265,61 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
       ensureBoolean((p.guards as any).secret_leak, 'guards.secret_leak', errors);
       ensureBoolean((p.guards as any).patch_integrity, 'guards.patch_integrity', errors);
       ensureBoolean((p.guards as any).mcp_tool, 'guards.mcp_tool', errors);
+
+      const computerUse = (p.guards as any).computer_use;
+      if (computerUse !== undefined) {
+        if (!isPlainObject(computerUse)) {
+          errors.push('guards.computer_use must be an object');
+        } else {
+          ensureAllowedKeys(computerUse, 'guards.computer_use', COMPUTER_USE_KEYS, errors);
+          ensureBoolean((computerUse as any).enabled, 'guards.computer_use.enabled', errors);
+
+          const mode = (computerUse as any).mode;
+          if (mode !== undefined && (typeof mode !== 'string' || !VALID_COMPUTER_USE_MODES.has(mode))) {
+            errors.push(`guards.computer_use.mode must be one of: ${[...VALID_COMPUTER_USE_MODES].join(', ')}`);
+          }
+
+          const allowedActions = ensureStringArray((computerUse as any).allowed_actions, 'guards.computer_use.allowed_actions', errors);
+          if (allowedActions && allowedActions.length === 0) {
+            warnings.push('guards.computer_use.allowed_actions is empty (all actions allowed)');
+          }
+        }
+      }
+
+      const remoteSideChannel = (p.guards as any).remote_desktop_side_channel;
+      if (remoteSideChannel !== undefined) {
+        if (!isPlainObject(remoteSideChannel)) {
+          errors.push('guards.remote_desktop_side_channel must be an object');
+        } else {
+          ensureAllowedKeys(remoteSideChannel, 'guards.remote_desktop_side_channel', REMOTE_DESKTOP_SIDE_CHANNEL_KEYS, errors);
+          ensureBoolean((remoteSideChannel as any).enabled, 'guards.remote_desktop_side_channel.enabled', errors);
+          ensureBoolean((remoteSideChannel as any).clipboard_enabled, 'guards.remote_desktop_side_channel.clipboard_enabled', errors);
+          ensureBoolean((remoteSideChannel as any).file_transfer_enabled, 'guards.remote_desktop_side_channel.file_transfer_enabled', errors);
+          ensureBoolean((remoteSideChannel as any).audio_enabled, 'guards.remote_desktop_side_channel.audio_enabled', errors);
+          ensureBoolean((remoteSideChannel as any).drive_mapping_enabled, 'guards.remote_desktop_side_channel.drive_mapping_enabled', errors);
+          ensureBoolean((remoteSideChannel as any).printing_enabled, 'guards.remote_desktop_side_channel.printing_enabled', errors);
+          ensureBoolean((remoteSideChannel as any).session_share_enabled, 'guards.remote_desktop_side_channel.session_share_enabled', errors);
+          ensureFiniteNumber((remoteSideChannel as any).max_transfer_size_bytes, 'guards.remote_desktop_side_channel.max_transfer_size_bytes', errors);
+          if (typeof (remoteSideChannel as any).max_transfer_size_bytes === 'number' && (remoteSideChannel as any).max_transfer_size_bytes < 0) {
+            errors.push('guards.remote_desktop_side_channel.max_transfer_size_bytes must be >= 0');
+          }
+        }
+      }
+
+      const inputInjection = (p.guards as any).input_injection_capability;
+      if (inputInjection !== undefined) {
+        if (!isPlainObject(inputInjection)) {
+          errors.push('guards.input_injection_capability must be an object');
+        } else {
+          ensureAllowedKeys(inputInjection, 'guards.input_injection_capability', INPUT_INJECTION_CAPABILITY_KEYS, errors);
+          ensureBoolean((inputInjection as any).enabled, 'guards.input_injection_capability.enabled', errors);
+          const inputTypes = ensureStringArray((inputInjection as any).allowed_input_types, 'guards.input_injection_capability.allowed_input_types', errors);
+          if (inputTypes && inputTypes.length === 0) {
+            warnings.push('guards.input_injection_capability.allowed_input_types is empty (all input types allowed)');
+          }
+          ensureBoolean((inputInjection as any).require_postcondition_probe, 'guards.input_injection_capability.require_postcondition_probe', errors);
+        }
+      }
 
       const custom = (p.guards as any).custom;
       if (custom !== undefined) {

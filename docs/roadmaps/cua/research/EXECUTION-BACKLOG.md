@@ -250,11 +250,16 @@ Date: 2026-02-18
 - [x] Code review of all CUA implementation passes completed with critical issues resolved.
 - [x] CI runs 17 roadmap harnesses on every PR/push.
 
-### Completion status (Pass #14)
+### Completion status (Pass #15)
 
-All workstreams A–E are **complete**:
+All workstreams A–E are **complete**, with post-review production remediation applied:
 - **A1–A4** (Trust Foundation): Verifier flow, attestation policy, schema package, signer migration.
 - **B1–B3** (Enforcement Surface): Remote desktop matrix, injection capabilities, policy event mapping.
 - **C1–C3** (Evidence Integrity): Post-condition probes, session continuity, envelope equivalence.
 - **D1–D2** (Operational Readiness): Latency harness, verification bundle.
 - **E1–E4** (Ecosystem): Canonical adapter contract, provider conformance, OpenClaw bridge, trycua connector.
+
+Pass #15 closes the remaining production gaps from code review:
+- OpenClaw now enforces canonical CUA guard configs at runtime (no CUA default-allow fallthrough).
+- OpenAI/Claude adapters now run provider-specific CUA translators in the runtime path (not fixture-only mapping).
+- Remote desktop side-channel runtime scope now includes audio/drive-mapping/printing in Rust guard enforcement.

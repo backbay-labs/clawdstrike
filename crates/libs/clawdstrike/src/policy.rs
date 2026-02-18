@@ -1655,9 +1655,7 @@ impl RuleSet {
             "cicd" => Some(include_str!("../rulesets/cicd.yaml")),
             "permissive" => Some(include_str!("../rulesets/permissive.yaml")),
             "remote-desktop" => Some(include_str!("../rulesets/remote-desktop.yaml")),
-            "remote-desktop-strict" => {
-                Some(include_str!("../rulesets/remote-desktop-strict.yaml"))
-            }
+            "remote-desktop-strict" => Some(include_str!("../rulesets/remote-desktop-strict.yaml")),
             "remote-desktop-permissive" => {
                 Some(include_str!("../rulesets/remote-desktop-permissive.yaml"))
             }

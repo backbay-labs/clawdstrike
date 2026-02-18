@@ -24,6 +24,10 @@ const KNOWN_EVENT_TYPES: EventType[] = [
   'input.inject',
   'remote.clipboard',
   'remote.file_transfer',
+  'remote.audio',
+  'remote.drive_mapping',
+  'remote.printing',
+  'remote.session_share',
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,7 +70,11 @@ function assertPolicyEventShape(value: unknown): asserts value is PolicyEvent {
     eventType === 'remote.session.reconnect' ||
     eventType === 'input.inject' ||
     eventType === 'remote.clipboard' ||
-    eventType === 'remote.file_transfer'
+    eventType === 'remote.file_transfer' ||
+    eventType === 'remote.audio' ||
+    eventType === 'remote.drive_mapping' ||
+    eventType === 'remote.printing' ||
+    eventType === 'remote.session_share'
   ) {
     expect(dataType).toBe('cua');
   }

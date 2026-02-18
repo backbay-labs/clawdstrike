@@ -67,4 +67,20 @@ describe('ClaudeToolBoundary', () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(fs.existsSync(sideEffectPath)).toBe(false);
   });
+
+  it('applies Claude translator before policy evaluation', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: event => ({
+        status: event.eventType === 'input.inject' ? 'deny' : 'allow',
+        reason: 'blocked',
+      }),
+    };
+
+    const boundary = new ClaudeToolBoundary({ engine, config: { blockOnViolation: true } });
+    await expect(boundary.handleToolStart('computer', { action: 'mouse_click' }, 'run-translate')).rejects.toBeInstanceOf(
+      ClawdstrikeBlockedError,
+    );
+
+    expect(boundary.getAuditEvents().some(e => e.type === 'tool_call_blocked')).toBe(true);
+  });
 });

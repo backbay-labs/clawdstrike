@@ -147,8 +147,7 @@ fn remote_desktop_strict_has_minimal_actions() {
         "strict must not allow session_share"
     );
     assert!(
-        !cu.allowed_actions
-            .contains(&"remote.clipboard".to_string()),
+        !cu.allowed_actions.contains(&"remote.clipboard".to_string()),
         "strict must not allow clipboard"
     );
     assert!(

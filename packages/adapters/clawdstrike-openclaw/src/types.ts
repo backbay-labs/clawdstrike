@@ -47,6 +47,9 @@ export type EventType =
   | 'input.inject'
   | 'remote.clipboard'
   | 'remote.file_transfer'
+  | 'remote.audio'
+  | 'remote.drive_mapping'
+  | 'remote.printing'
   | 'remote.session_share';
 
 /**
@@ -192,10 +195,42 @@ export interface SecretEventData {
 export interface CuaEventData {
   type: 'cua';
   cuaAction: string;
-  direction?: 'read' | 'write' | 'upload' | 'download';
+  direction?: 'read' | 'write' | 'upload' | 'download' | 'inbound' | 'outbound';
   continuityPrevSessionHash?: string;
   postconditionProbeHash?: string;
   [key: string]: unknown;
+}
+
+export type ComputerUseMode = 'observe' | 'guardrail' | 'fail_closed';
+
+export interface ComputerUseGuardConfig {
+  enabled?: boolean;
+  mode?: ComputerUseMode;
+  allowed_actions?: string[];
+}
+
+export interface RemoteDesktopSideChannelGuardConfig {
+  enabled?: boolean;
+  clipboard_enabled?: boolean;
+  file_transfer_enabled?: boolean;
+  audio_enabled?: boolean;
+  drive_mapping_enabled?: boolean;
+  printing_enabled?: boolean;
+  session_share_enabled?: boolean;
+  max_transfer_size_bytes?: number;
+}
+
+export interface InputInjectionCapabilityGuardConfig {
+  enabled?: boolean;
+  allowed_input_types?: string[];
+  require_postcondition_probe?: boolean;
+}
+
+export interface PolicyGuards extends GuardToggles {
+  custom?: unknown;
+  computer_use?: ComputerUseGuardConfig;
+  remote_desktop_side_channel?: RemoteDesktopSideChannelGuardConfig;
+  input_injection_capability?: InputInjectionCapabilityGuardConfig;
 }
 
 /**
@@ -255,7 +290,7 @@ export interface Policy {
   /** Resource limits */
   limits?: ResourceLimits;
   /** Guard-level toggles */
-  guards?: GuardToggles & { custom?: unknown };
+  guards?: PolicyGuards;
   /** Action to take on violation */
   on_violation?: ViolationAction;
 }

@@ -136,6 +136,27 @@ export class PolicyEventFactory {
     return this.buildCuaEvent('remote.file_transfer', 'file_transfer', sessionId, { ...data, direction });
   }
 
+  createCuaAudioEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.audio', 'audio', sessionId, data);
+  }
+
+  createCuaDriveMappingEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.drive_mapping', 'drive_mapping', sessionId, data);
+  }
+
+  createCuaPrintingEvent(
+    sessionId: string,
+    data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,
+  ): PolicyEvent {
+    return this.buildCuaEvent('remote.printing', 'printing', sessionId, data);
+  }
+
   createCuaSessionShareEvent(
     sessionId: string,
     data?: Partial<Omit<CuaEventData, 'type' | 'cuaAction'>>,

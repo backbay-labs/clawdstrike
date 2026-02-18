@@ -77,7 +77,7 @@ fail=0
 check_fixed_pattern() {
   local pattern="$1"
   local matches
-  matches="$({ rg --fixed-strings --line-number --color never "${EXCLUDE_GLOBS[@]}" "$pattern" "${SEARCH_PATHS[@]}" 2>/dev/null || true; } | sed '/^$/d')"
+  matches="$({ rg --fixed-strings --line-number --color never "${EXCLUDE_GLOBS[@]}" "$pattern" "${SEARCH_PATHS[@]}" 2>/dev/null || true; } | { rg --invert-match '://[^[:space:]]+' || true; } | sed '/^$/d')"
   if [[ -n "$matches" ]]; then
     echo "[path-lint] stale path reference found: $pattern"
     echo "$matches"

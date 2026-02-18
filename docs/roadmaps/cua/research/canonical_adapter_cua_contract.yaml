@@ -21,6 +21,7 @@ flow_surfaces:
   - clipboard_write
   - file_transfer_upload
   - file_transfer_download
+  - session_share
   - reconnect
   - disconnect
 
@@ -79,6 +80,11 @@ flow_policy_event_map:
     guard_expectations:
       - egress_allowlist
       - forbidden_path
+      - computer_use
+      - remote_desktop_side_channel
+  session_share:
+    policy_event_ref: remote.session_share
+    guard_expectations:
       - computer_use
       - remote_desktop_side_channel
   reconnect:

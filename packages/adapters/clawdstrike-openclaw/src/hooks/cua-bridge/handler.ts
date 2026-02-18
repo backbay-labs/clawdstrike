@@ -53,7 +53,11 @@ type CuaActionKind =
   | 'clipboard_read'
   | 'clipboard_write'
   | 'file_upload'
-  | 'file_download';
+  | 'file_download'
+  | 'session_share'
+  | 'audio'
+  | 'drive_mapping'
+  | 'printing';
 
 const ACTION_TOKEN_MAP: ReadonlyArray<{ tokens: ReadonlyArray<string>; kind: CuaActionKind }> = [
   { tokens: ['connect', 'session_start', 'open', 'launch'], kind: 'connect' },
@@ -64,6 +68,10 @@ const ACTION_TOKEN_MAP: ReadonlyArray<{ tokens: ReadonlyArray<string>; kind: Cua
   { tokens: ['clipboard_write', 'clipboard_set', 'copy_to', 'paste_to_remote'], kind: 'clipboard_write' },
   { tokens: ['file_upload', 'upload', 'send_file'], kind: 'file_upload' },
   { tokens: ['file_download', 'download', 'receive_file', 'get_file'], kind: 'file_download' },
+  { tokens: ['session_share', 'share_session', 'share'], kind: 'session_share' },
+  { tokens: ['audio', 'audio_stream', 'stream_audio'], kind: 'audio' },
+  { tokens: ['drive_mapping', 'map_drive', 'mount_drive'], kind: 'drive_mapping' },
+  { tokens: ['printing', 'print', 'remote_print'], kind: 'printing' },
 ];
 
 // ── Module State ────────────────────────────────────────────────────
@@ -158,8 +166,18 @@ export function buildCuaEvent(
   }
   // Preserve input_type so the InputInjectionCapabilityGuard (fail-closed on
   // missing input_type) receives it through the canonical CUA event data.
-  if (typeof params.input_type === 'string') {
-    (extraData as Record<string, unknown>).input_type = params.input_type;
+  const inputType = typeof params.input_type === 'string'
+    ? params.input_type
+    : typeof params.inputType === 'string'
+      ? params.inputType
+      : undefined;
+  if (typeof inputType === 'string') {
+    (extraData as Record<string, unknown>).input_type = inputType;
+  }
+
+  const transferSize = coerceTransferSize(params.transfer_size ?? params.transferSize);
+  if (transferSize !== null) {
+    (extraData as Record<string, unknown>).transfer_size = transferSize;
   }
 
   switch (kind) {
@@ -179,6 +197,14 @@ export function buildCuaEvent(
       return factory.createCuaFileTransferEvent(sessionId, 'upload', extraData);
     case 'file_download':
       return factory.createCuaFileTransferEvent(sessionId, 'download', extraData);
+    case 'session_share':
+      return factory.createCuaSessionShareEvent(sessionId, extraData);
+    case 'audio':
+      return factory.createCuaAudioEvent(sessionId, extraData);
+    case 'drive_mapping':
+      return factory.createCuaDriveMappingEvent(sessionId, extraData);
+    case 'printing':
+      return factory.createCuaPrintingEvent(sessionId, extraData);
   }
 }
 
@@ -286,3 +312,16 @@ export {
   extractActionToken,
   type CuaActionKind,
 };
+
+function coerceTransferSize(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.trunc(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return null;
+}

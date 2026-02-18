@@ -67,4 +67,20 @@ describe('OpenAIToolBoundary', () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(fs.existsSync(sideEffectPath)).toBe(false);
   });
+
+  it('applies OpenAI translator before policy evaluation', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: event => ({
+        status: event.eventType === 'input.inject' ? 'deny' : 'allow',
+        reason: 'blocked',
+      }),
+    };
+
+    const boundary = new OpenAIToolBoundary({ engine, config: { blockOnViolation: true } });
+    await expect(boundary.handleToolStart('computer_use', { action: 'click' }, 'run-translate')).rejects.toBeInstanceOf(
+      ClawdstrikeBlockedError,
+    );
+
+    expect(boundary.getAuditEvents().some(e => e.type === 'tool_call_blocked')).toBe(true);
+  });
 });

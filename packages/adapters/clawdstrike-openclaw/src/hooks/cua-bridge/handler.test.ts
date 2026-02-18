@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import handler, {
   isCuaToolCall,
   classifyCuaAction,
@@ -32,8 +35,40 @@ function makeToolCallEvent(
 // ── Tests ───────────────────────────────────────────────────────────
 
 describe('CUA Bridge Handler', () => {
+  const testDir = join(tmpdir(), `clawdstrike-openclaw-cua-bridge-${Date.now()}`);
+
   beforeEach(() => {
-    initialize({});
+    mkdirSync(testDir, { recursive: true });
+    const policyPath = join(testDir, 'cua-bridge-policy.yaml');
+    writeFileSync(policyPath, `
+version: "1.2.0"
+guards:
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - "remote.session.connect"
+      - "remote.session.disconnect"
+      - "remote.session.reconnect"
+      - "input.inject"
+      - "remote.clipboard"
+      - "remote.file_transfer"
+      - "remote.audio"
+      - "remote.drive_mapping"
+      - "remote.printing"
+      - "remote.session_share"
+  remote_desktop_side_channel:
+    enabled: true
+    clipboard_enabled: true
+    file_transfer_enabled: true
+    audio_enabled: true
+    drive_mapping_enabled: true
+    printing_enabled: true
+    session_share_enabled: true
+  input_injection_capability:
+    enabled: true
+`);
+    initialize({ policy: policyPath });
   });
 
   describe('isCuaToolCall', () => {
@@ -133,6 +168,13 @@ describe('CUA Bridge Handler', () => {
       expect(classifyCuaAction('download')).toBe('file_download');
     });
 
+    it('classifies side channel tokens', () => {
+      expect(classifyCuaAction('session_share')).toBe('session_share');
+      expect(classifyCuaAction('audio')).toBe('audio');
+      expect(classifyCuaAction('drive_mapping')).toBe('drive_mapping');
+      expect(classifyCuaAction('printing')).toBe('printing');
+    });
+
     it('returns null for unknown action', () => {
       expect(classifyCuaAction('screen_record')).toBe(null);
       expect(classifyCuaAction('unknown_action')).toBe(null);
@@ -190,6 +232,30 @@ describe('CUA Bridge Handler', () => {
       const event = buildCuaEvent('sess-1', 'file_download', {});
       expect(event.eventType).toBe('remote.file_transfer');
       expect((event.data as any).direction).toBe('download');
+    });
+
+    it('builds session_share event', () => {
+      const event = buildCuaEvent('sess-1', 'session_share', {});
+      expect(event.eventType).toBe('remote.session_share');
+      expect((event.data as any).cuaAction).toBe('session_share');
+    });
+
+    it('builds remote.audio event', () => {
+      const event = buildCuaEvent('sess-1', 'audio', {});
+      expect(event.eventType).toBe('remote.audio');
+      expect((event.data as any).cuaAction).toBe('audio');
+    });
+
+    it('builds remote.drive_mapping event', () => {
+      const event = buildCuaEvent('sess-1', 'drive_mapping', {});
+      expect(event.eventType).toBe('remote.drive_mapping');
+      expect((event.data as any).cuaAction).toBe('drive_mapping');
+    });
+
+    it('builds remote.printing event', () => {
+      const event = buildCuaEvent('sess-1', 'printing', {});
+      expect(event.eventType).toBe('remote.printing');
+      expect((event.data as any).cuaAction).toBe('printing');
     });
 
     it('includes adapter-core source metadata', () => {

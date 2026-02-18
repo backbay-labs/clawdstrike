@@ -1,4 +1,5 @@
-//! Remote desktop side channel guard - controls clipboard, file transfer, and session sharing
+//! Remote desktop side channel guard - controls clipboard, file transfer, audio, drive mapping,
+//! printing, and session sharing.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,15 @@ pub struct RemoteDesktopSideChannelConfig {
     /// Whether session sharing is allowed.
     #[serde(default = "default_enabled")]
     pub session_share_enabled: bool,
+    /// Whether remote audio channel is allowed.
+    #[serde(default = "default_enabled")]
+    pub audio_enabled: bool,
+    /// Whether remote drive mapping channel is allowed.
+    #[serde(default = "default_enabled")]
+    pub drive_mapping_enabled: bool,
+    /// Whether remote printing channel is allowed.
+    #[serde(default = "default_enabled")]
+    pub printing_enabled: bool,
     /// Maximum transfer size in bytes (for file_transfer). None means unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_transfer_size_bytes: Option<u64>,
@@ -37,6 +47,9 @@ impl Default for RemoteDesktopSideChannelConfig {
             clipboard_enabled: true,
             file_transfer_enabled: true,
             session_share_enabled: true,
+            audio_enabled: true,
+            drive_mapping_enabled: true,
+            printing_enabled: true,
             max_transfer_size_bytes: None,
         }
     }
@@ -47,6 +60,9 @@ impl Default for RemoteDesktopSideChannelConfig {
 /// Handles `GuardAction::Custom` where the custom type is one of:
 /// - `"remote.clipboard"`
 /// - `"remote.file_transfer"`
+/// - `"remote.audio"`
+/// - `"remote.drive_mapping"`
+/// - `"remote.printing"`
 /// - `"remote.session_share"`
 pub struct RemoteDesktopSideChannelGuard {
     name: String,
@@ -92,6 +108,9 @@ impl Guard for RemoteDesktopSideChannelGuard {
             action,
             GuardAction::Custom("remote.clipboard", _)
                 | GuardAction::Custom("remote.file_transfer", _)
+                | GuardAction::Custom("remote.audio", _)
+                | GuardAction::Custom("remote.drive_mapping", _)
+                | GuardAction::Custom("remote.printing", _)
                 | GuardAction::Custom("remote.session_share", _)
         )
     }
@@ -137,8 +156,7 @@ impl Guard for RemoteDesktopSideChannelGuard {
 
                 // Check transfer size if configured
                 if let Some(max_size) = self.config.max_transfer_size_bytes {
-                    if let Some(transfer_size) =
-                        data.get("transfer_size").and_then(|v| v.as_u64())
+                    if let Some(transfer_size) = data.get("transfer_size").and_then(|v| v.as_u64())
                     {
                         if transfer_size > max_size {
                             return GuardResult::block(
@@ -176,10 +194,58 @@ impl Guard for RemoteDesktopSideChannelGuard {
                     GuardResult::allow(&self.name)
                 }
             }
+            "remote.audio" => {
+                if !self.config.audio_enabled {
+                    GuardResult::block(
+                        &self.name,
+                        Severity::Error,
+                        "Remote audio channel is disabled by policy",
+                    )
+                    .with_details(serde_json::json!({
+                        "channel": "audio",
+                        "reason": "channel_disabled",
+                    }))
+                } else {
+                    GuardResult::allow(&self.name)
+                }
+            }
+            "remote.drive_mapping" => {
+                if !self.config.drive_mapping_enabled {
+                    GuardResult::block(
+                        &self.name,
+                        Severity::Error,
+                        "Drive mapping is disabled by policy",
+                    )
+                    .with_details(serde_json::json!({
+                        "channel": "drive_mapping",
+                        "reason": "channel_disabled",
+                    }))
+                } else {
+                    GuardResult::allow(&self.name)
+                }
+            }
+            "remote.printing" => {
+                if !self.config.printing_enabled {
+                    GuardResult::block(
+                        &self.name,
+                        Severity::Error,
+                        "Remote printing is disabled by policy",
+                    )
+                    .with_details(serde_json::json!({
+                        "channel": "printing",
+                        "reason": "channel_disabled",
+                    }))
+                } else {
+                    GuardResult::allow(&self.name)
+                }
+            }
             _ => GuardResult::block(
                 &self.name,
                 Severity::Error,
-                format!("Unknown side channel type '{}' denied by fail-closed policy", custom_type),
+                format!(
+                    "Unknown side channel type '{}' denied by fail-closed policy",
+                    custom_type
+                ),
             )
             .with_details(serde_json::json!({
                 "channel": custom_type,
@@ -200,6 +266,9 @@ mod tests {
 
         assert!(guard.handles(&GuardAction::Custom("remote.clipboard", &data)));
         assert!(guard.handles(&GuardAction::Custom("remote.file_transfer", &data)));
+        assert!(guard.handles(&GuardAction::Custom("remote.audio", &data)));
+        assert!(guard.handles(&GuardAction::Custom("remote.drive_mapping", &data)));
+        assert!(guard.handles(&GuardAction::Custom("remote.printing", &data)));
         assert!(guard.handles(&GuardAction::Custom("remote.session_share", &data)));
     }
 
@@ -237,6 +306,24 @@ mod tests {
                 &GuardAction::Custom("remote.session_share", &data),
                 &context,
             )
+            .await;
+        assert!(result.allowed);
+
+        let result = guard
+            .check(&GuardAction::Custom("remote.audio", &data), &context)
+            .await;
+        assert!(result.allowed);
+
+        let result = guard
+            .check(
+                &GuardAction::Custom("remote.drive_mapping", &data),
+                &context,
+            )
+            .await;
+        assert!(result.allowed);
+
+        let result = guard
+            .check(&GuardAction::Custom("remote.printing", &data), &context)
             .await;
         assert!(result.allowed);
     }
@@ -293,5 +380,21 @@ mod tests {
             )
             .await;
         assert!(result.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_denies_audio_when_disabled() {
+        let config = RemoteDesktopSideChannelConfig {
+            audio_enabled: false,
+            ..Default::default()
+        };
+        let guard = RemoteDesktopSideChannelGuard::with_config(config);
+        let context = GuardContext::new();
+        let data = serde_json::json!({});
+
+        let result = guard
+            .check(&GuardAction::Custom("remote.audio", &data), &context)
+            .await;
+        assert!(!result.allowed);
     }
 }

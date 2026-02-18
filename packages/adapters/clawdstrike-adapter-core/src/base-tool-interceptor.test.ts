@@ -89,4 +89,62 @@ describe('BaseToolInterceptor', () => {
     expect(processed.modified).toBe(false);
     expect(processed.redactions).toEqual([]);
   });
+
+  it('uses provider translator output when configured', async () => {
+    let seenEventType: string | null = null;
+    let seenCuaAction: string | null = null;
+    const engine: PolicyEngineLike = {
+      evaluate: event => {
+        seenEventType = event.eventType;
+        if (event.data.type === 'cua') {
+          seenCuaAction = String(event.data.cuaAction);
+        }
+        return { status: 'allow' };
+      },
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {
+      translateToolCall: ({ toolName, parameters, sessionId }) => {
+        if (toolName !== 'computer_use') return null;
+        return {
+          eventId: 'evt-provider-1',
+          eventType: 'input.inject',
+          timestamp: new Date().toISOString(),
+          sessionId,
+          data: {
+            type: 'cua',
+            cuaAction: String(parameters.action ?? 'input.inject'),
+          },
+          metadata: { source: 'provider-translator' },
+        };
+      },
+    });
+
+    const context = createSecurityContext({ contextId: 'ctx-translate-1', sessionId: 'sess-translate-1' });
+    const result = await interceptor.beforeExecute('computer_use', { action: 'click' }, context);
+
+    expect(result.proceed).toBe(true);
+    expect(seenEventType).toBe('input.inject');
+    expect(seenCuaAction).toBe('click');
+  });
+
+  it('fails closed when translator throws', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: 'allow' }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {
+      blockOnViolation: true,
+      translateToolCall: () => {
+        throw new Error('boom');
+      },
+    });
+
+    const context = createSecurityContext({ contextId: 'ctx-translate-err', sessionId: 'sess-translate-err' });
+    const result = await interceptor.beforeExecute('computer_use', { action: 'click' }, context);
+
+    expect(result.proceed).toBe(false);
+    expect(result.decision.status).toBe('deny');
+    expect(result.decision.guard).toBe('provider_translator');
+  });
 });

@@ -18,12 +18,12 @@ async fn computer_use_allows_known_action_in_guardrail_mode() {
     let data = serde_json::json!({"type": "cua"});
 
     let result = guard
-        .check(
-            &GuardAction::Custom("remote.session.connect", &data),
-            &ctx,
-        )
+        .check(&GuardAction::Custom("remote.session.connect", &data), &ctx)
         .await;
-    assert!(result.allowed, "known CUA action should be allowed in guardrail mode");
+    assert!(
+        result.allowed,
+        "known CUA action should be allowed in guardrail mode"
+    );
 }
 
 #[tokio::test]
@@ -38,10 +38,7 @@ async fn computer_use_denies_unknown_action_in_fail_closed_mode() {
     let data = serde_json::json!({});
 
     let result = guard
-        .check(
-            &GuardAction::Custom("remote.unknown_thing", &data),
-            &ctx,
-        )
+        .check(&GuardAction::Custom("remote.unknown_thing", &data), &ctx)
         .await;
     assert!(
         !result.allowed,
@@ -61,10 +58,7 @@ async fn computer_use_allows_everything_in_observe_mode() {
     let data = serde_json::json!({});
 
     let result = guard
-        .check(
-            &GuardAction::Custom("remote.whatever", &data),
-            &ctx,
-        )
+        .check(&GuardAction::Custom("remote.whatever", &data), &ctx)
         .await;
     assert!(
         result.allowed,

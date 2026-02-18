@@ -36,6 +36,9 @@ export type EventType =
   | 'input.inject'
   | 'remote.clipboard'
   | 'remote.file_transfer'
+  | 'remote.audio'
+  | 'remote.drive_mapping'
+  | 'remote.printing'
   | 'remote.session_share';
 
 export interface PolicyEvent {
@@ -110,7 +113,7 @@ export interface CustomEventData {
 export interface CuaEventData {
   type: 'cua';
   cuaAction: string;
-  direction?: 'read' | 'write' | 'upload' | 'download';
+  direction?: 'read' | 'write' | 'upload' | 'download' | 'inbound' | 'outbound';
   continuityPrevSessionHash?: string;
   postconditionProbeHash?: string;
   [key: string]: unknown;

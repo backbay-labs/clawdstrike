@@ -2,7 +2,7 @@ import type { AuditEvent, AuditEventType, AuditLogger } from './audit.js';
 import type { SecurityContext } from './context.js';
 import type { PolicyEngineLike } from './engine.js';
 import type { InterceptResult, ProcessedOutput } from './interceptor.js';
-import type { ClawdstrikeConfig, Decision } from './types.js';
+import type { ClawdstrikeConfig, Decision, PolicyEvent } from './types.js';
 
 export interface FrameworkAdapter<TContext = unknown> {
   readonly name: string;
@@ -32,6 +32,7 @@ export interface AdapterConfig extends ClawdstrikeConfig {
   sanitizeOutputs?: boolean;
   injectSecurityPrompt?: boolean;
   normalizeToolName?: (name: string) => string;
+  translateToolCall?: ToolCallTranslator;
   excludedTools?: string[];
   audit?: AuditConfig;
   handlers?: EventHandlers;
@@ -71,6 +72,17 @@ export interface GenericToolCall {
   metadata?: Record<string, unknown>;
 }
 
+export interface ToolCallTranslationInput {
+  framework: string;
+  toolName: string;
+  parameters: Record<string, unknown>;
+  rawInput: unknown;
+  sessionId?: string;
+  contextMetadata?: Record<string, unknown>;
+}
+
+export type ToolCallTranslator = (input: ToolCallTranslationInput) => PolicyEvent | null;
+
 export interface SessionSummary {
   sessionId: string;
   startTime: Date;
@@ -85,4 +97,3 @@ export interface SessionSummary {
   policy: string;
   mode: string;
 }
-

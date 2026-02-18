@@ -937,7 +937,10 @@ mod tests {
         let event = cua_event("remote.session.disconnect", base_cua_data("disconnect"));
         let mapped = map_policy_event(&event).unwrap();
         assert_eq!(mapped.action.action_type(), "custom");
-        assert_eq!(mapped.action.target(), Some("remote.session.disconnect".to_string()));
+        assert_eq!(
+            mapped.action.target(),
+            Some("remote.session.disconnect".to_string())
+        );
     }
 
     #[test]

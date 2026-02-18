@@ -18,7 +18,10 @@ async fn cua_connect_event_allowed_with_default_policy() {
     });
 
     let report = engine
-        .check_action_report(&GuardAction::Custom("remote.session.connect", &payload), &ctx)
+        .check_action_report(
+            &GuardAction::Custom("remote.session.connect", &payload),
+            &ctx,
+        )
         .await
         .unwrap();
 
@@ -167,7 +170,10 @@ async fn cua_event_stats_counted() {
     });
 
     let _ = engine
-        .check_action_report(&GuardAction::Custom("remote.session.connect", &payload), &ctx)
+        .check_action_report(
+            &GuardAction::Custom("remote.session.connect", &payload),
+            &ctx,
+        )
         .await
         .unwrap();
 

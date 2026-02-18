@@ -4,17 +4,15 @@
 
 use chrono::Utc;
 use hushd::policy_event::{
-    map_policy_event, CuaEventData, FileEventData, MappedGuardAction, PolicyEvent,
-    PolicyEventData, PolicyEventType,
+    map_policy_event, CuaEventData, FileEventData, MappedGuardAction, PolicyEvent, PolicyEventData,
+    PolicyEventType,
 };
 
 fn cua_event(event_type_str: &str, cua_data: CuaEventData) -> PolicyEvent {
     PolicyEvent {
         event_id: format!("integ-{}", event_type_str),
-        event_type: serde_json::from_value(serde_json::Value::String(
-            event_type_str.to_string(),
-        ))
-        .unwrap(),
+        event_type: serde_json::from_value(serde_json::Value::String(event_type_str.to_string()))
+            .unwrap(),
         timestamp: Utc::now(),
         session_id: Some("integ-session-001".to_string()),
         data: PolicyEventData::Cua(cua_data),
@@ -60,10 +58,7 @@ fn cua_events_map_to_custom_guard_action() {
                     event_type
                 );
             }
-            other => panic!(
-                "expected Custom action for {}, got {:?}",
-                event_type, other
-            ),
+            other => panic!("expected Custom action for {}, got {:?}", event_type, other),
         }
 
         // Verify the action_type() and target() methods work correctly.

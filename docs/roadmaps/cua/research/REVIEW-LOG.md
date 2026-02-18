@@ -269,6 +269,33 @@ This log tracks reviewer interventions made while autonomous research agents con
   - All 17 harnesses pass (16 produce results; 1 pre-existing `Crypto` dep issue). 130+ fixture checks pass.
   - Clippy clean with `-D warnings`.
 
+## 2026-02-18 (Pass #15 — Production Readiness Remediation)
+
+- Closed critical runtime gaps identified in post-pass review:
+  - OpenClaw policy engine now enforces canonical CUA guard configs directly (`computer_use`, `remote_desktop_side_channel`, `input_injection_capability`) instead of default-allow fallthrough.
+  - OpenClaw canonical policy loader/validator now maps + validates CUA guard configs from canonical v1.2 policies.
+  - OpenClaw CUA bridge expanded to classify + emit `session_share`, `audio`, `drive_mapping`, and `printing` canonical events.
+- Closed E2 runtime translator gap:
+  - Added adapter-core `translateToolCall` hook and fail-closed translator error handling (`provider_translator` guard path).
+  - Implemented provider-specific OpenAI/Claude CUA translators and wired them into both adapter wrappers and tool boundaries.
+  - Added translator unit tests + adapter integration tests + boundary tests for allow/deny/fail-closed behavior.
+  - Added fixture-driven runtime conformance test (`packages/adapters/clawdstrike-openai/src/provider-conformance-runtime.test.ts`) that executes `fixtures/policy-events/provider-conformance/v1/cases.json` against real OpenAI/Claude translator code paths.
+- Added fixture-driven OpenClaw bridge runtime test (`packages/adapters/clawdstrike-openclaw/src/hooks/cua-bridge/fixture-runtime.test.ts`) that executes `fixtures/policy-events/openclaw-bridge/v1/cases.json` against real handler/event mapping paths.
+- Closed remote-desktop scope mismatch:
+  - Extended Rust `RemoteDesktopSideChannelGuard` to enforce `remote.audio`, `remote.drive_mapping`, and `remote.printing` channels with config toggles and tests.
+- Closed contract artifact mismatch:
+  - Updated `canonical_adapter_cua_contract.yaml` flow surfaces and policy-event map to include `session_share`.
+- Validation:
+  - `@clawdstrike/adapter-core` tests + typecheck pass.
+  - `@clawdstrike/openai` tests + typecheck pass.
+  - `@clawdstrike/claude` tests + typecheck pass.
+  - `@clawdstrike/openclaw` tests + typecheck pass.
+  - Rust guard tests pass: `cargo test -p clawdstrike remote_desktop_side_channel`.
+- CI-equivalent runs executed:
+  - `mise run ci` passes after formatting and guardrail fixes.
+  - `bash scripts/test-platform.sh` passes end-to-end (Rust/TS/Python/docs).
+  - Path lint false-positive against URL references was fixed in `scripts/path-lint.sh` by excluding URL matches from stale-path checks.
+
 ## Ongoing review protocol
 
 - Keep agent-authored text where defensible; annotate rather than overwrite unless clearly wrong.

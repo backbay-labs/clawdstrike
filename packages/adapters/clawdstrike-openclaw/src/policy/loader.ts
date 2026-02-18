@@ -293,6 +293,57 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
+    if (typeof guards.computer_use === 'object') {
+      const cfg = guards.computer_use as Record<string, unknown>;
+      const translated: NonNullable<Policy['guards']>['computer_use'] = {};
+      if (typeof cfg.enabled === 'boolean') translated.enabled = cfg.enabled;
+      if (typeof cfg.mode === 'string') {
+        translated.mode = cfg.mode as NonNullable<typeof translated>['mode'];
+      }
+      if (Array.isArray(cfg.allowed_actions)) {
+        translated.allowed_actions = cfg.allowed_actions.filter((v): v is string => typeof v === 'string');
+      }
+      out.guards = {
+        ...(out.guards ?? {}),
+        computer_use: translated,
+      };
+    }
+
+    if (typeof guards.remote_desktop_side_channel === 'object') {
+      const cfg = guards.remote_desktop_side_channel as Record<string, unknown>;
+      const translated: NonNullable<Policy['guards']>['remote_desktop_side_channel'] = {};
+      if (typeof cfg.enabled === 'boolean') translated.enabled = cfg.enabled;
+      if (typeof cfg.clipboard_enabled === 'boolean') translated.clipboard_enabled = cfg.clipboard_enabled;
+      if (typeof cfg.file_transfer_enabled === 'boolean') translated.file_transfer_enabled = cfg.file_transfer_enabled;
+      if (typeof cfg.audio_enabled === 'boolean') translated.audio_enabled = cfg.audio_enabled;
+      if (typeof cfg.drive_mapping_enabled === 'boolean') translated.drive_mapping_enabled = cfg.drive_mapping_enabled;
+      if (typeof cfg.printing_enabled === 'boolean') translated.printing_enabled = cfg.printing_enabled;
+      if (typeof cfg.session_share_enabled === 'boolean') translated.session_share_enabled = cfg.session_share_enabled;
+      if (typeof cfg.max_transfer_size_bytes === 'number' && Number.isFinite(cfg.max_transfer_size_bytes)) {
+        translated.max_transfer_size_bytes = cfg.max_transfer_size_bytes;
+      }
+      out.guards = {
+        ...(out.guards ?? {}),
+        remote_desktop_side_channel: translated,
+      };
+    }
+
+    if (typeof guards.input_injection_capability === 'object') {
+      const cfg = guards.input_injection_capability as Record<string, unknown>;
+      const translated: NonNullable<Policy['guards']>['input_injection_capability'] = {};
+      if (typeof cfg.enabled === 'boolean') translated.enabled = cfg.enabled;
+      if (Array.isArray(cfg.allowed_input_types)) {
+        translated.allowed_input_types = cfg.allowed_input_types.filter((v): v is string => typeof v === 'string');
+      }
+      if (typeof cfg.require_postcondition_probe === 'boolean') {
+        translated.require_postcondition_probe = cfg.require_postcondition_probe;
+      }
+      out.guards = {
+        ...(out.guards ?? {}),
+        input_injection_capability: translated,
+      };
+    }
+
     if (Array.isArray((guards as any).custom)) {
       out.guards = {
         ...out.guards,

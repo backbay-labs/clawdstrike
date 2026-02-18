@@ -156,4 +156,51 @@ describe('PolicyEventFactory', () => {
     expect(data.cuaAction).toBe('file_transfer');
     expect(data.direction).toBe('upload');
   });
+
+  it('CUA audio event emits remote.audio eventType', () => {
+    const factory = new PolicyEventFactory();
+    const event = factory.createCuaAudioEvent('sess-006');
+
+    expect(event.eventType).toBe('remote.audio');
+    expect(event.sessionId).toBe('sess-006');
+    expect(event.data.type).toBe('cua');
+
+    const data = event.data as CuaEventData;
+    expect(data.cuaAction).toBe('audio');
+  });
+
+  it('CUA drive mapping event emits remote.drive_mapping eventType', () => {
+    const factory = new PolicyEventFactory();
+    const event = factory.createCuaDriveMappingEvent('sess-007');
+
+    expect(event.eventType).toBe('remote.drive_mapping');
+    expect(event.sessionId).toBe('sess-007');
+    expect(event.data.type).toBe('cua');
+
+    const data = event.data as CuaEventData;
+    expect(data.cuaAction).toBe('drive_mapping');
+  });
+
+  it('CUA printing event emits remote.printing eventType', () => {
+    const factory = new PolicyEventFactory();
+    const event = factory.createCuaPrintingEvent('sess-008');
+
+    expect(event.eventType).toBe('remote.printing');
+    expect(event.sessionId).toBe('sess-008');
+    expect(event.data.type).toBe('cua');
+
+    const data = event.data as CuaEventData;
+    expect(data.cuaAction).toBe('printing');
+  });
+
+  it('CUA session connect event supports outbound direction metadata', () => {
+    const factory = new PolicyEventFactory();
+    const event = factory.createCuaConnectEvent('sess-009', { direction: 'outbound' });
+
+    expect(event.eventType).toBe('remote.session.connect');
+    expect(event.data.type).toBe('cua');
+
+    const data = event.data as CuaEventData;
+    expect(data.direction).toBe('outbound');
+  });
 });

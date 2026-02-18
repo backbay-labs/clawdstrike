@@ -117,10 +117,7 @@ impl Guard for InputInjectionCapabilityGuard {
                 return GuardResult::block(
                     &self.name,
                     Severity::Error,
-                    format!(
-                        "Input type '{}' is not allowed by policy",
-                        input_type
-                    ),
+                    format!("Input type '{}' is not allowed by policy", input_type),
                 )
                 .with_details(serde_json::json!({
                     "input_type": input_type,

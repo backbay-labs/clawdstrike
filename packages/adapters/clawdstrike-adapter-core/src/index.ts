@@ -39,6 +39,8 @@ export type {
   FrameworkHooks,
   GenericToolCall,
   SessionSummary,
+  ToolCallTranslationInput,
+  ToolCallTranslator,
 } from './adapter.js';
 
 export type { AuditEvent, AuditEventType, AuditLogger } from './audit.js';
