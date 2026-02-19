@@ -49,6 +49,9 @@ impl Default for ComputerUseConfig {
                 "input.inject".to_string(),
                 "remote.clipboard".to_string(),
                 "remote.file_transfer".to_string(),
+                "remote.audio".to_string(),
+                "remote.drive_mapping".to_string(),
+                "remote.printing".to_string(),
                 "remote.session_share".to_string(),
             ],
             mode: ComputerUseMode::Guardrail,
@@ -184,7 +187,28 @@ mod tests {
         assert!(guard.handles(&GuardAction::Custom("remote.session.connect", &data)));
         assert!(guard.handles(&GuardAction::Custom("remote.clipboard", &data)));
         assert!(guard.handles(&GuardAction::Custom("remote.file_transfer", &data)));
+        assert!(guard.handles(&GuardAction::Custom("remote.audio", &data)));
+        assert!(guard.handles(&GuardAction::Custom("remote.drive_mapping", &data)));
+        assert!(guard.handles(&GuardAction::Custom("remote.printing", &data)));
         assert!(guard.handles(&GuardAction::Custom("input.inject", &data)));
+    }
+
+    #[test]
+    fn test_default_allowlist_includes_all_remote_side_channels() {
+        let config = ComputerUseConfig::default();
+        let expected = [
+            "remote.audio",
+            "remote.drive_mapping",
+            "remote.printing",
+            "remote.session_share",
+        ];
+
+        for action in expected {
+            assert!(
+                config.allowed_actions.contains(&action.to_string()),
+                "default allowed_actions should include {action}"
+            );
+        }
     }
 
     #[test]
