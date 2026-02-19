@@ -167,3 +167,7 @@ RDP_PROBE_TIMEOUT_SECONDS=20 REMOTE_OP_TIMEOUT_SECONDS=30 SSM_WAIT_TIMEOUT_SECON
      `docs/roadmaps/cua/research/artifacts/soak-20260219-034325/summary.json`.
    - Full side-channel matrix completed with restore artifacts:
      `docs/roadmaps/cua/research/artifacts/rdp-sidechannel-20260219-033112/summary.json`.
+4. Cost-control checkpoint:
+   - EC2 Windows/Linux staging instances are currently `stopped` (not terminated) and can be restarted for resumed gate execution.
+5. PR hygiene checkpoint:
+   - Remaining unresolved review threads are tracked as part of Pass #18 closure criteria and are being remediated in branch updates.

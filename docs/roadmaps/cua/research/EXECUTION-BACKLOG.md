@@ -289,6 +289,12 @@ Pass #18 runs post-implementation production-readiness blockers:
 - Signed/notarized/stapled macOS artifact validation.
 - 6-24h soak reliability run with reconnect/restart pressure.
 - Full Windows/Linux host-side RDP side-channel matrix evidence.
+- Remaining PR review thread closure with runtime/test/doc alignment.
+
+Current checkpoint:
+- Harness stability hardening merged (`run-cua-soak.sh` timeout + bounded iteration, `run-rdp-sidechannel-matrix.sh` timeout/restore guards).
+- Full matrix evidence produced under `docs/roadmaps/cua/research/artifacts/rdp-sidechannel-20260219-033112/`.
+- Review-driven parity fixes merged for `hush-cli` CUA policy-event support and bundled/root ruleset alignment.
 
 Tracking doc:
 - `docs/roadmaps/cua/research/pass18-notarization-soak-rdp-plan.md`
