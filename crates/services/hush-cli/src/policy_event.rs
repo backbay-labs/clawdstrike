@@ -18,6 +18,17 @@ pub enum PolicyEventType {
     ToolCall,
     SecretAccess,
     Custom,
+    // CUA (Computer Use Agent) event types
+    RemoteSessionConnect,
+    RemoteSessionDisconnect,
+    RemoteSessionReconnect,
+    InputInject,
+    ClipboardTransfer,
+    FileTransfer,
+    RemoteAudio,
+    RemoteDriveMapping,
+    RemotePrinting,
+    SessionShare,
     Other(String),
 }
 
@@ -32,6 +43,16 @@ impl PolicyEventType {
             Self::ToolCall => "tool_call",
             Self::SecretAccess => "secret_access",
             Self::Custom => "custom",
+            Self::RemoteSessionConnect => "remote.session.connect",
+            Self::RemoteSessionDisconnect => "remote.session.disconnect",
+            Self::RemoteSessionReconnect => "remote.session.reconnect",
+            Self::InputInject => "input.inject",
+            Self::ClipboardTransfer => "remote.clipboard",
+            Self::FileTransfer => "remote.file_transfer",
+            Self::RemoteAudio => "remote.audio",
+            Self::RemoteDriveMapping => "remote.drive_mapping",
+            Self::RemotePrinting => "remote.printing",
+            Self::SessionShare => "remote.session_share",
             Self::Other(s) => s.as_str(),
         }
     }
@@ -70,6 +91,16 @@ impl Clone for PolicyEventType {
             Self::ToolCall => Self::ToolCall,
             Self::SecretAccess => Self::SecretAccess,
             Self::Custom => Self::Custom,
+            Self::RemoteSessionConnect => Self::RemoteSessionConnect,
+            Self::RemoteSessionDisconnect => Self::RemoteSessionDisconnect,
+            Self::RemoteSessionReconnect => Self::RemoteSessionReconnect,
+            Self::InputInject => Self::InputInject,
+            Self::ClipboardTransfer => Self::ClipboardTransfer,
+            Self::FileTransfer => Self::FileTransfer,
+            Self::RemoteAudio => Self::RemoteAudio,
+            Self::RemoteDriveMapping => Self::RemoteDriveMapping,
+            Self::RemotePrinting => Self::RemotePrinting,
+            Self::SessionShare => Self::SessionShare,
             Self::Other(s) => Self::Other(s.clone()),
         }
     }
@@ -90,6 +121,16 @@ impl<'de> Deserialize<'de> for PolicyEventType {
             "tool_call" => Self::ToolCall,
             "secret_access" => Self::SecretAccess,
             "custom" => Self::Custom,
+            "remote.session.connect" => Self::RemoteSessionConnect,
+            "remote.session.disconnect" => Self::RemoteSessionDisconnect,
+            "remote.session.reconnect" => Self::RemoteSessionReconnect,
+            "input.inject" => Self::InputInject,
+            "remote.clipboard" => Self::ClipboardTransfer,
+            "remote.file_transfer" => Self::FileTransfer,
+            "remote.audio" => Self::RemoteAudio,
+            "remote.drive_mapping" => Self::RemoteDriveMapping,
+            "remote.printing" => Self::RemotePrinting,
+            "remote.session_share" => Self::SessionShare,
             other => Self::Other(other.to_string()),
         })
     }
@@ -136,6 +177,16 @@ impl PolicyEvent {
             (PolicyEventType::ToolCall, PolicyEventData::Tool(_)) => {}
             (PolicyEventType::SecretAccess, PolicyEventData::Secret(_)) => {}
             (PolicyEventType::Custom, PolicyEventData::Custom(_)) => {}
+            (PolicyEventType::RemoteSessionConnect, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteSessionDisconnect, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteSessionReconnect, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::InputInject, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::ClipboardTransfer, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::FileTransfer, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteAudio, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemoteDriveMapping, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::RemotePrinting, PolicyEventData::Cua(_)) => {}
+            (PolicyEventType::SessionShare, PolicyEventData::Cua(_)) => {}
             (PolicyEventType::Other(_), _) => {}
             (event_type, data) => {
                 anyhow::bail!(
@@ -221,6 +272,7 @@ pub enum PolicyEventData {
     Tool(ToolEventData),
     Secret(SecretEventData),
     Custom(CustomEventData),
+    Cua(CuaEventData),
     Other {
         type_name: String,
         value: serde_json::Value,
@@ -237,6 +289,7 @@ impl PolicyEventData {
             Self::Tool(_) => "tool",
             Self::Secret(_) => "secret",
             Self::Custom(_) => "custom",
+            Self::Cua(_) => "cua",
             Self::Other { type_name, .. } => type_name.as_str(),
         }
     }
@@ -268,6 +321,9 @@ impl Serialize for PolicyEventData {
             }
             Self::Custom(inner) => {
                 serialize_typed_data("custom", inner).map_err(serde::ser::Error::custom)?
+            }
+            Self::Cua(inner) => {
+                serialize_typed_data("cua", inner).map_err(serde::ser::Error::custom)?
             }
             Self::Other { value, .. } => value.clone(),
         };
@@ -311,6 +367,9 @@ impl<'de> Deserialize<'de> for PolicyEventData {
                 .map_err(serde::de::Error::custom),
             "custom" => serde_json::from_value::<CustomEventData>(value)
                 .map(Self::Custom)
+                .map_err(serde::de::Error::custom),
+            "cua" => serde_json::from_value::<CuaEventData>(value)
+                .map(Self::Cua)
                 .map_err(serde::de::Error::custom),
             other => Ok(Self::Other {
                 type_name: other.to_string(),
@@ -411,6 +470,34 @@ pub struct SecretEventData {
 pub struct CustomEventData {
     #[serde(alias = "custom_type")]
     pub custom_type: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CuaEventData {
+    /// CUA sub-type: connect/disconnect/reconnect/inject/clipboard/file_transfer/audio/drive/printing/session_share
+    #[serde(alias = "cua_action")]
+    pub cua_action: String,
+    /// Direction for clipboard/file operations: read/write/upload/download
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    /// Session continuity hash from previous session (reconnect flows)
+    #[serde(
+        default,
+        alias = "continuity_prev_session_hash",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub continuity_prev_session_hash: Option<String>,
+    /// Post-condition probe result hash
+    #[serde(
+        default,
+        alias = "postcondition_probe_hash",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub postcondition_probe_hash: Option<String>,
+    /// Additional CUA-specific fields
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -609,6 +696,25 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
             },
             None,
         ),
+        (
+            PolicyEventType::RemoteSessionConnect
+            | PolicyEventType::RemoteSessionDisconnect
+            | PolicyEventType::RemoteSessionReconnect
+            | PolicyEventType::InputInject
+            | PolicyEventType::ClipboardTransfer
+            | PolicyEventType::FileTransfer
+            | PolicyEventType::RemoteAudio
+            | PolicyEventType::RemoteDriveMapping
+            | PolicyEventType::RemotePrinting
+            | PolicyEventType::SessionShare,
+            PolicyEventData::Cua(_),
+        ) => (
+            MappedGuardAction::Custom {
+                custom_type: event.event_type.as_str().to_string(),
+                data: data_json,
+            },
+            None,
+        ),
         (PolicyEventType::Other(event_type), _) => {
             anyhow::bail!("unsupported eventType: {}", event_type);
         }
@@ -701,6 +807,7 @@ fn merge_json(target: &mut serde_json::Value, source: serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
 
     #[test]
     fn fixtures_policy_events_v1_parse_and_validate() {
@@ -720,6 +827,69 @@ mod tests {
             event
                 .validate()
                 .unwrap_or_else(|e| panic!("invalid PolicyEvent at line {}: {}", line_no + 1, e));
+        }
+    }
+
+    #[test]
+    fn cua_connect_event_maps_to_custom_remote_session_connect() {
+        let event = PolicyEvent {
+            event_id: "evt-cua-connect".to_string(),
+            event_type: PolicyEventType::RemoteSessionConnect,
+            timestamp: Utc::now(),
+            session_id: Some("sess-1".to_string()),
+            data: PolicyEventData::Cua(CuaEventData {
+                cua_action: "connect".to_string(),
+                direction: None,
+                continuity_prev_session_hash: None,
+                postcondition_probe_hash: None,
+                extra: {
+                    let mut extra = serde_json::Map::new();
+                    extra.insert(
+                        "destination".to_string(),
+                        serde_json::Value::String("wss://gateway.example".to_string()),
+                    );
+                    extra
+                },
+            }),
+            metadata: None,
+            context: None,
+        };
+
+        event.validate().expect("cua connect validates");
+        let mapped = map_policy_event(&event).expect("cua connect maps");
+
+        match mapped.action {
+            MappedGuardAction::Custom { custom_type, .. } => {
+                assert_eq!(custom_type, "remote.session.connect")
+            }
+            other => panic!("expected custom action, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cua_input_inject_accepts_camel_case_probe_hash() {
+        let raw = serde_json::json!({
+            "eventId": "evt-cua-input",
+            "eventType": "input.inject",
+            "timestamp": Utc::now().to_rfc3339(),
+            "data": {
+                "type": "cua",
+                "cuaAction": "inject",
+                "postconditionProbeHash": "sha256:probe123",
+                "inputType": "keyboard"
+            }
+        });
+
+        let event: PolicyEvent =
+            serde_json::from_value(raw).expect("deserialize cua input event with camelCase fields");
+        event.validate().expect("cua input event validates");
+        let mapped = map_policy_event(&event).expect("cua input maps");
+
+        match mapped.action {
+            MappedGuardAction::Custom { custom_type, .. } => {
+                assert_eq!(custom_type, "input.inject")
+            }
+            other => panic!("expected custom action, got {:?}", other),
         }
     }
 }
