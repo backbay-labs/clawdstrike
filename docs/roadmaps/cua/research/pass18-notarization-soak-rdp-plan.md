@@ -31,6 +31,36 @@ Use helper script:
 scripts/notarize-agent-macos.sh
 ```
 
+### Notary credential discovery checklist
+1. Confirm a local Developer ID signing cert exists:
+```bash
+security find-identity -v -p codesigning
+```
+Expected: at least one `Developer ID Application` identity.
+2. Find Team ID:
+   - Apple Developer portal -> Membership -> Team ID (10 chars).
+3. Create a notarization keychain profile (recommended):
+```bash
+xcrun notarytool store-credentials AC_NOTARY \
+  --apple-id "you@example.com" \
+  --team-id "TEAMID1234" \
+  --password "<app-specific-password>"
+```
+Alternative: use App Store Connect API key:
+```bash
+xcrun notarytool store-credentials AC_NOTARY \
+  --key "<KEY_ID>" \
+  --issuer "<ISSUER_UUID>" \
+  --key-path "/path/to/AuthKey_<KEY_ID>.p8"
+```
+4. Export env for the release run:
+```bash
+export APPLE_TEAM_ID="TEAMID1234"
+export NOTARYTOOL_PROFILE="AC_NOTARY"
+# optional explicit cert selection:
+export APPLE_SIGNING_IDENTITY="Developer ID Application: <Name> (TEAMID1234)"
+```
+
 ### Required env for script
 - `APPLE_TEAM_ID`
 - `APPLE_SIGNING_IDENTITY` (recommended explicit value)
