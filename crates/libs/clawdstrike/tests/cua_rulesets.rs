@@ -115,7 +115,8 @@ fn remote_desktop_has_all_ten_cua_actions() {
         .into_iter()
         .map(|s| s.to_string())
         .collect();
-    let actual_set: std::collections::BTreeSet<String> = cu.allowed_actions.iter().cloned().collect();
+    let actual_set: std::collections::BTreeSet<String> =
+        cu.allowed_actions.iter().cloned().collect();
 
     assert_eq!(
         actual_set, expected_set,
