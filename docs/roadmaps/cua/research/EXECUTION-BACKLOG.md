@@ -244,6 +244,8 @@ Date: 2026-02-18
 
 ## Program definition of done
 
+Scope note: this definition applies to the implementation backlog for passes #5-#17. Pass #18 tracks release-gate validation work (notarization + long soak + host-level RDP side-channel evidence) in `pass18-notarization-soak-rdp-plan.md`.
+
 - [x] All `P0` workstreams complete with passing fixtures and documented rollback paths.
 - [x] All side-effect channels have deterministic policy-event mapping and guard coverage.
 - [x] Receipt verification remains backward-compatible with current baseline trust root.
@@ -280,3 +282,13 @@ Pass #17 closes additional production-hardening gaps discovered after Pass #16:
 - Provider conformance suite/runtime fixtures now cover the full canonical flow surface (`connect`, `input`, `clipboard_read/write`, upload/download transfer, `session_share`, `reconnect`, `disconnect`) for OpenAI + Claude.
 - OpenClaw provider scope is now explicitly separated from E2 conformance and covered by the dedicated OpenClaw bridge runtime fixture suite.
 - Added fixture-driven matrix-to-ruleset drift harness (`verify_remote_desktop_ruleset_alignment.py`) and wired it into CI.
+
+### Release-gate validation status (Pass #18, in progress)
+
+Pass #18 runs post-implementation production-readiness blockers:
+- Signed/notarized/stapled macOS artifact validation.
+- 6-24h soak reliability run with reconnect/restart pressure.
+- Full Windows/Linux host-side RDP side-channel matrix evidence.
+
+Tracking doc:
+- `docs/roadmaps/cua/research/pass18-notarization-soak-rdp-plan.md`

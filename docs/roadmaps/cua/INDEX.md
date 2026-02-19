@@ -6,6 +6,7 @@
 - [Deep Research Report](./deep-research-report.md) — 2026 landscape and MVP blueprint
 - [Review Log](./research/REVIEW-LOG.md) — dated reviewer interventions while agents continue writing
 - [Execution Backlog](./research/EXECUTION-BACKLOG.md) — execution and closure status across passes #5-#17
+- [Pass #18 Execution Plan](./research/pass18-notarization-soak-rdp-plan.md) — release integrity + long soak + full RDP side-channel E2E blockers
 - [Execution Agent Handoff Prompt](./research/EXECUTION-AGENT-HANDOFF-PROMPT.md) — ready-to-run prompt for implementation pass
 - [Pass #14 Handoff Prompt](./research/EXECUTION-AGENT-HANDOFF-PROMPT-PASS14.md) — E3/E4/code-review team execution prompt
 - [Verifier Flow Spec](./research/verifier-flow-spec.md) — pass-seven normative verifier order and error taxonomy
@@ -131,13 +132,13 @@
 | Topic | Status | Last Updated |
 |-------|--------|-------------|
 | Browser Automation | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
-| Remote Desktop | Pass #11 Runtime Integration + CUA Guards | 2026-02-18 |
-| Input Injection | Pass #11 Runtime Integration + CUA Guards | 2026-02-18 |
+| Remote Desktop | Pass #18 Release-Gate Validation In Progress (matrix harness + restore hardening complete; long-run host validation pending) | 2026-02-19 |
+| Input Injection | Pass #18 Release-Gate Validation In Progress (soak harness timeout + determinism hardening complete; 6-24h run pending) | 2026-02-19 |
 | Session Recording | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
 | Attestation & Signing | Pass #12 Verification Bundle (`D2`) + Harness-Validated | 2026-02-18 |
 | Orchestration | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
 | Receipt Schema | Pass #11 Envelope Equivalence (`C3`) + Harness-Validated | 2026-02-18 |
-| Policy Engine | Pass #12 Execution Artifacts + Harness-Validated | 2026-02-18 |
-| Ecosystem Integrations | Pass #17 Runtime Hardening (full provider conformance surface + reason-code parity + matrix/ruleset drift guard) + Harness-Validated | 2026-02-18 |
+| Policy Engine | Pass #17 Runtime Hardening Complete; Pass #18 Production Gate Validation In Progress | 2026-02-19 |
+| Ecosystem Integrations | Pass #17 Runtime Hardening Complete; Pass #18 Production Gate Validation In Progress | 2026-02-19 |
 
-Program status: Pass #17 extends production-readiness remediation with runtime enforcement + fixture closure for remaining ecosystem gaps: `hushd` now supports all emitted remote side-channel events (`audio`, `drive_mapping`, `printing`), runtime decisions now carry deterministic `reason_code` values across adapter/Rust boundaries, provider conformance now covers all canonical OpenAI/Claude CUA flow surfaces, and CI now includes matrix-to-ruleset drift validation for `rulesets/remote-desktop.yaml`.
+Program status: Pass #17 implementation remediation is complete. Pass #18 release-gate validation is now the active blocker set: signed/notarized artifact verification, sustained 6-24h soak execution, and full Windows/Linux side-channel host validation evidence.
