@@ -295,6 +295,7 @@ Current checkpoint:
 - Harness stability hardening merged (`run-cua-soak.sh` timeout + bounded iteration, `run-rdp-sidechannel-matrix.sh` timeout/restore guards).
 - Full matrix evidence produced under `docs/roadmaps/cua/research/artifacts/rdp-sidechannel-20260219-033112/`.
 - Review-driven parity fixes merged for `hush-cli` CUA policy-event support and bundled/root ruleset alignment.
+- Post-pass follow-up queued: deduplicate `hushd` + `hush-cli` `policy_event` parsing/mapping into a shared module to prevent future drift.
 
 Tracking doc:
 - `docs/roadmaps/cua/research/pass18-notarization-soak-rdp-plan.md`
