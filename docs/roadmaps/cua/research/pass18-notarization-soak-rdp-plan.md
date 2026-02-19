@@ -88,6 +88,13 @@ For 24h:
 DURATION_HOURS=24 scripts/run-cua-soak.sh
 ```
 
+Harness controls (added for deterministic long runs):
+
+```bash
+SOAK_ITER_TIMEOUT_SECONDS=240 DURATION_HOURS=6 scripts/run-cua-soak.sh
+MAX_ITERATIONS=1 SOAK_ITER_TIMEOUT_SECONDS=240 DURATION_HOURS=6 scripts/run-cua-soak.sh
+```
+
 ### Expected pass evidence
 1. No sustained reconnect failure.
 2. Smoke iterations maintain high success rate (target 100%; investigate any failures).
@@ -95,7 +102,18 @@ DURATION_HOURS=24 scripts/run-cua-soak.sh
 4. Per-iteration logs retained for triage.
 
 ## Workstream C: Full Windows + Linux RDP Side-Channel E2E (Blocking)
-Use the latest testbed JSON and run matrix manually (or with your preferred RDP harness):
+Use the latest testbed JSON and run the fixture harness:
+
+```bash
+scripts/run-rdp-sidechannel-matrix.sh
+```
+
+Timeout controls for deterministic completion:
+
+```bash
+RDP_PROBE_TIMEOUT_SECONDS=20 REMOTE_OP_TIMEOUT_SECONDS=30 SSM_WAIT_TIMEOUT_SECONDS=120 \
+  scripts/run-rdp-sidechannel-matrix.sh
+```
 
 ### Matrix to execute on both Windows and Linux targets
 1. Clipboard allow and deny behavior.
@@ -127,8 +145,25 @@ Store one JSON result per test case plus any screenshots or recordings.
 scripts/notarize-agent-macos.sh
 
 # B) Long soak
-DURATION_HOURS=6 scripts/run-cua-soak.sh
+SOAK_ITER_TIMEOUT_SECONDS=240 DURATION_HOURS=6 scripts/run-cua-soak.sh
 
 # C) Full RDP side-channel matrix
-# (execute matrix and collect artifacts in docs/roadmaps/cua/research/artifacts/rdp-sidechannel-<timestamp>/)
+RDP_PROBE_TIMEOUT_SECONDS=20 REMOTE_OP_TIMEOUT_SECONDS=30 SSM_WAIT_TIMEOUT_SECONDS=120 \
+  scripts/run-rdp-sidechannel-matrix.sh
 ```
+
+## Current Execution Status (2026-02-19)
+1. Soak harness hardening completed:
+   - Added per-iteration timeout (`SOAK_ITER_TIMEOUT_SECONDS`).
+   - Added bounded iteration mode (`MAX_ITERATIONS`) for smoke validation.
+   - Added structured result fields (`exit_code`, `reason`) to `results.jsonl`.
+2. RDP matrix harness hardening completed:
+   - Added probe timeout (`RDP_PROBE_TIMEOUT_SECONDS`).
+   - Added remote op and SSM wait timeouts (`REMOTE_OP_TIMEOUT_SECONDS`, `SSM_WAIT_TIMEOUT_SECONDS`).
+   - Added guaranteed restore flow with EXIT trap to avoid policy drift on test hosts.
+3. Recent evidence:
+   - One-hour soak pass artifact: `docs/roadmaps/cua/research/artifacts/soak-20260219-020826/summary.json`.
+   - One-iteration smoke validation with real gateway token:
+     `docs/roadmaps/cua/research/artifacts/soak-20260219-034325/summary.json`.
+   - Full side-channel matrix completed with restore artifacts:
+     `docs/roadmaps/cua/research/artifacts/rdp-sidechannel-20260219-033112/summary.json`.
