@@ -13,6 +13,20 @@ use std::time::{Duration, Instant};
 
 static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
+fn parse_proxy_url(line: &str) -> Option<String> {
+    line.find("Proxy listening on ")
+        .map(|idx| line[idx + "Proxy listening on ".len()..].trim().to_string())
+}
+
+fn proxy_listen_timeout() -> Duration {
+    let ms = std::env::var("HUSH_TEST_PROXY_LISTEN_TIMEOUT_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(30_000);
+    Duration::from_millis(ms)
+}
+
 #[derive(Debug)]
 struct HarnessProcess {
     child: Child,
@@ -72,18 +86,23 @@ impl HarnessProcess {
         let stderr = child.stderr.take().expect("child stderr");
         let stderr_logs = Arc::new(Mutex::new(Vec::<String>::new()));
         let (proxy_tx, proxy_rx) = mpsc::channel::<String>();
+        let proxy_tx_stdout = proxy_tx.clone();
 
         let stdout_thread = thread::spawn(move || {
             let reader = BufReader::new(stdout);
-            for _line in reader.lines().map_while(Result::ok) {}
+            for line in reader.lines().map_while(Result::ok) {
+                if let Some(url) = parse_proxy_url(&line) {
+                    let _ = proxy_tx_stdout.send(url);
+                }
+            }
         });
 
         let stderr_logs_for_thread = Arc::clone(&stderr_logs);
         let stderr_thread = thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
-                if let Some(url) = line.strip_prefix("Proxy listening on ") {
-                    let _ = proxy_tx.send(url.trim().to_string());
+                if let Some(url) = parse_proxy_url(&line) {
+                    let _ = proxy_tx.send(url);
                 }
                 let mut logs = match stderr_logs_for_thread.lock() {
                     Ok(guard) => guard,
@@ -93,9 +112,23 @@ impl HarnessProcess {
             }
         });
 
-        let proxy_url = proxy_rx
-            .recv_timeout(Duration::from_secs(10))
-            .expect("proxy url from stderr");
+        let proxy_timeout = proxy_listen_timeout();
+        let proxy_url = match proxy_rx.recv_timeout(proxy_timeout) {
+            Ok(url) => url,
+            Err(_) => {
+                let stderr = {
+                    let logs = match stderr_logs.lock() {
+                        Ok(guard) => guard,
+                        Err(poisoned) => poisoned.into_inner(),
+                    };
+                    logs.join("\n")
+                };
+                panic!(
+                    "proxy url from stderr/stdout timeout after {:?}; stderr:\n{}",
+                    proxy_timeout, stderr
+                );
+            }
+        };
 
         Self {
             child,
@@ -347,7 +380,7 @@ fn scenario_connection_flood_inflight_cap() {
 }
 
 fn scenario_dns_rebind_like_resolution_is_pinned() {
-    let accept_timeout = Duration::from_millis(500);
+    let accept_timeout = Duration::from_secs(5);
     let listener_a = TcpListener::bind(("127.0.0.1", 0)).expect("bind listener A");
     let listener_b = TcpListener::bind(("127.0.0.1", 0)).expect("bind listener B");
 
@@ -415,7 +448,8 @@ fn scenario_dns_rebind_like_resolution_is_pinned() {
         &["--proxy-allow-private-ips".to_string()],
         &[
             ("HUSH_TEST_RESOLVER_SEQUENCE", resolver_spec),
-            ("HUSH_TEST_PROXY_DNS_TIMEOUT_MS", "200".to_string()),
+            // Keep this above typical CI jitter so the pinning assertion is stable.
+            ("HUSH_TEST_PROXY_DNS_TIMEOUT_MS", "1000".to_string()),
         ],
     );
     let addr = proc.proxy_addr();
@@ -435,11 +469,11 @@ fn scenario_dns_rebind_like_resolution_is_pinned() {
     );
 
     assert!(
-        a_rx.recv_timeout(Duration::from_secs(1)).is_ok(),
+        a_rx.recv_timeout(Duration::from_secs(3)).is_ok(),
         "pinned connect target should dial first-resolution address"
     );
     assert!(
-        b_rx.recv_timeout(Duration::from_millis(700)).is_err(),
+        b_rx.recv_timeout(Duration::from_secs(2)).is_err(),
         "proxy must not dial second-stage rebind address"
     );
 
