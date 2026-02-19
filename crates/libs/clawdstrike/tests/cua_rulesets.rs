@@ -87,7 +87,7 @@ fn all_cua_rulesets_have_computer_use_guard_configured() {
 }
 
 #[test]
-fn remote_desktop_has_all_seven_cua_actions() {
+fn remote_desktop_has_all_ten_cua_actions() {
     let rs = RuleSet::by_name("remote-desktop")
         .unwrap()
         .expect("remote-desktop must exist");
@@ -106,16 +106,21 @@ fn remote_desktop_has_all_seven_cua_actions() {
         "input.inject",
         "remote.clipboard",
         "remote.file_transfer",
+        "remote.audio",
+        "remote.drive_mapping",
+        "remote.printing",
         "remote.session_share",
     ];
+    let expected_set: std::collections::BTreeSet<String> = expected_actions
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+    let actual_set: std::collections::BTreeSet<String> = cu.allowed_actions.iter().cloned().collect();
 
-    for action in &expected_actions {
-        assert!(
-            cu.allowed_actions.contains(&action.to_string()),
-            "remote-desktop computer_use must include action '{}'",
-            action
-        );
-    }
+    assert_eq!(
+        actual_set, expected_set,
+        "remote-desktop computer_use actions should match the canonical 10-action set"
+    );
 }
 
 #[test]

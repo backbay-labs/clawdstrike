@@ -44,6 +44,7 @@ fn cua_events_map_to_custom_guard_action() {
         ("remote.audio", "audio"),
         ("remote.drive_mapping", "drive_mapping"),
         ("remote.printing", "printing"),
+        ("remote.session_share", "session_share"),
     ];
 
     for (event_type, cua_action) in cases {

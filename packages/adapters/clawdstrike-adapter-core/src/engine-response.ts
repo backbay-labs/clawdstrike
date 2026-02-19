@@ -62,7 +62,7 @@ export function parseDecision(value: unknown): Decision | null {
   }
 
   const decision: Decision = status === 'allow'
-    ? { status }
+    ? (reasonCode ? { status, reason_code: reasonCode } : { status })
     : { status, reason_code: reasonCode as string };
 
   if (typeof value.reason === 'string') {

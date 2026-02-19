@@ -425,5 +425,85 @@ guards:
     const transferDecision = await engine.evaluate(transferEvent);
     expect(transferDecision.status).toBe('deny');
     expect(transferDecision.guard).toBe('remote_desktop_side_channel');
+
+    const transferMissingSize: PolicyEvent = {
+      eventId: 'cua-transfer-missing-size',
+      eventType: 'remote.file_transfer',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'file_transfer',
+        direction: 'upload',
+      },
+    };
+    const missingSizeDecision = await engine.evaluate(transferMissingSize);
+    expect(missingSizeDecision.status).toBe('deny');
+    expect(missingSizeDecision.guard).toBe('remote_desktop_side_channel');
+  });
+
+  it('enforces file transfer caps fail-closed when max_transfer_size_bytes is configured', async () => {
+    const policyPath = join(testDir, 'cua-side-channel-zero-cap-policy.yaml');
+    writeFileSync(policyPath, `
+version: "1.2.0"
+guards:
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - "remote.file_transfer"
+  remote_desktop_side_channel:
+    enabled: true
+    file_transfer_enabled: true
+    max_transfer_size_bytes: 0
+`);
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: 'deterministic',
+      logLevel: 'error',
+    });
+
+    const overLimitEvent: PolicyEvent = {
+      eventId: 'cua-transfer-zero-cap-over-limit',
+      eventType: 'remote.file_transfer',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'file_transfer',
+        direction: 'upload',
+        transfer_size: 1,
+      },
+    };
+    const overLimitDecision = await engine.evaluate(overLimitEvent);
+    expect(overLimitDecision.status).toBe('deny');
+    expect(overLimitDecision.guard).toBe('remote_desktop_side_channel');
+
+    const exactlyZeroEvent: PolicyEvent = {
+      eventId: 'cua-transfer-zero-cap-zero-size',
+      eventType: 'remote.file_transfer',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'file_transfer',
+        direction: 'upload',
+        transfer_size: 0,
+      },
+    };
+    const exactlyZeroDecision = await engine.evaluate(exactlyZeroEvent);
+    expect(exactlyZeroDecision.status).toBe('allow');
+
+    const missingSizeEvent: PolicyEvent = {
+      eventId: 'cua-transfer-zero-cap-missing-size',
+      eventType: 'remote.file_transfer',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'file_transfer',
+        direction: 'upload',
+      },
+    };
+    const missingSizeDecision = await engine.evaluate(missingSizeEvent);
+    expect(missingSizeDecision.status).toBe('deny');
+    expect(missingSizeDecision.guard).toBe('remote_desktop_side_channel');
   });
 });

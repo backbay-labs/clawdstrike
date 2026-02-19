@@ -149,6 +149,8 @@ const POLICY_REASON_CODES = {
   CUA_SIDE_CHANNEL_CONFIG_MISSING: 'OCLAW_CUA_SIDE_CHANNEL_CONFIG_MISSING',
   CUA_SIDE_CHANNEL_DISABLED: 'OCLAW_CUA_SIDE_CHANNEL_DISABLED',
   CUA_SIDE_CHANNEL_POLICY_DENY: 'OCLAW_CUA_SIDE_CHANNEL_POLICY_DENY',
+  CUA_TRANSFER_SIZE_CONFIG_INVALID: 'OCLAW_CUA_TRANSFER_SIZE_CONFIG_INVALID',
+  CUA_TRANSFER_SIZE_MISSING: 'OCLAW_CUA_TRANSFER_SIZE_MISSING',
   CUA_TRANSFER_SIZE_EXCEEDED: 'OCLAW_CUA_TRANSFER_SIZE_EXCEEDED',
   CUA_INPUT_CONFIG_MISSING: 'OCLAW_CUA_INPUT_CONFIG_MISSING',
   CUA_INPUT_DISABLED: 'OCLAW_CUA_INPUT_DISABLED',
@@ -486,16 +488,40 @@ export class PolicyEngine {
 
     if (event.eventType === 'remote.file_transfer') {
       const maxBytes = cfg.max_transfer_size_bytes;
-      const transferSize = extractTransferSize(data);
-      if (typeof maxBytes === 'number' && Number.isFinite(maxBytes) && maxBytes > 0 && transferSize !== null && transferSize > maxBytes) {
-        return this.applyOnViolation(
-          denyDecision(
-            POLICY_REASON_CODES.CUA_TRANSFER_SIZE_EXCEEDED,
-            `CUA file transfer size ${transferSize} exceeds max_transfer_size_bytes ${maxBytes}`,
-            'remote_desktop_side_channel',
-            'high',
-          ),
-        );
+      if (maxBytes !== undefined) {
+        if (typeof maxBytes !== 'number' || !Number.isFinite(maxBytes) || maxBytes < 0) {
+          return this.applyOnViolation(
+            denyDecision(
+              POLICY_REASON_CODES.CUA_TRANSFER_SIZE_CONFIG_INVALID,
+              `CUA file transfer denied: invalid max_transfer_size_bytes '${String(maxBytes)}'`,
+              'remote_desktop_side_channel',
+              'high',
+            ),
+          );
+        }
+
+        const transferSize = extractTransferSize(data);
+        if (transferSize === null) {
+          return this.applyOnViolation(
+            denyDecision(
+              POLICY_REASON_CODES.CUA_TRANSFER_SIZE_MISSING,
+              'CUA file transfer denied: missing required transfer_size metadata',
+              'remote_desktop_side_channel',
+              'high',
+            ),
+          );
+        }
+
+        if (transferSize > maxBytes) {
+          return this.applyOnViolation(
+            denyDecision(
+              POLICY_REASON_CODES.CUA_TRANSFER_SIZE_EXCEEDED,
+              `CUA file transfer size ${transferSize} exceeds max_transfer_size_bytes ${maxBytes}`,
+              'remote_desktop_side_channel',
+              'high',
+            ),
+          );
+        }
       }
     }
 
