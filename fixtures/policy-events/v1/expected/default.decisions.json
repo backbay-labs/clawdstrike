@@ -148,7 +148,7 @@
         "allowed": false,
         "denied": true,
         "warn": false,
-        "reason_code": "HSH_MISSING_CONTENT_BYTES",
+        "reason_code": "ADC_POLICY_DENY",
         "guard": "forbidden_path",
         "severity": "critical",
         "message": "Access to forbidden path: /etc/sudoers",

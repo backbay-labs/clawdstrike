@@ -60,17 +60,21 @@ pub fn canonical_reason_code_for_decision(
     overall: &GuardResult,
     reason_override: Option<&str>,
 ) -> String {
+    // Outcome taxonomy stays authoritative for deny/warn so mapper hints
+    // cannot mask policy outcomes in downstream analytics.
+    if !overall.allowed {
+        return "ADC_POLICY_DENY".to_string();
+    }
+
+    if overall.severity == Severity::Warning {
+        return "ADC_POLICY_WARN".to_string();
+    }
+
     if let Some(code) = reason_override.and_then(normalize_reason_code) {
         return code;
     }
 
-    if !overall.allowed {
-        "ADC_POLICY_DENY".to_string()
-    } else if overall.severity == Severity::Warning {
-        "ADC_POLICY_WARN".to_string()
-    } else {
-        "ADC_POLICY_ALLOW".to_string()
-    }
+    "ADC_POLICY_ALLOW".to_string()
 }
 
 pub fn summarize_decision(
@@ -106,6 +110,37 @@ mod tests {
         assert_eq!(
             normalize_reason_code("hsh_nonce_stale"),
             Some("HSH_NONCE_STALE".to_string())
+        );
+    }
+
+    #[test]
+    fn canonical_reason_code_preserves_deny_taxonomy_over_override() {
+        let overall = GuardResult::block(
+            "forbidden_path",
+            Severity::Critical,
+            "Access to forbidden path: /etc/sudoers",
+        );
+        assert_eq!(
+            canonical_reason_code_for_decision(&overall, Some("missing_content_bytes")),
+            "ADC_POLICY_DENY"
+        );
+    }
+
+    #[test]
+    fn canonical_reason_code_preserves_warn_taxonomy_over_override() {
+        let overall = GuardResult::warn("secret_leak", "Potential secret detected");
+        assert_eq!(
+            canonical_reason_code_for_decision(&overall, Some("missing_content_bytes")),
+            "ADC_POLICY_WARN"
+        );
+    }
+
+    #[test]
+    fn canonical_reason_code_uses_override_for_allow_outcome() {
+        let overall = GuardResult::allow("forbidden_path");
+        assert_eq!(
+            canonical_reason_code_for_decision(&overall, Some("missing_content_bytes")),
+            "HSH_MISSING_CONTENT_BYTES"
         );
     }
 }
