@@ -62,7 +62,7 @@
 
 > **Alpha software** — APIs and import paths may change between releases. See GitHub Releases and the package registries (crates.io / npm / PyPI) for published versions.
 
-Clawdstrike provides runtime security enforcement for agents, designed for developers building EDR solutions and security infrastructure on top of OpenClaw.
+Clawdstrike is a fail-closed policy + attestation runtime for AI agents and computer-use systems, designed for developers building EDR solutions and security infrastructure for autonomous agent swarms. It sits at the boundary between intent and execution: normalize actions, enforce policy, and sign what happened.
 
 <img src=".github/assets/sigils/boundary-light.svg#gh-light-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;margin-right:6px;" /> <img src=".github/assets/sigils/boundary-dark.svg#gh-dark-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;margin-right:6px;" />**Guards** — Block sensitive paths, control network egress, detect secrets, validate patches, restrict tools, catch jailbreaks
 
@@ -72,7 +72,41 @@ Clawdstrike provides runtime security enforcement for agents, designed for devel
 
 <img src=".github/assets/sigils/ruleset-light.svg#gh-light-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;margin-right:6px;" /> <img src=".github/assets/sigils/ruleset-dark.svg#gh-dark-mode-only" width="16" height="16" alt="" style="vertical-align:-3px;margin-right:6px;" />**Multi-framework** — OpenClaw, Vercel AI, LangChain, Claude, OpenAI, and more
 
+## Computer Use Gateway
+
+Clawdstrike now includes dedicated CUA gateway coverage for real runtime paths (not just static policy checks):
+
+- Canonical CUA action translation across providers/runtimes.
+- Side-channel policy controls for remote desktop surfaces (`clipboard`, `audio`, `drive_mapping`, `printing`, `session_share`, file transfer bounds).
+- Deterministic decision metadata (`reason_code`, guard, severity) for machine-checkable analytics.
+- Fixture-driven validator suites plus runtime bridge tests for regression safety.
+
+## Architecture At A Glance
+
+```mermaid
+flowchart LR
+    A[Provider Runtime<br/>OpenAI / Claude / OpenClaw] --> B[Clawdstrike Adapter]
+    B --> C[Canonical Action Event]
+    C --> D[Policy Engine + Guard Evaluation]
+    D -->|allow| E[Gateway / Tool / Remote Action]
+    D -->|deny| F[Fail-Closed Block]
+    D --> G[Signed Receipt + reason_code]
+```
+
 ## Quick Start
+
+### Computer use gateway smoke (agent-owned OpenClaw path)
+
+```bash
+scripts/openclaw-agent-smoke.sh \
+  --start-local-gateway \
+  --gateway-url ws://127.0.0.1:18789 \
+  --gateway-token dev-token
+```
+
+Runbook and flow details:
+- `docs/src/guides/agent-openclaw-operations.md`
+- `apps/desktop/docs/openclaw-gateway-testing.md`
 
 ### CLI (Rust)
 
@@ -120,18 +154,22 @@ if (!preflight.proceed) throw new Error("Blocked by policy");
 
 ### OpenClaw plugin
 
-See `packages/adapters/clawdstrike-openclaw/docs/getting-started.md`.
+- Quick start: `packages/adapters/clawdstrike-openclaw/docs/getting-started.md`
+- Integration guide: `docs/src/guides/openclaw-integration.md`
 
 ## Highlights
 
-| Feature                         | Description                                                                   |
-| ------------------------------- | ----------------------------------------------------------------------------- |
-| **7 Built-in Guards**           | Path, egress, secrets, patches, tools, prompt injection, jailbreak            |
+| Feature | Description |
+| --- | --- |
+| **Computer Use Gateway Controls** | Canonical CUA policy evaluation for click/type/scroll/key-chord and remote side-channel actions |
+| **Provider Translation Layer** | Runtime translators for OpenAI/Claude/OpenClaw flows into a unified policy surface |
+| **7 Built-in Guards** | Path, egress, secrets, patches, tools, prompt injection, jailbreak |
 | **4-Layer Jailbreak Detection** | Heuristic + statistical + ML + optional LLM-as-judge with session aggregation |
-| **Output Sanitization**         | Redact secrets, PII, internal data from LLM output with streaming support     |
-| **Prompt Watermarking**         | Embed signed provenance markers for attribution and forensics                 |
-| **Fail-Closed Design**          | Invalid policies reject at load time; errors deny access                      |
-| **Signed Receipts**             | Tamper-evident audit trail with Ed25519 signatures                            |
+| **Deterministic Decisions** | Stable `reason_code` + severity metadata for enforcement analytics and regression checks |
+| **Fail-Closed Design** | Invalid policies reject at load time; evaluation errors deny access |
+| **Signed Receipts** | Tamper-evident audit trail with Ed25519 signatures |
+| **Output Sanitization** | Redact secrets/PII/internal data from model output with streaming support |
+| **Prompt Watermarking** | Embed signed provenance markers for attribution and forensics |
 
 ## Performance
 
@@ -147,13 +185,20 @@ No external API calls required for core detection. [Full benchmarks →](docs/sr
 
 ## Documentation
 
-- [Design Philosophy](docs/src/concepts/design-philosophy.md) — Fail-closed, defense in depth
-- [Enforcement Tiers & Integration Contract](docs/src/concepts/enforcement-tiers.md) — What is enforceable at the tool boundary (and what requires a sandbox/broker)
-- [Guards Reference](docs/src/reference/guards/README.md) — All 7 guards documented
-- [Policy Schema](docs/src/reference/policy-schema.md) — YAML configuration
-- [Framework Integrations](docs/src/concepts/multi-language.md) — OpenClaw, Vercel AI, LangChain
-- [Repository Map](docs/REPO_MAP.md) — Newcomer guide to project layout and component maturity
-- [Documentation Map](docs/DOCS_MAP.md) — Canonical source-of-truth guide for docs
+- [Quick Start (Rust)](docs/src/getting-started/quick-start.md)
+- [Quick Start (TypeScript)](docs/src/getting-started/quick-start-typescript.md)
+- [Quick Start (Python)](docs/src/getting-started/quick-start-python.md)
+- [OpenClaw Integration Guide](docs/src/guides/openclaw-integration.md)
+- [Agent OpenClaw Operations Runbook](docs/src/guides/agent-openclaw-operations.md)
+- [OpenClaw Gateway Testing Guide](apps/desktop/docs/openclaw-gateway-testing.md)
+- [CUA Production Readiness Test Plan](production-readiness-test-plan.md)
+- [CUA Roadmap Index](docs/roadmaps/cua/INDEX.md)
+- [Design Philosophy](docs/src/concepts/design-philosophy.md)
+- [Enforcement Tiers & Integration Contract](docs/src/concepts/enforcement-tiers.md)
+- [Guards Reference](docs/src/reference/guards/README.md)
+- [Policy Schema](docs/src/reference/policy-schema.md)
+- [Repository Map](docs/REPO_MAP.md)
+- [Documentation Map](docs/DOCS_MAP.md)
 
 ## Security
 
