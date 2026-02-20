@@ -899,14 +899,7 @@ fn build_gateway_device_proof(
 }
 
 fn load_openclaw_device_identity() -> Result<Option<OpenClawDeviceIdentity>> {
-    let identity_path = resolve_openclaw_identity_path();
-    if !identity_path.exists() {
-        return Ok(None);
-    }
-
-    load_openclaw_device_identity_from_path(&identity_path)
-        .with_context(|| format!("failed to load OpenClaw identity from {:?}", identity_path))
-        .map(Some)
+    load_openclaw_device_identity_from_candidates(&openclaw_identity_candidate_paths())
 }
 
 fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDeviceIdentity> {
@@ -1093,31 +1086,52 @@ fn build_device_auth_payload(
     pieces.join("|")
 }
 
-fn resolve_openclaw_identity_path() -> PathBuf {
-    resolve_openclaw_state_dir().join(OPENCLAW_IDENTITY_PATH)
+fn configured_openclaw_state_dir_override() -> Option<PathBuf> {
+    normalized_env_var("OPENCLAW_STATE_DIR")
+        .or_else(|| normalized_env_var("CLAWDBOT_STATE_DIR"))
+        .map(|override_path| resolve_user_path(&override_path, &resolve_openclaw_home_dir()))
 }
 
-fn resolve_openclaw_state_dir() -> PathBuf {
-    if let Some(override_path) = normalized_env_var("OPENCLAW_STATE_DIR")
-        .or_else(|| normalized_env_var("CLAWDBOT_STATE_DIR"))
-    {
-        return resolve_user_path(&override_path, &resolve_openclaw_home_dir());
-    }
+fn openclaw_identity_candidate_paths() -> Vec<PathBuf> {
+    openclaw_identity_candidate_paths_for(
+        &resolve_openclaw_home_dir(),
+        configured_openclaw_state_dir_override().as_deref(),
+    )
+}
 
-    let home_dir = resolve_openclaw_home_dir();
-    let new_state_dir = home_dir.join(OPENCLAW_STATE_DIR);
-    if new_state_dir.exists() {
-        return new_state_dir;
-    }
-
-    for legacy in OPENCLAW_LEGACY_STATE_DIRS {
-        let candidate = home_dir.join(legacy);
-        if candidate.exists() {
-            return candidate;
+fn openclaw_identity_candidate_paths_for(
+    home_dir: &Path,
+    override_state_dir: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(override_dir) = override_state_dir {
+        candidates.push(override_dir.join(OPENCLAW_IDENTITY_PATH));
+    } else {
+        candidates.push(home_dir.join(OPENCLAW_STATE_DIR).join(OPENCLAW_IDENTITY_PATH));
+        for legacy in OPENCLAW_LEGACY_STATE_DIRS {
+            candidates.push(home_dir.join(legacy).join(OPENCLAW_IDENTITY_PATH));
         }
     }
 
-    new_state_dir
+    let mut seen = HashSet::new();
+    candidates.retain(|path| seen.insert(path.clone()));
+    candidates
+}
+
+fn load_openclaw_device_identity_from_candidates(
+    candidates: &[PathBuf],
+) -> Result<Option<OpenClawDeviceIdentity>> {
+    for identity_path in candidates {
+        if !identity_path.exists() {
+            continue;
+        }
+
+        return load_openclaw_device_identity_from_path(identity_path)
+            .with_context(|| format!("failed to load OpenClaw identity from {:?}", identity_path))
+            .map(Some);
+    }
+
+    Ok(None)
 }
 
 fn resolve_openclaw_home_dir() -> PathBuf {
@@ -1628,6 +1642,55 @@ mod tests {
         if let Err(err) = fs::remove_dir_all(&temp_dir) {
             panic!("failed to remove temp identity dir: {err}");
         }
+    }
+
+    #[test]
+    fn load_openclaw_identity_falls_back_to_legacy_when_primary_missing() {
+        let signing_key = SigningKey::from_bytes(&[29u8; 32]);
+        let verifying_key = signing_key.verifying_key();
+        let private_key_pem = signing_key
+            .to_pkcs8_pem(Default::default())
+            .unwrap_or_else(|err| panic!("failed to encode private key pem: {err}"))
+            .to_string();
+        let public_key_pem = verifying_key
+            .to_public_key_pem(Default::default())
+            .unwrap_or_else(|err| panic!("failed to encode public key pem: {err}"));
+
+        let temp_home = std::env::temp_dir().join(format!("openclaw-fallback-test-{}", Uuid::new_v4()));
+        let primary_identity = temp_home.join(OPENCLAW_STATE_DIR).join(OPENCLAW_IDENTITY_PATH);
+        let legacy_identity = temp_home
+            .join(OPENCLAW_LEGACY_STATE_DIRS[0])
+            .join(OPENCLAW_IDENTITY_PATH);
+
+        if let Some(parent) = primary_identity.parent() {
+            fs::create_dir_all(parent)
+                .unwrap_or_else(|err| panic!("failed to create primary dir: {err}"));
+        }
+        if let Some(parent) = legacy_identity.parent() {
+            fs::create_dir_all(parent)
+                .unwrap_or_else(|err| panic!("failed to create legacy dir: {err}"));
+        }
+
+        let raw = serde_json::json!({
+            "version": 1,
+            "deviceId": "legacy-device-id",
+            "publicKeyPem": public_key_pem,
+            "privateKeyPem": private_key_pem,
+        });
+        fs::write(&legacy_identity, raw.to_string())
+            .unwrap_or_else(|err| panic!("failed to write legacy identity: {err}"));
+
+        let loaded = load_openclaw_device_identity_from_candidates(&[
+            primary_identity.clone(),
+            legacy_identity.clone(),
+        ])
+        .unwrap_or_else(|err| panic!("failed to load fallback identity: {err}"))
+        .unwrap_or_else(|| panic!("expected fallback identity to load"));
+
+        let expected_device_id = hush_core::sha256(verifying_key.as_bytes()).to_hex();
+        assert_eq!(loaded.device_id, expected_device_id);
+
+        let _ = fs::remove_dir_all(&temp_home);
     }
 
     #[tokio::test]

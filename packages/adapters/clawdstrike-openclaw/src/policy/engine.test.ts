@@ -137,7 +137,7 @@ filesystem:
     expect(decision.guard).toBe('computer_use');
   });
 
-  it('enforces computer_use allowed_actions in guardrail mode', async () => {
+  it('warns on computer_use allowlist misses in guardrail mode', async () => {
     const policyPath = join(testDir, 'cua-guardrail-policy.yaml');
     writeFileSync(policyPath, `
 version: "1.2.0"
@@ -187,6 +187,39 @@ guards:
         cuaAction: 'session.disconnect',
       },
     };
+    const warnedDecision = await engine.evaluate(deniedEvent);
+    expect(warnedDecision.status).toBe('warn');
+    expect(warnedDecision.guard).toBe('computer_use');
+  });
+
+  it('denies computer_use allowlist misses in fail_closed mode', async () => {
+    const policyPath = join(testDir, 'cua-fail-closed-policy.yaml');
+    writeFileSync(policyPath, `
+version: "1.2.0"
+guards:
+  computer_use:
+    enabled: true
+    mode: fail_closed
+    allowed_actions:
+      - "remote.session.connect"
+`);
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: 'deterministic',
+      logLevel: 'error',
+    });
+
+    const deniedEvent: PolicyEvent = {
+      eventId: 'cua-fail-closed-deny',
+      eventType: 'remote.session.disconnect',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'cua',
+        cuaAction: 'session.disconnect',
+      },
+    };
+
     const deniedDecision = await engine.evaluate(deniedEvent);
     expect(deniedDecision.status).toBe('deny');
     expect(deniedDecision.guard).toBe('computer_use');

@@ -362,15 +362,15 @@ export class PolicyEngine {
 
     if (!actionAllowed) {
       const reason = `CUA action '${event.eventType}' is not listed in guards.computer_use.allowed_actions`;
-      if (mode === 'observe') {
+      if (mode === 'observe' || mode === 'guardrail') {
         return warnDecision(
-          POLICY_REASON_CODES.POLICY_WARN,
+          POLICY_REASON_CODES.CUA_ACTION_NOT_ALLOWED,
           reason,
           'computer_use',
           'medium',
         );
       }
-      if (mode !== 'guardrail' && mode !== 'fail_closed') {
+      if (mode !== 'fail_closed') {
         return this.applyOnViolation(
           denyDecision(
             POLICY_REASON_CODES.CUA_MODE_UNSUPPORTED,
