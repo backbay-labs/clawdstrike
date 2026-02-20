@@ -95,67 +95,206 @@ flowchart LR
 
 ## Quick Start
 
-### Computer use gateway smoke (agent-owned OpenClaw path)
+Pick one core runtime, then add the adapter for your framework.
+
+### Core Runtimes
+
+#### Rust CLI
 
 ```bash
-scripts/openclaw-agent-smoke.sh \
-  --start-local-gateway \
-  --gateway-url ws://127.0.0.1:18789 \
-  --gateway-token dev-token
-```
-
-Runbook and flow details:
-- `docs/src/guides/agent-openclaw-operations.md`
-- `apps/desktop/docs/openclaw-gateway-testing.md`
-
-### CLI (Rust)
-
-```bash
-cargo install --path crates/services/hush-cli
+# from crates.io (recommended when published)
+cargo install hush-cli
 
 clawdstrike policy list
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 ```
 
-### TypeScript (unified SDK)
-
-```typescript
-import { Clawdstrike } from "@clawdstrike/sdk";
-
-// Simple: use built-in strict rules (fail-closed)
-const cs = Clawdstrike.withDefaults("strict");
-
-// Check an action
-const decision = await cs.checkFile("~/.ssh/id_rsa", "read");
-if (decision.status === "deny") {
-  throw new Error(`Blocked: ${decision.message}`);
-}
-
-// Or use sessions for stateful tracking
-const session = cs.session({ agentId: "my-agent" });
-const result = await session.check("file_access", { path: "~/.ssh/id_rsa" });
-console.log(session.getSummary()); // { checkCount, denyCount, ... }
+```bash
+# from source checkout (development path)
+cargo install --path crates/services/hush-cli
 ```
 
-### TypeScript (tool boundary with interceptor)
+Docs: [Quick Start (Rust)](docs/src/getting-started/quick-start.md)
 
-For framework integrations, use the interceptor pattern:
+#### TypeScript SDK (`@clawdstrike/sdk`)
+
+```bash
+npm install @clawdstrike/sdk
+```
 
 ```typescript
 import { Clawdstrike } from "@clawdstrike/sdk";
 
 const cs = Clawdstrike.withDefaults("strict");
-const interceptor = cs.createInterceptor();
-const session = cs.session({ sessionId: "session-123" });
-
-const preflight = await interceptor.beforeExecute("bash", { cmd: "echo hello" }, session);
-if (!preflight.proceed) throw new Error("Blocked by policy");
+const decision = await cs.checkNetwork("api.openai.com:443");
+console.log(decision.status);
 ```
 
-### OpenClaw plugin
+Docs: [Quick Start (TypeScript)](docs/src/getting-started/quick-start-typescript.md)
 
-- Quick start: `packages/adapters/clawdstrike-openclaw/docs/getting-started.md`
-- Integration guide: `docs/src/guides/openclaw-integration.md`
+#### Python SDK (`clawdstrike`)
+
+```bash
+pip install clawdstrike
+```
+
+```python
+from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
+
+policy = Policy.from_yaml_file("policy.yaml")
+engine = PolicyEngine(policy)
+ctx = GuardContext(cwd="/app", session_id="session-123")
+
+allowed = engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), ctx)
+print("allowed:", allowed)
+```
+
+Docs: [Quick Start (Python)](docs/src/getting-started/quick-start-python.md)
+
+### Additional Language Bindings (Advanced / FFI)
+
+These bindings are useful for native/runtime integrations and receipt/crypto flows.
+They currently rely on the `hush-ffi` native library (`libhush_ffi`).
+
+#### C (via `hush-ffi`)
+
+```bash
+cargo build -p hush-ffi --release
+```
+
+- Header: `crates/libs/hush-ffi/hush.h`
+- Native library output: `target/release/` (`libhush_ffi.*`)
+
+#### Go (via cgo binding)
+
+```bash
+# optional local-development pin
+go mod edit -replace github.com/backbay-labs/clawdstrike/packages/sdk/hush-go=/path/to/clawdstrike/packages/sdk/hush-go
+go get github.com/backbay-labs/clawdstrike/packages/sdk/hush-go
+```
+
+```go
+import hush "github.com/backbay-labs/clawdstrike/packages/sdk/hush-go"
+
+v := hush.Version()
+_ = v
+```
+
+#### C# (.NET binding)
+
+```bash
+dotnet add <your-project>.csproj reference /path/to/clawdstrike/packages/sdk/hush-csharp/src/Hush/Hush.csproj
+```
+
+```csharp
+using Hush;
+using Hush.Crypto;
+
+var kp = Keypair.Generate();
+Console.WriteLine(kp.PublicKeyHex);
+```
+
+For Go/C#/C runtime setup, ensure `libhush_ffi` is on your dynamic library path.
+
+### Framework Adapters
+
+#### OpenAI Agents SDK (`@clawdstrike/openai`)
+
+```bash
+npm install @clawdstrike/openai @clawdstrike/adapter-core @clawdstrike/engine-local
+```
+
+```typescript
+import { createStrikeCell } from "@clawdstrike/engine-local";
+import { OpenAIToolBoundary, wrapOpenAIToolDispatcher } from "@clawdstrike/openai";
+
+const boundary = new OpenAIToolBoundary({ engine: createStrikeCell({ policyRef: "default" }) });
+const dispatchTool = wrapOpenAIToolDispatcher(boundary, async (toolName, input, runId) => {
+  return { toolName, input, runId };
+});
+```
+
+Docs: [OpenAI Adapter README](packages/adapters/clawdstrike-openai/README.md)
+
+#### Claude Code / Claude Agent SDK (`@clawdstrike/claude`)
+
+```bash
+npm install @clawdstrike/claude @clawdstrike/adapter-core @clawdstrike/engine-local
+```
+
+```typescript
+import { createStrikeCell } from "@clawdstrike/engine-local";
+import { ClaudeToolBoundary, wrapClaudeToolDispatcher } from "@clawdstrike/claude";
+
+const boundary = new ClaudeToolBoundary({ engine: createStrikeCell({ policyRef: "default" }) });
+const dispatchTool = wrapClaudeToolDispatcher(boundary, async (toolName, input, runId) => {
+  return { toolName, input, runId };
+});
+```
+
+Docs: [Claude Adapter README](packages/adapters/clawdstrike-claude/README.md), [Claude Recipe](docs/src/recipes/claude.md)
+
+#### Vercel AI SDK (`@clawdstrike/vercel-ai`)
+
+```bash
+npm install @clawdstrike/vercel-ai @clawdstrike/engine-local ai
+```
+
+```typescript
+import { createStrikeCell } from "@clawdstrike/engine-local";
+import { createVercelAiInterceptor, secureTools } from "@clawdstrike/vercel-ai";
+
+const interceptor = createVercelAiInterceptor(createStrikeCell({ policyRef: "default" }));
+const tools = secureTools(
+  { bash: { async execute(input: { cmd: string }) { return input.cmd; } } },
+  interceptor,
+);
+```
+
+Docs: [Vercel AI Integration Guide](docs/src/guides/vercel-ai-integration.md)
+
+#### LangChain (`@clawdstrike/langchain`)
+
+```bash
+npm install @clawdstrike/langchain @clawdstrike/adapter-core @clawdstrike/engine-local
+```
+
+```typescript
+import { createStrikeCell } from "@clawdstrike/engine-local";
+import { BaseToolInterceptor } from "@clawdstrike/adapter-core";
+import { wrapTool } from "@clawdstrike/langchain";
+
+const interceptor = new BaseToolInterceptor(createStrikeCell({ policyRef: "default" }));
+const secureTool = wrapTool({ name: "bash", async invoke(input: { cmd: string }) { return input.cmd; } }, interceptor);
+```
+
+Docs: [LangChain Integration Guide](docs/src/guides/langchain-integration.md)
+
+#### OpenClaw Plugin (`@clawdstrike/openclaw`)
+
+```bash
+# published package workflow (recommended)
+openclaw plugins install @clawdstrike/openclaw
+
+# local development workflow
+openclaw plugins install --link /path/to/clawdstrike/packages/adapters/clawdstrike-openclaw
+openclaw plugins enable clawdstrike-security
+```
+
+Docs: [OpenClaw Plugin Quick Start](packages/adapters/clawdstrike-openclaw/docs/getting-started.md), [OpenClaw Integration Guide](docs/src/guides/openclaw-integration.md)
+
+### Computer Use Gateway (Production Onboarding)
+
+Use the agent-owned OpenClaw architecture in production:
+
+1. Install a release build of Clawdstrike Agent/Desktop.
+2. Configure OpenClaw gateways (URL + token) in OpenClaw Fleet or via the local agent API.
+3. Validate gateway/session health through the agent health and gateway endpoints.
+
+Operational docs:
+- [Agent OpenClaw Operations Runbook](docs/src/guides/agent-openclaw-operations.md)
+- [OpenClaw Gateway Testing Guide](apps/desktop/docs/openclaw-gateway-testing.md)
+- [CUA Production Readiness Test Plan](production-readiness-test-plan.md)
 
 ## Highlights
 
@@ -188,6 +327,11 @@ No external API calls required for core detection. [Full benchmarks →](docs/sr
 - [Quick Start (Rust)](docs/src/getting-started/quick-start.md)
 - [Quick Start (TypeScript)](docs/src/getting-started/quick-start-typescript.md)
 - [Quick Start (Python)](docs/src/getting-started/quick-start-python.md)
+- [Multi-Language Support Matrix](docs/src/concepts/multi-language.md)
+- [OpenAI Adapter](packages/adapters/clawdstrike-openai/README.md)
+- [Claude Adapter](packages/adapters/clawdstrike-claude/README.md)
+- [Vercel AI Integration Guide](docs/src/guides/vercel-ai-integration.md)
+- [LangChain Integration Guide](docs/src/guides/langchain-integration.md)
 - [OpenClaw Integration Guide](docs/src/guides/openclaw-integration.md)
 - [Agent OpenClaw Operations Runbook](docs/src/guides/agent-openclaw-operations.md)
 - [OpenClaw Gateway Testing Guide](apps/desktop/docs/openclaw-gateway-testing.md)
