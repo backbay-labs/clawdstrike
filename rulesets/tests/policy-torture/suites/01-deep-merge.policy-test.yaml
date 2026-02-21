@@ -55,7 +55,7 @@ suites:
           eventType: file_read
           data:
             type: file
-            path: tests/policy-torture/workspace/company-secrets/token.txt
+            path: rulesets/tests/policy-torture/workspace/company-secrets/token.txt
         expect:
           denied: true
           guard: forbidden_path

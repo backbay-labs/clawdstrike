@@ -29,6 +29,6 @@ suites:
           eventType: file_read
           data:
             type: file
-            path: tests/policy-torture/workspace/allowed.txt
+            path: rulesets/tests/policy-torture/workspace/allowed.txt
         expect:
           allowed: true

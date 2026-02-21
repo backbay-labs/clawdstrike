@@ -7,7 +7,7 @@
 - [Review Log](./research/REVIEW-LOG.md) — dated reviewer interventions while agents continue writing
 - [Execution Backlog](./research/EXECUTION-BACKLOG.md) — execution and closure status across passes #5-#17
 - [Pass #18 Execution Plan](./research/pass18-notarization-soak-rdp-plan.md) — release integrity + long soak + full RDP side-channel E2E blockers
-- [Production Readiness Test Plan](../../../production-readiness-test-plan.md) — gate-by-gate criteria for release go/no-go
+- [Production Readiness Test Plan](../../../PRODUCTION_READINESS_TEST_PLAN.md) — gate-by-gate criteria for release go/no-go
 - [Execution Agent Handoff Prompt](./research/EXECUTION-AGENT-HANDOFF-PROMPT.md) — ready-to-run prompt for implementation pass
 - [Pass #14 Handoff Prompt](./research/EXECUTION-AGENT-HANDOFF-PROMPT-PASS14.md) — E3/E4/code-review team execution prompt
 - [Verifier Flow Spec](./research/verifier-flow-spec.md) — pass-seven normative verifier order and error taxonomy

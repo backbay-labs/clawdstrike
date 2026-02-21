@@ -1,4 +1,0 @@
-Policy test: Policy Torture 06 - Mixed Path Token Precedence
-Case:
-  - filesystem_irm_prefers_object_path_over_pathlike_string_arg: PASS
-Exit: 0

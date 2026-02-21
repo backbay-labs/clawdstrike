@@ -15,11 +15,11 @@ guards:
   path_allowlist:
     enabled: true
     file_access_allow:
-      - "**/tests/policy-torture/workspace/**"
+      - "**/rulesets/tests/policy-torture/workspace/**"
     file_write_allow:
-      - "**/tests/policy-torture/workspace/**"
+      - "**/rulesets/tests/policy-torture/workspace/**"
     patch_allow:
-      - "**/tests/policy-torture/workspace/**"
+      - "**/rulesets/tests/policy-torture/workspace/**"
 
   egress_allowlist:
     enabled: true

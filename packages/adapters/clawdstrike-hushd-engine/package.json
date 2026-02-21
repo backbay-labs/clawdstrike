@@ -31,6 +31,7 @@
     "README.md"
   ],
   "license": "Apache-2.0",
+  "author": "Clawdstrike Contributors",
   "repository": {
     "type": "git",
     "url": "https://github.com/backbay-labs/clawdstrike.git",

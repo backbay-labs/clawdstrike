@@ -18,7 +18,7 @@ suites:
           eventType: file_read
           data:
             type: file
-            path: tests/policy-torture/workspace/allowed.txt
+            path: rulesets/tests/policy-torture/workspace/allowed.txt
         expect:
           allowed: true
 
@@ -27,7 +27,7 @@ suites:
           eventType: file_write
           data:
             type: file
-            path: tests/policy-torture/workspace/allowed.txt
+            path: rulesets/tests/policy-torture/workspace/allowed.txt
             content: "AKIA1234567890ABCDEF"
         expect:
           denied: true
@@ -38,7 +38,7 @@ suites:
           eventType: patch_apply
           data:
             type: patch
-            filePath: tests/policy-torture/workspace/allowed.txt
+            filePath: rulesets/tests/policy-torture/workspace/allowed.txt
             patchContent: "@@ -1 +1 @@\n-rm\n+rm -rf /"
         expect:
           denied: true

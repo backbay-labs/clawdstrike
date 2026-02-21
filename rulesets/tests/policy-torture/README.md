@@ -17,10 +17,10 @@ Stress suites for policy authoring edge-cases and security invariants.
 ## Run
 
 ```bash
-bash tests/policy-torture/run.sh
+bash rulesets/tests/policy-torture/run.sh
 ```
 
-Artifacts are written to `tests/policy-torture/reports/`:
+Artifacts are written to `rulesets/tests/policy-torture/reports/`:
 
 - `*.txt`: human-readable reports
 - `*.json`: stable CI artifact payloads for audit traceability

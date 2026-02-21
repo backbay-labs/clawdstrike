@@ -1,9 +1,0 @@
-Policy test: Policy Torture 02 - Replace Merge
-Policy: tests/policy-torture/suites/../policies/replace-overlay.yaml
-Total: 3, Passed: 3, Failed: 0
-Guard coverage: 3/8 (37.50%)
-Coverage (by guard):
-  egress_allowlist: 2
-  forbidden_path: 1
-  path_allowlist: 1
-Exit: 0

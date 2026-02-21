@@ -33,9 +33,9 @@ Maintainers have commit access and review authority within their component areas
 
 ### RFC Process
 
-Significant design decisions are documented as RFCs in `docs/rfcs/`:
+Significant design decisions are documented as ADRs in `docs/plans/decisions/`:
 
-1. Author opens a PR adding `docs/rfcs/NNNN-title.md`
+1. Author opens a PR adding `docs/plans/decisions/NNNN-title.md`
 2. Community comment period: 14 days minimum
 3. Maintainer Council discusses in weekly call
 4. BDFL approves, requests changes, or rejects

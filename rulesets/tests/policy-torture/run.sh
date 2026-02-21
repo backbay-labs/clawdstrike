@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$ROOT"
 
-mkdir -p tests/policy-torture/reports
+mkdir -p rulesets/tests/policy-torture/reports
 
 if [ ! -x target/debug/hush ]; then
   cargo build -p hush-cli
 fi
 
 BIN="target/debug/hush"
-REPORTS_DIR="tests/policy-torture/reports"
+REPORTS_DIR="rulesets/tests/policy-torture/reports"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -127,13 +127,13 @@ EOF
       "name": "extends-loop-stress",
       "status": "pass",
       "expected_error": "Circular policy extension detected",
-      "log": "tests/policy-torture/reports/05-extends-loop-stress.log"
+      "log": "rulesets/tests/policy-torture/reports/05-extends-loop-stress.log"
     },
     {
       "name": "extends-depth-stress",
       "status": "pass",
       "expected_error": "Policy extends depth exceeded",
-      "log": "tests/policy-torture/reports/05-extends-depth-stress.log"
+      "log": "rulesets/tests/policy-torture/reports/05-extends-depth-stress.log"
     }
   ],
   "exit_code": 0
@@ -190,19 +190,19 @@ run_suite() {
     --output "${report_base}.json"
 }
 
-run_suite tests/policy-torture/suites/01-deep-merge.policy-test.yaml
-run_suite tests/policy-torture/suites/02-replace.policy-test.yaml
-run_suite tests/policy-torture/suites/03-posture-escalation.policy-test.yaml
+run_suite rulesets/tests/policy-torture/suites/01-deep-merge.policy-test.yaml
+run_suite rulesets/tests/policy-torture/suites/02-replace.policy-test.yaml
+run_suite rulesets/tests/policy-torture/suites/03-posture-escalation.policy-test.yaml
 
 # Gauntlet is hard-gated at 100% guard coverage.
-"$BIN" policy test tests/policy-torture/suites/04-guard-gauntlet.policy-test.yaml \
+"$BIN" policy test rulesets/tests/policy-torture/suites/04-guard-gauntlet.policy-test.yaml \
   --resolve \
   --coverage \
   --min-coverage 100 \
   --format text \
-  --output tests/policy-torture/reports/04-guard-gauntlet.txt
+  --output rulesets/tests/policy-torture/reports/04-guard-gauntlet.txt
 
-"$BIN" policy test tests/policy-torture/suites/04-guard-gauntlet.policy-test.yaml \
+"$BIN" policy test rulesets/tests/policy-torture/suites/04-guard-gauntlet.policy-test.yaml \
   --resolve \
   --coverage \
   --min-coverage 100 \

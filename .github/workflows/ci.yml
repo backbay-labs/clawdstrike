@@ -44,14 +44,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Run policy torture battery
-        run: bash tests/policy-torture/run.sh
+        run: bash rulesets/tests/policy-torture/run.sh
 
       - name: Upload policy torture JSON reports
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: policy-torture-reports
-          path: tests/policy-torture/reports/*.json
+          path: rulesets/tests/policy-torture/reports/*.json
           if-no-files-found: error
 
   check:

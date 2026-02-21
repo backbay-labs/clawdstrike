@@ -294,7 +294,7 @@ Use the agent-owned OpenClaw architecture in production:
 Operational docs:
 - [Agent OpenClaw Operations Runbook](docs/src/guides/agent-openclaw-operations.md)
 - [OpenClaw Gateway Testing Guide](apps/desktop/docs/openclaw-gateway-testing.md)
-- [CUA Production Readiness Test Plan](production-readiness-test-plan.md)
+- [CUA Production Readiness Test Plan](PRODUCTION_READINESS_TEST_PLAN.md)
 
 ## Highlights
 
@@ -335,7 +335,7 @@ No external API calls required for core detection. [Full benchmarks →](docs/sr
 - [OpenClaw Integration Guide](docs/src/guides/openclaw-integration.md)
 - [Agent OpenClaw Operations Runbook](docs/src/guides/agent-openclaw-operations.md)
 - [OpenClaw Gateway Testing Guide](apps/desktop/docs/openclaw-gateway-testing.md)
-- [CUA Production Readiness Test Plan](production-readiness-test-plan.md)
+- [CUA Production Readiness Test Plan](PRODUCTION_READINESS_TEST_PLAN.md)
 - [CUA Roadmap Index](docs/roadmaps/cua/INDEX.md)
 - [Design Philosophy](docs/src/concepts/design-philosophy.md)
 - [Enforcement Tiers & Integration Contract](docs/src/concepts/enforcement-tiers.md)
