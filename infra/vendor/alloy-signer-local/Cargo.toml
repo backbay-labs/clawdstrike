@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy-signer-local"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -72,12 +72,12 @@ name = "alloy_signer_local"
 path = "src/lib.rs"
 
 [dependencies.alloy-consensus]
-version = "1.6.3"
+version = "1.7.3"
 features = ["std"]
 default-features = false
 
 [dependencies.alloy-network]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.alloy-primitives]
@@ -85,7 +85,7 @@ version = "1.4.1"
 default-features = false
 
 [dependencies.alloy-signer]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.async-trait]
@@ -153,7 +153,7 @@ optional = true
 default-features = false
 
 [dev-dependencies.alloy-consensus]
-version = "1.6.3"
+version = "1.7.3"
 features = ["std"]
 default-features = false
 
@@ -162,7 +162,7 @@ version = "1.4.1"
 default-features = false
 
 [dev-dependencies.alloy-network]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dev-dependencies.alloy-sol-types]

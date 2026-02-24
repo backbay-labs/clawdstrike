@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy-rpc-types"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -59,10 +59,6 @@ default = [
 ]
 engine = ["dep:alloy-rpc-types-engine"]
 eth = ["dep:alloy-rpc-types-eth"]
-jsonrpsee-types = [
-    "alloy-rpc-types-eth?/jsonrpsee-types",
-    "alloy-rpc-types-engine?/jsonrpsee-types",
-]
 k256 = ["alloy-rpc-types-eth?/k256"]
 kzg = ["alloy-rpc-types-engine?/kzg"]
 mev = ["dep:alloy-rpc-types-mev"]
@@ -83,59 +79,59 @@ features = ["map"]
 default-features = false
 
 [dependencies.alloy-rpc-types-admin]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-anvil]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-any]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-beacon]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-debug]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-engine]
-version = "1.6.3"
+version = "1.7.3"
 features = ["serde"]
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-eth]
-version = "1.6.3"
+version = "1.7.3"
 features = ["serde"]
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-mev]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-trace]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types-txpool]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-serde]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.serde]

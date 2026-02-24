@@ -90,6 +90,30 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ExtendableMessageEventInit`*"]
     #[wasm_bindgen(method, setter = "source")]
     pub fn set_source(this: &ExtendableMessageEventInit, val: Option<&::js_sys::Object>);
+    #[cfg(feature = "Client")]
+    #[doc = "Change the `source` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ExtendableMessageEventInit`*"]
+    #[wasm_bindgen(method, setter = "source")]
+    pub fn set_source_opt_client(this: &ExtendableMessageEventInit, val: Option<&Client>);
+    #[cfg(feature = "ServiceWorker")]
+    #[doc = "Change the `source` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ExtendableMessageEventInit`*"]
+    #[wasm_bindgen(method, setter = "source")]
+    pub fn set_source_opt_service_worker(
+        this: &ExtendableMessageEventInit,
+        val: Option<&ServiceWorker>,
+    );
+    #[cfg(feature = "MessagePort")]
+    #[doc = "Change the `source` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ExtendableMessageEventInit`*"]
+    #[wasm_bindgen(method, setter = "source")]
+    pub fn set_source_opt_message_port(
+        this: &ExtendableMessageEventInit,
+        val: Option<&MessagePort>,
+    );
 }
 impl ExtendableMessageEventInit {
     #[doc = "Construct a new `ExtendableMessageEventInit`."]

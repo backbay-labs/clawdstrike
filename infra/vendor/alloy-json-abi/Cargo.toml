@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-json-abi"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -68,12 +68,12 @@ path = "benches/json_abi.rs"
 harness = false
 
 [dependencies.alloy-primitives]
-version = "1.5.4"
+version = "1.5.7"
 features = ["serde"]
 default-features = false
 
 [dependencies.alloy-sol-type-parser]
-version = "1.5.4"
+version = "1.5.7"
 features = ["serde"]
 default-features = false
 

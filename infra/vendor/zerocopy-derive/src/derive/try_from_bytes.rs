@@ -369,9 +369,13 @@ pub(crate) fn derive_is_bit_valid(
         // enum's tag corresponds to one of the enum's discriminants. Then, we
         // check the bit validity of each field of the corresponding variant.
         // Thus, this is a sound implementation of `is_bit_valid`.
-        fn is_bit_valid(
-            mut candidate: #zerocopy_crate::Maybe<'_, Self>,
-        ) -> #core::primitive::bool {
+        #[inline]
+        fn is_bit_valid<___ZcAlignment>(
+            mut candidate: #zerocopy_crate::Maybe<'_, Self, ___ZcAlignment>,
+        ) -> #core::primitive::bool
+        where
+            ___ZcAlignment: #zerocopy_crate::invariant::Alignment,
+        {
             #tag_enum
 
             type ___ZerocopyTagPrimitive = #zerocopy_crate::util::macro_util::SizeToTag<
@@ -415,7 +419,7 @@ pub(crate) fn derive_is_bit_valid(
                         #zerocopy_crate::pointer::cast::CastSized
                     >()
                 };
-                tag_ptr.recall_validity::<_, (_, (_, _))>().read_unaligned::<#zerocopy_crate::BecauseImmutable>()
+                tag_ptr.recall_validity::<_, (_, (_, _))>().read::<#zerocopy_crate::BecauseImmutable>()
             };
 
             let mut raw_enum = candidate.cast::<
@@ -570,9 +574,13 @@ fn derive_try_from_bytes_struct(
             // validity of a struct is just the composition of the bit
             // validities of its fields, so this is a sound implementation
             // of `is_bit_valid`.
-            fn is_bit_valid(
-                mut candidate: #zerocopy_crate::Maybe<Self>,
-            ) -> #core::primitive::bool {
+            #[inline]
+            fn is_bit_valid<___ZcAlignment>(
+                mut candidate: #zerocopy_crate::Maybe<'_, Self, ___ZcAlignment>,
+            ) -> #core::primitive::bool
+            where
+                ___ZcAlignment: #zerocopy_crate::invariant::Alignment,
+            {
                 true #(&& {
                     let field_candidate =   #zerocopy_crate::into_inner!(candidate.reborrow().project::<
                         _,
@@ -614,9 +622,13 @@ fn derive_try_from_bytes_union(ctx: &Ctx, unn: &DataUnion, top_level: Trait) -> 
             // The bit validity of a union is not yet well defined in Rust,
             // but it is guaranteed to be no more strict than this
             // definition. See #696 for a more in-depth discussion.
-            fn is_bit_valid(
-                mut candidate: #zerocopy_crate::Maybe<'_, Self>,
-            ) -> #core::primitive::bool {
+            #[inline]
+            fn is_bit_valid<___ZcAlignment>(
+                mut candidate: #zerocopy_crate::Maybe<'_, Self, ___ZcAlignment>,
+            ) -> #core::primitive::bool
+            where
+                ___ZcAlignment: #zerocopy_crate::invariant::Alignment,
+            {
                 false #(|| {
                     // SAFETY:
                     // - Since `ReadOnly<Self>: Immutable` unconditionally,
@@ -669,7 +681,11 @@ fn derive_try_from_bytes_enum(
         // SAFETY: It would be sound for the enum to implement `FromBytes`, as
         // required by `gen_trivial_is_bit_valid_unchecked`.
         (None, true) => unsafe { gen_trivial_is_bit_valid_unchecked(ctx) },
-        (None, false) => derive_is_bit_valid(ctx, enm, &repr)?,
+        (None, false) => match derive_is_bit_valid(ctx, enm, &repr) {
+            Ok(extra) => extra,
+            Err(_) if ctx.skip_on_error => return Ok(TokenStream::new()),
+            Err(e) => return Err(e),
+        },
     };
 
     Ok(ImplBlockBuilder::new(ctx, enm, Trait::TryFromBytes, FieldBounds::ALL_SELF)
@@ -685,14 +701,24 @@ fn try_gen_trivial_is_bit_valid(ctx: &Ctx, top_level: Trait) -> Option<proc_macr
     // make this no longer true. To hedge against these, we include an explicit
     // `Self: FromBytes` check in the generated `is_bit_valid`, which is
     // bulletproof.
-    if matches!(top_level, Trait::FromBytes) && ctx.ast.generics.params.is_empty() {
+    //
+    // If `ctx.skip_on_error` is true, we can't rely on the `FromBytes` derive
+    // to fail compilation if `Self` is not actually soundly `FromBytes`.
+    if matches!(top_level, Trait::FromBytes)
+        && ctx.ast.generics.params.is_empty()
+        && !ctx.skip_on_error
+    {
         let zerocopy_crate = &ctx.zerocopy_crate;
         let core = ctx.core_path();
         Some(quote!(
             // SAFETY: See inline.
-            fn is_bit_valid(
-                _candidate: #zerocopy_crate::Maybe<Self>,
-            ) -> #core::primitive::bool {
+            #[inline(always)]
+            fn is_bit_valid<___ZcAlignment>(
+                _candidate: #zerocopy_crate::Maybe<'_, Self, ___ZcAlignment>,
+            ) -> #core::primitive::bool
+            where
+                ___ZcAlignment: #zerocopy_crate::invariant::Alignment,
+            {
                 if false {
                     fn assert_is_from_bytes<T>()
                     where
@@ -714,15 +740,23 @@ fn try_gen_trivial_is_bit_valid(ctx: &Ctx, top_level: Trait) -> Option<proc_macr
         None
     }
 }
+
+/// # Safety
+///
+/// All initialized bit patterns must be valid for `Self`.
 unsafe fn gen_trivial_is_bit_valid_unchecked(ctx: &Ctx) -> proc_macro2::TokenStream {
     let zerocopy_crate = &ctx.zerocopy_crate;
     let core = ctx.core_path();
     quote!(
         // SAFETY: The caller of `gen_trivial_is_bit_valid_unchecked` has
         // promised that all initialized bit patterns are valid for `Self`.
-        fn is_bit_valid(
-            _candidate: #zerocopy_crate::Maybe<Self>,
-        ) -> #core::primitive::bool {
+        #[inline(always)]
+        fn is_bit_valid<___ZcAlignment>(
+            _candidate: #zerocopy_crate::Maybe<'_, Self, ___ZcAlignment>,
+        ) -> #core::primitive::bool
+        where
+            ___ZcAlignment: #zerocopy_crate::invariant::Alignment,
+        {
             true
         }
     )

@@ -11,10 +11,11 @@
 
 [package]
 edition = "2018"
-rust-version = "1.56"
+rust-version = "1.71"
 name = "futures"
-version = "0.3.31"
+version = "0.3.32"
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -50,6 +51,61 @@ features = [
     "executor",
     "thread-pool",
 ]
+
+[features]
+alloc = [
+    "futures-core/alloc",
+    "futures-task/alloc",
+    "futures-sink/alloc",
+    "futures-channel/alloc",
+    "futures-util/alloc",
+]
+async-await = [
+    "futures-util/async-await",
+    "futures-util/async-await-macro",
+]
+bilock = ["futures-util/bilock"]
+cfg-target-has-atomic = []
+compat = [
+    "std",
+    "futures-util/compat",
+]
+default = [
+    "std",
+    "async-await",
+    "executor",
+]
+executor = [
+    "std",
+    "futures-executor/std",
+]
+io-compat = [
+    "compat",
+    "futures-util/io-compat",
+]
+spin = ["futures-util/spin"]
+std = [
+    "alloc",
+    "futures-core/std",
+    "futures-task/std",
+    "futures-io/std",
+    "futures-sink/std",
+    "futures-util/std",
+    "futures-util/io",
+    "futures-util/channel",
+]
+thread-pool = [
+    "executor",
+    "futures-executor/thread-pool",
+]
+unstable = [
+    "futures-core/unstable",
+    "futures-task/unstable",
+    "futures-channel/unstable",
+    "futures-io/unstable",
+    "futures-util/unstable",
+]
+write-all-vectored = ["futures-util/write-all-vectored"]
 
 [lib]
 name = "futures"
@@ -284,33 +340,33 @@ name = "try_join"
 path = "tests/try_join.rs"
 
 [dependencies.futures-channel]
-version = "0.3.31"
+version = "0.3.32"
 features = ["sink"]
 default-features = false
 
 [dependencies.futures-core]
-version = "0.3.31"
+version = "0.3.32"
 default-features = false
 
 [dependencies.futures-executor]
-version = "0.3.31"
+version = "0.3.32"
 optional = true
 default-features = false
 
 [dependencies.futures-io]
-version = "0.3.31"
+version = "0.3.32"
 default-features = false
 
 [dependencies.futures-sink]
-version = "0.3.31"
+version = "0.3.32"
 default-features = false
 
 [dependencies.futures-task]
-version = "0.3.31"
+version = "0.3.32"
 default-features = false
 
 [dependencies.futures-util]
-version = "0.3.31"
+version = "0.3.32"
 features = ["sink"]
 default-features = false
 
@@ -325,60 +381,6 @@ version = "1"
 
 [dev-dependencies.tokio]
 version = "0.1.11"
-
-[features]
-alloc = [
-    "futures-core/alloc",
-    "futures-task/alloc",
-    "futures-sink/alloc",
-    "futures-channel/alloc",
-    "futures-util/alloc",
-]
-async-await = [
-    "futures-util/async-await",
-    "futures-util/async-await-macro",
-]
-bilock = ["futures-util/bilock"]
-cfg-target-has-atomic = []
-compat = [
-    "std",
-    "futures-util/compat",
-]
-default = [
-    "std",
-    "async-await",
-    "executor",
-]
-executor = [
-    "std",
-    "futures-executor/std",
-]
-io-compat = [
-    "compat",
-    "futures-util/io-compat",
-]
-std = [
-    "alloc",
-    "futures-core/std",
-    "futures-task/std",
-    "futures-io/std",
-    "futures-sink/std",
-    "futures-util/std",
-    "futures-util/io",
-    "futures-util/channel",
-]
-thread-pool = [
-    "executor",
-    "futures-executor/thread-pool",
-]
-unstable = [
-    "futures-core/unstable",
-    "futures-task/unstable",
-    "futures-channel/unstable",
-    "futures-io/unstable",
-    "futures-util/unstable",
-]
-write-all-vectored = ["futures-util/write-all-vectored"]
 
 [lints.rust]
 missing_debug_implementations = "warn"

@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy-consensus-any"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -71,12 +71,12 @@ name = "alloy_consensus_any"
 path = "src/lib.rs"
 
 [dependencies.alloy-consensus]
-version = "1.6.3"
+version = "1.7.3"
 features = ["serde"]
 default-features = false
 
 [dependencies.alloy-eips]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.alloy-primitives]
@@ -88,7 +88,7 @@ version = "0.3.9"
 default-features = false
 
 [dependencies.alloy-serde]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
@@ -108,7 +108,7 @@ optional = true
 default-features = false
 
 [dev-dependencies.alloy-consensus]
-version = "1.6.3"
+version = "1.7.3"
 features = ["arbitrary"]
 default-features = false
 

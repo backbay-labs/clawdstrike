@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.90.0"
 name = "wasmtime-internal-unwinder"
-version = "41.0.3"
+version = "41.0.4"
 authors = ["The Wasmtime Project Developers"]
 build = "build.rs"
 autolib = false
@@ -45,7 +45,7 @@ path = "src/lib.rs"
 version = "1.0"
 
 [dependencies.cranelift-codegen]
-version = "0.128.3"
+version = "0.128.4"
 features = [
     "std",
     "unwind",
@@ -66,7 +66,7 @@ features = [
 default-features = false
 
 [dependencies.wasmtime-environ]
-version = "=41.0.3"
+version = "=41.0.4"
 
 [lints.clippy]
 allow_attributes_without_reason = "warn"

@@ -220,7 +220,7 @@ function createLazyWrappedModel(
         if (typeof fn !== 'function') {
           throw new Error(`Wrapped model is missing method ${String(prop)}`);
         }
-        return await fn.apply(wrapped, args);
+        return await Reflect.apply(fn, wrapped, args);
       };
     },
   });

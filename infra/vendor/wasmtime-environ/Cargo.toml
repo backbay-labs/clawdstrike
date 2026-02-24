@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.90.0"
 name = "wasmtime-environ"
-version = "41.0.3"
+version = "41.0.4"
 authors = ["The Wasmtime Project Developers"]
 build = false
 autolib = false
@@ -88,11 +88,11 @@ version = "0.4.3"
 optional = true
 
 [dependencies.cranelift-bitset]
-version = "0.128.3"
+version = "0.128.4"
 features = ["enable-serde"]
 
 [dependencies.cranelift-entity]
-version = "0.128.3"
+version = "0.128.4"
 features = ["enable-serde"]
 
 [dependencies.gimli]
@@ -169,7 +169,7 @@ version = "0.243.0"
 optional = true
 
 [dependencies.wasmtime-component-util]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-component-util"
 

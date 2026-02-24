@@ -1,0 +1,5 @@
+name: "Clawdstrike CodeQL Config"
+
+paths-ignore:
+  - "infra/vendor"
+  - "infra/vendor/**"

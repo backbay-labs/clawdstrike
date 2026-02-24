@@ -15,59 +15,45 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type VideoFrameCopyToOptions;
     #[cfg(web_sys_unstable_apis)]
-    #[doc = "Get the `colorSpace` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    #[wasm_bindgen(method, getter = "colorSpace")]
-    pub fn get_color_space(this: &VideoFrameCopyToOptions) -> Option<::alloc::string::String>;
-    #[cfg(web_sys_unstable_apis)]
-    #[doc = "Change the `colorSpace` field of this object."]
-    #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`*"]
-    #[doc = ""]
-    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
-    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    #[wasm_bindgen(method, setter = "colorSpace")]
-    pub fn set_color_space(this: &VideoFrameCopyToOptions, val: &str);
-    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "VideoPixelFormat")]
     #[doc = "Get the `format` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`, `VideoPixelFormat`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "format")]
-    pub fn get_format(this: &VideoFrameCopyToOptions) -> Option<::alloc::string::String>;
+    pub fn get_format(this: &VideoFrameCopyToOptions) -> Option<VideoPixelFormat>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "VideoPixelFormat")]
     #[doc = "Change the `format` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`, `VideoPixelFormat`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "format")]
-    pub fn set_format(this: &VideoFrameCopyToOptions, val: &str);
+    pub fn set_format(this: &VideoFrameCopyToOptions, val: VideoPixelFormat);
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PlaneLayout")]
     #[doc = "Get the `layout` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrameCopyToOptions`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "layout")]
-    pub fn get_layout(this: &VideoFrameCopyToOptions) -> Option<::js_sys::Array>;
+    pub fn get_layout(this: &VideoFrameCopyToOptions) -> Option<::js_sys::Array<PlaneLayout>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PlaneLayout")]
     #[doc = "Change the `layout` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrameCopyToOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrameCopyToOptions`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "layout")]
-    pub fn set_layout(this: &VideoFrameCopyToOptions, val: &::wasm_bindgen::JsValue);
+    pub fn set_layout(this: &VideoFrameCopyToOptions, val: &[PlaneLayout]);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "DomRectInit")]
     #[doc = "Get the `rect` field of this object."]
@@ -103,20 +89,16 @@ impl VideoFrameCopyToOptions {
         ret
     }
     #[cfg(web_sys_unstable_apis)]
-    #[deprecated = "Use `set_color_space()` instead."]
-    pub fn color_space(&mut self, val: &str) -> &mut Self {
-        self.set_color_space(val);
-        self
-    }
-    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "VideoPixelFormat")]
     #[deprecated = "Use `set_format()` instead."]
-    pub fn format(&mut self, val: &str) -> &mut Self {
+    pub fn format(&mut self, val: VideoPixelFormat) -> &mut Self {
         self.set_format(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PlaneLayout")]
     #[deprecated = "Use `set_layout()` instead."]
-    pub fn layout(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn layout(&mut self, val: &[PlaneLayout]) -> &mut Self {
         self.set_layout(val);
         self
     }

@@ -26,7 +26,7 @@ import type {
   ClawdstrikeConfig,
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
-import { peekApproval, recordApproval, type ApprovalResolutionType } from '../approval-state.js';
+import { peekApproval } from '../approval-state.js';
 import { normalizeApprovalResource } from '../approval-utils.js';
 
 // ── Stable Error Codes ──────────────────────────────────────────────

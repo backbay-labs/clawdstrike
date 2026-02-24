@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy-rpc-client"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -67,7 +67,7 @@ name = "alloy_rpc_client"
 path = "src/lib.rs"
 
 [dependencies.alloy-json-rpc]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.alloy-primitives]
@@ -76,21 +76,21 @@ features = ["map"]
 default-features = false
 
 [dependencies.alloy-pubsub]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-transport]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.alloy-transport-http]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-transport-ws]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
@@ -139,7 +139,7 @@ features = ["serde"]
 optional = true
 
 [dev-dependencies.alloy-node-bindings]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dev-dependencies.alloy-primitives]
@@ -147,12 +147,12 @@ version = "1.4.1"
 default-features = false
 
 [dev-dependencies.alloy-transport-ipc]
-version = "1.6.3"
+version = "1.7.3"
 features = ["mock"]
 default-features = false
 
 [dev-dependencies.alloy-transport-ws]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dev-dependencies.ci_info]
@@ -171,7 +171,7 @@ version = "3"
 version = "0.4.0"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies.alloy-transport-ipc]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 

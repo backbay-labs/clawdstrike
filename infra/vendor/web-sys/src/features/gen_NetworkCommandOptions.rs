@@ -394,6 +394,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `NetworkCommandOptions`*"]
     #[wasm_bindgen(method, setter = "threshold")]
     pub fn set_threshold(this: &NetworkCommandOptions, val: f64);
+    #[doc = "Change the `threshold` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `NetworkCommandOptions`*"]
+    #[wasm_bindgen(method, setter = "threshold")]
+    pub fn set_threshold_i32(this: &NetworkCommandOptions, val: i32);
+    #[doc = "Change the `threshold` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `NetworkCommandOptions`*"]
+    #[wasm_bindgen(method, setter = "threshold")]
+    pub fn set_threshold_f64(this: &NetworkCommandOptions, val: f64);
     #[doc = "Get the `usbEndIp` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `NetworkCommandOptions`*"]

@@ -58,16 +58,6 @@ async function benchmark(
   };
 }
 
-function formatResult(result: BenchmarkResult): string {
-  return [
-    `${result.name}`,
-    `  avg: ${result.avgMs.toFixed(4)}ms`,
-    `  min: ${result.minMs.toFixed(4)}ms`,
-    `  max: ${result.maxMs.toFixed(4)}ms`,
-    `  ops/sec: ${result.opsPerSec.toFixed(0)}`,
-  ].join("\n");
-}
-
 function printTable(results: BenchmarkResult[]): void {
   console.log("\n" + "=".repeat(70));
   console.log("BENCHMARK RESULTS");

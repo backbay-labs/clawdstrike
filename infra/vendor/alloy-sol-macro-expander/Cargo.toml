@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-sol-macro-expander"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -59,12 +59,12 @@ name = "alloy_sol_macro_expander"
 path = "src/lib.rs"
 
 [dependencies.alloy-json-abi]
-version = "1.5.4"
+version = "1.5.7"
 optional = true
 default-features = false
 
 [dependencies.alloy-sol-macro-input]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.heck]
@@ -101,7 +101,7 @@ version = "2.0"
 features = ["extra-traits"]
 
 [dependencies.syn-solidity]
-version = "1.5.4"
+version = "1.5.7"
 features = [
     "visit",
     "visit-mut",

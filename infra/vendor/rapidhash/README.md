@@ -2,27 +2,27 @@
 
 A rust implementation of [rapidhash](https://github.com/Nicoshev/rapidhash), the official successor to [wyhash](https://github.com/wangyi-fudan/wyhash).
 
-- **High quality**, the fastest hash passing all tests in the SMHasher and SMHasher3 benchmarks. Collision-based study showed a collision probability that's close to ideal.
-- **Very fast**, the fastest passing hash in SMHasher3. Significant peak throughput improvement over wyhash and foldhash. Fastest platform-independent hash. Fastest const hash.
-- **Platform independent and no-std compatible**, works on all platforms, no dependency on machine-specific vectorized or cryptographic hardware instructions. Optimized for both AMD64 and AArch64.
+- **High quality** – the fastest hash to pass all [SMHasher](https://github.com/rurban/smhasher) and [SMHasher3](https://gitlab.com/fwojcik/smhasher3) tests, with near-ideal collision probability.
+- **Very fast** – significant throughput improvement over wyhash and foldhash.
+- **Platform independent and no-std compatible** – stable hash output on all platforms with no dependency on vectorized or cryptographic hardware instructions. Optimized for both AMD64 and AArch64.
 - **Official successor to wyhash** with improved speed, quality, and compatibility.
-- **Run-time and compile-time hashing** as the hash implementation is fully `const`.
+- **Run-time and compile-time hashing** – the hash implementation is fully `const`.
 - **Idiomatic** `std::hash::Hasher` compatible hasher for `HashMap` and `HashSet`.
-- **Non-cryptographic** hash function that's "minimally DoS resistant" in the same manner as foldhash.
-- **Streamable** hashing for large files and other streams.
-- **CLI tool** for convenient hashing of files or stdin.
+- **Non-cryptographic** – "minimally DoS resistant" in the same manner as foldhash.
+- **Streamable** – incremental and `Read`-based hashing for large files and other streams.
+- **CLI tool** for hashing files or stdin.
 
 **Sponsored by [Upon](https://uponvault.com?utm_source=github&utm_campaign=rapidhash)**, inheritance vaults for your digital life. Ensure your family can access your devices, accounts, and assets when the unexpected happens.
 
 ## Usage
 ### In-Memory Hashing
-Following rust's `std::hash` traits, the underlying hash function may change between minor versions, and is only suitable for in-memory hashing. These types are optimized for speed and minimal DoS resistance, available in the `rapidhash::fast` and `rapidhash::quality` flavours.
+The in-memory hasher follows rust's `std::hash` traits. The underlying hash function may change between minor versions and is only suitable for in-memory use (e.g. `HashMap`, `HashSet`). Available in `rapidhash::fast` and `rapidhash::quality` flavours.
 
-- `RapidHasher`: A `std::hash::Hasher` compatible hasher that uses the rapidhash algorithm.
-- `RandomState`: A `std::hash::BuildHasher` for initializing the hasher with a random seed and secrets.
-- `GlobalState`: A `std::hash::BuildHasher` for initializing the hasher with global seed and secrets, randomized once per process.
-- `SeedableState`: A `std::hash::BuildHasher` for initializing the hasher with a custom seed and secrets.
-- `RapidHashMap` and `RapidHashSet`: Helper types for using `fast::RandomState` with `HashMap` and `HashSet`.
+- `RapidHasher`: a `std::hash::Hasher` compatible hasher using the rapidhash algorithm.
+- `RandomState`: a `std::hash::BuildHasher` that initializes the hasher with a random seed and secrets.
+- `GlobalState`: a `std::hash::BuildHasher` that initializes the hasher with a global seed and secrets, randomized once per process.
+- `SeedableState`: a `std::hash::BuildHasher` that initializes the hasher with a custom seed and secrets.
+- `RapidHashMap` / `RapidHashSet`: helper types using `fast::RandomState` with `HashMap` and `HashSet`.
 
 ```rust
 use rapidhash::RapidHashMap;
@@ -42,38 +42,38 @@ assert_eq!(hasher.hash_one(b"hello world"), 3348275917668072623);
 ```
 
 ### Portable Hashing
-Full compatibility with C++ rapidhash algorithms, methods are provided for all rapidhash V1, V2, and V3 (with micro/nano) variants. These are stable functions whose output will not change between crate versions.
+Fully compatible with the C++ rapidhash algorithms. Methods are provided for all rapidhash V1, V2, and V3 (with micro/nano) variants. These are stable functions whose output will not change between crate versions.
 
 ```rust
-use std::hash::{BuildHasher, Hasher};
-use rapidhash::v3::{rapidhash_v3_seeded, rapidhash_v3_file_seeded, RapidSecrets};
+use rapidhash::v3::{rapidhash_v3_seeded, rapidhash_v3_file_seeded, RapidSecrets, RapidStreamHasherV3};
 
 /// Set your global hashing secrets.
 /// - For HashDoS resistance, choose a randomized secret.
 /// - For C++ compatibility, use the `seed_cpp` method or `DEFAULT_RAPID_SECRETS`.
-const RAPID_SECRETS: RapidSecrets = RapidSecrets::seed(0x123456);
+const SECRETS: RapidSecrets = RapidSecrets::seed(0x123456);
 
-/// A helper function for your chosen rapidhash version and secrets.
-#[inline]
-pub fn rapidhash(data: &[u8]) -> u64 {
-    rapidhash_v3_seeded(data, &RAPID_SECRETS)
-}
+// Bulk: hash a complete byte slice.
+let bulk = rapidhash_v3_seeded(b"hello world", &SECRETS);
 
-/// Hash streaming data with the rapidhash V3 algorithm.
-pub fn rapidhash_stream<R: std::io::Read>(reader: R) -> std::io::Result<u64> {
-    rapidhash_v3_file_seeded(reader, &RAPID_SECRETS)
-}
+// Stream: write chunks of any size, same output regardless of chunk boundaries.
+let mut hasher = RapidStreamHasherV3::new(&SECRETS);
+hasher.write(b"hello ");
+hasher.write(b"world");
+let stream = hasher.finish();
 
-assert_eq!(rapidhash(b"hello world"), 11653223729569656151);
-assert_eq!(rapidhash_stream(std::io::Cursor::new(b"hello world")).unwrap(), 11653223729569656151);
+// Read: hash from any `Read` source (files, cursors, etc.).
+let read = rapidhash_v3_file_seeded(std::io::Cursor::new(b"hello world"), &SECRETS).unwrap();
+
+assert_eq!(bulk, stream);
+assert_eq!(bulk, read);
 ```
 
-Please see the [`portable-hash` crate](https://github.com/hoxxep/portable-hash?tab=readme-ov-file#whats-wrong-with-the-stdhash-traits) for why using the standard library hashing traits is not recommended for portable hashing. Rapidhash is planning to implement the `PortableHash` and `PortableHasher` traits in a future release.
+See the [`portable-hash` crate](https://github.com/hoxxep/portable-hash?tab=readme-ov-file#whats-wrong-with-the-stdhash-traits) for why using the standard library hashing traits is not recommended for portable hashing. Rapidhash is planning to implement the `PortableHash` and `PortableHasher` traits in a future release.
 
 ### CLI
-Rapidhash can also be installed as a CLI tool to hash files or stdin. This is not a cryptographic hash, but should be much faster than cryptographic hashes. This is fully compatible with the C++ rapidhash V1, V2, and V3 algorithms.
+Rapidhash can be installed as a CLI tool to hash files or stdin. Not a cryptographic hash, but much faster than one. Fully compatible with the C++ rapidhash V1, V2, and V3 algorithms.
 
-Output is the decimal string of the `u64` hash value.
+Output is the decimal `u64` hash value.
 
 ```shell
 # install
@@ -97,7 +97,7 @@ echo "example" | rapidhash --v3
 
 ## Benchmarks
 
-In our benchmarking, rapidhash is one of the fastest general-purpose non-cryptographic hash functions. It places second to gxhash on some benchmarks, but gxhash is not portable, requires AES instructions to compile, and its main advantage is hashing string types. Between rapidhash, gxhash, and the default siphasher, we see little reason to use other hash functions on modern platforms without specifically benchmarking them for your workload and platform.
+In our benchmarking, rapidhash is one of the fastest general-purpose non-cryptographic hash functions. It places second to gxhash on some benchmarks, but gxhash is not portable and requires AES instructions to compile.
 
 ![Hashing Benchmarks](https://github.com/hoxxep/rapidhash/raw/master/docs/bench_hash_aarch64_apple_m1_max.svg)
 
@@ -276,12 +276,12 @@ Rust hashing traits (`RapidHasher`, `RandomState`, etc.) are implemented in `rap
 ## Crate Versioning
 The minimum supported Rust version (MSRV) is 1.71.0.
 
-The rapidhash crate follows the following versioning scheme:
-- Major for breaking API changes and MSRV version bumps or any changes to `rapidhash_v*` method output.
-- Minor for significant API additions/deprecations or any changes to `RapidHasher` output.
-- Patch for bug fixes and performance improvements.
+The rapidhash crate follows this versioning scheme:
+- **Major**: breaking API changes, MSRV bumps, or any changes to `rapidhash_v*` output.
+- **Minor**: API additions/deprecations, or changes to `RapidHasher` output.
+- **Patch**: bug fixes and performance improvements.
 
-Portable hash outputs (eg. `rapidhash_v3`) are guaranteed to be stable. In-memory hash outputs (eg. `RapidHasher`) may change between minor versions to allow us to freely improve performance.
+Portable hash outputs (e.g. `rapidhash_v3`) are guaranteed to be stable. In-memory hash outputs (e.g. `RapidHasher`) may change between minor versions to allow freely improving performance.
 
 ## License and Acknowledgements
 This project is licensed under both the MIT and Apache-2.0 licenses. You are free to choose either license.

@@ -295,7 +295,6 @@ def verify_fixture(
     if isinstance(metadata, dict) and "receipt_profile" in metadata:
         profile = metadata.get("receipt_profile")
 
-    mode = "baseline"
     if profile is None:
         mode = "baseline"
     elif profile == "cua.v1":

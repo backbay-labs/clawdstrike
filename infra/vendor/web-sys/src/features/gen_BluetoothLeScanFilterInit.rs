@@ -103,7 +103,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "services")]
-    pub fn set_services(this: &BluetoothLeScanFilterInit, val: &::wasm_bindgen::JsValue);
+    pub fn set_services(this: &BluetoothLeScanFilterInit, val: &[::js_sys::JsString]);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `services` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `BluetoothLeScanFilterInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "services")]
+    pub fn set_services_u32_sequence(this: &BluetoothLeScanFilterInit, val: &[::js_sys::Number]);
 }
 #[cfg(web_sys_unstable_apis)]
 impl BluetoothLeScanFilterInit {
@@ -144,7 +153,7 @@ impl BluetoothLeScanFilterInit {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_services()` instead."]
-    pub fn services(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn services(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_services(val);
         self
     }

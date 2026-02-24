@@ -30,6 +30,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `HmacImportParams`*"]
     #[wasm_bindgen(method, setter = "hash")]
     pub fn set_hash(this: &HmacImportParams, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `hash` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HmacImportParams`*"]
+    #[wasm_bindgen(method, setter = "hash")]
+    pub fn set_hash_object(this: &HmacImportParams, val: &::js_sys::Object);
+    #[doc = "Change the `hash` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HmacImportParams`*"]
+    #[wasm_bindgen(method, setter = "hash")]
+    pub fn set_hash_str(this: &HmacImportParams, val: &str);
 }
 impl HmacImportParams {
     #[doc = "Construct a new `HmacImportParams`."]
@@ -40,6 +50,26 @@ impl HmacImportParams {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret.set_name(name);
         ret.set_hash(hash);
+        ret
+    }
+    #[doc = "Construct a new `HmacImportParams`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HmacImportParams`*"]
+    pub fn new_with_object(name: &str, hash: &::js_sys::Object) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_hash_object(hash);
+        ret
+    }
+    #[doc = "Construct a new `HmacImportParams`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `HmacImportParams`*"]
+    pub fn new_with_str(name: &str, hash: &str) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_hash_str(hash);
         ret
     }
     #[deprecated = "Use `set_name()` instead."]

@@ -224,7 +224,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "uuids")]
-    pub fn set_uuids(this: &BluetoothAdvertisingEventInit, val: &::wasm_bindgen::JsValue);
+    pub fn set_uuids(this: &BluetoothAdvertisingEventInit, val: &[::js_sys::JsString]);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `uuids` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `BluetoothAdvertisingEventInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "uuids")]
+    pub fn set_uuids_u32_sequence(this: &BluetoothAdvertisingEventInit, val: &[::js_sys::Number]);
 }
 #[cfg(web_sys_unstable_apis)]
 impl BluetoothAdvertisingEventInit {
@@ -306,7 +315,7 @@ impl BluetoothAdvertisingEventInit {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_uuids()` instead."]
-    pub fn uuids(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn uuids(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_uuids(val);
         self
     }

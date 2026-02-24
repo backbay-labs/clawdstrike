@@ -31,7 +31,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "duration")]
-    pub fn set_duration(this: &GamepadEffectParameters, val: f64);
+    pub fn set_duration(this: &GamepadEffectParameters, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `duration` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GamepadEffectParameters`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "duration")]
+    pub fn set_duration_f64(this: &GamepadEffectParameters, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `leftTrigger` field of this object."]
     #[doc = ""]
@@ -85,7 +94,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "startDelay")]
-    pub fn set_start_delay(this: &GamepadEffectParameters, val: f64);
+    pub fn set_start_delay(this: &GamepadEffectParameters, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `startDelay` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GamepadEffectParameters`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "startDelay")]
+    pub fn set_start_delay_f64(this: &GamepadEffectParameters, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `strongMagnitude` field of this object."]
     #[doc = ""]
@@ -138,7 +156,7 @@ impl GamepadEffectParameters {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_duration()` instead."]
-    pub fn duration(&mut self, val: f64) -> &mut Self {
+    pub fn duration(&mut self, val: u32) -> &mut Self {
         self.set_duration(val);
         self
     }
@@ -156,7 +174,7 @@ impl GamepadEffectParameters {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_start_delay()` instead."]
-    pub fn start_delay(&mut self, val: f64) -> &mut Self {
+    pub fn start_delay(&mut self, val: u32) -> &mut Self {
         self.set_start_delay(val);
         self
     }

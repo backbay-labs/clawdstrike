@@ -29,15 +29,15 @@ pub const fn rapidhash_v2_2_seeded(data: &[u8], secrets: &RapidSecrets) -> u64 {
 ///
 /// Compile time arguments:
 /// - `MINOR`: the minor version of the rapidhash algorithm:
-///     - 0: v2.0
-///     - 1: v2.1
-///     - 2: v2.2
+///   - 0: v2.0
+///   - 1: v2.1
+///   - 2: v2.2
 /// - `AVALANCHE`: Perform an extra mix step to avalanche the bits for higher hash quality. Enabled
-///     by default to match the C++ implementation.
+///   by default to match the C++ implementation.
 /// - `COMPACT`: Generates fewer instructions at compile time with less manual loop unrolling, but
-///     may be slower on some platforms. Disabled by default.
+///   may be slower on some platforms. Disabled by default.
 /// - `PROTECTED`: Slightly stronger hash quality and DoS resistance by performing two extra XOR
-///     instructions on every mix step. Disabled by default.
+///   instructions on every mix step. Disabled by default.
 #[inline(always)]
 pub const fn rapidhash_v2_inline<const MINOR: u8, const AVALANCHE: bool, const COMPACT: bool, const PROTECTED: bool>(data: &[u8], secrets: &RapidSecrets) -> u64 {
     rapidhash_core::<MINOR, AVALANCHE, COMPACT, PROTECTED>(secrets.seed, &secrets.secrets, data)

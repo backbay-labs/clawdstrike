@@ -75,6 +75,28 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn visible_rect(this: &VideoFrame) -> Option<DomRectReadOnly>;
     #[cfg(web_sys_unstable_apis)]
+    # [wasm_bindgen (structural , method , getter , js_class = "VideoFrame" , js_name = rotation)]
+    #[doc = "Getter for the `rotation` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/rotation)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn rotation(this: &VideoFrame) -> f64;
+    #[cfg(web_sys_unstable_apis)]
+    # [wasm_bindgen (structural , method , getter , js_class = "VideoFrame" , js_name = flip)]
+    #[doc = "Getter for the `flip` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/flip)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn flip(this: &VideoFrame) -> bool;
+    #[cfg(web_sys_unstable_apis)]
     # [wasm_bindgen (structural , method , getter , js_class = "VideoFrame" , js_name = displayWidth)]
     #[doc = "Getter for the `displayWidth` field of this object."]
     #[doc = ""]
@@ -412,52 +434,58 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn close(this: &VideoFrame);
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PlaneLayout")]
     # [wasm_bindgen (method , structural , js_class = "VideoFrame" , js_name = copyTo)]
     #[doc = "The `copyTo()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/copyTo)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrame`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn copy_to_with_buffer_source(
         this: &VideoFrame,
         destination: &::js_sys::Object,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<::js_sys::Array<PlaneLayout>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PlaneLayout")]
     # [wasm_bindgen (method , structural , js_class = "VideoFrame" , js_name = copyTo)]
     #[doc = "The `copyTo()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/copyTo)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrame`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn copy_to_with_u8_slice(this: &VideoFrame, destination: &mut [u8]) -> ::js_sys::Promise;
+    pub fn copy_to_with_u8_slice(
+        this: &VideoFrame,
+        destination: &mut [u8],
+    ) -> ::js_sys::Promise<::js_sys::Array<PlaneLayout>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PlaneLayout")]
     # [wasm_bindgen (method , structural , js_class = "VideoFrame" , js_name = copyTo)]
     #[doc = "The `copyTo()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/copyTo)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrame`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn copy_to_with_u8_array(
         this: &VideoFrame,
         destination: &::js_sys::Uint8Array,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<::js_sys::Array<PlaneLayout>>;
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "VideoFrameCopyToOptions")]
+    #[cfg(all(feature = "PlaneLayout", feature = "VideoFrameCopyToOptions",))]
     # [wasm_bindgen (method , structural , js_class = "VideoFrame" , js_name = copyTo)]
     #[doc = "The `copyTo()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/copyTo)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`, `VideoFrameCopyToOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrame`, `VideoFrameCopyToOptions`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
@@ -465,15 +493,15 @@ extern "C" {
         this: &VideoFrame,
         destination: &::js_sys::Object,
         options: &VideoFrameCopyToOptions,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<::js_sys::Array<PlaneLayout>>;
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "VideoFrameCopyToOptions")]
+    #[cfg(all(feature = "PlaneLayout", feature = "VideoFrameCopyToOptions",))]
     # [wasm_bindgen (method , structural , js_class = "VideoFrame" , js_name = copyTo)]
     #[doc = "The `copyTo()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/copyTo)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`, `VideoFrameCopyToOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrame`, `VideoFrameCopyToOptions`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
@@ -481,15 +509,15 @@ extern "C" {
         this: &VideoFrame,
         destination: &mut [u8],
         options: &VideoFrameCopyToOptions,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<::js_sys::Array<PlaneLayout>>;
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "VideoFrameCopyToOptions")]
+    #[cfg(all(feature = "PlaneLayout", feature = "VideoFrameCopyToOptions",))]
     # [wasm_bindgen (method , structural , js_class = "VideoFrame" , js_name = copyTo)]
     #[doc = "The `copyTo()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/copyTo)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`, `VideoFrameCopyToOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PlaneLayout`, `VideoFrame`, `VideoFrameCopyToOptions`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
@@ -497,5 +525,17 @@ extern "C" {
         this: &VideoFrame,
         destination: &::js_sys::Uint8Array,
         options: &VideoFrameCopyToOptions,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<::js_sys::Array<PlaneLayout>>;
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "VideoFrameMetadata")]
+    # [wasm_bindgen (method , structural , js_class = "VideoFrame" , js_name = metadata)]
+    #[doc = "The `metadata()` method."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/metadata)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrame`, `VideoFrameMetadata`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn metadata(this: &VideoFrame) -> VideoFrameMetadata;
 }

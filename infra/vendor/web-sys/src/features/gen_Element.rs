@@ -84,6 +84,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `Element`, `NamedNodeMap`*"]
     pub fn attributes(this: &Element) -> NamedNodeMap;
+    #[cfg(not(web_sys_unstable_apis))]
     # [wasm_bindgen (structural , method , getter , js_class = "Element" , js_name = scrollTop)]
     #[doc = "Getter for the `scrollTop` field of this object."]
     #[doc = ""]
@@ -91,6 +92,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `Element`*"]
     pub fn scroll_top(this: &Element) -> i32;
+    #[cfg(not(web_sys_unstable_apis))]
     # [wasm_bindgen (structural , method , setter , js_class = "Element" , js_name = scrollTop)]
     #[doc = "Setter for the `scrollTop` field of this object."]
     #[doc = ""]
@@ -98,6 +100,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `Element`*"]
     pub fn set_scroll_top(this: &Element, value: i32);
+    #[cfg(not(web_sys_unstable_apis))]
     # [wasm_bindgen (structural , method , getter , js_class = "Element" , js_name = scrollLeft)]
     #[doc = "Getter for the `scrollLeft` field of this object."]
     #[doc = ""]
@@ -105,6 +108,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `Element`*"]
     pub fn scroll_left(this: &Element) -> i32;
+    #[cfg(not(web_sys_unstable_apis))]
     # [wasm_bindgen (structural , method , setter , js_class = "Element" , js_name = scrollLeft)]
     #[doc = "Setter for the `scrollLeft` field of this object."]
     #[doc = ""]
@@ -212,6 +216,50 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `Element`*"]
     pub fn set_slot(this: &Element, value: &str);
+    #[cfg(web_sys_unstable_apis)]
+    # [wasm_bindgen (structural , method , getter , js_class = "Element" , js_name = scrollTop)]
+    #[doc = "Getter for the `scrollTop` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Element`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn scroll_top(this: &Element) -> f64;
+    #[cfg(web_sys_unstable_apis)]
+    # [wasm_bindgen (structural , method , setter , js_class = "Element" , js_name = scrollTop)]
+    #[doc = "Setter for the `scrollTop` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Element`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn set_scroll_top(this: &Element, value: f64);
+    #[cfg(web_sys_unstable_apis)]
+    # [wasm_bindgen (structural , method , getter , js_class = "Element" , js_name = scrollLeft)]
+    #[doc = "Getter for the `scrollLeft` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollLeft)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Element`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn scroll_left(this: &Element) -> f64;
+    #[cfg(web_sys_unstable_apis)]
+    # [wasm_bindgen (structural , method , setter , js_class = "Element" , js_name = scrollLeft)]
+    #[doc = "Setter for the `scrollLeft` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollLeft)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Element`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn set_scroll_left(this: &Element, value: f64);
     # [wasm_bindgen (structural , method , getter , js_class = "Element" , js_name = previousElementSibling)]
     #[doc = "Getter for the `previousElementSibling` field of this object."]
     #[doc = ""]
@@ -708,31 +756,32 @@ extern "C" {
         options: &KeyframeAnimationOptions,
     ) -> Animation;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "Animation")]
     # [wasm_bindgen (method , structural , js_class = "Element" , js_name = getAnimations)]
     #[doc = "The `getAnimations()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/getAnimations)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `Element`*"]
+    #[doc = "*This API requires the following crate features to be activated: `Animation`, `Element`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn get_animations(this: &Element) -> ::js_sys::Array;
+    pub fn get_animations(this: &Element) -> ::js_sys::Array<Animation>;
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "GetAnimationsOptions")]
+    #[cfg(all(feature = "Animation", feature = "GetAnimationsOptions",))]
     # [wasm_bindgen (method , structural , js_class = "Element" , js_name = getAnimations)]
     #[doc = "The `getAnimations()` method."]
     #[doc = ""]
     #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/getAnimations)"]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `Element`, `GetAnimationsOptions`*"]
+    #[doc = "*This API requires the following crate features to be activated: `Animation`, `Element`, `GetAnimationsOptions`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn get_animations_with_options(
         this: &Element,
         options: &GetAnimationsOptions,
-    ) -> ::js_sys::Array;
+    ) -> ::js_sys::Array<Animation>;
     # [wasm_bindgen (catch , method , structural , variadic , js_class = "Element" , js_name = after)]
     #[doc = "The `after()` method."]
     #[doc = ""]

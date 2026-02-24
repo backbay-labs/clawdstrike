@@ -1,6 +1,6 @@
 {
   "git": {
-    "sha1": "6cdba416ccef28b2d12c2f460cfe94a774393560"
+    "sha1": "1ed46a6bef2c02d97b6b4195161ddbd8c88c3179"
   },
   "path_in_vcs": "crates/sol-macro"
 }

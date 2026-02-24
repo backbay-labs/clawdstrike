@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy-transport"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -49,7 +49,7 @@ name = "alloy_transport"
 path = "src/lib.rs"
 
 [dependencies.alloy-json-rpc]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.auto_impl]

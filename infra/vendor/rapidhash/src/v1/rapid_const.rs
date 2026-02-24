@@ -21,13 +21,13 @@ pub const fn rapidhash_v1_seeded(data: &[u8], secrets: &RapidSecrets) -> u64 {
 ///
 /// Compile time arguments:
 /// - `AVALANCHE`: Perform an extra mix step to avalanche the bits for higher hash quality. Enabled
-///     by default to match the C++ implementation.
+///   by default to match the C++ implementation.
 /// - `COMPACT`: Generates fewer instructions at compile time with less manual loop unrolling, but
-///     may be slower on some platforms. Disabled by default.
+///   may be slower on some platforms. Disabled by default.
 /// - `PROTECTED`: Slightly stronger hash quality and DoS resistance by performing two extra XOR
-///     instructions on every mix step. Disabled by default.
+///   instructions on every mix step. Disabled by default.
 /// - `V1_BUG`: True to re-introduce the bug that was present on 48 byte length inputs in the
-///     1.x crate versions for backwards compatibility with the old rust implementation.
+///   1.x crate versions for backwards compatibility with the old rust implementation.
 #[inline(always)]
 pub const fn rapidhash_v1_inline<const AVALANCHE: bool, const COMPACT: bool, const PROTECTED: bool, const V1_BUG: bool>(data: &[u8], secrets: &RapidSecrets) -> u64 {
     rapidhash_core::<AVALANCHE, COMPACT, PROTECTED, V1_BUG>(secrets.seed, &secrets.secrets, data)

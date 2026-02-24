@@ -22,7 +22,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "constants")]
-    pub fn get_constants(this: &GpuVertexState) -> Option<::js_sys::Object>;
+    pub fn get_constants(this: &GpuVertexState) -> Option<::js_sys::Object<::js_sys::Number>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `constants` field of this object."]
     #[doc = ""]
@@ -31,7 +31,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "constants")]
-    pub fn set_constants(this: &GpuVertexState, val: &::js_sys::Object);
+    pub fn set_constants(this: &GpuVertexState, val: &::js_sys::Object<::js_sys::Number>);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `entryPoint` field of this object."]
     #[doc = ""]
@@ -71,23 +71,27 @@ extern "C" {
     #[wasm_bindgen(method, setter = "module")]
     pub fn set_module(this: &GpuVertexState, val: &GpuShaderModule);
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuVertexBufferLayout")]
     #[doc = "Get the `buffers` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuVertexState`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuVertexBufferLayout`, `GpuVertexState`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "buffers")]
-    pub fn get_buffers(this: &GpuVertexState) -> Option<::js_sys::Array>;
+    pub fn get_buffers(
+        this: &GpuVertexState,
+    ) -> Option<::js_sys::Array<::js_sys::JsOption<GpuVertexBufferLayout>>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuVertexBufferLayout")]
     #[doc = "Change the `buffers` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `GpuVertexState`*"]
+    #[doc = "*This API requires the following crate features to be activated: `GpuVertexBufferLayout`, `GpuVertexState`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "buffers")]
-    pub fn set_buffers(this: &GpuVertexState, val: &::wasm_bindgen::JsValue);
+    pub fn set_buffers(this: &GpuVertexState, val: &[::js_sys::JsOption<GpuVertexBufferLayout>]);
 }
 #[cfg(web_sys_unstable_apis)]
 impl GpuVertexState {
@@ -106,7 +110,7 @@ impl GpuVertexState {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_constants()` instead."]
-    pub fn constants(&mut self, val: &::js_sys::Object) -> &mut Self {
+    pub fn constants(&mut self, val: &::js_sys::Object<::js_sys::Number>) -> &mut Self {
         self.set_constants(val);
         self
     }
@@ -124,8 +128,9 @@ impl GpuVertexState {
         self
     }
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuVertexBufferLayout")]
     #[deprecated = "Use `set_buffers()` instead."]
-    pub fn buffers(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn buffers(&mut self, val: &[::js_sys::JsOption<GpuVertexBufferLayout>]) -> &mut Self {
         self.set_buffers(val);
         self
     }

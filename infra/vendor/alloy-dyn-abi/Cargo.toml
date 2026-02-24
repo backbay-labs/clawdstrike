@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-dyn-abi"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -92,19 +92,19 @@ path = "benches/types.rs"
 harness = false
 
 [dependencies.alloy-json-abi]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.alloy-primitives]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.alloy-sol-type-parser]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.alloy-sol-types]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.arbitrary]

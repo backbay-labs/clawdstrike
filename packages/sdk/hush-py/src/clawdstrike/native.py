@@ -38,63 +38,31 @@ try:
     merkle_root_native = _merkle_root_native
     verify_receipt_native = _verify_receipt_native
 
-    # Try to import optional functions that may not exist in older versions
-    try:
-        from hush_native import keccak256_native as _keccak256_native
-        keccak256_native = _keccak256_native
-    except ImportError:
-        pass
+    # Import optional functions that may not exist in older versions.
+    # Uses getattr to avoid repetitive try/except ImportError blocks.
+    import hush_native as _hush_native_mod
 
-    try:
-        from hush_native import verify_ed25519_native as _verify_ed25519_native
-        verify_ed25519_native = _verify_ed25519_native
-    except ImportError:
-        pass
+    _OPTIONAL_BINDINGS = [
+        "keccak256_native",
+        "verify_ed25519_native",
+        "generate_merkle_proof_native",
+        "canonicalize_native",
+        "detect_jailbreak_native",
+        "sanitize_output_native",
+        "watermark_public_key_native",
+        "watermark_prompt_native",
+        "extract_watermark_native",
+    ]
+    for _name in _OPTIONAL_BINDINGS:
+        _fn = getattr(_hush_native_mod, _name, None)
+        if _fn is not None:
+            globals()[_name] = _fn
 
-    try:
-        from hush_native import generate_merkle_proof_native as _generate_merkle_proof_native
-        generate_merkle_proof_native = _generate_merkle_proof_native
-    except ImportError:
-        pass
-
-    try:
-        from hush_native import canonicalize_native as _canonicalize_native
-        canonicalize_native = _canonicalize_native
-    except ImportError:
-        pass
-
-    try:
-        from hush_native import detect_jailbreak_native as _detect_jailbreak_native
-        detect_jailbreak_native = _detect_jailbreak_native
-    except ImportError:
-        pass
-
-    try:
-        from hush_native import sanitize_output_native as _sanitize_output_native
-        sanitize_output_native = _sanitize_output_native
-    except ImportError:
-        pass
-
-    try:
-        from hush_native import watermark_public_key_native as _watermark_public_key_native
-        watermark_public_key_native = _watermark_public_key_native
-    except ImportError:
-        pass
-
-    try:
-        from hush_native import watermark_prompt_native as _watermark_prompt_native
-        watermark_prompt_native = _watermark_prompt_native
-    except ImportError:
-        pass
-
-    try:
-        from hush_native import extract_watermark_native as _extract_watermark_native
-        extract_watermark_native = _extract_watermark_native
-    except ImportError:
-        pass
+    del _hush_native_mod, _OPTIONAL_BINDINGS, _name, _fn
 
 except ImportError:
-    pass
+    # hush_native is not installed; all native_* bindings remain None.
+    NATIVE_AVAILABLE = False
 
 
 __all__ = [

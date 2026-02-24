@@ -87,7 +87,72 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "duration")]
-    pub fn set_duration(this: &VideoFrameInit, val: f64);
+    pub fn set_duration(this: &VideoFrameInit, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `duration` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "duration")]
+    pub fn set_duration_f64(this: &VideoFrameInit, val: f64);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Get the `flip` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, getter = "flip")]
+    pub fn get_flip(this: &VideoFrameInit) -> Option<bool>;
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `flip` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "flip")]
+    pub fn set_flip(this: &VideoFrameInit, val: bool);
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "VideoFrameMetadata")]
+    #[doc = "Get the `metadata` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`, `VideoFrameMetadata`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, getter = "metadata")]
+    pub fn get_metadata(this: &VideoFrameInit) -> Option<VideoFrameMetadata>;
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "VideoFrameMetadata")]
+    #[doc = "Change the `metadata` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`, `VideoFrameMetadata`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "metadata")]
+    pub fn set_metadata(this: &VideoFrameInit, val: &VideoFrameMetadata);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Get the `rotation` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, getter = "rotation")]
+    pub fn get_rotation(this: &VideoFrameInit) -> Option<f64>;
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `rotation` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "rotation")]
+    pub fn set_rotation(this: &VideoFrameInit, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `timestamp` field of this object."]
     #[doc = ""]
@@ -105,7 +170,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "timestamp")]
-    pub fn set_timestamp(this: &VideoFrameInit, val: f64);
+    pub fn set_timestamp(this: &VideoFrameInit, val: i32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `timestamp` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `VideoFrameInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "timestamp")]
+    pub fn set_timestamp_f64(this: &VideoFrameInit, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "DomRectInit")]
     #[doc = "Get the `visibleRect` field of this object."]
@@ -161,13 +235,32 @@ impl VideoFrameInit {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_duration()` instead."]
-    pub fn duration(&mut self, val: f64) -> &mut Self {
+    pub fn duration(&mut self, val: u32) -> &mut Self {
         self.set_duration(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
+    #[deprecated = "Use `set_flip()` instead."]
+    pub fn flip(&mut self, val: bool) -> &mut Self {
+        self.set_flip(val);
+        self
+    }
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "VideoFrameMetadata")]
+    #[deprecated = "Use `set_metadata()` instead."]
+    pub fn metadata(&mut self, val: &VideoFrameMetadata) -> &mut Self {
+        self.set_metadata(val);
+        self
+    }
+    #[cfg(web_sys_unstable_apis)]
+    #[deprecated = "Use `set_rotation()` instead."]
+    pub fn rotation(&mut self, val: f64) -> &mut Self {
+        self.set_rotation(val);
+        self
+    }
+    #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_timestamp()` instead."]
-    pub fn timestamp(&mut self, val: f64) -> &mut Self {
+    pub fn timestamp(&mut self, val: i32) -> &mut Self {
         self.set_timestamp(val);
         self
     }

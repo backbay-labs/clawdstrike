@@ -4,7 +4,7 @@ use core::{
     slice,
 };
 
-use crate::flag::{EventFlags, MapFlags, PtraceFlags};
+use crate::flag::{EventFlags, MapFlags, PtraceFlags, StdFsCallKind};
 
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
@@ -170,6 +170,49 @@ impl DerefMut for StatVfs {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
             slice::from_raw_parts_mut(self as *mut StatVfs as *mut u8, mem::size_of::<StatVfs>())
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[repr(C, packed)]
+pub struct StdFsCallMeta {
+    pub kind: u8, // enum StdFsCallKind
+    _rsvd: [u8; 7],
+    pub arg1: u64,
+    pub arg2: u64,
+}
+
+impl StdFsCallMeta {
+    pub fn new(kind: StdFsCallKind, arg1: u64, arg2: u64) -> Self {
+        Self {
+            kind: kind as u8,
+            _rsvd: [0; 7],
+            arg1,
+            arg2,
+        }
+    }
+}
+
+impl Deref for StdFsCallMeta {
+    type Target = [u64];
+    fn deref(&self) -> &[u64] {
+        unsafe {
+            slice::from_raw_parts(
+                self as *const StdFsCallMeta as *const u64,
+                mem::size_of::<StdFsCallMeta>() / mem::size_of::<u64>(),
+            )
+        }
+    }
+}
+
+impl DerefMut for StdFsCallMeta {
+    fn deref_mut(&mut self) -> &mut [u64] {
+        unsafe {
+            slice::from_raw_parts_mut(
+                self as *mut StdFsCallMeta as *mut u64,
+                mem::size_of::<StdFsCallMeta>() / mem::size_of::<u64>(),
+            )
         }
     }
 }

@@ -153,33 +153,31 @@ impl PartialEq for ASN1Block {
     fn eq(&self, other: &ASN1Block) -> bool {
         match (self, other) {
             (&ASN1Block::Boolean(_, a1), &ASN1Block::Boolean(_, a2)) => a1 == a2,
-            (&ASN1Block::Integer(_, ref a1), &ASN1Block::Integer(_, ref a2)) => a1 == a2,
+            (ASN1Block::Integer(_, ref a1), ASN1Block::Integer(_, ref a2)) => a1 == a2,
             (&ASN1Block::BitString(_, a1, ref b1), &ASN1Block::BitString(_, a2, ref b2)) => {
                 (a1 == a2) && (b1 == b2)
             }
-            (&ASN1Block::OctetString(_, ref a1), &ASN1Block::OctetString(_, ref a2)) => a1 == a2,
-            (&ASN1Block::Null(_), &ASN1Block::Null(_)) => true,
-            (&ASN1Block::ObjectIdentifier(_, ref a1), &ASN1Block::ObjectIdentifier(_, ref a2)) => {
+            (ASN1Block::OctetString(_, ref a1), ASN1Block::OctetString(_, ref a2)) => a1 == a2,
+            (ASN1Block::Null(_), &ASN1Block::Null(_)) => true,
+            (ASN1Block::ObjectIdentifier(_, ref a1), ASN1Block::ObjectIdentifier(_, ref a2)) => {
                 a1 == a2
             }
-            (&ASN1Block::UTF8String(_, ref a1), &ASN1Block::UTF8String(_, ref a2)) => a1 == a2,
-            (&ASN1Block::PrintableString(_, ref a1), &ASN1Block::PrintableString(_, ref a2)) => {
+            (ASN1Block::UTF8String(_, ref a1), ASN1Block::UTF8String(_, ref a2)) => a1 == a2,
+            (ASN1Block::PrintableString(_, ref a1), ASN1Block::PrintableString(_, ref a2)) => {
                 a1 == a2
             }
-            (&ASN1Block::TeletexString(_, ref a1), &ASN1Block::TeletexString(_, ref a2)) => {
+            (ASN1Block::TeletexString(_, ref a1), ASN1Block::TeletexString(_, ref a2)) => a1 == a2,
+            (ASN1Block::IA5String(_, ref a1), ASN1Block::IA5String(_, ref a2)) => a1 == a2,
+            (ASN1Block::UTCTime(_, ref a1), ASN1Block::UTCTime(_, ref a2)) => a1 == a2,
+            (ASN1Block::GeneralizedTime(_, ref a1), ASN1Block::GeneralizedTime(_, ref a2)) => {
                 a1 == a2
             }
-            (&ASN1Block::IA5String(_, ref a1), &ASN1Block::IA5String(_, ref a2)) => a1 == a2,
-            (&ASN1Block::UTCTime(_, ref a1), &ASN1Block::UTCTime(_, ref a2)) => a1 == a2,
-            (&ASN1Block::GeneralizedTime(_, ref a1), &ASN1Block::GeneralizedTime(_, ref a2)) => {
+            (ASN1Block::UniversalString(_, ref a1), ASN1Block::UniversalString(_, ref a2)) => {
                 a1 == a2
             }
-            (&ASN1Block::UniversalString(_, ref a1), &ASN1Block::UniversalString(_, ref a2)) => {
-                a1 == a2
-            }
-            (&ASN1Block::BMPString(_, ref a1), &ASN1Block::BMPString(_, ref a2)) => a1 == a2,
-            (&ASN1Block::Sequence(_, ref a1), &ASN1Block::Sequence(_, ref a2)) => a1 == a2,
-            (&ASN1Block::Set(_, ref a1), &ASN1Block::Set(_, ref a2)) => a1 == a2,
+            (ASN1Block::BMPString(_, ref a1), ASN1Block::BMPString(_, ref a2)) => a1 == a2,
+            (ASN1Block::Sequence(_, ref a1), ASN1Block::Sequence(_, ref a2)) => a1 == a2,
+            (ASN1Block::Set(_, ref a1), ASN1Block::Set(_, ref a2)) => a1 == a2,
             (
                 &ASN1Block::Explicit(a1, _, ref b1, ref c1),
                 &ASN1Block::Explicit(a2, _, ref b2, ref c2),
@@ -206,7 +204,7 @@ impl OID {
 
     /// converts the
     pub fn as_raw(&self) -> Result<Vec<u8>, ASN1EncodeErr> {
-        match (self.0.get(0), self.0.get(1)) {
+        match (self.0.first(), self.0.get(1)) {
             (Some(v1), Some(v2)) => {
                 let two = BigUint::from_u8(2).unwrap();
 
@@ -256,10 +254,10 @@ impl OID {
     }
 }
 
-impl<'a> PartialEq<OID> for &'a OID {
+impl PartialEq<OID> for &OID {
     fn eq(&self, v2: &OID) -> bool {
-        let &&OID(ref vec1) = self;
-        let &OID(ref vec2) = v2;
+        let OID(ref vec1) = self;
+        let OID(ref vec2) = v2;
 
         if vec1.len() != vec2.len() {
             return false;
@@ -401,7 +399,7 @@ fn from_der_(i: &[u8], start_offset: usize) -> Result<Vec<ASN1Block>, ASN1Decode
             // BIT STRING
             Some(0x03) if body.is_empty() => result.push(ASN1Block::BitString(soff, 0, Vec::new())),
             Some(0x03) => {
-                let bits = (&body[1..]).to_vec();
+                let bits = (body[1..]).to_vec();
                 let bitcount = bits.len() * 8;
                 let rest = body[0] as usize;
                 if bitcount < rest {
@@ -741,7 +739,7 @@ pub fn to_der(i: &ASN1Block) -> Result<Vec<u8>, ASN1EncodeErr> {
         }
         // OBJECT IDENTIFIER
         ASN1Block::ObjectIdentifier(_, OID(ref nums)) => {
-            match (nums.get(0), nums.get(1)) {
+            match (nums.first(), nums.get(1)) {
                 (Some(v1), Some(v2)) => {
                     let two = BigUint::from_u8(2).unwrap();
 

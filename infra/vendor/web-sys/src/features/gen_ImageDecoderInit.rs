@@ -51,7 +51,35 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "data")]
-    pub fn set_data(this: &ImageDecoderInit, val: &::wasm_bindgen::JsValue);
+    pub fn set_data(this: &ImageDecoderInit, val: &::js_sys::Object);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `data` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "data")]
+    pub fn set_data_u8_slice(this: &ImageDecoderInit, val: &mut [u8]);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `data` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "data")]
+    pub fn set_data_u8_array(this: &ImageDecoderInit, val: &::js_sys::Uint8Array);
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "ReadableStream")]
+    #[doc = "Change the `data` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "data")]
+    pub fn set_data_readable_stream(this: &ImageDecoderInit, val: &ReadableStream);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `desiredHeight` field of this object."]
     #[doc = ""]
@@ -107,25 +135,23 @@ extern "C" {
     #[wasm_bindgen(method, setter = "preferAnimation")]
     pub fn set_prefer_animation(this: &ImageDecoderInit, val: bool);
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "PremultiplyAlpha")]
-    #[doc = "Get the `premultiplyAlpha` field of this object."]
+    #[doc = "Get the `transfer` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`, `PremultiplyAlpha`*"]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    #[wasm_bindgen(method, getter = "premultiplyAlpha")]
-    pub fn get_premultiply_alpha(this: &ImageDecoderInit) -> Option<PremultiplyAlpha>;
+    #[wasm_bindgen(method, getter = "transfer")]
+    pub fn get_transfer(this: &ImageDecoderInit) -> Option<::js_sys::Array<::js_sys::ArrayBuffer>>;
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "PremultiplyAlpha")]
-    #[doc = "Change the `premultiplyAlpha` field of this object."]
+    #[doc = "Change the `transfer` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`, `PremultiplyAlpha`*"]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    #[wasm_bindgen(method, setter = "premultiplyAlpha")]
-    pub fn set_premultiply_alpha(this: &ImageDecoderInit, val: PremultiplyAlpha);
+    #[wasm_bindgen(method, setter = "transfer")]
+    pub fn set_transfer(this: &ImageDecoderInit, val: &[::js_sys::ArrayBuffer]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `type` field of this object."]
     #[doc = ""]
@@ -153,10 +179,50 @@ impl ImageDecoderInit {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn new(data: &::wasm_bindgen::JsValue, type_: &str) -> Self {
+    pub fn new(data: &::js_sys::Object, type_: &str) -> Self {
         #[allow(unused_mut)]
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret.set_data(data);
+        ret.set_type(type_);
+        ret
+    }
+    #[doc = "Construct a new `ImageDecoderInit`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn new_with_u8_slice(data: &mut [u8], type_: &str) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_data_u8_slice(data);
+        ret.set_type(type_);
+        ret
+    }
+    #[doc = "Construct a new `ImageDecoderInit`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn new_with_u8_array(data: &::js_sys::Uint8Array, type_: &str) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_data_u8_array(data);
+        ret.set_type(type_);
+        ret
+    }
+    #[cfg(feature = "ReadableStream")]
+    #[doc = "Construct a new `ImageDecoderInit`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ImageDecoderInit`, `ReadableStream`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn new_with_readable_stream(data: &ReadableStream, type_: &str) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_data_readable_stream(data);
         ret.set_type(type_);
         ret
     }
@@ -169,7 +235,7 @@ impl ImageDecoderInit {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_data()` instead."]
-    pub fn data(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn data(&mut self, val: &::js_sys::Object) -> &mut Self {
         self.set_data(val);
         self
     }
@@ -192,10 +258,9 @@ impl ImageDecoderInit {
         self
     }
     #[cfg(web_sys_unstable_apis)]
-    #[cfg(feature = "PremultiplyAlpha")]
-    #[deprecated = "Use `set_premultiply_alpha()` instead."]
-    pub fn premultiply_alpha(&mut self, val: PremultiplyAlpha) -> &mut Self {
-        self.set_premultiply_alpha(val);
+    #[deprecated = "Use `set_transfer()` instead."]
+    pub fn transfer(&mut self, val: &[::js_sys::ArrayBuffer]) -> &mut Self {
+        self.set_transfer(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]

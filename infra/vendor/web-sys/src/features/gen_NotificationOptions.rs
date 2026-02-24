@@ -142,6 +142,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `NotificationOptions`*"]
     #[wasm_bindgen(method, setter = "timestamp")]
     pub fn set_timestamp(this: &NotificationOptions, val: f64);
+    #[doc = "Change the `timestamp` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `NotificationOptions`*"]
+    #[wasm_bindgen(method, setter = "timestamp")]
+    pub fn set_timestamp_u32(this: &NotificationOptions, val: u32);
+    #[doc = "Change the `timestamp` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `NotificationOptions`*"]
+    #[wasm_bindgen(method, setter = "timestamp")]
+    pub fn set_timestamp_f64(this: &NotificationOptions, val: f64);
     #[doc = "Get the `vibrate` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `NotificationOptions`*"]
@@ -152,6 +162,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `NotificationOptions`*"]
     #[wasm_bindgen(method, setter = "vibrate")]
     pub fn set_vibrate(this: &NotificationOptions, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `vibrate` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `NotificationOptions`*"]
+    #[wasm_bindgen(method, setter = "vibrate")]
+    pub fn set_vibrate_u32(this: &NotificationOptions, val: u32);
+    #[doc = "Change the `vibrate` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `NotificationOptions`*"]
+    #[wasm_bindgen(method, setter = "vibrate")]
+    pub fn set_vibrate_u32_sequence(this: &NotificationOptions, val: &::wasm_bindgen::JsValue);
 }
 impl NotificationOptions {
     #[doc = "Construct a new `NotificationOptions`."]

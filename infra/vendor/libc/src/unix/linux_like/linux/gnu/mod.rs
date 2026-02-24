@@ -747,6 +747,7 @@ pub const PTRACE_PEEKSIGINFO: c_uint = 0x4209;
 pub const PTRACE_GETSIGMASK: c_uint = 0x420a;
 pub const PTRACE_SETSIGMASK: c_uint = 0x420b;
 pub const PTRACE_GET_SYSCALL_INFO: c_uint = 0x420e;
+pub const PTRACE_SET_SYSCALL_INFO: c_uint = 0x4212;
 pub const PTRACE_SYSCALL_INFO_NONE: crate::__u8 = 0;
 pub const PTRACE_SYSCALL_INFO_ENTRY: crate::__u8 = 1;
 pub const PTRACE_SYSCALL_INFO_EXIT: crate::__u8 = 2;
@@ -1232,6 +1233,8 @@ extern "C" {
     ) -> c_int;
 
     pub fn mempcpy(dest: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
+
+    pub fn tgkill(tgid: crate::pid_t, tid: crate::pid_t, sig: c_int) -> c_int;
 }
 
 cfg_if! {

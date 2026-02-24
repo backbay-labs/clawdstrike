@@ -412,33 +412,15 @@ pub use crate::pointer::{invariant::BecauseImmutable, Maybe, Ptr};
 #[allow(unused_imports)]
 use crate::util::polyfills::{self, NonNullExt as _, NumExt as _};
 
-#[rustversion::nightly]
-#[cfg(all(test, not(__ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS)))]
+#[cfg(all(test, not(__ZEROCOPY_INTERNAL_USE_ONLY_DEV_MODE)))]
 const _: () = {
-    #[deprecated = "some tests may be skipped due to missing RUSTFLAGS=\"--cfg __ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS\""]
-    const _WARNING: () = ();
+    #[deprecated = "Development of zerocopy using cargo is not supported. Please use `cargo.sh` or `win-cargo.bat` instead."]
+    #[allow(unused)]
+    const WARNING: () = ();
     #[warn(deprecated)]
-    _WARNING
+    WARNING
 };
 
-// These exist so that code which was written against the old names will get
-// less confusing error messages when they upgrade to a more recent version of
-// zerocopy. On our MSRV toolchain, the error messages read, for example:
-//
-//   error[E0603]: trait `FromZeroes` is private
-//       --> examples/deprecated.rs:1:15
-//        |
-//   1    | use zerocopy::FromZeroes;
-//        |               ^^^^^^^^^^ private trait
-//        |
-//   note: the trait `FromZeroes` is defined here
-//       --> /Users/josh/workspace/zerocopy/src/lib.rs:1845:5
-//        |
-//   1845 | use FromZeros as FromZeroes;
-//        |     ^^^^^^^^^^^^^^^^^^^^^^^
-//
-// The "note" provides enough context to make it easy to figure out how to fix
-// the error.
 /// Implements [`KnownLayout`].
 ///
 /// This derive analyzes various aspects of a type's layout that are needed for
@@ -541,6 +523,24 @@ const _: () = {
 #[cfg(any(feature = "derive", test))]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "derive")))]
 pub use zerocopy_derive::KnownLayout;
+// These exist so that code which was written against the old names will get
+// less confusing error messages when they upgrade to a more recent version of
+// zerocopy. On our MSRV toolchain, the error messages read, for example:
+//
+//   error[E0603]: trait `FromZeroes` is private
+//       --> examples/deprecated.rs:1:15
+//        |
+//   1    | use zerocopy::FromZeroes;
+//        |               ^^^^^^^^^^ private trait
+//        |
+//   note: the trait `FromZeroes` is defined here
+//       --> /Users/josh/workspace/zerocopy/src/lib.rs:1845:5
+//        |
+//   1845 | use FromZeros as FromZeroes;
+//        |     ^^^^^^^^^^^^^^^^^^^^^^^
+//
+// The "note" provides enough context to make it easy to figure out how to fix
+// the error.
 #[allow(unused)]
 use {FromZeros as FromZeroes, IntoBytes as AsBytes, Ref as LayoutVerified};
 
@@ -747,7 +747,7 @@ pub unsafe trait KnownLayout {
 
     /// The type of metadata stored in a pointer to `Self`.
     ///
-    /// This is `()` for sized types and `usize` for slice DSTs.
+    /// This is `()` for sized types and [`usize`] for slice DSTs.
     type PointerMetadata: PointerMetadata;
 
     /// A maybe-uninitialized analog of `Self`
@@ -830,9 +830,9 @@ pub unsafe trait KnownLayout {
     /// # Safety
     ///
     /// `size_for_metadata` promises to return `None` if and only if the
-    /// resulting size would not fit in a `usize`. Note that the returned size
+    /// resulting size would not fit in a [`usize`]. Note that the returned size
     /// could exceed the actual maximum valid size of an allocated object,
-    /// `isize::MAX`.
+    /// [`isize::MAX`].
     ///
     /// # Examples
     ///
@@ -1713,7 +1713,9 @@ pub unsafe trait TryFromBytes {
     /// [`UnsafeCell`]: core::cell::UnsafeCell
     /// [`Shared`]: invariant::Shared
     #[doc(hidden)]
-    fn is_bit_valid(candidate: Maybe<'_, Self>) -> bool;
+    fn is_bit_valid<A>(candidate: Maybe<'_, Self, A>) -> bool
+    where
+        A: invariant::Alignment;
 
     /// Attempts to interpret the given `source` as a `&Self`.
     ///
@@ -2882,12 +2884,22 @@ pub unsafe trait TryFromBytes {
     /// let bytes = &mut [0x10, 0xC0, 240, 77][..];
     /// assert!(Packet::try_read_from_bytes(bytes).is_err());
     /// ```
+    ///
+    /// # Performance Considerations
+    ///
+    /// In this version of zerocopy, this method reads the `source` into a
+    /// well-aligned stack allocation and *then* validates that the allocation
+    /// is a valid `Self`. This ensures that validation can be performed using
+    /// aligned reads (which carry a performance advantage over unaligned reads
+    /// on many platforms) at the cost of an unconditional copy.
     #[must_use = "has no side effects"]
     #[inline]
     fn try_read_from_bytes(source: &[u8]) -> Result<Self, TryReadError<&[u8], Self>>
     where
         Self: Sized,
     {
+        // FIXME(#2981): If `align_of::<Self>() == 1`, validate `source` in-place.
+
         let candidate = match CoreMaybeUninit::<Self>::read_from_bytes(source) {
             Ok(candidate) => candidate,
             Err(e) => {
@@ -2943,12 +2955,22 @@ pub unsafe trait TryFromBytes {
     /// let bytes = &[0x10, 0xC0, 240, 77, 0, 1, 2, 3, 4, 5, 6][..];
     /// assert!(Packet::try_read_from_prefix(bytes).is_err());
     /// ```
+    ///
+    /// # Performance Considerations
+    ///
+    /// In this version of zerocopy, this method reads the `source` into a
+    /// well-aligned stack allocation and *then* validates that the allocation
+    /// is a valid `Self`. This ensures that validation can be performed using
+    /// aligned reads (which carry a performance advantage over unaligned reads
+    /// on many platforms) at the cost of an unconditional copy.
     #[must_use = "has no side effects"]
     #[inline]
     fn try_read_from_prefix(source: &[u8]) -> Result<(Self, &[u8]), TryReadError<&[u8], Self>>
     where
         Self: Sized,
     {
+        // FIXME(#2981): If `align_of::<Self>() == 1`, validate `source` in-place.
+
         let (candidate, suffix) = match CoreMaybeUninit::<Self>::read_from_prefix(source) {
             Ok(candidate) => candidate,
             Err(e) => {
@@ -3005,12 +3027,22 @@ pub unsafe trait TryFromBytes {
     /// let bytes = &[0, 1, 2, 3, 4, 5, 0x10, 0xC0, 240, 77][..];
     /// assert!(Packet::try_read_from_suffix(bytes).is_err());
     /// ```
+    ///
+    /// # Performance Considerations
+    ///
+    /// In this version of zerocopy, this method reads the `source` into a
+    /// well-aligned stack allocation and *then* validates that the allocation
+    /// is a valid `Self`. This ensures that validation can be performed using
+    /// aligned reads (which carry a performance advantage over unaligned reads
+    /// on many platforms) at the cost of an unconditional copy.
     #[must_use = "has no side effects"]
     #[inline]
     fn try_read_from_suffix(source: &[u8]) -> Result<(&[u8], Self), TryReadError<&[u8], Self>>
     where
         Self: Sized,
     {
+        // FIXME(#2981): If `align_of::<Self>() == 1`, validate `source` in-place.
+
         let (prefix, candidate) = match CoreMaybeUninit::<Self>::read_from_suffix(source) {
             Ok(candidate) => candidate,
             Err(e) => {

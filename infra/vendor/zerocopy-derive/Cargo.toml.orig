@@ -9,7 +9,7 @@
 [package]
 edition = "2021"
 name = "zerocopy-derive"
-version = "0.8.38"
+version = "0.8.39"
 authors = ["Joshua Liebow-Feeser <joshlf@google.com>", "Jack Wrenn <jswrenn@amazon.com>"]
 description = "Custom derive for traits from the zerocopy crate"
 license = "BSD-2-Clause OR Apache-2.0 OR MIT"
@@ -24,7 +24,10 @@ exclude = [".*", "tests/enum_from_bytes.rs", "tests/ui-nightly/enum_from_bytes_u
 
 [lints.rust]
 # See #1792 for more context.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(zerocopy_derive_union_into_bytes)'] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(zerocopy_derive_union_into_bytes)',
+  'cfg(zerocopy_unstable_derive_on_error)',
+] }
 
 [lib]
 proc-macro = true

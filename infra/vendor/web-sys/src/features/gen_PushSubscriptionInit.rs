@@ -20,6 +20,27 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
     #[wasm_bindgen(method, setter = "appServerKey")]
     pub fn set_app_server_key(this: &PushSubscriptionInit, val: Option<&::js_sys::Object>);
+    #[doc = "Change the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "appServerKey")]
+    pub fn set_app_server_key_opt_buffer_source(
+        this: &PushSubscriptionInit,
+        val: Option<&::js_sys::Object>,
+    );
+    #[doc = "Change the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "appServerKey")]
+    pub fn set_app_server_key_opt_u8_slice(this: &PushSubscriptionInit, val: Option<&mut [u8]>);
+    #[doc = "Change the `appServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]
+    #[wasm_bindgen(method, setter = "appServerKey")]
+    pub fn set_app_server_key_opt_u8_array(
+        this: &PushSubscriptionInit,
+        val: Option<&::js_sys::Uint8Array>,
+    );
     #[doc = "Get the `authSecret` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionInit`*"]

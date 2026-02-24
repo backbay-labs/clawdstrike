@@ -31,7 +31,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn effects(this: &GamepadHapticActuator) -> ::js_sys::Array;
+    pub fn effects(this: &GamepadHapticActuator) -> ::js_sys::Array<::js_sys::JsString>;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "GamepadHapticEffectType")]
     # [wasm_bindgen (method , structural , js_class = "GamepadHapticActuator" , js_name = playEffect)]
@@ -46,7 +46,7 @@ extern "C" {
     pub fn play_effect(
         this: &GamepadHapticActuator,
         type_: GamepadHapticEffectType,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<::js_sys::JsString>;
     #[cfg(web_sys_unstable_apis)]
     #[cfg(all(
         feature = "GamepadEffectParameters",
@@ -65,7 +65,7 @@ extern "C" {
         this: &GamepadHapticActuator,
         type_: GamepadHapticEffectType,
         params: &GamepadEffectParameters,
-    ) -> ::js_sys::Promise;
+    ) -> ::js_sys::Promise<::js_sys::JsString>;
     # [wasm_bindgen (catch , method , structural , js_class = "GamepadHapticActuator" , js_name = pulse)]
     #[doc = "The `pulse()` method."]
     #[doc = ""]
@@ -87,5 +87,5 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn reset(this: &GamepadHapticActuator) -> ::js_sys::Promise;
+    pub fn reset(this: &GamepadHapticActuator) -> ::js_sys::Promise<::js_sys::JsString>;
 }

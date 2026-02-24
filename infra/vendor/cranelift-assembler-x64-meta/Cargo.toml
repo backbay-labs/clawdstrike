@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.90.0"
 name = "cranelift-assembler-x64-meta"
-version = "0.128.3"
+version = "0.128.4"
 build = false
 autolib = false
 autobins = false
@@ -34,7 +34,7 @@ name = "cranelift-assembler-x64-meta"
 path = "src/main.rs"
 
 [dependencies.cranelift-srcgen]
-version = "0.128.3"
+version = "0.128.4"
 
 [lints.clippy]
 allow_attributes_without_reason = "warn"

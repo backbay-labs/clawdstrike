@@ -11,12 +11,12 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.71.0"
 name = "aws-lc-sys"
-version = "0.37.0"
+version = "0.37.1"
 authors = ["AWS-LC"]
 build = "builder/main.rs"
-links = "aws_lc_0_37_0"
+links = "aws_lc_0_37_1"
 include = [
     "LICENSE",
     "/aws-lc/**/*.c",

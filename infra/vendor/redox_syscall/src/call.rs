@@ -1,6 +1,6 @@
 use super::{
     arch::*,
-    data::{Map, Stat, StatVfs, TimeSpec},
+    data::{Map, Stat, StatVfs, StdFsCallMeta, TimeSpec},
     error::Result,
     flag::*,
     number::*,
@@ -343,4 +343,8 @@ pub fn call_rw(fd: usize, payload: &mut [u8], flags: CallFlags, metadata: &[u64]
             metadata.as_ptr() as usize,
         )
     }
+}
+
+pub fn std_fs_call(fd: usize, payload: &mut [u8], metadata: &StdFsCallMeta) -> Result<usize> {
+    call_rw(fd, payload, CallFlags::STD_FS, metadata)
 }

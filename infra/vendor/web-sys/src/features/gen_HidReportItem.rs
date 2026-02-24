@@ -292,7 +292,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "strings")]
-    pub fn get_strings(this: &HidReportItem) -> Option<::js_sys::Array>;
+    pub fn get_strings(this: &HidReportItem) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `strings` field of this object."]
     #[doc = ""]
@@ -301,7 +301,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "strings")]
-    pub fn set_strings(this: &HidReportItem, val: &::wasm_bindgen::JsValue);
+    pub fn set_strings(this: &HidReportItem, val: &[::js_sys::JsString]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `unitExponent` field of this object."]
     #[doc = ""]
@@ -492,7 +492,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "usages")]
-    pub fn get_usages(this: &HidReportItem) -> Option<::js_sys::Array>;
+    pub fn get_usages(this: &HidReportItem) -> Option<::js_sys::Array<::js_sys::Number>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `usages` field of this object."]
     #[doc = ""]
@@ -501,7 +501,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "usages")]
-    pub fn set_usages(this: &HidReportItem, val: &::wasm_bindgen::JsValue);
+    pub fn set_usages(this: &HidReportItem, val: &[::js_sys::Number]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `wrap` field of this object."]
     #[doc = ""]
@@ -626,7 +626,7 @@ impl HidReportItem {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_strings()` instead."]
-    pub fn strings(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn strings(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_strings(val);
         self
     }
@@ -693,7 +693,7 @@ impl HidReportItem {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_usages()` instead."]
-    pub fn usages(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn usages(&mut self, val: &[::js_sys::Number]) -> &mut Self {
         self.set_usages(val);
         self
     }

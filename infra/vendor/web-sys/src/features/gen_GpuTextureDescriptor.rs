@@ -125,7 +125,42 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "size")]
-    pub fn set_size(this: &GpuTextureDescriptor, val: &::wasm_bindgen::JsValue);
+    pub fn set_size(this: &GpuTextureDescriptor, val: &[::js_sys::Number]);
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuExtent3dDict")]
+    #[doc = "Change the `size` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuTextureDescriptor`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "size")]
+    pub fn set_size_gpu_extent_3d_dict(this: &GpuTextureDescriptor, val: &GpuExtent3dDict);
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuTextureViewDimension")]
+    #[doc = "Get the `textureBindingViewDimension` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuTextureDescriptor`, `GpuTextureViewDimension`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, getter = "textureBindingViewDimension")]
+    pub fn get_texture_binding_view_dimension(
+        this: &GpuTextureDescriptor,
+    ) -> Option<GpuTextureViewDimension>;
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuTextureViewDimension")]
+    #[doc = "Change the `textureBindingViewDimension` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuTextureDescriptor`, `GpuTextureViewDimension`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "textureBindingViewDimension")]
+    pub fn set_texture_binding_view_dimension(
+        this: &GpuTextureDescriptor,
+        val: GpuTextureViewDimension,
+    );
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `usage` field of this object."]
     #[doc = ""]
@@ -152,7 +187,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "viewFormats")]
-    pub fn get_view_formats(this: &GpuTextureDescriptor) -> Option<::js_sys::Array>;
+    pub fn get_view_formats(
+        this: &GpuTextureDescriptor,
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `viewFormats` field of this object."]
     #[doc = ""]
@@ -161,7 +198,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "viewFormats")]
-    pub fn set_view_formats(this: &GpuTextureDescriptor, val: &::wasm_bindgen::JsValue);
+    pub fn set_view_formats(this: &GpuTextureDescriptor, val: &[::js_sys::JsString]);
 }
 #[cfg(web_sys_unstable_apis)]
 impl GpuTextureDescriptor {
@@ -172,11 +209,30 @@ impl GpuTextureDescriptor {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn new(format: GpuTextureFormat, size: &::wasm_bindgen::JsValue, usage: u32) -> Self {
+    pub fn new(format: GpuTextureFormat, size: &[::js_sys::Number], usage: u32) -> Self {
         #[allow(unused_mut)]
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret.set_format(format);
         ret.set_size(size);
+        ret.set_usage(usage);
+        ret
+    }
+    #[cfg(all(feature = "GpuExtent3dDict", feature = "GpuTextureFormat",))]
+    #[doc = "Construct a new `GpuTextureDescriptor`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuExtent3dDict`, `GpuTextureDescriptor`, `GpuTextureFormat`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    pub fn new_with_gpu_extent_3d_dict(
+        format: GpuTextureFormat,
+        size: &GpuExtent3dDict,
+        usage: u32,
+    ) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_format(format);
+        ret.set_size_gpu_extent_3d_dict(size);
         ret.set_usage(usage);
         ret
     }
@@ -214,8 +270,15 @@ impl GpuTextureDescriptor {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_size()` instead."]
-    pub fn size(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn size(&mut self, val: &[::js_sys::Number]) -> &mut Self {
         self.set_size(val);
+        self
+    }
+    #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "GpuTextureViewDimension")]
+    #[deprecated = "Use `set_texture_binding_view_dimension()` instead."]
+    pub fn texture_binding_view_dimension(&mut self, val: GpuTextureViewDimension) -> &mut Self {
+        self.set_texture_binding_view_dimension(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
@@ -226,7 +289,7 @@ impl GpuTextureDescriptor {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_view_formats()` instead."]
-    pub fn view_formats(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn view_formats(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_view_formats(val);
         self
     }

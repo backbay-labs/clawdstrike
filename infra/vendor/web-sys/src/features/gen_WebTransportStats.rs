@@ -31,7 +31,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "bytesReceived")]
-    pub fn set_bytes_received(this: &WebTransportStats, val: f64);
+    pub fn set_bytes_received(this: &WebTransportStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `bytesReceived` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "bytesReceived")]
+    pub fn set_bytes_received_f64(this: &WebTransportStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `bytesSent` field of this object."]
     #[doc = ""]
@@ -49,7 +58,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "bytesSent")]
-    pub fn set_bytes_sent(this: &WebTransportStats, val: f64);
+    pub fn set_bytes_sent(this: &WebTransportStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `bytesSent` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "bytesSent")]
+    pub fn set_bytes_sent_f64(this: &WebTransportStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "WebTransportDatagramStats")]
     #[doc = "Get the `datagrams` field of this object."]
@@ -141,7 +159,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "packetsLost")]
-    pub fn set_packets_lost(this: &WebTransportStats, val: f64);
+    pub fn set_packets_lost(this: &WebTransportStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `packetsLost` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "packetsLost")]
+    pub fn set_packets_lost_f64(this: &WebTransportStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `packetsReceived` field of this object."]
     #[doc = ""]
@@ -159,7 +186,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "packetsReceived")]
-    pub fn set_packets_received(this: &WebTransportStats, val: f64);
+    pub fn set_packets_received(this: &WebTransportStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `packetsReceived` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "packetsReceived")]
+    pub fn set_packets_received_f64(this: &WebTransportStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `packetsSent` field of this object."]
     #[doc = ""]
@@ -177,7 +213,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "packetsSent")]
-    pub fn set_packets_sent(this: &WebTransportStats, val: f64);
+    pub fn set_packets_sent(this: &WebTransportStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `packetsSent` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "packetsSent")]
+    pub fn set_packets_sent_f64(this: &WebTransportStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `rttVariation` field of this object."]
     #[doc = ""]
@@ -248,13 +293,13 @@ impl WebTransportStats {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_bytes_received()` instead."]
-    pub fn bytes_received(&mut self, val: f64) -> &mut Self {
+    pub fn bytes_received(&mut self, val: u32) -> &mut Self {
         self.set_bytes_received(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_bytes_sent()` instead."]
-    pub fn bytes_sent(&mut self, val: f64) -> &mut Self {
+    pub fn bytes_sent(&mut self, val: u32) -> &mut Self {
         self.set_bytes_sent(val);
         self
     }
@@ -285,19 +330,19 @@ impl WebTransportStats {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_packets_lost()` instead."]
-    pub fn packets_lost(&mut self, val: f64) -> &mut Self {
+    pub fn packets_lost(&mut self, val: u32) -> &mut Self {
         self.set_packets_lost(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_packets_received()` instead."]
-    pub fn packets_received(&mut self, val: f64) -> &mut Self {
+    pub fn packets_received(&mut self, val: u32) -> &mut Self {
         self.set_packets_received(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_packets_sent()` instead."]
-    pub fn packets_sent(&mut self, val: f64) -> &mut Self {
+    pub fn packets_sent(&mut self, val: u32) -> &mut Self {
         self.set_packets_sent(val);
         self
     }

@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-primitives"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -105,8 +105,8 @@ nightly = [
     "rapidhash?/nightly",
     "hashbrown?/nightly",
     "hex/nightly",
-    "ruint/nightly",
     "rustc-hash/nightly",
+    "fixed-cache?/nightly",
 ]
 postgres = [
     "std",
@@ -185,6 +185,10 @@ default-features = false
 
 [dependencies.alloy-rlp]
 version = "0.3"
+features = [
+    "core-net",
+    "core-error",
+]
 optional = true
 default-features = false
 
@@ -231,7 +235,7 @@ version = "2.2"
 optional = true
 
 [dependencies.fixed-cache]
-version = "0.1"
+version = "0.1.8"
 optional = true
 default-features = false
 
@@ -241,7 +245,7 @@ optional = true
 default-features = false
 
 [dependencies.getrandom]
-version = "0.3"
+version = "0.4"
 optional = true
 
 [dependencies.hashbrown]
@@ -293,7 +297,7 @@ version = "1"
 optional = true
 
 [dependencies.proptest-derive]
-version = "0.6"
+version = "0.7"
 optional = true
 
 [dependencies.rand]

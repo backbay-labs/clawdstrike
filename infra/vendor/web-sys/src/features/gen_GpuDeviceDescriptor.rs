@@ -60,7 +60,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "requiredFeatures")]
-    pub fn get_required_features(this: &GpuDeviceDescriptor) -> Option<::js_sys::Array>;
+    pub fn get_required_features(
+        this: &GpuDeviceDescriptor,
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `requiredFeatures` field of this object."]
     #[doc = ""]
@@ -69,7 +71,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "requiredFeatures")]
-    pub fn set_required_features(this: &GpuDeviceDescriptor, val: &::wasm_bindgen::JsValue);
+    pub fn set_required_features(this: &GpuDeviceDescriptor, val: &[::js_sys::JsString]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `requiredLimits` field of this object."]
     #[doc = ""]
@@ -87,7 +89,22 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "requiredLimits")]
-    pub fn set_required_limits(this: &GpuDeviceDescriptor, val: &::js_sys::Object);
+    pub fn set_required_limits(
+        this: &GpuDeviceDescriptor,
+        val: &::js_sys::Object<::js_sys::Number>,
+    );
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `requiredLimits` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `GpuDeviceDescriptor`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "requiredLimits")]
+    pub fn set_required_limits_record_from_str_to_f64(
+        this: &GpuDeviceDescriptor,
+        val: &::js_sys::Object<::js_sys::Number>,
+    );
 }
 #[cfg(web_sys_unstable_apis)]
 impl GpuDeviceDescriptor {
@@ -117,13 +134,13 @@ impl GpuDeviceDescriptor {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_required_features()` instead."]
-    pub fn required_features(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn required_features(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_required_features(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_required_limits()` instead."]
-    pub fn required_limits(&mut self, val: &::js_sys::Object) -> &mut Self {
+    pub fn required_limits(&mut self, val: &::js_sys::Object<::js_sys::Number>) -> &mut Self {
         self.set_required_limits(val);
         self
     }

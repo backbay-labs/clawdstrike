@@ -11,10 +11,11 @@
 
 [package]
 edition = "2018"
-rust-version = "1.56"
+rust-version = "1.71"
 name = "futures-macro"
-version = "0.3.31"
+version = "0.3.32"
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -26,6 +27,8 @@ homepage = "https://rust-lang.github.io/futures-rs"
 readme = false
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rust-lang/futures-rs"
+
+[features]
 
 [lib]
 name = "futures_macro"
@@ -41,8 +44,6 @@ version = "1.0"
 [dependencies.syn]
 version = "2.0.52"
 features = ["full"]
-
-[features]
 
 [lints.rust]
 missing_debug_implementations = "warn"

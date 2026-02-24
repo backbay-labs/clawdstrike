@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "wasm-bindgen-test"
-version = "0.3.58"
+version = "0.3.62"
 authors = ["The wasm-bindgen Developers"]
 build = false
 include = [
@@ -54,7 +54,7 @@ version = "1.0"
 optional = true
 
 [dependencies.js-sys]
-version = "=0.3.85"
+version = "=0.3.89"
 default-features = false
 
 [dependencies.libm]
@@ -83,18 +83,20 @@ features = ["alloc"]
 default-features = false
 
 [dependencies.wasm-bindgen]
-version = "=0.2.108"
+version = "=0.2.112"
 default-features = false
 
 [dependencies.wasm-bindgen-futures]
-version = "=0.4.58"
+version = "=0.4.62"
 default-features = false
 
 [dependencies.wasm-bindgen-test-macro]
-version = "=0.3.58"
+version = "=0.3.62"
 
 [dependencies.wasm-bindgen-test-shared]
-version = "=0.2.108"
+version = "=0.2.112"
+
+[dev-dependencies]
 
 [target.'cfg(all(target_arch = "wasm32", wasm_bindgen_unstable_test_coverage))'.dependencies.minicov]
 version = "0.3.8"

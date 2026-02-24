@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-core"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -120,26 +120,30 @@ name = "alloy_core"
 path = "src/lib.rs"
 
 [dependencies.alloy-dyn-abi]
-version = "1.5.4"
+version = "1.5.7"
 optional = true
 default-features = false
 
 [dependencies.alloy-json-abi]
-version = "1.5.4"
+version = "1.5.7"
 optional = true
 default-features = false
 
 [dependencies.alloy-primitives]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.alloy-rlp]
 version = "0.3"
+features = [
+    "core-net",
+    "core-error",
+]
 optional = true
 default-features = false
 
 [dependencies.alloy-sol-types]
-version = "1.5.4"
+version = "1.5.7"
 optional = true
 default-features = false
 

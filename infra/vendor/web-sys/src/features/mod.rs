@@ -12,6 +12,13 @@ mod gen_AbortSignal;
 #[allow(unused_imports)]
 pub use gen_AbortSignal::*;
 
+#[cfg(feature = "AbstractRange")]
+#[allow(non_snake_case)]
+mod gen_AbstractRange;
+#[cfg(feature = "AbstractRange")]
+#[allow(unused_imports)]
+pub use gen_AbstractRange::*;
+
 #[cfg(feature = "AddEventListenerOptions")]
 #[allow(non_snake_case)]
 mod gen_AddEventListenerOptions;
@@ -747,6 +754,13 @@ mod gen_BiquadFilterType;
 #[allow(unused_imports)]
 pub use gen_BiquadFilterType::*;
 
+#[cfg(feature = "BitrateMode")]
+#[allow(non_snake_case)]
+mod gen_BitrateMode;
+#[cfg(feature = "BitrateMode")]
+#[allow(unused_imports)]
+pub use gen_BitrateMode::*;
+
 #[cfg(feature = "Blob")]
 #[allow(non_snake_case)]
 mod gen_Blob;
@@ -1264,6 +1278,20 @@ mod gen_ColorSpaceConversion;
 #[cfg(feature = "ColorSpaceConversion")]
 #[allow(unused_imports)]
 pub use gen_ColorSpaceConversion::*;
+
+#[cfg(feature = "CommandEvent")]
+#[allow(non_snake_case)]
+mod gen_CommandEvent;
+#[cfg(feature = "CommandEvent")]
+#[allow(unused_imports)]
+pub use gen_CommandEvent::*;
+
+#[cfg(feature = "CommandEventInit")]
+#[allow(non_snake_case)]
+mod gen_CommandEventInit;
+#[cfg(feature = "CommandEventInit")]
+#[allow(unused_imports)]
+pub use gen_CommandEventInit::*;
 
 #[cfg(feature = "Comment")]
 #[allow(non_snake_case)]
@@ -2840,12 +2868,33 @@ mod gen_FileSystemSyncAccessHandle;
 #[allow(unused_imports)]
 pub use gen_FileSystemSyncAccessHandle::*;
 
+#[cfg(feature = "FileSystemSyncAccessHandleMode")]
+#[allow(non_snake_case)]
+mod gen_FileSystemSyncAccessHandleMode;
+#[cfg(feature = "FileSystemSyncAccessHandleMode")]
+#[allow(unused_imports)]
+pub use gen_FileSystemSyncAccessHandleMode::*;
+
+#[cfg(feature = "FileSystemSyncAccessHandleOptions")]
+#[allow(non_snake_case)]
+mod gen_FileSystemSyncAccessHandleOptions;
+#[cfg(feature = "FileSystemSyncAccessHandleOptions")]
+#[allow(unused_imports)]
+pub use gen_FileSystemSyncAccessHandleOptions::*;
+
 #[cfg(feature = "FileSystemWritableFileStream")]
 #[allow(non_snake_case)]
 mod gen_FileSystemWritableFileStream;
 #[cfg(feature = "FileSystemWritableFileStream")]
 #[allow(unused_imports)]
 pub use gen_FileSystemWritableFileStream::*;
+
+#[cfg(feature = "FillLightMode")]
+#[allow(non_snake_case)]
+mod gen_FillLightMode;
+#[cfg(feature = "FillLightMode")]
+#[allow(unused_imports)]
+pub use gen_FillLightMode::*;
 
 #[cfg(feature = "FillMode")]
 #[allow(non_snake_case)]
@@ -3091,6 +3140,27 @@ mod gen_Geolocation;
 #[cfg(feature = "Geolocation")]
 #[allow(unused_imports)]
 pub use gen_Geolocation::*;
+
+#[cfg(feature = "GeolocationCoordinates")]
+#[allow(non_snake_case)]
+mod gen_GeolocationCoordinates;
+#[cfg(feature = "GeolocationCoordinates")]
+#[allow(unused_imports)]
+pub use gen_GeolocationCoordinates::*;
+
+#[cfg(feature = "GeolocationPosition")]
+#[allow(non_snake_case)]
+mod gen_GeolocationPosition;
+#[cfg(feature = "GeolocationPosition")]
+#[allow(unused_imports)]
+pub use gen_GeolocationPosition::*;
+
+#[cfg(feature = "GeolocationPositionError")]
+#[allow(non_snake_case)]
+mod gen_GeolocationPositionError;
+#[cfg(feature = "GeolocationPositionError")]
+#[allow(unused_imports)]
+pub use gen_GeolocationPositionError::*;
 
 #[cfg(feature = "GestureEvent")]
 #[allow(non_snake_case)]
@@ -4176,6 +4246,41 @@ mod gen_HiddenPluginEventInit;
 #[cfg(feature = "HiddenPluginEventInit")]
 #[allow(unused_imports)]
 pub use gen_HiddenPluginEventInit::*;
+
+#[cfg(feature = "Highlight")]
+#[allow(non_snake_case)]
+mod gen_Highlight;
+#[cfg(feature = "Highlight")]
+#[allow(unused_imports)]
+pub use gen_Highlight::*;
+
+#[cfg(feature = "HighlightHitResult")]
+#[allow(non_snake_case)]
+mod gen_HighlightHitResult;
+#[cfg(feature = "HighlightHitResult")]
+#[allow(unused_imports)]
+pub use gen_HighlightHitResult::*;
+
+#[cfg(feature = "HighlightRegistry")]
+#[allow(non_snake_case)]
+mod gen_HighlightRegistry;
+#[cfg(feature = "HighlightRegistry")]
+#[allow(unused_imports)]
+pub use gen_HighlightRegistry::*;
+
+#[cfg(feature = "HighlightType")]
+#[allow(non_snake_case)]
+mod gen_HighlightType;
+#[cfg(feature = "HighlightType")]
+#[allow(unused_imports)]
+pub use gen_HighlightType::*;
+
+#[cfg(feature = "HighlightsFromPointOptions")]
+#[allow(non_snake_case)]
+mod gen_HighlightsFromPointOptions;
+#[cfg(feature = "HighlightsFromPointOptions")]
+#[allow(unused_imports)]
+pub use gen_HighlightsFromPointOptions::*;
 
 #[cfg(feature = "History")]
 #[allow(non_snake_case)]
@@ -5689,6 +5794,13 @@ mod gen_MediaSessionPlaybackState;
 #[allow(unused_imports)]
 pub use gen_MediaSessionPlaybackState::*;
 
+#[cfg(feature = "MediaSettingsRange")]
+#[allow(non_snake_case)]
+mod gen_MediaSettingsRange;
+#[cfg(feature = "MediaSettingsRange")]
+#[allow(unused_imports)]
+pub use gen_MediaSettingsRange::*;
+
 #[cfg(feature = "MediaSource")]
 #[allow(non_snake_case)]
 mod gen_MediaSource;
@@ -5919,6 +6031,13 @@ mod gen_MessagePort;
 #[cfg(feature = "MessagePort")]
 #[allow(unused_imports)]
 pub use gen_MessagePort::*;
+
+#[cfg(feature = "MeteringMode")]
+#[allow(non_snake_case)]
+mod gen_MeteringMode;
+#[cfg(feature = "MeteringMode")]
+#[allow(unused_imports)]
+pub use gen_MeteringMode::*;
 
 #[cfg(feature = "MidiAccess")]
 #[allow(non_snake_case)]
@@ -6613,12 +6732,26 @@ mod gen_PerformanceMark;
 #[allow(unused_imports)]
 pub use gen_PerformanceMark::*;
 
+#[cfg(feature = "PerformanceMarkOptions")]
+#[allow(non_snake_case)]
+mod gen_PerformanceMarkOptions;
+#[cfg(feature = "PerformanceMarkOptions")]
+#[allow(unused_imports)]
+pub use gen_PerformanceMarkOptions::*;
+
 #[cfg(feature = "PerformanceMeasure")]
 #[allow(non_snake_case)]
 mod gen_PerformanceMeasure;
 #[cfg(feature = "PerformanceMeasure")]
 #[allow(unused_imports)]
 pub use gen_PerformanceMeasure::*;
+
+#[cfg(feature = "PerformanceMeasureOptions")]
+#[allow(non_snake_case)]
+mod gen_PerformanceMeasureOptions;
+#[cfg(feature = "PerformanceMeasureOptions")]
+#[allow(unused_imports)]
+pub use gen_PerformanceMeasureOptions::*;
 
 #[cfg(feature = "PerformanceNavigation")]
 #[allow(non_snake_case)]
@@ -6732,6 +6865,20 @@ mod gen_Permissions;
 #[allow(unused_imports)]
 pub use gen_Permissions::*;
 
+#[cfg(feature = "PhotoCapabilities")]
+#[allow(non_snake_case)]
+mod gen_PhotoCapabilities;
+#[cfg(feature = "PhotoCapabilities")]
+#[allow(unused_imports)]
+pub use gen_PhotoCapabilities::*;
+
+#[cfg(feature = "PhotoSettings")]
+#[allow(non_snake_case)]
+mod gen_PhotoSettings;
+#[cfg(feature = "PhotoSettings")]
+#[allow(unused_imports)]
+pub use gen_PhotoSettings::*;
+
 #[cfg(feature = "PictureInPictureEvent")]
 #[allow(non_snake_case)]
 mod gen_PictureInPictureEvent;
@@ -6787,6 +6934,13 @@ mod gen_PluginCrashedEventInit;
 #[cfg(feature = "PluginCrashedEventInit")]
 #[allow(unused_imports)]
 pub use gen_PluginCrashedEventInit::*;
+
+#[cfg(feature = "Point2d")]
+#[allow(non_snake_case)]
+mod gen_Point2d;
+#[cfg(feature = "Point2d")]
+#[allow(unused_imports)]
+pub use gen_Point2d::*;
 
 #[cfg(feature = "PointerEvent")]
 #[allow(non_snake_case)]
@@ -7361,6 +7515,13 @@ mod gen_RecordingState;
 #[cfg(feature = "RecordingState")]
 #[allow(unused_imports)]
 pub use gen_RecordingState::*;
+
+#[cfg(feature = "RedEyeReduction")]
+#[allow(non_snake_case)]
+mod gen_RedEyeReduction;
+#[cfg(feature = "RedEyeReduction")]
+#[allow(unused_imports)]
+pub use gen_RedEyeReduction::*;
 
 #[cfg(feature = "ReferrerPolicy")]
 #[allow(non_snake_case)]
@@ -8573,6 +8734,13 @@ mod gen_SharedWorkerGlobalScope;
 #[allow(unused_imports)]
 pub use gen_SharedWorkerGlobalScope::*;
 
+#[cfg(feature = "ShowPopoverOptions")]
+#[allow(non_snake_case)]
+mod gen_ShowPopoverOptions;
+#[cfg(feature = "ShowPopoverOptions")]
+#[allow(unused_imports)]
+pub use gen_ShowPopoverOptions::*;
+
 #[cfg(feature = "SignResponse")]
 #[allow(non_snake_case)]
 mod gen_SignResponse;
@@ -8761,6 +8929,20 @@ mod gen_SpeechSynthesisVoice;
 #[cfg(feature = "SpeechSynthesisVoice")]
 #[allow(unused_imports)]
 pub use gen_SpeechSynthesisVoice::*;
+
+#[cfg(feature = "StaticRange")]
+#[allow(non_snake_case)]
+mod gen_StaticRange;
+#[cfg(feature = "StaticRange")]
+#[allow(unused_imports)]
+pub use gen_StaticRange::*;
+
+#[cfg(feature = "StaticRangeInit")]
+#[allow(non_snake_case)]
+mod gen_StaticRangeInit;
+#[cfg(feature = "StaticRangeInit")]
+#[allow(unused_imports)]
+pub use gen_StaticRangeInit::*;
 
 #[cfg(feature = "StereoPannerNode")]
 #[allow(non_snake_case)]
@@ -9966,6 +10148,13 @@ mod gen_ToggleEventInit;
 #[allow(unused_imports)]
 pub use gen_ToggleEventInit::*;
 
+#[cfg(feature = "TogglePopoverOptions")]
+#[allow(non_snake_case)]
+mod gen_TogglePopoverOptions;
+#[cfg(feature = "TogglePopoverOptions")]
+#[allow(unused_imports)]
+pub use gen_TogglePopoverOptions::*;
+
 #[cfg(feature = "TokenBinding")]
 #[allow(non_snake_case)]
 mod gen_TokenBinding;
@@ -10477,6 +10666,13 @@ mod gen_VideoEncoder;
 #[allow(unused_imports)]
 pub use gen_VideoEncoder::*;
 
+#[cfg(feature = "VideoEncoderBitrateMode")]
+#[allow(non_snake_case)]
+mod gen_VideoEncoderBitrateMode;
+#[cfg(feature = "VideoEncoderBitrateMode")]
+#[allow(unused_imports)]
+pub use gen_VideoEncoderBitrateMode::*;
+
 #[cfg(feature = "VideoEncoderConfig")]
 #[allow(non_snake_case)]
 mod gen_VideoEncoderConfig;
@@ -10539,6 +10735,13 @@ mod gen_VideoFrameInit;
 #[cfg(feature = "VideoFrameInit")]
 #[allow(unused_imports)]
 pub use gen_VideoFrameInit::*;
+
+#[cfg(feature = "VideoFrameMetadata")]
+#[allow(non_snake_case)]
+mod gen_VideoFrameMetadata;
+#[cfg(feature = "VideoFrameMetadata")]
+#[allow(unused_imports)]
+pub use gen_VideoFrameMetadata::*;
 
 #[cfg(feature = "VideoMatrixCoefficients")]
 #[allow(non_snake_case)]

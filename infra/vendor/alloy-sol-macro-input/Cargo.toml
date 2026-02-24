@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-sol-macro-input"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -60,7 +60,7 @@ name = "alloy_sol_macro_input"
 path = "src/lib.rs"
 
 [dependencies.alloy-json-abi]
-version = "1.5.4"
+version = "1.5.7"
 optional = true
 default-features = false
 
@@ -98,5 +98,5 @@ default-features = false
 version = "2.0"
 
 [dependencies.syn-solidity]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false

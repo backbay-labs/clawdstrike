@@ -30,6 +30,19 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
     #[wasm_bindgen(method, setter = "keyPath")]
     pub fn set_key_path(this: &IdbObjectStoreParameters, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `keyPath` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, setter = "keyPath")]
+    pub fn set_key_path_opt_str(this: &IdbObjectStoreParameters, val: Option<&str>);
+    #[doc = "Change the `keyPath` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IdbObjectStoreParameters`*"]
+    #[wasm_bindgen(method, setter = "keyPath")]
+    pub fn set_key_path_opt_str_sequence(
+        this: &IdbObjectStoreParameters,
+        val: Option<&::wasm_bindgen::JsValue>,
+    );
 }
 impl IdbObjectStoreParameters {
     #[doc = "Construct a new `IdbObjectStoreParameters`."]
