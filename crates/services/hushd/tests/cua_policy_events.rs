@@ -49,10 +49,9 @@ fn cua_events_map_to_custom_guard_action() {
 
     for (event_type, cua_action) in cases {
         let event = cua_event(event_type, base_cua_data(cua_action));
-        let mapped = map_policy_event(&event).expect(&format!(
-            "map_policy_event should succeed for {}",
-            event_type
-        ));
+        let mapped = map_policy_event(&event).unwrap_or_else(|_| {
+            panic!("map_policy_event should succeed for {}", event_type)
+        });
 
         match &mapped.action {
             MappedGuardAction::Custom { custom_type, .. } => {
