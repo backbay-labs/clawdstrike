@@ -9,11 +9,12 @@
 
 ## 1. Overview
 
-This document provides a comprehensive research survey of detection techniques for prompt security threats, including prompt injection, jailbreaking, and data exfiltration. We analyze three primary detection paradigms:
+This document provides a comprehensive research survey of detection techniques for prompt security threats, including prompt injection, jailbreaking, and data exfiltration. We analyze four primary detection paradigms:
 
 1. **Heuristic Detection**: Rule-based pattern matching
-2. **Machine Learning Detection**: Trained classifiers
-3. **LLM-as-Judge Detection**: Using LLMs to evaluate other LLM inputs/outputs
+2. **Retrieval / Similarity Screening**: Embedding + nearest-neighbor matching against known patterns
+3. **Machine Learning Detection**: Trained classifiers
+4. **LLM-as-Judge Detection**: Using LLMs to evaluate other LLM inputs/outputs
 
 Each approach has distinct tradeoffs in accuracy, latency, interpretability, and bypass resistance.
 
@@ -23,16 +24,16 @@ Each approach has distinct tradeoffs in accuracy, latency, interpretability, and
 
 ### 2.1 Summary Matrix
 
-| Aspect | Heuristics | ML Classifiers | LLM-as-Judge |
-|--------|------------|----------------|--------------|
-| **Latency** | < 1ms | 10-50ms | 500-3000ms |
-| **Accuracy** | 70-85% | 85-95% | 90-98% |
-| **Interpretability** | High | Low-Medium | Medium |
-| **Bypass Resistance** | Low | Medium | High |
-| **Novel Attack Detection** | Low | Medium | High |
-| **False Positive Rate** | 1-5% | 0.5-2% | 0.1-1% |
-| **Maintenance Cost** | Low | High | Low |
-| **Resource Requirements** | Minimal | GPU optional | External API |
+| Aspect | Heuristics | Retrieval / Similarity | ML Classifiers | LLM-as-Judge |
+|--------|------------|------------------------|----------------|--------------|
+| **Latency** | < 1ms | 1-20ms | 10-50ms | 500-3000ms |
+| **Accuracy** | 70-85% | 80-95% | 85-95% | 90-98% |
+| **Interpretability** | High | Medium | Low-Medium | Medium |
+| **Bypass Resistance** | Low | Medium | Medium | High |
+| **Novel Attack Detection** | Low | Medium | Medium | High |
+| **False Positive Rate** | 1-5% | 0.5-3% | 0.5-2% | 0.1-1% |
+| **Maintenance Cost** | Low | Medium | High | Low |
+| **Resource Requirements** | Minimal | Embedding model + vector DB | GPU optional | External API |
 
 ### 2.2 Decision Tree
 
@@ -47,15 +48,27 @@ Each approach has distinct tradeoffs in accuracy, latency, interpretability, and
          < 10ms            10-100ms             > 100ms OK
               │                   │                   │
               v                   v                   v
-     ┌────────────────┐  ┌────────────────┐  ┌────────────────┐
-     │   Heuristics   │  │ ML Classifier  │  │ LLM-as-Judge   │
-     │   (Tier 1)     │  │   (Tier 2)     │  │   (Tier 3)     │
-     └────────────────┘  └────────────────┘  └────────────────┘
+     ┌────────────────┐  ┌──────────────────────┐  ┌────────────────┐
+     │   Heuristics   │  │ Retrieval/Similarity │  │ LLM-as-Judge   │
+     │   (Tier 1)     │  │   (Tier 1.5)         │  │   (Tier 3)     │
+     └────────────────┘  └──────────────────────┘  └────────────────┘
               │                   │                   │
               v                   v                   v
-        Quick filter         Main defense        Ambiguous cases
+        Quick filter      Known-pattern screen   Ambiguous cases
         High volume          Balanced            High stakes
 ```
+
+### 2.3 Retrieval / Similarity Screening (Tier 1.5)
+
+This paradigm embeds the current artifact (query/plan/action/observation text, tool schema, tool output, etc.) and performs nearest-neighbor search against a curated case bank of known attacks/benign lookalikes.
+
+It’s a strong fit when you want:
+
+- **Low latency** compared to LLM-as-judge
+- **Better generalization** than raw keyword heuristics (matches *structure*, not exact strings)
+- A clean escalation path: similarity match is the cheap filter; only borderline cases go to deeper analysis
+
+This is the core “fast path” in Spider-Sense (Yu et al., 2026) and maps well onto Clawdstrike’s existing sync/async guard split: sync guards for similarity matching, async guards for deep analysis.
 
 ---
 

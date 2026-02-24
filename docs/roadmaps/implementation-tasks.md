@@ -18,7 +18,7 @@ This document tracks **only genuinely new work** for v1.2.0. Existing infrastruc
 These systems are **production-grade and already exist on `main`**. Spider-Sense and Dynamic Policies extend them — they don't replace them.
 
 ### Guard Pipeline (fully operational)
-- **7 built-in sync guards** in `crates/libs/clawdstrike/src/guards/`: `ForbiddenPathGuard`, `EgressAllowlistGuard`, `SecretLeakGuard`, `PatchIntegrityGuard`, `McpToolGuard`, `PromptInjectionGuard`, `JailbreakGuard`
+- **7 built-in sync guards** in `crates/clawdstrike/src/guards/`: `ForbiddenPathGuard`, `EgressAllowlistGuard`, `SecretLeakGuard`, `PatchIntegrityGuard`, `McpToolGuard`, `PromptInjectionGuard`, `JailbreakGuard`
 - **`CustomGuardRegistry`** + **`CustomGuardFactory` trait** in `guards/custom.rs` — register new guards by ID, instantiate from policy YAML config. **This is the primary extension point for Spider-Sense stage guards.**
 - **`GuardAction::Custom(&str, &Value)`** in `guards/mod.rs` — extensible action type for arbitrary payloads. Already used by `PromptInjectionGuard` and `JailbreakGuard`. **This is the hook for `risk_signal.*` actions.**
 - **Engine pipeline** in `engine.rs`: BuiltIn → Custom (via registry) → Extra (runtime) → Async, with `fail_fast`, `#[must_use]` on `GuardResult`, fail-closed on config error
@@ -31,24 +31,24 @@ These systems are **production-grade and already exist on `main`**. Spider-Sense
 - **Registry** in `async_guards/registry.rs` — closed set of 3 packages via `match` on `spec.package`; adding a new one = one match arm + one `validate_custom_guards` entry
 
 ### Session Management (fully operational)
-- **`SessionManager`** in `crates/services/hushd/src/session/mod.rs` (725 lines) — `SessionStore` trait, `InMemorySessionStore`, `SqliteSessionStore`
+- **`SessionManager`** in `crates/hushd/src/session/mod.rs` (725 lines) — `SessionStore` trait, `InMemorySessionStore`, `SqliteSessionStore`
 - **`SessionUpdates.state: Option<HashMap<String, serde_json::Value>>`** — generic key/value state map. **Posture and Spider-Sense session state go here.**
 - REST API: `POST /session`, `GET /session/{id}`, `DELETE /session/{id}`, session binding, rotation, RBAC
 - SQLite persistence with atomic operations
 
 ### Receipts (fully operational)
-- **`Receipt`** in `crates/libs/hush-core/src/receipt.rs` — `metadata: Option<JsonValue>` generic field. **Posture snapshots go under `metadata.clawdstrike.posture`.**
+- **`Receipt`** in `crates/hush-core/src/receipt.rs` — `metadata: Option<JsonValue>` generic field. **Posture snapshots go under `metadata.clawdstrike.posture`.**
 - Signing (`SignedReceipt`), cosigning, verification, canonical JSON (JCS)
 - Receipt schema v1.0.0 with strict validation
 
 ### SSE Events (fully operational)
-- **`GET /api/v1/events`** in `crates/services/hushd/src/api/events.rs` — SSE endpoint with auth/RBAC gating
+- **`GET /api/v1/events`** in `crates/hushd/src/api/events.rs` — SSE endpoint with auth/RBAC gating
 - **`DaemonEvent { event_type: String, data: Value }`** broadcast via `tokio::sync::broadcast` (capacity 1024)
 - Already emits events from check, eval, webhooks, SAML, policy scoping
 - **Adding Spider-Sense events = calling `state.broadcast(DaemonEvent { event_type: "spider_sense.*", ... })`**
 
 ### SIEM Exporters (fully operational, comprehensive)
-- **24 files** in `crates/services/hushd/src/siem/` — `SecurityEvent` type, `Exporter` trait, `ExporterManager` with fanout
+- **24 files** in `crates/hushd/src/siem/` — `SecurityEvent` type, `Exporter` trait, `ExporterManager` with fanout
 - **6 exporters**: Splunk, Elastic, Datadog, Sumo Logic, Webhooks, Alerting
 - **3 schema transforms**: CEF, ECS, OCSF
 - **Threat intel**: STIX format, TAXII protocol, config, guard, service
@@ -56,18 +56,18 @@ These systems are **production-grade and already exist on `main`**. Spider-Sense
 - **Spider-Sense events flow through automatically once emitted as `SecurityEvent`**
 
 ### Multi-Agent (fully operational)
-- `crates/libs/hush-multi-agent/src/` — `AgentIdentity`, `TrustLevel` (5 levels), `AgentRole` (7 variants), `AgentCapability` (9 variants incl. `Custom { name, params }`)
+- `crates/hush-multi-agent/src/` — `AgentIdentity`, `TrustLevel` (5 levels), `AgentRole` (7 variants), `AgentCapability` (9 variants incl. `Custom { name, params }`)
 - **Delegation tokens** (`SignedDelegationToken`) — JWS-like claims with capability ceiling, attenuation-only, Ed25519 signing over JCS
 - **Signed messages** (`SignedMessage`) — integrity, replay protection via nonce, delegation chain verification
 - **`RevocationStore`** trait + `InMemoryRevocationStore`
 - **`DelegationClaims.ctx`** and **`MessageClaims.ctx`** — open `Value` fields for carrying Spider-Sense metadata
 
 ### TS SDK (partial — SIEM fully mirrors Rust)
-- `packages/policy/clawdstrike-policy/src/policy/schema.ts` — `Policy`, `GuardConfigs`, `CustomGuardSpec`, `PolicySettings`
-- `packages/sdk/hush-ts/src/siem/` (10 files) — full Rust SIEM parity: types, event bus, manager, filter, exporters, transforms, threat intel
+- `packages/clawdstrike-policy/src/policy/schema.ts` — `Policy`, `GuardConfigs`, `CustomGuardSpec`, `PolicySettings`
+- `packages/hush-ts/src/siem/` (10 files) — full Rust SIEM parity: types, event bus, manager, filter, exporters, transforms, threat intel
 
 ### CLI (simulate exists, observe/synth do not)
-- **`hush policy simulate`** in `crates/services/hush-cli/src/policy_pac.rs` — JSONL input, interactive mode, benchmarking. No posture awareness yet.
+- **`hush policy simulate`** in `crates/hush-cli/src/policy_pac.rs` — JSONL input, interactive mode, benchmarking. No posture awareness yet.
 
 ---
 
@@ -101,7 +101,7 @@ New crate with vector DB and four stage guards. Registers into the **existing `C
 
 | ID | Task | Status | Deps | Extends | Ref |
 |----|------|--------|------|---------|-----|
-| SS-1 | **Create `crates/libs/clawdstrike-spider-sense/` crate** | `[ ]` | — | — | [SS §9 P1](./spider-sense-integration.md#phase-1-foundation-23-weeks) |
+| SS-1 | **Create `crates/clawdstrike-spider-sense/` crate** | `[ ]` | — | — | [SS §9 P1](./spider-sense-integration.md#phase-1-foundation-23-weeks) |
 | | Scaffold workspace crate. Match existing lint config (`unwrap_used = "deny"`, `deny_unknown_fields`). | | | | |
 | SS-2 | **`VectorStore` trait + implementations** | `[ ]` | D-2, SS-1 | — | [SS App C.2](./spider-sense-integration.md#c2-has-vectorfeedbacksandbox-implementation) |
 | | `fn query(&self, embedding: &[f32], top_k: usize) -> Result<Vec<Match>>`. In-memory (tests) + file-backed (prod). Cosine similarity. | | | | |
@@ -126,18 +126,35 @@ New crate with vector DB and four stage guards. Registers into the **existing `C
 
 ---
 
+## Milestone 1.5: Risk Signal Emitters (Integration Wiring)
+
+The stage guards above are inert until an integration emits `risk_signal.*` artifacts. This workstream makes the stage model real in adapters/framework integrations.
+
+| ID | Task | Status | Deps | Extends | Ref |
+|----|------|--------|------|---------|-----|
+| INT-1 | **Define canonical `risk_signal.*` payload schema(s)** | `[ ]` | D-3 | — | [SS §4.1.2](./spider-sense-integration.md#412-new-guardactioncustom-kinds) |
+| | Document payload contracts for `query`, `plan`, `action`, `observation` (minimal required fields + optional evidence fields). | | | | |
+| INT-2 | **TS adapter-core: emit action/observation artifacts** | `[ ]` | INT-1 | `@clawdstrike/adapter-core` | [SS §2.1](./spider-sense-integration.md#21-four-stage-semantic-model) |
+| | Add optional hooks to emit `risk_signal.action` (pre-tool) and `risk_signal.observation` (post-tool) from `BaseToolInterceptor`. | | | | |
+| INT-3 | **Framework adapters: query/plan emitters where available** | `[ ]` | INT-1 | framework adapters | [SS §2.1](./spider-sense-integration.md#21-four-stage-semantic-model) |
+| | Wire query-stage and plan-stage emitters in `@clawdstrike/vercel-ai`, `@clawdstrike/langchain`, and other adapters that can observe user messages, memory retrieval, or plan traces. | | | | |
+
+**Deliverable:** at least one real integration emits `risk_signal.*` so the stage guards can run in practice.
+
+---
+
 ## Milestone 2: Spider-Sense Deep Analysis
 
 Async LLM guard for ambiguous cases. Plugs into the **existing `AsyncGuard` runtime** (gets free caching, rate limiting, circuit breaker).
 
 | ID | Task | Status | Deps | Extends | Ref |
 |----|------|--------|------|---------|-----|
-| SS-11 | **Escalation protocol** | `[ ]` | SS-9 | `GuardContext.metadata` | [SS §9 P2](./spider-sense-integration.md#phase-2-deep-analysis-23-weeks) |
-| | Sync guards set `metadata["spider_sense.escalated"]` when ambiguous. Async guard reads it. | | | | |
+| SS-11 | **Escalation protocol (adapter-driven)** | `[ ]` | SS-9, INT-1 | `check_action_report()` + `GuardResult.details` | [SS §4.1.3](./spider-sense-integration.md#413-metadata-carried-behavioral-signals) |
+| | Guards receive `&GuardContext` (side-effect free). For escalation: stage guards return similarity evidence + “ambiguous” hints in `details`, and adapters decide whether to run deep analysis by emitting a follow-up `risk_signal.<stage>.deep` action. | | | | |
 | SS-12 | **Port judge prompts** | `[ ]` | SS-1 | — | [SS App C.2](./spider-sense-integration.md#c2-has-vectorfeedbacksandbox-implementation) |
 | | Port `sandbox_judge_*.txt` (4 stage-specific) from Spider-Sense `template/`. | | | | |
 | SS-13 | **`SpiderSenseDeepAnalysis` async guard** | `[ ]` | SS-11, SS-12, SS-2 | `AsyncGuard` trait | [SS §5.5](./spider-sense-integration.md#55-spidersensedeepanalysis-async) |
-| | Top-K retrieval + LLM reasoning. Configurable endpoint. Implements `AsyncGuard`. | | | | |
+| | Handles `risk_signal.<stage>.deep`. Top-K retrieval + LLM reasoning. Configurable endpoint. Implements `AsyncGuard`. | | | | |
 | SS-14 | **Add to async guard registry** | `[ ]` | SS-13 | `async_guards/registry.rs` | [SS §4.2](./spider-sense-integration.md#42-tier-2--async-guard-package) |
 | | Add `"clawdstrike-spider-sense"` match arm in `build_guard()` + entry in `validate_custom_guards()`. | | | | |
 | SS-15 | **Emit Spider-Sense SSE events** | `[ ]` | SS-13 | `DaemonEvent` broadcast | [SS §4.1.4](./spider-sense-integration.md#414-sse-event-broadcasting) |
@@ -260,9 +277,9 @@ Wire posture and Spider-Sense into **existing daemon and CLI infrastructure**.
 
 ```
 D-1/D-2 → SS-1 → SS-2/SS-3 → SS-4 → SS-5..8 → SS-9 → SS-10
+D-3      → INT-1 → INT-2/INT-3 ───────────────────────────────┘
                                                     │
-                                                    ├→ SS-11..14 (deep analysis)
-                                                    │
+                                                    └→ SS-11..14 (deep analysis)
 SC-1 → SC-2 → DP-1 → DP-2 → DP-3 ──→ HC-1 → HC-2 → HC-3 → HC-4
   │                                │
   ├→ SC-3 → SS-17 → SS-18 → SS-19 │
@@ -280,6 +297,7 @@ Milestones 1–2 (Spider-Sense guards) and Milestone 3 (schema bump) can proceed
 | Category | New Tasks | Extends Existing |
 |----------|-----------|-----------------|
 | Spider-Sense crate + guards | 10 | `CustomGuardRegistry`, `CustomGuardFactory` |
+| Integration wiring (risk_signal emitters) | 3 | `@clawdstrike/adapter-core`, framework adapters |
 | Spider-Sense deep analysis | 6 | `AsyncGuard`, `AsyncGuardRuntime`, SSE broadcast |
 | Schema v1.2.0 | 6 | `Policy`, `GuardConfigs`, `Decision`, TS schema |
 | Dynamic Policies engine | 3 | `engine.rs`, `SessionContext.state` |
@@ -287,6 +305,6 @@ Milestones 1–2 (Spider-Sense guards) and Milestone 3 (schema bump) can proceed
 | hushd + CLI | 6 | Session API, receipt metadata, `hush-cli` |
 | Documentation | 6 | — |
 | Hardening | 5 | — |
-| **Total** | **47** | |
+| **Total** | **50** | |
 
-Down from 62 → **47 tasks** after removing infrastructure that already exists. The existing `CustomGuardRegistry`, `AsyncGuard` runtime, session management, SIEM, SSE, multi-agent, and receipt systems are extension points — not rebuild targets.
+Down from 62 → **50 tasks** after removing infrastructure that already exists (and adding explicit integration wiring tasks for `risk_signal.*` emitters). The existing `CustomGuardRegistry`, `AsyncGuard` runtime, session management, SIEM, SSE, multi-agent, and receipt systems are extension points — not rebuild targets.

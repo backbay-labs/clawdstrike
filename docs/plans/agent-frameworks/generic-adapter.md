@@ -14,8 +14,8 @@ By establishing a consistent adapter pattern, we ensure:
 
 | Package | Minimum Version | Notes |
 |---------|----------------|-------|
-| **@backbay/adapter-core** | 1.0.0 | Core adapter interfaces and utilities |
-| **@backbay/openclaw** | 0.1.0 | Policy engine dependency |
+| **@clawdstrike/adapter-core** | 1.0.0 | Core adapter interfaces and utilities |
+| **@clawdstrike/openclaw** | 0.1.0 | Policy engine dependency |
 | **TypeScript** | 5.0.0 | Required for generic type features |
 | **Node.js** | 18.0.0 | Required for async/await patterns |
 
@@ -43,6 +43,26 @@ By establishing a consistent adapter pattern, we ensure:
 | **Performance** | Minimal overhead for policy evaluation |
 | **Testability** | Mock implementations for unit testing |
 
+## Stage-Aware Security Signals (Query/Plan/Action/Observation)
+
+Several modern agent-defense approaches (e.g. Spider-Sense, 2026) treat the agent loop as four security-critical stages:
+
+1. **Query**: user input
+2. **Plan**: internal plan + retrieved memories (RAG context)
+3. **Action**: tool invocation + parameters
+4. **Observation**: tool output / external content returned to the agent
+
+Clawdstrike’s core enforcement remains **tool-boundary**. The adapter layer is responsible for surfacing non-tool artifacts (query/plan/observation) into the policy engine as explicit events/actions when needed.
+
+**Recommended adapter hooks:**
+
+- **Query →** run input/jailbreak checks on user messages before tool planning.
+- **Plan →** when a framework exposes memory retrieval or plan traces, optionally emit a “plan artifact” event for poisoning detection.
+- **Action →** `beforeExecute` / tool intercept already provides the right seam.
+- **Observation →** `afterExecute` / output processing is the seam for indirect prompt injection + sanitization.
+
+For Spider-Sense-style integration, treat `risk_signal.*` events as **adapter-emitted artifacts** and keep any “deep analysis” escalation as an adapter decision (based on guard results), since guard evaluation is intentionally side-effect free.
+
 ## Architecture
 
 ### Layered Design
@@ -56,7 +76,7 @@ By establishing a consistent adapter pattern, we ensure:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Framework Adapter Layer                       │
-│  (@backbay/langchain, @backbay/crewai, etc.)           │
+│  (@clawdstrike/langchain, @clawdstrike/crewai, etc.)           │
 │  - Implements FrameworkAdapter interface                        │
 │  - Translates framework events to Clawdstrike events            │
 │  - Applies security decisions back to framework                 │
@@ -65,7 +85,7 @@ By establishing a consistent adapter pattern, we ensure:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Generic Adapter Core                         │
-│  (@backbay/adapter-core)                                    │
+│  (@clawdstrike/adapter-core)                                    │
 │  - ToolInterceptor, OutputSanitizer, AuditLogger               │
 │  - SecurityContext, DecisionRouter                              │
 │  - PolicyEventFactory, DecisionHandler                          │
@@ -74,7 +94,7 @@ By establishing a consistent adapter pattern, we ensure:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Clawdstrike Policy Engine                     │
-│  (@backbay/openclaw)                                        │
+│  (@clawdstrike/openclaw)                                        │
 │  - PolicyEngine, Guards, Validators                             │
 │  - Policy loading, evaluation, caching                          │
 └─────────────────────────────────────────────────────────────────┘
@@ -84,7 +104,7 @@ By establishing a consistent adapter pattern, we ensure:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                   @backbay/adapter-core                      │
+│                   @clawdstrike/adapter-core                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  Interfaces                                                       │
@@ -117,7 +137,7 @@ By establishing a consistent adapter pattern, we ensure:
 ### TypeScript Definitions
 
 ```typescript
-import { PolicyEngine, Decision, PolicyEvent, Policy, ClawdstrikeConfig } from '@backbay/openclaw';
+import { PolicyEngine, Decision, PolicyEvent, Policy, ClawdstrikeConfig } from '@clawdstrike/openclaw';
 
 // =============================================================================
 // Framework Adapter Interface
@@ -572,7 +592,7 @@ export interface SessionSummary {
 ### BaseToolInterceptor
 
 ```typescript
-import { PolicyEngine, Decision, PolicyEvent } from '@backbay/openclaw';
+import { PolicyEngine, Decision, PolicyEvent } from '@clawdstrike/openclaw';
 
 /**
  * Base implementation of ToolInterceptor
@@ -787,7 +807,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
 ### DefaultOutputSanitizer
 
 ```typescript
-import { PolicyEngine } from '@backbay/openclaw';
+import { PolicyEngine } from '@clawdstrike/openclaw';
 
 /**
  * Default output sanitizer implementation
@@ -849,7 +869,7 @@ export class DefaultOutputSanitizer implements OutputSanitizer {
 ### PolicyEventFactory
 
 ```typescript
-import { PolicyEvent } from '@backbay/openclaw';
+import { PolicyEvent } from '@clawdstrike/openclaw';
 
 // EventType is derived from PolicyEvent for consistency across all adapters
 type EventType = PolicyEvent['eventType'];
@@ -1090,8 +1110,8 @@ import {
   BaseToolInterceptor,
   InMemoryAuditLogger,
   DefaultOutputSanitizer,
-} from '@backbay/adapter-core';
-import { PolicyEngine } from '@backbay/openclaw';
+} from '@clawdstrike/adapter-core';
+import { PolicyEngine } from '@clawdstrike/openclaw';
 
 /**
  * Example: Creating an adapter for a hypothetical framework "AgentX"
@@ -1306,7 +1326,7 @@ class AgentXSecurityCallback {
 ## Usage Example
 
 ```typescript
-import { AgentXAdapter } from '@backbay/agentx';
+import { AgentXAdapter } from '@clawdstrike/agentx';
 import { AgentX, Tool, Conversation } from 'agentx';
 
 // Initialize adapter
@@ -1362,8 +1382,8 @@ import {
   DefaultOutputSanitizer,
   PolicyEventFactory,
   InMemoryAuditLogger,
-} from '@backbay/adapter-core';
-import { PolicyEngine } from '@backbay/openclaw';
+} from '@clawdstrike/adapter-core';
+import { PolicyEngine } from '@clawdstrike/openclaw';
 
 describe('BaseToolInterceptor', () => {
   let engine: PolicyEngine;
