@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from spine_reticulum.store import EnvelopeIngestResult, ForkDetected, SpineStore
+from spine_reticulum.store import ForkDetected, SpineStore
 
 
 def _make_envelope(

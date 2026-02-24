@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
 

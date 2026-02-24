@@ -2,7 +2,7 @@
 
 import pytest
 from clawdstrike.guards.patch_integrity import PatchIntegrityGuard, PatchIntegrityConfig
-from clawdstrike.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.base import GuardAction, GuardContext
 
 
 class TestPatchIntegrityConfig:

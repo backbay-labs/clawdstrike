@@ -1,6 +1,5 @@
 """Tests for McpToolGuard."""
 
-import pytest
 from clawdstrike.guards.mcp_tool import McpToolGuard, McpToolConfig
 from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 

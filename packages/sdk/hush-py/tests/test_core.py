@@ -1,6 +1,5 @@
 """Tests for hush.core cryptographic primitives."""
 
-import pytest
 from clawdstrike.core import sha256, keccak256, verify_signature, sign_message, generate_keypair
 
 

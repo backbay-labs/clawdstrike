@@ -1,8 +1,6 @@
 """Tests for hush.guards base types."""
 
-import pytest
 from clawdstrike.guards.base import (
-    Guard,
     GuardResult,
     GuardContext,
     GuardAction,

@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 
-import rfc8785
 from nacl.signing import SigningKey
 
 from spine_reticulum.envelope import (
     build_signed_envelope,
-    canonical_bytes_for_envelope,
     canonical_bytes_without_signature,
     canonical_json_bytes,
     compute_envelope_hash,

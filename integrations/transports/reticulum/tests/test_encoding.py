@@ -6,7 +6,6 @@ import json
 
 from spine_reticulum.encoding import (
     CBOR_MAGIC,
-    FRAGMENT_MAGIC,
     FragmentReassembler,
     decode_envelope,
     encode_envelope_cbor,

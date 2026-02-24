@@ -1,6 +1,5 @@
 """Integration tests for hush SDK."""
 
-import pytest
 from clawdstrike import (
     Policy,
     PolicyEngine,
