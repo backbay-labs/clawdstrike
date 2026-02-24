@@ -1,12 +1,12 @@
 import type { AdapterConfig, GenericToolCall } from './adapter.js';
-import type { AuditEvent } from './audit.js';
+import type { AuditEvent, AuditEventType } from './audit.js';
 import type { SecurityContext } from './context.js';
 import type { PolicyEngineLike } from './engine.js';
 import type { InterceptResult, ProcessedOutput, ToolInterceptor } from './interceptor.js';
 import type { OutputSanitizer, RedactionInfo } from './sanitizer.js';
 import { DefaultOutputSanitizer } from './default-output-sanitizer.js';
 import { PolicyEventFactory } from './policy-event-factory.js';
-import { allowDecision, type Decision, type PolicyEvent } from './types.js';
+import { allowDecision, type Decision } from './types.js';
 
 export class BaseToolInterceptor implements ToolInterceptor {
   protected readonly engine: PolicyEngineLike;
@@ -38,70 +38,21 @@ export class BaseToolInterceptor implements ToolInterceptor {
 
     const normalizedName = this.config.normalizeToolName?.(toolName) ?? toolName;
     const params = this.normalizeParams(input);
+    const event = this.eventFactory.create(normalizedName, params, context.sessionId);
+    // Ensure downstream policy engines (e.g. hushd `/api/v1/eval`) can attribute actions
+    // to the correct agent/session by propagating the runtime security context metadata.
+    event.metadata = {
+      ...(context.metadata ?? {}),
+      ...(event.metadata ?? {}),
+    };
 
     const toolCall: GenericToolCall = {
-      id: `${context.id}-${Date.now()}`,
+      id: event.eventId,
       name: normalizedName,
       parameters: params,
       timestamp: new Date(),
       source: 'generic',
     };
-
-    let event: PolicyEvent;
-    try {
-      event = this.createPolicyEvent(normalizedName, params, input, context);
-      toolCall.id = event.eventId;
-    } catch (error) {
-      const translationError = error instanceof Error ? error : new Error(String(error));
-      const decision: Decision = {
-        status: 'deny',
-        reason_code: 'ADC_GUARD_ERROR',
-        guard: 'provider_translator',
-        severity: 'high',
-        reason: `Policy event translation failed: ${translationError.message}`,
-        message: `Policy event translation failed: ${translationError.message}`,
-      };
-
-      context.checkCount++;
-      context.violationCount++;
-      context.recordBlocked(normalizedName, decision);
-      this.config.handlers?.onError?.(translationError, toolCall);
-      this.config.handlers?.onAfterEvaluate?.(toolCall, decision);
-      this.config.handlers?.onBlocked?.(toolCall, decision);
-
-      await this.emitAuditEvent(context, {
-        id: `${toolCall.id}-translation-error`,
-        type: 'tool_call_blocked',
-        timestamp: new Date(),
-        contextId: context.id,
-        sessionId: context.sessionId,
-        toolName: normalizedName,
-        parameters: this.config.audit?.logParameters
-          ? (this.sanitizeForAudit(params) as Record<string, unknown>)
-          : undefined,
-        decision,
-        details: { error: translationError.message, phase: 'translation' },
-      });
-
-      if (this.config.blockOnViolation !== false) {
-        return {
-          proceed: false,
-          decision,
-          duration: Date.now() - startTime,
-        };
-      }
-
-      return {
-        proceed: true,
-        decision: {
-          ...decision,
-          status: 'warn',
-          severity: 'medium',
-        },
-        warning: decision.message,
-        duration: Date.now() - startTime,
-      };
-    }
 
     this.config.handlers?.onBeforeEvaluate?.(toolCall);
 
@@ -170,29 +121,6 @@ export class BaseToolInterceptor implements ToolInterceptor {
       warning: decision.status === 'warn' ? decision.message : undefined,
       duration: Date.now() - startTime,
     };
-  }
-
-  private createPolicyEvent(
-    toolName: string,
-    parameters: Record<string, unknown>,
-    rawInput: unknown,
-    context: SecurityContext,
-  ): PolicyEvent {
-    const translated = this.config.translateToolCall?.({
-      framework: String(context.metadata?.framework ?? 'generic'),
-      toolName,
-      parameters,
-      rawInput,
-      sessionId: context.sessionId,
-      contextMetadata: context.metadata,
-    });
-
-    const event = translated ?? this.eventFactory.create(toolName, parameters, context.sessionId);
-    event.metadata = {
-      ...(context.metadata ?? {}),
-      ...(event.metadata ?? {}),
-    };
-    return event;
   }
 
   async afterExecute(

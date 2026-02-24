@@ -1,21 +1,63 @@
-schema_version: "1.1.0"
-extends: strict
-name: red-blue-policy
-description: Strict policy for red/blue team exercise
+version: "1.1.0"
+name: red-blue-demo
+description: Self-contained strict policy for the red/blue swarm exercise
+
 guards:
-  forbidden_paths:
-    enabled: true
-    paths:
-      - "~/.ssh/*"
-      - "~/.aws/*"
-      - "/etc/passwd"
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/.aws/**"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.password-store/**"
+      - "**/pass/**"
+      - "**/.1password/**"
       - "/etc/shadow"
+      - "/etc/passwd"
       - "/etc/crontab"
+      - "/etc/sudoers"
+      - "**/.bashrc"
+      - "**/.bash_profile"
+      - "**/.zshrc"
+      - "**/credentials/**"
+    exceptions: []
+
   egress_allowlist:
-    enabled: true
-    allowed_hosts: []
-  secret_leak:
-    enabled: true
-  mcp_tool:
-    enabled: true
     allow: []
+    block: []
+    default_action: block
+
+  secret_leak:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN PRIVATE KEY-----"
+        severity: critical
+    skip_paths: []
+
+  patch_integrity:
+    max_additions: 500
+    max_deletions: 200
+    require_balance: true
+    max_imbalance_ratio: 5.0
+    forbidden_patterns: []
+
+  mcp_tool:
+    allow:
+      - read_file
+      - list_directory
+      - search
+    block: []
+    require_confirmation: []
+    default_action: block
+    max_args_size: 524288
+
+settings:
+  fail_fast: true
+  verbose_logging: false

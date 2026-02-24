@@ -3,7 +3,7 @@
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
-use clawdstrike::{decision_taxonomy::summarize_decision, GuardReport, GuardResult, Severity};
+use clawdstrike::{GuardReport, GuardResult, Severity};
 use hush_certification::audit::NewAuditEventV2;
 
 use crate::api::v1::V1Error;
@@ -23,7 +23,6 @@ pub struct DecisionJson {
     pub allowed: bool,
     pub denied: bool,
     pub warn: bool,
-    pub reason_code: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub guard: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,21 +83,37 @@ fn canonical_guard_severity(severity: &Severity) -> &'static str {
     }
 }
 
+fn canonical_severity_for_decision(result: &GuardResult) -> Option<String> {
+    if result.allowed && result.severity == Severity::Info {
+        return None;
+    }
+
+    Some(
+        match result.severity {
+            Severity::Info => "low",
+            Severity::Warning => "medium",
+            Severity::Error => "high",
+            Severity::Critical => "critical",
+        }
+        .to_string(),
+    )
+}
+
 fn decision_from_report(report: &GuardReport, reason_override: Option<String>) -> DecisionJson {
     let overall = &report.overall;
-    let summary = summarize_decision(overall, reason_override.as_deref());
+    let warn = overall.allowed && overall.severity == Severity::Warning;
+    let denied = !overall.allowed;
 
     DecisionJson {
         allowed: overall.allowed,
-        denied: summary.denied,
-        warn: summary.warn,
-        reason_code: summary.reason_code,
+        denied,
+        warn,
         guard: if overall.allowed && overall.severity == Severity::Info {
             None
         } else {
             Some(overall.guard.clone())
         },
-        severity: summary.severity,
+        severity: canonical_severity_for_decision(overall),
         message: Some(overall.message.clone()),
         reason: reason_override,
     }
