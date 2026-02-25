@@ -57,15 +57,15 @@ ingress:
     alb.ingress.kubernetes.io/group.name: clawdstrike
   hushd:
     enabled: true
-    host: hushd.clawdstrike.dev.backbay.industries
+    host: hushd.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /health
-      external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.industries
+      external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.io
   proofsApi:
     enabled: true
-    host: proofs-api.clawdstrike.dev.backbay.industries
+    host: proofs-api.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix
     annotations:

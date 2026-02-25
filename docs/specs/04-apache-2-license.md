@@ -21,6 +21,7 @@ The migration touches the root `LICENSE` file, `Cargo.toml` workspace license fi
 ### Root LICENSE file
 
 From `/Users/connor/Medica/backbay/standalone/clawdstrike/LICENSE`:
+
 ```
 MIT License
 Copyright (c) 2026 Backbay Industries
@@ -29,6 +30,7 @@ Copyright (c) 2026 Backbay Industries
 ### Cargo.toml workspace
 
 From `Cargo.toml` line 31:
+
 ```toml
 [workspace.package]
 license = "MIT"
@@ -39,6 +41,7 @@ All 14 workspace member crates inherit this via `license.workspace = true` in th
 ### TypeScript packages
 
 All 11 TypeScript packages in `packages/` specify `"license": "MIT"` in their `package.json`:
+
 - `packages/sdk/hush-ts/package.json` line 40
 - `packages/adapters/clawdstrike-adapter-core/package.json` line 29
 - `packages/adapters/clawdstrike-claude/package.json` line 33
@@ -98,7 +101,7 @@ ClawdStrike
 Copyright 2026 Backbay Industries
 
 This product includes software developed at Backbay Industries
-(https://backbay.industries/).
+(https://backbay.io/).
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -140,6 +143,7 @@ For each of the 11 packages in `packages/*/package.json`, change:
 ```
 
 Files to update:
+
 1. `packages/sdk/hush-ts/package.json`
 2. `packages/adapters/clawdstrike-adapter-core/package.json`
 3. `packages/adapters/clawdstrike-claude/package.json`
@@ -207,24 +211,24 @@ This ensures all workspace crates now report Apache-2.0 and no license conflicts
 
 ## File Changes
 
-| File | Action | Description |
-|------|--------|-------------|
-| `LICENSE` | Replace | MIT text -> Apache License 2.0 full text |
-| `NOTICE` | Create | Copyright attribution (required by Apache 2.0 Section 4d) |
-| `Cargo.toml` | Modify | `license = "MIT"` -> `license = "Apache-2.0"` |
-| `packages/sdk/hush-ts/package.json` | Modify | `"license": "MIT"` -> `"license": "Apache-2.0"` |
-| `packages/adapters/clawdstrike-adapter-core/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-claude/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-openai/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-hush-cli-engine/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-hushd-engine/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-langchain/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-openclaw/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-opencode/package.json` | Modify | Same |
-| `packages/adapters/clawdstrike-vercel-ai/package.json` | Modify | Same |
-| `packages/policy/clawdstrike-policy/package.json` | Modify | Same |
-| `packages/sdk/hush-py/pyproject.toml` | Modify | Update license field (if present) |
-| `deny.toml` | Modify (if needed) | Ensure Apache-2.0 is in allowlist |
+| File                                                         | Action             | Description                                               |
+| ------------------------------------------------------------ | ------------------ | --------------------------------------------------------- |
+| `LICENSE`                                                    | Replace            | MIT text -> Apache License 2.0 full text                  |
+| `NOTICE`                                                     | Create             | Copyright attribution (required by Apache 2.0 Section 4d) |
+| `Cargo.toml`                                                 | Modify             | `license = "MIT"` -> `license = "Apache-2.0"`             |
+| `packages/sdk/hush-ts/package.json`                          | Modify             | `"license": "MIT"` -> `"license": "Apache-2.0"`           |
+| `packages/adapters/clawdstrike-adapter-core/package.json`    | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-claude/package.json`          | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-openai/package.json`          | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-hush-cli-engine/package.json` | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-hushd-engine/package.json`    | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-langchain/package.json`       | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-openclaw/package.json`        | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-opencode/package.json`        | Modify             | Same                                                      |
+| `packages/adapters/clawdstrike-vercel-ai/package.json`       | Modify             | Same                                                      |
+| `packages/policy/clawdstrike-policy/package.json`            | Modify             | Same                                                      |
+| `packages/sdk/hush-py/pyproject.toml`                        | Modify             | Update license field (if present)                         |
+| `deny.toml`                                                  | Modify (if needed) | Ensure Apache-2.0 is in allowlist                         |
 
 Total: ~16 files modified, 1 file created, 1 file replaced.
 
@@ -241,10 +245,12 @@ Total: ~16 files modified, 1 file created, 1 file replaced.
 4. **Manual inspection** -- Verify `LICENSE` file contains the full Apache 2.0 text (not a truncated version). The standard text is 11,556 bytes.
 
 5. **grep for stragglers** -- Search for any remaining "MIT" license references:
+
    ```bash
    grep -rn '"MIT"' --include="*.json" packages/
    grep -rn 'license.*=.*"MIT"' --include="*.toml" crates/
    ```
+
    Should return zero results for first-party files (infra/vendor/ excluded).
 
 6. **NOTICE file exists** -- Verify `NOTICE` file is present at the repo root.
@@ -268,11 +274,11 @@ Since the license is metadata (not code), reverting has zero runtime impact.
 
 ## Dependencies
 
-| Dependency | Status | Notes |
-|------------|--------|-------|
-| Legal review | Recommended | Confirm all contributors consent to license change |
-| No external contributors yet | Simplifies migration | No CLA/DCO needed retroactively |
-| Research doc Section 4.1 | Reference | `docs/research/open-source-strategy.md` |
+| Dependency                   | Status               | Notes                                              |
+| ---------------------------- | -------------------- | -------------------------------------------------- |
+| Legal review                 | Recommended          | Confirm all contributors consent to license change |
+| No external contributors yet | Simplifies migration | No CLA/DCO needed retroactively                    |
+| Research doc Section 4.1     | Reference            | `docs/research/open-source-strategy.md`            |
 
 ---
 
@@ -287,6 +293,7 @@ If there are any external contributors, their consent should be obtained before 
 ### MIT -> Apache 2.0 compatibility
 
 MIT is permissive and one-way compatible with Apache 2.0. Code previously licensed under MIT can be relicensed under Apache 2.0 by the copyright holder. Apache 2.0 adds:
+
 - Explicit patent grant (Section 3)
 - Patent termination clause (Section 3, "if You institute patent litigation")
 - Requirement to include NOTICE file (Section 4d)

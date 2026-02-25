@@ -5,7 +5,7 @@ This project follows the [Contributor Covenant v2.1](https://www.contributor-cov
 ## Enforcement
 
 Instances of unacceptable behavior may be reported to the project team at
-**conduct@clawdstrike.io**. All complaints will be reviewed and investigated
+**conduct@backbay.io**. All complaints will be reviewed and investigated
 promptly and fairly.
 
 ## Attribution

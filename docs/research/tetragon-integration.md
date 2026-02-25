@@ -48,13 +48,13 @@
 
 ### 1.2 Hook Points
 
-| Hook Type     | Use Case                              | Portability           |
-|---------------|---------------------------------------|-----------------------|
-| **kprobes**   | Any kernel function (dynamic)         | Tied to kernel version|
+| Hook Type       | Use Case                            | Portability              |
+| --------------- | ----------------------------------- | ------------------------ |
+| **kprobes**     | Any kernel function (dynamic)       | Tied to kernel version   |
 | **tracepoints** | Stable kernel trace events          | Portable across versions |
-| **LSM hooks** | Security module decision points       | Requires BPF LSM support |
-| **uprobes**   | User-space function instrumentation   | Tied to binary layout |
-| **USDTs**     | User Statically-Defined Tracing       | Application-defined   |
+| **LSM hooks**   | Security module decision points     | Requires BPF LSM support |
+| **uprobes**     | User-space function instrumentation | Tied to binary layout    |
+| **USDTs**       | User Statically-Defined Tracing     | Application-defined      |
 
 ### 1.3 Key Capabilities for Our Use Case
 
@@ -86,16 +86,16 @@
 
 Tetragon emits these primary event types via both JSON log and gRPC:
 
-| Event Type             | Trigger                                   |
-|------------------------|-------------------------------------------|
-| `process_exec`         | Process execution (fork+exec)             |
-| `process_exit`         | Process termination                       |
-| `process_kprobe`       | Kprobe match in TracingPolicy             |
-| `process_tracepoint`   | Tracepoint match in TracingPolicy         |
-| `process_lsm`          | LSM hook match in TracingPolicy           |
-| `process_uprobe`       | Uprobe match in TracingPolicy             |
-| `process_loader`       | Binary/shared library loading             |
-| `process_throttle`     | Rate-limiting notification                |
+| Event Type           | Trigger                           |
+| -------------------- | --------------------------------- |
+| `process_exec`       | Process execution (fork+exec)     |
+| `process_exit`       | Process termination               |
+| `process_kprobe`     | Kprobe match in TracingPolicy     |
+| `process_tracepoint` | Tracepoint match in TracingPolicy |
+| `process_lsm`        | LSM hook match in TracingPolicy   |
+| `process_uprobe`     | Uprobe match in TracingPolicy     |
+| `process_loader`     | Binary/shared library loading     |
+| `process_throttle`   | Rate-limiting notification        |
 
 ### 2.2 Process Message Schema (Protobuf)
 
@@ -136,7 +136,7 @@ Process {
       "uid": 0,
       "cwd": "/",
       "binary": "/usr/bin/curl",
-      "arguments": "https://api.backbay.industries/health",
+      "arguments": "https://api.backbay.io/health",
       "flags": "execve clone",
       "start_time": "2026-02-06T10:30:00.123456789Z",
       "auid": 4294967295,
@@ -172,7 +172,7 @@ Process {
       "binary": "/usr/bin/aegisnet-checkpointer",
       "arguments": "--checkpoint-every 10 --witness-timeout-sec 5",
       "start_time": "2026-02-06T10:00:00Z",
-      "pod": { "..." : "same pod metadata" }
+      "pod": { "...": "same pod metadata" }
     }
   },
   "node_name": "ip-10-0-1-42.ec2.internal",
@@ -193,7 +193,7 @@ Process {
       "arguments": "/etc/shadow",
       "pod": { "namespace": "default", "name": "suspicious-pod-xyz" }
     },
-    "parent": { "..." : "parent process info" },
+    "parent": { "...": "parent process info" },
     "function_name": "security_file_open",
     "args": [
       {
@@ -252,12 +252,12 @@ Process {
 
 ### 2.6 Export Methods
 
-| Method         | Path                                          | Notes                               |
-|----------------|-----------------------------------------------|--------------------------------------|
-| **JSON file**  | `/var/run/cilium/tetragon/tetragon.log`       | Default. Collect via Fluentd/Filebeat|
-| **gRPC stream**| `localhost:54321` (configurable)               | `GetEvents` server-streaming RPC     |
-| **stdout**     | Container stdout                              | For `tetra getevents`                |
-| **Elastic**    | Via Filebeat + Elastic integration             | Native Elastic integration exists    |
+| Method          | Path                                    | Notes                                 |
+| --------------- | --------------------------------------- | ------------------------------------- |
+| **JSON file**   | `/var/run/cilium/tetragon/tetragon.log` | Default. Collect via Fluentd/Filebeat |
+| **gRPC stream** | `localhost:54321` (configurable)        | `GetEvents` server-streaming RPC      |
+| **stdout**      | Container stdout                        | For `tetra getevents`                 |
+| **Elastic**     | Via Filebeat + Elastic integration      | Native Elastic integration exists     |
 
 **Key limitation**: Tetragon does not have a native NATS exporter. The integration path for AegisNet requires a **sidecar bridge** (see Section 4).
 
@@ -276,37 +276,37 @@ metadata:
   name: aegisnet-exec-allowlist
 spec:
   kprobes:
-  - call: "sys_execve"
-    syscall: true
-    args:
-    - index: 0
-      type: "string"
-    selectors:
-    # Allow known AegisNet binaries silently
-    - matchBinaries:
-      - operator: In
-        values:
-        - "/usr/bin/aegisnet-checkpointer"
-        - "/usr/bin/aegisnet-witness"
-        - "/usr/bin/aegisnet-proofs-api"
-        - "/usr/bin/aegisnet-model-registry"
-        - "/usr/bin/aegisctl"
-      matchNamespaces:
-      - namespace: Pid
-        operator: NotIn
-        values:
-        - "host_ns"
-      matchActions:
-      - action: NoPost
-    # Alert on any other exec in aegisnet namespace
-    - matchNamespaces:
-      - namespace: Pid
-        operator: NotIn
-        values:
-        - "host_ns"
-      matchActions:
-      - action: Post
-        rateLimit: "1m"
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        # Allow known AegisNet binaries silently
+        - matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/aegisnet-checkpointer"
+                - "/usr/bin/aegisnet-witness"
+                - "/usr/bin/aegisnet-proofs-api"
+                - "/usr/bin/aegisnet-model-registry"
+                - "/usr/bin/aegisctl"
+          matchNamespaces:
+            - namespace: Pid
+              operator: NotIn
+              values:
+                - "host_ns"
+          matchActions:
+            - action: NoPost
+        # Alert on any other exec in aegisnet namespace
+        - matchNamespaces:
+            - namespace: Pid
+              operator: NotIn
+              values:
+                - "host_ns"
+          matchActions:
+            - action: Post
+              rateLimit: "1m"
 ```
 
 ### 3.2 File Integrity Monitoring with Hash Collection
@@ -320,21 +320,21 @@ metadata:
   name: aegisnet-fim
 spec:
   lsmhooks:
-  - hook: "file_open"
-    args:
-    - index: 0
-      type: "file"
-    selectors:
-    - matchArgs:
-      - index: 0
-        operator: "Prefix"
-        values:
-        - "/etc/aegisnet/"
-        - "/var/run/secrets/kubernetes.io/"
-        - "/var/run/spire/agent/"
-      matchActions:
-      - action: Post
-        imaHash: true
+    - hook: "file_open"
+      args:
+        - index: 0
+          type: "file"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/aegisnet/"
+                - "/var/run/secrets/kubernetes.io/"
+                - "/var/run/spire/agent/"
+          matchActions:
+            - action: Post
+              imaHash: true
 ```
 
 ### 3.3 Network Exfiltration Detection
@@ -348,22 +348,22 @@ metadata:
   name: aegisnet-network-egress
 spec:
   kprobes:
-  - call: "tcp_connect"
-    syscall: false
-    args:
-    - index: 0
-      type: "sock"
-    selectors:
-    # Alert on connections outside expected CIDR ranges
-    - matchArgs:
-      - index: 0
-        operator: "NotDAddr"
-        values:
-        - "10.0.0.0/8"       # Cluster CIDR
-        - "172.16.0.0/12"    # Service CIDR
-        - "127.0.0.0/8"      # Loopback
-      matchActions:
-      - action: Post
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        # Alert on connections outside expected CIDR ranges
+        - matchArgs:
+            - index: 0
+              operator: "NotDAddr"
+              values:
+                - "10.0.0.0/8" # Cluster CIDR
+                - "172.16.0.0/12" # Service CIDR
+                - "127.0.0.0/8" # Loopback
+          matchActions:
+            - action: Post
 ```
 
 ### 3.4 Crypto Mining Detection
@@ -377,27 +377,27 @@ metadata:
   name: cryptominer-detection
 spec:
   kprobes:
-  - call: "tcp_connect"
-    syscall: false
-    args:
-    - index: 0
-      type: "sock"
-    selectors:
-    # Common stratum mining ports
-    - matchArgs:
-      - index: 0
-        operator: "DPort"
-        values:
-        - "3333"
-        - "4444"
-        - "5555"
-        - "7777"
-        - "8888"
-        - "9999"
-        - "14444"
-        - "14433"
-      matchActions:
-      - action: Sigkill
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        # Common stratum mining ports
+        - matchArgs:
+            - index: 0
+              operator: "DPort"
+              values:
+                - "3333"
+                - "4444"
+                - "5555"
+                - "7777"
+                - "8888"
+                - "9999"
+                - "14444"
+                - "14433"
+          matchActions:
+            - action: Sigkill
 ```
 
 ### 3.5 Container Escape Detection
@@ -411,40 +411,40 @@ metadata:
   name: container-escape-detection
 spec:
   kprobes:
-  # Detect setuid to root
-  - call: "sys_setuid"
-    syscall: true
-    args:
-    - index: 0
-      type: "int"
-    selectors:
-    - matchArgs:
-      - index: 0
-        operator: "Equal"
-        values:
-        - "0"
-      matchNamespaces:
-      - namespace: Pid
-        operator: NotIn
-        values:
-        - "host_ns"
-      matchActions:
-      - action: Sigkill
-  # Detect unshare (new namespace creation)
-  - call: "sys_unshare"
-    syscall: true
-    args:
-    - index: 0
-      type: "int"
-    selectors:
-    - matchNamespaceChanges:
-      - operator: In
-        values:
-        - "Mnt"
-        - "Pid"
-        - "Net"
-      matchActions:
-      - action: Post
+    # Detect setuid to root
+    - call: "sys_setuid"
+      syscall: true
+      args:
+        - index: 0
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Equal"
+              values:
+                - "0"
+          matchNamespaces:
+            - namespace: Pid
+              operator: NotIn
+              values:
+                - "host_ns"
+          matchActions:
+            - action: Sigkill
+    # Detect unshare (new namespace creation)
+    - call: "sys_unshare"
+      syscall: true
+      args:
+        - index: 0
+          type: "int"
+      selectors:
+        - matchNamespaceChanges:
+            - operator: In
+              values:
+                - "Mnt"
+                - "Pid"
+                - "Net"
+          matchActions:
+            - action: Post
 ```
 
 ### 3.6 ClawdStrike Guard Enforcement (hushd Integration)
@@ -458,32 +458,32 @@ metadata:
   name: clawdstrike-guard-enforcement
 spec:
   kprobes:
-  # Monitor writes to policy files
-  - call: "security_file_permission"
-    syscall: false
-    args:
-    - index: 0
-      type: "file"
-    - index: 1
-      type: "int"
-    selectors:
-    - matchArgs:
-      - index: 0
-        operator: "Prefix"
-        values:
-        - "/etc/clawdstrike/"
-        - "/var/lib/clawdstrike/policies/"
-      - index: 1
-        operator: "Mask"
-        values:
-        - "2"  # MAY_WRITE
-      matchBinaries:
-      - operator: NotIn
-        values:
-        - "/usr/bin/hushd"
-        - "/usr/bin/clawdstriked"
-      matchActions:
-      - action: Sigkill
+    # Monitor writes to policy files
+    - call: "security_file_permission"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/clawdstrike/"
+                - "/var/lib/clawdstrike/policies/"
+            - index: 1
+              operator: "Mask"
+              values:
+                - "2" # MAY_WRITE
+          matchBinaries:
+            - operator: NotIn
+              values:
+                - "/usr/bin/hushd"
+                - "/usr/bin/clawdstriked"
+          matchActions:
+            - action: Sigkill
 ```
 
 ---
@@ -591,14 +591,14 @@ async fn bridge_loop(
 
 Extending AegisNet's existing subject hierarchy:
 
-| Subject                                            | Direction | Purpose                               |
-|----------------------------------------------------|-----------|---------------------------------------|
-| `aegis.spine.envelope.tetragon.v1`                 | Publish   | All Tetragon events (wildcard)        |
-| `aegis.spine.envelope.tetragon.process_exec.v1`    | Publish   | Process execution events              |
-| `aegis.spine.envelope.tetragon.process_exit.v1`    | Publish   | Process exit events                   |
-| `aegis.spine.envelope.tetragon.process_kprobe.v1`  | Publish   | Kprobe-triggered events               |
+| Subject                                           | Direction | Purpose                               |
+| ------------------------------------------------- | --------- | ------------------------------------- |
+| `aegis.spine.envelope.tetragon.v1`                | Publish   | All Tetragon events (wildcard)        |
+| `aegis.spine.envelope.tetragon.process_exec.v1`   | Publish   | Process execution events              |
+| `aegis.spine.envelope.tetragon.process_exit.v1`   | Publish   | Process exit events                   |
+| `aegis.spine.envelope.tetragon.process_kprobe.v1` | Publish   | Kprobe-triggered events               |
 | `aegis.spine.envelope.tetragon.process_lsm.v1`    | Publish   | LSM hook events                       |
-| `aegis.spine.envelope.tetragon.enforcement.v1`     | Publish   | Events where enforcement action fired |
+| `aegis.spine.envelope.tetragon.enforcement.v1`    | Publish   | Events where enforcement action fired |
 
 These subjects should be added to the `AEGISNET_LOG` stream's subject filter so the checkpointer automatically ingests them.
 
@@ -661,19 +661,16 @@ The complete envelope wrapping:
 Add to existing AegisNet JetStream resources:
 
 | Resource                | Type   | Replicas | Purpose                               |
-|-------------------------|--------|----------|---------------------------------------|
+| ----------------------- | ------ | -------- | ------------------------------------- |
 | `AEGISNET_LOG`          | Stream | 3        | Existing -- add `tetragon.*` subjects |
-| `AEGISNET_TETRAGON_RAW`| Stream | 1        | Optional: raw Tetragon events (debug) |
+| `AEGISNET_TETRAGON_RAW` | Stream | 1        | Optional: raw Tetragon events (debug) |
 
 Configuration update for `AEGISNET_LOG`:
 
 ```json
 {
   "name": "AEGISNET_LOG",
-  "subjects": [
-    "aegis.spine.log.leaf.v1",
-    "aegis.spine.envelope.tetragon.>"
-  ],
+  "subjects": ["aegis.spine.log.leaf.v1", "aegis.spine.envelope.tetragon.>"],
   "num_replicas": 3,
   "storage": "file",
   "retention": "limits"
@@ -710,13 +707,13 @@ Map Tetragon events to the `Threat` type used by `@backbay/glia ThreatRadar`:
 ```typescript
 // Proposed: tetragonToThreat mapping
 interface Threat {
-  id: string;        // Tetragon exec_id or event UUID
-  angle: number;     // Derived from hash of pod namespace (cluster segment)
-  distance: number;  // Inversely proportional to severity (closer = worse)
-  severity: number;  // 0-1 scale from Tetragon event context
-  type: ThreatType;  // Map from Tetragon event type
-  active: boolean;   // True if enforcement action was Post (not Sigkill)
-  label: string;     // policy_name + message from TracingPolicy
+  id: string; // Tetragon exec_id or event UUID
+  angle: number; // Derived from hash of pod namespace (cluster segment)
+  distance: number; // Inversely proportional to severity (closer = worse)
+  severity: number; // 0-1 scale from Tetragon event context
+  type: ThreatType; // Map from Tetragon event type
+  active: boolean; // True if enforcement action was Post (not Sigkill)
+  label: string; // policy_name + message from TracingPolicy
 }
 
 function tetragonEventToThreat(event: TetragonEvent): Threat {
@@ -756,15 +753,15 @@ function buildAttackChains(events: TetragonEvent[]): AttackChain[] {
   const processTree = buildProcessTree(events);
 
   // Map process trees to ATT&CK chains using MITRE tags
-  return processTree.roots.map(root => ({
+  return processTree.roots.map((root) => ({
     id: `chain-${root.exec_id}`,
     name: inferCampaignName(root),
     actor: inferActor(root), // From threat intel correlation
     status: hasEnforcementAction(root) ? "contained" : "active",
     techniques: root.descendants
-      .filter(e => e.tags?.some(t => t.startsWith("MITRE:")))
-      .map(e => ({
-        id: e.tags.find(t => t.startsWith("MITRE:"))!.slice(6),
+      .filter((e) => e.tags?.some((t) => t.startsWith("MITRE:")))
+      .map((e) => ({
+        id: e.tags.find((t) => t.startsWith("MITRE:"))!.slice(6),
         name: e.message ?? e.function_name,
         tactic: inferTactic(e),
         detected: true,
@@ -792,14 +789,27 @@ Extend the `DaemonEvent` type system:
 // Extend existing types in apps/desktop/src/types/events.ts
 
 export type ActionType =
-  | "file_access" | "file_write" | "egress" | "shell"
-  | "mcp_tool" | "patch" | "secret_access" | "custom"
+  | "file_access"
+  | "file_write"
+  | "egress"
+  | "shell"
+  | "mcp_tool"
+  | "patch"
+  | "secret_access"
+  | "custom"
   // New Tetragon-sourced types:
-  | "process_exec" | "process_exit" | "kernel_hook"
-  | "namespace_change" | "capability_change";
+  | "process_exec"
+  | "process_exit"
+  | "kernel_hook"
+  | "namespace_change"
+  | "capability_change";
 
 export interface TetragonEventData {
-  event_type: "process_exec" | "process_exit" | "process_kprobe" | "process_lsm";
+  event_type:
+    | "process_exec"
+    | "process_exit"
+    | "process_kprobe"
+    | "process_lsm";
   exec_id: string;
   binary: string;
   arguments?: string;
@@ -910,9 +920,9 @@ A "runtime proof" fact that combines Tetragon + SPIRE data:
   },
 
   "identity": {
-    "spiffe_id": "spiffe://aegis.backbay.industries/ns/aegisnet/sa/checkpointer",
+    "spiffe_id": "spiffe://aegis.backbay.io/ns/aegisnet/sa/checkpointer",
     "svid_serial": "abc123",
-    "trust_domain": "aegis.backbay.industries"
+    "trust_domain": "aegis.backbay.io"
   },
 
   "kubernetes": {
@@ -950,12 +960,12 @@ A "runtime proof" fact that combines Tetragon + SPIRE data:
 
 The AegisNet TrustBundle already supports `required_receipt_enforcement_tiers`. Tetragon enables a new tier:
 
-| Tier                        | Meaning                                               | How Verified                         |
-|-----------------------------|-------------------------------------------------------|--------------------------------------|
-| `best_effort`               | ClawdStrike SDK checked, but no kernel enforcement    | Receipt signature only               |
-| `daemon_enforced`           | hushd made the decision, signed receipt               | hushd receipt + policy hash          |
-| `linux_kernel_enforced`     | Tetragon eBPF policy active, kernel-level enforcement | Tetragon event in AegisNet log       |
-| `linux_kernel_attested`     | Tetragon observed + SPIRE identity + AegisNet proof   | Full proof chain (see 6.2)           |
+| Tier                    | Meaning                                               | How Verified                   |
+| ----------------------- | ----------------------------------------------------- | ------------------------------ |
+| `best_effort`           | ClawdStrike SDK checked, but no kernel enforcement    | Receipt signature only         |
+| `daemon_enforced`       | hushd made the decision, signed receipt               | hushd receipt + policy hash    |
+| `linux_kernel_enforced` | Tetragon eBPF policy active, kernel-level enforcement | Tetragon event in AegisNet log |
+| `linux_kernel_attested` | Tetragon observed + SPIRE identity + AegisNet proof   | Full proof chain (see 6.2)     |
 
 The `require_kernel_loader_signatures` field in TrustBundle can be extended to require Tetragon policy attestation signatures.
 
@@ -991,11 +1001,11 @@ The `require_kernel_loader_signatures` field in TrustBundle can be extended to r
 
 ### 7.1 Kernel Compatibility
 
-| AMI                    | Kernel Version | BTF Support | eBPF Support | Tetragon Compatible |
-|------------------------|----------------|-------------|--------------|---------------------|
-| AL2023 (original)      | 6.1.x          | Yes         | Yes          | Yes                 |
-| AL2023.7 (2025 Q2)    | 6.12.x         | Yes         | Enhanced     | Yes (recommended)   |
-| Amazon Linux 2 (EKS)  | 5.10.x         | Partial     | Yes          | Yes (basic)         |
+| AMI                  | Kernel Version | BTF Support | eBPF Support | Tetragon Compatible |
+| -------------------- | -------------- | ----------- | ------------ | ------------------- |
+| AL2023 (original)    | 6.1.x          | Yes         | Yes          | Yes                 |
+| AL2023.7 (2025 Q2)   | 6.12.x         | Yes         | Enhanced     | Yes (recommended)   |
+| Amazon Linux 2 (EKS) | 5.10.x         | Partial     | Yes          | Yes (basic)         |
 
 AL2023 ships with kernel 6.1+ which exceeds Tetragon's minimum requirement of kernel 5.8. The 6.12 kernel available in AL2023.7 provides enhanced eBPF support and is recommended.
 
@@ -1027,11 +1037,11 @@ kubectl rollout status -n kube-system ds/tetragon -w
 
 ### 7.3 Resource Requirements
 
-| Component              | CPU Request | CPU Limit | Memory Request | Memory Limit |
-|------------------------|-------------|-----------|----------------|--------------|
-| Tetragon DaemonSet     | 100m        | 1000m     | 256Mi          | 1Gi          |
-| tetragon-nats-bridge   | 50m         | 250m      | 64Mi           | 256Mi        |
-| Tetragon Operator      | 10m         | 100m      | 32Mi           | 128Mi        |
+| Component            | CPU Request | CPU Limit | Memory Request | Memory Limit |
+| -------------------- | ----------- | --------- | -------------- | ------------ |
+| Tetragon DaemonSet   | 100m        | 1000m     | 256Mi          | 1Gi          |
+| tetragon-nats-bridge | 50m         | 250m      | 64Mi           | 256Mi        |
+| Tetragon Operator    | 10m         | 100m      | 32Mi           | 128Mi        |
 
 ### 7.4 DaemonSet Architecture on EKS
 
@@ -1099,6 +1109,7 @@ kubectl -n kube-system exec ds/tetragon -c tetragon -- tetra getevents -o json
 **Question**: What is the expected event volume per node/cluster with our TracingPolicies?
 
 **Estimation**:
+
 - Process exec/exit: ~100-1000 events/sec/node (depends on workload)
 - Kprobe file access: ~50-500 events/sec/node (with selector filtering)
 - Network connect: ~10-100 events/sec/node (with CIDR filtering)
@@ -1117,17 +1128,17 @@ kubectl -n kube-system exec ds/tetragon -c tetragon -- tetra getevents -o json
 **Question**: What is the end-to-end latency from kernel hook to AegisNet checkpoint inclusion?
 
 **Estimated breakdown**:
-| Stage                           | Latency       |
+| Stage | Latency |
 |---------------------------------|---------------|
-| eBPF hook to userspace          | ~1-5ms        |
+| eBPF hook to userspace | ~1-5ms |
 | Tetragon processing + K8s enrichment | ~5-20ms |
-| gRPC to bridge                  | ~1-5ms        |
-| Bridge transform + sign         | ~1-2ms        |
-| NATS publish                    | ~1-5ms        |
-| Checkpointer ingestion          | ~5-10ms       |
-| Checkpoint emission (batched)   | 5-10 seconds  |
-| Witness co-sign                 | ~50-200ms     |
-| **Total to checkpoint**         | **5-15 seconds** |
+| gRPC to bridge | ~1-5ms |
+| Bridge transform + sign | ~1-2ms |
+| NATS publish | ~1-5ms |
+| Checkpointer ingestion | ~5-10ms |
+| Checkpoint emission (batched) | 5-10 seconds |
+| Witness co-sign | ~50-200ms |
+| **Total to checkpoint** | **5-15 seconds** |
 
 The checkpoint latency is dominated by the batching interval (`--checkpoint-interval-sec 5`).
 
@@ -1136,15 +1147,15 @@ The checkpoint latency is dominated by the batching interval (`--checkpoint-inte
 **Question**: Can Tetragon enforcement mode replace some ClawdStrike guards?
 
 **Analysis**:
-| ClawdStrike Guard       | Tetragon Replacement?  | Notes                                    |
+| ClawdStrike Guard | Tetragon Replacement? | Notes |
 |-------------------------|------------------------|------------------------------------------|
-| ForbiddenPathGuard      | Yes (LSM file_open)    | Kernel-level, no bypass possible         |
-| EgressAllowlistGuard    | Yes (tcp_connect)      | Combined with Cilium NetworkPolicy       |
-| SecretLeakGuard         | Partial                | Can detect file writes, not content scan |
-| PatchIntegrityGuard     | No                     | Requires semantic patch analysis         |
-| McpToolGuard            | No                     | Application-layer MCP protocol           |
-| PromptInjectionGuard    | No                     | Requires NLP analysis                    |
-| JailbreakGuard          | No                     | Requires ML/LLM judge                    |
+| ForbiddenPathGuard | Yes (LSM file_open) | Kernel-level, no bypass possible |
+| EgressAllowlistGuard | Yes (tcp_connect) | Combined with Cilium NetworkPolicy |
+| SecretLeakGuard | Partial | Can detect file writes, not content scan |
+| PatchIntegrityGuard | No | Requires semantic patch analysis |
+| McpToolGuard | No | Application-layer MCP protocol |
+| PromptInjectionGuard | No | Requires NLP analysis |
+| JailbreakGuard | No | Requires ML/LLM judge |
 
 **Recommendation**: Use Tetragon as a **kernel-level enforcement floor** beneath ClawdStrike's application-level guards. Tetragon handles low-level filesystem, network, and process enforcement that cannot be bypassed. ClawdStrike handles semantic, content-aware, and AI-specific guards.
 
@@ -1153,6 +1164,7 @@ The checkpoint latency is dominated by the batching interval (`--checkpoint-inte
 **Question**: How does the bridge handle restarts and message loss?
 
 **Approach**:
+
 - The bridge should persist its last-published NATS sequence number to a local file or NATS KV bucket
 - On restart, reconnect to Tetragon gRPC stream (which replays recent events)
 - Use NATS JetStream publish with ack to ensure at-least-once delivery
@@ -1168,7 +1180,7 @@ The checkpoint latency is dominated by the batching interval (`--checkpoint-inte
 
 **Question**: How does the tetragon-nats-bridge authenticate itself?
 
-**Approach**: The bridge obtains a SPIRE SVID with SPIFFE ID `spiffe://aegis.backbay.industries/ns/kube-system/sa/tetragon-nats-bridge`. The Ed25519 signing key for envelope creation should be derived from or rotated alongside the SPIRE identity. The bridge's node ID (`aegis:ed25519:<pubkey>`) is added to the TrustBundle's `allowed_receipt_signer_node_ids`.
+**Approach**: The bridge obtains a SPIRE SVID with SPIFFE ID `spiffe://aegis.backbay.io/ns/kube-system/sa/tetragon-nats-bridge`. The Ed25519 signing key for envelope creation should be derived from or rotated alongside the SPIRE identity. The bridge's node ID (`aegis:ed25519:<pubkey>`) is added to the TrustBundle's `allowed_receipt_signer_node_ids`.
 
 ---
 
@@ -1192,19 +1204,19 @@ The checkpoint latency is dominated by the batching interval (`--checkpoint-inte
 
 ## Appendix B: Glossary
 
-| Term                  | Definition                                                                 |
-|-----------------------|----------------------------------------------------------------------------|
-| **BTF**               | BPF Type Format -- kernel debug info enabling portable eBPF programs       |
-| **CO-RE**             | Compile Once Run Everywhere -- eBPF portability across kernel versions     |
-| **CRD**               | Custom Resource Definition -- Kubernetes extension mechanism               |
-| **DaemonSet**         | K8s workload that runs one pod per node                                    |
-| **exec_id**           | Tetragon's cluster-wide unique process identifier                          |
-| **IMA**               | Integrity Measurement Architecture -- Linux kernel integrity subsystem     |
-| **kprobe**            | Dynamic kernel function hook                                               |
-| **LSM**               | Linux Security Module -- mandatory access control framework                |
-| **RFC 6962**          | Certificate Transparency Merkle tree specification                         |
-| **SignedEnvelope**    | AegisNet's cryptographically signed log entry                              |
-| **SPIFFE/SPIRE**      | Secure Production Identity Framework / SPIFFE Runtime Environment          |
-| **SVID**              | SPIFFE Verifiable Identity Document                                        |
-| **TracingPolicy**     | Tetragon's CRD for defining eBPF security policies                        |
-| **tracepoint**        | Stable kernel trace hook (more portable than kprobes)                      |
+| Term               | Definition                                                             |
+| ------------------ | ---------------------------------------------------------------------- |
+| **BTF**            | BPF Type Format -- kernel debug info enabling portable eBPF programs   |
+| **CO-RE**          | Compile Once Run Everywhere -- eBPF portability across kernel versions |
+| **CRD**            | Custom Resource Definition -- Kubernetes extension mechanism           |
+| **DaemonSet**      | K8s workload that runs one pod per node                                |
+| **exec_id**        | Tetragon's cluster-wide unique process identifier                      |
+| **IMA**            | Integrity Measurement Architecture -- Linux kernel integrity subsystem |
+| **kprobe**         | Dynamic kernel function hook                                           |
+| **LSM**            | Linux Security Module -- mandatory access control framework            |
+| **RFC 6962**       | Certificate Transparency Merkle tree specification                     |
+| **SignedEnvelope** | AegisNet's cryptographically signed log entry                          |
+| **SPIFFE/SPIRE**   | Secure Production Identity Framework / SPIFFE Runtime Environment      |
+| **SVID**           | SPIFFE Verifiable Identity Document                                    |
+| **TracingPolicy**  | Tetragon's CRD for defining eBPF security policies                     |
+| **tracepoint**     | Stable kernel trace hook (more portable than kprobes)                  |

@@ -18,6 +18,7 @@ Upgrade the project's open source governance infrastructure for a public launch:
 ### What exists today
 
 **`CONTRIBUTING.md`** (220 lines):
+
 - Covers Rust-only development (prerequisites list Rust 1.93+, optional Node/Python/wasm-pack). Node.js version should be listed as 24+ to match CI.
 - Architecture diagram is outdated: missing Spine, bridges, multi-agent, certification, desktop
 - References "MIT License" (line 213), which will change under Spec 04
@@ -27,6 +28,7 @@ Upgrade the project's open source governance infrastructure for a public launch:
 - Pull request review says "a maintainer will review" with no defined SLAs or areas of ownership
 
 **`SECURITY.md`** (109 lines):
+
 - Basic vulnerability reporting process (email connor@backbay.io)
 - Response timeline: 48h ack, 7d assessment, 30d fix
 - Good security model description for guards and attestation
@@ -36,22 +38,27 @@ Upgrade the project's open source governance infrastructure for a public launch:
 - Missing: Security audit history and planned audits
 
 **`LICENSE`** (22 lines):
+
 - MIT License, Copyright 2026 Backbay Industries
 - Will change to Apache 2.0 under Spec 04
 
 **No `CODE_OF_CONDUCT.md`**:
+
 - CONTRIBUTING.md references the Rust Code of Conduct by link only
 - A standalone file is expected by GitHub and CNCF
 
 **No `GOVERNANCE.md`**:
+
 - No defined governance model, decision process, or maintainer roles
 
 **No GitHub issue templates**:
+
 - No `.github/ISSUE_TEMPLATE/` directory
 - No issue forms (YAML-based)
 - No PR template
 
 **Existing `.github/` assets**:
+
 - `dependabot.yml` -- dependency update automation
 - `release.yml` -- GitHub Releases config
 - Workflow files: `ci.yml`, `docker.yml`, `docs.yml`, `fuzz.yml`, `release.yml`
@@ -62,6 +69,7 @@ Upgrade the project's open source governance infrastructure for a public launch:
 From `docs/research/open-source-strategy.md` (section 4.3, Community Governance Model):
 
 > **Phase 1 (0-12 months): BDFL with Maintainer Council**
+>
 > - Founding team retains final decision authority
 > - Maintainer Council of 3-5 core contributors with commit access
 > - All design decisions documented in RFCs (markdown in `docs/rfcs/`)
@@ -69,10 +77,12 @@ From `docs/research/open-source-strategy.md` (section 4.3, Community Governance 
 > - Decision process: RFC -> community comment period (2 weeks) -> BDFL approval
 
 > **Phase 2 (12-24 months): Steering Committee**
+>
 > - Transition to 5-member elected Steering Committee
 > - BDFL retains veto on security-critical decisions only
 
 > **Phase 3 (24+ months): CNCF Sandbox Application**
+>
 > - Apache 2.0 license, CLA or DCO
 > - Dual-company maintainership
 
@@ -85,6 +95,7 @@ From section 4.4 (Contribution Guidelines):
 > - Guard and ruleset contributions require test coverage
 
 From section 4.4 (Extension points):
+
 1. Rulesets (YAML) -- lowest barrier
 2. Guard plugins (Rust)
 3. Transport adapters (Rust/Python)
@@ -93,6 +104,7 @@ From section 4.4 (Extension points):
 6. Bridge plugins (Rust + eBPF)
 
 From section 9 (Phase 0 timeline):
+
 > Create CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md (3 days)
 
 ---
@@ -130,7 +142,7 @@ community a harassment-free experience for everyone...
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project team at **conduct@clawdstrike.io**.
+reported to the project team at **connor@backbay.io**.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
@@ -165,13 +177,13 @@ The BDFL has final authority on all project decisions.
 
 Maintainers have commit access and review authority within their component areas.
 
-| Maintainer | Component Area | GitHub |
-|------------|---------------|--------|
-| (TBD)      | Guards / Policy Engine | |
-| (TBD)      | Spine Protocol | |
-| (TBD)      | Desktop / SDK | |
-| (TBD)      | Bridges / Infrastructure | |
-| (TBD)      | Documentation / Community | |
+| Maintainer | Component Area            | GitHub |
+| ---------- | ------------------------- | ------ |
+| (TBD)      | Guards / Policy Engine    |        |
+| (TBD)      | Spine Protocol            |        |
+| (TBD)      | Desktop / SDK             |        |
+| (TBD)      | Bridges / Infrastructure  |        |
+| (TBD)      | Documentation / Community |        |
 
 ### Decision Process
 
@@ -193,25 +205,26 @@ Significant design decisions are documented as RFCs in `docs/rfcs/`:
 
 ### Component Ownership
 
-| Component | Directory | Owner(s) |
-|-----------|-----------|----------|
-| Crypto primitives | `crates/libs/hush-core/` | Guards maintainer |
-| Guard engine | `crates/libs/clawdstrike/` | Guards maintainer |
-| Spine protocol | `crates/libs/spine/` | Spine maintainer |
-| Tetragon bridge | `crates/bridges/tetragon-bridge/` | Bridges maintainer |
-| Hubble bridge | `crates/bridges/hubble-bridge/` | Bridges maintainer |
-| hushd daemon | `crates/services/hushd/` | Guards maintainer |
-| CLI | `crates/services/hush-cli/` | Guards maintainer |
-| Desktop app | `apps/desktop/` | Desktop maintainer |
-| TypeScript SDK | `packages/sdk/hush-ts/` | Desktop maintainer |
-| Python SDK | `packages/sdk/hush-py/` | Community maintainer |
-| Rulesets | `rulesets/` | Any maintainer |
-| Documentation | `docs/` | Any maintainer |
-| Helm chart | `infra/deploy/helm/` | Bridges maintainer |
+| Component         | Directory                         | Owner(s)             |
+| ----------------- | --------------------------------- | -------------------- |
+| Crypto primitives | `crates/libs/hush-core/`          | Guards maintainer    |
+| Guard engine      | `crates/libs/clawdstrike/`        | Guards maintainer    |
+| Spine protocol    | `crates/libs/spine/`              | Spine maintainer     |
+| Tetragon bridge   | `crates/bridges/tetragon-bridge/` | Bridges maintainer   |
+| Hubble bridge     | `crates/bridges/hubble-bridge/`   | Bridges maintainer   |
+| hushd daemon      | `crates/services/hushd/`          | Guards maintainer    |
+| CLI               | `crates/services/hush-cli/`       | Guards maintainer    |
+| Desktop app       | `apps/desktop/`                   | Desktop maintainer   |
+| TypeScript SDK    | `packages/sdk/hush-ts/`           | Desktop maintainer   |
+| Python SDK        | `packages/sdk/hush-py/`           | Community maintainer |
+| Rulesets          | `rulesets/`                       | Any maintainer       |
+| Documentation     | `docs/`                           | Any maintainer       |
+| Helm chart        | `infra/deploy/helm/`              | Bridges maintainer   |
 
 ### Becoming a Maintainer
 
 Maintainer candidates are nominated by existing maintainers based on:
+
 - Sustained, high-quality contributions (6+ merged PRs)
 - Demonstrated understanding of the codebase and design philosophy
 - Constructive participation in reviews and discussions
@@ -224,6 +237,7 @@ The BDFL approves all maintainer additions.
 ### Phase 2: Steering Committee (12-24 months)
 
 When the contributor base grows beyond the founding team:
+
 - Transition to a 5-member elected Steering Committee
 - BDFL retains veto on security-critical decisions only
 - Sub-teams form around components with designated leads
@@ -232,6 +246,7 @@ When the contributor base grows beyond the founding team:
 ### Phase 3: CNCF Sandbox (24+ months)
 
 Requirements for CNCF Sandbox application:
+
 - 2+ maintainers from different organizations
 - Apache 2.0 license (prerequisite: Spec 04 must be completed first)
 - Adopt CNCF governance template
@@ -240,12 +255,12 @@ Requirements for CNCF Sandbox application:
 
 ## Community Channels
 
-| Channel | Purpose |
-|---------|---------|
-| [GitHub Discussions](https://github.com/backbay-labs/clawdstrike/discussions) | Q&A, feature ideas, architecture |
-| [Discord](https://discord.gg/clawdstrike) | Real-time chat, contributor coordination |
-| Weekly community call | Demos, roadmap, contributor spotlights |
-| Monthly security office hours | Guard design, threat modeling |
+| Channel                                                                       | Purpose                                  |
+| ----------------------------------------------------------------------------- | ---------------------------------------- |
+| [GitHub Discussions](https://github.com/backbay-labs/clawdstrike/discussions) | Q&A, feature ideas, architecture         |
+| [Discord](https://discord.gg/clawdstrike)                                     | Real-time chat, contributor coordination |
+| Weekly community call                                                         | Demos, roadmap, contributor spotlights   |
+| Monthly security office hours                                                 | Guard design, threat modeling            |
 ```
 
 ### Step 3: Overhaul `CONTRIBUTING.md`
@@ -253,9 +268,11 @@ Requirements for CNCF Sandbox application:
 Major changes from the current version:
 
 1. **Add DCO sign-off requirement** with instructions:
+
    ```
    git commit -s -m "feat(guards): add rate limiting"
    ```
+
    Every commit must include `Signed-off-by: Name <email>` (DCO 1.1).
 
 2. **Update architecture diagram** to include Spine, bridges, marketplace, desktop, multi-agent, certification crates
@@ -280,6 +297,7 @@ Major changes from the current version:
 6. **Update license reference**: Change "MIT License" to "Apache License 2.0". **This change is conditional on Spec 04 (Apache 2.0 license migration) completing first.** If Spec 04 has not yet landed, use a placeholder: `"See [LICENSE](./LICENSE) for the project's license terms."` to avoid referencing an incorrect license.
 
 7. **Add ruleset contribution guide** with example:
+
    ```yaml
    # rulesets/community/my-policy.yaml
    schema_version: "1.1.0"
@@ -301,6 +319,7 @@ Major additions:
 
 1. **Enable GitHub private vulnerability reporting**:
    Add to `SECURITY.md`:
+
    ```
    ## Reporting a Vulnerability
 
@@ -310,24 +329,25 @@ Major additions:
    2. Fill out the vulnerability report form
    3. We will respond within 48 hours
 
-   Alternatively, email security@clawdstrike.io with PGP-encrypted details.
+   Alternatively, email connor@backbay.io with PGP-encrypted details.
    ```
 
    Enable in repo settings: Settings > Security > Private vulnerability reporting.
 
 2. **Expand security scope** to cover the full SDR stack:
 
-   | Component | Security Scope | Critical Assets |
-   |-----------|---------------|-----------------|
-   | hush-core | Ed25519 signing, SHA-256/Keccak, Merkle trees, canonical JSON | Key material, signature verification |
-   | Guards | Policy evaluation, guard bypass resistance | Fail-closed invariant |
-   | Spine | Envelope signing, checkpoint integrity, proof verification | Append-only log, witness signatures |
-   | Bridges | Tetragon/Hubble event integrity, NATS transport | Signing key management, dedup |
-   | Marketplace | Feed signing, bundle verification, IPFS content integrity | Curator keys, provenance chain |
-   | hushd | API auth, audit log integrity, SSE broadcast | API keys, audit database |
-   | Desktop | Tauri IPC, localStorage trust config, P2P discovery | Trust settings, local key storage |
+   | Component   | Security Scope                                                | Critical Assets                      |
+   | ----------- | ------------------------------------------------------------- | ------------------------------------ |
+   | hush-core   | Ed25519 signing, SHA-256/Keccak, Merkle trees, canonical JSON | Key material, signature verification |
+   | Guards      | Policy evaluation, guard bypass resistance                    | Fail-closed invariant                |
+   | Spine       | Envelope signing, checkpoint integrity, proof verification    | Append-only log, witness signatures  |
+   | Bridges     | Tetragon/Hubble event integrity, NATS transport               | Signing key management, dedup        |
+   | Marketplace | Feed signing, bundle verification, IPFS content integrity     | Curator keys, provenance chain       |
+   | hushd       | API auth, audit log integrity, SSE broadcast                  | API keys, audit database             |
+   | Desktop     | Tauri IPC, localStorage trust config, P2P discovery           | Trust settings, local key storage    |
 
 3. **Add CVE publication process**:
+
    ```
    ## CVE Publication
 
@@ -339,6 +359,7 @@ Major additions:
    ```
 
 4. **Add planned security audits section**:
+
    ```
    ## Security Audits
 
@@ -358,6 +379,7 @@ Major additions:
 ### Step 5: Create GitHub issue templates
 
 **`.github/ISSUE_TEMPLATE/config.yml`:**
+
 ```yaml
 blank_issues_enabled: false
 contact_links:
@@ -370,6 +392,7 @@ contact_links:
 ```
 
 **`.github/ISSUE_TEMPLATE/bug_report.yml`:**
+
 ```yaml
 name: Bug Report
 description: Report a bug in ClawdStrike
@@ -448,6 +471,7 @@ body:
 ```
 
 **`.github/ISSUE_TEMPLATE/feature_request.yml`:**
+
 ```yaml
 name: Feature Request
 description: Suggest a new feature or enhancement
@@ -494,6 +518,7 @@ body:
 ```
 
 **`.github/ISSUE_TEMPLATE/guard_proposal.yml`:**
+
 ```yaml
 name: Guard Proposal
 description: Propose a new built-in or community guard
@@ -554,6 +579,7 @@ body:
 ```
 
 **`.github/ISSUE_TEMPLATE/ruleset_proposal.yml`:**
+
 ```yaml
 name: Ruleset / Policy Proposal
 description: Propose a community security ruleset
@@ -642,6 +668,7 @@ body:
 ### Step 7: Cross-reference all governance files
 
 Ensure each file links to the others:
+
 - `CONTRIBUTING.md` links to `CODE_OF_CONDUCT.md`, `SECURITY.md`, `GOVERNANCE.md`
 - `CODE_OF_CONDUCT.md` links to enforcement email
 - `SECURITY.md` links to `CONTRIBUTING.md` for non-security contributions
@@ -652,19 +679,19 @@ Ensure each file links to the others:
 
 ## File Changes
 
-| File | Action | Description |
-|------|--------|-------------|
-| `CODE_OF_CONDUCT.md` | Create | Contributor Covenant v2.1 |
-| `GOVERNANCE.md` | Create | BDFL + Maintainer Council model, RFC process, evolution path |
-| `CONTRIBUTING.md` | Overhaul | DCO, updated architecture, contribution on-ramps, multi-language setup, security review requirements |
-| `SECURITY.md` | Expand | Full SDR scope, GitHub private reporting, CVE process, audit plans |
-| `.github/ISSUE_TEMPLATE/config.yml` | Create | Disable blank issues, add security/discussion links |
-| `.github/ISSUE_TEMPLATE/bug_report.yml` | Create | Bug report form with component dropdown |
-| `.github/ISSUE_TEMPLATE/feature_request.yml` | Create | Feature request form |
-| `.github/ISSUE_TEMPLATE/guard_proposal.yml` | Create | Guard proposal form with threat model |
-| `.github/ISSUE_TEMPLATE/ruleset_proposal.yml` | Create | Ruleset/policy proposal form |
-| `.github/PULL_REQUEST_TEMPLATE.md` | Create | PR checklist with DCO, CI, security impact |
-| `README.md` | Modify | Add "Community" section linking to governance files |
+| File                                          | Action   | Description                                                                                          |
+| --------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `CODE_OF_CONDUCT.md`                          | Create   | Contributor Covenant v2.1                                                                            |
+| `GOVERNANCE.md`                               | Create   | BDFL + Maintainer Council model, RFC process, evolution path                                         |
+| `CONTRIBUTING.md`                             | Overhaul | DCO, updated architecture, contribution on-ramps, multi-language setup, security review requirements |
+| `SECURITY.md`                                 | Expand   | Full SDR scope, GitHub private reporting, CVE process, audit plans                                   |
+| `.github/ISSUE_TEMPLATE/config.yml`           | Create   | Disable blank issues, add security/discussion links                                                  |
+| `.github/ISSUE_TEMPLATE/bug_report.yml`       | Create   | Bug report form with component dropdown                                                              |
+| `.github/ISSUE_TEMPLATE/feature_request.yml`  | Create   | Feature request form                                                                                 |
+| `.github/ISSUE_TEMPLATE/guard_proposal.yml`   | Create   | Guard proposal form with threat model                                                                |
+| `.github/ISSUE_TEMPLATE/ruleset_proposal.yml` | Create   | Ruleset/policy proposal form                                                                         |
+| `.github/PULL_REQUEST_TEMPLATE.md`            | Create   | PR checklist with DCO, CI, security impact                                                           |
+| `README.md`                                   | Modify   | Add "Community" section linking to governance files                                                  |
 
 ---
 
@@ -713,12 +740,12 @@ Alternatively, use the simpler `probot/dco` GitHub App.
 
 ## Dependencies
 
-| Dependency | Type | Notes |
-|------------|------|-------|
-| Spec 04 (Apache 2.0 license migration) | Soft | CONTRIBUTING.md should reference the correct license. Can use "see LICENSE" as a placeholder until Spec 04 lands. |
-| GitHub repo settings | Admin | Enable "Private vulnerability reporting" in repo settings |
-| Email setup | Admin | `conduct@clawdstrike.io` and `security@clawdstrike.io` email addresses |
-| Discord server | Admin | Create Discord server and update invite link in GOVERNANCE.md |
+| Dependency                             | Type  | Notes                                                                                                             |
+| -------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------- |
+| Spec 04 (Apache 2.0 license migration) | Soft  | CONTRIBUTING.md should reference the correct license. Can use "see LICENSE" as a placeholder until Spec 04 lands. |
+| GitHub repo settings                   | Admin | Enable "Private vulnerability reporting" in repo settings                                                         |
+| Email setup                            | Admin | `connor@backbay.io` and `security@backbay.io` email addresses                                                     |
+| Discord server                         | Admin | Create Discord server and update invite link in GOVERNANCE.md                                                     |
 
 ---
 
