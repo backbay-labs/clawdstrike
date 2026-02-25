@@ -18,7 +18,6 @@ import type {
   EventType,
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
-import { isCuaToolCall } from '../cua-bridge/handler.js';
 import { peekApproval, recordApproval, type ApprovalResolutionType } from '../approval-state.js';
 import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
 
@@ -460,10 +459,6 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   const toolEvent = event as ToolCallEvent;
   const { toolName, params } = toolEvent.context.toolCall;
   const sessionId = toolEvent.context.sessionId;
-
-  if (isCuaToolCall(toolName, params)) {
-    return;
-  }
 
   // Determine if this tool is destructive
   const eventType = inferPolicyEventType(toolName, params);
