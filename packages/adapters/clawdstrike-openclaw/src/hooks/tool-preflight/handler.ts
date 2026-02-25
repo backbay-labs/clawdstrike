@@ -68,7 +68,7 @@ const DESTRUCTIVE_EVENT_MAP: Array<{ tokens: Set<string>; eventType: EventType }
 ];
 
 /** Network tokens for egress classification */
-const NETWORK_TOKENS = new Set(['fetch', 'http', 'web', 'curl', 'request', 'api', 'download', 'upload', 'socket', 'connect']);
+const NETWORK_TOKENS = new Set(['fetch', 'http', 'web', 'curl', 'request', 'api', 'download', 'socket', 'connect']);
 
 /**
  * Tokenize a tool name by splitting on common delimiters and camel-case boundaries.
