@@ -42,8 +42,8 @@ import { McpToolGuard } from './guards/mcp-tool.js';
 import { PatchIntegrityGuard } from './guards/patch-integrity.js';
 import { PromptInjectionGuard } from './guards/prompt-injection.js';
 import { SecretLeakGuard } from './guards/secret-leak.js';
-import { GuardAction, GuardContext, Severity } from './guards/types.js';
-import type { Guard, GuardResult } from './guards/types.js';
+import { GuardAction, GuardContext, GuardResult, Severity } from './guards/types.js';
+import type { Guard } from './guards/types.js';
 import type { EgressAllowlistConfig } from './guards/egress-allowlist.js';
 import type { ForbiddenPathConfig } from './guards/forbidden-path.js';
 import type { JailbreakGuardConfig } from './guards/jailbreak.js';
@@ -1187,7 +1187,16 @@ export class ClawdstrikeSession {
         continue;
       }
 
-      const result = guard.check(guardAction, guardContext);
+      let result: GuardResult;
+      try {
+        result = guard.check(guardAction, guardContext);
+      } catch (error) {
+        result = GuardResult.block(
+          guard.name,
+          Severity.CRITICAL,
+          `Guard evaluation error (fail-closed): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       const decision = guardResultToDecision(result);
 
       if (decision.status === 'deny') {
@@ -1485,7 +1494,16 @@ export class Clawdstrike {
         continue;
       }
 
-      const result = guard.check(guardAction, this.defaultContext);
+      let result: GuardResult;
+      try {
+        result = guard.check(guardAction, this.defaultContext);
+      } catch (error) {
+        result = GuardResult.block(
+          guard.name,
+          Severity.CRITICAL,
+          `Guard evaluation error (fail-closed): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       const decision = guardResultToDecision(result);
 
       if (decision.status === 'deny') {

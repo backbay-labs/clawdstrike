@@ -58,6 +58,9 @@ class JailbreakConfig:
     block_threshold: int = 70
     warn_threshold: int = 30
     max_input_bytes: int = 200_000
+    # session_aggregation is accepted in configuration but not yet implemented.
+    # Matching Rust's exponential decay model is non-trivial; this field is
+    # reserved for future use.
     session_aggregation: bool = True
 
 

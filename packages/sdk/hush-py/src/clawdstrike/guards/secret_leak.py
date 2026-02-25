@@ -44,6 +44,36 @@ DEFAULT_SECRET_PATTERNS: List[SecretPattern] = [
         pattern=r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----",
         severity="critical",
     ),
+    SecretPattern(
+        name="aws_secret_key",
+        pattern=r"(?i)aws[_\-]?secret[_\-]?access[_\-]?key['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9/+=]{40}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="github_pat",
+        pattern=r"github_pat_[A-Za-z0-9_]{82}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="anthropic_key",
+        pattern=r"\bsk-ant-[A-Za-z0-9_-]{40,}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="npm_token",
+        pattern=r"npm_[A-Za-z0-9]{36}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="slack_token",
+        pattern=r"xox[baprs]-[A-Za-z0-9\-]{10,}",
+        severity="critical",
+    ),
+    SecretPattern(
+        name="generic_secret",
+        pattern=r"(?i)(secret|password|passwd|pwd)['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9!@#$%^&*]{8,}",
+        severity="critical",
+    ),
 ]
 
 
@@ -92,7 +122,7 @@ class SecretLeakGuard(Guard):
         return "secret_leak"
 
     def handles(self, action: GuardAction) -> bool:
-        if action.action_type == "file_write":
+        if action.action_type in ("file_write", "patch"):
             return True
         if action.action_type == "custom" and action.custom_type:
             return action.custom_type in self.OUTPUT_ACTIONS
@@ -101,6 +131,16 @@ class SecretLeakGuard(Guard):
     def _extract_text(self, action: GuardAction) -> str:
         """Extract text content from action."""
         if action.action_type == "file_write":
+            if action.content is not None:
+                try:
+                    return action.content.decode("utf-8", errors="replace")
+                except (AttributeError, UnicodeDecodeError):
+                    return str(action.content)
+            return ""
+
+        if action.action_type == "patch":
+            if action.diff is not None:
+                return action.diff
             if action.content is not None:
                 try:
                     return action.content.decode("utf-8", errors="replace")

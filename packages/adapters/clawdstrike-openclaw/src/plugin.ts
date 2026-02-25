@@ -6,7 +6,7 @@
 
 import { PolicyEngine } from "./policy/engine.js";
 import type { ClawdstrikeConfig, CommandBuilder, HookHandler, PolicyEvent } from "./types.js";
-import toolPreflightHandler, { initialize as initPreflight } from "./hooks/tool-preflight/handler.js";
+import toolPreflightHandler, { initialize as initPreflight, getEngine } from "./hooks/tool-preflight/handler.js";
 import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
 import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agent-bootstrap/handler.js";
 import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
@@ -76,7 +76,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     async execute(_id: string, params: Record<string, unknown>) {
       try {
         const config = getConfig();
-        const engine = new PolicyEngine(config);
+        const engine = getEngine() ?? new PolicyEngine(config);
 
         const action = (typeof params.action === 'string' ? params.action : 'tool_call') as PolicyCheckAction;
         const resource = typeof params.resource === 'string' ? params.resource : '';
@@ -106,7 +106,13 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
           content: [
             {
               type: "text",
-              text: JSON.stringify({ error: true, message }, null, 2),
+              text: JSON.stringify({
+                status: "deny",
+                guard: "policy_engine",
+                reason: "evaluation_error",
+                message: `Policy evaluation failed (fail-closed): ${message}`,
+                suggestion: "Check policy configuration and retry",
+              }, null, 2),
             },
           ],
         };
@@ -199,7 +205,7 @@ interface PluginDecision {
 
 function buildEvent(action: PolicyCheckAction, resource: string): PolicyEvent {
   const now = new Date();
-  const eventId = `policy-check-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+  const eventId = `policy-check-${now.getTime()}-${crypto.randomUUID()}`;
   const timestamp = now.toISOString();
 
   switch (action) {

@@ -132,6 +132,9 @@ class PagerDutyClient {
       this.autoResolveTimer = setInterval(() => {
         void this.checkAutoResolve();
       }, 60_000);
+      if (typeof this.autoResolveTimer === 'object' && 'unref' in this.autoResolveTimer) {
+        this.autoResolveTimer.unref();
+      }
     }
   }
 
@@ -304,6 +307,9 @@ class OpsGenieClient {
     this.heartbeatTimer = setInterval(() => {
       void this.pingHeartbeat();
     }, intervalMs);
+    if (typeof this.heartbeatTimer === 'object' && 'unref' in this.heartbeatTimer) {
+      this.heartbeatTimer.unref();
+    }
     void this.pingHeartbeat();
   }
 
@@ -320,6 +326,7 @@ class OpsGenieClient {
   }
 }
 
+/** @experimental */
 export class AlertingExporter extends BaseExporter {
   readonly name = "alerting";
   readonly schema = SchemaFormat.Native;

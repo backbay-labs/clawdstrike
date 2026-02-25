@@ -34,7 +34,7 @@ export function initialize(config: ClawdstrikeConfig): void {
 /**
  * Get or create the policy engine
  */
-function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
+export function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
   if (!engine) {
     engine = new PolicyEngine(config ?? {});
   }
@@ -44,7 +44,7 @@ function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
 /** Read-only tokens: if ANY token matches and no destructive token is present, tool is read-only */
 const READ_ONLY_TOKENS = new Set([
   'read', 'list', 'get', 'search', 'view', 'show', 'find', 'describe',
-  'info', 'status', 'check', 'ls', 'cat', 'head', 'tail', 'type',
+  'info', 'status', 'check', 'ls', 'cat', 'head', 'tail',
   'which', 'echo', 'pwd', 'env', 'whoami', 'hostname', 'uname', 'date',
   'glob', 'grep',
 ]);
@@ -55,6 +55,7 @@ const DESTRUCTIVE_TOKENS = new Set([
   'uninstall', 'create', 'update', 'modify', 'patch', 'put', 'post',
   'move', 'mv', 'rename', 'chmod', 'chown', 'drop', 'truncate',
   'edit', 'command', 'bash', 'save', 'overwrite', 'unlink', 'terminal',
+  'append', 'replace', 'deploy', 'push', 'send', 'publish', 'upload',
 ]);
 
 /** Destructive token-to-event-type mapping for specific policy routing */
@@ -66,7 +67,7 @@ const DESTRUCTIVE_EVENT_MAP: Array<{ tokens: Set<string>; eventType: EventType }
 ];
 
 /** Network tokens for egress classification */
-const NETWORK_TOKENS = new Set(['fetch', 'http', 'web', 'curl', 'request']);
+const NETWORK_TOKENS = new Set(['fetch', 'http', 'web', 'curl', 'request', 'api', 'download', 'upload', 'socket', 'connect']);
 
 /**
  * Tokenize a tool name by splitting on common delimiters and camel-case boundaries.
@@ -166,7 +167,7 @@ function buildPolicyEvent(
   params: Record<string, unknown>,
   eventType: EventType,
 ): PolicyEvent {
-  const eventId = `preflight-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const eventId = `preflight-${sessionId}-${Date.now()}-${crypto.randomUUID()}`;
   const timestamp = new Date().toISOString();
 
   switch (eventType) {
@@ -304,7 +305,7 @@ function looksLikePatchApply(params: Record<string, unknown>): boolean {
   return typeof params.patch === 'string'
     || typeof params.diff === 'string'
     || typeof params.patchContent === 'string'
-    || typeof params.filePath === 'string';
+    || (typeof params.filePath === 'string' && (typeof params.content === 'string' || typeof params.newContent === 'string'));
 }
 
 function looksLikeCommandExec(params: Record<string, unknown>): boolean {
@@ -391,6 +392,7 @@ async function requestApproval(details: {
     const submitRes = await fetch(`${approvalUrl}/api/v1/approval/request`, {
       method: 'POST',
       headers: authHeaders,
+      signal: AbortSignal.timeout(10_000),
       body: JSON.stringify({
         tool: details.toolName,
         resource: details.resource,
@@ -416,6 +418,7 @@ async function requestApproval(details: {
     try {
       const pollRes = await fetch(`${approvalUrl}/api/v1/approval/${id}/status`, {
         headers: { 'Authorization': 'Bearer ' + token },
+        signal: AbortSignal.timeout(10_000),
       });
       if (!pollRes.ok) {
         return null;
@@ -456,6 +459,10 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   const toolEvent = event as ToolCallEvent;
   const { toolName, params } = toolEvent.context.toolCall;
   const sessionId = toolEvent.context.sessionId;
+
+  if (toolName.startsWith('computer_') || toolName.startsWith('cua_')) {
+    return;
+  }
 
   // Determine if this tool is destructive
   const eventType = inferPolicyEventType(toolName, params);

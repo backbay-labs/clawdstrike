@@ -24,6 +24,7 @@ export interface ElasticConfig extends Partial<ExporterConfig> {
   tls?: ElasticTlsConfig;
 }
 
+/** @experimental */
 export class ElasticExporter extends BaseExporter {
   readonly name = "elastic";
   readonly schema = SchemaFormat.ECS;

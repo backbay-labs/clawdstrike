@@ -85,7 +85,7 @@ def verify_signature(message: bytes, signature: bytes, public_key: bytes) -> boo
         verify_key = VerifyKey(public_key)
         verify_key.verify(message, signature)
         return True
-    except (BadSignatureError, Exception):
+    except BadSignatureError:
         return False
 
 

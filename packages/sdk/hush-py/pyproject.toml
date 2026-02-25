@@ -34,6 +34,7 @@ dev = [
     "pytest-cov>=4.0",
     "mypy>=1.0",
     "ruff>=0.1",
+    "types-PyYAML>=6.0",
 ]
 
 [build-system]
@@ -42,6 +43,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/clawdstrike", "src/hush"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"../../../rulesets" = "clawdstrike/rulesets"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

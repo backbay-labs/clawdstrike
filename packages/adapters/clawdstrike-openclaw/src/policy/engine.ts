@@ -267,7 +267,14 @@ export class PolicyEngine {
 
   private applyMode(result: Decision, mode: EvaluationMode): Decision {
     if (mode === 'audit') {
-      return { status: 'allow' };
+      return {
+        status: 'allow',
+        reason_code: result.reason_code,
+        reason: result.reason,
+        message: `[audit] Original decision: ${result.status} — ${result.message ?? result.reason ?? 'no reason'}`,
+        guard: result.guard,
+        severity: result.severity,
+      };
     }
 
     if (mode === 'advisory' && result.status === 'deny') {
@@ -787,6 +794,10 @@ export class PolicyEngine {
       );
     }
 
+    if (action && action !== 'cancel') {
+      console.warn(`[clawdstrike] Unhandled on_violation action: "${action}" — treating as deny`);
+    }
+
     return decision;
   }
 
@@ -833,8 +844,8 @@ function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
 }
 
 function combineDecisions(base: Decision, next: Decision): Decision {
-  if (next.status === 'deny' || next.status === 'warn') return next;
-  return base;
+  const rank: Record<string, number> = { deny: 2, warn: 1, allow: 0 };
+  return (rank[next.status] ?? 0) > (rank[base.status] ?? 0) ? next : base;
 }
 
 function normalizeStringList(values: unknown): string[] {
