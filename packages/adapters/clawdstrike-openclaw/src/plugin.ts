@@ -76,7 +76,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     async execute(_id: string, params: Record<string, unknown>) {
       try {
         const config = getConfig();
-        const engine = getEngine() ?? new PolicyEngine(config);
+        const engine = getEngine(config);
 
         const action = (typeof params.action === 'string' ? params.action : 'tool_call') as PolicyCheckAction;
         const resource = typeof params.resource === 'string' ? params.resource : '';
