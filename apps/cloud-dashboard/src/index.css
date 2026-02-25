@@ -1,1 +1,51 @@
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap");
+
 @import "tailwindcss";
+
+:root {
+  --glia-font-display: "Cinzel", serif;
+  --glia-font-body: "Inter", sans-serif;
+  --glia-font-mono: "JetBrains Mono", monospace;
+
+  --glia-color-accent: #22d3ee;
+  --glia-color-accent-muted: rgba(34, 211, 238, 0.15);
+  --glia-color-accent-glow: rgba(34, 211, 238, 0.35);
+  --glia-color-destructive: #ef4444;
+  --glia-color-success: #10b981;
+  --glia-color-warning: #eab308;
+
+  --glia-color-windowBg: rgba(4, 8, 16, 0.94);
+  --glia-color-windowBorder: rgba(34, 211, 238, 0.12);
+  --glia-color-windowBorderFocused: rgba(34, 211, 238, 0.3);
+  --glia-color-titlebarBg: rgba(4, 8, 16, 0.98);
+  --glia-color-titlebarText: #e5e7eb;
+  --glia-color-taskbarBg: rgba(4, 8, 16, 0.96);
+  --glia-color-taskbarText: #94a3b8;
+  --glia-color-textPrimary: #e5e7eb;
+  --glia-color-textSecondary: #94a3b8;
+  --glia-color-textMuted: #64748b;
+  --glia-color-desktopBg: #02040a;
+
+  --glia-spacing-taskbar-height: 48px;
+  --glia-radius-window: 8px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #02040a;
+  color: #e5e7eb;
+  font-family: var(--glia-font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

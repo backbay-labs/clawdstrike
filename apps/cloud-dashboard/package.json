@@ -1,8 +1,8 @@
 {
   "name": "@backbay/cloud-dashboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "ClawdStrike Cloud web dashboard (React SPA)",
+  "description": "ClawdStrike Cloud web dashboard – BackbayOS desktop experience",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,9 +12,13 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@backbay/glia": "file:../../../backbay-sdk/packages/glia",
+    "@backbay/glia-desktop": "file:../../../backbay-sdk/packages/glia-desktop",
+    "framer-motion": "^12.23.24",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.1"
+    "react-rnd": "^10.4.13",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
