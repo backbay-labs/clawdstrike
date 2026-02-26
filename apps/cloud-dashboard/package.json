@@ -14,8 +14,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@backbay/glia": "file:../../../backbay-sdk/packages/glia",
-    "@backbay/glia-desktop": "file:../../../backbay-sdk/packages/glia-desktop",
+    "@backbay/glia": "^0.2.0",
+    "@backbay/glia-desktop": "^0.2.0",
     "framer-motion": "^12.23.24",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

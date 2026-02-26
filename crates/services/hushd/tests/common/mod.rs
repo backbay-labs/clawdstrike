@@ -101,6 +101,9 @@ impl TestDaemon {
     }
 
     pub fn spawn_rate_limited_daemon(burst_size: u32, requests_per_second: u32) -> Self {
+        // Loopback connections are exempt from rate limiting, so enable
+        // trust_xff_from_any so tests can simulate non-loopback clients
+        // via the X-Forwarded-For header.
         Self::spawn_with_config(Config {
             cors_enabled: false,
             auth: AuthConfig {
@@ -111,6 +114,7 @@ impl TestDaemon {
                 enabled: true,
                 burst_size,
                 requests_per_second,
+                trust_xff_from_any: true,
                 ..Default::default()
             },
             ..Default::default()

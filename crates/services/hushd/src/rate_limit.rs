@@ -135,12 +135,16 @@ pub async fn rate_limit_middleware(
         return next.run(req).await;
     }
 
-    // Extract client IP with trusted proxy check
-    let client_ip = extract_client_ip(&req, &rate_limit);
+    // Skip rate limiting for loopback connections (agent proxy, CLI, local dev).
+    // hushd binds to localhost by default, so all local traffic is trusted.
+    let connection_ip = extract_client_ip(&req, &rate_limit);
+    if connection_ip.is_loopback() {
+        return next.run(req).await;
+    }
 
-    // Check rate limit
+    // Check rate limit using the already-extracted client IP
     if let Some(ref limiter) = rate_limit.limiter {
-        match limiter.check_key(&client_ip) {
+        match limiter.check_key(&connection_ip) {
             Ok(_) => {
                 // Request allowed
                 next.run(req).await
@@ -148,7 +152,7 @@ pub async fn rate_limit_middleware(
             Err(not_until) => {
                 // Rate limit exceeded
                 tracing::debug!(
-                    client_ip = %client_ip,
+                    client_ip = %connection_ip,
                     "Rate limit exceeded"
                 );
                 rate_limit.metrics.inc_rate_limit_dropped();

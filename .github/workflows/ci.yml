@@ -189,9 +189,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: apps/cloud-dashboard/package-lock.json
 
-      - name: Stub external file deps
-        run: node apps/cloud-dashboard/ci/stub-deps.mjs
-
       - name: Install dependencies
         working-directory: apps/cloud-dashboard
         run: npm ci
