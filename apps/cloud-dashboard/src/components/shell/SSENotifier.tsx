@@ -22,12 +22,19 @@ const STATUS_TOAST: Partial<Record<SSEConnectionStatus, { msg: string; type: Toa
   network_error: { msg: "SSE network error — retrying",   type: "error" },
 };
 
-let toastId = 0;
-
 export function SSENotifier() {
   const { status } = useSharedSSE();
   const prevStatus = useRef<SSEConnectionStatus>(status);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = useRef(0);
+  const timersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+
+  useEffect(() => {
+    return () => {
+      for (const t of timersRef.current) clearTimeout(t);
+      timersRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (status === prevStatus.current) return;
@@ -39,12 +46,14 @@ export function SSENotifier() {
     const cfg = STATUS_TOAST[status];
     if (!cfg) return;
 
-    const id = ++toastId;
+    const id = ++toastIdRef.current;
     setToasts((t) => [...t, { id, message: cfg.msg, type: cfg.type }]);
 
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setToasts((t) => t.filter((toast) => toast.id !== id));
+      timersRef.current.delete(timer);
     }, 4000);
+    timersRef.current.add(timer);
   }, [status]);
 
   if (toasts.length === 0) return null;
@@ -67,6 +76,7 @@ export function SSENotifier() {
         return (
           <div
             key={toast.id}
+            className="font-mono"
             style={{
               pointerEvents: "auto",
               background: "rgba(4,8,16,0.94)",
@@ -75,7 +85,6 @@ export function SSENotifier() {
               borderRadius: 8,
               padding: "10px 16px",
               boxShadow: `inset 0 1px 0 rgba(255,255,255,0.02), 0 4px 16px ${s.glow}`,
-              fontFamily: "var(--glia-font-mono, 'JetBrains Mono', monospace)",
               fontSize: 12,
               letterSpacing: "0.06em",
               color: s.color,
@@ -86,12 +95,6 @@ export function SSENotifier() {
           </div>
         );
       })}
-      <style>{`
-        @keyframes toastSlideIn {
-          from { opacity: 0; transform: translateX(20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-      `}</style>
     </div>
   );
 }

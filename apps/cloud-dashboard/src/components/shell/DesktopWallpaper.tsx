@@ -1,5 +1,7 @@
 const GRID_SVG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cpath d='M60 0H0v60' fill='none' stroke='rgba(34,211,238,0.04)' stroke-width='0.5'/%3E%3C/svg%3E")`;
 
+const NOISE_BG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
+
 export function DesktopWallpaper() {
   return (
     <div
@@ -16,16 +18,18 @@ export function DesktopWallpaper() {
         pointerEvents: "none",
       }}
     >
-      {/* noise grain overlay */}
-      <svg
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.04 }}
+      {/* noise grain overlay — tiled CSS background instead of full-viewport SVG filter */}
+      <div
         aria-hidden
-      >
-        <filter id="wallpaper-noise">
-          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#wallpaper-noise)" />
-      </svg>
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage: NOISE_BG,
+          backgroundRepeat: "repeat",
+          opacity: 0.04,
+          pointerEvents: "none",
+        }}
+      />
     </div>
   );
 }

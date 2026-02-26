@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { fetchIntegrationSettings, saveIntegrationSettings } from "../api/client";
 import { notifySSEConfigChanged } from "../hooks/useSSE";
+import { NoiseGrain, GlassButton } from "../components/ui";
+import packageJson from "../../package.json";
 
 type SettingsSection = "connection" | "siem" | "webhooks";
 
@@ -27,95 +29,14 @@ const SECTION_ORDER: Array<{ id: SettingsSection; label: string; description: st
   },
 ];
 
-const GLASS_PANEL = {
-  background: "rgba(4,8,16,0.94)",
-  border: "1px solid rgba(34,211,238,0.12)",
-  backdropFilter: "blur(24px)",
-  WebkitBackdropFilter: "blur(24px)",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
-} as const;
-
-const INPUT_STYLE = {
-  background: "rgba(4,8,16,0.8)",
-  border: "1px solid rgba(34,211,238,0.12)",
-  color: "rgba(229,231,235,0.92)",
-  fontFamily: "var(--glia-font-body), sans-serif",
-} as const;
-
 const INPUT_FOCUS_CSS =
-  "rounded-md px-3 py-2 text-sm outline-none transition-colors duration-150 focus:ring-1 placeholder:text-[rgba(100,116,139,0.5)]";
-
-function NoiseGrain({ id = "settingsNoise" }: { id?: string }) {
-  return (
-    <svg
-      aria-hidden
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        opacity: 0.04,
-        pointerEvents: "none",
-        borderRadius: "inherit",
-      }}
-    >
-      <filter id={id}>
-        <feTurbulence
-          type="fractalNoise"
-          baseFrequency="0.8"
-          numOctaves="4"
-          stitchTiles="stitch"
-        />
-      </filter>
-      <rect width="100%" height="100%" filter={`url(#${id})`} />
-    </svg>
-  );
-}
-
-function GlassButton({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-md px-5 py-2 text-sm transition-all duration-200 disabled:opacity-50"
-      style={{
-        ...GLASS_PANEL,
-        color: "#22d3ee",
-        fontFamily: "var(--glia-font-mono), monospace",
-        letterSpacing: "0.05em",
-        cursor: disabled ? "default" : "pointer",
-      }}
-      onMouseEnter={(e) => {
-        if (disabled) return;
-        e.currentTarget.style.boxShadow =
-          "inset 0 1px 0 rgba(255,255,255,0.02), 0 0 14px rgba(34,211,238,0.18)";
-        e.currentTarget.style.borderColor = "rgba(34,211,238,0.35)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.02)";
-        e.currentTarget.style.borderColor = "rgba(34,211,238,0.12)";
-      }}
-    >
-      {children}
-    </button>
-  );
-}
+  "glass-input font-body rounded-md px-3 py-2 text-sm outline-none transition-colors duration-150 focus:ring-1 placeholder:text-[rgba(100,116,139,0.5)]";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <span
-      className="text-[10px]"
+      className="font-mono text-[10px]"
       style={{
-        fontFamily: "var(--glia-font-mono), monospace",
         color: "rgba(34,211,238,0.55)",
         textTransform: "uppercase",
         letterSpacing: "0.1em",
@@ -281,18 +202,15 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
   return (
     <div className="space-y-6" style={{ color: "rgba(229,231,235,0.92)" }}>
       <h1
-        className="text-2xl tracking-wide"
-        style={{ fontFamily: "var(--glia-font-display), Cinzel, serif", color: "#fff" }}
+        className="font-display text-2xl tracking-wide"
+        style={{ color: "#fff" }}
       >
         Settings
       </h1>
 
       {/* Tab selector */}
-      <section
-        className="relative max-w-3xl overflow-hidden rounded-lg p-4"
-        style={GLASS_PANEL}
-      >
-        <NoiseGrain id="settingsTabs" />
+      <section className="glass-panel max-w-3xl p-4">
+        <NoiseGrain />
         <div className="relative z-10 grid gap-2 sm:grid-cols-3">
           {SECTION_ORDER.map((section) => {
             const active = section.id === activeSection;
@@ -314,9 +232,8 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
                 }}
               >
                 <p
-                  className="text-sm font-medium"
+                  className="font-mono text-sm font-medium"
                   style={{
-                    fontFamily: "var(--glia-font-mono), monospace",
                     letterSpacing: "0.05em",
                     color: active ? "#22d3ee" : "rgba(229,231,235,0.7)",
                   }}
@@ -324,11 +241,8 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
                   {section.label}
                 </p>
                 <p
-                  className="mt-1 text-xs"
-                  style={{
-                    fontFamily: "var(--glia-font-body), sans-serif",
-                    color: "rgba(229,231,235,0.35)",
-                  }}
+                  className="font-body mt-1 text-xs"
+                  style={{ color: "rgba(229,231,235,0.35)" }}
                 >
                   {section.description}
                 </p>
@@ -341,42 +255,31 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
       {/* Status messages */}
       {statusMessage && (
         <section
-          className="relative max-w-3xl overflow-hidden rounded-lg p-3 text-sm"
-          style={{
-            ...GLASS_PANEL,
-            borderColor: "rgba(16,185,129,0.3)",
-            color: "#10b981",
-          }}
+          className="glass-panel max-w-3xl p-3 text-sm"
+          style={{ borderColor: "rgba(16,185,129,0.3)", color: "#10b981" }}
         >
-          <NoiseGrain id="settingsSuccess" />
+          <NoiseGrain />
           <span className="relative z-10">{statusMessage}</span>
         </section>
       )}
 
       {statusError && (
         <section
-          className="relative max-w-3xl overflow-hidden rounded-lg p-3 text-sm"
-          style={{
-            ...GLASS_PANEL,
-            borderColor: "rgba(239,68,68,0.3)",
-            color: "#ef4444",
-          }}
+          className="glass-panel max-w-3xl p-3 text-sm"
+          style={{ borderColor: "rgba(239,68,68,0.3)", color: "#ef4444" }}
         >
-          <NoiseGrain id="settingsError" />
+          <NoiseGrain />
           <span className="relative z-10">{statusError}</span>
         </section>
       )}
 
       {/* Connection section */}
       {activeSection === "connection" && (
-        <section
-          className="relative max-w-3xl space-y-5 overflow-hidden rounded-lg p-6"
-          style={GLASS_PANEL}
-        >
-          <NoiseGrain id="settingsConn" />
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
           <h2
-            className="relative z-10 text-lg tracking-wide"
-            style={{ fontFamily: "var(--glia-font-display), Cinzel, serif", color: "#fff" }}
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
           >
             Connection
           </h2>
@@ -389,7 +292,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
               onChange={(e) => setHushdUrl(e.target.value)}
               placeholder="http://localhost:9876"
               className={INPUT_FOCUS_CSS}
-              style={{ ...INPUT_STYLE, ...focusRingStyle }}
+              style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
             />
           </label>
 
@@ -401,7 +304,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Bearer token for hushd"
               className={INPUT_FOCUS_CSS}
-              style={{ ...INPUT_STYLE, ...focusRingStyle }}
+              style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
             />
           </label>
 
@@ -418,14 +321,11 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
 
       {/* SIEM section */}
       {activeSection === "siem" && (
-        <section
-          className="relative max-w-3xl space-y-5 overflow-hidden rounded-lg p-6"
-          style={GLASS_PANEL}
-        >
-          <NoiseGrain id="settingsSiem" />
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
           <h2
-            className="relative z-10 text-lg tracking-wide"
-            style={{ fontFamily: "var(--glia-font-display), Cinzel, serif", color: "#fff" }}
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
           >
             SIEM Export
           </h2>
@@ -436,7 +336,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
               value={siemProvider}
               onChange={(e) => setSiemProvider(e.target.value)}
               className={INPUT_FOCUS_CSS}
-              style={{ ...INPUT_STYLE, ...focusRingStyle }}
+              style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
             >
               <option value="datadog">Datadog</option>
               <option value="splunk">Splunk</option>
@@ -454,7 +354,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
               onChange={(e) => setSiemEndpoint(e.target.value)}
               placeholder="https://example-collector.company.net"
               className={INPUT_FOCUS_CSS}
-              style={{ ...INPUT_STYLE, ...focusRingStyle }}
+              style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
             />
           </label>
 
@@ -466,7 +366,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
               onChange={(e) => setSiemApiKey(e.target.value)}
               placeholder="Optional auth token"
               className={INPUT_FOCUS_CSS}
-              style={{ ...INPUT_STYLE, ...focusRingStyle }}
+              style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
             />
           </label>
 
@@ -485,14 +385,11 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
 
       {/* Webhooks section */}
       {activeSection === "webhooks" && (
-        <section
-          className="relative max-w-3xl space-y-5 overflow-hidden rounded-lg p-6"
-          style={GLASS_PANEL}
-        >
-          <NoiseGrain id="settingsWebhooks" />
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
           <h2
-            className="relative z-10 text-lg tracking-wide"
-            style={{ fontFamily: "var(--glia-font-display), Cinzel, serif", color: "#fff" }}
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
           >
             Webhooks
           </h2>
@@ -505,7 +402,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
               onChange={(e) => setWebhookUrl(e.target.value)}
               placeholder="https://hooks.slack.com/services/..."
               className={INPUT_FOCUS_CSS}
-              style={{ ...INPUT_STYLE, ...focusRingStyle }}
+              style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
             />
           </label>
 
@@ -517,7 +414,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
               onChange={(e) => setWebhookSecret(e.target.value)}
               placeholder="Secret for HMAC signing"
               className={INPUT_FOCUS_CSS}
-              style={{ ...INPUT_STYLE, ...focusRingStyle }}
+              style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
             />
           </label>
 
@@ -535,25 +432,19 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
       )}
 
       {/* About section */}
-      <section
-        className="relative max-w-3xl overflow-hidden rounded-lg p-6"
-        style={GLASS_PANEL}
-      >
-        <NoiseGrain id="settingsAbout" />
+      <section className="glass-panel max-w-3xl p-6">
+        <NoiseGrain />
         <h2
-          className="relative z-10 mb-2 text-lg tracking-wide"
-          style={{ fontFamily: "var(--glia-font-display), Cinzel, serif", color: "#fff" }}
+          className="font-display relative z-10 mb-2 text-lg tracking-wide"
+          style={{ color: "#fff" }}
         >
           About
         </h2>
         <p
-          className="relative z-10 text-sm"
-          style={{
-            fontFamily: "var(--glia-font-body), sans-serif",
-            color: "rgba(229,231,235,0.5)",
-          }}
+          className="font-body relative z-10 text-sm"
+          style={{ color: "rgba(229,231,235,0.5)" }}
         >
-          ClawdStrike Dashboard v0.1.0 &mdash; Local-first security monitoring for hushd.
+          ClawdStrike Dashboard v{packageJson.version} &mdash; Local-first security monitoring for hushd.
         </p>
       </section>
     </div>

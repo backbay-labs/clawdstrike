@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface SSEEvent {
+  _id: number;
   event_type: string;
   action_type?: string;
   target?: string;
@@ -11,6 +12,8 @@ export interface SSEEvent {
   agent_id?: string;
   timestamp: string;
 }
+
+let _nextEventId = 1;
 
 export type SSEConnectionStatus =
   | "connecting"
@@ -159,6 +162,7 @@ export function useSSE(url: string): UseSSEResult {
                           if (data !== "ping" && raw !== "ping") {
                             const eventType = currentEvent || "message";
                             const event: SSEEvent = {
+                              _id: _nextEventId++,
                               ...data,
                               event_type: eventType,
                               timestamp: data.timestamp ?? new Date().toISOString(),
@@ -230,6 +234,7 @@ export function useSSE(url: string): UseSSEResult {
         try {
           const data = JSON.parse(e.data);
           const event: SSEEvent = {
+            _id: _nextEventId++,
             ...data,
             event_type: eventType,
             timestamp: data.timestamp ?? new Date().toISOString(),
@@ -252,6 +257,7 @@ export function useSSE(url: string): UseSSEResult {
         const data = JSON.parse(e.data);
         if (data === "ping" || e.data === "ping") return;
         const event: SSEEvent = {
+          _id: _nextEventId++,
           ...data,
           event_type: "message",
           timestamp: data.timestamp ?? new Date().toISOString(),

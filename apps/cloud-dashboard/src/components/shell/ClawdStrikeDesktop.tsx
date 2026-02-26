@@ -15,12 +15,12 @@ import { desktopIcons } from "../../state/processRegistry";
 function LoadingFallback() {
   return (
     <div
+      className="font-mono"
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         height: "100%",
-        fontFamily: "var(--glia-font-mono, 'JetBrains Mono', monospace)",
         fontSize: 12,
         letterSpacing: "0.12em",
         textTransform: "uppercase",
@@ -36,15 +36,17 @@ const WindowItem = memo(function WindowItem({ windowId }: { windowId: WindowId }
   const win = useWindow(windowId);
   const { processes } = useDesktopOS();
 
-  const instance = useMemo(
-    () => processes.instances.find((i) => i.windowId === windowId),
+  const processId = useMemo(
+    () => processes.instances.find((i) => i.windowId === windowId)?.processId,
     [processes.instances, windowId],
   );
 
-  if (!win) return null;
+  const definition = useMemo(
+    () => (processId ? processes.getDefinition(processId) : undefined),
+    [processes, processId],
+  );
 
-  const definition = instance ? processes.getDefinition(instance.processId) : undefined;
-  if (!definition) return null;
+  if (!win || !definition) return null;
 
   const AppComponent = definition.component;
 
@@ -52,6 +54,7 @@ const WindowItem = memo(function WindowItem({ windowId }: { windowId: WindowId }
     <Window id={windowId}>
       {win.isMinimized ? (
         <div
+          className="font-mono"
           style={{
             width: "100%",
             height: "100%",
@@ -59,7 +62,6 @@ const WindowItem = memo(function WindowItem({ windowId }: { windowId: WindowId }
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontFamily: "var(--glia-font-mono, monospace)",
             fontSize: 11,
             letterSpacing: "0.15em",
             textTransform: "uppercase",
@@ -111,6 +113,7 @@ function DesktopSurface() {
             key={icon.id}
             type="button"
             onDoubleClick={() => processes.launch(icon.processId)}
+            className="hover-desktop-icon"
             style={{
               display: "flex",
               flexDirection: "column",
@@ -123,22 +126,15 @@ function DesktopSurface() {
               background: "transparent",
               cursor: "pointer",
               color: "var(--glia-color-textPrimary, #e5e7eb)",
-              transition: "background 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(34,211,238,0.08)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
             }}
           >
             <span style={{ fontSize: 28, lineHeight: 1 }}>
               {typeof def?.icon === "string" ? def.icon : "📁"}
             </span>
             <span
+              className="font-mono"
               style={{
                 fontSize: 10,
-                fontFamily: "var(--glia-font-mono, 'JetBrains Mono', monospace)",
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
                 textAlign: "center",

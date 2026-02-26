@@ -87,10 +87,12 @@ test("authenticated SSE reconnects and resumes events", async ({ page }) => {
       { base: hushdUrl, key: apiKey }
     );
 
-    await page.goto("/events");
+    // Navigate to root and open Event Stream via desktop icon
+    await page.goto("/");
+    await page.getByText("Event Stream").dblclick();
 
-    await expect(page.getByTestId("sse-connection-status")).toContainText("Connected");
-    await expect(page.getByText("/tmp/first")).toBeVisible();
+    // Wait for events to appear in the event stream table
+    await expect(page.getByText("/tmp/first")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("/tmp/second")).toBeVisible({ timeout: 20_000 });
     expect(connectionCount).toBeGreaterThanOrEqual(2);
   } finally {

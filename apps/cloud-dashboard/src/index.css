@@ -49,3 +49,115 @@ body,
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ── Shared glass primitives ── */
+
+.glass-panel {
+  background: rgba(4, 8, 16, 0.94);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-input {
+  background: rgba(4, 8, 16, 0.8);
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  transition: border-color 0.15s ease;
+}
+.glass-input:focus {
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+/* ── Font utility classes ── */
+
+.font-display {
+  font-family: var(--glia-font-display, "Cinzel", serif);
+}
+.font-mono {
+  font-family: var(--glia-font-mono, "JetBrains Mono", monospace);
+}
+.font-body {
+  font-family: var(--glia-font-body, "Inter", sans-serif);
+}
+
+/* ── Hover classes (replace inline onMouseEnter/onMouseLeave) ── */
+
+.hover-row {
+  transition: background 0.15s ease;
+}
+.hover-row:hover {
+  background: rgba(34, 211, 238, 0.06);
+}
+
+.hover-row-violation {
+  transition: background 0.15s ease;
+  background: rgba(244, 63, 94, 0.06);
+}
+.hover-row-violation:hover {
+  background: rgba(244, 63, 94, 0.1);
+}
+
+.hover-glass-button {
+  transition: all 0.2s ease;
+}
+.hover-glass-button:hover:not(:disabled) {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02),
+    0 0 14px rgba(34, 211, 238, 0.18);
+}
+
+.hover-desktop-icon {
+  transition: background 0.15s ease;
+}
+.hover-desktop-icon:hover {
+  background: rgba(34, 211, 238, 0.08);
+}
+
+/* ── Keyframes ── */
+
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 4px 1px rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.7);
+  }
+}
+
+@keyframes breathe-red {
+  0%,
+  100% {
+    box-shadow: 0 0 4px 1px rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(239, 68, 68, 0.7);
+  }
+}
+
+@keyframes sseBreathingPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px 1px currentColor;
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 10px 3px currentColor;
+    opacity: 0.7;
+  }
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

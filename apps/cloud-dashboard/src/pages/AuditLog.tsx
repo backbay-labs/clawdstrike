@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchAuditEvents, type AuditEvent, type AuditFilters } from "../api/client";
-
-const NOISE_SVG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E")`;
-
-const glassPanel = {
-  background: "rgba(4,8,16,0.94)",
-  border: "1px solid rgba(34,211,238,0.12)",
-  backdropFilter: "blur(24px)",
-  WebkitBackdropFilter: "blur(24px)",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
-} as const;
-
-const glassInput = {
-  background: "rgba(4,8,16,0.8)",
-  border: "1px solid rgba(34,211,238,0.12)",
-} as const;
+import { NoiseGrain, GlassButton } from "../components/ui";
+import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 
 export function AuditLog(_props: { windowId?: string }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
@@ -42,11 +29,18 @@ export function AuditLog(_props: { windowId?: string }) {
   const page = Math.floor((filters.offset ?? 0) / (filters.limit ?? 50));
   const totalPages = Math.ceil(total / (filters.limit ?? 50));
 
+  const debouncedSetFilter = useDebouncedCallback(
+    (key: string, value: string) => {
+      setFilters((f) => ({ ...f, [key]: value || undefined, offset: 0 }));
+    },
+    300,
+  );
+
   return (
     <div className="space-y-5" style={{ minHeight: "100%", color: "#e2e8f0" }}>
       <h1
-        className="text-2xl tracking-wide"
-        style={{ fontFamily: "var(--glia-font-display, 'Cinzel', serif)", color: "#22d3ee" }}
+        className="font-display text-2xl tracking-wide"
+        style={{ color: "#22d3ee" }}
       >
         Audit Log
       </h1>
@@ -67,45 +61,24 @@ export function AuditLog(_props: { windowId?: string }) {
         />
         <FilterInput
           label="Session ID"
-          value={filters.session_id ?? ""}
-          onChange={(v) => setFilters((f) => ({ ...f, session_id: v || undefined, offset: 0 }))}
+          onChange={(v) => debouncedSetFilter("session_id", v)}
         />
         <FilterInput
           label="Agent ID"
-          value={filters.agent_id ?? ""}
-          onChange={(v) => setFilters((f) => ({ ...f, agent_id: v || undefined, offset: 0 }))}
+          onChange={(v) => debouncedSetFilter("agent_id", v)}
         />
-        <button
-          onClick={load}
-          className="rounded px-4 py-1.5 text-xs uppercase tracking-widest transition-all duration-200"
-          style={{
-            ...glassPanel,
-            color: "#22d3ee",
-            fontFamily: "var(--glia-font-mono, monospace)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "rgba(34,211,238,0.5)";
-            e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.02), 0 0 12px rgba(34,211,238,0.15)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "rgba(34,211,238,0.12)";
-            e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.02)";
-          }}
-        >
-          Refresh
-        </button>
+        <GlassButton onClick={load}>Refresh</GlassButton>
       </div>
 
       {/* Error banner */}
       {error && (
         <p
-          className="rounded px-4 py-2 text-sm"
+          className="font-mono rounded px-4 py-2 text-sm"
           style={{
             background: "rgba(239,68,68,0.08)",
             border: "1px solid rgba(239,68,68,0.4)",
             boxShadow: "0 0 16px rgba(239,68,68,0.1), inset 0 1px 0 rgba(255,255,255,0.02)",
             color: "#ef4444",
-            fontFamily: "var(--glia-font-mono, monospace)",
           }}
         >
           {error}
@@ -113,15 +86,8 @@ export function AuditLog(_props: { windowId?: string }) {
       )}
 
       {/* Table glass panel */}
-      <div
-        className="relative overflow-x-auto rounded-lg"
-        style={{ ...glassPanel }}
-      >
-        {/* Noise grain overlay */}
-        <div
-          className="pointer-events-none absolute inset-0 rounded-lg"
-          style={{ backgroundImage: NOISE_SVG, backgroundRepeat: "repeat", opacity: 1 }}
-        />
+      <div className="glass-panel overflow-x-auto rounded-lg">
+        <NoiseGrain />
 
         <table className="relative w-full text-left text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
@@ -137,9 +103,8 @@ export function AuditLog(_props: { windowId?: string }) {
               {["Time", "Action", "Target", "Decision", "Guard", "Session", "Agent"].map((h) => (
                 <th
                   key={h}
-                  className="px-4 py-3 text-[10px] uppercase"
+                  className="font-mono px-4 py-3 text-[10px] uppercase"
                   style={{
-                    fontFamily: "var(--glia-font-mono, monospace)",
                     letterSpacing: "0.1em",
                     color: "rgba(34,211,238,0.5)",
                     fontWeight: 500,
@@ -153,13 +118,13 @@ export function AuditLog(_props: { windowId?: string }) {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center" style={{ color: "rgba(34,211,238,0.3)", fontFamily: "var(--glia-font-mono, monospace)" }}>
+                <td colSpan={7} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(34,211,238,0.3)" }}>
                   Loading...
                 </td>
               </tr>
             ) : events.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center" style={{ color: "rgba(226,232,240,0.3)", fontFamily: "var(--glia-font-mono, monospace)" }}>
+                <td colSpan={7} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(226,232,240,0.3)" }}>
                   No events found
                 </td>
               </tr>
@@ -167,20 +132,18 @@ export function AuditLog(_props: { windowId?: string }) {
               events.map((event) => (
                 <tr
                   key={event.id}
-                  className="transition-colors duration-150"
+                  className="hover-row"
                   style={{ cursor: "default" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(34,211,238,0.04)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                 >
                   <td
-                    className="whitespace-nowrap px-4 py-2.5 text-xs"
-                    style={{ color: "rgba(226,232,240,0.4)", fontFamily: "var(--glia-font-mono, monospace)" }}
+                    className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                    style={{ color: "rgba(226,232,240,0.4)" }}
                   >
                     {new Date(event.timestamp).toLocaleString()}
                   </td>
                   <td
-                    className="whitespace-nowrap px-4 py-2.5 text-sm"
-                    style={{ fontFamily: "var(--glia-font-mono, monospace)", color: "#e2e8f0" }}
+                    className="font-mono whitespace-nowrap px-4 py-2.5 text-sm"
+                    style={{ color: "#e2e8f0" }}
                   >
                     {event.action_type}
                   </td>
@@ -200,14 +163,14 @@ export function AuditLog(_props: { windowId?: string }) {
                     {event.guard ?? "-"}
                   </td>
                   <td
-                    className="whitespace-nowrap px-4 py-2.5 text-xs"
-                    style={{ color: "rgba(226,232,240,0.35)", fontFamily: "var(--glia-font-mono, monospace)" }}
+                    className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                    style={{ color: "rgba(226,232,240,0.35)" }}
                   >
                     {event.session_id?.slice(0, 12) ?? "-"}
                   </td>
                   <td
-                    className="whitespace-nowrap px-4 py-2.5 text-xs"
-                    style={{ color: "rgba(226,232,240,0.35)", fontFamily: "var(--glia-font-mono, monospace)" }}
+                    className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                    style={{ color: "rgba(226,232,240,0.35)" }}
                   >
                     {event.agent_id?.slice(0, 12) ?? "-"}
                   </td>
@@ -221,8 +184,8 @@ export function AuditLog(_props: { windowId?: string }) {
       {/* Pagination */}
       <div className="flex items-center justify-between text-sm">
         <span
+          className="font-mono"
           style={{
-            fontFamily: "var(--glia-font-mono, monospace)",
             fontSize: "11px",
             letterSpacing: "0.1em",
             textTransform: "uppercase",
@@ -239,9 +202,8 @@ export function AuditLog(_props: { windowId?: string }) {
             Previous
           </PaginationButton>
           <span
-            className="px-2 py-1"
+            className="font-mono px-2 py-1"
             style={{
-              fontFamily: "var(--glia-font-mono, monospace)",
               fontSize: "11px",
               letterSpacing: "0.05em",
               color: "rgba(34,211,238,0.6)",
@@ -265,9 +227,8 @@ function DecisionBadge({ decision }: { decision: string }) {
   const isBlocked = decision === "blocked";
   return (
     <span
-      className="inline-block rounded px-2 py-0.5 text-[11px] uppercase"
+      className="font-mono inline-block rounded px-2 py-0.5 text-[11px] uppercase"
       style={{
-        fontFamily: "var(--glia-font-mono, monospace)",
         letterSpacing: "0.08em",
         fontWeight: 600,
         color: isBlocked ? "#ef4444" : "#10b981",
@@ -286,22 +247,10 @@ function PaginationButton({ disabled, onClick, children }: { disabled: boolean; 
     <button
       disabled={disabled}
       onClick={onClick}
-      className="rounded px-3 py-1 text-xs uppercase tracking-wider transition-all duration-200 disabled:opacity-30"
+      className="glass-panel hover-glass-button font-mono rounded px-3 py-1 text-xs uppercase tracking-wider disabled:opacity-30"
       style={{
-        ...glassPanel,
-        fontFamily: "var(--glia-font-mono, monospace)",
         color: disabled ? "rgba(226,232,240,0.3)" : "#22d3ee",
         letterSpacing: "0.08em",
-      }}
-      onMouseEnter={(e) => {
-        if (!disabled) {
-          e.currentTarget.style.borderColor = "rgba(34,211,238,0.4)";
-          e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.02), 0 0 10px rgba(34,211,238,0.1)";
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "rgba(34,211,238,0.12)";
-        e.currentTarget.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.02)";
       }}
     >
       {children}
@@ -313,9 +262,8 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
   return (
     <label className="flex flex-col gap-1">
       <span
-        className="text-[10px] uppercase"
+        className="font-mono text-[10px] uppercase"
         style={{
-          fontFamily: "var(--glia-font-mono, monospace)",
           letterSpacing: "0.1em",
           color: "rgba(34,211,238,0.4)",
         }}
@@ -325,14 +273,8 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded px-2 py-1.5 text-sm transition-colors duration-200 outline-none"
-        style={{
-          ...glassInput,
-          fontFamily: "var(--glia-font-mono, monospace)",
-          color: "#e2e8f0",
-        }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(34,211,238,0.4)"; }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(34,211,238,0.12)"; }}
+        className="glass-input font-mono rounded px-2 py-1.5 text-sm outline-none"
+        style={{ color: "#e2e8f0" }}
       >
         {options.map((o) => (
           <option key={o} value={o} style={{ background: "#0a0a0a" }}>{o || "All"}</option>
@@ -342,13 +284,12 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
   );
 }
 
-function FilterInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function FilterInput({ label, onChange }: { label: string; onChange: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1">
       <span
-        className="text-[10px] uppercase"
+        className="font-mono text-[10px] uppercase"
         style={{
-          fontFamily: "var(--glia-font-mono, monospace)",
           letterSpacing: "0.1em",
           color: "rgba(34,211,238,0.4)",
         }}
@@ -357,17 +298,10 @@ function FilterInput({ label, value, onChange }: { label: string; value: string;
       </span>
       <input
         type="text"
-        value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={`Filter by ${label.toLowerCase()}`}
-        className="rounded px-2 py-1.5 text-sm transition-colors duration-200 outline-none placeholder:text-[rgba(100,116,139,0.5)]"
-        style={{
-          ...glassInput,
-          fontFamily: "var(--glia-font-mono, monospace)",
-          color: "#e2e8f0",
-        }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(34,211,238,0.4)"; }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(34,211,238,0.12)"; }}
+        className="glass-input font-mono rounded px-2 py-1.5 text-sm outline-none placeholder:text-[rgba(100,116,139,0.5)]"
+        style={{ color: "#e2e8f0" }}
       />
     </label>
   );

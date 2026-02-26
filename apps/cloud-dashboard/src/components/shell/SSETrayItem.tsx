@@ -24,24 +24,27 @@ export function SSETrayItem() {
   const { registerItem, updateItem, unregisterItem } = useSystemTray();
   const cfg = STATUS_CONFIG[status];
 
+  // Mount-only: register and unregister the tray item
   useEffect(() => {
     registerItem({
       id: "sse-status",
-      icon: <StatusDot color={cfg.color} />,
-      tooltip: error ? `${cfg.label} — ${error}` : cfg.label,
-      onClick: reconnect,
+      icon: <StatusDot color={STATUS_CONFIG.connecting.color} />,
+      tooltip: STATUS_CONFIG.connecting.label,
+      onClick: () => {},
       order: 10,
     });
     return () => unregisterItem("sse-status");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Dynamic update: refresh icon/tooltip/onClick when status/error change
   useEffect(() => {
     updateItem("sse-status", {
       icon: <StatusDot color={cfg.color} />,
       tooltip: error ? `${cfg.label} — ${error}` : cfg.label,
+      onClick: reconnect,
     });
-  }, [status, error, cfg, updateItem]);
+  }, [status, error, cfg, updateItem, reconnect]);
 
   return null;
 }
