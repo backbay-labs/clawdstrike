@@ -41,7 +41,8 @@ const DEFAULT_DENIED_DOMAINS = [
   '169.254.*',
   'fe80:*',
   'fc00:*',
-  'fd*',
+  'fd00:*',
+  'fd[0-9a-f][0-9a-f]:*',
 ];
 
 /**
@@ -186,7 +187,7 @@ export class EgressGuard extends BaseGuard {
       host.startsWith('169.254.') ||
       host.startsWith('fe80:') ||
       host.startsWith('fc00:') ||
-      host.startsWith('fd')
+      /^fd[0-9a-f]{2}:/.test(host)
     ) {
       return 'high';
     }

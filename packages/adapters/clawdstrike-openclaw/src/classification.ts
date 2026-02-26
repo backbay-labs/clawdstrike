@@ -29,7 +29,7 @@ export const DESTRUCTIVE_TOKENS = new Set([
 
 /** Destructive token-to-event-type mapping for specific policy routing */
 export const DESTRUCTIVE_EVENT_MAP: ReadonlyArray<{ tokens: Set<string>; eventType: EventType }> = [
-  { tokens: new Set(['write', 'edit', 'create', 'save', 'overwrite']), eventType: 'file_write' },
+  { tokens: new Set(['write', 'edit', 'create', 'save', 'overwrite', 'append', 'replace']), eventType: 'file_write' },
   { tokens: new Set(['delete', 'remove', 'unlink', 'rm']), eventType: 'file_write' },
   { tokens: new Set(['shell', 'bash', 'exec', 'command', 'terminal', 'run']), eventType: 'command_exec' },
   { tokens: new Set(['patch', 'diff']), eventType: 'patch_apply' },

@@ -221,26 +221,32 @@ export function applyGatewayEventFrame(
 
   if (frame.event === "node.connected" || frame.event === "node.updated") {
     const payload = frame.payload;
-    if (payload && typeof payload === "object" && "id" in payload) {
-      const nodeId = (payload as any).id;
-      const node = payload as OpenClawNode;
-      const nodes = [...(current.nodes ?? [])];
-      const idx = nodes.findIndex((n: any) => n.id === nodeId);
-      if (idx >= 0) {
-        nodes[idx] = node;
-      } else {
-        nodes.push(node);
+    if (payload && typeof payload === "object") {
+      const raw = payload as Record<string, unknown>;
+      const nodeId = typeof raw.nodeId === "string" ? raw.nodeId : typeof raw.id === "string" ? raw.id : undefined;
+      if (nodeId) {
+        const node: OpenClawNode = { ...(raw as OpenClawNode), nodeId };
+        const nodes = [...(current.nodes ?? [])];
+        const idx = nodes.findIndex((n) => n.nodeId === nodeId);
+        if (idx >= 0) {
+          nodes[idx] = node;
+        } else {
+          nodes.push(node);
+        }
+        return { ...current, nodes };
       }
-      return { ...current, nodes };
     }
   }
 
   if (frame.event === "node.disconnected") {
     const payload = frame.payload;
-    if (payload && typeof payload === "object" && "id" in payload) {
-      const nodeId = (payload as any).id;
-      const nodes = (current.nodes ?? []).filter((n: any) => n.id !== nodeId);
-      return { ...current, nodes };
+    if (payload && typeof payload === "object") {
+      const raw = payload as Record<string, unknown>;
+      const nodeId = typeof raw.nodeId === "string" ? raw.nodeId : typeof raw.id === "string" ? raw.id : undefined;
+      if (nodeId) {
+        const nodes = (current.nodes ?? []).filter((n) => n.nodeId !== nodeId);
+        return { ...current, nodes };
+      }
     }
   }
 
@@ -452,7 +458,7 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
           ...prev,
           [id]: {
             ...(prev[id] ?? createEmptyRuntime()),
-            status: "connecting",
+            status: "disconnected",
             lastError: message,
           },
         }));

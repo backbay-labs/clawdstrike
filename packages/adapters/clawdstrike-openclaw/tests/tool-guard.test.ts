@@ -9,7 +9,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { homedir } from 'os';
 import toolGuardHandler, {
   initialize as initToolGuard,
-  DecisionCache,
 } from '../src/hooks/tool-guard/handler.js';
 import { inferEventTypeFromName } from '../src/classification.js';
 import type { ToolResultPersistEvent, ClawdstrikeConfig } from '../src/types.js';

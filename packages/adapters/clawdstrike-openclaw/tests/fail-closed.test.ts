@@ -7,12 +7,9 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { homedir } from 'os';
 import { PolicyEngine } from '../src/policy/engine.js';
 import { ForbiddenPathGuard, EgressGuard, SecretLeakGuard, PatchIntegrityGuard } from '../src/guards/index.js';
 import type { PolicyEvent, ClawdstrikeConfig } from '../src/types.js';
-
-const HOME = homedir();
 
 const baseConfig: ClawdstrikeConfig = {
   policy: 'clawdstrike:ai-agent-minimal',

@@ -10,18 +10,16 @@
  * allowing the BaseToolInterceptor fallback to handle them.
  */
 
-import {
-  PolicyEventFactory,
-  type AdapterConfig,
-  type PolicyEvent,
-  type ToolCallTranslationInput,
-  type ToolCallTranslator,
+import type {
+  AdapterConfig,
+  PolicyEvent,
+  ToolCallTranslationInput,
+  ToolCallTranslator,
 } from '@clawdstrike/adapter-core';
 import {
   tokenize,
   classifyTool,
   inferEventTypeFromName,
-  NETWORK_TOKENS,
 } from '../classification.js';
 import {
   isCuaToolCall,
@@ -30,10 +28,6 @@ import {
   extractActionToken,
 } from '../hooks/cua-bridge/handler.js';
 import { extractPath } from '../hooks/approval-utils.js';
-
-// ── Shared Factory ──────────────────────────────────────────────────
-
-const factory = new PolicyEventFactory();
 
 // ── Parameter Extraction Helpers ────────────────────────────────────
 

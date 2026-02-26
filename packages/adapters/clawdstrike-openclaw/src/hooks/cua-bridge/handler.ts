@@ -240,7 +240,7 @@ export function buildCuaEvent(
  * Missing session ID or CUA metadata also fail closed.
  */
 const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'tool_call') {
+  if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
     return;
   }
 

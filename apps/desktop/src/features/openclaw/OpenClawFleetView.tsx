@@ -334,9 +334,6 @@ export function OpenClawFleetView() {
     setResolveBusyId(approvalId);
     try {
       await oc.resolveExecApproval(approvalId, decision);
-    } catch (err) {
-      // Re-throw so the ExecApprovalCard's safeResolve can surface the error inline
-      throw err;
     } finally {
       setResolveBusyId(null);
     }

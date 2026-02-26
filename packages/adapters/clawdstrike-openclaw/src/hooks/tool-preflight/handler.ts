@@ -25,7 +25,6 @@ import {
   classifyTool,
   NETWORK_TOKENS,
   DESTRUCTIVE_EVENT_MAP,
-  inferEventTypeFromName,
 } from '../../classification.js';
 
 /**
@@ -390,7 +389,7 @@ async function requestApproval(details: {
  * On allow / read-only: no-op.
  */
 const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'tool_call') {
+  if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
     return;
   }
 
