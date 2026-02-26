@@ -7,6 +7,7 @@ cd "$REPO_ROOT"
 echo "[smoke] Building adapter-core (file dependency source)"
 npm --prefix packages/adapters/clawdstrike-adapter-core ci
 npm --prefix packages/adapters/clawdstrike-adapter-core run build
+npm --prefix packages/adapters/clawdstrike-adapter-core run test:cross-adapter
 
 echo "[smoke] Verifying @clawdstrike/policy clean install + tests"
 npm --prefix packages/policy/clawdstrike-policy ci

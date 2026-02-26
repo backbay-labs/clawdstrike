@@ -8,6 +8,9 @@
 **Date**: 2026-02-25
 **Audience**: Adapter maintainers, plugin QA, security architecture
 
+> Update (2026-02-26): Section 3.1/3.2 risks were revalidated and mitigated in code.  
+> See [`../audits/2026-02-26-openclaw-launch-revalidation.md`](../audits/2026-02-26-openclaw-launch-revalidation.md) and [`../reports/2026-02-26-openclaw-runtime-compatibility-validation.md`](../reports/2026-02-26-openclaw-runtime-compatibility-validation.md).
+
 ---
 
 ## Table of Contents

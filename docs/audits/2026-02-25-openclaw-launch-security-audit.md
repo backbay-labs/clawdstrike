@@ -1,5 +1,8 @@
 # OpenClaw Launch Security Audit (2026-02-25)
 
+> Historical snapshot (2026-02-25).  
+> Current branch status is tracked in [`2026-02-26-openclaw-launch-revalidation.md`](./2026-02-26-openclaw-launch-revalidation.md) and runtime evidence in [`../reports/2026-02-26-openclaw-runtime-compatibility-validation.md`](../reports/2026-02-26-openclaw-runtime-compatibility-validation.md).
+
 ## Executive Summary
 
 Point-in-time security audit of the `feat/clawdstrike-sdks-launch` branch, conducted as part of the OpenClaw adapter launch readiness review. The audit identified **6 security findings**: 3 high-severity, 2 medium-severity, and 1 low-severity. Two high-severity findings (S1, S2) are directly exploitable guard bypasses that should be resolved before merge. Two findings (S4, S5) require verification against the live OpenClaw runtime and may represent complete enforcement bypass if confirmed. The remaining findings are defense-in-depth improvements.

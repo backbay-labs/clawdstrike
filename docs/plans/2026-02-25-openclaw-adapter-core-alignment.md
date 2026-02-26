@@ -4,6 +4,9 @@ Status: Proposed
 Author: Architecture review
 Last updated: 2026-02-25
 
+> Update (2026-02-26): This remains a forward-looking architecture plan.  
+> Launch-blocker closure and runtime verification status are tracked in [`../audits/2026-02-26-openclaw-launch-revalidation.md`](../audits/2026-02-26-openclaw-launch-revalidation.md).
+
 ## Problem Statement
 
 The `@clawdstrike/openclaw` adapter is architecturally divergent from all other framework adapters (vercel-ai, langchain, claude, openai, opencode). Every other adapter implements the `FrameworkAdapter` interface from `@clawdstrike/adapter-core` and delegates to `BaseToolInterceptor`. The openclaw adapter has its own parallel architecture built around OpenClaw's hook system (`registerHook`/`on`), creating:

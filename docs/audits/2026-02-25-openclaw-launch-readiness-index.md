@@ -1,5 +1,8 @@
 # OpenClaw Launch Readiness Review -- Master Index
 
+> Historical snapshot (2026-02-25).  
+> Current status is tracked in [`2026-02-26-openclaw-launch-revalidation.md`](./2026-02-26-openclaw-launch-revalidation.md).
+
 ## Review Metadata
 
 - **Date:** 2026-02-25
@@ -42,6 +45,13 @@ Validation performed in this branch:
 ---
 
 ## Document Index
+
+### Current Status
+
+| Document | Path | Focus |
+|----------|------|-------|
+| Launch Revalidation | [`audits/2026-02-26-openclaw-launch-revalidation.md`](./2026-02-26-openclaw-launch-revalidation.md) | Current status of launch findings as of 2026-02-26 |
+| Runtime Compatibility Validation | [`reports/2026-02-26-openclaw-runtime-compatibility-validation.md`](../reports/2026-02-26-openclaw-runtime-compatibility-validation.md) | Live OpenClaw runtime evidence for S4/S5 closure |
 
 ### Security
 

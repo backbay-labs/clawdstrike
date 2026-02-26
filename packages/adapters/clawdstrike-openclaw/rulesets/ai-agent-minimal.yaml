@@ -46,7 +46,8 @@ egress:
     - "169.254.*"
     - "fe80:*"
     - "fc00:*"
-    - "fd*"
+    - "fd00:*"
+    - "fd[0-9a-f][0-9a-f]:*"
 
 filesystem:
   forbidden_paths:

@@ -365,6 +365,24 @@ export interface ToolCallEvent {
 }
 
 /**
+ * Modern OpenClaw before_tool_call hook payload (v2026 runtime).
+ */
+export interface BeforeToolCallHookEvent {
+  toolName: string;
+  params: Record<string, unknown>;
+}
+
+/**
+ * Modern OpenClaw hook context payload.
+ */
+export interface OpenClawHookContext {
+  agentId?: string;
+  sessionKey?: string;
+  toolName?: string;
+  toolCallId?: string;
+}
+
+/**
  * Generic hook event type
  */
 export type HookEvent = ToolResultPersistEvent | AgentBootstrapEvent | ToolCallEvent;
@@ -372,4 +390,15 @@ export type HookEvent = ToolResultPersistEvent | AgentBootstrapEvent | ToolCallE
 /**
  * Hook handler function type
  */
-export type HookHandler = (event: HookEvent) => Promise<void> | void;
+export interface BeforeToolCallHookResult {
+  block: boolean;
+  blockReason?: string;
+  params?: Record<string, unknown>;
+}
+
+export type HookHandlerResult = void | BeforeToolCallHookResult;
+
+export type HookHandler = (
+  event: HookEvent,
+  ctx?: OpenClawHookContext,
+) => Promise<HookHandlerResult> | HookHandlerResult;

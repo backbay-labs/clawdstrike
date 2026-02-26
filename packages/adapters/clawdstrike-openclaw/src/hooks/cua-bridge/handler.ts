@@ -23,6 +23,9 @@ import type {
   HookHandler,
   HookEvent,
   ToolCallEvent,
+  BeforeToolCallHookEvent,
+  BeforeToolCallHookResult,
+  OpenClawHookContext,
   ClawdstrikeConfig,
 } from '../../types.js';
 import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
@@ -230,6 +233,20 @@ export function buildCuaEvent(
 
 // ── Hook Handler ────────────────────────────────────────────────────
 
+function beforeToolCallBlockResult(
+  toolEvent: ToolCallEvent,
+  blockReason: string,
+): BeforeToolCallHookResult | void {
+  if (toolEvent.type !== 'before_tool_call') {
+    return;
+  }
+  return {
+    block: true,
+    blockReason,
+    params: toolEvent.context.toolCall.params,
+  };
+}
+
 /**
  * CUA bridge hook handler for tool_call (pre-execution) events.
  *
@@ -239,17 +256,37 @@ export function buildCuaEvent(
  * Fail-closed: unknown CUA action types are denied with stable error code.
  * Missing session ID or CUA metadata also fail closed.
  */
-const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
-    return;
+const handler: HookHandler = async (
+  event: HookEvent | BeforeToolCallHookEvent,
+  hookCtx?: OpenClawHookContext,
+): Promise<void | BeforeToolCallHookResult> => {
+  const isModernBeforeToolCallEvent = (value: HookEvent | BeforeToolCallHookEvent): value is BeforeToolCallHookEvent => {
+    if (value && typeof value === 'object' && 'type' in value) return false;
+    return Boolean(
+      value &&
+      typeof value === 'object' &&
+      typeof (value as { toolName?: unknown }).toolName === 'string' &&
+      typeof (value as { params?: unknown }).params === 'object' &&
+      (value as { params?: unknown }).params !== null,
+    );
+  };
+
+  const isModern = isModernBeforeToolCallEvent(event);
+  if (!isModern) {
+    if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
+      return;
+    }
   }
 
-  const toolEvent = event as ToolCallEvent;
+  const legacyToolEvent = isModern ? null : event as ToolCallEvent;
 
   // Skip if already handled by another hook registration (e.g. before_tool_call + tool_call dual registration)
-  if (toolEvent.preventDefault) return;
-  const { toolName, params } = toolEvent.context.toolCall;
-  const sessionId = toolEvent.context.sessionId;
+  if (!isModern && legacyToolEvent!.preventDefault) return;
+  const toolName = isModern ? event.toolName : legacyToolEvent!.context.toolCall.toolName;
+  const params = isModern ? event.params : legacyToolEvent!.context.toolCall.params;
+  const sessionId = isModern
+    ? (hookCtx?.sessionKey ?? hookCtx?.agentId ?? '')
+    : legacyToolEvent!.context.sessionId;
 
   // Only intercept CUA tool calls
   if (!isCuaToolCall(toolName, params)) {
@@ -260,35 +297,43 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   // handler skips it (avoids double policy evaluation).  Set this early —
   // before any fail-closed exits — because even a CUA denial here means the
   // tool was already handled and the preflight handler should not re-evaluate.
-  (toolEvent as any).__cuaBridgeEvaluated = true;
+  (event as any).__cuaBridgeEvaluated = true;
 
   // Fail closed: session ID required for CUA actions
   if (!sessionId) {
-    toolEvent.preventDefault = true;
-    toolEvent.messages.push(
-      `[clawdstrike:cua-bridge] Denied ${toolName}: missing session ID (${CUA_ERROR_CODES.SESSION_MISSING})`,
-    );
-    return;
+    const blockReason = `Denied ${toolName}: missing session ID (${CUA_ERROR_CODES.SESSION_MISSING})`;
+    if (isModern) {
+      return { block: true, blockReason, params };
+    }
+    legacyToolEvent!.preventDefault = true;
+    legacyToolEvent!.messages.push(`[clawdstrike:cua-bridge] ${blockReason}`);
+    return beforeToolCallBlockResult(legacyToolEvent!, blockReason);
   }
 
   // Extract and classify the CUA action
   const actionToken = extractActionToken(toolName, params);
   if (!actionToken) {
-    toolEvent.preventDefault = true;
-    toolEvent.messages.push(
-      `[clawdstrike:cua-bridge] Denied ${toolName}: unable to extract CUA action from tool name or params (${CUA_ERROR_CODES.MISSING_METADATA})`,
-    );
-    return;
+    const blockReason =
+      `Denied ${toolName}: unable to extract CUA action from tool name or params (${CUA_ERROR_CODES.MISSING_METADATA})`;
+    if (isModern) {
+      return { block: true, blockReason, params };
+    }
+    legacyToolEvent!.preventDefault = true;
+    legacyToolEvent!.messages.push(`[clawdstrike:cua-bridge] ${blockReason}`);
+    return beforeToolCallBlockResult(legacyToolEvent!, blockReason);
   }
 
   const kind = classifyCuaAction(actionToken);
   if (!kind) {
     // Fail closed on unknown CUA action type
-    toolEvent.preventDefault = true;
-    toolEvent.messages.push(
-      `[clawdstrike:cua-bridge] Denied ${toolName}: unknown CUA action '${actionToken}' (${CUA_ERROR_CODES.UNKNOWN_ACTION})`,
-    );
-    return;
+    const blockReason =
+      `Denied ${toolName}: unknown CUA action '${actionToken}' (${CUA_ERROR_CODES.UNKNOWN_ACTION})`;
+    if (isModern) {
+      return { block: true, blockReason, params };
+    }
+    legacyToolEvent!.preventDefault = true;
+    legacyToolEvent!.messages.push(`[clawdstrike:cua-bridge] ${blockReason}`);
+    return beforeToolCallBlockResult(legacyToolEvent!, blockReason);
   }
 
   // Build canonical CUA event via PolicyEventFactory
@@ -304,30 +349,35 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     const resource = normalizeApprovalResource(policyEngine, toolName, params);
     const prior = peekApproval(sessionId, toolName, resource);
     if (prior) {
-      toolEvent.messages.push(
-        `[clawdstrike:cua-bridge] CUA ${kind}: using prior ${prior.resolution} approval for ${toolName}`,
-      );
+      if (!isModern) {
+        legacyToolEvent!.messages.push(
+          `[clawdstrike:cua-bridge] CUA ${kind}: using prior ${prior.resolution} approval for ${toolName}`,
+        );
+      }
       return;
     }
   }
 
   if (decision.status === 'deny') {
-    toolEvent.preventDefault = true;
-    toolEvent.messages.push(
-      `[clawdstrike:cua-bridge] CUA ${kind} denied${decision.guard ? ` by ${decision.guard}` : ''}${decision.reason ? `: ${decision.reason}` : ''} (${toolName})`,
-    );
-    return;
+    const blockReason =
+      `CUA ${kind} denied${decision.guard ? ` by ${decision.guard}` : ''}${decision.reason ? `: ${decision.reason}` : ''} (${toolName})`;
+    if (isModern) {
+      return { block: true, blockReason, params };
+    }
+    legacyToolEvent!.preventDefault = true;
+    legacyToolEvent!.messages.push(`[clawdstrike:cua-bridge] ${blockReason}`);
+    return beforeToolCallBlockResult(legacyToolEvent!, blockReason);
   }
 
-  if (decision.status === 'warn') {
-    toolEvent.messages.push(
+  if (!isModern && decision.status === 'warn') {
+    legacyToolEvent!.messages.push(
       `[clawdstrike:cua-bridge] CUA ${kind} warning: ${decision.message ?? decision.reason ?? 'Policy warning'} (${toolName})`,
     );
   }
 
   // Allow: record for potential post-exec parity
-  if (decision.status === 'allow') {
-    toolEvent.messages.push(
+  if (!isModern && decision.status === 'allow') {
+    legacyToolEvent!.messages.push(
       `[clawdstrike:cua-bridge] CUA ${kind} allowed (${toolName})`,
     );
   }

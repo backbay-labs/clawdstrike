@@ -19,3 +19,5 @@ Current policy/structure guardrails:
 7. `scripts/helm-e2e-smoke.sh` - OCI install smoke check (`helm upgrade --install`, `helm test`, service health probes, diagnostics bundle).
 8. `scripts/helm-resilience-security.sh` - nightly-style restart/recovery + upgrade/rollback + security checks with machine-readable summary.
 9. `scripts/helm-all-on-preflight.sh` - strict preflight gate for all-on profile rollout (bridge image availability, cluster prerequisites, and render checks).
+10. `scripts/openclaw-plugin-runtime-smoke.sh` - validates OpenClaw plugin runtime loading and expected hook registrations from `plugins info ... --json`.
+11. `scripts/openclaw-plugin-blocked-call-e2e.sh` - validates end-to-end runtime blocking for a destructive `bash` call (no target file creation).

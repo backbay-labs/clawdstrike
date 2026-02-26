@@ -13,6 +13,9 @@ import type {
   HookHandler,
   HookEvent,
   ToolCallEvent,
+  BeforeToolCallHookEvent,
+  BeforeToolCallHookResult,
+  OpenClawHookContext,
   ClawdstrikeConfig,
   PolicyEvent,
   EventType,
@@ -388,23 +391,43 @@ async function requestApproval(details: {
  * On warn: adds a warning message but allows execution.
  * On allow / read-only: no-op.
  */
-const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
-    return;
+const handler: HookHandler = async (
+  event: HookEvent | BeforeToolCallHookEvent,
+  hookCtx?: OpenClawHookContext,
+): Promise<void | BeforeToolCallHookResult> => {
+  const isModernBeforeToolCallEvent = (value: HookEvent | BeforeToolCallHookEvent): value is BeforeToolCallHookEvent => {
+    if (value && typeof value === 'object' && 'type' in value) return false;
+    return Boolean(
+      value &&
+      typeof value === 'object' &&
+      typeof (value as { toolName?: unknown }).toolName === 'string' &&
+      typeof (value as { params?: unknown }).params === 'object' &&
+      (value as { params?: unknown }).params !== null,
+    );
+  };
+
+  const isModern = isModernBeforeToolCallEvent(event);
+  if (!isModern) {
+    if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
+      return;
+    }
   }
 
-  const toolEvent = event as ToolCallEvent;
+  const legacyToolEvent = isModern ? null : event as ToolCallEvent;
 
   // Skip if already handled by another hook registration (e.g. before_tool_call + tool_call dual registration)
-  if (toolEvent.preventDefault) return;
+  if (!isModern && legacyToolEvent!.preventDefault) return;
 
   // Skip if the CUA bridge handler already evaluated this tool call.
   // CUA tools receive specialized policy evaluation via the bridge; running
   // the general preflight handler as well would cause double evaluation.
-  if ((toolEvent as any).__cuaBridgeEvaluated) return;
+  if ((event as any).__cuaBridgeEvaluated) return;
 
-  const { toolName, params } = toolEvent.context.toolCall;
-  const sessionId = toolEvent.context.sessionId;
+  const toolName = isModern ? event.toolName : legacyToolEvent!.context.toolCall.toolName;
+  const params = isModern ? event.params : legacyToolEvent!.context.toolCall.params;
+  const sessionId = isModern
+    ? (hookCtx?.sessionKey ?? hookCtx?.agentId ?? 'openclaw-runtime')
+    : legacyToolEvent!.context.sessionId;
 
   // Determine if this tool is destructive
   const eventType = inferPolicyEventType(toolName, params);
@@ -427,9 +450,11 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     if (severity !== 'critical') {
       const prior = peekApproval(sessionId, toolName, resource);
       if (prior) {
-        toolEvent.messages.push(
-          `[clawdstrike] Pre-flight check: using prior ${prior.resolution} approval for ${toolName} on ${resource}`,
-        );
+        if (!isModern) {
+          legacyToolEvent!.messages.push(
+            `[clawdstrike] Pre-flight check: using prior ${prior.resolution} approval for ${toolName} on ${resource}`,
+          );
+        }
         return;
       }
     }
@@ -448,22 +473,30 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
       if (approvalResult) {
         const resolution = approvalResult.resolution as ApprovalResolutionType;
         recordApproval(sessionId, toolName, resource, resolution);
-        toolEvent.messages.push(
-          `[clawdstrike] Pre-flight check: ${toolName} on ${resource} was approved by user`,
-        );
+        if (!isModern) {
+          legacyToolEvent!.messages.push(
+            `[clawdstrike] Pre-flight check: ${toolName} on ${resource} was approved by user`,
+          );
+        }
         return;
       }
     }
 
-    toolEvent.preventDefault = true;
-    toolEvent.messages.push(
-      `[clawdstrike] Pre-flight check: blocked ${toolName} on ${resource}${decision.reason ? ` — ${decision.reason}` : ''}`,
-    );
+    const blockReason =
+      `blocked ${toolName} on ${resource}${decision.reason ? ` — ${decision.reason}` : ''}`;
+    if (isModern) {
+      return { block: true, blockReason, params };
+    }
+    legacyToolEvent!.preventDefault = true;
+    legacyToolEvent!.messages.push(`[clawdstrike] Pre-flight check: ${blockReason}`);
+    if (legacyToolEvent!.type === 'before_tool_call') {
+      return { block: true, blockReason, params };
+    }
     return;
   }
 
-  if (decision.status === 'warn') {
-    toolEvent.messages.push(
+  if (!isModern && decision.status === 'warn') {
+    legacyToolEvent!.messages.push(
       `[clawdstrike] Pre-flight warning: ${decision.message ?? decision.reason ?? 'Policy warning'} (${toolName})`,
     );
   }

@@ -10,11 +10,21 @@ import toolPreflightHandler, { initialize as initPreflight } from "./hooks/tool-
 import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
 import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agent-bootstrap/handler.js";
 import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
+import { readFileSync } from "node:fs";
 
 // Re-export existing utilities for external use
 export * from "./index.js";
 
 /** Minimal OpenClaw plugin API surface used by this plugin. */
+interface RegisterHookOptions {
+  name?: string;
+  entry?: {
+    hook?: {
+      name?: string;
+    };
+  };
+}
+
 interface OpenClawPluginAPI {
   logger?: { info?(...args: unknown[]): void; warn?(...args: unknown[]): void; error?(...args: unknown[]): void };
   config?: { plugins?: { entries?: Record<string, { config?: Record<string, unknown> }> } };
@@ -25,7 +35,7 @@ interface OpenClawPluginAPI {
     execute: (id: string, params: Record<string, unknown>) => Promise<unknown>;
   }): void;
   registerCli(callback: (ctx: { program: { command(name: string): CommandBuilder } }) => void, opts?: { commands?: string[] }): void;
-  registerHook?(event: string, handler: HookHandler): void;
+  registerHook?(event: string, handler: HookHandler, opts?: RegisterHookOptions): void;
   on?(event: string, handler: HookHandler): void;
 }
 
@@ -35,9 +45,31 @@ interface OpenClawPluginAPI {
 export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   const logger = api.logger ?? console;
 
+  const getFileBackedPluginConfig = (): Record<string, unknown> => {
+    const explicitPath = process.env.OPENCLAW_CONFIG_PATH;
+    if (!explicitPath) return {};
+
+    try {
+      const raw = readFileSync(explicitPath, 'utf8');
+      const parsed = JSON.parse(raw) as { plugins?: { entries?: Record<string, { config?: Record<string, unknown> }> } };
+      const entries = parsed.plugins?.entries ?? {};
+      return entries["clawdstrike-security"]?.config
+        ?? entries["openclaw"]?.config
+        ?? {};
+    } catch {
+      return {};
+    }
+  };
+
   // Load config from plugin settings
   const getConfig = (): ClawdstrikeConfig => {
-    const pluginConfig = api.config?.plugins?.entries?.["clawdstrike-security"]?.config ?? {};
+    const entries = api.config?.plugins?.entries ?? {};
+    const apiPluginConfig =
+      entries["clawdstrike-security"]?.config
+      ?? entries["openclaw"]?.config
+      ?? {};
+    const filePluginConfig = getFileBackedPluginConfig();
+    const pluginConfig = Object.keys(apiPluginConfig).length > 0 ? apiPluginConfig : filePluginConfig;
     const policy = typeof pluginConfig.policy === 'string' ? pluginConfig.policy : undefined;
     const mode = typeof pluginConfig.mode === 'string' ? pluginConfig.mode : 'deterministic';
     const logLevel = typeof pluginConfig.logLevel === 'string' ? pluginConfig.logLevel : 'info';
@@ -50,6 +82,12 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
       logLevel: logLevel as ClawdstrikeConfig['logLevel'],
       guards,
     };
+  };
+
+  const refreshSharedEngine = (): ClawdstrikeConfig => {
+    const config = getConfig();
+    initializeEngine(config);
+    return config;
   };
 
   // Register the policy_check tool
@@ -75,7 +113,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     },
     async execute(_id: string, params: Record<string, unknown>) {
       try {
-        const config = getConfig();
+        const config = refreshSharedEngine();
         const engine = getSharedEngine(config);
 
         const action = (typeof params.action === 'string' ? params.action : 'tool_call') as PolicyCheckAction;
@@ -131,7 +169,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
         .command("status")
         .description("Show Clawdstrike plugin status")
         .action(() => {
-          const config = getConfig();
+          const config = refreshSharedEngine();
           console.log("Clawdstrike Security Plugin");
           console.log("---------------------------");
           console.log(`Mode: ${config.mode}`);
@@ -149,7 +187,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
         .action(async (...args: unknown[]) => {
           const action = typeof args[0] === 'string' ? args[0] : '';
           const resource = typeof args[1] === 'string' ? args[1] : '';
-          const config = getConfig();
+          const config = refreshSharedEngine();
           const engine = getSharedEngine(config);
           const event = buildEvent(action as PolicyCheckAction, resource);
           const decision = await engine.evaluate(event);
@@ -165,28 +203,64 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
 
   // Initialize the shared policy engine once, then let each handler
   // initialize its own module state (caches, etc.) via the shared engine.
-  const config = getConfig();
-  initializeEngine(config);
+  const config = refreshSharedEngine();
   initPreflight(config);
   initToolGuard(config);
   initBootstrap(config);
   initCuaBridge(config);
 
-  // Register hooks — try both 'before_tool_call' (v2026.2.1+) and 'tool_call' (legacy)
-  const registerHookFn = typeof api.registerHook === 'function'
-    ? api.registerHook.bind(api)
-    : typeof api.on === 'function'
-      ? api.on.bind(api)
-      : null;
+  const withFreshEngine = (handler: HookHandler): HookHandler => {
+    return async (event) => {
+      refreshSharedEngine();
+      return handler(event);
+    };
+  };
 
-  if (registerHookFn) {
-    // Register for both modern and legacy event names for compatibility
-    registerHookFn('before_tool_call', cuaBridgeHandler);
-    registerHookFn('before_tool_call', toolPreflightHandler);
-    registerHookFn('tool_call', cuaBridgeHandler);
-    registerHookFn('tool_call', toolPreflightHandler);
-    registerHookFn('tool_result_persist', toolGuardHandler);
-    registerHookFn('agent:bootstrap', agentBootstrapHandler);
+  const wrappedCuaBridgeHandler = withFreshEngine(cuaBridgeHandler);
+  const wrappedToolPreflightHandler = withFreshEngine(toolPreflightHandler);
+  const wrappedToolGuardHandler = withFreshEngine(toolGuardHandler);
+  const wrappedAgentBootstrapHandler = withFreshEngine(agentBootstrapHandler);
+
+  // Register hooks — prefer named hook registration for modern runtimes,
+  // but fall back to legacy registration shapes for compatibility.
+  if (typeof api.registerHook === 'function') {
+    const registerHook = api.registerHook.bind(api);
+    const registerHookCompat = (event: string, name: string, handler: HookHandler): void => {
+      const namedOpts: RegisterHookOptions = {
+        name,
+        entry: {
+          hook: {
+            name,
+          },
+        },
+      };
+
+      try {
+        registerHook(event, handler, namedOpts);
+      } catch {
+        try {
+          registerHook(event, handler, { name });
+        } catch {
+          registerHook(event, handler);
+        }
+      }
+    };
+
+    // Register for both modern and legacy event names for compatibility.
+    registerHookCompat('before_tool_call', 'clawdstrike:cua-bridge:before-tool-call', wrappedCuaBridgeHandler);
+    registerHookCompat('before_tool_call', 'clawdstrike:tool-preflight:before-tool-call', wrappedToolPreflightHandler);
+    registerHookCompat('tool_call', 'clawdstrike:cua-bridge:tool-call', wrappedCuaBridgeHandler);
+    registerHookCompat('tool_call', 'clawdstrike:tool-preflight:tool-call', wrappedToolPreflightHandler);
+    registerHookCompat('tool_result_persist', 'clawdstrike:tool-guard:tool-result-persist', wrappedToolGuardHandler);
+    registerHookCompat('agent:bootstrap', 'clawdstrike:agent-bootstrap', wrappedAgentBootstrapHandler);
+  } else if (typeof api.on === 'function') {
+    const registerHook = api.on.bind(api);
+    registerHook('before_tool_call', wrappedCuaBridgeHandler);
+    registerHook('before_tool_call', wrappedToolPreflightHandler);
+    registerHook('tool_call', wrappedCuaBridgeHandler);
+    registerHook('tool_call', wrappedToolPreflightHandler);
+    registerHook('tool_result_persist', wrappedToolGuardHandler);
+    registerHook('agent:bootstrap', wrappedAgentBootstrapHandler);
   }
 
   logger.info?.("[clawdstrike] Plugin registered");

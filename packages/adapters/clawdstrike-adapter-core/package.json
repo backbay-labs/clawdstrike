@@ -15,7 +15,7 @@
     "build": "tsc",
     "prepare": "npm run build",
     "test": "vitest run",
-    "test:cross-adapter": "vitest run --dir tests/cross-adapter",
+    "test:cross-adapter": "vitest run --config vitest.cross-adapter.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },

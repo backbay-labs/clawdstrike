@@ -13,9 +13,14 @@ import type { ToolCallEvent, ClawdstrikeConfig } from '../src/types.js';
 
 const HOME = homedir();
 
-function makeToolCallEvent(toolName: string, params: Record<string, unknown>, sessionId = 'test-session'): ToolCallEvent {
+function makeToolCallEvent(
+  toolName: string,
+  params: Record<string, unknown>,
+  sessionId = 'test-session',
+  type: ToolCallEvent['type'] = 'tool_call',
+): ToolCallEvent {
   return {
-    type: 'tool_call',
+    type,
     timestamp: new Date().toISOString(),
     context: {
       sessionId,
@@ -53,6 +58,23 @@ describe('Tool Pre-flight Hook', () => {
       expect(event.preventDefault).toBe(true);
       expect(event.messages.some(m => m.includes('[clawdstrike] Pre-flight check: blocked'))).toBe(true);
       expect(event.messages.some(m => m.includes('.ssh/id_rsa'))).toBe(true);
+    });
+
+    it('returns modern before_tool_call block result when denied', async () => {
+      const event = makeToolCallEvent(
+        'file_write',
+        { path: `${HOME}/.ssh/id_rsa`, content: 'malicious' },
+        'test-session',
+        'before_tool_call',
+      );
+
+      const result = await toolPreflightHandler(event);
+
+      expect(event.preventDefault).toBe(true);
+      expect(result).toMatchObject({
+        block: true,
+      });
+      expect((result as { blockReason?: string }).blockReason).toContain('.ssh/id_rsa');
     });
 
     it('should block shell command rm -rf /', async () => {

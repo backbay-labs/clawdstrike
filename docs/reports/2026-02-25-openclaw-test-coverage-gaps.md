@@ -5,11 +5,15 @@
 **Author:** Clawdstrike SDKs Team
 **Status:** Pre-merge review
 
+> Historical snapshot (2026-02-25).  
+> Current branch status (2026-02-26): OpenClaw adapter tests are **26 files / 455 tests passing**, and adapter-core cross-adapter tests are now runnable (**57 tests passing**).  
+> See [`../audits/2026-02-26-openclaw-launch-revalidation.md`](../audits/2026-02-26-openclaw-launch-revalidation.md).
+
 ---
 
 ## Context
 
-Branch `feat/clawdstrike-sdks-launch` introduces changes to the openclaw adapter, policy engine, SDK, and SIEM exporters. All 242 existing TypeScript tests and all Rust workspace tests pass. Clippy is clean with `-D warnings`. No tests are skipped or disabled. However, the branch's behavioral changes have significant coverage gaps that warrant attention before merge and in fast-follow work.
+At the time of this pre-merge audit, branch `feat/clawdstrike-sdks-launch` introduced changes to the openclaw adapter, policy engine, SDK, and SIEM exporters. The snapshot then reported 242 TypeScript tests passing. This report preserves that point-in-time analysis.
 
 ## Current Test Suite Status
 

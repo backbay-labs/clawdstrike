@@ -1,5 +1,8 @@
 # OpenClaw Plugin Correctness Findings (2026-02-25)
 
+> Historical snapshot (2026-02-25).  
+> Current branch status is tracked in [`2026-02-26-openclaw-launch-revalidation.md`](./2026-02-26-openclaw-launch-revalidation.md).
+
 ## Audit Metadata
 
 - **Audit date:** 2026-02-25
