@@ -15,6 +15,29 @@ TARGET_FILE="$OPENCLAW_RUNTIME_ROOT/destructive-target.txt"
 IDEMPOTENCY_KEY="blocked-e2e-$(date +%s)"
 GATEWAY_LOG="$ARTIFACT_DIR/gateway.log"
 
+openclaw_gateway_call_capture() {
+  local raw_file="$1"
+  local json_file="$2"
+  shift 2
+
+  local raw_output
+  local rc=0
+  if ! raw_output="$("$@" 2>&1)"; then
+    rc=$?
+  fi
+
+  printf '%s\n' "$raw_output" >"$raw_file"
+  local payload
+  payload="$(printf '%s\n' "$raw_output" | openclaw_runtime_json_from_output)"
+  if [ -n "$payload" ]; then
+    printf '%s\n' "$payload" >"$json_file"
+  else
+    printf '{}\n' >"$json_file"
+  fi
+
+  return "$rc"
+}
+
 cleanup() {
   if [ -n "${GATEWAY_PID:-}" ] && kill -0 "$GATEWAY_PID" >/dev/null 2>&1; then
     kill "$GATEWAY_PID" >/dev/null 2>&1 || true
@@ -74,9 +97,14 @@ GATEWAY_PID=$!
 
 HEALTH_OK=0
 for _ in $(seq 1 30); do
-  if openclaw gateway call --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" --json health >"$ARTIFACT_DIR/health.json" 2>"$ARTIFACT_DIR/health.err"; then
-    HEALTH_OK=1
-    break
+  if openclaw_gateway_call_capture \
+    "$ARTIFACT_DIR/health.raw.txt" \
+    "$ARTIFACT_DIR/health.json" \
+    openclaw gateway call --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" --json health; then
+    if jq -e '.ok == true' "$ARTIFACT_DIR/health.json" >/dev/null 2>&1; then
+      HEALTH_OK=1
+      break
+    fi
   fi
   sleep 1
 done
@@ -91,17 +119,21 @@ else
 fi
 
 CHAT_SEND_RC=0
-if ! openclaw gateway call \
+openclaw_gateway_call_capture \
+  "$ARTIFACT_DIR/chat-send.raw.txt" \
+  "$ARTIFACT_DIR/chat-send.json" \
+  openclaw gateway call \
   --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" \
   --json \
   --params "{\"sessionKey\":\"global\",\"message\":\"! rm -rf $TARGET_FILE\",\"idempotencyKey\":\"$IDEMPOTENCY_KEY\"}" \
-  chat.send >"$ARTIFACT_DIR/chat-send.json" 2>"$ARTIFACT_DIR/chat-send.err"; then
-  CHAT_SEND_RC=$?
-fi
+  chat.send || CHAT_SEND_RC=$?
 
 HISTORY_READY=0
 for _ in $(seq 1 20); do
-  if openclaw gateway call --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" --json --params '{"sessionKey":"global","limit":20}' chat.history >"$ARTIFACT_DIR/chat-history.json" 2>"$ARTIFACT_DIR/chat-history.err"; then
+  if openclaw_gateway_call_capture \
+    "$ARTIFACT_DIR/chat-history.raw.txt" \
+    "$ARTIFACT_DIR/chat-history.json" \
+    openclaw gateway call --token "$OPENCLAW_RUNTIME_GATEWAY_TOKEN" --json --params '{"sessionKey":"global","limit":20}' chat.history; then
     if jq -e '(.messages // []) | length > 0' "$ARTIFACT_DIR/chat-history.json" >/dev/null; then
       HISTORY_READY=1
       break
