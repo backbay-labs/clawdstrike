@@ -275,10 +275,10 @@ Drop Clawdstrike into your existing agent stack. Every adapter normalizes framew
 
 | Framework | Package | Install |
 |-----------|---------|---------|
-| **OpenAI Agents SDK** | `@clawdstrike/openai` | `npm install @clawdstrike/openai` |
-| **Claude / Agent SDK** | `@clawdstrike/claude` | `npm install @clawdstrike/claude` |
-| **Vercel AI SDK** | `@clawdstrike/vercel-ai` | `npm install @clawdstrike/vercel-ai` |
-| **LangChain** | `@clawdstrike/langchain` | `npm install @clawdstrike/langchain` |
+| **OpenAI Agents SDK** | `@clawdstrike/openai` | `npm install @clawdstrike/openai @clawdstrike/engine-local` |
+| **Claude / Agent SDK** | `@clawdstrike/claude` | `npm install @clawdstrike/claude @clawdstrike/engine-local` |
+| **Vercel AI SDK** | `@clawdstrike/vercel-ai` | `npm install @clawdstrike/vercel-ai @clawdstrike/engine-local` |
+| **LangChain** | `@clawdstrike/langchain` | `npm install @clawdstrike/langchain @clawdstrike/engine-local` |
 | **OpenClaw** | `@clawdstrike/openclaw` | `openclaw plugins install @clawdstrike/openclaw` |
 
 ```typescript
@@ -323,7 +323,7 @@ settings:
   fail_fast: true
 ```
 
-**Built-in rulesets:** `permissive` | `default` | `strict` | `ai-agent` | `cicd` | `remote-desktop` | `remote-desktop-strict`
+**Built-in rulesets:** `permissive` | `default` | `strict` | `ai-agent` | `ai-agent-posture` | `cicd` | `remote-desktop` | `remote-desktop-permissive` | `remote-desktop-strict`
 
 Policies support inheritance via `extends`: local files, remote URLs, and git refs.
 
