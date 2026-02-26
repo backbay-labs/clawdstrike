@@ -83,7 +83,26 @@ openclaw_runtime_cleanup() {
 }
 
 openclaw_runtime_json_from_output() {
-  sed -n '/^{/,$p'
+  python3 -c '
+import json
+import re
+import sys
+
+text = sys.stdin.read()
+text = re.sub(r"\x1B\[[0-9;?]*[ -/]*[@-~]", "", text)
+decoder = json.JSONDecoder()
+
+for i, ch in enumerate(text):
+    if ch not in "{[":
+        continue
+    try:
+        payload, _ = decoder.raw_decode(text[i:])
+    except Exception:
+        continue
+    json.dump(payload, sys.stdout)
+    sys.stdout.write("\n")
+    break
+'
 }
 
 openclaw_runtime_version() {

@@ -21,7 +21,10 @@ fi
 cat >"$OPENCLAW_RUNTIME_CONFIG_PATH" <<JSON
 {
   "plugins": {
-    "enabled": true
+    "enabled": true,
+    "slots": {
+      "memory": "none"
+    }
   }
 }
 JSON
