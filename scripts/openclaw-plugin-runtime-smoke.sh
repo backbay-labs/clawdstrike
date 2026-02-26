@@ -86,7 +86,7 @@ if [ "$MISSING_HOOKS_JSON" = "[]" ]; then
 fi
 
 ID_MISMATCH_WARNING_PRESENT=false
-if printf '%s\n' "$RAW_OUTPUT" | rg -q 'plugin id mismatch'; then
+if printf '%s\n' "$RAW_OUTPUT" | grep -Eqi 'plugin id mismatch'; then
   ID_MISMATCH_WARNING_PRESENT=true
 fi
 

@@ -3,6 +3,10 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@clawdstrike/adapter-core": ["../clawdstrike-adapter-core/dist/index.d.ts"]
+    },
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": "src",

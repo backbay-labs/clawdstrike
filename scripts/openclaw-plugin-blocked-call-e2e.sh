@@ -151,7 +151,7 @@ if [ "$HISTORY_READY" -eq 1 ] && jq -e '(.messages // []) | length > 0' "$ARTIFA
 fi
 
 ASSISTANT_BLOCK_SIGNAL=false
-if printf '%s\n' "$ASSISTANT_TEXT" | rg -q 'Approval required|Exec denied|Blocked'; then
+if printf '%s\n' "$ASSISTANT_TEXT" | grep -Eq 'Approval required|Exec denied|Blocked'; then
   ASSISTANT_BLOCK_SIGNAL=true
 fi
 

@@ -19,4 +19,9 @@ npm --prefix packages/sdk/hush-ts ci
 npm --prefix packages/sdk/hush-ts test
 npm --prefix packages/sdk/hush-ts run typecheck
 
+echo "[smoke] Verifying @clawdstrike/openclaw clean install + build"
+npm --prefix packages/adapters/clawdstrike-openclaw ci
+npm --prefix packages/adapters/clawdstrike-openclaw run build
+npm --prefix packages/adapters/clawdstrike-openclaw run typecheck
+
 echo "[smoke] OK"
