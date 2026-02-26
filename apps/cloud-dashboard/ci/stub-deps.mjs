@@ -3,21 +3,25 @@
  * this repository. Only used in CI where the Backbay workspace root
  * is not available.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../../..");
 
-function stubPkg(relPath, name, dts = "export {};") {
+function stubPkg(relPath, name, { dts = "export {};", esm = "export {};" } = {}) {
   const dir = resolve(repoRoot, relPath);
+  if (existsSync(resolve(dir, "package.json"))) {
+    console.log(`Skipping ${name} — real package already exists at ${dir}`);
+    return;
+  }
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     resolve(dir, "package.json"),
-    JSON.stringify({ name, version: "0.0.0", main: "index.js", types: "index.d.ts" }),
+    JSON.stringify({ name, version: "0.0.0", type: "module", main: "index.js", types: "index.d.ts" }),
   );
-  writeFileSync(resolve(dir, "index.js"), "module.exports = {};");
+  writeFileSync(resolve(dir, "index.js"), esm);
   writeFileSync(resolve(dir, "index.d.ts"), dts);
 }
 
@@ -25,10 +29,23 @@ function stubPkg(relPath, name, dts = "export {};") {
 stubPkg("../backbay-sdk/packages/glia", "@backbay/glia");
 
 // @backbay/glia-desktop — provides the desktop OS shell primitives
-stubPkg(
-  "../backbay-sdk/packages/glia-desktop",
-  "@backbay/glia-desktop",
-  `import { ComponentType, ReactNode } from "react";
+stubPkg("../backbay-sdk/packages/glia-desktop", "@backbay/glia-desktop", {
+  esm: `
+const noop = () => {};
+const noopComponent = () => null;
+export function DesktopOSProvider(props) { return props.children; }
+export function useDesktopOS() {
+  return { processes: { instances: [], getDefinition: () => undefined, launch: noop } };
+}
+export function useWindowIds() { return []; }
+export function useWindow() { return null; }
+export const Window = noopComponent;
+export const Taskbar = noopComponent;
+export function useSystemTray() {
+  return { registerItem: noop, updateItem: noop, unregisterItem: noop };
+}
+`,
+  dts: `import { ComponentType, ReactNode } from "react";
 export type WindowId = string;
 export interface ProcessDefinition {
   id: string;
@@ -76,4 +93,4 @@ export declare function useSystemTray(): {
   unregisterItem: (id: string) => void;
 };
 `,
-);
+});
