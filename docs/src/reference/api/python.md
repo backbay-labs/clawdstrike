@@ -6,10 +6,9 @@ It provides:
 
 - policy loading from YAML (`Policy`)
 - a local policy engine (`PolicyEngine`)
-- five guards (ForbiddenPath, EgressAllowlist, SecretLeak, PatchIntegrity, McpTool)
+- seven guards (ForbiddenPath, EgressAllowlist, SecretLeak, PatchIntegrity, McpTool, PromptInjection, Jailbreak)
 - crypto + receipt signing/verification compatible with `hush-core`
-
-Prompt-security utilities (jailbreak detection, output sanitization, watermarking) are not yet implemented in Python.
+- prompt-security utilities (jailbreak detection, output sanitization, watermarking) via the optional `hush-native` extension
 
 ## Installation
 

@@ -10,9 +10,13 @@ In this repository, rulesets are defined as YAML files in `rulesets/` and embedd
 |----|---------|
 | `default` | Balanced baseline |
 | `ai-agent` | Tuned for AI coding assistants |
+| `ai-agent-posture` | Posture-aware progressive capabilities for AI agents |
 | `strict` | Deny-by-default baseline for sensitive environments |
 | `cicd` | Tuned for CI jobs (registries allowed) |
 | `permissive` | Dev-friendly (egress defaults to allow; verbose logging) |
+| `remote-desktop` | Base CUA security for remote desktop AI agents |
+| `remote-desktop-permissive` | Dev-friendly CUA policy (all channels open, observe mode) |
+| `remote-desktop-strict` | Maximum CUA security for high-security environments |
 
 ## Use a ruleset
 
@@ -25,7 +29,7 @@ clawdstrike check --action-type egress --ruleset default api.github.com:443
 ### As a base policy
 
 ```yaml
-version: "1.1.0"
+version: "1.2.0"
 name: My Policy
 extends: clawdstrike:default
 ```
@@ -41,7 +45,7 @@ clawdstrike policy show strict
 Create a policy file that extends a ruleset and adds overrides:
 
 ```yaml
-version: "1.1.0"
+version: "1.2.0"
 name: My CI Policy
 extends: clawdstrike:cicd
 
@@ -64,6 +68,10 @@ Remote `extends` is hardened by default:
 
 - [Default](./default.md)
 - [AI Agent](./ai-agent.md)
+- [AI Agent Posture](./ai-agent-posture.md)
 - [Strict](./strict.md)
 - [CI/CD](./cicd.md)
 - [Permissive](./permissive.md)
+- [Remote Desktop](./remote-desktop.md)
+- [Remote Desktop Permissive](./remote-desktop-permissive.md)
+- [Remote Desktop Strict](./remote-desktop-strict.md)

@@ -32,5 +32,5 @@ For a persistent audit ledger, use `clawdstriked` (optional/WIP). It stores audi
 
 ```bash
 cargo install --path crates/services/hushd
-clawdstriked start
+clawdstrike daemon start
 ```

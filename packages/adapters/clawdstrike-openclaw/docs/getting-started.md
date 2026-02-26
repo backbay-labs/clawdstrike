@@ -38,7 +38,7 @@ openclaw plugins install @clawdstrike/openclaw
 Create `.hush/policy.yaml` in your project:
 
 ```yaml
-version: "clawdstrike-v1.0"
+version: "clawdstrike-v1.0"   # legacy alias; canonical current version is "1.2.0"
 
 egress:
   mode: allowlist

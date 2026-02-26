@@ -144,10 +144,10 @@ Use these guardrails for monorepo changes:
 
 ### Level 1: Rulesets (YAML) -- lowest barrier
 
-Create a new security ruleset in `rulesets/community/`:
+Create a new security ruleset in `rulesets/`:
 
 ```yaml
-# rulesets/community/my-policy.yaml
+# rulesets/my-policy.yaml
 version: "1.2.0"
 name: "my-org-baseline"
 extends: "default"

@@ -1,6 +1,6 @@
 # Documentation Map
 
-Last updated: 2026-02-09
+Last updated: 2026-02-26
 
 This page defines where documentation lives and which source is canonical when documents overlap.
 
@@ -15,6 +15,7 @@ This page defines where documentation lives and which source is canonical when d
 | `docs/research/**` | Exploratory/non-normative analysis. | No (context only). |
 | `docs/roadmaps/**` | Time-based planning docs. | No (planning context only). |
 | `docs/audits/**` | Point-in-time repository and quality audits. | No (operational guidance/context). |
+| `docs/ops/**` | Operational guidance (limits, rollouts, safe defaults). | Yes for operational procedures. |
 
 ## Conflict Resolution Order
 
@@ -35,6 +36,7 @@ If documents disagree, interpret sources in this order:
 4. Formal specs and schema-level details: `docs/specs/`
 5. Open-ended exploratory writing: `docs/research/`
 6. Point-in-time audit reports: `docs/audits/`
+7. Operational guidance and procedures: `docs/ops/`
 
 ## Maintenance Rules
 
