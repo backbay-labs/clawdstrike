@@ -17,7 +17,7 @@ import { BaseToolInterceptor, createSecurityContext } from "@clawdstrike/adapter
 
 // Create an engine for policy evaluation (implementation-specific).
 // Use @clawdstrike/engine-local (shell out to `hush`) or
-// @clawdstrike/hushd-engine (HTTP calls to hushd daemon).
+// @clawdstrike/engine-remote (HTTP calls to hushd daemon).
 const engine = /* ... */;
 
 const interceptor = new BaseToolInterceptor(engine, { blockOnViolation: true });
@@ -35,7 +35,7 @@ dispatcher directly:
 ```ts
 import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
-// Use @clawdstrike/engine-local or @clawdstrike/hushd-engine:
+// Use @clawdstrike/engine-local or @clawdstrike/engine-remote:
 const engine = /* createStrikeCell({ policyRef: 'default' }) */;
 const boundary = new GenericToolBoundary({ engine });
 
