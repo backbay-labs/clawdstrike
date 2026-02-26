@@ -53,6 +53,7 @@
   "files": [
     "dist",
     "rulesets",
+    "clawdstrike-security.js",
     "README.md"
   ],
   "keywords": [

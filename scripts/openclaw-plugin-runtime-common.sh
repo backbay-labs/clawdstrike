@@ -78,3 +78,7 @@ openclaw_runtime_cleanup() {
 openclaw_runtime_json_from_output() {
   sed -n '/^{/,$p'
 }
+
+openclaw_runtime_version() {
+  openclaw --version 2>&1 | tail -n 1 | tr -d '\r'
+}

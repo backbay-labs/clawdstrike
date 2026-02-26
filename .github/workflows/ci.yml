@@ -666,26 +666,117 @@ jobs:
       - name: OpenClaw E2E (simulated runtime)
         run: npm run e2e
 
-      - name: Install OpenClaw CLI
+  openclaw-plugin-runtime-matrix:
+    name: OpenClaw Runtime (${{ matrix.openclaw_version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        openclaw_version: ['2026.2.15', '2026.2.25', 'latest']
+    defaults:
+      run:
+        working-directory: packages/adapters/clawdstrike-openclaw
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: packages/adapters/clawdstrike-openclaw/package-lock.json
+
+      - name: Bootstrap file deps (adapter-core)
+        working-directory: packages/adapters/clawdstrike-adapter-core
+        run: npm ci
+
+      - name: Build file deps (adapter-core)
+        working-directory: packages/adapters/clawdstrike-adapter-core
+        run: npm run build
+
+      - name: Bootstrap file deps (policy)
+        working-directory: packages/policy/clawdstrike-policy
+        run: npm ci
+
+      - name: Build file deps (policy)
+        working-directory: packages/policy/clawdstrike-policy
+        run: npm run build
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install OpenClaw CLI (${{ matrix.openclaw_version }})
         working-directory: .
-        run: npm install -g openclaw@2026.2.25
+        run: npm install -g openclaw@${{ matrix.openclaw_version }}
+
+      - name: OpenClaw install-link smoke
+        working-directory: .
+        run: OPENCLAW_RUNTIME_ARTIFACT_DIR=artifacts/openclaw-install-link-smoke-${{ matrix.openclaw_version }} bash scripts/openclaw-plugin-install-link-smoke.sh
+
+      - name: Assert install-link summary checks
+        working-directory: .
+        run: |
+          jq -e '
+            .result == "pass"
+            and .checks.installCommandSucceeded
+            and .checks.enableCommandSucceeded
+            and .checks.pluginInfoJsonPresent
+            and .checks.pluginIdMatches
+            and .checks.pluginStatusLoaded
+            and .checks.configLoadPathContainsLink
+            and .checks.configEntryEnabled
+            and .checks.allExpectedHooksPresent
+            and (.checks.idMismatchWarningPresent | not)
+          ' artifacts/openclaw-install-link-smoke-${{ matrix.openclaw_version }}/summary.json >/dev/null
 
       - name: OpenClaw runtime smoke (hook registration)
         working-directory: .
-        run: bash scripts/openclaw-plugin-runtime-smoke.sh
+        run: OPENCLAW_RUNTIME_ARTIFACT_DIR=artifacts/openclaw-runtime-smoke-${{ matrix.openclaw_version }} bash scripts/openclaw-plugin-runtime-smoke.sh
+
+      - name: Assert runtime smoke summary checks
+        working-directory: .
+        run: |
+          jq -e '
+            .result == "pass"
+            and .checks.pluginInfoJsonPresent
+            and .checks.pluginIdMatches
+            and .checks.pluginStatusLoaded
+            and .checks.allExpectedHooksPresent
+            and (.checks.idMismatchWarningPresent | not)
+          ' artifacts/openclaw-runtime-smoke-${{ matrix.openclaw_version }}/summary.json >/dev/null
 
       - name: OpenClaw blocked-call runtime e2e
         working-directory: .
-        run: bash scripts/openclaw-plugin-blocked-call-e2e.sh
+        run: OPENCLAW_RUNTIME_ARTIFACT_DIR=artifacts/openclaw-runtime-blocked-e2e-${{ matrix.openclaw_version }} bash scripts/openclaw-plugin-blocked-call-e2e.sh
 
-      - name: Upload OpenClaw runtime artifacts
+      - name: Assert blocked-call summary checks
+        working-directory: .
+        run: |
+          jq -e '
+            .result == "pass"
+            and .checks.gatewayHealthOk
+            and .checks.pluginInfoJsonPresent
+            and .checks.pluginStatusLoaded
+            and .checks.hookPreflightPresent
+            and .checks.hookCuaPresent
+            and .checks.chatSendStarted
+            and .checks.historyHasMessages
+            and .checks.assistantBlockSignal
+            and .checks.targetFileAbsent
+          ' artifacts/openclaw-runtime-blocked-e2e-${{ matrix.openclaw_version }}/summary.json >/dev/null
+
+      - name: Upload OpenClaw runtime artifacts (${{ matrix.openclaw_version }})
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: openclaw-runtime-artifacts
+          name: openclaw-runtime-artifacts-${{ matrix.openclaw_version }}
           path: |
-            artifacts/openclaw-runtime-smoke
-            artifacts/openclaw-runtime-blocked-e2e
+            artifacts/openclaw-install-link-smoke-${{ matrix.openclaw_version }}
+            artifacts/openclaw-runtime-smoke-${{ matrix.openclaw_version }}
+            artifacts/openclaw-runtime-blocked-e2e-${{ matrix.openclaw_version }}
           if-no-files-found: error
 
   clawdstrike-policy:
