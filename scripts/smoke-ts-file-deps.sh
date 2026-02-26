@@ -11,6 +11,7 @@ npm --prefix packages/adapters/clawdstrike-adapter-core run test:cross-adapter
 
 echo "[smoke] Verifying @clawdstrike/policy clean install + tests"
 npm --prefix packages/policy/clawdstrike-policy ci
+npm --prefix packages/policy/clawdstrike-policy run build
 npm --prefix packages/policy/clawdstrike-policy test
 npm --prefix packages/policy/clawdstrike-policy run typecheck
 
