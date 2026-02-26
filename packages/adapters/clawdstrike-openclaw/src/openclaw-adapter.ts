@@ -1,6 +1,7 @@
 import { createFrameworkAdapter } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
+  AuditLogger,
   FrameworkAdapter,
   FrameworkHooks,
   GenericToolCall,
@@ -11,7 +12,13 @@ import type {
   SessionSummary,
 } from '@clawdstrike/adapter-core';
 
+import { OpenClawAuditLogger } from './audit/adapter-logger.js';
 import { PolicyEngine } from './policy/engine.js';
+import { composeOpenClawConfig } from './translator/openclaw-translator.js';
+
+export interface OpenClawAdapterOptions extends AdapterConfig {
+  auditLogger?: AuditLogger;
+}
 
 /**
  * OpenClawAdapter implements the standard `FrameworkAdapter` interface from
@@ -21,6 +28,9 @@ import { PolicyEngine } from './policy/engine.js';
  * It delegates to the existing openclaw `PolicyEngine` for all security
  * evaluation while layering on the adapter-core interceptor, audit, and
  * context-management infrastructure.
+ *
+ * Audit logging is enabled by default. Pass `auditLogger` to supply a custom
+ * logger, or rely on the built-in `OpenClawAuditLogger`.
  *
  * This is purely additive and does not change the existing hook-based
  * integration path.
@@ -39,10 +49,25 @@ import { PolicyEngine } from './policy/engine.js';
 export class OpenClawAdapter implements FrameworkAdapter {
   private readonly delegate: FrameworkAdapter;
   private readonly engine: PolicyEngine;
+  private readonly auditLogger: AuditLogger;
 
-  constructor(engine: PolicyEngine, config: AdapterConfig = {}) {
+  constructor(engine: PolicyEngine, config: OpenClawAdapterOptions = {}) {
     this.engine = engine;
-    this.delegate = createFrameworkAdapter('openclaw', engine as PolicyEngineLike, config);
+    this.auditLogger = config.auditLogger ?? new OpenClawAuditLogger();
+
+    const adapterConfig: AdapterConfig = {
+      ...config,
+      audit: {
+        enabled: true,
+        logger: this.auditLogger,
+        logParameters: true,
+        logOutputs: false,
+        redactPII: true,
+        ...config.audit,
+      },
+    };
+
+    this.delegate = createFrameworkAdapter('openclaw', engine as PolicyEngineLike, composeOpenClawConfig(adapterConfig));
   }
 
   get name(): string {
@@ -86,5 +111,9 @@ export class OpenClawAdapter implements FrameworkAdapter {
 
   getHooks(): FrameworkHooks {
     return this.delegate.getHooks();
+  }
+
+  getAuditLogger(): AuditLogger {
+    return this.auditLogger;
   }
 }
