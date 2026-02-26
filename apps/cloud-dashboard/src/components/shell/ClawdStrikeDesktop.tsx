@@ -169,7 +169,9 @@ function AutoLaunch() {
     if (launched.current) return;
     launched.current = true;
 
-    const path = window.location.pathname.replace(/\/+$/, "") || "/";
+    const base = (import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
+    const raw = window.location.pathname.replace(/\/+$/, "") || "/";
+    const path = base && raw.startsWith(base) ? raw.slice(base.length) || "/" : raw;
     const processId = PATH_TO_PROCESS[path];
 
     if (processId) {

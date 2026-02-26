@@ -52,8 +52,14 @@ const PATH_TO_SECTION: Record<string, SettingsSection> = {
   "/settings/webhooks": "webhooks",
 };
 
+function getAppPath(): string {
+  const base = (import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
+  const raw = window.location.pathname.replace(/\/+$/, "") || "/";
+  return base && raw.startsWith(base) ? raw.slice(base.length) || "/" : raw;
+}
+
 export function Settings({ initialSection }: SettingsProps) {
-  const derivedSection = initialSection ?? PATH_TO_SECTION[window.location.pathname] ?? "connection";
+  const derivedSection = initialSection ?? PATH_TO_SECTION[getAppPath()] ?? "connection";
   const [activeSection, setActiveSection] = useState<SettingsSection>(derivedSection);
   const [hushdUrl, setHushdUrl] = useState(() => localStorage.getItem("hushd_url") || "");
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("hushd_api_key") || "");

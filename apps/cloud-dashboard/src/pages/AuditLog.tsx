@@ -285,6 +285,7 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
 }
 
 function FilterInput({ label, onChange }: { label: string; onChange: (v: string) => void }) {
+  const [value, setValue] = useState("");
   return (
     <label className="flex flex-col gap-1">
       <span
@@ -298,7 +299,11 @@ function FilterInput({ label, onChange }: { label: string; onChange: (v: string)
       </span>
       <input
         type="text"
-        onChange={(e) => onChange(e.target.value)}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          onChange(e.target.value);
+        }}
         placeholder={`Filter by ${label.toLowerCase()}`}
         className="glass-input font-mono rounded px-2 py-1.5 text-sm outline-none placeholder:text-[rgba(100,116,139,0.5)]"
         style={{ color: "#e2e8f0" }}
