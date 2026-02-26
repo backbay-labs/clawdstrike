@@ -345,10 +345,11 @@ export interface AgentBootstrapEvent {
 }
 
 /**
- * Hook event context for tool_call (pre-execution)
+ * Hook event context for tool_call (pre-execution).
+ * Accepts both 'tool_call' (legacy) and 'before_tool_call' (v2026.2.1+).
  */
 export interface ToolCallEvent {
-  type: 'tool_call';
+  type: 'tool_call' | 'before_tool_call';
   timestamp: string;
   context: {
     sessionId: string;
