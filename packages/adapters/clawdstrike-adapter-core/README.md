@@ -16,7 +16,7 @@ npm install @clawdstrike/adapter-core
 import { BaseToolInterceptor, createSecurityContext } from "@clawdstrike/adapter-core";
 
 // Create an engine for policy evaluation (implementation-specific).
-// Use @clawdstrike/hush-cli-engine (shell out to `hush`) or
+// Use @clawdstrike/engine-local (shell out to `hush`) or
 // @clawdstrike/hushd-engine (HTTP calls to hushd daemon).
 const engine = /* ... */;
 
@@ -35,7 +35,7 @@ dispatcher directly:
 ```ts
 import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
-// Use @clawdstrike/hush-cli-engine or @clawdstrike/hushd-engine:
+// Use @clawdstrike/engine-local or @clawdstrike/hushd-engine:
 const engine = /* createStrikeCell({ policyRef: 'default' }) */;
 const boundary = new GenericToolBoundary({ engine });
 

@@ -7,7 +7,7 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 ## Install
 
 ```bash
-npm install @clawdstrike/langchain @clawdstrike/hush-cli-engine
+npm install @clawdstrike/langchain @clawdstrike/engine-local
 ```
 
 ## Usage

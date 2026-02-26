@@ -283,8 +283,8 @@ Drop Clawdstrike into your existing agent stack. Every adapter normalizes framew
 
 ```typescript
 // 3 lines to secure any OpenAI agent
-import { createStrikeCell } from "@clawdstrike/hush-cli-engine";
-import { wrapOpenAIToolDispatcher } from "@clawdstrike/openai";
+import { createStrikeCell } from "@clawdstrike/engine-local";
+import { OpenAIToolBoundary, wrapOpenAIToolDispatcher } from "@clawdstrike/openai";
 
 const secure = wrapOpenAIToolDispatcher(
   new OpenAIToolBoundary({ engine: createStrikeCell({ policyRef: "strict" }) }),

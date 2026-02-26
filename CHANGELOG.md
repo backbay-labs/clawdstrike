@@ -89,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Framework Adapters
 
 - `@clawdstrike/adapter-core` - Framework-agnostic primitives (PolicyEventFactory, SecurityContext, BaseToolInterceptor)
-- `@clawdstrike/hush-cli-engine` - Node.js bridge to Rust CLI for policy evaluation
+- `@clawdstrike/engine-local` - Node.js bridge to Rust CLI for policy evaluation
 - `@clawdstrike/hushd-engine` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
 - `@clawdstrike/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
 - `@clawdstrike/langchain` - Tool wrappers and callback handlers for LangChain
