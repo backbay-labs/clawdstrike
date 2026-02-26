@@ -72,4 +72,35 @@ describe('plugin runtime hook compatibility', () => {
     expect(on).toHaveBeenCalledTimes(EXPECTED_EVENTS.length);
     expect(on.mock.calls.map(([event]) => event)).toEqual(EXPECTED_EVENTS);
   });
+
+  it('forwards hook context through wrapper handlers', async () => {
+    const registerHook = vi.fn();
+    const api = {
+      ...makeBaseApi(),
+      registerHook,
+    };
+
+    clawdstrikePlugin(api);
+
+    const call = registerHook.mock.calls.find(
+      ([event, , options]) =>
+        event === 'before_tool_call'
+        && options?.name === 'clawdstrike:cua-bridge:before-tool-call',
+    );
+    expect(call).toBeDefined();
+
+    const wrappedHandler = call?.[1] as
+      | ((event: unknown, ctx?: { sessionKey?: string }) => Promise<unknown>)
+      | undefined;
+
+    const result = await wrappedHandler?.(
+      { toolName: 'cua_notarealaction', params: {} },
+      { sessionKey: 'session-from-context' },
+    );
+
+    if (result && typeof result === 'object' && 'blockReason' in result) {
+      expect(String((result as { blockReason?: string }).blockReason ?? ''))
+        .not.toContain('missing session ID');
+    }
+  });
 });

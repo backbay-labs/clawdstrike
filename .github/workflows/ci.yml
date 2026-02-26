@@ -712,6 +712,18 @@ jobs:
         working-directory: .
         run: npm install -g openclaw@${{ matrix.openclaw_version }}
 
+      - name: Prepare OpenClaw runtime artifact directories
+        working-directory: .
+        run: |
+          mkdir -p \
+            artifacts/openclaw-install-link-smoke-${{ matrix.openclaw_version }} \
+            artifacts/openclaw-runtime-smoke-${{ matrix.openclaw_version }} \
+            artifacts/openclaw-runtime-blocked-e2e-${{ matrix.openclaw_version }}
+          touch \
+            artifacts/openclaw-install-link-smoke-${{ matrix.openclaw_version }}/.keep \
+            artifacts/openclaw-runtime-smoke-${{ matrix.openclaw_version }}/.keep \
+            artifacts/openclaw-runtime-blocked-e2e-${{ matrix.openclaw_version }}/.keep
+
       - name: OpenClaw install-link smoke
         working-directory: .
         run: OPENCLAW_RUNTIME_ARTIFACT_DIR=artifacts/openclaw-install-link-smoke-${{ matrix.openclaw_version }} bash scripts/openclaw-plugin-install-link-smoke.sh
@@ -777,7 +789,7 @@ jobs:
             artifacts/openclaw-install-link-smoke-${{ matrix.openclaw_version }}
             artifacts/openclaw-runtime-smoke-${{ matrix.openclaw_version }}
             artifacts/openclaw-runtime-blocked-e2e-${{ matrix.openclaw_version }}
-          if-no-files-found: error
+          if-no-files-found: warn
 
   clawdstrike-policy:
     name: Canonical Policy Engine (TS)

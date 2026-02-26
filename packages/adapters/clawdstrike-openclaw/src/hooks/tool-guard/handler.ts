@@ -168,9 +168,11 @@ export function initialize(config: ClawdstrikeConfig): void {
  */
 function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
   const engine = getSharedEngine(config);
-  // Ensure cachedPolicyKey is initialized if this is the first access.
-  if (cachedPolicyKey === 'unknown') {
-    cachedPolicyKey = policyCacheKey(engine.getPolicy());
+  const nextPolicyKey = policyCacheKey(engine.getPolicy());
+  if (cachedPolicyKey !== nextPolicyKey) {
+    // Policy changed (or first access): invalidate cached allow decisions to avoid stale bypasses.
+    decisionCache.clear();
+    cachedPolicyKey = nextPolicyKey;
   }
   return engine;
 }

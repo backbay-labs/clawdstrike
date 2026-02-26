@@ -581,7 +581,7 @@ impl OpenClawManager {
             scopes: Some(scopes),
             auth: if secrets.token.is_some() || secrets.device_token.is_some() {
                 Some(GatewayAuth {
-                    token: secrets.token.clone(),
+                    token: auth_token.clone(),
                     password: secrets.device_token.clone(),
                     device_token: secrets.device_token.clone(),
                 })
@@ -756,11 +756,6 @@ impl OpenClawManager {
                                     }
                                 }
                                 GatewayFrame::Req(server_req) => {
-                                    tracing::debug!(
-                                        method = %server_req.method,
-                                        "received server-initiated request (not handled)"
-                                    );
-
                                     let response_frame = match server_req.method.as_str() {
                                         "ping" => Some(GatewayFrame::Res(GatewayResponseFrame {
                                             id: server_req.id.clone(),
@@ -785,6 +780,10 @@ impl OpenClawManager {
                                     };
 
                                     if let Some(resp) = response_frame {
+                                        tracing::debug!(
+                                            method = %server_req.method,
+                                            "received server-initiated request (handled)"
+                                        );
                                         if let Ok(text) = serde_json::to_string(&resp) {
                                             if let Err(err) = sink.send(Message::Text(text)).await {
                                                 tracing::warn!(
@@ -793,6 +792,11 @@ impl OpenClawManager {
                                                 );
                                             }
                                         }
+                                    } else {
+                                        tracing::debug!(
+                                            method = %server_req.method,
+                                            "received server-initiated request (not handled)"
+                                        );
                                     }
                                 }
                             }
@@ -2079,6 +2083,124 @@ mod tests {
         };
         if let Err(err) = server_result {
             panic!("mock gateway task failed: {}", err);
+        }
+    }
+
+    #[tokio::test]
+    async fn device_token_only_populates_auth_token_field() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|err| panic!("failed to bind device-token listener: {err}"));
+        let addr = listener
+            .local_addr()
+            .unwrap_or_else(|err| panic!("failed to read device-token listener address: {err}"));
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener
+                .accept()
+                .await
+                .map_err(|err| format!("accept failed: {err}"))?;
+            let mut ws = accept_async(stream)
+                .await
+                .map_err(|err| format!("ws accept failed: {err}"))?;
+
+            let connect_text = match ws.next().await {
+                Some(Ok(Message::Text(text))) => text,
+                Some(Ok(_)) => return Err("expected text connect frame".to_string()),
+                Some(Err(err)) => return Err(format!("read connect frame failed: {err}")),
+                None => return Err("stream closed before connect frame".to_string()),
+            };
+            let (connect_id, params) = match parse_gateway_frame(&connect_text) {
+                Some(GatewayFrame::Req(req)) if req.method == "connect" => (req.id, req.params),
+                Some(_) => return Err("unexpected first frame shape".to_string()),
+                None => return Err("failed to parse connect frame".to_string()),
+            };
+
+            let auth = params
+                .as_ref()
+                .and_then(|value| value.get("auth"))
+                .and_then(|value| value.as_object())
+                .ok_or_else(|| "connect auth missing".to_string())?;
+
+            let token = auth
+                .get("token")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "connect auth token missing".to_string())?;
+            if token != "device-only-token" {
+                return Err(format!(
+                    "connect auth token mismatch: expected device-only-token, got {token}"
+                ));
+            }
+
+            let connect_response = GatewayFrame::Res(GatewayResponseFrame {
+                id: connect_id,
+                ok: true,
+                payload: Some(serde_json::json!({"session":"mock"})),
+                error: None,
+            });
+            let response_text = serde_json::to_string(&connect_response)
+                .map_err(|err| format!("serialize connect response failed: {err}"))?;
+            ws.send(Message::Text(response_text))
+                .await
+                .map_err(|err| format!("send connect response failed: {err}"))?;
+
+            let _ = tokio::time::timeout(Duration::from_secs(3), ws.next()).await;
+            Ok::<(), String>(())
+        });
+
+        let mut settings = Settings::default();
+        settings.openclaw.gateways.push(OpenClawGatewayMetadata {
+            id: "gw-device".to_string(),
+            label: "Device Gateway".to_string(),
+            gateway_url: format!("ws://{}", addr),
+        });
+        settings.openclaw.active_gateway_id = Some("gw-device".to_string());
+
+        let manager = OpenClawManager::new(Arc::new(RwLock::new(settings)));
+        manager
+            .secrets
+            .set(
+                "gw-device",
+                GatewaySecrets {
+                    token: None,
+                    device_token: Some("device-only-token".to_string()),
+                },
+            )
+            .await
+            .unwrap_or_else(|err| panic!("failed to set device-token secret: {err}"));
+
+        manager
+            .connect_gateway("gw-device")
+            .await
+            .unwrap_or_else(|err| panic!("connect_gateway failed: {err}"));
+
+        let mut connected = false;
+        for _ in 0..40 {
+            let status = manager
+                .list_gateways()
+                .await
+                .gateways
+                .into_iter()
+                .find(|gateway| gateway.id == "gw-device")
+                .map(|gateway| gateway.runtime.status);
+            if status == Some(GatewayConnectionStatus::Connected) {
+                connected = true;
+                break;
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
+        assert!(connected, "gateway did not reach connected state");
+
+        manager
+            .disconnect_gateway("gw-device")
+            .await
+            .unwrap_or_else(|err| panic!("disconnect_gateway failed: {err}"));
+
+        let server_result = server
+            .await
+            .unwrap_or_else(|err| panic!("device-token server join failed: {err}"));
+        if let Err(err) = server_result {
+            panic!("device-token server failed: {err}");
         }
     }
 

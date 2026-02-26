@@ -210,9 +210,9 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   initCuaBridge(config);
 
   const withFreshEngine = (handler: HookHandler): HookHandler => {
-    return async (event) => {
+    return async (event, ctx) => {
       refreshSharedEngine();
-      return handler(event);
+      return handler(event, ctx);
     };
   };
 

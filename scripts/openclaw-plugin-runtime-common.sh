@@ -28,6 +28,7 @@ PY
 openclaw_runtime_prepare() {
   openclaw_runtime_require_cmd openclaw
   openclaw_runtime_require_cmd jq
+  openclaw_runtime_require_cmd npm
   openclaw_runtime_require_cmd python3
 
   OPENCLAW_RUNTIME_REPO_ROOT="${OPENCLAW_RUNTIME_REPO_ROOT:-$(openclaw_runtime_repo_root)}"
@@ -45,6 +46,12 @@ openclaw_runtime_prepare() {
     echo "[openclaw-runtime] run: npm --prefix packages/adapters/clawdstrike-openclaw run build" >&2
     exit 1
   fi
+  if [ ! -d "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" ] \
+    || [ -z "$(find "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ] \
+    || [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/adapter-core/package.json" ]; then
+    echo "[openclaw-runtime] plugin dependencies missing; restoring with npm ci" >&2
+    npm --prefix "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR" ci
+  fi
   if [ ! -d "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" ]; then
     echo "[openclaw-runtime] expected plugin dependencies at $OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" >&2
     echo "[openclaw-runtime] run: npm --prefix packages/adapters/clawdstrike-openclaw ci" >&2
@@ -56,7 +63,7 @@ openclaw_runtime_prepare() {
   cp "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/openclaw.plugin.json" "$OPENCLAW_RUNTIME_PLUGIN_DIR/openclaw.plugin.json"
   cp -R "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/dist" "$OPENCLAW_RUNTIME_PLUGIN_DIR/dist"
   cp -R "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/rulesets" "$OPENCLAW_RUNTIME_PLUGIN_DIR/rulesets"
-  ln -s "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" "$OPENCLAW_RUNTIME_PLUGIN_DIR/node_modules"
+  cp -RL "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" "$OPENCLAW_RUNTIME_PLUGIN_DIR/node_modules"
 
   cat >"$OPENCLAW_RUNTIME_PLUGIN_DIR/index.js" <<'JS'
 export { default } from './dist/plugin.js';

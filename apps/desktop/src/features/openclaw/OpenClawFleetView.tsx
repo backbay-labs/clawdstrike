@@ -89,12 +89,20 @@ function GatewayCard({
 
 /** Ticking countdown hook - returns milliseconds remaining, updated every second. */
 function useCountdown(targetMs: number): number {
-  const [remaining, setRemaining] = useState(targetMs - Date.now());
+  const [remaining, setRemaining] = useState(Math.max(0, targetMs - Date.now()));
   useEffect(() => {
     // Sync immediately in case targetMs changed between render and effect
-    setRemaining(targetMs - Date.now());
+    const initialRemaining = Math.max(0, targetMs - Date.now());
+    setRemaining(initialRemaining);
+    if (initialRemaining <= 0) {
+      return;
+    }
     const timer = setInterval(() => {
-      setRemaining(targetMs - Date.now());
+      const nextRemaining = Math.max(0, targetMs - Date.now());
+      setRemaining(nextRemaining);
+      if (nextRemaining <= 0) {
+        clearInterval(timer);
+      }
     }, 1_000);
     return () => clearInterval(timer);
   }, [targetMs]);

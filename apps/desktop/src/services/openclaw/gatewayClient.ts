@@ -482,7 +482,11 @@ export class OpenClawGatewayClient {
     let lastError: unknown;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await this.requestOnce<TPayload>(method, params, opts);
+        const attemptOpts =
+          attempt === 0 || !opts
+            ? opts
+            : { ...opts, id: undefined };
+        return await this.requestOnce<TPayload>(method, params, attemptOpts);
       } catch (err) {
         lastError = err;
 

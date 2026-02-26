@@ -235,6 +235,45 @@ describe("OpenClawGatewayClient", () => {
     expect(rpcErr.message).toBe("bad token");
   });
 
+  it("uses a fresh request id on retry when opts.id is provided", async () => {
+    const client = new OpenClawGatewayClient("ws://example.test");
+    const connectPromise = client.connect();
+    const ws = MockWebSocket.instances[0]!;
+
+    ws.emitOpen();
+    vi.advanceTimersByTime(150);
+    const connectFrame = JSON.parse(ws.sent[0]!) as Record<string, unknown>;
+    ws.emitMessage({ type: "res", id: String(connectFrame.id), ok: true });
+    await connectPromise;
+
+    const requestPromise = client.request("system-presence", undefined, {
+      id: "fixed-request-id",
+      retries: 1,
+    });
+
+    const firstReq = JSON.parse(ws.sent[1]!) as Record<string, unknown>;
+    expect(firstReq.id).toBe("fixed-request-id");
+
+    ws.emitMessage({
+      type: "res",
+      id: "fixed-request-id",
+      ok: false,
+      error: {
+        message: "retry please",
+        retryable: true,
+        retryAfterMs: 25,
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(25);
+    expect(ws.sent).toHaveLength(3);
+    const retryReq = JSON.parse(ws.sent[2]!) as Record<string, unknown>;
+    expect(retryReq.id).not.toBe("fixed-request-id");
+
+    ws.emitMessage({ type: "res", id: String(retryReq.id), ok: true, payload: { ok: true } });
+    await expect(requestPromise).resolves.toEqual({ ok: true });
+  });
+
   it("times out connect when the socket never opens", async () => {
     const client = new OpenClawGatewayClient("ws://example.test", { connectTimeoutMs: 50 });
     const connectPromise = client.connect();

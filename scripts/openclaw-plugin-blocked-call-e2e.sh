@@ -5,10 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/openclaw-plugin-runtime-common.sh
 source "$SCRIPT_DIR/openclaw-plugin-runtime-common.sh"
 
-openclaw_runtime_prepare
-
+OPENCLAW_RUNTIME_REPO_ROOT="${OPENCLAW_RUNTIME_REPO_ROOT:-$(openclaw_runtime_repo_root)}"
 ARTIFACT_DIR="${OPENCLAW_RUNTIME_ARTIFACT_DIR:-$OPENCLAW_RUNTIME_REPO_ROOT/artifacts/openclaw-runtime-blocked-e2e}"
 mkdir -p "$ARTIFACT_DIR"
+
+openclaw_runtime_prepare
 
 TARGET_FILE="$OPENCLAW_RUNTIME_ROOT/destructive-target.txt"
 IDEMPOTENCY_KEY="blocked-e2e-$(date +%s)"
