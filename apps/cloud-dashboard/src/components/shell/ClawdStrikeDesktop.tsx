@@ -152,6 +152,15 @@ function DesktopSurface() {
   );
 }
 
+const PATH_TO_PROCESS: Record<string, string> = {
+  "/events": "event-stream",
+  "/audit": "audit",
+  "/policies": "policy",
+  "/settings": "settings",
+  "/settings/siem": "settings",
+  "/settings/webhooks": "settings",
+};
+
 function AutoLaunch() {
   const { processes } = useDesktopOS();
   const launched = useRef(false);
@@ -159,7 +168,15 @@ function AutoLaunch() {
   useEffect(() => {
     if (launched.current) return;
     launched.current = true;
-    processes.launch("monitor");
+
+    const path = window.location.pathname.replace(/\/+$/, "") || "/";
+    const processId = PATH_TO_PROCESS[path];
+
+    if (processId) {
+      processes.launch(processId);
+    } else {
+      processes.launch("monitor");
+    }
   }, [processes]);
 
   return null;

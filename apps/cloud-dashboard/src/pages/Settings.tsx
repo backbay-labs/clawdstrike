@@ -47,8 +47,14 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Settings({ initialSection = "connection" }: SettingsProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
+const PATH_TO_SECTION: Record<string, SettingsSection> = {
+  "/settings/siem": "siem",
+  "/settings/webhooks": "webhooks",
+};
+
+export function Settings({ initialSection }: SettingsProps) {
+  const derivedSection = initialSection ?? PATH_TO_SECTION[window.location.pathname] ?? "connection";
+  const [activeSection, setActiveSection] = useState<SettingsSection>(derivedSection);
   const [hushdUrl, setHushdUrl] = useState(() => localStorage.getItem("hushd_url") || "");
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("hushd_api_key") || "");
   const [siemProvider, setSiemProvider] = useState(
@@ -68,7 +74,7 @@ export function Settings({ initialSection = "connection" }: SettingsProps) {
   const [savingSection, setSavingSection] = useState<SettingsSection | null>(null);
 
   useEffect(() => {
-    setActiveSection(initialSection);
+    if (initialSection) setActiveSection(initialSection);
   }, [initialSection]);
 
   useEffect(() => {
