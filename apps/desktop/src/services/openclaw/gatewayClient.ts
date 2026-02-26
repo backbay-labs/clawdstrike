@@ -33,6 +33,13 @@ export type GatewayClientOptions = {
   };
   connectTimeoutMs?: number;
   connectDelayMs?: number;
+  /**
+   * When `true`, a clean WebSocket close (code 1000) will still trigger
+   * auto-reconnect.  Useful when the gateway sends 1000 during planned
+   * restarts and the client should transparently reconnect.
+   * Default: `false` (backward-compatible — clean close skips reconnect).
+   */
+  reconnectOnCleanClose?: boolean;
 };
 
 export type GatewayStatusSnapshot = {
@@ -205,7 +212,7 @@ export class OpenClawGatewayClient {
     const initialDelayMs = Math.max(25, config?.initialDelayMs ?? 350);
     const maxDelayMs = Math.max(initialDelayMs, config?.maxDelayMs ?? 15_000);
     const backoffFactor = Math.max(1.0, config?.backoffFactor ?? 1.6);
-    const jitterRatio = Math.max(0, Math.min(1, config?.jitterRatio ?? 0));
+    const jitterRatio = Math.max(0, Math.min(1, config?.jitterRatio ?? 0.15));
 
     const expDelay = Math.min(maxDelayMs, Math.round(initialDelayMs * Math.pow(backoffFactor, attempt)));
     const jitterMs = jitterRatio ? Math.round(expDelay * jitterRatio * (Math.random() * 2 - 1)) : 0;
@@ -431,7 +438,7 @@ export class OpenClawGatewayClient {
       this.pending.clear();
 
       if (this.manualDisconnect) return;
-      if (ev.code === 1000) return;
+      if (ev.code === 1000 && !this.options.reconnectOnCleanClose) return;
       this.scheduleReconnect("socket closed");
     };
 

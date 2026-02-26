@@ -8,17 +8,24 @@ export type { PolicyEngineLike } from './engine.js';
 
 export type {
   ClawdstrikeConfig,
+  CommandEventData,
   CuaEventData,
   Decision,
+  DecisionReasonCode,
   DecisionStatus,
   EvaluationMode,
   EventData,
   EventType,
+  FileEventData,
   GuardToggles,
   LogLevel,
+  NetworkEventData,
+  PatchEventData,
   Policy,
   PolicyEvent,
+  SecretEventData,
   Severity,
+  ToolEventData,
 } from './types.js';
 
 export {

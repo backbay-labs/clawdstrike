@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { GatewayEventFrame } from "@/services/openclaw/gatewayProtocol";
 import { OpenClawGatewayClient, type GatewayConnectionStatus } from "@/services/openclaw/gatewayClient";
+import { DEFAULT_GATEWAY_URL } from "@/features/openclaw/openclawFleetUtils";
 
 export type OpenClawGatewayConfig = {
   id: string;
@@ -114,7 +115,7 @@ function defaultGateway(): OpenClawGatewayConfig {
   return {
     id: `gw:${Date.now()}-${Math.random().toString(16).slice(2)}`,
     label: "Local Gateway",
-    gatewayUrl: "ws://127.0.0.1:18789",
+    gatewayUrl: DEFAULT_GATEWAY_URL,
     token: "",
   };
 }
@@ -131,7 +132,7 @@ function loadGateways(): OpenClawGatewayConfig[] {
       .map((v) => ({
         id: String(v!.id ?? defaultGateway().id),
         label: String(v!.label ?? "Gateway"),
-        gatewayUrl: String(v!.gatewayUrl ?? "ws://127.0.0.1:18789"),
+        gatewayUrl: String(v!.gatewayUrl ?? DEFAULT_GATEWAY_URL),
         token: String(v!.token ?? ""),
         deviceToken: typeof v!.deviceToken === "string" ? v!.deviceToken : undefined,
       }));
@@ -386,6 +387,7 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
         deviceToken: gw.deviceToken,
         instanceId: `sdr:${id}`,
         autoReconnect: true,
+        reconnectOnCleanClose: true,
         reconnect: { maxAttempts: 20, initialDelayMs: 400, maxDelayMs: 12_000, backoffFactor: 1.6, jitterRatio: 0.15 },
       });
       clientsRef.current[id] = client;
@@ -415,7 +417,20 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
       try {
         await client.connect();
       } catch (err) {
-        disconnectGatewayInternal(id, clientsRef, setRuntimeByGatewayId);
+        // Do NOT call disconnectGatewayInternal here — that invokes
+        // client.disconnect() which sets manualDisconnect = true and
+        // permanently kills auto-reconnect.  Instead, log the error and
+        // let the client's internal reconnect logic handle recovery.
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[OpenClaw] initial connect failed for gateway ${id}: ${message}`);
+        setRuntimeByGatewayId((prev) => ({
+          ...prev,
+          [id]: {
+            ...(prev[id] ?? createEmptyRuntime()),
+            status: "connecting",
+            lastError: message,
+          },
+        }));
         throw err;
       }
     },

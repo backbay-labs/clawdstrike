@@ -288,11 +288,8 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   const cuaEvent = buildCuaEvent(sessionId, kind, params);
 
   // Evaluate through policy engine first to get severity before consulting prior approvals.
-  // Cast required: adapter-core PolicyEvent has a superset EventData union
-  // (includes CustomEventData) that the local PolicyEvent does not carry.
-  // The CUA event data is structurally compatible at runtime.
   const policyEngine = getEngine();
-  const decision: Decision = await policyEngine.evaluate(cuaEvent as unknown as import('../../types.js').PolicyEvent);
+  const decision: Decision = await policyEngine.evaluate(cuaEvent);
 
   // Check prior approvals for non-critical denials only.
   // Critical denials must always be re-evaluated and never short-circuited.

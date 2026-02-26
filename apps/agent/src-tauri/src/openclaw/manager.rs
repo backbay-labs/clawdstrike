@@ -24,6 +24,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
+use zeroize::Zeroizing;
 
 #[cfg(test)]
 const CONNECT_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(400);
@@ -446,12 +447,13 @@ impl OpenClawManager {
         gateway_id: String,
         session_id: u64,
         metadata: OpenClawGatewayMetadata,
-        secrets: GatewaySecrets,
+        initial_secrets: GatewaySecrets,
         mut rx: mpsc::Receiver<SessionCommand>,
     ) {
         let mut reconnect_attempt = 0u32;
         let max_attempts = 20u32;
         let stable_reset = Duration::from_secs(90);
+        let mut secrets = initial_secrets;
 
         loop {
             if reconnect_attempt >= max_attempts {
@@ -523,6 +525,9 @@ impl OpenClawManager {
             if rx.is_closed() {
                 break;
             }
+
+            // Re-read secrets from store in case tokens were rotated while disconnected.
+            secrets = self.secrets.get(&gateway_id).await;
         }
 
         self.remove_session_if_current(&gateway_id, session_id)
@@ -722,8 +727,45 @@ impl OpenClawManager {
                                         }
                                     }
                                 }
-                                GatewayFrame::Req(_) => {
-                                    // Gateway-to-client requests are currently ignored.
+                                GatewayFrame::Req(server_req) => {
+                                    tracing::debug!(
+                                        method = %server_req.method,
+                                        "received server-initiated request (not handled)"
+                                    );
+
+                                    let response_frame = match server_req.method.as_str() {
+                                        "ping" => Some(GatewayFrame::Res(GatewayResponseFrame {
+                                            id: server_req.id.clone(),
+                                            ok: true,
+                                            payload: Some(serde_json::json!({ "pong": true })),
+                                            error: None,
+                                        })),
+                                        "capabilities" => Some(GatewayFrame::Res(GatewayResponseFrame {
+                                            id: server_req.id.clone(),
+                                            ok: true,
+                                            payload: Some(serde_json::json!({
+                                                "capabilities": [
+                                                    "operator.read",
+                                                    "operator.write",
+                                                    "operator.approvals",
+                                                    "operator.pairing"
+                                                ]
+                                            })),
+                                            error: None,
+                                        })),
+                                        _ => None,
+                                    };
+
+                                    if let Some(resp) = response_frame {
+                                        if let Ok(text) = serde_json::to_string(&resp) {
+                                            if let Err(err) = sink.send(Message::Text(text)).await {
+                                                tracing::warn!(
+                                                    method = %server_req.method,
+                                                    "failed to send response to server request: {err}"
+                                                );
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -896,7 +938,7 @@ struct OpenClawDeviceIdentityFile {
 struct OpenClawDeviceIdentity {
     device_id: String,
     public_key_raw_base64url: String,
-    private_key_pem: String,
+    private_key_pem: Zeroizing<String>,
 }
 
 impl std::fmt::Debug for OpenClawDeviceIdentity {
@@ -973,7 +1015,7 @@ fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDevice
     Ok(OpenClawDeviceIdentity {
         device_id: derived_device_id,
         public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
-        private_key_pem: parsed.private_key_pem,
+        private_key_pem: Zeroizing::new(parsed.private_key_pem),
     })
 }
 
@@ -1440,7 +1482,7 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: device_id.clone(),
             public_key_raw_base64url: public_key_raw_base64url.clone(),
-            private_key_pem,
+            private_key_pem: Zeroizing::new(private_key_pem),
         };
         let scopes = vec![
             "operator.read".to_string(),
@@ -1501,7 +1543,7 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: hush_core::sha256(verifying_key.as_bytes()).to_hex(),
             public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
-            private_key_pem,
+            private_key_pem: Zeroizing::new(private_key_pem),
         };
         let scopes = default_gateway_scopes();
         let stale_signed_at = now_ms().saturating_sub(DEVICE_AUTH_MAX_CLOCK_SKEW_MS + 5_000);
@@ -1537,7 +1579,7 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: hush_core::sha256(verifying_key.as_bytes()).to_hex(),
             public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
-            private_key_pem,
+            private_key_pem: Zeroizing::new(private_key_pem),
         };
         let scopes = vec!["operator.read".to_string(), "operator.write".to_string()];
 
@@ -1574,7 +1616,7 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: hush_core::sha256(verifying_key_a.as_bytes()).to_hex(),
             public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key_a.as_bytes()),
-            private_key_pem: private_key_pem_b,
+            private_key_pem: Zeroizing::new(private_key_pem_b),
         };
 
         let result = build_gateway_device_proof_from_identity(

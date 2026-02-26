@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-import type { PolicyEngineLike as CanonicalPolicyEngineLike, PolicyEvent as CanonicalPolicyEvent } from '@clawdstrike/adapter-core';
+import type { PolicyEngineLike as CanonicalPolicyEngineLike } from '@clawdstrike/adapter-core';
 import { parseNetworkTarget } from '@clawdstrike/adapter-core';
 import { createPolicyEngineFromPolicy, type Policy as CanonicalPolicy } from '@clawdstrike/policy';
 
@@ -256,7 +256,7 @@ export class PolicyEngine {
     }
 
     if (this.threatIntelEngine) {
-      const ti = await this.threatIntelEngine.evaluate(toCanonicalEvent(event));
+      const ti = await this.threatIntelEngine.evaluate(event);
       const tiApplied = this.applyOnViolation(ti as Decision);
       const combined = combineDecisions(base, tiApplied);
       return this.applyMode(combined, this.config.mode);
@@ -873,12 +873,6 @@ function buildThreatIntelEngine(policy: Policy): CanonicalPolicyEngineLike | nul
   };
 
   return createPolicyEngineFromPolicy(canonicalPolicy);
-}
-
-function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
-  // OpenClaw events are compatible with adapter-core's PolicyEvent shape. Keep the
-  // raw eventId/timestamp/metadata for audit trails.
-  return event as unknown as CanonicalPolicyEvent;
 }
 
 function combineDecisions(base: Decision, next: Decision): Decision {

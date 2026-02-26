@@ -1,3 +1,5 @@
+export const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789";
+
 export type ParsedCommand = { argv: string[]; rawCommand: string | null; error: string | null };
 
 export function parseCommand(raw: string): ParsedCommand {

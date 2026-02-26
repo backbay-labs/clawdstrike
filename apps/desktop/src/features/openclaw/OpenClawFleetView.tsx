@@ -15,7 +15,7 @@ import { GlowInput } from "@backbay/glia/primitives";
 import { Badge } from "@backbay/glia/primitives";
 import { useOpenClaw, type ExecApprovalDecision, type ExecApprovalQueueItem, type OpenClawGatewayConfig } from "@/context/OpenClawContext";
 import { isTauri, openclawGatewayDiscover, openclawGatewayProbe } from "@/services/tauri";
-import { normalizeGatewayUrl, originFixHint, parseCommand, selectSystemRunNodes, statusDotClass, timeAgo } from "./openclawFleetUtils";
+import { DEFAULT_GATEWAY_URL, normalizeGatewayUrl, originFixHint, parseCommand, selectSystemRunNodes, statusDotClass, timeAgo } from "./openclawFleetUtils";
 
 function GatewayCard({
   gateway,
@@ -209,6 +209,8 @@ export function OpenClawFleetView() {
   const [invokeResult, setInvokeResult] = useState<unknown>(null);
 
   const [resolveBusyId, setResolveBusyId] = useState<string | null>(null);
+  const [pairingBusyId, setPairingBusyId] = useState<string | null>(null);
+  const [pairingError, setPairingError] = useState<string | null>(null);
 
   async function handleDiscoverGateways() {
     setDiscoveryError(null);
@@ -340,6 +342,34 @@ export function OpenClawFleetView() {
     }
   }
 
+  async function handleApproveDevice(requestId: string) {
+    setPairingError(null);
+    setPairingBusyId(requestId);
+    try {
+      await oc.approveDevicePairing(requestId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[OpenClawFleetView] approve device error:", message);
+      setPairingError(message);
+    } finally {
+      setPairingBusyId(null);
+    }
+  }
+
+  async function handleRejectDevice(requestId: string) {
+    setPairingError(null);
+    setPairingBusyId(requestId);
+    try {
+      await oc.rejectDevicePairing(requestId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[OpenClawFleetView] reject device error:", message);
+      setPairingError(message);
+    } finally {
+      setPairingBusyId(null);
+    }
+  }
+
   return (
     <GlassPanel className="h-full overflow-y-auto" variant="flush">
       <GlassHeader className="flex items-start justify-between gap-3 px-6 py-4">
@@ -364,7 +394,7 @@ export function OpenClawFleetView() {
             ))}
           </select>
 
-          <GlowButton onClick={() => oc.addGateway({ gatewayUrl: "ws://127.0.0.1:18789", token: "" })} variant="secondary">
+          <GlowButton onClick={() => oc.addGateway({ gatewayUrl: DEFAULT_GATEWAY_URL, token: "" })} variant="secondary">
             Add
           </GlowButton>
 
@@ -537,14 +567,43 @@ export function OpenClawFleetView() {
               <Badge variant="secondary">{runtime?.presence?.length ?? 0}</Badge>
             </div>
             <div className="mt-3 space-y-2">
-              {(runtime?.presence ?? []).slice(0, 12).map((p, idx) => (
-                <pre
-                  key={idx}
-                  className="text-xs text-sdr-text-muted whitespace-pre-wrap p-2 rounded border border-sdr-border bg-sdr-bg-tertiary/30 overflow-x-auto"
-                >
-                  {JSON.stringify(p, null, 2)}
-                </pre>
-              ))}
+              {(runtime?.presence ?? []).slice(0, 12).map((p, idx) => {
+                const entry = p && typeof p === "object" ? (p as Record<string, unknown>) : null;
+                const knownFields = ["clientId", "displayName", "version", "platform", "mode"] as const;
+                const hasKnown = entry && knownFields.some((f) => entry[f] != null);
+
+                if (!hasKnown) {
+                  return (
+                    <pre
+                      key={idx}
+                      className="text-xs text-sdr-text-muted whitespace-pre-wrap p-2 rounded border border-sdr-border bg-sdr-bg-tertiary/30 overflow-x-auto"
+                    >
+                      {JSON.stringify(p, null, 2)}
+                    </pre>
+                  );
+                }
+
+                return (
+                  <div
+                    key={idx}
+                    className="p-2 rounded border border-sdr-border bg-sdr-bg-tertiary/30 text-xs text-sdr-text-muted"
+                  >
+                    <ul className="space-y-0.5">
+                      {knownFields.map((field) =>
+                        entry![field] != null ? (
+                          <li key={field}>
+                            <span className="font-medium text-sdr-text-secondary">{field}:</span>{" "}
+                            {String(entry![field])}
+                          </li>
+                        ) : null,
+                      )}
+                    </ul>
+                  </div>
+                );
+              })}
+              {(runtime?.presence ?? []).length > 12 && (
+                <p className="text-xs text-sdr-text-muted mt-1">and {(runtime?.presence ?? []).length - 12} more</p>
+              )}
               {(runtime?.presence ?? []).length === 0 ? (
                 <div className="text-sm text-sdr-text-muted mt-2">No presence entries yet.</div>
               ) : null}
@@ -586,6 +645,9 @@ export function OpenClawFleetView() {
                   </div>
                 </div>
               ))}
+              {(runtime?.nodes ?? []).length > 12 && (
+                <p className="text-xs text-sdr-text-muted mt-1">and {(runtime?.nodes ?? []).length - 12} more</p>
+              )}
               {(runtime?.nodes ?? []).length === 0 ? (
                 <div className="text-sm text-sdr-text-muted mt-2">No nodes yet. Install a node host and pair it.</div>
               ) : null}
@@ -613,6 +675,9 @@ export function OpenClawFleetView() {
                 onResolve={(decision) => handleResolveApproval(a.id, decision)}
               />
             ))}
+            {(runtime?.execApprovalQueue ?? []).length > 20 && (
+              <p className="text-xs text-sdr-text-muted mt-1">showing 20 of {(runtime?.execApprovalQueue ?? []).length}</p>
+            )}
             {(runtime?.execApprovalQueue ?? []).length === 0 ? (
               <div className="text-sm text-sdr-text-muted mt-2">No pending approvals.</div>
             ) : null}
@@ -711,6 +776,11 @@ export function OpenClawFleetView() {
             </div>
           </div>
 
+          {pairingError ? (
+            <div className="mt-2 text-xs text-sdr-accent-red whitespace-pre-wrap">
+              Pairing error: {pairingError}
+            </div>
+          ) : null}
           <div className="mt-3 space-y-2">
             {(runtime?.devices?.pending ?? []).slice(0, 20).map((d) => (
               <div key={d.requestId} className="p-3 rounded border border-sdr-border bg-sdr-bg-tertiary/30 flex items-start justify-between gap-4">
@@ -723,11 +793,11 @@ export function OpenClawFleetView() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <GlowButton onClick={() => oc.approveDevicePairing(d.requestId)} variant="default">
-                    Approve
+                  <GlowButton onClick={() => void handleApproveDevice(d.requestId)} disabled={pairingBusyId === d.requestId} variant="default">
+                    {pairingBusyId === d.requestId ? "Approving..." : "Approve"}
                   </GlowButton>
-                  <GlowButton onClick={() => oc.rejectDevicePairing(d.requestId)} variant="secondary">
-                    Reject
+                  <GlowButton onClick={() => void handleRejectDevice(d.requestId)} disabled={pairingBusyId === d.requestId} variant="secondary">
+                    {pairingBusyId === d.requestId ? "Rejecting..." : "Reject"}
                   </GlowButton>
                 </div>
               </div>
