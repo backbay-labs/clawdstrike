@@ -203,7 +203,7 @@ describe("OpenClawGatewayClient", () => {
     ws.emitMessage({ type: "res", id: String(connectFrame.id), ok: true });
     await connectPromise;
 
-    const promise = client.request("system-presence");
+    const promise = client.request("system-presence", undefined, { retries: 0 });
     const reqFrame = JSON.parse(ws.sent[1]!) as Record<string, unknown>;
 
     ws.emitMessage({

@@ -1,3 +1,6 @@
+/** Current protocol version. Update when gateway ships v4+. */
+export const GATEWAY_PROTOCOL_VERSION = 3;
+
 export type GatewayFrameType = "req" | "res" | "event";
 
 export type GatewayRequestFrame<TParams = unknown> = {

@@ -14,7 +14,8 @@ import type {
   Decision,
   PolicyEvent,
 } from '../../types.js';
-import { PolicyEngine } from '../../policy/engine.js';
+import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
+import type { PolicyEngine } from '../../policy/engine.js';
 import { checkAndConsumeApproval } from '../approval-state.js';
 import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
 import { inferEventTypeFromName } from '../../classification.js';
@@ -144,8 +145,6 @@ export class DecisionCache {
 
 // ── Module State ─────────────────────────────────────────────────────
 
-/** Shared policy engine instance */
-let engine: PolicyEngine | null = null;
 let currentConfig: ClawdstrikeConfig = {};
 let cachedPolicyKey = 'unknown';
 
@@ -153,21 +152,24 @@ let cachedPolicyKey = 'unknown';
 export let decisionCache = new DecisionCache();
 
 /**
- * Initialize the hook with configuration
+ * Initialize the hook with configuration.
+ * Delegates to the shared engine holder so all hooks share one PolicyEngine.
  */
 export function initialize(config: ClawdstrikeConfig): void {
-  engine = new PolicyEngine(config);
+  const engine = initializeEngine(config);
   currentConfig = config;
   decisionCache = new DecisionCache();
   cachedPolicyKey = policyCacheKey(engine.getPolicy());
 }
 
 /**
- * Get or create the policy engine
+ * Get or create the policy engine.
+ * Delegates to the shared engine holder.
  */
 function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
-  if (!engine) {
-    engine = new PolicyEngine(config ?? {});
+  const engine = getSharedEngine(config);
+  // Ensure cachedPolicyKey is initialized if this is the first access.
+  if (cachedPolicyKey === 'unknown') {
     cachedPolicyKey = policyCacheKey(engine.getPolicy());
   }
   return engine;

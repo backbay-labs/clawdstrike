@@ -28,3 +28,6 @@ export { AuditStore, type AuditEvent } from './audit/store.js';
 
 // CLI
 export { registerCli, createCli } from './cli/index.js';
+
+// Adapter (FrameworkAdapter interface from @clawdstrike/adapter-core)
+export { OpenClawAdapter } from './openclaw-adapter.js';

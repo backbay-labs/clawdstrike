@@ -4,7 +4,7 @@ import type {
   GatewayFrame,
   GatewayResponseError,
 } from "./gatewayProtocol";
-import { createRequestId, safeParseGatewayFrame } from "./gatewayProtocol";
+import { createRequestId, GATEWAY_PROTOCOL_VERSION, safeParseGatewayFrame } from "./gatewayProtocol";
 
 export type GatewayConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -40,6 +40,12 @@ export type GatewayClientOptions = {
    * Default: `false` (backward-compatible — clean close skips reconnect).
    */
   reconnectOnCleanClose?: boolean;
+  /**
+   * Maximum number of automatic retries for RPC requests that fail with a
+   * retryable `GatewayRpcError`.  Set to `0` to disable retries.
+   * Default: `2`.
+   */
+  maxRetries?: number;
 };
 
 export type GatewayStatusSnapshot = {
@@ -287,7 +293,9 @@ export class OpenClawGatewayClient {
           this.connectDelayId = null;
         }
 
-        const protocol = this.options.protocolVersion ?? 3;
+        const protocol = this.options.protocolVersion ?? GATEWAY_PROTOCOL_VERSION;
+        // When v4 ships, change to min_protocol: 3, max_protocol: 4 with
+        // conditional v4 handling based on the negotiated version.
         const params: GatewayConnectParams = {
           minProtocol: protocol,
           maxProtocol: protocol,
@@ -464,7 +472,40 @@ export class OpenClawGatewayClient {
     this.ws.send(JSON.stringify(frame));
   }
 
-  request<TPayload = unknown>(
+  async request<TPayload = unknown>(
+    method: string,
+    params?: unknown,
+    opts?: { timeoutMs?: number; id?: string; retries?: number }
+  ): Promise<TPayload> {
+    const maxRetries = Math.max(0, opts?.retries ?? this.options.maxRetries ?? 2);
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.requestOnce<TPayload>(method, params, opts);
+      } catch (err) {
+        lastError = err;
+
+        // Only retry GatewayRpcErrors that are explicitly marked retryable.
+        if (
+          attempt < maxRetries &&
+          err instanceof GatewayRpcError &&
+          err.retryable === true
+        ) {
+          const delayMs = Math.min(err.retryAfterMs ?? 1000, 5000);
+          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        throw err;
+      }
+    }
+
+    // Should be unreachable, but satisfies the compiler.
+    throw lastError;
+  }
+
+  private requestOnce<TPayload = unknown>(
     method: string,
     params?: unknown,
     opts?: { timeoutMs?: number; id?: string }

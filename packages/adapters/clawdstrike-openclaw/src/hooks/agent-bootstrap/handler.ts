@@ -5,20 +5,19 @@
  */
 
 import type { AgentBootstrapEvent, HookEvent, HookHandler, ClawdstrikeConfig } from '../../types.js';
-import { PolicyEngine } from '../../policy/engine.js';
+import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
 import { generateSecurityPrompt } from '../../security-prompt.js';
 
-let engine: PolicyEngine | null = null;
-
+/**
+ * Initialize the hook with configuration.
+ * Delegates to the shared engine holder so all hooks share one PolicyEngine.
+ */
 export function initialize(config: ClawdstrikeConfig): void {
-  engine = new PolicyEngine(config);
+  initializeEngine(config);
 }
 
-function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
-  if (!engine) {
-    engine = new PolicyEngine(config ?? {});
-  }
-  return engine;
+function getEngine(config?: ClawdstrikeConfig) {
+  return getSharedEngine(config);
 }
 
 const handler: HookHandler = async (event: HookEvent): Promise<void> => {

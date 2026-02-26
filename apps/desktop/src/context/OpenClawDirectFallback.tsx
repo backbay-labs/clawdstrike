@@ -219,6 +219,31 @@ export function applyGatewayEventFrame(
     return current;
   }
 
+  if (frame.event === "node.connected" || frame.event === "node.updated") {
+    const payload = frame.payload;
+    if (payload && typeof payload === "object" && "id" in payload) {
+      const nodeId = (payload as any).id;
+      const node = payload as OpenClawNode;
+      const nodes = [...(current.nodes ?? [])];
+      const idx = nodes.findIndex((n: any) => n.id === nodeId);
+      if (idx >= 0) {
+        nodes[idx] = node;
+      } else {
+        nodes.push(node);
+      }
+      return { ...current, nodes };
+    }
+  }
+
+  if (frame.event === "node.disconnected") {
+    const payload = frame.payload;
+    if (payload && typeof payload === "object" && "id" in payload) {
+      const nodeId = (payload as any).id;
+      const nodes = (current.nodes ?? []).filter((n: any) => n.id !== nodeId);
+      return { ...current, nodes };
+    }
+  }
+
   return current;
 }
 

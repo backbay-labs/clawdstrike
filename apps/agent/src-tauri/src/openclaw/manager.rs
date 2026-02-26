@@ -606,6 +606,10 @@ impl OpenClawManager {
         let mut connected = false;
         let connect_deadline = Instant::now() + CONNECT_HANDSHAKE_TIMEOUT;
         let mut pending: HashMap<String, PendingResponse> = HashMap::new();
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
+        heartbeat_interval.reset(); // skip the immediate first tick
+        let mut last_received_at = Instant::now();
+        const HEARTBEAT_DEAD_TIMEOUT: Duration = Duration::from_secs(90);
 
         loop {
             let timeout_tick = tokio::time::sleep(Duration::from_millis(200));
@@ -622,6 +626,17 @@ impl OpenClawManager {
                         ));
                     }
 
+                    // Check for dead connection (no data received within heartbeat window)
+                    if connected && now.duration_since(last_received_at) > HEARTBEAT_DEAD_TIMEOUT {
+                        tracing::warn!(
+                            gateway_id = %gateway_id,
+                            elapsed_secs = now.duration_since(last_received_at).as_secs(),
+                            "no data received within heartbeat window, treating connection as dead"
+                        );
+                        reject_all_pending(&mut pending, "heartbeat timeout");
+                        return Ok(ConnectionExit::RemoteClosed("heartbeat timeout".to_string()));
+                    }
+
                     let expired: Vec<String> = pending
                         .iter()
                         .filter_map(|(id, p)| if now > p.expires_at { Some(id.clone()) } else { None })
@@ -630,6 +645,18 @@ impl OpenClawManager {
                     for id in expired {
                         if let Some(pending_item) = pending.remove(&id) {
                             let _ = pending_item.tx.send(Err(format!("timeout waiting for gateway response ({id})")));
+                        }
+                    }
+                }
+                _ = heartbeat_interval.tick() => {
+                    if connected {
+                        if let Err(err) = sink.send(Message::Ping(Vec::new())).await {
+                            tracing::warn!(
+                                gateway_id = %gateway_id,
+                                "failed to send WebSocket ping: {err}"
+                            );
+                            reject_all_pending(&mut pending, "ping send failed");
+                            return Err(anyhow::anyhow!("failed to send heartbeat ping: {err}"));
                         }
                     }
                 }
@@ -693,6 +720,7 @@ impl OpenClawManager {
                             return Ok(ConnectionExit::RemoteClosed(reason));
                         }
                         Some(Ok(Message::Text(text))) => {
+                            last_received_at = Instant::now();
                             self.touch_runtime_message(gateway_id).await;
 
                             let Some(frame) = parse_gateway_frame(&text) else {
@@ -770,7 +798,8 @@ impl OpenClawManager {
                             }
                         }
                         Some(Ok(_)) => {
-                            // Ignore binary/ping/pong frames.
+                            // Binary/ping/pong frames still count as activity.
+                            last_received_at = Instant::now();
                         }
                     }
                 }
@@ -898,6 +927,29 @@ impl OpenClawManager {
                         }
                     }
                 }
+                "node.connected" | "node.updated" => {
+                    if let Some(payload) = &frame.payload {
+                        if let Some(node_id) = payload.get("id").and_then(|v| v.as_str()) {
+                            if let Some(existing) = rt
+                                .nodes
+                                .iter_mut()
+                                .find(|n| n.get("id").and_then(|v| v.as_str()) == Some(node_id))
+                            {
+                                *existing = payload.clone();
+                            } else {
+                                rt.nodes.push(payload.clone());
+                            }
+                        }
+                    }
+                }
+                "node.disconnected" => {
+                    if let Some(payload) = &frame.payload {
+                        if let Some(node_id) = payload.get("id").and_then(|v| v.as_str()) {
+                            rt.nodes
+                                .retain(|n| n.get("id").and_then(|v| v.as_str()) != Some(node_id));
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -963,15 +1015,17 @@ fn build_gateway_device_proof(
     };
 
     let client_mode = client.mode.as_deref().unwrap_or("cli");
+    let now = now_ms();
     let proof = build_gateway_device_proof_from_identity(
         &identity,
         &client.id,
         client_mode,
         role,
         scopes,
-        now_ms(),
+        now,
         auth_token,
         None,
+        now,
     )?;
     Ok(Some(proof))
 }
@@ -1019,6 +1073,7 @@ fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDevice
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_gateway_device_proof_from_identity(
     identity: &OpenClawDeviceIdentity,
     client_id: &str,
@@ -1028,9 +1083,10 @@ fn build_gateway_device_proof_from_identity(
     signed_at_ms: u64,
     token: Option<&str>,
     nonce: Option<&str>,
+    now_ms_value: u64,
 ) -> Result<GatewayDeviceProof> {
     validate_gateway_scopes(scopes)?;
-    validate_signed_at_window(signed_at_ms, now_ms())?;
+    validate_signed_at_window(signed_at_ms, now_ms_value)?;
 
     let signing_key = load_identity_signing_key(identity)?;
     validate_identity_key_consistency(identity, &signing_key)?;
@@ -1135,6 +1191,7 @@ fn validate_identity_key_consistency(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_device_auth_payload(
     device_id: &str,
     client_id: &str,
@@ -1500,6 +1557,7 @@ mod tests {
             signed_at,
             Some("gateway-token"),
             None,
+            signed_at,
         ) {
             Ok(value) => value,
             Err(err) => panic!("failed to build device proof: {err}"),
@@ -1548,6 +1606,7 @@ mod tests {
         let scopes = default_gateway_scopes();
         let stale_signed_at = now_ms().saturating_sub(DEVICE_AUTH_MAX_CLOCK_SKEW_MS + 5_000);
 
+        let now = now_ms();
         let result = build_gateway_device_proof_from_identity(
             &identity,
             "cli",
@@ -1557,6 +1616,7 @@ mod tests {
             stale_signed_at,
             Some("gateway-token"),
             None,
+            now,
         );
 
         let err = result
@@ -1583,15 +1643,17 @@ mod tests {
         };
         let scopes = vec!["operator.read".to_string(), "operator.write".to_string()];
 
+        let now = now_ms();
         let result = build_gateway_device_proof_from_identity(
             &identity,
             "cli",
             "cli",
             "operator",
             &scopes,
-            now_ms(),
+            now,
             Some("gateway-token"),
             None,
+            now,
         );
 
         let err = result
@@ -1619,15 +1681,17 @@ mod tests {
             private_key_pem: Zeroizing::new(private_key_pem_b),
         };
 
+        let now = now_ms();
         let result = build_gateway_device_proof_from_identity(
             &identity,
             "cli",
             "cli",
             "operator",
             &default_gateway_scopes(),
-            now_ms(),
+            now,
             Some("valid-token"),
             None,
+            now,
         );
 
         let err = result

@@ -4,9 +4,9 @@
  * Follows the OpenClaw plugin API: https://docs.openclaw.ai/plugin
  */
 
-import { PolicyEngine } from "./policy/engine.js";
 import type { ClawdstrikeConfig, CommandBuilder, HookHandler, PolicyEvent } from "./types.js";
-import toolPreflightHandler, { initialize as initPreflight, getEngine } from "./hooks/tool-preflight/handler.js";
+import { initializeEngine, getSharedEngine } from "./engine-holder.js";
+import toolPreflightHandler, { initialize as initPreflight } from "./hooks/tool-preflight/handler.js";
 import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
 import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agent-bootstrap/handler.js";
 import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
@@ -76,7 +76,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     async execute(_id: string, params: Record<string, unknown>) {
       try {
         const config = getConfig();
-        const engine = getEngine(config);
+        const engine = getSharedEngine(config);
 
         const action = (typeof params.action === 'string' ? params.action : 'tool_call') as PolicyCheckAction;
         const resource = typeof params.resource === 'string' ? params.resource : '';
@@ -150,7 +150,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
           const action = typeof args[0] === 'string' ? args[0] : '';
           const resource = typeof args[1] === 'string' ? args[1] : '';
           const config = getConfig();
-          const engine = new PolicyEngine(config);
+          const engine = getSharedEngine(config);
           const event = buildEvent(action as PolicyCheckAction, resource);
           const decision = await engine.evaluate(event);
           console.log(formatDecision(decision));
@@ -163,8 +163,10 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     { commands: ["clawdstrike"] }
   );
 
-  // Initialize and register hooks
+  // Initialize the shared policy engine once, then let each handler
+  // initialize its own module state (caches, etc.) via the shared engine.
   const config = getConfig();
+  initializeEngine(config);
   initPreflight(config);
   initToolGuard(config);
   initBootstrap(config);

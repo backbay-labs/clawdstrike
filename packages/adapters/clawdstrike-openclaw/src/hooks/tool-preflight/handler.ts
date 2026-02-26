@@ -17,7 +17,7 @@ import type {
   PolicyEvent,
   EventType,
 } from '../../types.js';
-import { PolicyEngine } from '../../policy/engine.js';
+import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
 import { peekApproval, recordApproval, type ApprovalResolutionType } from '../approval-state.js';
 import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
 import {
@@ -28,25 +28,24 @@ import {
   inferEventTypeFromName,
 } from '../../classification.js';
 
-/** Shared policy engine instance */
-let engine: PolicyEngine | null = null;
-
 /**
- * Initialize the hook with configuration
+ * Initialize the hook with configuration.
+ * Delegates to the shared engine holder so all hooks share one PolicyEngine.
  */
 export function initialize(config: ClawdstrikeConfig): void {
-  engine = new PolicyEngine(config);
+  initializeEngine(config);
 }
 
 /**
- * Get or create the policy engine
+ * Get or create the policy engine.
+ * Delegates to the shared engine holder.
  */
 export function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
-  if (!engine) {
-    engine = new PolicyEngine(config ?? {});
-  }
-  return engine;
+  return getSharedEngine(config);
 }
+
+// Re-export PolicyEngine type so existing `getEngine` callers can use it.
+import type { PolicyEngine } from '../../policy/engine.js';
 
 /**
  * Infer the event type for a tool based on its name tokens and parameters.

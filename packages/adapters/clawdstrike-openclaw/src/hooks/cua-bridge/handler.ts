@@ -25,7 +25,7 @@ import type {
   ToolCallEvent,
   ClawdstrikeConfig,
 } from '../../types.js';
-import { PolicyEngine } from '../../policy/engine.js';
+import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
 import { peekApproval } from '../approval-state.js';
 import { normalizeApprovalResource } from '../approval-utils.js';
 
@@ -78,19 +78,26 @@ const ACTION_TOKEN_MAP: ReadonlyArray<{ tokens: ReadonlyArray<string>; kind: Cua
 
 // ── Module State ────────────────────────────────────────────────────
 
-let engine: PolicyEngine | null = null;
 const factory = new PolicyEventFactory();
 
+/**
+ * Initialize the hook with configuration.
+ * Delegates to the shared engine holder so all hooks share one PolicyEngine.
+ */
 export function initialize(config: ClawdstrikeConfig): void {
-  engine = new PolicyEngine(config);
+  initializeEngine(config);
 }
 
+/**
+ * Get or create the policy engine.
+ * Delegates to the shared engine holder.
+ */
 function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
-  if (!engine) {
-    engine = new PolicyEngine(config ?? {});
-  }
-  return engine;
+  return getSharedEngine(config);
 }
+
+// Import PolicyEngine type for return type annotations.
+import type { PolicyEngine } from '../../policy/engine.js';
 
 // ── CUA Detection ───────────────────────────────────────────────────
 
