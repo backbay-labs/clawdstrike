@@ -384,8 +384,9 @@ export class AlertingExporter extends BaseExporter {
 
   async export(events: SecurityEvent[]): Promise<ExportResult> {
     const alertEvents = events.filter(e => this.shouldAlert(e));
+    const filtered = events.length - alertEvents.length;
     if (alertEvents.length === 0) {
-      return { exported: 0, failed: 0, errors: [] };
+      return { exported: 0, failed: 0, filtered, errors: [] };
     }
 
     const errors: ExportError[] = [];
@@ -404,7 +405,7 @@ export class AlertingExporter extends BaseExporter {
       }
     }
 
-    return { exported, failed: errors.length, errors };
+    return { exported, failed: errors.length, filtered, errors };
   }
 
   private async sendAlerts(event: SecurityEvent): Promise<void> {
@@ -426,6 +427,7 @@ export class AlertingExporter extends BaseExporter {
   }
 
   async shutdown(): Promise<void> {
+    await super.shutdown();
     this.pagerduty?.shutdown();
     this.opsgenie?.stopHeartbeat();
   }

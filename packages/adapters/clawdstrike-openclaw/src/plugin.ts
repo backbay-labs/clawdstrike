@@ -170,16 +170,21 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   initBootstrap(config);
   initCuaBridge(config);
 
-  if (typeof api.registerHook === 'function') {
-    api.registerHook('tool_call', cuaBridgeHandler);
-    api.registerHook('tool_call', toolPreflightHandler);
-    api.registerHook('tool_result_persist', toolGuardHandler);
-    api.registerHook('agent:bootstrap', agentBootstrapHandler);
-  } else if (typeof api.on === 'function') {
-    api.on('tool_call', cuaBridgeHandler);
-    api.on('tool_call', toolPreflightHandler);
-    api.on('tool_result_persist', toolGuardHandler);
-    api.on('agent:bootstrap', agentBootstrapHandler);
+  // Register hooks — try both 'before_tool_call' (v2026.2.1+) and 'tool_call' (legacy)
+  const registerHookFn = typeof api.registerHook === 'function'
+    ? api.registerHook.bind(api)
+    : typeof api.on === 'function'
+      ? api.on.bind(api)
+      : null;
+
+  if (registerHookFn) {
+    // Register for both modern and legacy event names for compatibility
+    registerHookFn('before_tool_call', cuaBridgeHandler);
+    registerHookFn('before_tool_call', toolPreflightHandler);
+    registerHookFn('tool_call', cuaBridgeHandler);
+    registerHookFn('tool_call', toolPreflightHandler);
+    registerHookFn('tool_result_persist', toolGuardHandler);
+    registerHookFn('agent:bootstrap', agentBootstrapHandler);
   }
 
   logger.info?.("[clawdstrike] Plugin registered");

@@ -7,10 +7,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct GatewaySecrets {
     pub token: Option<String>,
     pub device_token: Option<String>,
+}
+
+impl std::fmt::Debug for GatewaySecrets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GatewaySecrets")
+            .field("token", &self.token.as_ref().map(|_| "[REDACTED]"))
+            .field("device_token", &self.device_token.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

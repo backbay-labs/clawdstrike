@@ -203,6 +203,21 @@ export function applyGatewayEventFrame(
     };
   }
 
+  if (frame.event === "exec.approval.resolved" || frame.event === "exec.approval.rejected") {
+    const approvalId = typeof (frame.payload as Record<string, unknown>)?.approvalId === "string"
+      ? (frame.payload as Record<string, unknown>).approvalId as string
+      : typeof (frame.payload as Record<string, unknown>)?.id === "string"
+        ? (frame.payload as Record<string, unknown>).id as string
+        : null;
+    if (approvalId && current.execApprovalQueue) {
+      return {
+        ...current,
+        execApprovalQueue: current.execApprovalQueue.filter((a) => a.id !== approvalId),
+      };
+    }
+    return current;
+  }
+
   return current;
 }
 

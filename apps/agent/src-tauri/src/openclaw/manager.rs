@@ -502,8 +502,21 @@ impl OpenClawManager {
                 }
             }
 
-            let backoff_ms = (400.0_f64 * 1.6_f64.powi(reconnect_attempt as i32)).round() as u64;
-            let backoff_ms = backoff_ms.clamp(250, 12_000);
+            let base_backoff_ms = (400.0_f64 * 1.6_f64.powi(reconnect_attempt as i32)).round() as u64;
+            let base_backoff_ms = base_backoff_ms.clamp(250, 12_000);
+            // Add ±20% jitter to prevent thundering herd
+            let jitter_range = (base_backoff_ms as f64 * 0.2) as u64;
+            let jitter = if jitter_range > 0 {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                std::time::SystemTime::now().hash(&mut hasher);
+                reconnect_attempt.hash(&mut hasher);
+                (hasher.finish() % (jitter_range * 2 + 1)) as i64 - jitter_range as i64
+            } else {
+                0
+            };
+            let backoff_ms = (base_backoff_ms as i64 + jitter).max(100) as u64;
             tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
 
             // If the channel is closed, stop reconnecting.
@@ -561,10 +574,11 @@ impl OpenClawManager {
             client,
             role: Some(role),
             scopes: Some(scopes),
-            auth: if let Some(token) = auth_token {
+            auth: if secrets.token.is_some() || secrets.device_token.is_some() {
                 Some(GatewayAuth {
-                    token: Some(token),
+                    token: secrets.token.clone(),
                     password: None,
+                    device_token: secrets.device_token.clone(),
                 })
             } else {
                 None
@@ -829,6 +843,19 @@ impl OpenClawManager {
                         }
                     }
                 }
+                "exec.approval.resolved" | "exec.approval.rejected" => {
+                    if let Some(payload) = &frame.payload {
+                        let approval_id = payload
+                            .get("approvalId")
+                            .or_else(|| payload.get("id"))
+                            .and_then(|v| v.as_str());
+                        if let Some(id) = approval_id {
+                            rt.exec_approval_queue.retain(|a| {
+                                a.get("id").and_then(|v| v.as_str()) != Some(id)
+                            });
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -866,11 +893,20 @@ struct OpenClawDeviceIdentityFile {
     private_key_pem: String,
 }
 
-#[derive(Debug)]
 struct OpenClawDeviceIdentity {
     device_id: String,
     public_key_raw_base64url: String,
     private_key_pem: String,
+}
+
+impl std::fmt::Debug for OpenClawDeviceIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenClawDeviceIdentity")
+            .field("device_id", &self.device_id)
+            .field("public_key_raw_base64url", &self.public_key_raw_base64url)
+            .field("private_key_pem", &"[REDACTED]")
+            .finish()
+    }
 }
 
 fn build_gateway_device_proof(

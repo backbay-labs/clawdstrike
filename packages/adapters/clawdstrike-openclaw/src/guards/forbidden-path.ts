@@ -61,6 +61,14 @@ export class ForbiddenPathGuard extends BaseGuard {
     }
 
     const path = data.path;
+
+    // Reject paths containing null bytes (path injection attack)
+    if (path.includes('\0')) {
+      return this.deny(
+        'Path contains null byte: null_byte_injection',
+        'critical',
+      );
+    }
     const forbiddenPaths = policy.filesystem?.forbidden_paths ?? DEFAULT_FORBIDDEN_PATHS;
 
     // Check against forbidden paths
@@ -142,6 +150,9 @@ export class ForbiddenPathGuard extends BaseGuard {
  * Normalize a path, expanding ~ and resolving to absolute
  */
 function normalizePath(path: string): string {
+  // Strip null bytes to prevent path injection
+  path = path.replace(/\0/g, '');
+
   // Expand ~
   if (path.startsWith('~')) {
     path = path.replace(/^~/, homedir());

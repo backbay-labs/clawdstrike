@@ -64,6 +64,8 @@ export type GatewayConnectParams = {
   auth?: {
     token?: string;
     deviceToken?: string;
+    /** @deprecated Use deviceToken instead. Kept for Rust protocol compatibility. */
+    password?: string;
   };
   locale?: string;
   userAgent?: string;

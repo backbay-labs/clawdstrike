@@ -7,7 +7,7 @@
  * - exec approval inbox
  * - device pairing list
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { GlassHeader, GlassPanel } from "@backbay/glia/primitives";
 import { GlowButton } from "@backbay/glia/primitives";
@@ -87,6 +87,20 @@ function GatewayCard({
   );
 }
 
+/** Ticking countdown hook - returns milliseconds remaining, updated every second. */
+function useCountdown(targetMs: number): number {
+  const [remaining, setRemaining] = useState(targetMs - Date.now());
+  useEffect(() => {
+    // Sync immediately in case targetMs changed between render and effect
+    setRemaining(targetMs - Date.now());
+    const timer = setInterval(() => {
+      setRemaining(targetMs - Date.now());
+    }, 1_000);
+    return () => clearInterval(timer);
+  }, [targetMs]);
+  return remaining;
+}
+
 function ExecApprovalCard({
   approval,
   busy,
@@ -94,16 +108,33 @@ function ExecApprovalCard({
 }: {
   approval: ExecApprovalQueueItem;
   busy: boolean;
-  onResolve: (decision: ExecApprovalDecision) => void;
+  onResolve: (decision: ExecApprovalDecision) => void | Promise<void>;
 }) {
-  const expiresIn = approval.expiresAtMs - Date.now();
-  const expiresLabel = expiresIn > 0 ? `expires in ${Math.max(0, Math.floor(expiresIn / 1000))}s` : "expired";
+  const expiresIn = useCountdown(approval.expiresAtMs);
+  const expired = expiresIn <= 0;
+  const expiresLabel = !expired ? `expires in ${Math.max(0, Math.floor(expiresIn / 1000))}s` : "expired";
+
+  const [resolveError, setResolveError] = useState<string | null>(null);
+
+  const safeResolve = useCallback(
+    async (decision: ExecApprovalDecision) => {
+      setResolveError(null);
+      try {
+        await onResolve(decision);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[ExecApprovalCard] resolve error:", message);
+        setResolveError(message);
+      }
+    },
+    [onResolve],
+  );
 
   return (
-    <div className="p-3 rounded border border-sdr-border bg-sdr-bg-tertiary/30">
+    <div className={clsx("p-3 rounded border border-sdr-border bg-sdr-bg-tertiary/30", expired && "opacity-50")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs text-sdr-text-muted">{expiresLabel}</div>
+          <div className={clsx("text-xs", expired ? "text-sdr-accent-red" : "text-sdr-text-muted")}>{expiresLabel}</div>
           <div className="mt-1 text-sm font-mono text-sdr-text-primary break-all">{approval.request.command}</div>
           <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-xs text-sdr-text-muted">
             {approval.request.host ? <div>Host: {approval.request.host}</div> : null}
@@ -114,16 +145,21 @@ function ExecApprovalCard({
             {approval.request.security ? <div>Security: {approval.request.security}</div> : null}
             {approval.request.ask ? <div>Ask: {approval.request.ask}</div> : null}
           </div>
+          {resolveError ? (
+            <div className="mt-2 text-xs text-sdr-accent-red whitespace-pre-wrap">
+              Resolution error: {resolveError}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-2 shrink-0">
-          <GlowButton onClick={() => onResolve("allow-once")} disabled={busy} variant="default">
+          <GlowButton onClick={() => void safeResolve("allow-once")} disabled={busy || expired} variant="default">
             Allow once
           </GlowButton>
-          <GlowButton onClick={() => onResolve("allow-always")} disabled={busy} variant="secondary">
+          <GlowButton onClick={() => void safeResolve("allow-always")} disabled={busy || expired} variant="secondary">
             Always allow
           </GlowButton>
-          <GlowButton onClick={() => onResolve("deny")} disabled={busy} variant="secondary">
+          <GlowButton onClick={() => void safeResolve("deny")} disabled={busy || expired} variant="secondary">
             Deny
           </GlowButton>
         </div>
@@ -296,6 +332,9 @@ export function OpenClawFleetView() {
     setResolveBusyId(approvalId);
     try {
       await oc.resolveExecApproval(approvalId, decision);
+    } catch (err) {
+      // Re-throw so the ExecApprovalCard's safeResolve can surface the error inline
+      throw err;
     } finally {
       setResolveBusyId(null);
     }

@@ -298,6 +298,7 @@ export class OpenClawGatewayClient {
           auth: {
             token: this.options.token,
             deviceToken: this.options.deviceToken,
+            password: this.options.deviceToken, // Rust protocol compatibility
           },
           locale: typeof navigator === "undefined" ? "en-US" : navigator.language,
           userAgent: typeof navigator === "undefined" ? "unknown" : navigator.userAgent,

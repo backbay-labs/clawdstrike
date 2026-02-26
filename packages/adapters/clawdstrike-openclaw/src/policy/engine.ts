@@ -291,8 +291,46 @@ export class PolicyEngine {
     return ensureReasonCode(result);
   }
 
+  private getExpectedDataType(eventType: PolicyEvent['eventType']): string | undefined {
+    switch (eventType) {
+      case 'file_read':
+      case 'file_write':
+        return 'file';
+      case 'command_exec':
+        return 'command';
+      case 'network_egress':
+        return 'network';
+      case 'tool_call':
+        return 'tool';
+      case 'patch_apply':
+        return 'patch';
+      case 'secret_access':
+        return 'secret';
+      case 'custom':
+        return undefined;
+      default:
+        // CUA event types (starting with 'remote.' or 'input.')
+        if (eventType.startsWith('remote.') || eventType.startsWith('input.')) {
+          return 'cua';
+        }
+        return undefined;
+    }
+  }
+
   private evaluateDeterministic(event: PolicyEvent): Decision {
     const allowed: Decision = { status: 'allow' };
+
+    // Validate eventType/data.type consistency to prevent guard bypass
+    const expectedDataType = this.getExpectedDataType(event.eventType);
+    if (expectedDataType && event.data.type !== expectedDataType) {
+      return {
+        status: 'deny',
+        reason_code: 'event_type_mismatch',
+        reason: `Event type "${event.eventType}" requires data.type "${expectedDataType}" but got "${event.data.type}"`,
+        guard: 'policy_engine',
+        severity: 'critical' as const,
+      };
+    }
 
     switch (event.eventType) {
       case 'file_read':
@@ -845,7 +883,19 @@ function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
 
 function combineDecisions(base: Decision, next: Decision): Decision {
   const rank: Record<string, number> = { deny: 2, warn: 1, allow: 0 };
-  return (rank[next.status] ?? 0) > (rank[base.status] ?? 0) ? next : base;
+  const baseRank = rank[base.status] ?? 0;
+  const nextRank = rank[next.status] ?? 0;
+  if (nextRank > baseRank) return next;
+  if (nextRank === baseRank && nextRank > 0 && next.reason) {
+    // On ties for non-allow decisions, merge the reasons
+    return {
+      ...base,
+      message: base.message
+        ? `${base.message}; ${next.message ?? next.reason}`
+        : next.message ?? next.reason,
+    };
+  }
+  return base;
 }
 
 function normalizeStringList(values: unknown): string[] {

@@ -1,6 +1,6 @@
 {
   "id": "clawdstrike-security",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "name": "Clawdstrike Security Plugin",
   "description": "Tool-layer security guardrails for OpenClaw agents (policy_check preflight + post-action tool output blocking/redaction). Provides policy-based access control decisions, secret detection, and egress allowlist guidance.",
   "main": "./dist/plugin.js",
@@ -42,6 +42,18 @@
           "patch_integrity": {
             "type": "boolean",
             "default": true
+          },
+          "computer_use": {
+            "type": "boolean",
+            "default": true
+          },
+          "remote_desktop_side_channel": {
+            "type": "boolean",
+            "default": true
+          },
+          "input_injection_capability": {
+            "type": "boolean",
+            "default": true
           }
         }
       }
@@ -49,6 +61,22 @@
     "required": []
   },
   "hooks": [
+    {
+      "event": "before_tool_call",
+      "handler": "./dist/hooks/cua-bridge/handler.js"
+    },
+    {
+      "event": "before_tool_call",
+      "handler": "./dist/hooks/tool-preflight/handler.js"
+    },
+    {
+      "event": "tool_call",
+      "handler": "./dist/hooks/cua-bridge/handler.js"
+    },
+    {
+      "event": "tool_call",
+      "handler": "./dist/hooks/tool-preflight/handler.js"
+    },
     {
       "event": "tool_result_persist",
       "handler": "./dist/hooks/tool-guard/handler.js"

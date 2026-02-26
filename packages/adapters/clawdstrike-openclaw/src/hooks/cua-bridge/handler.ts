@@ -238,6 +238,9 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   }
 
   const toolEvent = event as ToolCallEvent;
+
+  // Skip if already handled by another hook registration (e.g. before_tool_call + tool_call dual registration)
+  if (toolEvent.preventDefault) return;
   const { toolName, params } = toolEvent.context.toolCall;
   const sessionId = toolEvent.context.sessionId;
 
@@ -245,6 +248,12 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   if (!isCuaToolCall(toolName, params)) {
     return;
   }
+
+  // Mark this event as evaluated by the CUA bridge so the general preflight
+  // handler skips it (avoids double policy evaluation).  Set this early —
+  // before any fail-closed exits — because even a CUA denial here means the
+  // tool was already handled and the preflight handler should not re-evaluate.
+  (toolEvent as any).__cuaBridgeEvaluated = true;
 
   // Fail closed: session ID required for CUA actions
   if (!sessionId) {
@@ -278,22 +287,25 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   // Build canonical CUA event via PolicyEventFactory
   const cuaEvent = buildCuaEvent(sessionId, kind, params);
 
-  // Check prior approvals
-  const policyEngine = getEngine();
-  const resource = normalizeApprovalResource(policyEngine, toolName, params);
-  const prior = peekApproval(sessionId, toolName, resource);
-  if (prior) {
-    toolEvent.messages.push(
-      `[clawdstrike:cua-bridge] CUA ${kind}: using prior ${prior.resolution} approval for ${toolName}`,
-    );
-    return;
-  }
-
-  // Evaluate through policy engine.
+  // Evaluate through policy engine first to get severity before consulting prior approvals.
   // Cast required: adapter-core PolicyEvent has a superset EventData union
   // (includes CustomEventData) that the local PolicyEvent does not carry.
   // The CUA event data is structurally compatible at runtime.
+  const policyEngine = getEngine();
   const decision: Decision = await policyEngine.evaluate(cuaEvent as unknown as import('../../types.js').PolicyEvent);
+
+  // Check prior approvals for non-critical denials only.
+  // Critical denials must always be re-evaluated and never short-circuited.
+  if (decision.status === 'deny' && decision.severity !== 'critical') {
+    const resource = normalizeApprovalResource(policyEngine, toolName, params);
+    const prior = peekApproval(sessionId, toolName, resource);
+    if (prior) {
+      toolEvent.messages.push(
+        `[clawdstrike:cua-bridge] CUA ${kind}: using prior ${prior.resolution} approval for ${toolName}`,
+      );
+      return;
+    }
+  }
 
   if (decision.status === 'deny') {
     toolEvent.preventDefault = true;

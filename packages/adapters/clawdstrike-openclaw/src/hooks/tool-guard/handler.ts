@@ -17,6 +17,7 @@ import type {
 import { PolicyEngine } from '../../policy/engine.js';
 import { checkAndConsumeApproval } from '../approval-state.js';
 import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
+import { inferEventTypeFromName } from '../../classification.js';
 
 // ── LRU Decision Cache ──────────────────────────────────────────────
 
@@ -359,30 +360,12 @@ function createPolicyEvent(
 }
 
 /**
- * Infer event type from tool name
+ * Infer event type from tool name using the shared token-based classifier.
  */
 function inferEventType(
   toolName: string,
 ): PolicyEvent['eventType'] {
-  const lowerName = toolName.toLowerCase();
-
-  if (lowerName.includes('patch') || lowerName.includes('diff') || lowerName.includes('apply_patch')) {
-    return 'patch_apply';
-  }
-  if (lowerName.includes('read') || lowerName.includes('cat') || lowerName.includes('head') || lowerName.includes('tail')) {
-    return 'file_read';
-  }
-  if (lowerName.includes('write') || lowerName.includes('edit')) {
-    return 'file_write';
-  }
-  if (lowerName.includes('exec') || lowerName.includes('bash') || lowerName.includes('shell')) {
-    return 'command_exec';
-  }
-  if (lowerName.includes('fetch') || lowerName.includes('http') || lowerName.includes('web') || lowerName.includes('curl')) {
-    return 'network_egress';
-  }
-
-  return 'tool_call';
+  return inferEventTypeFromName(toolName) ?? 'tool_call';
 }
 
 /**
@@ -500,7 +483,7 @@ function extractNetworkInfo(
       const parsed = new URL(url);
       return {
         host: parsed.hostname,
-        port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80),
+        port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
         url,
       };
     } catch {
@@ -516,7 +499,7 @@ function extractNetworkInfo(
         const parsed = new URL(urlMatch[0]);
         return {
           host: parsed.hostname,
-          port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80),
+          port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
           url: urlMatch[0],
         };
       } catch {
