@@ -209,7 +209,7 @@ export function OpenClawFleetView() {
   const [invokeResult, setInvokeResult] = useState<unknown>(null);
 
   const [resolveBusyId, setResolveBusyId] = useState<string | null>(null);
-  const [pairingBusyId, setPairingBusyId] = useState<string | null>(null);
+  const [pairingBusy, setPairingBusy] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
   const [pairingError, setPairingError] = useState<string | null>(null);
 
   async function handleDiscoverGateways() {
@@ -341,7 +341,7 @@ export function OpenClawFleetView() {
 
   async function handleApproveDevice(requestId: string) {
     setPairingError(null);
-    setPairingBusyId(requestId);
+    setPairingBusy({ id: requestId, action: "approve" });
     try {
       await oc.approveDevicePairing(requestId);
     } catch (err) {
@@ -349,13 +349,13 @@ export function OpenClawFleetView() {
       console.error("[OpenClawFleetView] approve device error:", message);
       setPairingError(message);
     } finally {
-      setPairingBusyId(null);
+      setPairingBusy(null);
     }
   }
 
   async function handleRejectDevice(requestId: string) {
     setPairingError(null);
-    setPairingBusyId(requestId);
+    setPairingBusy({ id: requestId, action: "reject" });
     try {
       await oc.rejectDevicePairing(requestId);
     } catch (err) {
@@ -363,7 +363,7 @@ export function OpenClawFleetView() {
       console.error("[OpenClawFleetView] reject device error:", message);
       setPairingError(message);
     } finally {
-      setPairingBusyId(null);
+      setPairingBusy(null);
     }
   }
 
@@ -790,11 +790,11 @@ export function OpenClawFleetView() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <GlowButton onClick={() => void handleApproveDevice(d.requestId)} disabled={pairingBusyId === d.requestId} variant="default">
-                    {pairingBusyId === d.requestId ? "Approving..." : "Approve"}
+                  <GlowButton onClick={() => void handleApproveDevice(d.requestId)} disabled={pairingBusy?.id === d.requestId} variant="default">
+                    {pairingBusy?.id === d.requestId && pairingBusy.action === "approve" ? "Approving..." : "Approve"}
                   </GlowButton>
-                  <GlowButton onClick={() => void handleRejectDevice(d.requestId)} disabled={pairingBusyId === d.requestId} variant="secondary">
-                    {pairingBusyId === d.requestId ? "Rejecting..." : "Reject"}
+                  <GlowButton onClick={() => void handleRejectDevice(d.requestId)} disabled={pairingBusy?.id === d.requestId} variant="secondary">
+                    {pairingBusy?.id === d.requestId && pairingBusy.action === "reject" ? "Rejecting..." : "Reject"}
                   </GlowButton>
                 </div>
               </div>

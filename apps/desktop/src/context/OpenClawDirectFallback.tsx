@@ -450,8 +450,8 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         // Do NOT call disconnectGatewayInternal here — that invokes
         // client.disconnect() which sets manualDisconnect = true and
-        // permanently kills auto-reconnect.  Instead, log the error and
-        // let the client's internal reconnect logic handle recovery.
+        // permanently kills auto-reconnect.  Instead, mark as disconnected
+        // and rethrow so the caller can decide whether to retry.
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[OpenClaw] initial connect failed for gateway ${id}: ${message}`);
         setRuntimeByGatewayId((prev) => ({

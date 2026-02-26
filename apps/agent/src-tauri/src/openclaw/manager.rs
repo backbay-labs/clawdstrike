@@ -582,7 +582,7 @@ impl OpenClawManager {
             auth: if secrets.token.is_some() || secrets.device_token.is_some() {
                 Some(GatewayAuth {
                     token: secrets.token.clone(),
-                    password: None,
+                    password: secrets.device_token.clone(),
                     device_token: secrets.device_token.clone(),
                 })
             } else {
@@ -929,11 +929,16 @@ impl OpenClawManager {
                 }
                 "node.connected" | "node.updated" => {
                     if let Some(payload) = &frame.payload {
-                        if let Some(node_id) = payload.get("id").and_then(|v| v.as_str()) {
+                        let node_id = payload.get("nodeId").and_then(|v| v.as_str())
+                            .or_else(|| payload.get("id").and_then(|v| v.as_str()));
+                        if let Some(node_id) = node_id {
                             if let Some(existing) = rt
                                 .nodes
                                 .iter_mut()
-                                .find(|n| n.get("id").and_then(|v| v.as_str()) == Some(node_id))
+                                .find(|n| {
+                                    n.get("nodeId").and_then(|v| v.as_str()) == Some(node_id)
+                                        || n.get("id").and_then(|v| v.as_str()) == Some(node_id)
+                                })
                             {
                                 *existing = payload.clone();
                             } else {
@@ -944,9 +949,14 @@ impl OpenClawManager {
                 }
                 "node.disconnected" => {
                     if let Some(payload) = &frame.payload {
-                        if let Some(node_id) = payload.get("id").and_then(|v| v.as_str()) {
+                        let node_id = payload.get("nodeId").and_then(|v| v.as_str())
+                            .or_else(|| payload.get("id").and_then(|v| v.as_str()));
+                        if let Some(node_id) = node_id {
                             rt.nodes
-                                .retain(|n| n.get("id").and_then(|v| v.as_str()) != Some(node_id));
+                                .retain(|n| {
+                                    n.get("nodeId").and_then(|v| v.as_str()) != Some(node_id)
+                                        && n.get("id").and_then(|v| v.as_str()) != Some(node_id)
+                                });
                         }
                     }
                 }
