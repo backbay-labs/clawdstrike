@@ -15,12 +15,11 @@
     "build": "tsc",
     "prepare": "npm run build",
     "test": "vitest run",
+    "test:cross-adapter": "vitest run --dir tests/cross-adapter",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@clawdstrike/claude": "^0.1.1",
-    "@clawdstrike/vercel-ai": "^0.1.1",
     "@types/node": "^25.2.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
