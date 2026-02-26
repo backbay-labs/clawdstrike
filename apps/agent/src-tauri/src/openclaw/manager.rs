@@ -932,6 +932,12 @@ impl OpenClawManager {
                         let node_id = payload.get("nodeId").and_then(|v| v.as_str())
                             .or_else(|| payload.get("id").and_then(|v| v.as_str()));
                         if let Some(node_id) = node_id {
+                            // Normalize: ensure nodeId is always present on the
+                            // stored entry, matching the TS client behaviour.
+                            let mut normalized = payload.clone();
+                            if let serde_json::Value::Object(ref mut m) = normalized {
+                                m.insert("nodeId".into(), serde_json::Value::String(node_id.to_owned()));
+                            }
                             if let Some(existing) = rt
                                 .nodes
                                 .iter_mut()
@@ -940,9 +946,9 @@ impl OpenClawManager {
                                         || n.get("id").and_then(|v| v.as_str()) == Some(node_id)
                                 })
                             {
-                                *existing = payload.clone();
+                                *existing = normalized;
                             } else {
-                                rt.nodes.push(payload.clone());
+                                rt.nodes.push(normalized);
                             }
                         }
                     }
