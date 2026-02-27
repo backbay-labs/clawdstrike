@@ -1530,6 +1530,7 @@ mod tests {
             binary_path: PathBuf::from("/tmp/hushd"),
             port: 9876,
             policy_path: PathBuf::from("/tmp/policy.yaml"),
+            settings: Some(settings.clone()),
         }));
         let session_manager = Arc::new(crate::session::SessionManager::new());
         let approval_queue = Arc::new(crate::approval::ApprovalQueue::new());

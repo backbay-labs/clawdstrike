@@ -305,9 +305,9 @@ async fn mark_failed(
 }
 
 fn compute_backoff_secs(attempts: i32) -> i32 {
-    let exp = attempts.saturating_sub(1).clamp(0, 8) as u32;
-    let backoff = 2_i64.pow(exp);
-    std::cmp::min(MAX_BACKOFF_SECS, backoff) as i32
+    let exp = attempts.max(1).saturating_sub(1) as u32;
+    let backoff = 2_i64.saturating_pow(exp);
+    backoff.clamp(1, MAX_BACKOFF_SECS) as i32
 }
 
 fn row_to_entry(row: sqlx_postgres::PgRow) -> Result<OutboxEntry, sqlx::error::Error> {
@@ -332,7 +332,8 @@ mod tests {
         assert_eq!(compute_backoff_secs(2), 2);
         assert_eq!(compute_backoff_secs(3), 4);
         assert_eq!(compute_backoff_secs(6), 32);
-        assert_eq!(compute_backoff_secs(20), 256);
-        assert_eq!(compute_backoff_secs(21), 256);
+        assert_eq!(compute_backoff_secs(9), 256);
+        assert_eq!(compute_backoff_secs(10), 300);
+        assert_eq!(compute_backoff_secs(20), 300);
     }
 }

@@ -73,6 +73,8 @@ pub struct DaemonConfig {
     pub port: u16,
     /// Path to policy file.
     pub policy_path: PathBuf,
+    /// Canonical in-memory agent settings (preferred over on-disk reads).
+    pub settings: Option<Arc<RwLock<crate::settings::Settings>>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -968,7 +970,8 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
         anyhow::bail!("hushd binary not found at {:?}", config.binary_path);
     }
 
-    let runtime_config_path = write_runtime_config_file(config).await?;
+    let runtime_settings = load_runtime_settings_for_config(config).await;
+    let runtime_config_path = write_runtime_config_file(config, runtime_settings).await?;
 
     let mut cmd = Command::new(&config.binary_path);
     cmd.arg("start").arg("--config").arg(&runtime_config_path);
@@ -984,7 +987,10 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
     Ok(child)
 }
 
-async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
+async fn write_runtime_config_file(
+    config: &DaemonConfig,
+    settings: Option<crate::settings::Settings>,
+) -> Result<PathBuf> {
     // Keep runtime config files in the agent config directory rather than alongside the
     // policy file. Users may point policy_path at a repo directory or read-only location.
     let parent = crate::settings::get_config_dir().join("runtime");
@@ -998,7 +1004,6 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
             .with_context(|| format!("Failed to create runtime config dir {:?}", parent))?;
 
         let policy_path = resolve_supported_policy_path(&policy_path);
-        let settings = load_runtime_settings_for_config();
         let runtime = HushdRuntimeConfig {
             listen,
             policy_path,
@@ -1023,7 +1028,13 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn load_runtime_settings_for_config() -> Option<crate::settings::Settings> {
+async fn load_runtime_settings_for_config(
+    config: &DaemonConfig,
+) -> Option<crate::settings::Settings> {
+    if let Some(settings) = config.settings.as_ref() {
+        return Some(settings.read().await.clone());
+    }
+
     let settings = match crate::settings::Settings::load() {
         Ok(settings) => settings,
         Err(err) => {
@@ -1736,6 +1747,7 @@ mod tests {
             binary_path: PathBuf::from("/tmp/does-not-exist/hushd"),
             port: 0,
             policy_path: PathBuf::from("/tmp/policy.yaml"),
+            settings: None,
         });
 
         let result = manager.start().await;

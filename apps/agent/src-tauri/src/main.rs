@@ -156,16 +156,19 @@ fn main() {
         });
     tracing::info!(path = %hushd_path.display(), "Using hushd binary path");
 
-    let daemon_config = DaemonConfig {
-        binary_path: hushd_path,
-        port: settings.daemon_port,
-        policy_path: settings.policy_path.clone(),
-    };
-
     let settings = Arc::new(RwLock::new(settings));
     let (daemon_url, daemon_api_key) = {
         let guard = settings.blocking_read();
         (guard.daemon_url(), guard.api_key.clone())
+    };
+    let daemon_config = {
+        let guard = settings.blocking_read();
+        DaemonConfig {
+            binary_path: hushd_path,
+            port: guard.daemon_port,
+            policy_path: guard.policy_path.clone(),
+            settings: Some(settings.clone()),
+        }
     };
     let daemon_manager = Arc::new(DaemonManager::new(daemon_config));
     let event_manager = Arc::new(EventManager::new(daemon_url, daemon_api_key));

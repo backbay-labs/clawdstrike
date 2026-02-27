@@ -106,7 +106,10 @@ pub async fn publish_approval_request(
         }
     });
     let bytes = serde_json::to_vec(&payload)?;
-    nats.client().publish(subject, bytes.into()).await?;
+    nats.jetstream()
+        .publish(subject, bytes.into())
+        .await?
+        .await?;
     Ok(())
 }
 

@@ -156,6 +156,15 @@ impl Config {
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(300);
 
+        validate_consumer_stream_configuration(
+            approval_consumer_enabled,
+            heartbeat_consumer_enabled,
+            &approval_subject_filter,
+            &heartbeat_subject_filter,
+            &approval_stream_name,
+            &heartbeat_stream_name,
+        )?;
+
         Ok(Self {
             listen_addr,
             database_url,
@@ -192,30 +201,95 @@ impl Config {
 }
 
 fn default_approval_subject_filter() -> String {
-    // Tenant slugs may include dots, which expands the subject token count
-    // before `.approval.request.<agent-id>`. We therefore default to a broad
-    // filter and rely on strict subject parsing inside the consumer.
-    ">".to_string()
+    "tenant-*.clawdstrike.approval.request.*".to_string()
 }
 
 fn default_heartbeat_subject_filter() -> String {
-    // Tenant slugs may include dots, which expands the subject token count
-    // before `.agent.heartbeat.<agent-id>`. We therefore default to a broad
-    // filter and rely on strict subject parsing inside the consumer.
-    ">".to_string()
+    "tenant-*.clawdstrike.agent.heartbeat.*".to_string()
+}
+
+fn validate_consumer_stream_configuration(
+    approval_consumer_enabled: bool,
+    heartbeat_consumer_enabled: bool,
+    approval_subject_filter: &str,
+    heartbeat_subject_filter: &str,
+    approval_stream_name: &str,
+    heartbeat_stream_name: &str,
+) -> Result<(), ConfigError> {
+    if !approval_consumer_enabled || !heartbeat_consumer_enabled {
+        return Ok(());
+    }
+
+    let filters_overlap =
+        subject_filters_overlap(approval_subject_filter, heartbeat_subject_filter);
+    if !filters_overlap {
+        return Ok(());
+    }
+
+    if approval_stream_name == heartbeat_stream_name {
+        return Ok(());
+    }
+
+    Err(ConfigError::InvalidConfig(format!(
+        "APPROVAL_SUBJECT_FILTER ({approval_subject_filter}) overlaps HEARTBEAT_SUBJECT_FILTER ({heartbeat_subject_filter}) \
+         while APPROVAL_STREAM_NAME ({approval_stream_name}) and HEARTBEAT_STREAM_NAME ({heartbeat_stream_name}) differ; \
+         use non-overlapping filters or a shared stream name"
+    )))
+}
+
+fn subject_filters_overlap(left: &str, right: &str) -> bool {
+    let left = left.trim();
+    let right = right.trim();
+
+    left == ">" || right == ">" || left == right
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{default_approval_subject_filter, default_heartbeat_subject_filter};
+    use super::{
+        default_approval_subject_filter, default_heartbeat_subject_filter,
+        validate_consumer_stream_configuration,
+    };
 
     #[test]
-    fn default_approval_subject_filter_is_dotted_slug_safe() {
-        assert_eq!(default_approval_subject_filter(), ">");
+    fn default_approval_subject_filter_is_non_overlapping() {
+        assert_eq!(
+            default_approval_subject_filter(),
+            "tenant-*.clawdstrike.approval.request.*"
+        );
     }
 
     #[test]
-    fn default_heartbeat_subject_filter_is_dotted_slug_safe() {
-        assert_eq!(default_heartbeat_subject_filter(), ">");
+    fn default_heartbeat_subject_filter_is_non_overlapping() {
+        assert_eq!(
+            default_heartbeat_subject_filter(),
+            "tenant-*.clawdstrike.agent.heartbeat.*"
+        );
+    }
+
+    #[test]
+    fn shared_stream_allows_overlapping_filters() {
+        let result = validate_consumer_stream_configuration(
+            true,
+            true,
+            ">",
+            ">",
+            "clawdstrike_ingress",
+            "clawdstrike_ingress",
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn separate_streams_reject_overlapping_filters() {
+        let result = validate_consumer_stream_configuration(
+            true,
+            true,
+            ">",
+            "tenant-*.clawdstrike.agent.heartbeat.*",
+            "approval-stream",
+            "heartbeat-stream",
+        );
+        assert!(result.is_err());
     }
 }
