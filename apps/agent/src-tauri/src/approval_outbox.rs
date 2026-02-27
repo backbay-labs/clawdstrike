@@ -103,10 +103,7 @@ impl ApprovalRequestOutbox {
 
     pub async fn flush_due(&self, nats: &NatsClient) -> Result<usize> {
         let _flush_guard = self.flush_lock.lock().await;
-        let mut entries = {
-            let mut guard = self.entries.lock().await;
-            std::mem::take(&mut *guard)
-        };
+        let mut entries = self.entries.lock().await.clone();
 
         if entries.is_empty() {
             return Ok(0);
@@ -142,11 +139,8 @@ impl ApprovalRequestOutbox {
             }
         }
 
-        {
-            let mut guard = self.entries.lock().await;
-            *guard = next_entries;
-            persist_entries(&self.path, &guard)?;
-        }
+        persist_entries(&self.path, &next_entries)?;
+        *self.entries.lock().await = next_entries;
 
         Ok(sent)
     }

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 /// Application configuration loaded from environment variables.
@@ -238,16 +239,116 @@ fn validate_consumer_stream_configuration(
 }
 
 fn subject_filters_overlap(left: &str, right: &str) -> bool {
-    let left = left.trim();
-    let right = right.trim();
+    let left_tokens: Vec<&str> = left
+        .trim()
+        .split('.')
+        .filter(|token| !token.is_empty())
+        .collect();
+    let right_tokens: Vec<&str> = right
+        .trim()
+        .split('.')
+        .filter(|token| !token.is_empty())
+        .collect();
 
-    left == ">" || right == ">" || left == right
+    if left_tokens.is_empty() || right_tokens.is_empty() {
+        return false;
+    }
+
+    let mut memo = HashMap::new();
+    subject_filter_tokens_overlap(&left_tokens, &right_tokens, 0, 0, &mut memo)
+}
+
+fn subject_filter_tokens_overlap(
+    left: &[&str],
+    right: &[&str],
+    left_idx: usize,
+    right_idx: usize,
+    memo: &mut HashMap<(usize, usize), bool>,
+) -> bool {
+    if let Some(cached) = memo.get(&(left_idx, right_idx)) {
+        return *cached;
+    }
+
+    let result = if left_idx == left.len() && right_idx == right.len() {
+        true
+    } else if left_idx == left.len() || right_idx == right.len() {
+        false
+    } else {
+        let left_token = left[left_idx];
+        let right_token = right[right_idx];
+
+        if left_token == ">" && right_token == ">" {
+            true
+        } else if left_token == ">" {
+            subject_filter_tokens_overlap(left, right, left_idx, right_idx + 1, memo)
+                || subject_filter_tokens_overlap(left, right, left_idx + 1, right_idx + 1, memo)
+        } else if right_token == ">" {
+            subject_filter_tokens_overlap(left, right, left_idx + 1, right_idx, memo)
+                || subject_filter_tokens_overlap(left, right, left_idx + 1, right_idx + 1, memo)
+        } else if token_patterns_overlap(left_token, right_token) {
+            subject_filter_tokens_overlap(left, right, left_idx + 1, right_idx + 1, memo)
+        } else {
+            false
+        }
+    };
+
+    memo.insert((left_idx, right_idx), result);
+    result
+}
+
+fn token_patterns_overlap(left: &str, right: &str) -> bool {
+    let left_bytes = left.as_bytes();
+    let right_bytes = right.as_bytes();
+    let mut memo = HashMap::new();
+    token_glob_overlap(left_bytes, right_bytes, 0, 0, &mut memo)
+}
+
+fn token_glob_overlap(
+    left: &[u8],
+    right: &[u8],
+    left_idx: usize,
+    right_idx: usize,
+    memo: &mut HashMap<(usize, usize), bool>,
+) -> bool {
+    if let Some(cached) = memo.get(&(left_idx, right_idx)) {
+        return *cached;
+    }
+
+    let result = if left_idx == left.len() && right_idx == right.len() {
+        true
+    } else if left_idx == left.len() {
+        right[right_idx..].iter().all(|c| *c == b'*')
+    } else if right_idx == right.len() {
+        left[left_idx..].iter().all(|c| *c == b'*')
+    } else {
+        let left_char = left[left_idx];
+        let right_char = right[right_idx];
+
+        if left_char == b'*' && right_char == b'*' {
+            token_glob_overlap(left, right, left_idx + 1, right_idx, memo)
+                || token_glob_overlap(left, right, left_idx, right_idx + 1, memo)
+                || token_glob_overlap(left, right, left_idx + 1, right_idx + 1, memo)
+        } else if left_char == b'*' {
+            token_glob_overlap(left, right, left_idx + 1, right_idx, memo)
+                || token_glob_overlap(left, right, left_idx, right_idx + 1, memo)
+        } else if right_char == b'*' {
+            token_glob_overlap(left, right, left_idx, right_idx + 1, memo)
+                || token_glob_overlap(left, right, left_idx + 1, right_idx, memo)
+        } else if left_char == right_char {
+            token_glob_overlap(left, right, left_idx + 1, right_idx + 1, memo)
+        } else {
+            false
+        }
+    };
+
+    memo.insert((left_idx, right_idx), result);
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        default_approval_subject_filter, default_heartbeat_subject_filter,
+        default_approval_subject_filter, default_heartbeat_subject_filter, subject_filters_overlap,
         validate_consumer_stream_configuration,
     };
 
@@ -291,5 +392,21 @@ mod tests {
             "heartbeat-stream",
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn overlap_detection_handles_wildcard_patterns() {
+        assert!(subject_filters_overlap(
+            "tenant-*.>",
+            "tenant-*.clawdstrike.agent.heartbeat.*"
+        ));
+    }
+
+    #[test]
+    fn overlap_detection_distinguishes_approval_and_heartbeat_defaults() {
+        assert!(!subject_filters_overlap(
+            "tenant-*.clawdstrike.approval.request.*",
+            "tenant-*.clawdstrike.agent.heartbeat.*"
+        ));
     }
 }

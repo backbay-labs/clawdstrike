@@ -79,6 +79,7 @@ pub async fn process_due_batch(
     db: &PgPool,
     batch_size: i64,
 ) -> Result<usize, sqlx::error::Error> {
+    let js = async_nats::jetstream::new(nats.clone());
     let entries = claim_due_entries(db, batch_size).await?;
     if entries.is_empty() {
         return Ok(0);
@@ -100,14 +101,29 @@ pub async fn process_due_batch(
             }
         };
 
-        match nats
+        let publish_result = js
             .publish(entry.subject.clone(), payload_bytes.into())
-            .await
-        {
-            Ok(()) => {
-                mark_sent(db, entry.id).await?;
-                sent += 1;
-            }
+            .await;
+        match publish_result {
+            Ok(ack) => match ack.await {
+                Ok(_) => {
+                    mark_sent(db, entry.id).await?;
+                    sent += 1;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        outbox_id = entry.id,
+                        approval_id = %entry.approval_id,
+                        tenant = %entry.tenant_slug,
+                        agent_id = %entry.agent_id,
+                        subject = %entry.subject,
+                        attempts = entry.attempts,
+                        error = %err,
+                        "Approval resolution outbox publish ack failed"
+                    );
+                    mark_failed(db, entry.id, entry.attempts, &err.to_string()).await?;
+                }
+            },
             Err(err) => {
                 tracing::warn!(
                     outbox_id = entry.id,
@@ -132,6 +148,7 @@ pub async fn process_due_for_approval(
     db: &PgPool,
     approval_id: Uuid,
 ) -> Result<bool, sqlx::error::Error> {
+    let js = async_nats::jetstream::new(nats.clone());
     let Some(entry) = claim_entry_by_approval_id(db, approval_id).await? else {
         return Ok(false);
     };
@@ -144,14 +161,20 @@ pub async fn process_due_for_approval(
         }
     };
 
-    match nats
+    let publish_result = js
         .publish(entry.subject.clone(), payload_bytes.into())
-        .await
-    {
-        Ok(()) => {
-            mark_sent(db, entry.id).await?;
-            Ok(true)
-        }
+        .await;
+    match publish_result {
+        Ok(ack) => match ack.await {
+            Ok(_) => {
+                mark_sent(db, entry.id).await?;
+                Ok(true)
+            }
+            Err(err) => {
+                mark_failed(db, entry.id, entry.attempts, &err.to_string()).await?;
+                Ok(false)
+            }
+        },
         Err(err) => {
             mark_failed(db, entry.id, entry.attempts, &err.to_string()).await?;
             Ok(false)

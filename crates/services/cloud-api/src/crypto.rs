@@ -22,6 +22,9 @@ pub fn hash_enrollment_token(token: &str) -> String {
 
 fn parse_salted_token(token: &str) -> Option<(&str, &str)> {
     let rest = token.strip_prefix("cset_")?;
+    if rest.matches('_').count() != 1 {
+        return None;
+    }
     let (salt, secret) = rest.split_once('_')?;
     if salt.is_empty() || secret.is_empty() {
         return None;
@@ -57,6 +60,15 @@ mod tests {
     #[test]
     fn legacy_token_hash_is_still_supported() {
         let token = "csetlegacytokenwithoutseparator";
+        let mut hasher = Sha256::new();
+        hasher.update(token.as_bytes());
+        let expected = hex::encode(hasher.finalize());
+        assert_eq!(hash_enrollment_token(token), expected);
+    }
+
+    #[test]
+    fn malformed_salted_token_with_extra_separator_uses_legacy_hash() {
+        let token = "cset_salt_with_extra_separator_secret";
         let mut hasher = Sha256::new();
         hasher.update(token.as_bytes());
         let expected = hex::encode(hasher.finalize());

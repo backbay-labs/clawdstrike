@@ -75,8 +75,9 @@ impl EnrollmentManager {
             .do_enroll(cloud_api_url, enrollment_token)
             .await;
 
-        // Clear in-progress flag regardless of outcome.
-        {
+        // `do_enroll` persists `enrollment_in_progress = false` on success.
+        // On failure we clear and persist it here so crash-recovery state is accurate.
+        if result.is_err() {
             let mut settings = self.settings.write().await;
             settings.enrollment.enrollment_in_progress = false;
             if let Err(err) = settings.save() {
