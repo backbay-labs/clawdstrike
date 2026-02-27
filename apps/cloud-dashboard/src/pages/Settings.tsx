@@ -1,10 +1,20 @@
 import { useEffect, useState } from "react";
 import { fetchIntegrationSettings, saveIntegrationSettings } from "../api/client";
 import { notifySSEConfigChanged } from "../hooks/useSSE";
+import { useTheme } from "../hooks/useTheme";
+import { useAlertRules } from "../hooks/useAlertRules";
+import { useMultiInstance } from "../hooks/useMultiInstance";
+import { useSharedSSE } from "../context/SSEContext";
+import { useSoundEffects } from "../hooks/useSoundEffects";
 import { NoiseGrain, GlassButton } from "../components/ui";
+import { WallpaperPicker } from "../components/settings/WallpaperPicker";
+import { SoundSettings } from "../components/settings/SoundSettings";
+import { AlertRules } from "../components/settings/AlertRules";
+import { MultiInstance } from "../components/settings/MultiInstance";
+import { ThemeToggle } from "../components/settings/ThemeToggle";
 import packageJson from "../../package.json";
 
-type SettingsSection = "connection" | "siem" | "webhooks";
+type SettingsSection = "connection" | "siem" | "webhooks" | "wallpaper" | "sound" | "alerts" | "instances" | "theme";
 
 type SettingsProps = {
   initialSection?: SettingsSection;
@@ -27,6 +37,31 @@ const SECTION_ORDER: Array<{ id: SettingsSection; label: string; description: st
     label: "Webhooks",
     description: "Set webhook delivery targets for incident forwarding.",
   },
+  {
+    id: "wallpaper",
+    label: "Wallpaper",
+    description: "Choose a desktop wallpaper.",
+  },
+  {
+    id: "sound",
+    label: "Sound",
+    description: "Toggle sound effects for events.",
+  },
+  {
+    id: "alerts",
+    label: "Alerts",
+    description: "Configure violation alert rules.",
+  },
+  {
+    id: "instances",
+    label: "Instances",
+    description: "Manage multiple hushd connections.",
+  },
+  {
+    id: "theme",
+    label: "Theme",
+    description: "Switch between dark and light mode.",
+  },
 ];
 
 const INPUT_FOCUS_CSS =
@@ -37,7 +72,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     <span
       className="font-mono text-[10px]"
       style={{
-        color: "rgba(34,211,238,0.55)",
+        color: "rgba(214,177,90,0.55)",
         textTransform: "uppercase",
         letterSpacing: "0.1em",
       }}
@@ -78,6 +113,27 @@ export function Settings({ initialSection }: SettingsProps) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [savingSection, setSavingSection] = useState<SettingsSection | null>(null);
+
+  // Hooks for new settings sections
+  const { theme, toggle: toggleTheme } = useTheme();
+  const { events } = useSharedSSE();
+  const [soundsEnabled, setSoundsEnabled] = useState(
+    () => localStorage.getItem("cs_sounds_enabled") === "true",
+  );
+  useSoundEffects(events, soundsEnabled);
+
+  // Listen for sound toggle changes from SoundSettings
+  useEffect(() => {
+    const handler = () => setSoundsEnabled(localStorage.getItem("cs_sounds_enabled") === "true");
+    window.addEventListener("storage", handler);
+    window.addEventListener("clawdstrike:sound-changed", handler);
+    return () => {
+      window.removeEventListener("storage", handler);
+      window.removeEventListener("clawdstrike:sound-changed", handler);
+    };
+  }, []);
+  const { rules, addRule, removeRule, updateRule, triggered } = useAlertRules(events);
+  const { instances, activeId, addInstance, removeInstance, switchTo } = useMultiInstance();
 
   useEffect(() => {
     if (initialSection) setActiveSection(initialSection);
@@ -208,22 +264,15 @@ export function Settings({ initialSection }: SettingsProps) {
   }
 
   const focusRingStyle = {
-    "--tw-ring-color": "rgba(34,211,238,0.4)",
+    "--tw-ring-color": "rgba(214,177,90,0.4)",
   } as React.CSSProperties;
 
   return (
-    <div className="space-y-6" style={{ color: "rgba(229,231,235,0.92)" }}>
-      <h1
-        className="font-display text-2xl tracking-wide"
-        style={{ color: "#fff" }}
-      >
-        Settings
-      </h1>
-
+    <div className="space-y-6" style={{ padding: 20, color: "rgba(229,231,235,0.92)", overflow: "auto", height: "100%" }}>
       {/* Tab selector */}
-      <section className="glass-panel max-w-3xl p-4">
+      <section className="glass-panel max-w-4xl p-4">
         <NoiseGrain />
-        <div className="relative z-10 grid gap-2 sm:grid-cols-3">
+        <div className="relative z-10 grid gap-2 sm:grid-cols-4">
           {SECTION_ORDER.map((section) => {
             const active = section.id === activeSection;
             return (
@@ -233,12 +282,12 @@ export function Settings({ initialSection }: SettingsProps) {
                 onClick={() => setActiveSection(section.id)}
                 className="rounded-md px-3 py-3 text-left transition-all duration-200"
                 style={{
-                  background: active ? "rgba(34,211,238,0.06)" : "rgba(4,8,16,0.6)",
+                  background: active ? "rgba(214,177,90,0.06)" : "rgba(7,8,10,0.6)",
                   border: active
-                    ? "1px solid rgba(34,211,238,0.3)"
-                    : "1px solid rgba(34,211,238,0.08)",
+                    ? "1px solid rgba(214,177,90,0.35)"
+                    : "1px solid rgba(27,34,48,0.5)",
                   boxShadow: active
-                    ? "inset 0 1px 0 rgba(255,255,255,0.03), 0 0 8px rgba(34,211,238,0.06)"
+                    ? "inset 0 1px 0 rgba(255,255,255,0.03), 0 0 8px rgba(214,177,90,0.06)"
                     : "inset 0 1px 0 rgba(255,255,255,0.02)",
                   cursor: "pointer",
                 }}
@@ -247,7 +296,7 @@ export function Settings({ initialSection }: SettingsProps) {
                   className="font-mono text-sm font-medium"
                   style={{
                     letterSpacing: "0.05em",
-                    color: active ? "#22d3ee" : "rgba(229,231,235,0.7)",
+                    color: active ? "#d6b15a" : "rgba(229,231,235,0.7)",
                   }}
                 >
                   {section.label}
@@ -268,7 +317,7 @@ export function Settings({ initialSection }: SettingsProps) {
       {statusMessage && (
         <section
           className="glass-panel max-w-3xl p-3 text-sm"
-          style={{ borderColor: "rgba(16,185,129,0.3)", color: "#10b981" }}
+          style={{ borderColor: "rgba(45,170,106,0.3)", color: "#2daa6a" }}
         >
           <NoiseGrain />
           <span className="relative z-10">{statusMessage}</span>
@@ -278,7 +327,7 @@ export function Settings({ initialSection }: SettingsProps) {
       {statusError && (
         <section
           className="glass-panel max-w-3xl p-3 text-sm"
-          style={{ borderColor: "rgba(239,68,68,0.3)", color: "#ef4444" }}
+          style={{ borderColor: "rgba(194,59,59,0.3)", color: "#c23b3b" }}
         >
           <NoiseGrain />
           <span className="relative z-10">{statusError}</span>
@@ -323,7 +372,7 @@ export function Settings({ initialSection }: SettingsProps) {
           <div className="relative z-10 flex items-center gap-3">
             <GlassButton onClick={handleConnectionSave}>Save Connection</GlassButton>
             {savedSection === "connection" && (
-              <span className="text-sm" style={{ color: "#10b981" }}>
+              <span className="text-sm" style={{ color: "#2daa6a" }}>
                 Saved!
               </span>
             )}
@@ -387,7 +436,7 @@ export function Settings({ initialSection }: SettingsProps) {
               {savingSection === "siem" ? "Applying..." : "Save SIEM Config"}
             </GlassButton>
             {savedSection === "siem" && (
-              <span className="text-sm" style={{ color: "#10b981" }}>
+              <span className="text-sm" style={{ color: "#2daa6a" }}>
                 Saved!
               </span>
             )}
@@ -435,11 +484,93 @@ export function Settings({ initialSection }: SettingsProps) {
               {savingSection === "webhooks" ? "Applying..." : "Save Webhook Config"}
             </GlassButton>
             {savedSection === "webhooks" && (
-              <span className="text-sm" style={{ color: "#10b981" }}>
+              <span className="text-sm" style={{ color: "#2daa6a" }}>
                 Saved!
               </span>
             )}
           </div>
+        </section>
+      )}
+
+      {/* Wallpaper section */}
+      {activeSection === "wallpaper" && (
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
+          <h2
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
+          >
+            Wallpaper
+          </h2>
+          <WallpaperPicker />
+        </section>
+      )}
+
+      {/* Sound section */}
+      {activeSection === "sound" && (
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
+          <h2
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
+          >
+            Sound Effects
+          </h2>
+          <SoundSettings />
+        </section>
+      )}
+
+      {/* Alerts section */}
+      {activeSection === "alerts" && (
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
+          <h2
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
+          >
+            Alert Rules
+          </h2>
+          <AlertRules
+            rules={rules}
+            onAdd={addRule}
+            onRemove={removeRule}
+            onUpdate={updateRule}
+            triggered={triggered}
+          />
+        </section>
+      )}
+
+      {/* Instances section */}
+      {activeSection === "instances" && (
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
+          <h2
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
+          >
+            Multi-Instance
+          </h2>
+          <MultiInstance
+            instances={instances}
+            activeId={activeId}
+            onAdd={addInstance}
+            onRemove={removeInstance}
+            onSwitch={switchTo}
+          />
+        </section>
+      )}
+
+      {/* Theme section */}
+      {activeSection === "theme" && (
+        <section className="glass-panel max-w-3xl space-y-5 p-6">
+          <NoiseGrain />
+          <h2
+            className="font-display relative z-10 text-lg tracking-wide"
+            style={{ color: "#fff" }}
+          >
+            Theme
+          </h2>
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </section>
       )}
 

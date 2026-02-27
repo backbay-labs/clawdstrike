@@ -1,4 +1,4 @@
-import { Suspense, memo, useEffect, useRef, useMemo } from "react";
+import { Suspense, memo, useEffect, useRef, useMemo, useCallback, useState } from "react";
 import {
   useDesktopOS,
   useWindowIds,
@@ -8,9 +8,20 @@ import {
   type WindowId,
 } from "@backbay/glia-desktop";
 import { DesktopWallpaper } from "./DesktopWallpaper";
+import { StartMenu } from "./StartMenu";
 import { SSETrayItem } from "./SSETrayItem";
 import { SSENotifier } from "./SSENotifier";
-import { desktopIcons } from "../../state/processRegistry";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
+import { CommandPalette } from "./CommandPalette";
+import { NotificationCenter } from "./NotificationCenter";
+import { ContextMenu } from "./ContextMenu";
+import { DesktopWidgets } from "./DesktopWidgets";
+import { LockScreen } from "./LockScreen";
+import { useNotifications } from "../../hooks/useNotifications";
+import { useLockScreen } from "../../hooks/useLockScreen";
+import { useContextMenu } from "../../hooks/useContextMenu";
+import { useSharedSSE } from "../../context/SSEContext";
+import { desktopIcons, PROCESS_ICONS } from "../../state/processRegistry";
 
 function LoadingFallback() {
   return (
@@ -24,7 +35,7 @@ function LoadingFallback() {
         fontSize: 12,
         letterSpacing: "0.12em",
         textTransform: "uppercase",
-        color: "rgba(148,163,184,0.6)",
+        color: "rgba(154,167,181,0.6)",
       }}
     >
       INITIALIZING...
@@ -58,14 +69,14 @@ const WindowItem = memo(function WindowItem({ windowId }: { windowId: WindowId }
           style={{
             width: "100%",
             height: "100%",
-            background: "#02040a",
+            background: "#000000",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontSize: 11,
             letterSpacing: "0.15em",
             textTransform: "uppercase",
-            color: "rgba(148,163,184,0.3)",
+            color: "rgba(154,167,181,0.3)",
           }}
         >
           SUSPENDED
@@ -108,6 +119,7 @@ function DesktopSurface() {
     >
       {desktopIcons.map((icon) => {
         const def = processes.getDefinition(icon.processId);
+        const sigil = PROCESS_ICONS[icon.processId];
         return (
           <button
             key={icon.id}
@@ -125,11 +137,22 @@ function DesktopSurface() {
               borderRadius: 8,
               background: "transparent",
               cursor: "pointer",
-              color: "var(--glia-color-textPrimary, #e5e7eb)",
+              color: "var(--text)",
             }}
           >
-            <span style={{ fontSize: 28, lineHeight: 1 }}>
-              {typeof def?.icon === "string" ? def.icon : "📁"}
+            <span
+              style={{
+                width: 40,
+                height: 40,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "linear-gradient(180deg, var(--graphite), var(--obsidian))",
+                border: "1px solid var(--gold-edge)",
+                borderRadius: 12,
+              }}
+            >
+              {sigil ?? (typeof def?.icon === "string" ? def.icon : null)}
             </span>
             <span
               className="font-mono"
@@ -139,8 +162,7 @@ function DesktopSurface() {
                 textTransform: "uppercase",
                 textAlign: "center",
                 lineHeight: 1.3,
-                color: "rgba(229,231,235,0.85)",
-                textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+                color: "var(--muted)",
               }}
             >
               {icon.label}
@@ -159,6 +181,14 @@ const PATH_TO_PROCESS: Record<string, string> = {
   "/settings": "settings",
   "/settings/siem": "settings",
   "/settings/webhooks": "settings",
+  "/agents": "agent-explorer",
+  "/receipts": "receipt-verifier",
+  "/policy-editor": "policy-editor",
+  "/playground": "guard-playground",
+  "/posture": "posture-map",
+  "/compliance": "compliance-report",
+  "/replay": "replay-mode",
+  "/chat": "agent-chat",
 };
 
 function AutoLaunch() {
@@ -184,10 +214,137 @@ function AutoLaunch() {
   return null;
 }
 
+function ComposedTaskbar({
+  notifications,
+  onMarkAllRead,
+  onClearNotifications,
+  unreadCount,
+}: {
+  notifications: import("../../hooks/useNotifications").AppNotification[];
+  onMarkAllRead: () => void;
+  onClearNotifications: () => void;
+  unreadCount: number;
+}) {
+  const { windows, processes } = useDesktopOS();
+
+  const handleClick = useCallback(
+    (windowId: string) => {
+      if (windows.focusedId === windowId) {
+        windows.minimize(windowId as WindowId);
+      } else {
+        windows.focus(windowId as WindowId);
+      }
+    },
+    [windows],
+  );
+
+  return (
+    <Taskbar showClock>
+      <StartMenu />
+      <Taskbar.RunningApps>
+        {processes.instances.map((instance) => {
+          const def = processes.getDefinition(instance.processId);
+          const sigil = PROCESS_ICONS[instance.processId];
+          const isFocused = instance.windowId === windows.focusedId;
+
+          return (
+            <div
+              key={instance.windowId}
+              onClick={() => handleClick(instance.windowId)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleClick(instance.windowId);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 12px",
+                borderRadius: "var(--radius-control)",
+                cursor: "pointer",
+                background: isFocused
+                  ? "var(--gold-bloom)"
+                  : "rgba(18,21,27,0.6)",
+                border: isFocused
+                  ? "1px solid var(--gold-edge)"
+                  : "1px solid rgba(27,34,48,0.5)",
+                transition: "all 0.15s ease",
+                whiteSpace: "nowrap",
+                maxWidth: 180,
+              }}
+            >
+              {sigil && (
+                <span style={{ display: "flex", flexShrink: 0 }}>
+                  {sigil}
+                </span>
+              )}
+              <span
+                className="font-mono"
+                style={{
+                  fontSize: 11,
+                  letterSpacing: "0.04em",
+                  color: isFocused ? "var(--gold)" : "var(--muted)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {def?.name ?? instance.processId}
+              </span>
+            </div>
+          );
+        })}
+      </Taskbar.RunningApps>
+      <div style={{ flex: 1 }} />
+      <NotificationCenter
+        notifications={notifications}
+        onMarkAllRead={onMarkAllRead}
+        onClear={onClearNotifications}
+        unreadCount={unreadCount}
+      />
+      <Taskbar.SystemTray />
+    </Taskbar>
+  );
+}
+
 export function ClawdStrikeDesktop() {
+  const { events, connected } = useSharedSSE();
+  const { locked, lock, unlock } = useLockScreen();
+  const { notifications, add: addNotification, markAllRead, clear: clearNotifications, unreadCount } = useNotifications();
+  const { state: contextMenuState, show: showContextMenu, hide: hideContextMenu } = useContextMenu();
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Push SSE violations into notification center (track by _id to handle capped arrays)
+  const lastNotifiedIdRef = useRef(-1);
+  useEffect(() => {
+    for (const evt of events) {
+      if (evt._id <= lastNotifiedIdRef.current) break; // already notified
+      if (evt.allowed === false || evt.event_type === "violation") {
+        addNotification(`Violation: ${evt.guard || evt.event_type} — ${evt.action_type || "unknown"}`, "error");
+      } else if (evt.event_type === "policy_updated") {
+        addNotification("Policy updated", "warning");
+      }
+    }
+    if (events.length > 0) lastNotifiedIdRef.current = events[0]._id;
+  }, [events, addNotification]);
+
+  const handleDesktopContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: "Refresh", action: () => window.location.reload() },
+        { label: "Lock Screen", action: lock, separator: false },
+      ]);
+    },
+    [showContextMenu, lock],
+  );
+
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
       <DesktopWallpaper />
+
+      {/* Lock screen (outermost overlay) */}
+      <LockScreen locked={locked} onUnlock={unlock} />
 
       {/* Desktop area */}
       <div
@@ -196,8 +353,10 @@ export function ClawdStrikeDesktop() {
           position: "relative",
           paddingBottom: "var(--glia-spacing-taskbar-height, 48px)",
         }}
+        onContextMenu={handleDesktopContextMenu}
       >
         <DesktopSurface />
+        <DesktopWidgets events={events} connected={connected} />
         <WindowContainer />
       </div>
 
@@ -205,9 +364,20 @@ export function ClawdStrikeDesktop() {
       <AutoLaunch />
       <SSETrayItem />
       <SSENotifier />
+      <KeyboardShortcuts
+        onToggleCommandPalette={() => setCommandPaletteOpen((v) => !v)}
+        onLock={lock}
+      />
+      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onLock={lock} />
+      <ContextMenu state={contextMenuState} onClose={hideContextMenu} />
 
       {/* Taskbar */}
-      <Taskbar showClock />
+      <ComposedTaskbar
+        notifications={notifications}
+        onMarkAllRead={markAllRead}
+        onClearNotifications={clearNotifications}
+        unreadCount={unreadCount}
+      />
     </div>
   );
 }

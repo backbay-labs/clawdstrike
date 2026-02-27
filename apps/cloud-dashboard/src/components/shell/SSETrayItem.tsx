@@ -3,11 +3,11 @@ import { useSystemTray } from "@backbay/glia-desktop";
 import { useSharedSSE } from "../../context/SSEContext";
 
 const STATUS_CONFIG = {
-  connected:     { color: "#10B981", label: "SSE Connected" },
-  connecting:    { color: "#3B82F6", label: "SSE Connecting..." },
-  disconnected:  { color: "#EAB308", label: "SSE Disconnected" },
-  unauthorized:  { color: "#F97316", label: "SSE Unauthorized" },
-  network_error: { color: "#EF4444", label: "SSE Network Error" },
+  connected:     { color: "#2fa7a0", label: "SSE Connected" },
+  connecting:    { color: "#d6b15a", label: "SSE Connecting..." },
+  disconnected:  { color: "#9aa7b5", label: "SSE Disconnected" },
+  unauthorized:  { color: "#c23b3b", label: "SSE Unauthorized" },
+  network_error: { color: "#c23b3b", label: "SSE Network Error" },
 } as const;
 
 function StatusDot({ color }: { color: string }) {

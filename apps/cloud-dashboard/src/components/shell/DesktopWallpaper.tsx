@@ -1,24 +1,36 @@
-const GRID_SVG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cpath d='M60 0H0v60' fill='none' stroke='rgba(34,211,238,0.04)' stroke-width='0.5'/%3E%3C/svg%3E")`;
+import { useEffect, useState } from "react";
+import { WALLPAPERS } from "../../state/wallpapers";
 
-const NOISE_BG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
+const NOISE_BG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
+
+const WALLPAPER_CHANGED_EVENT = "clawdstrike:wallpaper-changed";
+
+function getWallpaperGradient(): string {
+  const id = localStorage.getItem("cs_wallpaper") || "default";
+  const wp = WALLPAPERS.find((w) => w.id === id);
+  return wp?.gradient ?? WALLPAPERS[0].gradient;
+}
 
 export function DesktopWallpaper() {
+  const [gradient, setGradient] = useState(getWallpaperGradient);
+
+  useEffect(() => {
+    const handler = () => setGradient(getWallpaperGradient());
+    window.addEventListener(WALLPAPER_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(WALLPAPER_CHANGED_EVENT, handler);
+  }, []);
+
   return (
     <div
       style={{
         position: "fixed",
         inset: 0,
         zIndex: 0,
-        background: `
-          radial-gradient(ellipse 80% 60% at 50% 40%, rgba(34,211,238,0.06) 0%, transparent 70%),
-          radial-gradient(ellipse 60% 50% at 80% 70%, rgba(139,92,246,0.04) 0%, transparent 60%),
-          ${GRID_SVG},
-          linear-gradient(180deg, #020410 0%, #02040a 50%, #030508 100%)
-        `,
+        background: gradient,
         pointerEvents: "none",
       }}
     >
-      {/* noise grain overlay — tiled CSS background instead of full-viewport SVG filter */}
+      {/* noise grain overlay */}
       <div
         aria-hidden
         style={{
@@ -26,7 +38,7 @@ export function DesktopWallpaper() {
           inset: 0,
           backgroundImage: NOISE_BG,
           backgroundRepeat: "repeat",
-          opacity: 0.04,
+          opacity: 0.03,
           pointerEvents: "none",
         }}
       />

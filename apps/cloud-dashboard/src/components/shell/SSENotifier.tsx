@@ -9,10 +9,10 @@ interface Toast {
 }
 
 const TYPE_STYLES: Record<Toast["type"], { border: string; color: string; glow: string }> = {
-  info:    { border: "rgba(34,211,238,0.3)",  color: "#22d3ee", glow: "rgba(34,211,238,0.15)" },
-  success: { border: "rgba(16,185,129,0.3)",  color: "#10b981", glow: "rgba(16,185,129,0.15)" },
-  warning: { border: "rgba(234,179,8,0.3)",   color: "#eab308", glow: "rgba(234,179,8,0.15)" },
-  error:   { border: "rgba(239,68,68,0.3)",   color: "#ef4444", glow: "rgba(239,68,68,0.15)" },
+  info:    { border: "rgba(214,177,90,0.3)",  color: "#d6b15a", glow: "rgba(214,177,90,0.15)" },
+  success: { border: "rgba(45,170,106,0.3)",  color: "#2daa6a", glow: "rgba(45,170,106,0.15)" },
+  warning: { border: "rgba(210,163,75,0.3)",  color: "#d2a34b", glow: "rgba(210,163,75,0.15)" },
+  error:   { border: "rgba(194,59,59,0.3)",   color: "#c23b3b", glow: "rgba(194,59,59,0.15)" },
 };
 
 const STATUS_TOAST: Partial<Record<SSEConnectionStatus, { msg: string; type: Toast["type"] }>> = {
@@ -79,7 +79,7 @@ export function SSENotifier() {
             className="font-mono"
             style={{
               pointerEvents: "auto",
-              background: "rgba(4,8,16,0.94)",
+              background: "rgba(11,13,16,0.96)",
               backdropFilter: "blur(24px)",
               border: `1px solid ${s.border}`,
               borderRadius: 8,

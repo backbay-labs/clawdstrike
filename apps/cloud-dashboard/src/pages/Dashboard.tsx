@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchHealth, fetchAuditStats, type HealthResponse, type AuditStats } from "../api/client";
 import { useSharedSSE } from "../context/SSEContext";
 import { NoiseGrain } from "../components/ui";
+import { DashboardCharts } from "../components/viz/DashboardCharts";
+import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
 import { formatUptime } from "../utils/format";
 import type { SSEEvent } from "../hooks/useSSE";
 
@@ -9,6 +11,7 @@ export function Dashboard(_props: { windowId?: string }) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [stats, setStats] = useState<AuditStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<SSEEvent | null>(null);
   const { events, connected } = useSharedSSE();
 
   const refresh = useCallback(async () => {
@@ -34,40 +37,27 @@ export function Dashboard(_props: { windowId?: string }) {
   );
 
   return (
-    <div className="space-y-6" style={{ color: "#e2e8f0" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1
-          className="font-display"
+    <div className="space-y-6" style={{ padding: 20, color: "#e2e8f0", overflow: "auto", height: "100%" }}>
+      {/* SSE status bar */}
+      <div className="flex items-center gap-2.5">
+        <span
+          className="h-2 w-2 rounded-full"
           style={{
-            fontSize: "1.75rem",
-            fontWeight: 700,
-            letterSpacing: "0.05em",
-            color: "#fff",
+            background: connected ? "#2fa7a0" : "#c23b3b",
+            animation: connected ? "breathe-teal 2.4s ease-in-out infinite" : "breathe-crimson 1.6s ease-in-out infinite",
+          }}
+        />
+        <span
+          className="font-mono"
+          style={{
+            fontSize: "0.7rem",
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            color: connected ? "rgba(154,167,181,0.7)" : "rgba(194,59,59,0.8)",
           }}
         >
-          Dashboard
-        </h1>
-        <div className="flex items-center gap-2.5">
-          <span
-            className="h-2 w-2 rounded-full"
-            style={{
-              background: connected ? "#10b981" : "#ef4444",
-              animation: connected ? "breathe 2.4s ease-in-out infinite" : "breathe-red 1.6s ease-in-out infinite",
-            }}
-          />
-          <span
-            className="font-mono"
-            style={{
-              fontSize: "0.7rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: connected ? "rgba(16,185,129,0.8)" : "rgba(239,68,68,0.8)",
-            }}
-          >
-            {connected ? "SSE Connected" : "Disconnected"}
-          </span>
-        </div>
+          {connected ? "SSE Connected" : "Disconnected"}
+        </span>
       </div>
 
       {/* Error banner */}
@@ -75,10 +65,10 @@ export function Dashboard(_props: { windowId?: string }) {
         <div
           className="glass-panel"
           style={{
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.3)",
+            background: "rgba(194,59,59,0.08)",
+            border: "1px solid rgba(194,59,59,0.3)",
             padding: "0.625rem 1rem",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02), 0 0 20px rgba(239,68,68,0.1)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02), 0 0 20px rgba(194,59,59,0.1)",
           }}
         >
           <NoiseGrain />
@@ -87,7 +77,7 @@ export function Dashboard(_props: { windowId?: string }) {
             style={{
               position: "relative",
               fontSize: "0.8rem",
-              color: "#f87171",
+              color: "#c23b3b",
               letterSpacing: "0.04em",
             }}
           >
@@ -108,79 +98,90 @@ export function Dashboard(_props: { windowId?: string }) {
         />
       </div>
 
-      {/* Feed panels */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section>
-          <h2
-            className="font-mono mb-3"
-            style={{
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.14em",
-              color: "rgba(34,211,238,0.7)",
-            }}
-          >
-            Live Feed
-          </h2>
-          <div
-            className="glass-panel max-h-96 space-y-0.5 overflow-y-auto p-3"
-            style={{ scrollbarColor: "rgba(34,211,238,0.2) transparent" }}
-          >
-            <NoiseGrain />
-            {events.length === 0 ? (
-              <p
-                className="font-mono text-sm"
-                style={{
-                  position: "relative",
-                  color: "rgba(148,163,184,0.5)",
-                  fontSize: "0.75rem",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                Waiting for events…
-              </p>
-            ) : (
-              events.slice(0, 50).map((event) => <EventRow key={event._id} event={event} />)
-            )}
-          </div>
-        </section>
+      {/* Data visualization charts */}
+      <DashboardCharts events={events} />
 
-        <section>
-          <h2
-            className="font-mono mb-3"
-            style={{
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.14em",
-              color: "rgba(244,63,94,0.7)",
-            }}
-          >
-            Recent Violations
-          </h2>
-          <div
-            className="glass-panel max-h-96 space-y-0.5 overflow-y-auto p-3"
-            style={{ scrollbarColor: "rgba(244,63,94,0.2) transparent" }}
-          >
-            <NoiseGrain />
-            {violations.length === 0 ? (
-              <p
-                className="font-mono text-sm"
-                style={{
-                  position: "relative",
-                  color: "rgba(148,163,184,0.5)",
-                  fontSize: "0.75rem",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                No violations
-              </p>
-            ) : (
-              violations.slice(0, 20).map((event) => <EventRow key={event._id} event={event} />)
-            )}
-          </div>
-        </section>
+      {/* Feed panels + drawer */}
+      <div style={{ position: "relative" }}>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <section>
+            <h2
+              className="font-mono mb-3"
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.14em",
+                color: "rgba(214,177,90,0.7)",
+              }}
+            >
+              Live Feed
+            </h2>
+            <div
+              className="glass-panel max-h-96 space-y-0.5 overflow-y-auto p-3"
+              style={{ scrollbarColor: "rgba(214,177,90,0.15) transparent" }}
+            >
+              <NoiseGrain />
+              {events.length === 0 ? (
+                <p
+                  className="font-mono text-sm"
+                  style={{
+                    position: "relative",
+                    color: "rgba(154,167,181,0.5)",
+                    fontSize: "0.75rem",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  Waiting for events…
+                </p>
+              ) : (
+                events.slice(0, 50).map((event) => (
+                  <EventRow key={event._id} event={event} onClick={() => setSelectedEvent(event)} />
+                ))
+              )}
+            </div>
+          </section>
+
+          <section>
+            <h2
+              className="font-mono mb-3"
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.14em",
+                color: "rgba(214,177,90,0.7)",
+              }}
+            >
+              Recent Violations
+            </h2>
+            <div
+              className="glass-panel max-h-96 space-y-0.5 overflow-y-auto p-3"
+              style={{ scrollbarColor: "rgba(214,177,90,0.15) transparent" }}
+            >
+              <NoiseGrain />
+              {violations.length === 0 ? (
+                <p
+                  className="font-mono text-sm"
+                  style={{
+                    position: "relative",
+                    color: "rgba(154,167,181,0.5)",
+                    fontSize: "0.75rem",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  No violations
+                </p>
+              ) : (
+                violations.slice(0, 20).map((event) => (
+                  <EventRow key={event._id} event={event} onClick={() => setSelectedEvent(event)} />
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+
+        <EventDetailDrawer event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       </div>
     </div>
   );
@@ -197,8 +198,8 @@ function Card({
   sub?: string;
   highlight?: boolean;
 }) {
-  const accentColor = highlight ? "rgba(244,63,94,0.25)" : "rgba(34,211,238,0.12)";
-  const valueColor = highlight ? "#f43f5e" : "#fff";
+  const accentColor = highlight ? "rgba(194,59,59,0.25)" : "rgba(27,34,48,0.8)";
+  const valueColor = highlight ? "#c23b3b" : "#fff";
 
   return (
     <div
@@ -206,7 +207,7 @@ function Card({
       style={{
         border: `1px solid ${accentColor}`,
         boxShadow: highlight
-          ? "inset 0 1px 0 rgba(255,255,255,0.02), 0 0 24px rgba(244,63,94,0.08)"
+          ? "inset 0 1px 0 rgba(255,255,255,0.02), 0 0 24px rgba(194,59,59,0.08)"
           : undefined,
       }}
     >
@@ -218,7 +219,7 @@ function Card({
           fontSize: "0.65rem",
           textTransform: "uppercase",
           letterSpacing: "0.14em",
-          color: "rgba(148,163,184,0.6)",
+          color: "rgba(154,167,181,0.6)",
           marginBottom: "0.375rem",
         }}
       >
@@ -231,7 +232,7 @@ function Card({
           fontSize: "1.625rem",
           fontWeight: 700,
           color: valueColor,
-          textShadow: highlight ? "0 0 16px rgba(244,63,94,0.5)" : undefined,
+          textShadow: highlight ? "0 0 16px rgba(194,59,59,0.5)" : undefined,
           lineHeight: 1.2,
         }}
       >
@@ -243,7 +244,7 @@ function Card({
           style={{
             position: "relative",
             fontSize: "0.65rem",
-            color: "rgba(148,163,184,0.4)",
+            color: "rgba(154,167,181,0.4)",
             marginTop: "0.25rem",
             letterSpacing: "0.06em",
           }}
@@ -255,7 +256,7 @@ function Card({
   );
 }
 
-function EventRow({ event }: { event: SSEEvent }) {
+function EventRow({ event, onClick }: { event: SSEEvent; onClick?: () => void }) {
   const isViolation = event.event_type === "violation" || event.allowed === false;
 
   return (
@@ -264,23 +265,25 @@ function EventRow({ event }: { event: SSEEvent }) {
       style={{
         position: "relative",
         borderRadius: "6px",
-        borderLeft: `2px solid ${isViolation ? "rgba(244,63,94,0.5)" : "rgba(34,211,238,0.25)"}`,
+        borderLeft: `2px solid ${isViolation ? "rgba(194,59,59,0.5)" : "rgba(27,34,48,0.6)"}`,
+        cursor: onClick ? "pointer" : undefined,
       }}
+      onClick={onClick}
     >
       <span
         className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
         style={{
-          background: isViolation ? "#f43f5e" : "#10b981",
+          background: isViolation ? "#c23b3b" : "var(--gold)",
           boxShadow: isViolation
-            ? "0 0 6px rgba(244,63,94,0.5)"
-            : "0 0 6px rgba(16,185,129,0.4)",
+            ? "0 0 6px rgba(194,59,59,0.5)"
+            : "0 0 4px rgba(214,177,90,0.3)",
         }}
       />
       <span
         className="font-mono flex-shrink-0"
         style={{
           fontSize: "0.65rem",
-          color: "rgba(148,163,184,0.45)",
+          color: "rgba(154,167,181,0.45)",
           letterSpacing: "0.04em",
         }}
       >
@@ -290,7 +293,7 @@ function EventRow({ event }: { event: SSEEvent }) {
         className="font-mono"
         style={{
           fontSize: "0.8rem",
-          color: isViolation ? "#f87171" : "rgba(34,211,238,0.85)",
+          color: isViolation ? "var(--crimson)" : "var(--text)",
           letterSpacing: "0.02em",
         }}
       >
@@ -300,7 +303,7 @@ function EventRow({ event }: { event: SSEEvent }) {
         className="font-body truncate"
         style={{
           fontSize: "0.8rem",
-          color: "rgba(148,163,184,0.4)",
+          color: "rgba(154,167,181,0.4)",
         }}
       >
         {event.target ?? ""}
@@ -312,9 +315,9 @@ function EventRow({ event }: { event: SSEEvent }) {
             fontSize: "0.6rem",
             textTransform: "uppercase",
             letterSpacing: "0.08em",
-            color: "rgba(34,211,238,0.6)",
-            background: "rgba(34,211,238,0.08)",
-            border: "1px solid rgba(34,211,238,0.15)",
+            color: "rgba(214,177,90,0.6)",
+            background: "rgba(214,177,90,0.08)",
+            border: "1px solid rgba(214,177,90,0.15)",
             borderRadius: "4px",
             padding: "2px 6px",
           }}
@@ -327,7 +330,7 @@ function EventRow({ event }: { event: SSEEvent }) {
           className="font-mono flex-shrink-0"
           style={{
             fontSize: "0.6rem",
-            color: "rgba(148,163,184,0.35)",
+            color: "rgba(154,167,181,0.35)",
             letterSpacing: "0.04em",
           }}
         >

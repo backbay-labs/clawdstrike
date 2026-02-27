@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchAuditEvents, type AuditEvent, type AuditFilters } from "../api/client";
-import { NoiseGrain, GlassButton } from "../components/ui";
+import { NoiseGrain, GlassButton, Stamp } from "../components/ui";
+import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
+import { EventBookmarks } from "../components/events/EventBookmarks";
+import { exportAsCSV, exportAsJSON } from "../utils/exportData";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 
 export function AuditLog(_props: { windowId?: string }) {
@@ -9,6 +12,7 @@ export function AuditLog(_props: { windowId?: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<AuditFilters>({ limit: 50, offset: 0 });
+  const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -37,14 +41,7 @@ export function AuditLog(_props: { windowId?: string }) {
   );
 
   return (
-    <div className="space-y-5" style={{ minHeight: "100%", color: "#e2e8f0" }}>
-      <h1
-        className="font-display text-2xl tracking-wide"
-        style={{ color: "#22d3ee" }}
-      >
-        Audit Log
-      </h1>
-
+    <div className="space-y-5" style={{ padding: 20, minHeight: "100%", color: "#e2e8f0", overflow: "auto", height: "100%" }}>
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
         <FilterSelect
@@ -68,6 +65,12 @@ export function AuditLog(_props: { windowId?: string }) {
           onChange={(v) => debouncedSetFilter("agent_id", v)}
         />
         <GlassButton onClick={load}>Refresh</GlassButton>
+        <GlassButton onClick={() => exportAsCSV(events as unknown as Record<string, unknown>[], "audit-events")}>
+          Export CSV
+        </GlassButton>
+        <GlassButton onClick={() => exportAsJSON(events, "audit-events")}>
+          Export JSON
+        </GlassButton>
       </div>
 
       {/* Error banner */}
@@ -75,110 +78,119 @@ export function AuditLog(_props: { windowId?: string }) {
         <p
           className="font-mono rounded px-4 py-2 text-sm"
           style={{
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.4)",
-            boxShadow: "0 0 16px rgba(239,68,68,0.1), inset 0 1px 0 rgba(255,255,255,0.02)",
-            color: "#ef4444",
+            background: "rgba(194,59,59,0.08)",
+            border: "1px solid rgba(194,59,59,0.4)",
+            boxShadow: "0 0 16px rgba(194,59,59,0.1), inset 0 1px 0 rgba(255,255,255,0.02)",
+            color: "#c23b3b",
           }}
         >
           {error}
         </p>
       )}
 
-      {/* Table glass panel */}
-      <div className="glass-panel overflow-x-auto rounded-lg">
-        <NoiseGrain />
+      {/* Table glass panel + drawer wrapper */}
+      <div style={{ position: "relative" }}>
+        <div className="glass-panel overflow-x-auto rounded-lg">
+          <NoiseGrain />
 
-        <table className="relative w-full text-left text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-          <thead>
-            <tr
-              style={{
-                borderBottom: "1px solid transparent",
-                backgroundImage: "linear-gradient(to right, rgba(34,211,238,0.0), rgba(34,211,238,0.12), rgba(34,211,238,0.0))",
-                backgroundSize: "100% 1px",
-                backgroundPosition: "bottom",
-                backgroundRepeat: "no-repeat",
-              }}
-            >
-              {["Time", "Action", "Target", "Decision", "Guard", "Session", "Agent"].map((h) => (
-                <th
-                  key={h}
-                  className="font-mono px-4 py-3 text-[10px] uppercase"
-                  style={{
-                    letterSpacing: "0.1em",
-                    color: "rgba(34,211,238,0.5)",
-                    fontWeight: 500,
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={7} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(34,211,238,0.3)" }}>
-                  Loading...
-                </td>
+          <table className="relative w-full text-left text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+            <thead>
+              <tr
+                style={{
+                  borderBottom: "1px solid transparent",
+                  backgroundImage: "linear-gradient(to right, rgba(27,34,48,0.0), rgba(27,34,48,0.6), rgba(27,34,48,0.0))",
+                  backgroundSize: "100% 1px",
+                  backgroundPosition: "bottom",
+                  backgroundRepeat: "no-repeat",
+                }}
+              >
+                {["\u2606", "Time", "Action", "Target", "Decision", "Guard", "Session", "Agent"].map((h) => (
+                  <th
+                    key={h}
+                    className="font-mono px-4 py-3 text-[10px] uppercase"
+                    style={{
+                      letterSpacing: "0.1em",
+                      color: "rgba(154,167,181,0.6)",
+                      fontWeight: 500,
+                      width: h === "\u2606" ? "40px" : undefined,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ) : events.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(226,232,240,0.3)" }}>
-                  No events found
-                </td>
-              </tr>
-            ) : (
-              events.map((event) => (
-                <tr
-                  key={event.id}
-                  className="hover-row"
-                  style={{ cursor: "default" }}
-                >
-                  <td
-                    className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
-                    style={{ color: "rgba(226,232,240,0.4)" }}
-                  >
-                    {new Date(event.timestamp).toLocaleString()}
-                  </td>
-                  <td
-                    className="font-mono whitespace-nowrap px-4 py-2.5 text-sm"
-                    style={{ color: "#e2e8f0" }}
-                  >
-                    {event.action_type}
-                  </td>
-                  <td
-                    className="max-w-xs truncate px-4 py-2.5 text-sm"
-                    style={{ color: "rgba(226,232,240,0.5)" }}
-                  >
-                    {event.target ?? "-"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5">
-                    <DecisionBadge decision={event.decision} />
-                  </td>
-                  <td
-                    className="whitespace-nowrap px-4 py-2.5 text-sm"
-                    style={{ color: "rgba(226,232,240,0.6)" }}
-                  >
-                    {event.guard ?? "-"}
-                  </td>
-                  <td
-                    className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
-                    style={{ color: "rgba(226,232,240,0.35)" }}
-                  >
-                    {event.session_id?.slice(0, 12) ?? "-"}
-                  </td>
-                  <td
-                    className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
-                    style={{ color: "rgba(226,232,240,0.35)" }}
-                  >
-                    {event.agent_id?.slice(0, 12) ?? "-"}
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(154,167,181,0.4)" }}>
+                    Loading...
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : events.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(226,232,240,0.3)" }}>
+                    No events found
+                  </td>
+                </tr>
+              ) : (
+                events.map((event) => (
+                  <tr
+                    key={event.id}
+                    className="hover-row"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSelectedEvent(event)}
+                  >
+                    <td className="whitespace-nowrap px-4 py-2.5" style={{ width: "40px" }}>
+                      <EventBookmarks eventId={event.id} />
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                      style={{ color: "rgba(226,232,240,0.4)" }}
+                    >
+                      {new Date(event.timestamp).toLocaleString()}
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-sm"
+                      style={{ color: "#e2e8f0" }}
+                    >
+                      {event.action_type}
+                    </td>
+                    <td
+                      className="max-w-xs truncate px-4 py-2.5 text-sm"
+                      style={{ color: "rgba(226,232,240,0.5)" }}
+                    >
+                      {event.target ?? "-"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5">
+                      <Stamp variant={event.decision === "blocked" ? "blocked" : "allowed"}>{event.decision}</Stamp>
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-2.5 text-sm"
+                      style={{ color: "rgba(226,232,240,0.6)" }}
+                    >
+                      {event.guard ?? "-"}
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                      style={{ color: "rgba(226,232,240,0.35)" }}
+                    >
+                      {event.session_id?.slice(0, 12) ?? "-"}
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                      style={{ color: "rgba(226,232,240,0.35)" }}
+                    >
+                      {event.agent_id?.slice(0, 12) ?? "-"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <EventDetailDrawer event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       </div>
 
       {/* Pagination */}
@@ -206,7 +218,7 @@ export function AuditLog(_props: { windowId?: string }) {
             style={{
               fontSize: "11px",
               letterSpacing: "0.05em",
-              color: "rgba(34,211,238,0.6)",
+              color: "rgba(214,177,90,0.6)",
             }}
           >
             Page {page + 1} of {totalPages || 1}
@@ -223,25 +235,6 @@ export function AuditLog(_props: { windowId?: string }) {
   );
 }
 
-function DecisionBadge({ decision }: { decision: string }) {
-  const isBlocked = decision === "blocked";
-  return (
-    <span
-      className="font-mono inline-block rounded px-2 py-0.5 text-[11px] uppercase"
-      style={{
-        letterSpacing: "0.08em",
-        fontWeight: 600,
-        color: isBlocked ? "#ef4444" : "#10b981",
-        background: isBlocked ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)",
-        border: `1px solid ${isBlocked ? "rgba(239,68,68,0.25)" : "rgba(16,185,129,0.25)"}`,
-        boxShadow: `0 0 8px ${isBlocked ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)"}`,
-      }}
-    >
-      {decision}
-    </span>
-  );
-}
-
 function PaginationButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -249,7 +242,7 @@ function PaginationButton({ disabled, onClick, children }: { disabled: boolean; 
       onClick={onClick}
       className="glass-panel hover-glass-button font-mono rounded px-3 py-1 text-xs uppercase tracking-wider disabled:opacity-30"
       style={{
-        color: disabled ? "rgba(226,232,240,0.3)" : "#22d3ee",
+        color: disabled ? "rgba(154,167,181,0.4)" : "#d6b15a",
         letterSpacing: "0.08em",
       }}
     >
@@ -265,7 +258,7 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
         className="font-mono text-[10px] uppercase"
         style={{
           letterSpacing: "0.1em",
-          color: "rgba(34,211,238,0.4)",
+          color: "rgba(214,177,90,0.5)",
         }}
       >
         {label}
@@ -277,7 +270,7 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
         style={{ color: "#e2e8f0" }}
       >
         {options.map((o) => (
-          <option key={o} value={o} style={{ background: "#0a0a0a" }}>{o || "All"}</option>
+          <option key={o} value={o} style={{ background: "#0b0d10" }}>{o || "All"}</option>
         ))}
       </select>
     </label>
@@ -292,7 +285,7 @@ function FilterInput({ label, onChange }: { label: string; onChange: (v: string)
         className="font-mono text-[10px] uppercase"
         style={{
           letterSpacing: "0.1em",
-          color: "rgba(34,211,238,0.4)",
+          color: "rgba(214,177,90,0.5)",
         }}
       >
         {label}
