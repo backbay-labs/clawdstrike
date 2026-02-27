@@ -115,7 +115,7 @@ You deployed 50 agents. Someone on another team deployed 50 more you don't know 
 
 ## What Clawdstrike Is
 
-Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for autonomous AI agents. It sits at the tool boundary, the exact point where an agent's intent becomes a real-world action, and enforces security policy with signed proof.
+Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for autonomous AI agents. It sits at the tool boundary, the exact point where an agent's intent becomes a real-world action, and enforces security policy with signed proof. From a single SDK install to a fleet of thousands of managed agents, the same engine, the same receipts, the same guarantees.
 
 Every action. Every agent. Every time. No exceptions.
 
@@ -130,8 +130,6 @@ flowchart LR
     G -.->|enterprise| H[Spine Audit Trail]
     H -.-> I[Cloud API + Dashboard]
 ```
-
-From a single `npm install` to a fleet of 10,000 managed agents — same policy engine, same receipts, same fail-closed guarantees. See [Deployment Modes](#deployment-modes) below.
 
 ---
 
