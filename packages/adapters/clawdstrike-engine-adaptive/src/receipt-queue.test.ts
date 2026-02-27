@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createReceiptQueue } from './receipt-queue.js';
 import type { QueuedReceipt } from './types.js';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
