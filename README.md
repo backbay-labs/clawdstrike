@@ -333,20 +333,12 @@ Clawdstrike scales from a single developer's laptop to a fleet of thousands of m
 
 The `@clawdstrike/engine-adaptive` package bridges standalone and enterprise deployments. It wraps a local and remote engine behind the same `PolicyEngineLike` interface and automatically transitions between three modes:
 
-```
- ┌────────────┐    remote healthy    ┌────────────┐
- │ standalone │ ──────────────────► │ connected  │
- └────────────┘                     └─────┬──────┘
-                                          │ remote fails
-                                          ▼
-                                    ┌────────────┐
-                                    │  degraded  │
-                                    └─────┬──────┘
-                                          │ remote recovers
-                                          ▼
-                                    ┌────────────┐
-                                    │ connected  │
-                                    └────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> standalone
+    standalone --> connected : remote healthy
+    connected --> degraded : remote fails
+    degraded --> connected : remote recovers
 ```
 
 - **Standalone** — local policy engine only. Zero network dependency.
