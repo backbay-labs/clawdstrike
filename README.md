@@ -109,7 +109,7 @@ allowed = engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), c
 
 Google's 2026 Cybersecurity Forecast calls it the **"Shadow Agent" crisis**: employees and teams spinning up AI agents without corporate oversight, creating invisible pipelines that exfiltrate sensitive data, violate compliance, and leak IP. No one sanctioned them. No one is watching them. And your security stack wasn't built for this.
 
-You deployed 50 agents. Someone on another team deployed 50 more you don't know about. One of them just `curl`'d your `.env` to an unknown IP. Another rewrote your auth middleware. A third is running `chmod 777` on production. Your logging pipeline says everything looks fine.
+Your org provisioned 50 agents. Shadow IT spun up 50 more outside your asset inventory. One is exfiltrating `.env` secrets to an unclassified endpoint. Another is patching auth middleware with no peer review, no receipt, no rollback. A third just ran `chmod 777` against a production filesystem. Your SIEM shows green across the board because none of these actions generate the signals it was built to detect.
 
 **Logs tell you what happened after the damage is done. Clawdstrike stops it before the action fires and cryptographically proves what it decided.**
 
