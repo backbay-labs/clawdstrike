@@ -115,16 +115,23 @@ class Clawdstrike:
         results = self._engine.check(action, ctx)
         return self._decide(results)
 
-    def check_file(self, path: str | os.PathLike[str], operation: str = "read") -> Decision:
+    def check_file(
+        self,
+        path: str | os.PathLike[str],
+        operation: str = "read",
+        *,
+        content: bytes | None = None,
+    ) -> Decision:
         """Check file access.
 
         Args:
             path: File path to check
             operation: "read" or "write"
+            content: File content for write operations (used by content-aware guards)
         """
         str_path = str(path)
         if operation == "write":
-            action: Action = FileWriteAction(path=str_path, content=b"")
+            action: Action = FileWriteAction(path=str_path, content=content or b"")
         else:
             action = FileAccessAction(path=str_path)
         return self.check(action)
@@ -197,24 +204,40 @@ class ClawdstrikeSession:
         decision = self._cs.check(action, **merged)
         return self._track(decision, f"{action.action_type}")
 
-    def check_file(self, path: str | os.PathLike[str], operation: str = "read") -> Decision:
-        decision = self._cs.check_file(path, operation)
+    def check_file(
+        self,
+        path: str | os.PathLike[str],
+        operation: str = "read",
+        *,
+        content: bytes | None = None,
+    ) -> Decision:
+        str_path = str(path)
+        ctx = self._context_kwargs()
+        if operation == "write":
+            action: Action = FileWriteAction(path=str_path, content=content or b"")
+        else:
+            action = FileAccessAction(path=str_path)
+        decision = self._cs.check(action, **ctx)
         return self._track(decision, f"file:{path}")
 
     def check_command(self, command: str) -> Decision:
-        decision = self._cs.check_command(command)
+        ctx = self._context_kwargs()
+        decision = self._cs.check(ShellCommandAction(command=command), **ctx)
         return self._track(decision, f"command:{command[:50]}")
 
     def check_network(self, host: str, port: int = 443) -> Decision:
-        decision = self._cs.check_network(host, port)
+        ctx = self._context_kwargs()
+        decision = self._cs.check(NetworkEgressAction(host=host, port=port), **ctx)
         return self._track(decision, f"network:{host}:{port}")
 
     def check_patch(self, path: str | os.PathLike[str], diff: str) -> Decision:
-        decision = self._cs.check_patch(path, diff)
+        ctx = self._context_kwargs()
+        decision = self._cs.check(PatchAction(path=str(path), diff=diff), **ctx)
         return self._track(decision, f"patch:{path}")
 
     def check_mcp_tool(self, tool: str, args: dict[str, Any] | None = None) -> Decision:
-        decision = self._cs.check_mcp_tool(tool, args)
+        ctx = self._context_kwargs()
+        decision = self._cs.check(McpToolAction(tool=tool, args=args or {}), **ctx)
         return self._track(decision, f"mcp:{tool}")
 
     def get_summary(self) -> SessionSummary:

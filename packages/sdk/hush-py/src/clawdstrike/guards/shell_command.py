@@ -67,12 +67,7 @@ class ShellCommandGuard(Guard):
         if command is None:
             return GuardResult.allow(self.name)
 
-        # Check allowed commands first
-        for allowed in self._config.allowed_commands:
-            if command.strip().startswith(allowed):
-                return GuardResult.allow(self.name)
-
-        # Check blocked patterns
+        # Check blocked patterns first (before allowlist)
         for pattern_str, compiled in self._compiled:
             if compiled.search(command):
                 return GuardResult.block(
@@ -83,5 +78,12 @@ class ShellCommandGuard(Guard):
                     "command": command[:200],
                     "matched_pattern": pattern_str,
                 })
+
+        # Check allowed commands (exact first-word match)
+        if self._config.allowed_commands:
+            first_word = command.strip().split()[0] if command.strip() else ""
+            for allowed in self._config.allowed_commands:
+                if first_word == allowed:
+                    return GuardResult.allow(self.name)
 
         return GuardResult.allow(self.name)
