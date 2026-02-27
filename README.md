@@ -183,19 +183,9 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 
 Not a regex and a prayer. A tiered detection engine that catches what single-layer approaches miss:
 
-```
-Layer 1: Heuristic      Pattern matching for known jailbreak taxonomies
-                         (role-play, authority confusion, encoding attacks,
-                          system prompt extraction, multi-turn grooming)
-
-Layer 2: Statistical    Shannon entropy analysis, punctuation ratio,
-                         zero-width character obfuscation, adversarial suffix detection
-
-Layer 3: ML             Lightweight linear model with configurable weights,
-                         no external API calls, sub-millisecond inference
-
-Layer 4: LLM-as-Judge   Optional external model scoring for high-stakes environments
-```
+<p align="center">
+  <img src="docs/static/jailbreak-explain.png" alt="4-Layer Jailbreak Detection" width="520" />
+</p>
 
 **Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores. An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Persistent session state survives across connections via pluggable storage backends.
 
