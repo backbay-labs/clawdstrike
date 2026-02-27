@@ -176,12 +176,6 @@ class Clawdstrike:
             report = self._backend.check_mcp_tool(action.tool, action.args, ctx)
         elif isinstance(action, PatchAction):
             report = self._backend.check_patch(action.path, action.diff, ctx)
-        elif isinstance(action, CustomAction) and action.custom_type in (
-            "untrusted_text", "hushclaw.untrusted_text",
-        ):
-            source = action.custom_data.get("source")
-            text = action.custom_data.get("text", "")
-            report = self._backend.check_untrusted_text(source, text, ctx)
         elif isinstance(action, CustomAction):
             report = self._backend.check_custom(
                 action.custom_type, action.custom_data, ctx,
