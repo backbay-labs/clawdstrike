@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 interface Bookmark {
   note: string;
@@ -9,6 +9,7 @@ interface Bookmark {
 type BookmarkMap = Record<string, Bookmark>;
 
 const STORAGE_KEY = "cs_bookmarks";
+const BOOKMARKS_CHANGED_EVENT = "clawdstrike:bookmarks-changed";
 
 function loadBookmarks(): BookmarkMap {
   try {
@@ -21,10 +22,18 @@ function loadBookmarks(): BookmarkMap {
 
 function saveBookmarks(bookmarks: BookmarkMap) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks));
+  window.dispatchEvent(new Event(BOOKMARKS_CHANGED_EVENT));
 }
 
 export function useBookmarks() {
   const [bookmarks, setBookmarks] = useState<BookmarkMap>(loadBookmarks);
+
+  // Sync across multiple hook instances (each table row mounts its own)
+  useEffect(() => {
+    const handler = () => setBookmarks(loadBookmarks());
+    window.addEventListener(BOOKMARKS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(BOOKMARKS_CHANGED_EVENT, handler);
+  }, []);
 
   const toggleBookmark = useCallback((id: string) => {
     setBookmarks((prev) => {

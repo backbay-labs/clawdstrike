@@ -139,11 +139,14 @@ pub async fn rate_limit_middleware(
     // for this check, since a client could spoof X-Forwarded-For: 127.0.0.1.
     let socket_ip = extract_socket_ip(&req);
 
-    // Skip rate limiting for loopback only when no trusted proxies are configured,
-    // meaning the loopback traffic is genuinely local (CLI, agent proxy, local dev).
-    // When trusted proxies ARE configured, loopback traffic may be from a reverse
-    // proxy forwarding external requests, so it must still be rate-limited.
-    if socket_ip.is_loopback() && rate_limit.trusted_proxies.is_empty() {
+    // Skip rate limiting for loopback only when the operator has NOT configured any
+    // form of proxy trust — meaning loopback traffic is genuinely local (CLI, agent
+    // proxy, local dev). When trusted_proxies or trust_xff_from_any are set, loopback
+    // traffic may be from a reverse proxy forwarding external requests.
+    if socket_ip.is_loopback()
+        && rate_limit.trusted_proxies.is_empty()
+        && !rate_limit.config.trust_xff_from_any
+    {
         return next.run(req).await;
     }
 
