@@ -13,8 +13,6 @@ export interface SSEEvent {
   timestamp: string;
 }
 
-let _nextEventId = 1;
-
 export type SSEConnectionStatus =
   | "connecting"
   | "connected"
@@ -37,6 +35,7 @@ interface UseSSEResult {
 }
 
 export function useSSE(url: string): UseSSEResult {
+  const nextEventIdRef = useRef(1);
   const [events, setEvents] = useState<SSEEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<SSEConnectionStatus>("connecting");
@@ -162,15 +161,15 @@ export function useSSE(url: string): UseSSEResult {
                           if (data !== "ping" && raw !== "ping") {
                             const eventType = currentEvent || "message";
                             const event: SSEEvent = {
-                              _id: _nextEventId++,
+                              _id: nextEventIdRef.current++,
                               ...data,
                               event_type: eventType,
                               timestamp: data.timestamp ?? new Date().toISOString(),
                             };
                             setEvents((prev) => [event, ...prev].slice(0, 500));
                           }
-                        } catch {
-                          // skip malformed payloads
+                        } catch (err) {
+                          console.debug("[SSE] skipping malformed payload:", err);
                         }
                       }
                       dataLines = [];
@@ -178,7 +177,8 @@ export function useSSE(url: string): UseSSEResult {
                     }
                   }
                 }
-              } catch {
+              } catch (err) {
+                console.warn("[SSE] read error, will reconnect:", err);
                 // read errors (network drop/hushd restart/abort mid-read) should reconnect
                 if (!cancelled && !ctrl.signal.aborted) {
                   scheduleReconnect(
@@ -189,8 +189,8 @@ export function useSSE(url: string): UseSSEResult {
               } finally {
                 try {
                   reader.releaseLock();
-                } catch {
-                  // ignore lock release errors
+                } catch (err) {
+                  console.debug("[SSE] lock release error:", err);
                 }
               }
             };
@@ -234,14 +234,14 @@ export function useSSE(url: string): UseSSEResult {
         try {
           const data = JSON.parse(e.data);
           const event: SSEEvent = {
-            _id: _nextEventId++,
+            _id: nextEventIdRef.current++,
             ...data,
             event_type: eventType,
             timestamp: data.timestamp ?? new Date().toISOString(),
           };
           setEvents((prev) => [event, ...prev].slice(0, 500));
-        } catch {
-          // skip malformed
+        } catch (err) {
+          console.debug("[SSE] skipping malformed event:", err);
         }
       };
     }
@@ -257,14 +257,14 @@ export function useSSE(url: string): UseSSEResult {
         const data = JSON.parse(e.data);
         if (data === "ping" || e.data === "ping") return;
         const event: SSEEvent = {
-          _id: _nextEventId++,
+          _id: nextEventIdRef.current++,
           ...data,
           event_type: "message",
           timestamp: data.timestamp ?? new Date().toISOString(),
         };
         setEvents((prev) => [event, ...prev].slice(0, 500));
-      } catch {
-        // skip
+      } catch (err) {
+        console.debug("[SSE] event parse error:", err);
       }
     };
 

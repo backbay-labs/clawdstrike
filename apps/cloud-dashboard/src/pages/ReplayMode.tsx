@@ -18,7 +18,7 @@ export function ReplayMode(_props: { windowId?: string }) {
       setEvents(data.events.reverse());
       setPosition(0);
       setPlaying(false);
-    } catch { /* ignore */ }
+    } catch (err) { console.debug("[ReplayMode] error:", err); }
     finally { setLoading(false); }
   }, []);
 

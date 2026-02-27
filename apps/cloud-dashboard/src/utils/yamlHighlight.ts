@@ -6,7 +6,8 @@ export function highlightYaml(yaml: string): string {
       let escaped = line
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
 
       // Comments
       if (/^\s*#/.test(escaped)) {
@@ -46,7 +47,7 @@ function colorizeValue(raw: string): string {
   }
 
   // Quoted strings
-  if (/^["'].*["']$/.test(trimmed)) {
+  if (/^(&quot;|['"]).*(&quot;|['"])$/.test(trimmed)) {
     return `<span style="color:var(--text)">${raw}</span>`;
   }
 
@@ -74,7 +75,10 @@ function findInlineComment(raw: string): number {
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
     if (ch === "'" && !inDouble) inSingle = !inSingle;
-    else if (ch === '"' && !inSingle) inDouble = !inDouble;
+    else if (ch === "&" && raw.slice(i, i + 6) === "&quot;" && !inSingle) {
+      inDouble = !inDouble;
+      i += 5; // skip past &quot;
+    }
     else if (ch === "#" && !inSingle && !inDouble && i > 0 && raw[i - 1] === " ") {
       return i;
     }

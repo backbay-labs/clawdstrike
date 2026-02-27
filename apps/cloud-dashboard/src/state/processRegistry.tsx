@@ -1,17 +1,19 @@
+import { lazy } from "react";
 import type { ProcessDefinition } from "@backbay/glia-desktop";
-import { Dashboard } from "../pages/Dashboard";
-import { Events } from "../pages/Events";
-import { AuditLog } from "../pages/AuditLog";
-import { Policies } from "../pages/Policies";
-import { Settings } from "../pages/Settings";
-import { AgentExplorer } from "../pages/AgentExplorer";
-import { ReceiptVerifier } from "../pages/ReceiptVerifier";
-import { PolicyEditor } from "../pages/PolicyEditor";
-import { GuardPlayground } from "../pages/GuardPlayground";
-import { PostureMap } from "../pages/PostureMap";
-import { ComplianceReport } from "../pages/ComplianceReport";
-import { ReplayMode } from "../pages/ReplayMode";
-import { AgentChat } from "../pages/AgentChat";
+
+const Dashboard = lazy(() => import("../pages/Dashboard").then(m => ({ default: m.Dashboard })));
+const Events = lazy(() => import("../pages/Events").then(m => ({ default: m.Events })));
+const AuditLog = lazy(() => import("../pages/AuditLog").then(m => ({ default: m.AuditLog })));
+const Policies = lazy(() => import("../pages/Policies").then(m => ({ default: m.Policies })));
+const Settings = lazy(() => import("../pages/Settings").then(m => ({ default: m.Settings })));
+const AgentExplorer = lazy(() => import("../pages/AgentExplorer").then(m => ({ default: m.AgentExplorer })));
+const ReceiptVerifier = lazy(() => import("../pages/ReceiptVerifier").then(m => ({ default: m.ReceiptVerifier })));
+const PolicyEditor = lazy(() => import("../pages/PolicyEditor").then(m => ({ default: m.PolicyEditor })));
+const GuardPlayground = lazy(() => import("../pages/GuardPlayground").then(m => ({ default: m.GuardPlayground })));
+const PostureMap = lazy(() => import("../pages/PostureMap").then(m => ({ default: m.PostureMap })));
+const ComplianceReport = lazy(() => import("../pages/ComplianceReport").then(m => ({ default: m.ComplianceReport })));
+const ReplayMode = lazy(() => import("../pages/ReplayMode").then(m => ({ default: m.ReplayMode })));
+const AgentChat = lazy(() => import("../pages/AgentChat").then(m => ({ default: m.AgentChat })));
 
 /* ── Artifact OS SVG Sigils ── */
 

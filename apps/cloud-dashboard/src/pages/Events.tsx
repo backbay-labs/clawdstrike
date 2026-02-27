@@ -150,6 +150,9 @@ function EventTableRow({ event, onClick }: { event: SSEEvent; onClick: () => voi
         cursor: "pointer",
       }}
       onClick={onClick}
+      tabIndex={0}
+      role="button"
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
     >
       {/* Bookmark */}
       <td className="whitespace-nowrap px-4 py-2.5" style={{ width: "40px" }}>

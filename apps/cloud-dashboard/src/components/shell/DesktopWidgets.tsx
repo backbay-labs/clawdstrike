@@ -27,6 +27,8 @@ export function DesktopWidgets({ events, connected }: { events: SSEEvent[]; conn
     return { ...DEFAULT_POSITIONS, ...saved };
   });
   const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
 
   const violationCount = events.filter((e) => e.allowed === false || e.event_type === "violation").length;
 
@@ -49,7 +51,7 @@ export function DesktopWidgets({ events, connected }: { events: SSEEvent[]; conn
   }, [oldestTimestamp]);
 
   const handleMouseDown = useCallback((id: string, e: React.MouseEvent) => {
-    const pos = positions[id] || DEFAULT_POSITIONS[id];
+    const pos = positionsRef.current[id] || DEFAULT_POSITIONS[id];
     dragRef.current = { id, startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
@@ -64,7 +66,7 @@ export function DesktopWidgets({ events, connected }: { events: SSEEvent[]; conn
     const onUp = () => { dragRef.current = null; document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
-  }, [positions]);
+  }, []);
 
   const resolvePos = (id: string): React.CSSProperties => {
     const pos = positions[id] || DEFAULT_POSITIONS[id];

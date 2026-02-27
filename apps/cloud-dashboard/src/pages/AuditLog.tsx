@@ -140,6 +140,9 @@ export function AuditLog(_props: { windowId?: string }) {
                     className="hover-row"
                     style={{ cursor: "pointer" }}
                     onClick={() => setSelectedEvent(event)}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedEvent(event); } }}
                   >
                     <td className="whitespace-nowrap px-4 py-2.5" style={{ width: "40px" }}>
                       <EventBookmarks eventId={event.id} />

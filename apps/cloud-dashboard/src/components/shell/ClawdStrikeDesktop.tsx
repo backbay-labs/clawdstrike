@@ -17,6 +17,7 @@ import { NotificationCenter } from "./NotificationCenter";
 import { ContextMenu } from "./ContextMenu";
 import { DesktopWidgets } from "./DesktopWidgets";
 import { LockScreen } from "./LockScreen";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useLockScreen } from "../../hooks/useLockScreen";
 import { useContextMenu } from "../../hooks/useContextMenu";
@@ -82,9 +83,70 @@ const WindowItem = memo(function WindowItem({ windowId }: { windowId: WindowId }
           SUSPENDED
         </div>
       ) : (
-        <Suspense fallback={<LoadingFallback />}>
-          <AppComponent windowId={windowId} />
-        </Suspense>
+        <ErrorBoundary
+          fallback={(error, reset) => (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                padding: 24,
+                background: "rgba(15,20,30,0.95)",
+                color: "#e7edf6",
+                fontFamily: '"Inter", sans-serif',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontFamily: '"JetBrains Mono", monospace',
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "#c23b3b",
+                  marginBottom: 8,
+                }}
+              >
+                WINDOW ERROR
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "rgba(154,167,181,0.7)",
+                  marginBottom: 14,
+                  textAlign: "center",
+                  wordBreak: "break-word",
+                  maxWidth: 300,
+                }}
+              >
+                {error.message || "An unexpected error occurred"}
+              </div>
+              <button
+                type="button"
+                onClick={reset}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(214,177,90,0.35)",
+                  background: "rgba(214,177,90,0.1)",
+                  color: "#d6b15a",
+                  fontSize: 11,
+                  fontFamily: '"JetBrains Mono", monospace',
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                Reload Window
+              </button>
+            </div>
+          )}
+        >
+          <Suspense fallback={<LoadingFallback />}>
+            <AppComponent windowId={windowId} />
+          </Suspense>
+        </ErrorBoundary>
       )}
     </Window>
   );

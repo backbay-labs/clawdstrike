@@ -15,7 +15,8 @@ function loadRules(): AlertRule[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
-  } catch {
+  } catch (err) {
+    console.warn("[AlertRules] failed to load rules:", err);
     return [];
   }
 }
@@ -99,9 +100,20 @@ export function useAlertRules(events: SSEEvent[]) {
               windowMinutes: rule.windowMinutes,
               timestamp: new Date().toISOString(),
             }),
-          }).catch(() => {
-            // Webhook delivery is best-effort
-          });
+          })
+            .then((res) => {
+              if (!res.ok)
+                console.warn(
+                  `[AlertRules] webhook returned ${res.status} for ${rule.webhookUrl}`,
+                );
+            })
+            .catch((err) => {
+              console.warn(
+                "[AlertRules] webhook delivery failed:",
+                rule.webhookUrl,
+                err,
+              );
+            });
         }
       }
     }

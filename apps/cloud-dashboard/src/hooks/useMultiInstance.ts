@@ -15,7 +15,8 @@ function loadInstances(): HushdInstance[] {
   try {
     const raw = localStorage.getItem(INSTANCES_KEY);
     return raw ? JSON.parse(raw) : [];
-  } catch {
+  } catch (err) {
+    console.warn("[MultiInstance] failed to load instances:", err);
     return [];
   }
 }

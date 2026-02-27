@@ -2,6 +2,7 @@ import { DesktopOSProvider, type PartialDesktopOSTheme } from "@backbay/glia-des
 import { SharedSSEProvider } from "./context/SSEContext";
 import { ThemeProvider } from "./hooks/useTheme";
 import { ClawdStrikeDesktop } from "./components/shell/ClawdStrikeDesktop";
+import { ErrorBoundary } from "./components/shell/ErrorBoundary";
 import { processes, pinnedAppIds } from "./state/processRegistry";
 
 const artifactTheme: PartialDesktopOSTheme = {
@@ -45,18 +46,20 @@ const artifactTheme: PartialDesktopOSTheme = {
 
 export function App() {
   return (
-    <SharedSSEProvider>
-      <DesktopOSProvider
-        processes={processes}
-        initialPinnedApps={pinnedAppIds}
-        enableSnapZones
-        enableWindowGroups
-        enableAnimations
-        theme={artifactTheme}
-      >
-        <ThemeProvider />
-        <ClawdStrikeDesktop />
-      </DesktopOSProvider>
-    </SharedSSEProvider>
+    <ErrorBoundary>
+      <SharedSSEProvider>
+        <DesktopOSProvider
+          processes={processes}
+          initialPinnedApps={pinnedAppIds}
+          enableSnapZones
+          enableWindowGroups
+          enableAnimations
+          theme={artifactTheme}
+        >
+          <ThemeProvider />
+          <ClawdStrikeDesktop />
+        </DesktopOSProvider>
+      </SharedSSEProvider>
+    </ErrorBoundary>
   );
 }

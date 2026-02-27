@@ -12,10 +12,13 @@ export function Policies(_props: { windowId?: string }) {
   const [showDiff, setShowDiff] = useState(false);
   const [previousYaml, setPreviousYaml] = useState<string>("");
   const lastYamlRef = useRef<string>("");
+  const loadingRef = useRef(false);
 
   const { events } = useSharedSSE();
 
   const load = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const data = await fetchPolicy();
@@ -31,6 +34,7 @@ export function Policies(_props: { windowId?: string }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load policy");
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }, []);

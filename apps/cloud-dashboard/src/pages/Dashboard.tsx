@@ -269,6 +269,9 @@ function EventRow({ event, onClick }: { event: SSEEvent; onClick?: () => void })
         cursor: onClick ? "pointer" : undefined,
       }}
       onClick={onClick}
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? "button" : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
     >
       <span
         className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
