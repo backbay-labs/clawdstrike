@@ -135,20 +135,24 @@ pub async fn rate_limit_middleware(
         return next.run(req).await;
     }
 
-    // Extract client IP (respects trusted proxy headers when configured).
-    let connection_ip = extract_client_ip(&req, &rate_limit);
+    // Use the raw socket/peer IP for the loopback exemption — never trust headers
+    // for this check, since a client could spoof X-Forwarded-For: 127.0.0.1.
+    let socket_ip = extract_socket_ip(&req);
 
     // Skip rate limiting for loopback only when no trusted proxies are configured,
     // meaning the loopback traffic is genuinely local (CLI, agent proxy, local dev).
     // When trusted proxies ARE configured, loopback traffic may be from a reverse
     // proxy forwarding external requests, so it must still be rate-limited.
-    if connection_ip.is_loopback() && rate_limit.trusted_proxies.is_empty() {
+    if socket_ip.is_loopback() && rate_limit.trusted_proxies.is_empty() {
         return next.run(req).await;
     }
 
-    // Check rate limit using the already-extracted client IP
+    // Extract client IP (respects trusted proxy headers when configured).
+    let client_ip = extract_client_ip(&req, &rate_limit);
+
+    // Check rate limit using the header-aware client IP
     if let Some(ref limiter) = rate_limit.limiter {
-        match limiter.check_key(&connection_ip) {
+        match limiter.check_key(&client_ip) {
             Ok(_) => {
                 // Request allowed
                 next.run(req).await
@@ -156,7 +160,7 @@ pub async fn rate_limit_middleware(
             Err(not_until) => {
                 // Rate limit exceeded
                 tracing::debug!(
-                    client_ip = %connection_ip,
+                    client_ip = %client_ip,
                     "Rate limit exceeded"
                 );
                 rate_limit.metrics.inc_rate_limit_dropped();
@@ -186,6 +190,26 @@ pub async fn rate_limit_middleware(
     } else {
         next.run(req).await
     }
+}
+
+/// Extract the raw socket/peer IP from request extensions, ignoring proxy headers.
+///
+/// Used for the loopback exemption where we must not trust any header-derived IP.
+fn extract_socket_ip(req: &Request<Body>) -> IpAddr {
+    req.extensions()
+        .get::<axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        .or_else(|| {
+            req.extensions()
+                .get::<axum::extract::connect_info::ConnectInfo<crate::tls::TlsConnectInfo>>()
+                .map(|ci| (ci.0).0.ip())
+        })
+        .or_else(|| {
+            req.extensions()
+                .get::<std::net::SocketAddr>()
+                .map(|addr| addr.ip())
+        })
+        .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)))
 }
 
 /// Extract client IP from request
@@ -447,5 +471,29 @@ mod tests {
         // Should not trust headers from other IPs
         assert!(!state.should_trust_headers(Some("192.168.1.1".parse().unwrap())));
         assert!(!state.should_trust_headers(None));
+    }
+
+    #[test]
+    fn test_extract_socket_ip_ignores_xff_header() {
+        // Even with trust_xff_from_any, extract_socket_ip must return the fallback
+        // (no ConnectInfo in this bare request), never the header value.
+        let req = Request::builder()
+            .header("X-Forwarded-For", "127.0.0.1")
+            .body(Body::empty())
+            .unwrap();
+
+        let ip = extract_socket_ip(&req);
+        // Falls back to 127.0.0.1 because there's no ConnectInfo extension,
+        // but crucially it did NOT parse the XFF header — it used the default.
+        assert_eq!(ip, "127.0.0.1".parse::<IpAddr>().unwrap());
+
+        // With a non-loopback XFF, socket IP should still be the default fallback
+        let req2 = Request::builder()
+            .header("X-Forwarded-For", "203.0.113.195")
+            .body(Body::empty())
+            .unwrap();
+
+        let ip2 = extract_socket_ip(&req2);
+        assert_eq!(ip2, "127.0.0.1".parse::<IpAddr>().unwrap());
     }
 }

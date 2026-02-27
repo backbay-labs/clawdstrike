@@ -31,7 +31,8 @@ function generateId(): string {
   return `rule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function useAlertRules(events: SSEEvent[]) {
+export function useAlertRules(events: SSEEvent[], options?: { evaluate?: boolean }) {
+  const shouldFireSideEffects = options?.evaluate ?? true;
   const [rules, setRules] = useState<AlertRule[]>(loadRules);
   const [triggered, setTriggered] = useState(false);
 
@@ -85,6 +86,9 @@ export function useAlertRules(events: SSEEvent[]) {
       if (violations.length >= rule.threshold) {
         anyTriggered = true;
 
+        // Skip notifications/webhooks when evaluate is false (e.g. Settings UI)
+        if (!shouldFireSideEffects) continue;
+
         // Debounce: only alert once per window period per rule
         const lastAlert = lastAlertRef.current[rule.id] ?? 0;
         if (now - lastAlert < windowMs) continue;
@@ -128,7 +132,7 @@ export function useAlertRules(events: SSEEvent[]) {
     }
 
     setTriggered(anyTriggered);
-  }, [events, rules]);
+  }, [events, rules, shouldFireSideEffects]);
 
   return { rules, addRule, removeRule, updateRule, triggered };
 }

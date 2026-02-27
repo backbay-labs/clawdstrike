@@ -66,7 +66,7 @@ export function Settings({ initialSection }: SettingsProps) {
   const { theme, toggle: toggleTheme } = useTheme();
   const { events } = useSharedSSE();
 
-  const { rules, addRule, removeRule, updateRule, triggered } = useAlertRules(events);
+  const { rules, addRule, removeRule, updateRule, triggered } = useAlertRules(events, { evaluate: false });
   const { instances, activeId, addInstance, removeInstance, switchTo } = useMultiInstance();
 
   useEffect(() => {
