@@ -345,6 +345,8 @@ Ed25519-signed provenance markers embedded in prompts for attribution and forens
 
 Your revocation doesn't matter if it can't reach the node. Cut the fiber, jam the satellite uplink, airgap the facility. If your security plane requires the internet, you don't have a security plane. You have a suggestion.
 
+For agents running local models in environments where the internet is a liability, not an assumption.
+
 Clawdstrike's [Spine protocol](docs/specs/12-reticulum-adapter.md) carries the same Ed25519-signed envelopes over [Reticulum](https://reticulum.network/) mesh networks: LoRa radios, packet radio, serial lines, WiFi, TCP/UDP. Anything that can move 5 bits per second through a 500-byte aperture. The transport changes. The cryptographic proof doesn't.
 
 | Environment | What Propagates | How |
@@ -596,15 +598,15 @@ Every layer produces signed facts that feed into the same append-only Spine prot
 
 ## Design Principles
 
-**Fail closed.** Invalid policies reject at load time. Evaluation errors deny access. Missing config defaults to restrictive. Security degradation requires explicit action.
+**Fail closed.** Invalid policies reject at load time. Evaluation errors deny access. Missing config defaults to restrictive. Security degradation requires explicit, auditable action.
 
-**Proof, not logs.** Ed25519 receipts are cryptographic attestations, not log lines someone can edit. Canonical JSON (RFC 8785) ensures signatures are portable across every language implementation.
+**Proof, not logs.** Ed25519 receipts are cryptographic attestations, not log lines someone can edit. Canonical JSON (RFC 8785) ensures signatures verify identically in Rust, TypeScript, and Python.
 
-**Privacy-preserving detection.** Raw secrets never appear in findings. Match previews are truncated. SHA-256 fingerprints enable deduplication without content exposure.
+**Same envelope, any pipe.** A signed Spine envelope is byte-identical whether it travels over NATS at 100K msg/sec, libp2p gossipsub over residential internet, or a LoRa radio at 1,200 bps. The transport is invisible to the truth layer.
 
-**Composable guards.** Enable only what you need. Layer multiple checks. Extend with custom guards via the `Guard` trait or WASM plugins.
+**Attenuation only.** Agents delegate subsets of their capabilities, never escalate. Delegation tokens carry cryptographic capability ceilings. Privilege escalation isn't prevented by policy; it's prevented by math.
 
-**Defense in depth.** Clawdstrike enforces at the tool boundary. Pair it with OS-level sandboxing (seccomp, gVisor, Firecracker) for comprehensive protection.
+**Own your stack.** Apache-2.0. Self-hostable. No vendor dependency for security-critical infrastructure. The same engine runs on a developer laptop, an enterprise fleet, and a Raspberry Pi on a radio mesh.
 
 ---
 
