@@ -2,8 +2,6 @@ use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
 
 fn main() {
-    eprintln!("clawdstrike is deprecated; use `hush` instead.");
-
     let mut args = std::env::args_os();
     // Skip argv[0]
     let _ = args.next();
