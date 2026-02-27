@@ -21,6 +21,8 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useLockScreen } from "../../hooks/useLockScreen";
 import { useContextMenu } from "../../hooks/useContextMenu";
+import { useAlertRules } from "../../hooks/useAlertRules";
+import { useSoundEffects } from "../../hooks/useSoundEffects";
 import { useSharedSSE } from "../../context/SSEContext";
 import { desktopIcons, PROCESS_ICONS } from "../../state/processRegistry";
 
@@ -375,6 +377,24 @@ export function ClawdStrikeDesktop() {
   const { notifications, add: addNotification, markAllRead, clear: clearNotifications, unreadCount } = useNotifications();
   const { state: contextMenuState, show: showContextMenu, hide: hideContextMenu } = useContextMenu();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Persistent alert evaluation — runs regardless of which windows are open
+  useAlertRules(events);
+
+  // Persistent sound effects — runs regardless of which windows are open
+  const [soundsEnabled, setSoundsEnabled] = useState(
+    () => localStorage.getItem("cs_sounds_enabled") === "true",
+  );
+  useSoundEffects(events, soundsEnabled);
+  useEffect(() => {
+    const handler = () => setSoundsEnabled(localStorage.getItem("cs_sounds_enabled") === "true");
+    window.addEventListener("storage", handler);
+    window.addEventListener("clawdstrike:sound-changed", handler);
+    return () => {
+      window.removeEventListener("storage", handler);
+      window.removeEventListener("clawdstrike:sound-changed", handler);
+    };
+  }, []);
 
   // Push SSE violations into notification center (track by _id to handle capped arrays)
   const lastNotifiedIdRef = useRef(-1);

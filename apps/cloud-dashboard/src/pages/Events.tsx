@@ -7,6 +7,11 @@ import type { SSEEvent } from "../hooks/useSSE";
 
 const DISPLAY_LIMIT = 100;
 
+/** Stable bookmark key that survives SSE reconnections (timestamp + type + target + guard). */
+function stableEventKey(e: SSEEvent): string {
+  return `${e.timestamp}|${e.event_type}|${e.target ?? ""}|${e.guard ?? ""}`;
+}
+
 export function Events(_props: { windowId?: string }) {
   const { events, connected } = useSharedSSE();
   const [showAll, setShowAll] = useState(false);
@@ -156,7 +161,7 @@ function EventTableRow({ event, onClick }: { event: SSEEvent; onClick: () => voi
     >
       {/* Bookmark */}
       <td className="whitespace-nowrap px-4 py-2.5" style={{ width: "40px" }}>
-        <EventBookmarks eventId={String(event._id)} />
+        <EventBookmarks eventId={stableEventKey(event)} />
       </td>
 
       {/* Type badge */}

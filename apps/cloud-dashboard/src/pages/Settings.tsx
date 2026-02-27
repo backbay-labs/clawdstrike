@@ -3,7 +3,6 @@ import { useTheme } from "../hooks/useTheme";
 import { useAlertRules } from "../hooks/useAlertRules";
 import { useMultiInstance } from "../hooks/useMultiInstance";
 import { useSharedSSE } from "../context/SSEContext";
-import { useSoundEffects } from "../hooks/useSoundEffects";
 import { NoiseGrain } from "../components/ui";
 import {
   ConnectionSettings,
@@ -66,20 +65,6 @@ export function Settings({ initialSection }: SettingsProps) {
 
   const { theme, toggle: toggleTheme } = useTheme();
   const { events } = useSharedSSE();
-  const [soundsEnabled, setSoundsEnabled] = useState(
-    () => localStorage.getItem("cs_sounds_enabled") === "true",
-  );
-  useSoundEffects(events, soundsEnabled);
-
-  useEffect(() => {
-    const handler = () => setSoundsEnabled(localStorage.getItem("cs_sounds_enabled") === "true");
-    window.addEventListener("storage", handler);
-    window.addEventListener("clawdstrike:sound-changed", handler);
-    return () => {
-      window.removeEventListener("storage", handler);
-      window.removeEventListener("clawdstrike:sound-changed", handler);
-    };
-  }, []);
 
   const { rules, addRule, removeRule, updateRule, triggered } = useAlertRules(events);
   const { instances, activeId, addInstance, removeInstance, switchTo } = useMultiInstance();
