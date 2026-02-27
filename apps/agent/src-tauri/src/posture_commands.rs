@@ -89,7 +89,7 @@ impl PostureCommandHandler {
                     tracing::info!("Posture command handler shutting down");
                     break;
                 }
-                msg = subscriber.next() => {
+                msg = crate::nats_client::subscriber_next(&mut subscriber) => {
                     let Some(msg) = msg else {
                         tracing::warn!("Command subscription ended unexpectedly");
                         break;
@@ -183,24 +183,59 @@ impl PostureCommandHandler {
                 )
                 .await;
 
-                if transition.status != "ok" {
-                    return transition;
-                }
+                // Always restart daemon for kill switch, even if there is no
+                // active session to transition.
+                let restart = self.daemon_manager.restart().await;
+                let transition_message = transition.message.unwrap_or_else(|| {
+                    "Kill switch transition result did not include details".to_string()
+                });
+                let no_active_session = transition_message
+                    .to_ascii_lowercase()
+                    .contains("no active session");
 
-                match self.daemon_manager.restart().await {
-                    Ok(()) => CommandResponse {
+                match (transition.status.as_str(), restart) {
+                    ("ok", Ok(())) => CommandResponse {
                         status: "ok".to_string(),
                         message: Some(format!(
                             "Kill switch activated: transitioned active session to locked ({}) and restarted daemon",
                             reason_str
                         )),
                     },
-                    Err(err) => CommandResponse {
+                    ("ok", Err(err)) => CommandResponse {
                         status: "error".to_string(),
                         message: Some(format!(
-                            "Kill switch posture transitioned to locked but daemon restart failed: {}",
+                            "Kill switch transitioned posture to locked but daemon restart failed: {}",
                             err
                         )),
+                    },
+                    ("error", Ok(())) if no_active_session => CommandResponse {
+                        status: "ok".to_string(),
+                        message: Some(format!(
+                            "Kill switch activated: restarted daemon ({}); {}",
+                            reason_str, transition_message
+                        )),
+                    },
+                    ("error", Ok(())) => CommandResponse {
+                        status: "error".to_string(),
+                        message: Some(format!(
+                            "Kill switch restarted daemon but posture transition reported an error: {}",
+                            transition_message
+                        )),
+                    },
+                    ("error", Err(err)) => CommandResponse {
+                        status: "error".to_string(),
+                        message: Some(format!(
+                            "Kill switch failed: transition error ({}) and daemon restart failed ({})",
+                            transition_message, err
+                        )),
+                    },
+                    (_, Err(err)) => CommandResponse {
+                        status: "error".to_string(),
+                        message: Some(format!("Kill switch daemon restart failed: {}", err)),
+                    },
+                    _ => CommandResponse {
+                        status: "error".to_string(),
+                        message: Some("Kill switch failed due to unexpected transition state".to_string()),
                     },
                 }
             }
@@ -252,23 +287,6 @@ async fn transition_posture_command(
             status: "error".to_string(),
             message: Some(format!("{failure_prefix}: {err}")),
         },
-    }
-}
-
-/// Helper to poll the next message from a NATS subscriber.
-/// `subscriber.next()` requires `use futures::StreamExt` which is handled at the call site.
-trait SubscriberNext {
-    fn next(
-        &mut self,
-    ) -> impl std::future::Future<Output = Option<async_nats::Message>> + Send;
-}
-
-impl SubscriberNext for async_nats::Subscriber {
-    fn next(
-        &mut self,
-    ) -> impl std::future::Future<Output = Option<async_nats::Message>> + Send {
-        use futures::StreamExt;
-        StreamExt::next(self)
     }
 }
 

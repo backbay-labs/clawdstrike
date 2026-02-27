@@ -52,7 +52,7 @@ impl ApprovalSync {
                     tracing::info!("Approval sync shutting down");
                     break;
                 }
-                msg = subscriber.next() => {
+                msg = crate::nats_client::subscriber_next(&mut subscriber) => {
                     let Some(msg) = msg else {
                         tracing::warn!("Approval response subscription ended unexpectedly");
                         break;
@@ -173,21 +173,6 @@ fn map_resolution(raw: &str) -> Option<ApprovalResolution> {
         "allow_session" | "allow-session" => Some(ApprovalResolution::AllowSession),
         "allow_always" | "allow-always" => Some(ApprovalResolution::AllowAlways),
         _ => None,
-    }
-}
-
-trait SubscriberNext {
-    fn next(
-        &mut self,
-    ) -> impl std::future::Future<Output = Option<async_nats::Message>> + Send;
-}
-
-impl SubscriberNext for async_nats::Subscriber {
-    fn next(
-        &mut self,
-    ) -> impl std::future::Future<Output = Option<async_nats::Message>> + Send {
-        use futures::StreamExt;
-        StreamExt::next(self)
     }
 }
 

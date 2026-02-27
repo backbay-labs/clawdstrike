@@ -981,12 +981,13 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
             .with_context(|| format!("Failed to create runtime config dir {:?}", parent))?;
 
         let policy_path = resolve_supported_policy_path(&policy_path);
+        let settings = load_runtime_settings_for_config();
         let runtime = HushdRuntimeConfig {
             listen,
             policy_path,
             ruleset: "default".to_string(),
-            siem: resolve_runtime_siem_config(),
-            spine: resolve_runtime_spine_config(),
+            siem: settings.as_ref().and_then(build_runtime_siem_config),
+            spine: settings.as_ref().and_then(build_runtime_spine_config),
         };
         let serialized = serde_yaml::to_string(&runtime)
             .with_context(|| "Failed to serialize hushd runtime config")?;
@@ -1005,7 +1006,7 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn resolve_runtime_siem_config() -> Option<HushdRuntimeSiemConfig> {
+fn load_runtime_settings_for_config() -> Option<crate::settings::Settings> {
     let settings = match crate::settings::Settings::load() {
         Ok(settings) => settings,
         Err(err) => {
@@ -1017,22 +1018,7 @@ fn resolve_runtime_siem_config() -> Option<HushdRuntimeSiemConfig> {
         }
     };
 
-    build_runtime_siem_config(&settings)
-}
-
-fn resolve_runtime_spine_config() -> Option<HushdRuntimeSpineConfig> {
-    let settings = match crate::settings::Settings::load() {
-        Ok(settings) => settings,
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                "Failed to load agent settings while generating hushd runtime spine config"
-            );
-            return None;
-        }
-    };
-
-    build_runtime_spine_config(&settings)
+    Some(settings)
 }
 
 fn build_runtime_siem_config(

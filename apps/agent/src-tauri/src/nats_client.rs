@@ -90,6 +90,12 @@ impl NatsClient {
     }
 }
 
+/// Helper to poll the next message from an async-nats subscriber.
+pub async fn subscriber_next(subscriber: &mut async_nats::Subscriber) -> Option<async_nats::Message> {
+    use futures::StreamExt;
+    subscriber.next().await
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
