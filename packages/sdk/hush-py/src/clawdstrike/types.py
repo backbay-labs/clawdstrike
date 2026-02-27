@@ -116,7 +116,26 @@ class Decision:
             )
             for r in report.get("per_guard", [])
         ]
-        return cls.from_guard_results(per_guard)
+
+        # Use the backend's overall verdict directly instead of re-aggregating,
+        # since the native engine may have tie-break behavior (e.g. preferring
+        # sanitize warnings) that from_guard_results cannot replicate.
+        overall = report.get("overall", {})
+        if not overall.get("allowed", True):
+            status = DecisionStatus.DENY
+        elif severity_map.get(str(overall.get("severity", "info")).lower(), Severity.INFO) == Severity.WARNING:
+            status = DecisionStatus.WARN
+        else:
+            status = DecisionStatus.ALLOW
+
+        return cls(
+            status=status,
+            guard=overall.get("guard"),
+            severity=severity_map.get(str(overall.get("severity", "info")).lower(), Severity.INFO),
+            message=overall.get("message"),
+            details=overall.get("details"),
+            per_guard=per_guard,
+        )
 
 
 @dataclass
