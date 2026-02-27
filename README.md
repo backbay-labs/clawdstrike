@@ -69,8 +69,23 @@
 brew tap backbay-labs/tap
 brew install clawdstrike
 
+# Block access to sensitive paths
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
-# → DENIED: forbidden_path guard matched pattern "**/.ssh/**"
+# → BLOCKED [Critical]: Access to forbidden path: ~/.ssh/id_rsa
+
+# Control network egress
+clawdstrike check --action-type egress --ruleset strict api.openai.com:443
+# → BLOCKED [Error]: Egress to api.openai.com blocked by policy
+
+# Restrict MCP tool invocations
+clawdstrike check --action-type mcp --ruleset strict shell_exec
+# → BLOCKED [Error]: Tool 'shell_exec' is blocked by policy
+
+# Show available rulesets
+clawdstrike policy list
+
+# Diff two policies
+clawdstrike policy diff strict default
 ```
 
 ### TypeScript
