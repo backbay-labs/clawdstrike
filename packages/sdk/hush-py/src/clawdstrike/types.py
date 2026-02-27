@@ -57,14 +57,14 @@ class Decision:
         denies = [r for r in results if not r.allowed]
         warns = [r for r in results if r.allowed and r.severity == Severity.WARNING]
 
+        severity_order = {
+            Severity.CRITICAL: 4,
+            Severity.ERROR: 3,
+            Severity.WARNING: 2,
+            Severity.INFO: 1,
+        }
+
         if denies:
-            # Sort by severity (CRITICAL > ERROR > WARNING > INFO)
-            severity_order = {
-                Severity.CRITICAL: 4,
-                Severity.ERROR: 3,
-                Severity.WARNING: 2,
-                Severity.INFO: 1,
-            }
             worst = max(denies, key=lambda r: severity_order.get(r.severity, 0))
             return cls(
                 status=DecisionStatus.DENY,
@@ -76,12 +76,6 @@ class Decision:
             )
 
         if warns:
-            severity_order = {
-                Severity.CRITICAL: 4,
-                Severity.ERROR: 3,
-                Severity.WARNING: 2,
-                Severity.INFO: 1,
-            }
             worst = max(warns, key=lambda r: severity_order.get(r.severity, 0))
             return cls(
                 status=DecisionStatus.WARN,
