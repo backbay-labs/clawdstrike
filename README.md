@@ -181,11 +181,22 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 
 ---
 
-<p align="center">
-  <img src="docs/static/jailbreak-intro.png" alt="4-Layer Jailbreak Detection" width="100%" />
-</p>
+<table>
+<tr>
+<td width="50%">
+<img src="docs/static/jailbreak-intro.png" alt="4-Layer Jailbreak Detection" width="100%" />
+</td>
+<td width="50%" valign="top">
 
-**Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores. An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Persistent session state survives across connections via pluggable storage backends.
+**Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores.
+
+An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Their cumulative risk score rises until it crosses the threshold.
+
+Persistent session state survives across connections via pluggable storage backends.
+
+</td>
+</tr>
+</table>
 
 ---
 
