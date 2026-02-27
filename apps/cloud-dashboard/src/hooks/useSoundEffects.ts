@@ -54,24 +54,25 @@ function playReconnect() {
 }
 
 export function useSoundEffects(events: SSEEvent[], enabled: boolean): void {
-  const lastCountRef = useRef(events.length);
+  const lastIdRef = useRef(0);
 
   useEffect(() => {
+    if (events.length === 0) return;
+
+    const prevId = lastIdRef.current;
+
     if (!enabled) {
-      lastCountRef.current = events.length;
+      lastIdRef.current = events[0]._id;
       return;
     }
 
-    const prevCount = lastCountRef.current;
-    const newCount = events.length;
-
-    if (newCount <= prevCount) {
-      lastCountRef.current = newCount;
-      return;
+    // Events are newest-first with monotonic _id. Walk until we hit an already-seen event.
+    // This works even when the array is capped at 500 (length stays constant).
+    const newEvents: SSEEvent[] = [];
+    for (const evt of events) {
+      if (evt._id <= prevId) break;
+      newEvents.push(evt);
     }
-
-    // Events are prepended (newest first), so new events are at indices 0..(newCount-prevCount-1)
-    const newEvents = events.slice(0, newCount - prevCount);
 
     for (const evt of newEvents) {
       if (evt.event_type === "session_posture_transition" || evt.event_type === "policy_updated") {
@@ -83,6 +84,6 @@ export function useSoundEffects(events: SSEEvent[], enabled: boolean): void {
       }
     }
 
-    lastCountRef.current = newCount;
+    lastIdRef.current = events[0]._id;
   }, [events, enabled]);
 }

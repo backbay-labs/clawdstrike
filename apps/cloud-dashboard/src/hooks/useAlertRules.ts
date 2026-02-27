@@ -10,6 +10,7 @@ export interface AlertRule {
 }
 
 const STORAGE_KEY = "cs_alert_rules";
+const RULES_CHANGED_EVENT = "clawdstrike:alert-rules-changed";
 
 function loadRules(): AlertRule[] {
   try {
@@ -23,6 +24,7 @@ function loadRules(): AlertRule[] {
 
 function persistRules(rules: AlertRule[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
+  window.dispatchEvent(new Event(RULES_CHANGED_EVENT));
 }
 
 function generateId(): string {
@@ -32,6 +34,13 @@ function generateId(): string {
 export function useAlertRules(events: SSEEvent[]) {
   const [rules, setRules] = useState<AlertRule[]>(loadRules);
   const [triggered, setTriggered] = useState(false);
+
+  // Sync rules from other hook instances (e.g. Settings editing while desktop evaluates)
+  useEffect(() => {
+    const handler = () => setRules(loadRules());
+    window.addEventListener(RULES_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(RULES_CHANGED_EVENT, handler);
+  }, []);
 
   const addRule = useCallback((rule: Omit<AlertRule, "id">) => {
     setRules((prev) => {
