@@ -243,6 +243,157 @@ describe('EgressGuard', () => {
   });
 });
 
+describe('EgressGuard — S1: bypass addresses', () => {
+  let guard: EgressGuard;
+  const policy: Policy = {
+    egress: {
+      mode: 'allowlist',
+      allowed_domains: ['api.github.com'],
+    },
+  };
+
+  beforeEach(() => {
+    guard = new EgressGuard();
+  });
+
+  it('should deny 0.0.0.0 (S1)', async () => {
+    const event: PolicyEvent = {
+      eventId: 's1-1',
+      eventType: 'network_egress',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'network',
+        host: '0.0.0.0',
+        port: 80,
+      },
+    };
+
+    const result = await guard.check(event, policy);
+    expect(result.status).toBe('deny');
+  });
+
+  it('should deny ::1 (S1)', async () => {
+    const event: PolicyEvent = {
+      eventId: 's1-2',
+      eventType: 'network_egress',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'network',
+        host: '::1',
+        port: 80,
+      },
+    };
+
+    const result = await guard.check(event, policy);
+    expect(result.status).toBe('deny');
+  });
+
+  it('should deny 169.254.1.1 link-local address (S1)', async () => {
+    const event: PolicyEvent = {
+      eventId: 's1-3',
+      eventType: 'network_egress',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'network',
+        host: '169.254.1.1',
+        port: 80,
+      },
+    };
+
+    const result = await guard.check(event, policy);
+    expect(result.status).toBe('deny');
+  });
+});
+
+describe('EgressGuard — T5: 172.17-31.* ranges', () => {
+  let guard: EgressGuard;
+  const policy: Policy = {
+    egress: {
+      mode: 'allowlist',
+      allowed_domains: ['api.github.com'],
+    },
+  };
+
+  beforeEach(() => {
+    guard = new EgressGuard();
+  });
+
+  it('should deny 172.25.0.1 (T5)', async () => {
+    const event: PolicyEvent = {
+      eventId: 't5-1',
+      eventType: 'network_egress',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'network',
+        host: '172.25.0.1',
+        port: 443,
+      },
+    };
+
+    const result = await guard.check(event, policy);
+    expect(result.status).toBe('deny');
+  });
+
+  it('should deny 172.31.255.255 (T5)', async () => {
+    const event: PolicyEvent = {
+      eventId: 't5-2',
+      eventType: 'network_egress',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'network',
+        host: '172.31.255.255',
+        port: 443,
+      },
+    };
+
+    const result = await guard.check(event, policy);
+    expect(result.status).toBe('deny');
+  });
+});
+
+describe('ForbiddenPathGuard — S3: null byte injection', () => {
+  let guard: ForbiddenPathGuard;
+
+  beforeEach(() => {
+    guard = new ForbiddenPathGuard();
+  });
+
+  it('should deny path containing null byte with critical severity (S3)', async () => {
+    const event: PolicyEvent = {
+      eventId: 's3-1',
+      eventType: 'file_read',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'file',
+        path: '/etc/passwd\x00.txt',
+        operation: 'read',
+      },
+    };
+
+    const result = await guard.check(event, {});
+    expect(result.status).toBe('deny');
+    expect(result.severity).toBe('critical');
+    expect(result.reason).toContain('null');
+  });
+
+  it('should deny path with embedded null byte in the middle', async () => {
+    const event: PolicyEvent = {
+      eventId: 's3-2',
+      eventType: 'file_write',
+      timestamp: new Date().toISOString(),
+      data: {
+        type: 'file',
+        path: '/tmp/safe\x00/../etc/shadow',
+        operation: 'write',
+      },
+    };
+
+    const result = await guard.check(event, {});
+    expect(result.status).toBe('deny');
+    expect(result.severity).toBe('critical');
+  });
+});
+
 describe('SecretLeakGuard', () => {
   let guard: SecretLeakGuard;
   const policy: Policy = {};

@@ -23,6 +23,7 @@ export interface SumoLogicConfig extends Partial<ExporterConfig> {
   };
 }
 
+/** @experimental */
 export class SumoLogicExporter extends BaseExporter {
   readonly name = "sumo-logic";
   readonly schema = SchemaFormat.Native;

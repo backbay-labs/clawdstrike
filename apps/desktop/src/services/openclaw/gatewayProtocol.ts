@@ -1,3 +1,6 @@
+/** Current protocol version. Update when gateway ships v4+. */
+export const GATEWAY_PROTOCOL_VERSION = 3;
+
 export type GatewayFrameType = "req" | "res" | "event";
 
 export type GatewayRequestFrame<TParams = unknown> = {
@@ -64,6 +67,8 @@ export type GatewayConnectParams = {
   auth?: {
     token?: string;
     deviceToken?: string;
+    /** @deprecated Use deviceToken instead. Kept for Rust protocol compatibility. */
+    password?: string;
   };
   locale?: string;
   userAgent?: string;

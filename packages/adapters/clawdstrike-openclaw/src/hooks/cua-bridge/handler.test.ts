@@ -19,9 +19,10 @@ function makeToolCallEvent(
   toolName: string,
   params: Record<string, unknown> = {},
   sessionId = 'test-session-001',
+  type: ToolCallEvent['type'] = 'tool_call',
 ): ToolCallEvent {
   return {
-    type: 'tool_call',
+    type,
     timestamp: new Date().toISOString(),
     context: {
       sessionId,
@@ -317,6 +318,14 @@ guards:
       await handler(event);
       expect(event.preventDefault).toBe(true);
       expect(event.messages.some((m) => m.includes(CUA_ERROR_CODES.UNKNOWN_ACTION))).toBe(true);
+    });
+
+    it('returns modern before_tool_call block result when denied', async () => {
+      const event = makeToolCallEvent('cua_screen_record', {}, 'test-session-001', 'before_tool_call');
+      const result = await handler(event);
+      expect(event.preventDefault).toBe(true);
+      expect(result).toMatchObject({ block: true });
+      expect((result as { blockReason?: string }).blockReason).toContain(CUA_ERROR_CODES.UNKNOWN_ACTION);
     });
 
     it('denies CUA action with missing session ID', async () => {

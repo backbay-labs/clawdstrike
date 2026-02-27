@@ -18,8 +18,8 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 ### From local development (recommended during alpha)
 
 ```bash
-# Link the local package
-openclaw plugins install --link /path/to/clawdstrike/packages/adapters/clawdstrike-openclaw
+# Link the local plugin entry path
+openclaw plugins install --link /path/to/clawdstrike/packages/adapters/clawdstrike-openclaw/clawdstrike-security.js
 
 # Enable the plugin
 openclaw plugins enable clawdstrike-security
@@ -38,7 +38,7 @@ openclaw plugins install @clawdstrike/openclaw
 Create `.hush/policy.yaml` in your project:
 
 ```yaml
-version: "clawdstrike-v1.0"
+version: "clawdstrike-v1.0"   # legacy alias; canonical current version is "1.2.0"
 
 egress:
   mode: allowlist

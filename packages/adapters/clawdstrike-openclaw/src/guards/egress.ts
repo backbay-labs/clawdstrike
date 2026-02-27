@@ -33,6 +33,16 @@ const DEFAULT_DENIED_DOMAINS = [
   '172.29.*',
   '172.30.*',
   '172.31.*',
+  '0.0.0.0',
+  '[::1]',
+  '[::0]',
+  '::1',
+  '::0',
+  '169.254.*',
+  'fe80:*',
+  'fc00:*',
+  'fd00:*',
+  'fd[0-9a-f][0-9a-f]:*',
 ];
 
 /**
@@ -165,10 +175,19 @@ export class EgressGuard extends BaseGuard {
     // Localhost/private IPs are high
     if (
       host === 'localhost' ||
+      host === '0.0.0.0' ||
+      host === '[::1]' ||
+      host === '::1' ||
+      host === '[::0]' ||
+      host === '::0' ||
       host.startsWith('127.') ||
       host.startsWith('10.') ||
       host.startsWith('192.168.') ||
-      host.startsWith('172.')
+      host.startsWith('172.') ||
+      host.startsWith('169.254.') ||
+      host.startsWith('fe80:') ||
+      host.startsWith('fc00:') ||
+      /^fd[0-9a-f]{2}:/.test(host)
     ) {
       return 'high';
     }

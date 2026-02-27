@@ -98,3 +98,28 @@ Notes:
 ## Errors
 
 Blocked tool calls throw `ClawdstrikeBlockedError` (includes `decision` and `toolName`).
+
+## React (`./react` subpath)
+
+The package exports a `./react` subpath with React hooks for client-side security integration:
+
+```ts
+import { useSecureChat } from '@clawdstrike/vercel-ai/react';
+
+const chat = useSecureChat({
+  engine,
+  // All standard useChat options are supported
+  api: '/api/chat',
+});
+
+// Security-aware chat state
+chat.securityStatus.blocked;      // boolean
+chat.securityStatus.checkCount;   // number
+chat.securityStatus.violationCount;
+chat.blockedTools;                 // string[]
+chat.lastDecision;                 // Decision | null
+chat.clearBlockedTools();          // reset blocked tool list
+await chat.preflightCheck('bash', { cmd: 'rm -rf /' }); // manual preflight
+```
+
+Peer dependencies: `@ai-sdk/react`, `react` (both optional).

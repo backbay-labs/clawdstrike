@@ -1,3 +1,5 @@
+export const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789";
+
 export type ParsedCommand = { argv: string[]; rawCommand: string | null; error: string | null };
 
 export function parseCommand(raw: string): ParsedCommand {
@@ -54,10 +56,15 @@ export function originFixHint(lastError: string | null): string | null {
   if (!lastError) return null;
   const msg = lastError.toLowerCase();
   if (!msg.includes("origin") || !msg.includes("allowed")) return null;
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost:1420";
+  const origins = [currentOrigin];
+  if (!origins.includes("tauri://localhost")) {
+    origins.push("tauri://localhost");
+  }
   return [
     "OpenClaw rejected this app origin.",
     "Fix: allow SDR Desktop origins then restart the gateway:",
-    `openclaw config set --json gateway.controlUi.allowedOrigins '["http://localhost:1420","tauri://localhost"]'`,
+    `openclaw config set --json gateway.controlUi.allowedOrigins '${JSON.stringify(origins)}'`,
     "openclaw gateway restart",
   ].join("\n");
 }

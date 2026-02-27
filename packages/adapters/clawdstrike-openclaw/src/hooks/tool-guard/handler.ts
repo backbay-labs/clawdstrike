@@ -14,9 +14,11 @@ import type {
   Decision,
   PolicyEvent,
 } from '../../types.js';
-import { PolicyEngine } from '../../policy/engine.js';
+import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
+import type { PolicyEngine } from '../../policy/engine.js';
 import { checkAndConsumeApproval } from '../approval-state.js';
 import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
+import { inferEventTypeFromName } from '../../classification.js';
 
 // ── LRU Decision Cache ──────────────────────────────────────────────
 
@@ -143,8 +145,6 @@ export class DecisionCache {
 
 // ── Module State ─────────────────────────────────────────────────────
 
-/** Shared policy engine instance */
-let engine: PolicyEngine | null = null;
 let currentConfig: ClawdstrikeConfig = {};
 let cachedPolicyKey = 'unknown';
 
@@ -152,22 +152,27 @@ let cachedPolicyKey = 'unknown';
 export let decisionCache = new DecisionCache();
 
 /**
- * Initialize the hook with configuration
+ * Initialize the hook with configuration.
+ * Delegates to the shared engine holder so all hooks share one PolicyEngine.
  */
 export function initialize(config: ClawdstrikeConfig): void {
-  engine = new PolicyEngine(config);
+  const engine = initializeEngine(config);
   currentConfig = config;
   decisionCache = new DecisionCache();
   cachedPolicyKey = policyCacheKey(engine.getPolicy());
 }
 
 /**
- * Get or create the policy engine
+ * Get or create the policy engine.
+ * Delegates to the shared engine holder.
  */
 function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
-  if (!engine) {
-    engine = new PolicyEngine(config ?? {});
-    cachedPolicyKey = policyCacheKey(engine.getPolicy());
+  const engine = getSharedEngine(config);
+  const nextPolicyKey = policyCacheKey(engine.getPolicy());
+  if (cachedPolicyKey !== nextPolicyKey) {
+    // Policy changed (or first access): invalidate cached allow decisions to avoid stale bypasses.
+    decisionCache.clear();
+    cachedPolicyKey = nextPolicyKey;
   }
   return engine;
 }
@@ -359,30 +364,12 @@ function createPolicyEvent(
 }
 
 /**
- * Infer event type from tool name
+ * Infer event type from tool name using the shared token-based classifier.
  */
 function inferEventType(
   toolName: string,
 ): PolicyEvent['eventType'] {
-  const lowerName = toolName.toLowerCase();
-
-  if (lowerName.includes('patch') || lowerName.includes('diff') || lowerName.includes('apply_patch')) {
-    return 'patch_apply';
-  }
-  if (lowerName.includes('read') || lowerName.includes('cat') || lowerName.includes('head') || lowerName.includes('tail')) {
-    return 'file_read';
-  }
-  if (lowerName.includes('write') || lowerName.includes('edit')) {
-    return 'file_write';
-  }
-  if (lowerName.includes('exec') || lowerName.includes('bash') || lowerName.includes('shell')) {
-    return 'command_exec';
-  }
-  if (lowerName.includes('fetch') || lowerName.includes('http') || lowerName.includes('web') || lowerName.includes('curl')) {
-    return 'network_egress';
-  }
-
-  return 'tool_call';
+  return inferEventTypeFromName(toolName) ?? 'tool_call';
 }
 
 /**
@@ -500,7 +487,7 @@ function extractNetworkInfo(
       const parsed = new URL(url);
       return {
         host: parsed.hostname,
-        port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80),
+        port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
         url,
       };
     } catch {
@@ -516,7 +503,7 @@ function extractNetworkInfo(
         const parsed = new URL(urlMatch[0]);
         return {
           host: parsed.hostname,
-          port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80),
+          port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
           url: urlMatch[0],
         };
       } catch {

@@ -42,6 +42,7 @@ export interface ExportError {
 export interface ExportResult {
   exported: number;
   failed: number;
+  filtered?: number;
   errors: ExportError[];
 }
 

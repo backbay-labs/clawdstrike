@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Initial alpha release. APIs and import paths will change before 1.0.
-
 ### Added
 
 #### Desktop Policy Workbench Rollout (Forensics River)
@@ -78,7 +76,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - SQLite audit ledger with optional at-rest encryption for metadata
 - Certification badge PNG rendering (`format=png`, `size=1x|2x`)
 
-#### TypeScript SDK (`@backbay/sdk`, `hush-ts`)
+#### TypeScript SDK (`@clawdstrike/sdk`, `hush-ts`)
 
 - Crypto: `sha256`, `keccak256`, Ed25519 signing/verification
 - Canonical JSON (RFC 8785): `canonicalize`, `canonicalHash`
@@ -90,20 +88,20 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 #### Framework Adapters
 
-- `@backbay/adapter-core` - Framework-agnostic primitives (PolicyEventFactory, SecurityContext, BaseToolInterceptor)
-- `@backbay/hush-cli-engine` - Node.js bridge to Rust CLI for policy evaluation
-- `@backbay/hushd-engine` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
-- `@backbay/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
-- `@backbay/langchain` - Tool wrappers and callback handlers for LangChain
+- `@clawdstrike/adapter-core` - Framework-agnostic primitives (PolicyEventFactory, SecurityContext, BaseToolInterceptor)
+- `@clawdstrike/engine-local` - Node.js bridge to Rust CLI for policy evaluation
+- `@clawdstrike/engine-remote` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
+- `@clawdstrike/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
+- `@clawdstrike/langchain` - Tool wrappers and callback handlers for LangChain
 
 ### Changed
 
 - Canonical-first policy handling across SDKs: canonical `version: "1.1.0"/"1.2.0"` is primary, with legacy `clawdstrike-v1.0` accepted via translation and deprecation warning.
 - WASM plugin runtime now executes via Rust Wasmtime path with capability checks and resource ceilings; TS `executionMode: wasm` uses the CLI bridge path instead of a stub failure.
 - `hushd` auth pepper is now instance-bound (resolved at store creation) to eliminate global env race conditions in parallel test/runtime paths.
-- Local TS file-dependency workflows are now clean-install safe via `@backbay/adapter-core` `prepare` build and CI smoke coverage.
+- Local TS file-dependency workflows are now clean-install safe via `@clawdstrike/adapter-core` `prepare` build and CI smoke coverage.
 
-#### OpenClaw Integration (`@backbay/clawdstrike-security`)
+#### OpenClaw Integration (`@clawdstrike/openclaw`)
 
 - OpenClaw plugin with `policy_check` tool for preflight security checks
 - CLI commands via `openclaw clawdstrike status|check`
@@ -117,7 +115,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - **NetworkIrm**: Intercept TCP/UDP connect, DNS resolve, listen operations
 - **ExecutionIrm**: Intercept command execution from sandboxed modules
 
-#### WebAssembly Bindings (`@backbay/wasm`)
+#### WebAssembly Bindings (`@clawdstrike/wasm`)
 
 - Browser and Node.js compatible WASM module
 - SHA-256 and Keccak-256 hashing
@@ -138,7 +136,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 - mdBook documentation site
 - Getting Started guides (Rust, TypeScript, Python)
-- Guard reference documentation (all 9 guards + output sanitizer + watermarking)
+- Guard reference documentation (all 12 guards + output sanitizer + watermarking)
 - Framework integration guides (OpenClaw, Vercel AI, LangChain)
 - Architecture and design philosophy docs
 - Terminology glossary
@@ -151,4 +149,53 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - Dependabot configured for automated security updates
 - Added hushd eval-surface regression coverage for path traversal targets, userinfo-spoofed egress host inputs, and private-IP egress attempts.
 
-[Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/main...HEAD
+## [0.1.2] - 2026-02-26
+
+### Added
+
+- **CUA Gateway** — `ComputerUseGuard`, `ShellCommandGuard`, `PathAllowlistGuard`, `RemoteDesktopSideChannelGuard`, `InputInjectionCapabilityGuard` guards; 3 remote-desktop rulesets and `ai-agent-posture` ruleset (#88)
+- **Desktop Agent Overhaul** — OTA updates, session/agent tracing, Open Web UI integration, local dashboard MVP (#86)
+- **Enterprise Desktop Agent** — hardened agent deployment with productionized OpenClaw ownership (#80)
+- **FFI** — `hush-ffi` C ABI crate with C# SDK and Go SDK bindings (#83)
+- **OpenClaw Launch Readiness** — security fixes, adapter-core alignment, PR review resolutions (#101)
+- **Agent fail-closed POC** — smoke test suite for fail-closed enforcement (#63)
+- **Helm confidence pipeline** — EKS smoke/resilience workflows (#65)
+- **Policy Workbench** — river-based policy workbench with hushd eval hardening (#64)
+
+### Changed
+
+- Guard count expanded from 7 to 12 with CUA Gateway guards
+- `@clawdstrike/` npm scope finalized for all public packages
+- Ruleset count expanded from 5 to 9 (added `ai-agent-posture`, `remote-desktop`, `remote-desktop-permissive`, `remote-desktop-strict`)
+
+### Fixed
+
+- `hushd`: replace `expect(format!)` with `unwrap_or_else(panic!)` (#98)
+- SDK: `host:port` network parsing and docs refresh (#81)
+- SDK: resolve 44 review findings across all packages (#67)
+- Helm: all-on profile with bridge/ingress contract fixes (#66)
+- CI: Artifact Hub ORAS media type and badge alignment (#73, #74, #75, #78)
+
+### Security
+
+- Removed 22 unused Python imports flagged by CodeQL (#97)
+- Updated lockfiles and acknowledged remaining advisories (#96)
+- Dependency bumps: minimatch, Cargo workspace, Rust minor (#72, #85, #89, #90)
+
+## [0.1.1] - 2026-02-10
+
+### Added
+
+- **npm scope migration** — packages published under `@clawdstrike/` scope (#59)
+- **Helm chart** — Artifact Hub integration, chart icon, ORAS publishing
+- **Argo CD** — dev deploy verification workflow (#68)
+- **CI** — tag-driven publishing pipeline for Rust and npm
+
+### Fixed
+
+- Release pipeline: protoc installation, npm publish race conditions, crate ordering
+- Adapters: bump `adapter-core` minimum to `^0.1.1` and sync lock files
+
+[Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.0...v0.1.1

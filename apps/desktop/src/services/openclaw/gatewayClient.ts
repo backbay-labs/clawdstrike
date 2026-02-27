@@ -4,7 +4,7 @@ import type {
   GatewayFrame,
   GatewayResponseError,
 } from "./gatewayProtocol";
-import { createRequestId, safeParseGatewayFrame } from "./gatewayProtocol";
+import { createRequestId, GATEWAY_PROTOCOL_VERSION, safeParseGatewayFrame } from "./gatewayProtocol";
 
 export type GatewayConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -33,6 +33,19 @@ export type GatewayClientOptions = {
   };
   connectTimeoutMs?: number;
   connectDelayMs?: number;
+  /**
+   * When `true`, a clean WebSocket close (code 1000) will still trigger
+   * auto-reconnect.  Useful when the gateway sends 1000 during planned
+   * restarts and the client should transparently reconnect.
+   * Default: `false` (backward-compatible — clean close skips reconnect).
+   */
+  reconnectOnCleanClose?: boolean;
+  /**
+   * Maximum number of automatic retries for RPC requests that fail with a
+   * retryable `GatewayRpcError`.  Set to `0` to disable retries.
+   * Default: `2`.
+   */
+  maxRetries?: number;
 };
 
 export type GatewayStatusSnapshot = {
@@ -205,7 +218,7 @@ export class OpenClawGatewayClient {
     const initialDelayMs = Math.max(25, config?.initialDelayMs ?? 350);
     const maxDelayMs = Math.max(initialDelayMs, config?.maxDelayMs ?? 15_000);
     const backoffFactor = Math.max(1.0, config?.backoffFactor ?? 1.6);
-    const jitterRatio = Math.max(0, Math.min(1, config?.jitterRatio ?? 0));
+    const jitterRatio = Math.max(0, Math.min(1, config?.jitterRatio ?? 0.15));
 
     const expDelay = Math.min(maxDelayMs, Math.round(initialDelayMs * Math.pow(backoffFactor, attempt)));
     const jitterMs = jitterRatio ? Math.round(expDelay * jitterRatio * (Math.random() * 2 - 1)) : 0;
@@ -280,7 +293,9 @@ export class OpenClawGatewayClient {
           this.connectDelayId = null;
         }
 
-        const protocol = this.options.protocolVersion ?? 3;
+        const protocol = this.options.protocolVersion ?? GATEWAY_PROTOCOL_VERSION;
+        // When v4 ships, change to min_protocol: 3, max_protocol: 4 with
+        // conditional v4 handling based on the negotiated version.
         const params: GatewayConnectParams = {
           minProtocol: protocol,
           maxProtocol: protocol,
@@ -298,6 +313,7 @@ export class OpenClawGatewayClient {
           auth: {
             token: this.options.token,
             deviceToken: this.options.deviceToken,
+            password: this.options.deviceToken, // Rust protocol compatibility
           },
           locale: typeof navigator === "undefined" ? "en-US" : navigator.language,
           userAgent: typeof navigator === "undefined" ? "unknown" : navigator.userAgent,
@@ -430,7 +446,7 @@ export class OpenClawGatewayClient {
       this.pending.clear();
 
       if (this.manualDisconnect) return;
-      if (ev.code === 1000) return;
+      if (ev.code === 1000 && !this.options.reconnectOnCleanClose) return;
       this.scheduleReconnect("socket closed");
     };
 
@@ -456,7 +472,44 @@ export class OpenClawGatewayClient {
     this.ws.send(JSON.stringify(frame));
   }
 
-  request<TPayload = unknown>(
+  async request<TPayload = unknown>(
+    method: string,
+    params?: unknown,
+    opts?: { timeoutMs?: number; id?: string; retries?: number }
+  ): Promise<TPayload> {
+    const maxRetries = Math.max(0, opts?.retries ?? this.options.maxRetries ?? 2);
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const attemptOpts =
+          attempt === 0 || !opts
+            ? opts
+            : { ...opts, id: undefined };
+        return await this.requestOnce<TPayload>(method, params, attemptOpts);
+      } catch (err) {
+        lastError = err;
+
+        // Only retry GatewayRpcErrors that are explicitly marked retryable.
+        if (
+          attempt < maxRetries &&
+          err instanceof GatewayRpcError &&
+          err.retryable === true
+        ) {
+          const delayMs = Math.min(err.retryAfterMs ?? 1000, 5000);
+          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        throw err;
+      }
+    }
+
+    // Should be unreachable, but satisfies the compiler.
+    throw lastError;
+  }
+
+  private requestOnce<TPayload = unknown>(
     method: string,
     params?: unknown,
     opts?: { timeoutMs?: number; id?: string }

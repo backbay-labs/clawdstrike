@@ -24,6 +24,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
+use zeroize::Zeroizing;
 
 #[cfg(test)]
 const CONNECT_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(400);
@@ -446,12 +447,13 @@ impl OpenClawManager {
         gateway_id: String,
         session_id: u64,
         metadata: OpenClawGatewayMetadata,
-        secrets: GatewaySecrets,
+        initial_secrets: GatewaySecrets,
         mut rx: mpsc::Receiver<SessionCommand>,
     ) {
         let mut reconnect_attempt = 0u32;
         let max_attempts = 20u32;
         let stable_reset = Duration::from_secs(90);
+        let mut secrets = initial_secrets;
 
         loop {
             if reconnect_attempt >= max_attempts {
@@ -502,14 +504,30 @@ impl OpenClawManager {
                 }
             }
 
-            let backoff_ms = (400.0_f64 * 1.6_f64.powi(reconnect_attempt as i32)).round() as u64;
-            let backoff_ms = backoff_ms.clamp(250, 12_000);
+            let base_backoff_ms = (400.0_f64 * 1.6_f64.powi(reconnect_attempt as i32)).round() as u64;
+            let base_backoff_ms = base_backoff_ms.clamp(250, 12_000);
+            // Add ±20% jitter to prevent thundering herd
+            let jitter_range = (base_backoff_ms as f64 * 0.2) as u64;
+            let jitter = if jitter_range > 0 {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                std::time::SystemTime::now().hash(&mut hasher);
+                reconnect_attempt.hash(&mut hasher);
+                (hasher.finish() % (jitter_range * 2 + 1)) as i64 - jitter_range as i64
+            } else {
+                0
+            };
+            let backoff_ms = (base_backoff_ms as i64 + jitter).max(100) as u64;
             tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
 
             // If the channel is closed, stop reconnecting.
             if rx.is_closed() {
                 break;
             }
+
+            // Re-read secrets from store in case tokens were rotated while disconnected.
+            secrets = self.secrets.get(&gateway_id).await;
         }
 
         self.remove_session_if_current(&gateway_id, session_id)
@@ -561,10 +579,11 @@ impl OpenClawManager {
             client,
             role: Some(role),
             scopes: Some(scopes),
-            auth: if let Some(token) = auth_token {
+            auth: if secrets.token.is_some() || secrets.device_token.is_some() {
                 Some(GatewayAuth {
-                    token: Some(token),
-                    password: None,
+                    token: auth_token.clone(),
+                    password: secrets.device_token.clone(),
+                    device_token: secrets.device_token.clone(),
                 })
             } else {
                 None
@@ -587,6 +606,10 @@ impl OpenClawManager {
         let mut connected = false;
         let connect_deadline = Instant::now() + CONNECT_HANDSHAKE_TIMEOUT;
         let mut pending: HashMap<String, PendingResponse> = HashMap::new();
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
+        heartbeat_interval.reset(); // skip the immediate first tick
+        let mut last_received_at = Instant::now();
+        const HEARTBEAT_DEAD_TIMEOUT: Duration = Duration::from_secs(90);
 
         loop {
             let timeout_tick = tokio::time::sleep(Duration::from_millis(200));
@@ -603,6 +626,17 @@ impl OpenClawManager {
                         ));
                     }
 
+                    // Check for dead connection (no data received within heartbeat window)
+                    if connected && now.duration_since(last_received_at) > HEARTBEAT_DEAD_TIMEOUT {
+                        tracing::warn!(
+                            gateway_id = %gateway_id,
+                            elapsed_secs = now.duration_since(last_received_at).as_secs(),
+                            "no data received within heartbeat window, treating connection as dead"
+                        );
+                        reject_all_pending(&mut pending, "heartbeat timeout");
+                        return Ok(ConnectionExit::RemoteClosed("heartbeat timeout".to_string()));
+                    }
+
                     let expired: Vec<String> = pending
                         .iter()
                         .filter_map(|(id, p)| if now > p.expires_at { Some(id.clone()) } else { None })
@@ -611,6 +645,18 @@ impl OpenClawManager {
                     for id in expired {
                         if let Some(pending_item) = pending.remove(&id) {
                             let _ = pending_item.tx.send(Err(format!("timeout waiting for gateway response ({id})")));
+                        }
+                    }
+                }
+                _ = heartbeat_interval.tick() => {
+                    if connected {
+                        if let Err(err) = sink.send(Message::Ping(Vec::new())).await {
+                            tracing::warn!(
+                                gateway_id = %gateway_id,
+                                "failed to send WebSocket ping: {err}"
+                            );
+                            reject_all_pending(&mut pending, "ping send failed");
+                            return Err(anyhow::anyhow!("failed to send heartbeat ping: {err}"));
                         }
                     }
                 }
@@ -674,6 +720,7 @@ impl OpenClawManager {
                             return Ok(ConnectionExit::RemoteClosed(reason));
                         }
                         Some(Ok(Message::Text(text))) => {
+                            last_received_at = Instant::now();
                             self.touch_runtime_message(gateway_id).await;
 
                             let Some(frame) = parse_gateway_frame(&text) else {
@@ -708,13 +755,55 @@ impl OpenClawManager {
                                         }
                                     }
                                 }
-                                GatewayFrame::Req(_) => {
-                                    // Gateway-to-client requests are currently ignored.
+                                GatewayFrame::Req(server_req) => {
+                                    let response_frame = match server_req.method.as_str() {
+                                        "ping" => Some(GatewayFrame::Res(GatewayResponseFrame {
+                                            id: server_req.id.clone(),
+                                            ok: true,
+                                            payload: Some(serde_json::json!({ "pong": true })),
+                                            error: None,
+                                        })),
+                                        "capabilities" => Some(GatewayFrame::Res(GatewayResponseFrame {
+                                            id: server_req.id.clone(),
+                                            ok: true,
+                                            payload: Some(serde_json::json!({
+                                                "capabilities": [
+                                                    "operator.read",
+                                                    "operator.write",
+                                                    "operator.approvals",
+                                                    "operator.pairing"
+                                                ]
+                                            })),
+                                            error: None,
+                                        })),
+                                        _ => None,
+                                    };
+
+                                    if let Some(resp) = response_frame {
+                                        tracing::debug!(
+                                            method = %server_req.method,
+                                            "received server-initiated request (handled)"
+                                        );
+                                        if let Ok(text) = serde_json::to_string(&resp) {
+                                            if let Err(err) = sink.send(Message::Text(text)).await {
+                                                tracing::warn!(
+                                                    method = %server_req.method,
+                                                    "failed to send response to server request: {err}"
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        tracing::debug!(
+                                            method = %server_req.method,
+                                            "received server-initiated request (not handled)"
+                                        );
+                                    }
                                 }
                             }
                         }
                         Some(Ok(_)) => {
-                            // Ignore binary/ping/pong frames.
+                            // Binary/ping/pong frames still count as activity.
+                            last_received_at = Instant::now();
                         }
                     }
                 }
@@ -829,6 +918,58 @@ impl OpenClawManager {
                         }
                     }
                 }
+                "exec.approval.resolved" | "exec.approval.rejected" => {
+                    if let Some(payload) = &frame.payload {
+                        let approval_id = payload
+                            .get("approvalId")
+                            .or_else(|| payload.get("id"))
+                            .and_then(|v| v.as_str());
+                        if let Some(id) = approval_id {
+                            rt.exec_approval_queue.retain(|a| {
+                                a.get("id").and_then(|v| v.as_str()) != Some(id)
+                            });
+                        }
+                    }
+                }
+                "node.connected" | "node.updated" => {
+                    if let Some(payload) = &frame.payload {
+                        let node_id = payload.get("nodeId").and_then(|v| v.as_str())
+                            .or_else(|| payload.get("id").and_then(|v| v.as_str()));
+                        if let Some(node_id) = node_id {
+                            // Normalize: ensure nodeId is always present on the
+                            // stored entry, matching the TS client behaviour.
+                            let mut normalized = payload.clone();
+                            if let serde_json::Value::Object(ref mut m) = normalized {
+                                m.insert("nodeId".into(), serde_json::Value::String(node_id.to_owned()));
+                            }
+                            if let Some(existing) = rt
+                                .nodes
+                                .iter_mut()
+                                .find(|n| {
+                                    n.get("nodeId").and_then(|v| v.as_str()) == Some(node_id)
+                                        || n.get("id").and_then(|v| v.as_str()) == Some(node_id)
+                                })
+                            {
+                                *existing = normalized;
+                            } else {
+                                rt.nodes.push(normalized);
+                            }
+                        }
+                    }
+                }
+                "node.disconnected" => {
+                    if let Some(payload) = &frame.payload {
+                        let node_id = payload.get("nodeId").and_then(|v| v.as_str())
+                            .or_else(|| payload.get("id").and_then(|v| v.as_str()));
+                        if let Some(node_id) = node_id {
+                            rt.nodes
+                                .retain(|n| {
+                                    n.get("nodeId").and_then(|v| v.as_str()) != Some(node_id)
+                                        && n.get("id").and_then(|v| v.as_str()) != Some(node_id)
+                                });
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -866,11 +1007,20 @@ struct OpenClawDeviceIdentityFile {
     private_key_pem: String,
 }
 
-#[derive(Debug)]
 struct OpenClawDeviceIdentity {
     device_id: String,
     public_key_raw_base64url: String,
-    private_key_pem: String,
+    private_key_pem: Zeroizing<String>,
+}
+
+impl std::fmt::Debug for OpenClawDeviceIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenClawDeviceIdentity")
+            .field("device_id", &self.device_id)
+            .field("public_key_raw_base64url", &self.public_key_raw_base64url)
+            .field("private_key_pem", &"[REDACTED]")
+            .finish()
+    }
 }
 
 fn build_gateway_device_proof(
@@ -885,15 +1035,17 @@ fn build_gateway_device_proof(
     };
 
     let client_mode = client.mode.as_deref().unwrap_or("cli");
+    let now = now_ms();
     let proof = build_gateway_device_proof_from_identity(
         &identity,
         &client.id,
         client_mode,
         role,
         scopes,
-        now_ms(),
+        now,
         auth_token,
         None,
+        now,
     )?;
     Ok(Some(proof))
 }
@@ -937,10 +1089,11 @@ fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDevice
     Ok(OpenClawDeviceIdentity {
         device_id: derived_device_id,
         public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
-        private_key_pem: parsed.private_key_pem,
+        private_key_pem: Zeroizing::new(parsed.private_key_pem),
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_gateway_device_proof_from_identity(
     identity: &OpenClawDeviceIdentity,
     client_id: &str,
@@ -950,9 +1103,10 @@ fn build_gateway_device_proof_from_identity(
     signed_at_ms: u64,
     token: Option<&str>,
     nonce: Option<&str>,
+    now_ms_value: u64,
 ) -> Result<GatewayDeviceProof> {
     validate_gateway_scopes(scopes)?;
-    validate_signed_at_window(signed_at_ms, now_ms())?;
+    validate_signed_at_window(signed_at_ms, now_ms_value)?;
 
     let signing_key = load_identity_signing_key(identity)?;
     validate_identity_key_consistency(identity, &signing_key)?;
@@ -1057,6 +1211,7 @@ fn validate_identity_key_consistency(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_device_auth_payload(
     device_id: &str,
     client_id: &str,
@@ -1404,7 +1559,7 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: device_id.clone(),
             public_key_raw_base64url: public_key_raw_base64url.clone(),
-            private_key_pem,
+            private_key_pem: Zeroizing::new(private_key_pem),
         };
         let scopes = vec![
             "operator.read".to_string(),
@@ -1422,6 +1577,7 @@ mod tests {
             signed_at,
             Some("gateway-token"),
             None,
+            signed_at,
         ) {
             Ok(value) => value,
             Err(err) => panic!("failed to build device proof: {err}"),
@@ -1465,11 +1621,12 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: hush_core::sha256(verifying_key.as_bytes()).to_hex(),
             public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
-            private_key_pem,
+            private_key_pem: Zeroizing::new(private_key_pem),
         };
         let scopes = default_gateway_scopes();
         let stale_signed_at = now_ms().saturating_sub(DEVICE_AUTH_MAX_CLOCK_SKEW_MS + 5_000);
 
+        let now = now_ms();
         let result = build_gateway_device_proof_from_identity(
             &identity,
             "cli",
@@ -1479,6 +1636,7 @@ mod tests {
             stale_signed_at,
             Some("gateway-token"),
             None,
+            now,
         );
 
         let err = result
@@ -1501,19 +1659,21 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: hush_core::sha256(verifying_key.as_bytes()).to_hex(),
             public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
-            private_key_pem,
+            private_key_pem: Zeroizing::new(private_key_pem),
         };
         let scopes = vec!["operator.read".to_string(), "operator.write".to_string()];
 
+        let now = now_ms();
         let result = build_gateway_device_proof_from_identity(
             &identity,
             "cli",
             "cli",
             "operator",
             &scopes,
-            now_ms(),
+            now,
             Some("gateway-token"),
             None,
+            now,
         );
 
         let err = result
@@ -1538,18 +1698,20 @@ mod tests {
         let identity = OpenClawDeviceIdentity {
             device_id: hush_core::sha256(verifying_key_a.as_bytes()).to_hex(),
             public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key_a.as_bytes()),
-            private_key_pem: private_key_pem_b,
+            private_key_pem: Zeroizing::new(private_key_pem_b),
         };
 
+        let now = now_ms();
         let result = build_gateway_device_proof_from_identity(
             &identity,
             "cli",
             "cli",
             "operator",
             &default_gateway_scopes(),
-            now_ms(),
+            now,
             Some("valid-token"),
             None,
+            now,
         );
 
         let err = result
@@ -1921,6 +2083,124 @@ mod tests {
         };
         if let Err(err) = server_result {
             panic!("mock gateway task failed: {}", err);
+        }
+    }
+
+    #[tokio::test]
+    async fn device_token_only_populates_auth_token_field() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|err| panic!("failed to bind device-token listener: {err}"));
+        let addr = listener
+            .local_addr()
+            .unwrap_or_else(|err| panic!("failed to read device-token listener address: {err}"));
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener
+                .accept()
+                .await
+                .map_err(|err| format!("accept failed: {err}"))?;
+            let mut ws = accept_async(stream)
+                .await
+                .map_err(|err| format!("ws accept failed: {err}"))?;
+
+            let connect_text = match ws.next().await {
+                Some(Ok(Message::Text(text))) => text,
+                Some(Ok(_)) => return Err("expected text connect frame".to_string()),
+                Some(Err(err)) => return Err(format!("read connect frame failed: {err}")),
+                None => return Err("stream closed before connect frame".to_string()),
+            };
+            let (connect_id, params) = match parse_gateway_frame(&connect_text) {
+                Some(GatewayFrame::Req(req)) if req.method == "connect" => (req.id, req.params),
+                Some(_) => return Err("unexpected first frame shape".to_string()),
+                None => return Err("failed to parse connect frame".to_string()),
+            };
+
+            let auth = params
+                .as_ref()
+                .and_then(|value| value.get("auth"))
+                .and_then(|value| value.as_object())
+                .ok_or_else(|| "connect auth missing".to_string())?;
+
+            let token = auth
+                .get("token")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "connect auth token missing".to_string())?;
+            if token != "device-only-token" {
+                return Err(format!(
+                    "connect auth token mismatch: expected device-only-token, got {token}"
+                ));
+            }
+
+            let connect_response = GatewayFrame::Res(GatewayResponseFrame {
+                id: connect_id,
+                ok: true,
+                payload: Some(serde_json::json!({"session":"mock"})),
+                error: None,
+            });
+            let response_text = serde_json::to_string(&connect_response)
+                .map_err(|err| format!("serialize connect response failed: {err}"))?;
+            ws.send(Message::Text(response_text))
+                .await
+                .map_err(|err| format!("send connect response failed: {err}"))?;
+
+            let _ = tokio::time::timeout(Duration::from_secs(3), ws.next()).await;
+            Ok::<(), String>(())
+        });
+
+        let mut settings = Settings::default();
+        settings.openclaw.gateways.push(OpenClawGatewayMetadata {
+            id: "gw-device".to_string(),
+            label: "Device Gateway".to_string(),
+            gateway_url: format!("ws://{}", addr),
+        });
+        settings.openclaw.active_gateway_id = Some("gw-device".to_string());
+
+        let manager = OpenClawManager::new(Arc::new(RwLock::new(settings)));
+        manager
+            .secrets
+            .set(
+                "gw-device",
+                GatewaySecrets {
+                    token: None,
+                    device_token: Some("device-only-token".to_string()),
+                },
+            )
+            .await
+            .unwrap_or_else(|err| panic!("failed to set device-token secret: {err}"));
+
+        manager
+            .connect_gateway("gw-device")
+            .await
+            .unwrap_or_else(|err| panic!("connect_gateway failed: {err}"));
+
+        let mut connected = false;
+        for _ in 0..40 {
+            let status = manager
+                .list_gateways()
+                .await
+                .gateways
+                .into_iter()
+                .find(|gateway| gateway.id == "gw-device")
+                .map(|gateway| gateway.runtime.status);
+            if status == Some(GatewayConnectionStatus::Connected) {
+                connected = true;
+                break;
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
+        assert!(connected, "gateway did not reach connected state");
+
+        manager
+            .disconnect_gateway("gw-device")
+            .await
+            .unwrap_or_else(|err| panic!("disconnect_gateway failed: {err}"));
+
+        let server_result = server
+            .await
+            .unwrap_or_else(|err| panic!("device-token server join failed: {err}"));
+        if let Err(err) = server_result {
+            panic!("device-token server failed: {err}");
         }
     }
 

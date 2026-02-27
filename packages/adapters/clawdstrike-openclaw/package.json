@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/openclaw",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Clawdstrike security plugin for OpenClaw",
   "type": "module",
   "main": "dist/index.js",
@@ -43,7 +43,7 @@
     "vitest": "^4.0.18"
   },
   "peerDependencies": {
-    "openclaw": ">=0.1.0"
+    "openclaw": ">=2025.0.0"
   },
   "peerDependenciesMeta": {
     "openclaw": {
@@ -53,6 +53,7 @@
   "files": [
     "dist",
     "rulesets",
+    "clawdstrike-security.js",
     "README.md"
   ],
   "keywords": [

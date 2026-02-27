@@ -8,10 +8,15 @@ This example demonstrates enforcement at the **OpenClaw tool boundary** (preflig
 
 ## Setup
 
+This example contains configuration files only (`openclaw.json` and `policy.yaml`). No `package.json` or `npm install` step is needed.
+
 ```bash
 cd examples/hello-secure-agent
-npm install
+
+# Ensure the clawdstrike-openclaw plugin is installed and enabled
 openclaw plugins enable @clawdstrike/openclaw
+
+# Start the OpenClaw gateway
 openclaw start
 ```
 
@@ -42,6 +47,9 @@ See `policy.yaml` for the security configuration:
 
 ## Testing
 
+Use the OpenClaw CLI to verify policy enforcement:
+
 ```bash
-npm test
+openclaw clawdstrike check file_read ~/.ssh/id_rsa
+# Expected: Denied by forbidden_path
 ```

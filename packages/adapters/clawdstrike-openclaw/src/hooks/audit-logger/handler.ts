@@ -2,6 +2,10 @@
  * @clawdstrike/openclaw - Audit Logger Hook Handler
  *
  * Logs security events for audit and compliance.
+ *
+ * NOTE: Not currently registered in plugin.ts. The audit logger needs to be
+ * redesigned to capture structured policy decisions (not just console output)
+ * before it can be connected end-to-end. See docs/audits/2026-02-25-openclaw-correctness-findings.md#C6.
  */
 
 import type {

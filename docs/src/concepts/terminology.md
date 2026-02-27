@@ -16,7 +16,7 @@ This page defines key terms used throughout Clawdstrike documentation.
 
 | Term | Definition |
 |------|------------|
-| **GuardAction** | An action being evaluated by guards. Types: `FileAccess`, `FileWrite`, `Patch`, `NetworkEgress`, `McpTool`, `Custom`. |
+| **GuardAction** | An action being evaluated by guards. Types: `FileAccess`, `FileWrite`, `Patch`, `NetworkEgress`, `ShellCommand`, `McpTool`, `Custom`. |
 | **GuardContext** | Execution context passed to guards: working directory, session ID, agent ID, custom metadata. |
 | **GuardResult** | The outcome of a guard evaluation: `allowed` (bool), `verdict`, `violations`, `evidence`. |
 | **Verdict** | The decision for an action: `Allow`, `Warn`, or `Block`. |
@@ -67,7 +67,20 @@ This page defines key terms used throughout Clawdstrike documentation.
 | **Session Aggregation** | Accumulating risk signals across a session to detect multi-turn attacks. |
 | **Fingerprint** | A SHA-256 hash identifying content for deduplication without exposing raw data. |
 
-## Severity Levels
+## Guard Severity
+
+The `Severity` enum used by guard results and secret patterns:
+
+| Level | Meaning |
+|-------|---------|
+| **info** | Informational, logged but allowed. |
+| **warning** | Warning, logged and may be flagged. |
+| **error** | Error, action is blocked. |
+| **critical** | Critical, action is blocked and session may be terminated. |
+
+## Jailbreak Severity
+
+The `JailbreakSeverity` enum used specifically by the jailbreak detection system:
 
 | Level | Meaning |
 |-------|---------|
@@ -75,4 +88,3 @@ This page defines key terms used throughout Clawdstrike documentation.
 | **suspicious** | Weak signals present; warrants monitoring but not blocking. |
 | **likely** | Strong signals suggesting malicious intent. |
 | **confirmed** | Known attack pattern matched with high confidence. |
-| **critical** | Highest severity; immediate blocking required. |

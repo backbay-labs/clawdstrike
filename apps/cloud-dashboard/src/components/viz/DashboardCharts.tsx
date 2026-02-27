@@ -1,4 +1,4 @@
-import { NoiseGrain, Plate } from "../ui";
+import { Plate } from "../ui";
 import { ViolationSparkline } from "./ViolationSparkline";
 import { DecisionDonut } from "./DecisionDonut";
 import { GuardHeatmap } from "./GuardHeatmap";

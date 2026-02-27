@@ -57,6 +57,10 @@ pub struct BridgeConfig {
     pub event_types: Vec<TetragonEventKind>,
     /// Number of JetStream replicas for the stream.
     pub stream_replicas: usize,
+    /// Maximum bytes retained in the JetStream stream (0 = unlimited).
+    pub stream_max_bytes: i64,
+    /// Maximum age retained in the JetStream stream in seconds (0 = unlimited).
+    pub stream_max_age_seconds: u64,
     /// Maximum consecutive handle_event errors before run() returns an error.
     pub max_consecutive_errors: u64,
 }
@@ -74,6 +78,8 @@ impl Default for BridgeConfig {
                 TetragonEventKind::ProcessKprobe,
             ],
             stream_replicas: 1,
+            stream_max_bytes: 1_073_741_824,
+            stream_max_age_seconds: 86_400,
             max_consecutive_errors: 50,
         }
     }
@@ -117,8 +123,18 @@ impl Bridge {
 
         // Ensure the JetStream stream exists.
         let subjects = vec![format!("{NATS_SUBJECT_PREFIX}.>")];
-        spine::nats_transport::ensure_stream(&js, STREAM_NAME, subjects, config.stream_replicas)
-            .await?;
+        let max_bytes = (config.stream_max_bytes > 0).then_some(config.stream_max_bytes);
+        let max_age = (config.stream_max_age_seconds > 0)
+            .then(|| Duration::from_secs(config.stream_max_age_seconds));
+        spine::nats_transport::ensure_stream_with_limits(
+            &js,
+            STREAM_NAME,
+            subjects,
+            config.stream_replicas,
+            max_bytes,
+            max_age,
+        )
+        .await?;
 
         Ok(Self {
             keypair,
@@ -296,14 +312,14 @@ impl Bridge {
             return false;
         };
 
-        let Some(ns) = &pod.namespace else {
+        if pod.namespace.is_empty() {
             return false;
-        };
+        }
 
         self.config
             .namespace_allowlist
             .iter()
-            .any(|allowed| allowed.eq_ignore_ascii_case(&ns.value))
+            .any(|allowed| allowed.eq_ignore_ascii_case(&pod.namespace))
     }
 
     /// Get the NATS JetStream context (for testing or advanced usage).

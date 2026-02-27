@@ -116,7 +116,7 @@ describe('Tool Guard Hook', () => {
       context: {
         sessionId: 'test-session',
         toolResult: {
-          toolName: 'api_call',
+          toolName: 'custom_action',
           params: {},
           result: { data: 'safe content' },
         },

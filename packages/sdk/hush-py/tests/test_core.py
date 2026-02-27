@@ -82,3 +82,17 @@ class TestSignature:
         invalid_signature = b"\x00" * 64
 
         assert verify_signature(message, invalid_signature, public_key) is False
+
+    def test_verify_malformed_signature_returns_false(self) -> None:
+        _, public_key = generate_keypair()
+        message = b"test message"
+        malformed_signature = b"short"
+
+        assert verify_signature(message, malformed_signature, public_key) is False
+
+    def test_verify_malformed_public_key_returns_false(self) -> None:
+        message = b"test message"
+        signature = b"\x00" * 64
+        malformed_public_key = b"short"
+
+        assert verify_signature(message, signature, malformed_public_key) is False

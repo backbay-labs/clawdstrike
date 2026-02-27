@@ -89,17 +89,84 @@ pub async fn ensure_stream(
     subjects: Vec<String>,
     replicas: usize,
 ) -> Result<async_nats::jetstream::stream::Stream> {
+    ensure_stream_with_limits(js, name, subjects, replicas, None, None).await
+}
+
+/// Ensure a JetStream stream exists and reconcile key retention/replication limits.
+pub async fn ensure_stream_with_limits(
+    js: &async_nats::jetstream::Context,
+    name: &str,
+    subjects: Vec<String>,
+    replicas: usize,
+    max_bytes: Option<i64>,
+    max_age: Option<std::time::Duration>,
+) -> Result<async_nats::jetstream::stream::Stream> {
     match js.get_stream(name).await {
-        Ok(stream) => Ok(stream),
+        Ok(stream) => {
+            let mut desired = stream.cached_info().config.clone();
+            let mut changed = false;
+
+            if desired.subjects != subjects {
+                desired.subjects = subjects;
+                changed = true;
+            }
+            if desired.num_replicas != replicas {
+                desired.num_replicas = replicas;
+                changed = true;
+            }
+            if desired.storage != async_nats::jetstream::stream::StorageType::File {
+                desired.storage = async_nats::jetstream::stream::StorageType::File;
+                changed = true;
+            }
+            if desired.retention != async_nats::jetstream::stream::RetentionPolicy::Limits {
+                desired.retention = async_nats::jetstream::stream::RetentionPolicy::Limits;
+                changed = true;
+            }
+            if desired.discard != async_nats::jetstream::stream::DiscardPolicy::Old {
+                desired.discard = async_nats::jetstream::stream::DiscardPolicy::Old;
+                changed = true;
+            }
+
+            if let Some(limit) = max_bytes {
+                if desired.max_bytes != limit {
+                    desired.max_bytes = limit;
+                    changed = true;
+                }
+            }
+            if let Some(limit) = max_age {
+                if desired.max_age != limit {
+                    desired.max_age = limit;
+                    changed = true;
+                }
+            }
+
+            if changed {
+                js.update_stream(&desired).await.map_err(|e| {
+                    Error::Nats(format!("failed to update stream {name} configuration: {e}"))
+                })?;
+                js.get_stream(name).await.map_err(|e| {
+                    Error::Nats(format!("failed to reload stream {name} after update: {e}"))
+                })
+            } else {
+                Ok(stream)
+            }
+        }
         Err(_) => {
-            let config = async_nats::jetstream::stream::Config {
+            let mut config = async_nats::jetstream::stream::Config {
                 name: name.to_string(),
                 subjects,
                 num_replicas: replicas,
                 storage: async_nats::jetstream::stream::StorageType::File,
                 retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+                discard: async_nats::jetstream::stream::DiscardPolicy::Old,
                 ..Default::default()
             };
+            if let Some(limit) = max_bytes {
+                config.max_bytes = limit;
+            }
+            if let Some(limit) = max_age {
+                config.max_age = limit;
+            }
             js.create_stream(config)
                 .await
                 .map_err(|e| Error::Nats(format!("failed to create stream {name}: {e}")))

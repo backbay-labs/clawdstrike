@@ -5,7 +5,8 @@ export const POLICY_SCHEMA_VERSION = 'clawdstrike-v1.0';
 const SUPPORTED_CANONICAL_VERSIONS = new Set(['1.1.0', '1.2.0']);
 
 const VALID_EGRESS_MODES = new Set(['allowlist', 'denylist', 'open', 'deny_all']);
-const VALID_VIOLATION_ACTIONS = new Set(['cancel', 'warn', 'isolate', 'escalate']);
+const VALID_VIOLATION_ACTIONS = new Set(['cancel', 'warn']);
+const UNIMPLEMENTED_VIOLATION_ACTIONS = new Set(['isolate', 'escalate']);
 const VALID_TIMEOUT_BEHAVIORS = new Set(['allow', 'deny', 'warn', 'defer']);
 const VALID_EXECUTION_MODES = new Set(['parallel', 'sequential', 'background']);
 const VALID_COMPUTER_USE_MODES = new Set(['observe', 'guardrail', 'fail_closed']);
@@ -339,7 +340,11 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
 
   // on_violation validation
   if (p.on_violation !== undefined) {
-    if (typeof p.on_violation !== 'string' || !VALID_VIOLATION_ACTIONS.has(p.on_violation)) {
+    if (typeof p.on_violation !== 'string') {
+      errors.push(`on_violation must be one of: ${[...VALID_VIOLATION_ACTIONS].join(', ')}`);
+    } else if (UNIMPLEMENTED_VIOLATION_ACTIONS.has(p.on_violation)) {
+      warnings.push(`on_violation value '${p.on_violation}' is not yet implemented; use 'cancel' or 'warn'`);
+    } else if (!VALID_VIOLATION_ACTIONS.has(p.on_violation)) {
       errors.push(`on_violation must be one of: ${[...VALID_VIOLATION_ACTIONS].join(', ')}`);
     }
   }

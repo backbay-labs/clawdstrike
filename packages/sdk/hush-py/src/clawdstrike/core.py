@@ -11,7 +11,7 @@ from typing import Union
 
 from Crypto.Hash import keccak as keccak_hash
 from nacl.signing import SigningKey, VerifyKey
-from nacl.exceptions import BadSignatureError
+from nacl.exceptions import BadSignatureError, CryptoError
 
 
 def sha256(data: Union[bytes, str]) -> bytes:
@@ -85,7 +85,7 @@ def verify_signature(message: bytes, signature: bytes, public_key: bytes) -> boo
         verify_key = VerifyKey(public_key)
         verify_key.verify(message, signature)
         return True
-    except (BadSignatureError, Exception):
+    except (BadSignatureError, CryptoError, ValueError, TypeError):
         return False
 
 

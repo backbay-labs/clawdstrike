@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult
+from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
 from clawdstrike.guards.forbidden_path import ForbiddenPathGuard, ForbiddenPathConfig
 from clawdstrike.guards.egress_allowlist import EgressAllowlistGuard, EgressAllowlistConfig
 from clawdstrike.guards.secret_leak import SecretLeakGuard, SecretLeakConfig, SecretPattern
@@ -561,9 +561,9 @@ class Policy:
             secret_leak = child.secret_leak
         elif child.secret_leak is not None:
             g = guard_raw("secret_leak")
-            patterns = secret_leak.patterns
+            sl_patterns: List[SecretPattern] = secret_leak.patterns
             if "patterns" in g:
-                patterns = merge_secret_patterns(patterns, child.secret_leak.patterns)
+                sl_patterns = merge_secret_patterns(sl_patterns, child.secret_leak.patterns)
             skip_paths = secret_leak.skip_paths
             if "skip_paths" in g:
                 skip_paths = merge_str_list(skip_paths, child.secret_leak.skip_paths)
@@ -574,7 +574,7 @@ class Policy:
             if "secrets" in g:
                 secrets = merge_str_list(secrets, child.secret_leak.secrets)
             secret_leak = SecretLeakConfig(
-                patterns=patterns,
+                patterns=sl_patterns,
                 skip_paths=skip_paths,
                 enabled=enabled,
                 secrets=secrets,
@@ -774,7 +774,8 @@ class Policy:
                 "default_action": self.guards.mcp_tool.default_action,
             }
 
-        return yaml.dump(data, default_flow_style=False, sort_keys=False)
+        result: str = yaml.dump(data, default_flow_style=False, sort_keys=False)
+        return result
 
 
 class PolicyEngine:
@@ -832,7 +833,14 @@ class PolicyEngine:
 
         for guard in self.guards:
             if guard.handles(action):
-                result = guard.check(action, context)
+                try:
+                    result = guard.check(action, context)
+                except Exception as e:
+                    result = GuardResult.block(
+                        guard=guard.name,
+                        severity=Severity.CRITICAL,
+                        message=f"Guard evaluation error (fail-closed): {e}",
+                    )
                 results.append(result)
 
                 if self.policy.settings.fail_fast and not result.allowed:

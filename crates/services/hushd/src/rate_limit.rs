@@ -135,10 +135,14 @@ pub async fn rate_limit_middleware(
         return next.run(req).await;
     }
 
-    // Skip rate limiting for loopback connections (agent proxy, CLI, local dev).
-    // hushd binds to localhost by default, so all local traffic is trusted.
+    // Extract client IP (respects trusted proxy headers when configured).
     let connection_ip = extract_client_ip(&req, &rate_limit);
-    if connection_ip.is_loopback() {
+
+    // Skip rate limiting for loopback only when no trusted proxies are configured,
+    // meaning the loopback traffic is genuinely local (CLI, agent proxy, local dev).
+    // When trusted proxies ARE configured, loopback traffic may be from a reverse
+    // proxy forwarding external requests, so it must still be rate-limited.
+    if connection_ip.is_loopback() && rate_limit.trusted_proxies.is_empty() {
         return next.run(req).await;
     }
 

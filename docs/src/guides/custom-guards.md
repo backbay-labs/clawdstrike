@@ -39,4 +39,50 @@ let policy = Policy::from_yaml_file("policy.yaml")?;
 let engine = HushEngine::with_policy(policy).with_extra_guard(Box::new(AlwaysWarn));
 ```
 
+## Policy-driven custom guards (`custom_guards[]`)
+
+Custom guards can also be declared in the policy YAML at the top level using the `custom_guards` array. Each entry is a `PolicyCustomGuardSpec`:
+
+```yaml
+custom_guards:
+  - id: "my_custom_guard"
+    enabled: true
+    config:
+      threshold: 0.8
+      mode: strict
+```
+
+### PolicyCustomGuardSpec fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | string | (required) | Installed guard id, resolved via `CustomGuardRegistry`. |
+| `enabled` | bool | `true` | Enable/disable this custom guard. |
+| `config` | JSON object | `{}` | Factory configuration passed to the guard constructor. |
+
+## Plugin-shaped guards (`guards.custom[]`)
+
+The `guards.custom[]` array supports plugin-shaped guard references with package resolution:
+
+```yaml
+guards:
+  custom:
+    - package: "@clawdstrike/guard-threat-intel"
+      version: "^1.0.0"
+      enabled: true
+      config:
+        feed_url: "https://feeds.example.com/indicators.json"
+```
+
+### CustomGuardSpec fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `package` | string | (required) | Package identifier for the guard. |
+| `registry` | string or null | `null` | Optional registry URL for resolution. |
+| `version` | string or null | `null` | Optional semver constraint. |
+| `enabled` | bool | `true` | Enable/disable this guard. |
+| `config` | JSON object | `{}` | Configuration passed to the guard factory. |
+| `async` | object or null | `null` | Optional async guard policy config (rate limiting, retries, timeouts). |
+
 `guards.custom[]` supports a reserved set of built-in threat-intel guards (see [Threat Intel Guards](threat-intel.md)) plus manifest-based plugin loading. Use `hush guard inspect` and `hush guard validate` to verify plugin metadata/compatibility, and use `executionMode: wasm` for sandboxed plugin execution paths.

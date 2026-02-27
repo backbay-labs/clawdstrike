@@ -54,6 +54,8 @@ clawdstrike check --json --action-type egress --ruleset default api.github.com:4
 - `clawdstrike policy observe --hushd-url <url> --session <id> [--out <events.jsonl>]` — export + map hushd audit events for a session.
 - `clawdstrike policy synth <EVENTS.jsonl> [--extends <ref>] [--out <candidate.yaml>] [--diff-out <candidate.diff.json>] [--risk-out <candidate.risks.md>] [--with-posture]` — synthesize a least-privilege candidate policy.
 - `clawdstrike policy migrate <INPUT> --to 1.2.0 [--output <path>|--in-place]` — migrate policy schema versions.
+- `clawdstrike policy version <POLICY_REF> [--resolve] [--json]` — show the schema version of a policy and whether it is compatible with this CLI.
+- `clawdstrike policy impact <OLD> <NEW> <EVENTS.jsonl|-> [--resolve] [--json] [--fail-on-breaking]` — compare decisions from two policies over a stream of `PolicyEvent` JSONL. Reports allow/block transitions. Use `--fail-on-breaking` to exit non-zero on any allow-to-block change.
 - `clawdstrike policy bundle build <POLICY_REF> --key <private_key> [--resolve] [--embed-pubkey]` — build a signed policy bundle (JSON) for distribution.
 - `clawdstrike policy bundle verify <BUNDLE.json> [--pubkey <pubkey>]` — verify a signed policy bundle.
 
@@ -99,6 +101,31 @@ clawdstrike guard validate ./plugins/my-guard --strict --json
 - `clawdstrike hash <file|- >` — compute `sha256` or `keccak256`.
 - `clawdstrike sign --key <private_key> <file>` — sign a file (raw Ed25519 signature).
 - `clawdstrike merkle root|proof|verify` — Merkle tree utilities for files.
+
+## `clawdstrike run`
+
+Best-effort process wrapper that runs a command under Clawdstrike policy enforcement (audit log + optional CONNECT proxy + signed receipt).
+
+```bash
+clawdstrike run --policy <POLICY_REF|FILE> -- <CMD> <ARGS...>
+```
+
+Options:
+
+- `--policy <ref>` — policy reference (ruleset id or YAML file path; required)
+- `--events-out <path>` — output path for PolicyEvent JSONL (default: `hush.events.jsonl`)
+- `--receipt-out <path>` — output path for the signed receipt (default: `hush.run.receipt.json`)
+- `--signing-key <path>` — Ed25519 signing key path (default: `hush.key`; generated if missing)
+- `--no-proxy` — disable the local CONNECT proxy (egress enforcement becomes audit-only)
+- `--proxy-port <port>` — proxy listen port (0 = random free port)
+
+Example:
+
+```bash
+clawdstrike run --policy clawdstrike:ai-agent -- python my_agent.py
+```
+
+The wrapped process inherits `HTTP_PROXY`/`HTTPS_PROXY` environment variables pointing at the local enforcement proxy (unless `--no-proxy` is set). Egress decisions, file events, and other guard checks are recorded as PolicyEvent JSONL and a signed receipt is written on exit.
 
 ## `clawdstrike daemon` (optional)
 
