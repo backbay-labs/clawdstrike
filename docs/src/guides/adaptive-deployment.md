@@ -155,11 +155,11 @@ The Cloud API enables the core adaptive workers by default. Make these settings 
 | `APPROVAL_SIGNING_ENABLED` | `true` | Signed approval responses are enabled by default. |
 | `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Optional but recommended. If unset or unreadable while signing is enabled, cloud-api falls back to an ephemeral keypair and logs a warning. |
 | `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the cloud DB. |
-| `APPROVAL_SUBJECT_FILTER` | `>` | Default is broad to support tenant slugs with variable token depth; keep strict subject parsing enabled in consumers. |
+| `APPROVAL_SUBJECT_FILTER` | `tenant-*.>` | Default is dotted-slug-safe while still tenant-scoped; keep strict subject parsing enabled in consumers. |
 | `APPROVAL_STREAM_NAME` | `clawdstrike_adaptive_ingress` | Shared ingress stream used by both approval and heartbeat consumers to avoid overlapping-stream conflicts with broad filters. |
 | `APPROVAL_RESOLUTION_OUTBOX_ENABLED` | `true` | Retries cloud -> agent resolution delivery until sent. |
 | `HEARTBEAT_CONSUMER_ENABLED` | `true` | Reconciles NATS heartbeats into `agents.last_heartbeat_at`. |
-| `HEARTBEAT_SUBJECT_FILTER` | `>` | Default is broad to support tenant slugs with variable token depth; keep strict subject parsing enabled in consumers. |
+| `HEARTBEAT_SUBJECT_FILTER` | `tenant-*.>` | Default is dotted-slug-safe while still tenant-scoped; keep strict subject parsing enabled in consumers. |
 | `HEARTBEAT_STREAM_NAME` | `clawdstrike_adaptive_ingress` | Shared with approvals by default; if you split streams, use truly non-overlapping filters. |
 | `STALE_DETECTOR_ENABLED` | `true` | Periodic stale/dead lifecycle transitions (120s/300s default thresholds). |
 | `AUDIT_CONSUMER_ENABLED` | `false` | Optional; enable when ingesting Spine audit envelopes in this service. |
