@@ -188,7 +188,7 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 | **JailbreakGuard**       | 4-layer detection engine with session aggregation (see below)                    |
 | **ComputerUseGuard**     | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
 | **ShellCommandGuard**    | Blocks dangerous shell commands before execution                                 |
-| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Two-tier semantic screening ([Yu et al. 2026](https://arxiv.org/abs/2602.05386)): fast vector similarity + LLM deep reasoning for ambiguous cases |
+| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Hierarchical threat screening adapted from [Yu et al. 2026](https://arxiv.org/abs/2602.05386): fast vector similarity resolves known patterns, optional LLM escalation for ambiguous cases |
 
 ---
 
@@ -282,7 +282,7 @@ Ed25519-signed provenance markers embedded in prompts for attribution and forens
 
 **Threat feeds:** VirusTotal, Snyk, Google Safe Browsing — with circuit breakers, rate limiting, and caching. External failures never block the pipeline.
 
-**Spider-Sense** <sup>β</sup> adds two-tier semantic screening inspired by [Yu et al. (2026)](https://arxiv.org/abs/2602.05386). Fast-path cosine similarity against an attack pattern database handles the common case; ambiguous inputs escalate to LLM deep reasoning. Covers all four semantic stages (perception, cognition, action, feedback) and nine attack types. Feature-gated: `--features clawdstrike-spider-sense`.
+**Spider-Sense** <sup>β</sup> adapts the hierarchical screening pattern from [Yu et al. (2026)](https://arxiv.org/abs/2602.05386) as a tool-boundary guard. Fast-path cosine similarity against an attack pattern database resolves known threats; ambiguous inputs optionally escalate to an external LLM for deeper analysis. Test coverage uses the paper's S2Bench taxonomy (4 lifecycle stages × 9 attack types). Note: the original paper proposes agent-intrinsic risk sensing — our adaptation applies the screening hierarchy as middleware, not as an intrinsic agent capability. Feature-gated: `--features clawdstrike-spider-sense`.
 
 **WASM runtime:** Custom guards in sandboxed WebAssembly with declared capability sets and resource limits.
 

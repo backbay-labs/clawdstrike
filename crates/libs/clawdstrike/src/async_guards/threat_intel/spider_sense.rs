@@ -1,12 +1,16 @@
-//! Spider-Sense two-tier screening AsyncGuard.
+//! Spider-Sense hierarchical screening AsyncGuard.
 //!
-//! Implements hierarchical threat detection:
-//! 1. **Fast path**: Vector similarity against a pattern database
-//! 2. **Deep path**: LLM reasoning for ambiguous cases
+//! Adapts the hierarchical screening pattern from the Spider-Sense paper
+//! (Yu et al., Feb 2026) as a tool-boundary guard:
 //!
-//! Based on the Spider-Sense paper (Yu et al., Feb 2026) taxonomy:
-//! four semantic stages (perception, cognition, action, feedback) ×
-//! nine attack types.
+//! 1. **Fast path**: Cosine similarity against a pre-computed pattern database
+//! 2. **Deep path**: Optional external LLM escalation for ambiguous cases
+//!
+//! Note: the original paper proposes agent-intrinsic risk sensing (IRS) where
+//! the agent itself maintains latent vigilance. Our adaptation applies the
+//! screening hierarchy as middleware at the tool boundary — architecturally
+//! different, but reusing the same fast/deep tiering and the S2Bench
+//! taxonomy (four semantic stages × nine attack types).
 
 use std::time::Duration;
 
