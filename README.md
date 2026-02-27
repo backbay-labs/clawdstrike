@@ -188,7 +188,7 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 | **JailbreakGuard**       | 4-layer detection engine with session aggregation (see below)                    |
 | **ComputerUseGuard**     | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
 | **ShellCommandGuard**    | Blocks dangerous shell commands before execution                                 |
-| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Two-tier semantic screening: fast vector similarity + LLM deep reasoning for ambiguous cases |
+| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Two-tier semantic screening ([Yu et al. 2026](https://arxiv.org/abs/2502.17075)): fast vector similarity + LLM deep reasoning for ambiguous cases |
 
 ---
 
