@@ -1,6 +1,6 @@
 # Implementation Pad (Working Plan / Scratchpad)
 
-Last updated: 2026-02-04
+Last updated: 2026-02-07
 
 This file is the execution scratchpad for implementing the `docs/plans/**` roadmap in this repo.
 Keep it ruthlessly up to date as work ships: check boxes, add links to PRs/issues, and record decisions.
@@ -22,6 +22,7 @@ Tier 2: Differentiation (unique value)
 | Priority | Area | Why |
 |---|---|---|
 | P1 | Prompt Security | Moat: jailbreak/injection detection, instruction hierarchy, output sanitization. |
+| P1 | Event-driven Agent Defense (Spider-Sense) | Stage-aware sensing + hierarchical screening (fast similarity match → deep analysis). |
 | P1 | Multi-Agent | Future-proofing: orchestration security is the strategic wedge. |
 
 Tier 3: Enterprise readiness (close deals)
@@ -34,7 +35,17 @@ Tier 3: Enterprise readiness (close deals)
 
 ---
 
+## Feb 2026 addendum: Spider-Sense + Dynamic Policies (draft roadmaps)
+
+Cross-cutting draft roadmaps live in `docs/roadmaps/`:
+
+- Spider-Sense integration plan: `docs/roadmaps/spider-sense-integration.md`
+- Dependency-ordered task tracker: `docs/roadmaps/implementation-tasks.md`
+- Dynamic policies / posture roadmap: `docs/roadmaps/nextgen-policy-roadmap.md`
+
 ## Repo Reality Check (what exists today)
+
+> Path convention: this plan uses current repository layout (`crates/libs/*`, `crates/services/*`, `packages/adapters/*`, `packages/sdk/*`, `packages/policy/*`), not flattened shorthand aliases.
 
 ### Rust (workspace)
 - `crates/libs/clawdstrike`: guard suite + `HushEngine` policy enforcement at the tool boundary.
@@ -44,15 +55,15 @@ Tier 3: Enterprise readiness (close deals)
 - `crates/libs/hush-wasm`: WASM bindings (verification-oriented today).
 
 ### TypeScript (packages)
-- `packages/adapters/clawdstrike-openclaw` (`@backbay/openclaw`): OpenClaw plugin + TS policy engine + TS CLI (`clawdstrike policy lint|show|test|diff`, `clawdstrike audit ...`).
-- `packages/sdk/hush-ts` (`@backbay/sdk`): hashing/receipts utilities (not the policy engine).
+- `packages/adapters/clawdstrike-openclaw` (`@clawdstrike/openclaw`): OpenClaw plugin + TS policy engine + TS CLI (`clawdstrike policy lint|show|test|diff`, `clawdstrike audit ...`).
+- `packages/sdk/hush-ts` (`@clawdstrike/sdk`): hashing/receipts utilities (not the policy engine).
 
 ### Known mismatches / gaps to resolve early
 - Policy schema mismatch:
   - Rust policy schema is `version: "1.1.0"` and config lives under `guards.*`.
   - TS OpenClaw policy schema is `version: "clawdstrike-v1.0"` and config lives under `egress/filesystem/execution/...`.
   - The new P0/P1 specs (custom guards, PaC, composition) assume a guard-centric schema.
-- Guard parity baseline has improved: TS/OpenClaw now accepts canonical schema and includes prompt-injection/jailbreak built-ins; continue widening corpus + edge-case parity coverage.
+- Guard parity mismatch (built-ins differ between Rust and TS; prompt-injection exists in Rust, not in TS).
 - Engine architecture gap (still): plugins/composition need a dynamic registry + policy representation. **Progress:** `HushEngine` now supports runtime appended guards (built-ins first, extras last).
 - CLI naming mismatch (resolved): `hush` is canonical; `clawdstrike` is TS/OpenClaw-specific + planned wrapper/alias to forward to `hush` (ADR 0001).
 
@@ -72,16 +83,16 @@ Tier 3: Enterprise readiness (close deals)
 - Rust CLI (PaC baseline):
   - Added policy-as-code commands: `clawdstrike policy lint|test|eval|simulate|diff|impact|version` (see `docs/src/reference/api/cli.md`).
 - TypeScript adapter foundation:
-  - Added `packages/adapters/clawdstrike-adapter-core/` (`@backbay/adapter-core`) with `BaseToolInterceptor`, `DefaultOutputSanitizer`, `PolicyEventFactory`, and `InMemoryAuditLogger` + unit tests.
+  - Added `packages/adapters/clawdstrike-adapter-core/` (`@clawdstrike/adapter-core`) with `BaseToolInterceptor`, `DefaultOutputSanitizer`, `PolicyEventFactory`, and `InMemoryAuditLogger` + unit tests.
 - Agent framework integrations (P0):
-  - `@backbay/vercel-ai`: middleware, tool/model wrappers, streaming support, optional prompt-security (tests included): `packages/adapters/clawdstrike-vercel-ai/`.
-  - `@backbay/langchain`: tool wrappers + callback handler + LangGraph nodes (tests included): `packages/adapters/clawdstrike-langchain/`.
+  - `@clawdstrike/vercel-ai`: middleware, tool/model wrappers, streaming support, optional prompt-security (tests included): `packages/adapters/clawdstrike-vercel-ai/`.
+  - `@clawdstrike/langchain`: tool wrappers + callback handler + LangGraph nodes (tests included): `packages/adapters/clawdstrike-langchain/`.
 - Prompt Security (P1 baseline + wiring):
   - Watermark payload bytes are RFC 8785 (JCS) canonical in Rust + TS (portable signatures/fingerprints).
   - Jailbreak detection: added session TTL + half-life decay + optional persistence hooks; linear model weights are configurable.
   - Output sanitization: allow/deny lists + streaming-safe sanitizer + optional entity/NER hook; improved patterns (Anthropic key, JWT, internal IPs, etc) and Luhn validation for CC.
   - Vercel AI: `createClawdstrikeMiddleware` supports `config.promptSecurity` to apply hierarchy, jailbreak detection, output sanitization, and watermarking to model calls; stream sanitization is supported for `text-delta`.
-  - Tool-boundary runtime convenience: OpenAI/OpenCode/Claude packages now ship `wrap*ToolDispatcher(...)` helpers for drop-in wiring into a tool dispatcher.
+  - Tool-boundary runtime convenience: Codex/OpenCode/Claude Code packages now ship `wrap*ToolDispatcher(...)` helpers for drop-in wiring into a tool dispatcher.
 - CI/tooling hardening:
   - Offline vendored build fixed by narrowing `.gitignore` patterns so vendored crate sources aren’t accidentally ignored.
   - WASM build fixed by enabling `getrandom`'s `js` feature for wasm32 in `hush-core`.
@@ -160,16 +171,16 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 ### M0: Baseline convergence (P0 prerequisite)
 - [x] Policy schema convergence plan written (decision + migration path). (See `decisions/0002-policy-schema-convergence.md`)
 - [x] Canonical event model documented + fixture corpus created. (See `decisions/0003-policy-event-and-severity.md` and `../../fixtures/policy-events/v1/`)
-- [x] Cross-SDK parity tests scaffolded (same events, same expected decisions). (See `tools/scripts/policy-parity.mjs`, `.github/workflows/ci.yml` “Policy parity (Rust ↔ TS)”, and `packages/adapters/clawdstrike-hush-cli-engine/src/hush-cli-engine.e2e.test.ts`.)
+- [ ] Cross-SDK parity tests scaffolded (same events, same expected decisions).
 
 ### M1: P0 Foundation shipped (Custom Guards + Agent Frameworks + Policy-as-Code)
-- [x] Custom guards plugin system (dev-mode first; production hardening later). *(Manifest validation + Rust wasm runtime + TS wasm bridge path landed; hardening continues.)*
-- [x] `@backbay/adapter-core` + at least 2 “real” integrations (Vercel AI + LangChain). (See `packages/adapters/clawdstrike-adapter-core/`, `packages/adapters/clawdstrike-vercel-ai/`, `packages/adapters/clawdstrike-langchain/`.)
+- [ ] Custom guards plugin system (dev-mode first; production hardening later).
+- [x] `@clawdstrike/adapter-core` + at least 2 “real” integrations (Vercel AI + LangChain). (See `packages/adapters/clawdstrike-adapter-core/`, `packages/adapters/clawdstrike-vercel-ai/`, `packages/adapters/clawdstrike-langchain/`.)
 - [x] Policy-as-code CLI: lint + test (YAML test suite) + diff + simulate. (See `crates/services/hush-cli/src/policy_lint.rs`, `crates/services/hush-cli/src/policy_test.rs`, `crates/services/hush-cli/src/policy_pac.rs`, `crates/services/hush-cli/src/policy_diff.rs`.)
 
 ### M2: P1 Differentiation shipped (Prompt Security + Multi-Agent primitives)
 - [x] Prompt security baseline: stronger injection/jailbreak detection + output sanitization. (See `docs/src/reference/guards/README.md`, `crates/libs/clawdstrike/src/jailbreak.rs`, `crates/libs/clawdstrike/src/output_sanitizer.rs`.)
-- [x] Multi-agent baseline: identities + delegation tokens + audit correlation. (Rust baseline primitives in `crates/libs/hush-multi-agent/src/{types.rs,identity_registry.rs,token.rs,message.rs,correlation.rs}`.)
+- [ ] Multi-agent baseline: identities + delegation tokens + audit correlation.
 
 ### M3: P2 Enterprise readiness shipped
 - [ ] Human-in-loop approvals + breakglass.
@@ -194,20 +205,20 @@ Primary specs: `docs/plans/custom-guards/*`
 - [ ] Define guard config schemas and how they are validated (JSON Schema + runtime checks).
 
 ### A2. Plugin manifest + validation
-- [x] Implement `clawdstrike.plugin.json` (npm) and `clawdstrike.plugin.toml` (Rust) parsing + validation. (See `packages/policy/clawdstrike-policy/src/plugins/manifest.ts`, `packages/policy/clawdstrike-policy/src/plugins/loader.ts`, and `crates/libs/clawdstrike/src/plugins/manifest.rs`.)
-- [ ] Publish JSON Schema(s) for manifests + policy schema(s) (versioned URLs + local copies for offline use). *(Partial: plugin manifest schema scaffolded at `packages/policy/clawdstrike-policy/schemas/clawdstrike.plugin.schema.json`.)*
-- [x] Add CLI commands for plugin validation (dev ergonomics): `guard validate`, `guard inspect`.
+- [ ] Implement `clawdstrike.plugin.json` (npm) and `clawdstrike.plugin.toml` (Rust) parsing + validation.
+- [ ] Publish JSON Schema(s) for manifests + policy schema(s) (versioned URLs + local copies for offline use).
+- [ ] Add CLI commands for plugin validation (dev ergonomics): `guard validate`, `guard inspect`.
 
 ### A3. TS plugin loader (Node)
-- [x] Package resolution (local path + npm). (See `packages/policy/clawdstrike-policy/src/plugins/loader.ts:resolvePluginRoot`.)
-- [x] Dynamic import loader with explicit entrypoints per guard. (See `packages/policy/clawdstrike-policy/src/plugins/loader.ts:PluginLoader.loadIntoRegistry`.)
+- [ ] Package resolution (local path + npm).
+- [ ] Dynamic import loader with explicit entrypoints per guard.
 - [ ] Guard instance manager: lifecycle, caching, hot reload (dev only).
-- [x] Capability gate stubs wired through (even before WASM sandbox lands). (See `packages/policy/clawdstrike-policy/src/plugins/loader.ts:validateCapabilityPolicy`.)
+- [ ] Capability gate stubs wired through (even before WASM sandbox lands).
 
 ### A4. Rust plugin loader (native)
-- [x] WASM runtime integration (Wasmtime) as the default for “untrusted/community” plugins.
-- [x] Host function surface + capability enforcement (network/fs/secrets/subprocess).
-- [x] Resource limits (cpu/memory/wall clock) enforced per plugin call.
+- [ ] WASM runtime integration (Wasmtime) as the default for “untrusted/community” plugins.
+- [ ] Host function surface + capability enforcement (network/fs/secrets/subprocess).
+- [ ] Resource limits (cpu/memory/wall clock) enforced per plugin call.
 - [ ] (Optional later) Native `dlopen` path for certified/first-party plugins.
 
 ### A5. Capability system (security boundary)
@@ -243,7 +254,7 @@ Primary specs: `docs/plans/custom-guards/*`
 Primary specs: `docs/plans/agent-frameworks/*`
 
 ### B0. Adapter core (shared)
-- [x] Create `@backbay/adapter-core` package (interfaces + base implementations): `packages/adapters/clawdstrike-adapter-core/`.
+- [x] Create `@clawdstrike/adapter-core` package (interfaces + base implementations): `packages/adapters/clawdstrike-adapter-core/`.
 - [x] Define the “interception contract” (captured in exported types + base interceptor):
   - Pre-call: build `PolicyEvent` + evaluate + block/warn/allow.
   - Post-call: sanitize output + audit + optional block persistence.
@@ -252,29 +263,29 @@ Primary specs: `docs/plans/agent-frameworks/*`
 - [x] Provide “default” implementations: tool interceptor, output sanitizer, event factory, in-memory audit logger.
 
 ### B1. Policy engine packaging strategy (TS)
-- [ ] Decide: keep policy engine in `@backbay/openclaw` and depend on it, OR extract to `@backbay/policy` for reuse.
+- [ ] Decide: keep policy engine in `@clawdstrike/openclaw` and depend on it, OR extract to `@clawdstrike/policy` for reuse.
 - [ ] Align policy schema with the canonical decision from M0 (migration shim if needed).
-- [x] Bring built-in guard parity with Rust where feasible (mcp_tool, prompt_injection, etc.). *(Canonical-first path + prompt/jailbreak parity + permissive/default alignment in hush-ts.)*
+- [ ] Bring built-in guard parity with Rust where feasible (mcp_tool, prompt_injection, etc.).
 
 ### B2. Vercel AI SDK integration (P0)
-- [x] Create `@backbay/vercel-ai` with middleware + streaming support. (See `packages/adapters/clawdstrike-vercel-ai/`.)
+- [x] Create `@clawdstrike/vercel-ai` with middleware + streaming support. (See `packages/adapters/clawdstrike-vercel-ai/`.)
 - [x] Tool wrapping (pre/post) + model wrapping (bootstrap + prompt injection defenses). (See `packages/adapters/clawdstrike-vercel-ai/src/middleware.ts`.)
 - [x] React helpers (`useSecureChat`, etc.) if they don’t materially expand scope. (See `packages/adapters/clawdstrike-vercel-ai/src/react/use-secure-chat.ts`.)
 - [x] Examples + integration tests with mocked model/tools. (See `packages/adapters/clawdstrike-vercel-ai/src/*.test.ts` and `packages/adapters/clawdstrike-vercel-ai/src/react/use-secure-chat.test.tsx`.)
 
 ### B3. LangChain / LangGraph integration (P0)
-- [x] Create `@backbay/langchain` using callbacks + tool wrappers. (See `packages/adapters/clawdstrike-langchain/`.)
+- [x] Create `@clawdstrike/langchain` using callbacks + tool wrappers. (See `packages/adapters/clawdstrike-langchain/`.)
 - [x] LangGraph nodes: “security checkpoint node”, tool-node wrapper, conditional edges. (See `packages/adapters/clawdstrike-langchain/src/langgraph.ts`.)
 - [x] Ensure correct trace/correlation propagation for audit. (See `packages/adapters/clawdstrike-langchain/src/callback-handler.ts`.)
 
 ### B4. Generic adapter “bring your own framework” (P0)
-- [x] Document and ship a minimal “generic tool runner” wrapper that any framework can plug into. (See `packages/adapters/clawdstrike-adapter-core/src/generic-tool-runner.ts`, `packages/adapters/clawdstrike-adapter-core/src/generic-tool-runner.test.ts`, and `docs/src/guides/generic-adapter-integration.md`.)
-- [x] Provide examples (one TS sample app, one server-side handler). (See `examples/generic-adapter/sample-app.ts` and `examples/generic-adapter/server-handler.ts`.)
+- [ ] Document and ship a minimal “generic tool runner” wrapper that any framework can plug into.
+- [ ] Provide examples (one TS sample app, one server-side handler).
 
 ### B5. P1/P2 frameworks (later)
-- [ ] P1: `@backbay/crewai` (Python bridge strategy TBD).
-- [ ] P1: `@backbay/autogpt` (higher complexity).
-- [ ] P2: `@backbay/autogen`.
+- [ ] P1: `@clawdstrike/crewai` (Python bridge strategy TBD).
+- [ ] P1: `@clawdstrike/autogpt` (higher complexity).
+- [ ] P2: `@clawdstrike/autogen`.
 
 ---
 
@@ -286,7 +297,7 @@ Primary specs: `docs/plans/policy-as-code/*`
 - [ ] Decide what’s “source of truth”:
   - Rust: extend `clawdstrike` CLI (`clawdstrike policy lint|test|diff|simulate|migrate|version`).
   - TS: keep `clawdstrike policy ...` for OpenClaw users, but ensure semantics match.
-- [x] Ensure machine-readable output formats (JSON + optional SARIF for CI). (See `crates/services/hush-cli/src/policy_lint.rs` and `docs/src/reference/api/cli.md` for `clawdstrike policy lint --sarif`; JSON outputs are available across policy subcommands.)
+- [ ] Ensure machine-readable output formats (JSON + optional SARIF for CI).
 
 ### C1. Validation (lint)
 - [x] Implement layered validation:
@@ -297,12 +308,12 @@ Primary specs: `docs/plans/policy-as-code/*`
 ### C2. Testing framework (YAML test suites)
 - [x] Implement `policy.test.yaml` runner with fixtures, contexts, parameterization. (See `crates/services/hush-cli/src/policy_test.rs`.)
 - [x] Add coverage model (which guards/rules were exercised). (See `clawdstrike policy test --coverage`.)
-- [x] Add snapshot testing for decisions + mutation testing (baseline). *(Implemented `--snapshots`, `--update-snapshots`, `--mutation` in `hush policy test`.)*
+- [ ] Add snapshot testing for decisions + mutation testing (later, likely P1).
 
 ### C3. Diff + migration tooling
 - [x] M0 baseline: `clawdstrike policy diff <left> <right> [--resolve] [--json]` (rulesets or files; optional extends resolution).
 - [x] Breaking-change detector (configurable rules; CI `--fail-on-breaking`). (See `clawdstrike policy impact --fail-on-breaking`.)
-- [x] Migration transforms for schema upgrades (and a “dry-run” mode). (See `crates/services/hush-cli/src/policy_migrate.rs`; default stdout output is dry-run, with `--output`/`--in-place` write modes.)
+- [ ] Migration transforms for schema upgrades (and a “dry-run” mode).
 
 ### C4. Simulation / replay
 - [x] Batch simulation mode (`events.jsonl` / audit replay) producing a report (counts, top denials). (See `clawdstrike policy simulate`.)
@@ -310,9 +321,9 @@ Primary specs: `docs/plans/policy-as-code/*`
 - [ ] “Shadow mode” concept captured (likely P1/P2 with `hushd`).
 
 ### C5. OPA/Rego integration (likely P1 unless enterprise asks)
-- [x] Embed OPA/Rego engine (Rust/WASM). *(Regorus-backed runtime behind `rego-runtime` feature in `hush-cli`.)*
+- [ ] Embed OPA/Rego engine (Rust/WASM).
 - [ ] Hybrid YAML+Rego combination modes and “replaces guard” migration story.
-- [x] Rego tooling: compile, eval, trace/explain.
+- [ ] Rego tooling: compile, eval, trace/explain.
 
 ---
 
@@ -356,14 +367,14 @@ Primary specs: `docs/plans/prompt-security/*`
 Primary specs: `docs/plans/multi-agent/*`
 
 ### E0. Foundations (types + audit)
-- [ ] Define `AgentIdentity` and registration APIs (TS + Rust). *(Rust shipped in `crates/libs/hush-multi-agent/src/{types.rs,identity_registry.rs}`; TS parity pending.)*
-- [x] Define trace/correlation propagation (W3C trace context recommended). (See `crates/libs/hush-multi-agent/src/correlation.rs`.)
-- [x] Define “cross-agent event” schema additions (delegation, channel open/close, cross-agent access). (See `crates/libs/hush-multi-agent/src/correlation.rs`.)
+- [ ] Define `AgentIdentity` and registration APIs (TS + Rust).
+- [ ] Define trace/correlation propagation (W3C trace context recommended).
+- [ ] Define “cross-agent event” schema additions (delegation, channel open/close, cross-agent access).
 
 ### E1. Delegation tokens
-- [x] Token format + signing (COSE Sign1 / EdDSA suggested). (JCS + Ed25519 baseline in `crates/libs/hush-multi-agent/src/token.rs`.)
-- [x] Verification middleware + revocation registry interface. (See `crates/libs/hush-multi-agent/src/{token.rs,message.rs,revocation.rs}`.)
-- [x] Attenuation enforcement (capability ceiling, chain tracking). (See `crates/libs/hush-multi-agent/src/token.rs:DelegationClaims::redelegate` + `validate_redelegation_from`.)
+- [ ] Token format + signing (COSE Sign1 / EdDSA suggested).
+- [ ] Verification middleware + revocation registry interface.
+- [ ] Attenuation enforcement (capability ceiling, chain tracking).
 
 ### E2. Cross-agent policy enforcement
 - [ ] Cross-agent guard to prevent confused deputy (sender+receiver checks).
@@ -404,7 +415,7 @@ Primary specs: `docs/plans/identity-access/*`
 - [ ] Okta/Auth0: `docs/plans/identity-access/okta-auth0.md`
 
 ### F3. SIEM/SOAR + audit exports
-- [x] Define audit sink interface (stdout/jsonl, webhook, OTLP, Splunk HEC, Datadog logs). (See `crates/services/hushd/src/audit/forward.rs`, `crates/services/hushd/src/config.rs`, and SIEM Datadog exporter in `crates/services/hushd/src/siem/exporters/datadog.rs`.)
+- [ ] Define audit sink interface (stdout/jsonl, webhook, OTLP, Splunk HEC, Datadog logs).
 - [ ] Ensure tamper-evident audit storage options (hash chaining, signed checkpoints).
 - [ ] Add export formats (JSONL + optional CEF/LEEF).
 

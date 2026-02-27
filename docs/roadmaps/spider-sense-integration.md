@@ -227,40 +227,52 @@ Each factory builds a guard that:
 1. Handles `GuardAction::Custom("risk_signal.<stage>", payload)`
 2. Computes embedding of the payload content
 3. Queries the stage-specific vector DB for cosine similarity
-4. Returns `Allow` (similarity < threshold) or `Deny` (similarity >= threshold, known attack) or escalates to async
+4. Returns `Allow` / `Deny` for high-confidence cases, or `Warn` for ambiguous cases (with similarity evidence in `details`). The integration layer may then emit `risk_signal.<stage>.deep` to trigger async deep analysis.
 
 #### 4.1.2 New `GuardAction::Custom` Kinds
 
 The agent integration layer emits risk signals as custom actions:
 
 ```rust
-// When IRS flags a query-stage risk:
-engine.check(GuardAction::Custom("risk_signal.query", &json!({
+// Query-stage artifact (user input):
+let payload = serde_json::json!({
     "content": user_query,
     "risk_indicators": ["escape_chars", "instruction_override"],
     "source": "irs"
-})), &context).await?;
+});
+let action = GuardAction::Custom("risk_signal.query", &payload);
+let report = engine.check_action_report(&action, &context).await?;
 
-// When IRS flags a plan-stage risk:
-engine.check(GuardAction::Custom("risk_signal.plan", &json!({
+// Plan-stage artifact (plan trace + retrieved memory):
+let payload = serde_json::json!({
     "plan_trace": planning_output,
     "memory_sources": retrieved_memories,
     "risk_indicators": ["memory_divergence"],
     "source": "irs"
-})), &context).await?;
+});
+let action = GuardAction::Custom("risk_signal.plan", &payload);
+let report = engine.check_action_report(&action, &context).await?;
 ```
 
 #### 4.1.3 Metadata-Carried Behavioral Signals
 
-Use `GuardContext.metadata` to carry Spider-Sense state across the pipeline:
+`GuardContext` is intentionally **side-effect free**: guards receive `&GuardContext` and must not mutate shared state.
+
+Use `GuardContext.metadata` only as a **read-only hint blob** supplied by the integration layer (adapter / `hushd`) *into* evaluation:
 
 ```rust
-context.metadata.insert("spider_sense.session_risk_score", json!(0.42));
-context.metadata.insert("spider_sense.flagged_stages", json!(["plan"]));
-context.metadata.insert("spider_sense.escalation_count", json!(2));
+let mut context = GuardContext::new();
+context.metadata = Some(serde_json::json!({
+    "spider_sense": {
+        "session_risk_score": 0.42,
+        "flagged_stages": ["plan"],
+    }
+}));
 ```
 
-Existing guards can inspect this metadata for risk-aware decisions.
+For stateful, cross-turn behavior (risk score decay, escalation counters, quarantine), store state in the control plane (`hushd` sessions) and pass snapshots into `GuardContext` on each check.
+
+For per-action escalation (“run deep analysis”), prefer an **adapter-driven** protocol: the stage guard returns evidence in `GuardResult.details` (e.g., similarity score / matched case), and the adapter decides whether to emit a follow-up `risk_signal.<stage>.deep` action that triggers an async deep-analysis guard.
 
 #### 4.1.4 SSE Event Broadcasting
 
@@ -280,7 +292,7 @@ event_tx.send(DaemonEvent {
 
 ### 4.2 Tier 2 — Async Guard Package
 
-Create `clawdstrike-spider-sense` as an async guard for HAS Level 2 deep analysis:
+Create `clawdstrike-spider-sense` as an async guard for HAS Level 2 deep analysis (triggered by adapter-emitted `risk_signal.<stage>.deep` actions):
 
 ```rust
 // crates/libs/clawdstrike-spider-sense/src/lib.rs
@@ -296,7 +308,7 @@ impl AsyncGuard for SpiderSenseDeepAnalysis {
     fn handles(&self, action: &GuardAction<'_>) -> bool {
         matches!(action, GuardAction::Custom(kind, _)
             if kind.starts_with("risk_signal.")
-            && /* escalated from Level 1 */)
+            && kind.ends_with(".deep"))
     }
 
     fn config(&self) -> &AsyncGuardConfig {
@@ -306,7 +318,8 @@ impl AsyncGuard for SpiderSenseDeepAnalysis {
 
     fn cache_key(&self, action: &GuardAction<'_>, ctx: &GuardContext) -> Option<String> {
         // Cache by content hash + stage
-        Some(format!("ss:{}:{}", stage, content_hash))
+        let (stage, content_hash) = /* extract from `action` */ ("query", "sha256:...");
+        Some(format!("ss:{stage}:{content_hash}"))
     }
 
     async fn check_uncached(
@@ -540,7 +553,7 @@ Tier 1 and Tier 2 integration requires **zero schema changes**:
 - Custom guards are already supported via `custom_guards: [...]`
 - Async guard packages require only registry code changes
 - Risk signals flow through `GuardAction::Custom` (existing variant)
-- Behavioral state travels in `GuardContext.metadata` (existing field)
+- Behavioral state is managed by the integration layer (e.g. `hushd` sessions) and passed *into* `GuardContext` as metadata snapshots; guard evaluation remains side-effect free.
 
 ### 6.2 Schema v1.2.0 (Tier 3)
 
@@ -750,10 +763,10 @@ Four attack types get **entirely new coverage** that ClawdStrike currently lacks
 1. **Implement `SpiderSenseDeepAnalysis` async guard** — LLM reasoning with top-K retrieval
 2. **Port stage-specific judge prompts** — from `sandbox_judge_*.txt`
 3. **Add to async guard registry** — `"clawdstrike-spider-sense"` package name
-4. **Implement escalation protocol** — sync guard sets escalation flag in `GuardContext.metadata`, async guard picks it up
+4. **Implement escalation protocol** — stage guards return “ambiguous” evidence in `GuardResult.details`; adapters emit `risk_signal.<stage>.deep` to trigger async deep analysis
 5. **Add SSE event types** — `spider_sense.threat_detected`, `spider_sense.deep_analysis`, `spider_sense.escalated`
 6. **SIEM integration** — Spider-Sense events flow through existing exporters
-7. **TS SDK parity** — mirror Spider-Sense guard configs in `@backbay/sdk`
+7. **TS SDK parity** — mirror Spider-Sense guard configs in `@clawdstrike/sdk`
 
 **Deliverable:** Full two-tier HAS pipeline operational.
 

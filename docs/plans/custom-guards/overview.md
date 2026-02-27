@@ -7,8 +7,18 @@
 | **Status** | Draft |
 | **Version** | 0.1.0 |
 | **Authors** | Clawdstrike Architecture Team |
-| **Last Updated** | 2026-02-02 |
+| **Last Updated** | 2026-02-07 |
 | **Related Specs** | plugin-system.md, marketplace.md, composition-dsl.md, async-guards.md, guard-sdk.md, versioning.md |
+
+---
+
+## Repo Status (Feb 2026)
+
+This spec predates some in-tree implementation work. Current reality:
+
+- **Sync custom guards (in-process) exist**: `policy.custom_guards[]` + `CustomGuardRegistry` + `CustomGuardFactory` (Rust).
+- **Async guards exist** with caching/rate limiting/circuit breaker/retry: `policy.guards.custom[]` with a **closed set** of built-in packages (VirusTotal / Safe Browsing / Snyk) (Rust).
+- **Plugin loading / marketplace / composition DSL** remain roadmap items (not implemented as a general plugin system yet).
 
 ---
 
@@ -24,6 +34,7 @@ The Clawdstrike security SDK currently ships with a fixed set of built-in guards
 - **PatchIntegrityGuard** - Validates patch/diff safety
 - **McpToolGuard** - Controls MCP tool invocations
 - **PromptInjectionGuard** - Detects prompt injection attempts
+- **JailbreakGuard** - Detects jailbreak attempts in user input
 
 While these guards cover common security scenarios, organizations face unique security requirements:
 

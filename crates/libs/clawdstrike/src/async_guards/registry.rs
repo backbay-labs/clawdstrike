@@ -5,6 +5,8 @@ use crate::async_guards::threat_intel::{
     SafeBrowsingGuard, SafeBrowsingPolicyConfig, SnykGuard, SnykPolicyConfig, VirusTotalGuard,
     VirusTotalPolicyConfig,
 };
+#[cfg(feature = "clawdstrike-spider-sense")]
+use crate::async_guards::threat_intel::{SpiderSenseGuard, SpiderSensePolicyConfig};
 use crate::async_guards::types::{
     AsyncGuard, AsyncGuardConfig, CircuitBreakerConfig, RateLimitConfig, RetryConfig,
 };
@@ -49,6 +51,13 @@ fn build_guard(spec: &CustomGuardSpec) -> Result<Arc<dyn AsyncGuard>> {
         "clawdstrike-snyk" => {
             let typed: SnykPolicyConfig = serde_json::from_value(config)?;
             Ok(Arc::new(SnykGuard::new(typed, async_cfg)))
+        }
+        #[cfg(feature = "clawdstrike-spider-sense")]
+        "clawdstrike-spider-sense" => {
+            let typed: SpiderSensePolicyConfig = serde_json::from_value(config)?;
+            let guard = SpiderSenseGuard::new(typed, async_cfg)
+                .map_err(|e| Error::ConfigError(format!("spider-sense init: {e}")))?;
+            Ok(Arc::new(guard))
         }
         other => Err(Error::ConfigError(format!(
             "unsupported custom guard package: {other}"

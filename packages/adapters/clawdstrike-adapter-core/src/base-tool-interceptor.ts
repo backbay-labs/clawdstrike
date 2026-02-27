@@ -8,6 +8,14 @@ import { DefaultOutputSanitizer } from './default-output-sanitizer.js';
 import { PolicyEventFactory } from './policy-event-factory.js';
 import { allowDecision, type Decision, type PolicyEvent } from './types.js';
 
+type SanitizeExecutionOverrides = {
+  modifiedInput?: unknown;
+  modifiedParameters?: Record<string, unknown>;
+  replacementResult?: unknown;
+  mode: 'advisory' | 'enforced';
+  strategy: string;
+};
+
 export class BaseToolInterceptor implements ToolInterceptor {
   protected readonly engine: PolicyEngineLike;
   protected readonly config: AdapterConfig;
@@ -107,6 +115,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
 
     const decision = await this.engine.evaluate(event);
     context.checkCount++;
+    let sanitizeOverrides: SanitizeExecutionOverrides | undefined;
 
     this.config.handlers?.onAfterEvaluate?.(toolCall, decision);
 
@@ -137,6 +146,35 @@ export class BaseToolInterceptor implements ToolInterceptor {
       }
     }
 
+    if (decision.status === 'sanitize') {
+      sanitizeOverrides = this.deriveSanitizeExecutionOverrides(input, params, decision);
+      this.config.handlers?.onWarning?.(toolCall, decision);
+
+      await this.emitAuditEvent(context, {
+        id: `${event.eventId}-sanitized`,
+        type: 'output_sanitized',
+        timestamp: new Date(),
+        contextId: context.id,
+        sessionId: context.sessionId,
+        toolName: normalizedName,
+        decision,
+        details: {
+          original: 'original' in decision ? decision.original : undefined,
+          sanitized: 'sanitized' in decision ? decision.sanitized : undefined,
+          execution: {
+            mode: sanitizeOverrides.mode,
+            strategy: sanitizeOverrides.strategy,
+            hasReplacementResult: sanitizeOverrides.replacementResult !== undefined,
+          },
+        },
+      });
+    }
+
+    const dispatchInput = sanitizeOverrides?.modifiedInput
+      ?? sanitizeOverrides?.modifiedParameters
+      ?? input;
+    const dispatchParams = BaseToolInterceptor.asRecord(dispatchInput) ?? this.normalizeParams(dispatchInput);
+
     if (decision.status === 'warn') {
       this.config.handlers?.onWarning?.(toolCall, decision);
 
@@ -159,7 +197,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
       sessionId: context.sessionId,
       toolName: normalizedName,
       parameters: this.config.audit?.logParameters
-        ? (this.sanitizeForAudit(params) as Record<string, unknown>)
+        ? (this.sanitizeForAudit(dispatchParams) as Record<string, unknown>)
         : undefined,
       decision,
     });
@@ -167,7 +205,13 @@ export class BaseToolInterceptor implements ToolInterceptor {
     return {
       proceed: true,
       decision,
-      warning: decision.status === 'warn' ? decision.message : undefined,
+      modifiedInput: sanitizeOverrides?.modifiedInput,
+      modifiedParameters: sanitizeOverrides?.modifiedParameters,
+      replacementResult: sanitizeOverrides?.replacementResult,
+      warning:
+        decision.status === 'warn' || decision.status === 'sanitize'
+          ? decision.message
+          : undefined,
       duration: Date.now() - startTime,
     };
   }
@@ -273,6 +317,74 @@ export class BaseToolInterceptor implements ToolInterceptor {
       }
     }
     return { value: input };
+  }
+
+  private deriveSanitizeExecutionOverrides(
+    input: unknown,
+    params: Record<string, unknown>,
+    decision: Extract<Decision, { status: 'sanitize' }>,
+  ): SanitizeExecutionOverrides {
+    const details = BaseToolInterceptor.asRecord(decision.details);
+
+    if (details && 'replacement_result' in details) {
+      return {
+        replacementResult: details.replacement_result,
+        mode: 'enforced',
+        strategy: 'details.replacement_result',
+      };
+    }
+
+    const sanitizedParameters = BaseToolInterceptor.asRecord(details?.sanitized_parameters);
+    if (sanitizedParameters) {
+      return {
+        modifiedParameters: sanitizedParameters,
+        mode: 'enforced',
+        strategy: 'details.sanitized_parameters',
+      };
+    }
+
+    if (typeof decision.sanitized === 'string') {
+      if (typeof input === 'string') {
+        return {
+          modifiedInput: decision.sanitized,
+          mode: 'enforced',
+          strategy: 'decision.sanitized_string_input',
+        };
+      }
+
+      const textKey = this.findTextParameterKey(params);
+      if (textKey) {
+        return {
+          modifiedParameters: {
+            ...params,
+            [textKey]: decision.sanitized,
+          },
+          mode: 'enforced',
+          strategy: `decision.sanitized_field:${textKey}`,
+        };
+      }
+    }
+
+    return {
+      mode: 'advisory',
+      strategy: 'no_applicable_override',
+    };
+  }
+
+  private findTextParameterKey(params: Record<string, unknown>): string | undefined {
+    for (const key of ['text', 'input', 'prompt', 'query', 'command', 'content']) {
+      if (typeof params[key] === 'string') {
+        return key;
+      }
+    }
+    return undefined;
+  }
+
+  private static asRecord(value: unknown): Record<string, unknown> | null {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return null;
+    }
+    return value as Record<string, unknown>;
   }
 
   protected sanitizeForAudit(value: unknown): unknown {

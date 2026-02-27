@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spider-Sense Pattern Database",
+  "description": "Schema for the Spider-Sense guard's pattern database. The file is a JSON array of PatternEntry objects, each containing a pre-computed embedding vector and metadata for similarity-based threat detection.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "required": ["id", "category", "stage", "label", "embedding"],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Unique identifier for this pattern entry."
+      },
+      "category": {
+        "type": "string",
+        "description": "Attack category from the S2Bench taxonomy.",
+        "enum": [
+          "prompt_injection",
+          "jailbreak",
+          "data_exfiltration",
+          "unauthorized_action",
+          "privilege_escalation",
+          "social_engineering",
+          "supply_chain",
+          "evasion",
+          "multimodal"
+        ]
+      },
+      "stage": {
+        "type": "string",
+        "description": "Spider-Sense semantic stage where this attack pattern applies.",
+        "enum": ["perception", "cognition", "action", "feedback"]
+      },
+      "label": {
+        "type": "string",
+        "description": "Human-readable label describing this attack pattern."
+      },
+      "embedding": {
+        "type": "array",
+        "description": "Pre-computed embedding vector. All entries in a database must have the same dimensionality.",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 1
+      }
+    }
+  },
+  "examples": [
+    [
+      {
+        "id": "pi-001",
+        "category": "prompt_injection",
+        "stage": "perception",
+        "label": "Ignore previous instructions",
+        "embedding": [0.1, 0.2, 0.3]
+      },
+      {
+        "id": "jb-001",
+        "category": "jailbreak",
+        "stage": "perception",
+        "label": "DAN jailbreak prompt",
+        "embedding": [0.4, 0.5, 0.6]
+      }
+    ]
+  ]
+}

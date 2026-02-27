@@ -20,16 +20,16 @@ class EngineBackend(Protocol):
 
     name: str
 
-    def check_file_access(self, path: str, ctx: dict[str, Any]) -> dict: ...
-    def check_file_write(self, path: str, content: bytes, ctx: dict[str, Any]) -> dict: ...
-    def check_shell(self, command: str, ctx: dict[str, Any]) -> dict: ...
-    def check_network(self, host: str, port: int, ctx: dict[str, Any]) -> dict: ...
-    def check_mcp_tool(self, tool: str, args: dict[str, Any], ctx: dict[str, Any]) -> dict: ...
-    def check_patch(self, path: str, diff: str, ctx: dict[str, Any]) -> dict: ...
+    def check_file_access(self, path: str, ctx: dict[str, Any]) -> dict: pass
+    def check_file_write(self, path: str, content: bytes, ctx: dict[str, Any]) -> dict: pass
+    def check_shell(self, command: str, ctx: dict[str, Any]) -> dict: pass
+    def check_network(self, host: str, port: int, ctx: dict[str, Any]) -> dict: pass
+    def check_mcp_tool(self, tool: str, args: dict[str, Any], ctx: dict[str, Any]) -> dict: pass
+    def check_patch(self, path: str, diff: str, ctx: dict[str, Any]) -> dict: pass
     def check_untrusted_text(
         self, source: str | None, text: str, ctx: dict[str, Any],
-    ) -> dict: ...
-    def policy_yaml(self) -> str: ...
+    ) -> dict: pass
+    def policy_yaml(self) -> str: pass
 
 
 class NativeEngineBackend:
@@ -218,8 +218,8 @@ class PurePythonBackend:
         from clawdstrike.guards.base import CustomAction, GuardContext
 
         action = CustomAction(
-            action_type="untrusted_text",
-            data={"source": source, "text": text},
+            custom_type="untrusted_text",
+            custom_data={"source": source, "text": text},
         )
         context = GuardContext(**ctx)
         results = self._engine.check(action, context)

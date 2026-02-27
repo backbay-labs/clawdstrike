@@ -176,21 +176,28 @@ class Clawdstrike:
             report = self._backend.check_mcp_tool(action.tool, action.args, ctx)
         elif isinstance(action, PatchAction):
             report = self._backend.check_patch(action.path, action.diff, ctx)
-        elif isinstance(action, CustomAction) and action.action_type == "untrusted_text":
-            source = action.data.get("source") if action.data else None
-            text = action.data.get("text", "") if action.data else ""
+        elif isinstance(action, CustomAction) and action.custom_type == "untrusted_text":
+            source = action.custom_data.get("source")
+            text = action.custom_data.get("text", "")
             report = self._backend.check_untrusted_text(source, text, ctx)
+        elif isinstance(action, CustomAction):
+            # Other custom actions: route to untrusted_text on native backend,
+            # or fall through to engine on pure python backend
+            if isinstance(self._backend, PurePythonBackend):
+                gc = self._context(**context_kwargs)
+                results = self._backend._engine.check(action, gc)
+                return self._decide(results)
+            data_str = str(action.custom_data)
+            report = self._backend.check_untrusted_text(
+                action.custom_type, data_str, ctx,
+            )
         else:
-            # CustomAction or unknown — fall through to engine directly
+            # Unknown action type — fall through to engine directly if possible
             gc = self._context(**context_kwargs)
             if isinstance(self._backend, PurePythonBackend):
                 results = self._backend._engine.check(action, gc)
                 return self._decide(results)
-            # Native backend: evaluate as untrusted_text with action data
-            data_str = str(getattr(action, "data", ""))
-            report = self._backend.check_untrusted_text(
-                action.action_type, data_str, ctx,
-            )
+            return Decision(status=DecisionStatus.ALLOW)
         return self._decide_from_report(report)
 
     def check_file(

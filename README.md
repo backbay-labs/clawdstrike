@@ -5,8 +5,13 @@
 <p align="center">
   <a href="https://github.com/backbay-labs/clawdstrike/actions"><img src="https://img.shields.io/github/actions/workflow/status/backbay-labs/clawdstrike/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI Status"></a>
   <a href="https://crates.io/crates/clawdstrike"><img src="https://img.shields.io/crates/v/clawdstrike?style=flat-square&logo=rust" alt="crates.io"></a>
+  <a href="https://www.npmjs.com/package/@clawdstrike/sdk"><img src="https://img.shields.io/npm/v/@clawdstrike/sdk?style=flat-square&logo=npm&label=npm" alt="npm"></a>
+  <a href="https://pypi.org/project/clawdstrike/"><img src="https://img.shields.io/pypi/v/clawdstrike?style=flat-square&logo=python&logoColor=white&label=PyPI" alt="PyPI"></a>
   <a href="https://docs.rs/clawdstrike"><img src="https://img.shields.io/docsrs/clawdstrike?style=flat-square&logo=docs.rs" alt="docs.rs"></a>
+  <a href="https://github.com/backbay-labs/homebrew-tap/blob/main/Formula/clawdstrike.rb"><img src="https://img.shields.io/badge/homebrew-clawdstrike-FBB040?style=flat-square&logo=homebrew" alt="Homebrew"></a>
+  <a href="https://crates.io/crates/clawdstrike"><img src="https://img.shields.io/crates/d/clawdstrike?style=flat-square&logo=rust&label=downloads" alt="crates.io downloads"></a>
   <a href="https://artifacthub.io/packages/search?repo=clawdstrike"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/clawdstrike" alt="Artifact Hub"></a>
+  <a href="https://discord.gg/clawdstrike"><img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/MSRV-1.93-orange?style=flat-square&logo=rust" alt="MSRV: 1.93">
 </p>
@@ -69,8 +74,23 @@
 brew tap backbay-labs/tap
 brew install clawdstrike
 
+# Block access to sensitive paths
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
-# → DENIED: forbidden_path guard matched pattern "**/.ssh/**"
+# → BLOCKED [Critical]: Access to forbidden path: ~/.ssh/id_rsa
+
+# Control network egress
+clawdstrike check --action-type egress --ruleset strict api.openai.com:443
+# → BLOCKED [Error]: Egress to api.openai.com blocked by policy
+
+# Restrict MCP tool invocations
+clawdstrike check --action-type mcp --ruleset strict shell_exec
+# → BLOCKED [Error]: Tool 'shell_exec' is blocked by policy
+
+# Show available rulesets
+clawdstrike policy list
+
+# Diff two policies
+clawdstrike policy diff strict default
 ```
 
 ### TypeScript
@@ -102,6 +122,23 @@ ctx = GuardContext(cwd="/app", session_id="session-123")
 allowed = engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), ctx)
 # → False
 ```
+
+### OpenClaw Plugin
+
+Clawdstrike ships as a first-class [OpenClaw](https://openclaw.com) plugin that enforces policy at the tool boundary — every tool call your agent makes is checked against your policy before execution.
+
+```bash
+openclaw plugins install @clawdstrike/openclaw
+openclaw plugins enable clawdstrike-security
+```
+
+[Configure the plugin](docs/src/guides/openclaw-integration.md#configuration) in your project's `openclaw.json`.
+
+### Additional SDKs & Bindings
+
+Framework adapters: [OpenAI](packages/adapters/clawdstrike-openai/README.md) · [Claude](packages/adapters/clawdstrike-claude/README.md) · [Vercel AI](docs/src/guides/vercel-ai-integration.md) · [LangChain](docs/src/guides/langchain-integration.md)
+
+[C, Go, C#](docs/src/concepts/multi-language.md) via FFI · [WebAssembly](crates/libs/hush-wasm/README.md)
 
 ---
 
@@ -169,7 +206,8 @@ flowchart LR
   <a href="#jailbreak-detection"><kbd>Jailbreak Detection</kbd></a>&nbsp;&nbsp;
   <a href="#cryptographic-receipts"><kbd>Receipts</kbd></a>&nbsp;&nbsp;
   <a href="#multi-agent-security-primitives"><kbd>Multi-Agent</kbd></a>&nbsp;&nbsp;
-  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>
+  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>&nbsp;&nbsp;
+  <a href="#spider-sense"><kbd>Spider-Sense</kbd></a>
 </p>
 
 ### Guard Stack
@@ -187,8 +225,11 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 | **JailbreakGuard**       | 4-layer detection engine with session aggregation (see below)                    |
 | **ComputerUseGuard**     | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
 | **ShellCommandGuard**    | Blocks dangerous shell commands before execution                                 |
+| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Hierarchical threat screening adapted from [Yu et al. 2026](https://arxiv.org/abs/2602.05386): fast vector similarity resolves known patterns, optional LLM escalation for ambiguous cases |
 
 ---
+
+<h3 align="center">Jailbreak Detection</h3>
 
 <a id="jailbreak-detection"></a>
 <table>
@@ -263,6 +304,8 @@ IRM Router ─┬─ Filesystem Monitor
 
 Catches secrets that make it into model output on the way out. Scans for API keys, tokens, PII, internal URLs, and custom patterns. Redaction strategies: full replacement, partial masking, type labels, stable SHA-256 hashing. Batch and streaming modes.
 
+The `Sanitize` decision verdict allows operations to proceed with modified content — guards can redact or rewrite dangerous payloads instead of outright blocking.
+
 </td>
 </tr>
 <tr>
@@ -273,9 +316,12 @@ Ed25519-signed provenance markers embedded in prompts for attribution and forens
 
 </td>
 <td width="50%" valign="top">
-<h4 align="center">Threat Intel & WASM Plugins</h4>
+<a id="spider-sense"></a>
+<h4 align="center">Threat Intel · Spider-Sense · WASM</h4>
 
 **Threat feeds:** VirusTotal, Snyk, Google Safe Browsing — with circuit breakers, rate limiting, and caching. External failures never block the pipeline.
+
+**Spider-Sense** <sup>β</sup> adapts the hierarchical screening pattern from [Yu et al. (2026)](https://arxiv.org/abs/2602.05386) as a tool-boundary guard. Fast-path cosine similarity against an attack pattern database resolves known threats; ambiguous inputs optionally escalate to an external LLM for deeper analysis. Test coverage uses the paper's S2Bench taxonomy (4 lifecycle stages × 9 attack types). Note: the original paper proposes agent-intrinsic risk sensing — our adaptation applies the screening hierarchy as middleware, not as an intrinsic agent capability. Feature-gated: `--features clawdstrike-spider-sense`.
 
 **WASM runtime:** Custom guards in sandboxed WebAssembly with declared capability sets and resource limits.
 

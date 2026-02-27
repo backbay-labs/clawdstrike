@@ -64,6 +64,17 @@ clawdstrike audit export ./audit-dump.jsonl
 clawdstrike why <event-id>
 ```
 
+## Development Testing
+
+When running this package from the monorepo workspace, build local package dependencies first:
+
+```bash
+bun --cwd packages/adapters/clawdstrike-openclaw run test:workspace
+bun --cwd packages/adapters/clawdstrike-openclaw run typecheck:workspace
+```
+
+These commands build `@clawdstrike/policy` and `@clawdstrike/adapter-core` before running tests/typecheck.
+
 ## API Overview
 
 | Export | Description |

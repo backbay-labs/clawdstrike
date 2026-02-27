@@ -53,6 +53,7 @@ harness = false
 default = []
 ipfs = []
 llm-judge-openai = []
+clawdstrike-spider-sense = []
 wasm-plugin-runtime = ["dep:wasmtime"]
 
 [lints]

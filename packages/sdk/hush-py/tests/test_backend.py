@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from clawdstrike import Clawdstrike, Decision, DecisionStatus
+from clawdstrike import Clawdstrike, Decision
 from clawdstrike.backend import (
     NativeEngineBackend,
     PurePythonBackend,
@@ -15,7 +15,6 @@ from clawdstrike.backend import (
 from clawdstrike.guards.base import GuardResult, Severity
 from clawdstrike.native import NATIVE_AVAILABLE
 from clawdstrike.policy import Policy, PolicyEngine
-
 
 # ---------------------------------------------------------------------------
 # PurePythonBackend

@@ -1,8 +1,8 @@
 """Tests for Clawdstrike facade."""
 
 import pytest
+
 from clawdstrike import Clawdstrike, Decision, DecisionStatus
-from clawdstrike.backend import NativeEngineBackend, PurePythonBackend
 from clawdstrike.exceptions import ConfigurationError
 from clawdstrike.native import NATIVE_AVAILABLE
 from clawdstrike.policy import Policy, PolicyEngine

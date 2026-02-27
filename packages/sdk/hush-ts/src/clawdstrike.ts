@@ -59,7 +59,7 @@ import type { SecretLeakConfig } from './guards/secret-leak.js';
 /**
  * Decision status for security checks.
  */
-export type DecisionStatus = 'allow' | 'warn' | 'deny';
+export type DecisionStatus = 'allow' | 'warn' | 'deny' | 'sanitize';
 
 /**
  * Severity level for security violations.
