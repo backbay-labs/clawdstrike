@@ -43,23 +43,25 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/boundary-dark.svg"><img src=".github/assets/sigils/boundary-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Tool-boundary enforcement
+  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/boundary-dark.svg"><img src=".github/assets/sigils/boundary-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Kernel to chain
    <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/seal-dark.svg"><img src=".github/assets/sigils/seal-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Cryptographic receipts
+  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/seal-dark.svg"><img src=".github/assets/sigils/seal-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Tool-boundary enforcement
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
   <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/plugin-dark.svg"><img src=".github/assets/sigils/plugin-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Swarm-native security
 </p>
 
 <p align="center">
-  <a href="docs/src/getting-started/quick-start.md">Docs</a>
+  <a href="#enforcement-stack">Enforcement Stack</a>
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <a href="docs/src/getting-started/quick-start-typescript.md">TypeScript</a>
+  <a href="https://backbay.io/attack-range">Attack Range</a>
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <a href="docs/src/getting-started/quick-start-python.md">Python</a>
+  <a href="#off-grid-enforcement-plane-a-r">Off-Grid</a>
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <a href="packages/adapters/clawdstrike-openclaw/docs/getting-started.md">OpenClaw</a>
+  <a href="#guard-stack">Guards</a>
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
-  <a href="examples">Examples</a>
+  <a href="#enterprise-architecture">Enterprise</a>
+  <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
+  <a href="#quick-start">Quick Start</a>
 </p>
 
 ---
@@ -210,9 +212,10 @@ flowchart LR
   <a href="#cryptographic-receipts"><kbd>Receipts</kbd></a>&nbsp;&nbsp;
   <a href="#multi-agent-security-primitives"><kbd>Multi-Agent</kbd></a>&nbsp;&nbsp;
   <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>&nbsp;&nbsp;
+  <a href="#spider-sense"><kbd>Spider-Sense</kbd></a>&nbsp;&nbsp;
+  <a href="#off-grid-enforcement-plane-a-r"><kbd>Off-Grid Enforcement</kbd></a>&nbsp;&nbsp;
   <a href="#deployment-modes"><kbd>Deployment Modes</kbd></a>&nbsp;&nbsp;
   <a href="#enterprise-architecture"><kbd>Enterprise</kbd></a>
-  <a href="#spider-sense"><kbd>Spider-Sense</kbd></a>
 </p>
 
 ### Guard Stack
@@ -333,6 +336,27 @@ Ed25519-signed provenance markers embedded in prompts for attribution and forens
 </td>
 </tr>
 </table>
+
+---
+
+<a id="off-grid-enforcement-plane-a-r"></a>
+
+### Off-Grid Enforcement (Plane A-R)
+
+Your revocation doesn't matter if it can't reach the node. Cut the fiber, jam the satellite uplink, airgap the facility. If your security plane requires the internet, you don't have a security plane. You have a suggestion.
+
+Clawdstrike's [Spine protocol](docs/specs/12-reticulum-adapter.md) carries the same Ed25519-signed envelopes over [Reticulum](https://reticulum.network/) mesh networks: LoRa radios, packet radio, serial lines, WiFi, TCP/UDP. Anything that can move 5 bits per second through a 500-byte aperture. The transport changes. The cryptographic proof doesn't.
+
+| Environment | What Propagates | How |
+|---|---|---|
+| **SCIF / air-gapped facility** | Policy deltas, revocations, checkpoints | USB sneakernet with offline Merkle proof verification |
+| **Disaster response / degraded infra** | Emergency revocations, incident facts | Ad-hoc LoRa mesh, store-and-forward via LXMF |
+| **Hostile network / denied spectrum** | Signed revocations at priority 1 | Multi-hop Reticulum over any available carrier |
+| **Remote IoT / edge** | Policy enforcement + attestation receipts | LoRa at 1,200 bps, 6+ km line-of-sight |
+
+**Bandwidth-aware priority scheduling.** Seven tiers. Revocations always transmit first. Under 2 seconds on LoRa. Heartbeats drop when the link can't spare the bytes. A compromised signing key gets revoked across the mesh before the attacker finishes their coffee.
+
+**[$98 reference gateway.](integrations/transports/reticulum/pi-gateway/)** Raspberry Pi 4 + RNode LoRa USB radio. Bridges the off-grid mesh to your NATS backbone. Disclosure policy controls what crosses the boundary. Hash-chained audit log records every envelope forwarded or dropped. 5 watts.
 
 ---
 
@@ -493,6 +517,20 @@ Web UI for security teams to manage their agent fleet:
 
 See [Enterprise Enrollment Guide](docs/src/guides/enterprise-enrollment.md) and [Adaptive Deployment Guide](docs/src/guides/adaptive-deployment.md) for detailed setup instructions.
 
+### Compliance Templates
+
+Every guard decision maps to a regulatory control. Templates ship with pre-built evidence collectors, guard-to-control mappings, and exportable evidence bundles for auditors.
+
+| Framework | What Clawdstrike Proves | Key Controls |
+|---|---|---|
+| **HIPAA** | PHI never left the allowed path. Signed receipts for every access decision. Breach forensics from session reconstruction, not guesswork | 164.312(a)(1) Access Control · 164.312(b) Audit · 164.312(e)(1) Transmission Security |
+| **PCI-DSS v4.0** | Cardholder data stayed in scope. Egress locked to the CDE. Secrets masked before they hit the model | 1.4.1 Network Segmentation · 3.5.1 PAN Masking · 7.2.1 Access Control · 10.2.1 Audit Trail |
+| **SOC2 Type II** | Continuous control evidence across a 6-12 month observation window. Guard verdicts feed directly into CC6/CC7/CC8 criteria with zero manual evidence collection | CC6.1 Logical Access · CC6.6 Network Boundaries · CC7.2 Security Anomalies · CC8.1 Change Management |
+
+**Certification tiers:** Certified (OSS baseline) → Silver (egress lockdown, secret redaction, 90-day retention) → Gold (compliance templates, external auditor attestation, 1-year retention) → Platinum (multi-framework, 7-year archive, real-time SIEM, 99.9% SLA).
+
+See [Certification Program](docs/plans/certification/overview.md) · [HIPAA Template](docs/plans/certification/hipaa-template.md) · [PCI-DSS Template](docs/plans/certification/pci-dss-template.md) · [SOC2 Template](docs/plans/certification/soc2-template.md)
+
 ---
 
 ## Policy System
@@ -536,6 +574,23 @@ Full CUA policy enforcement for agents operating remote desktop surfaces:
 - **Side-channel controls** for clipboard, audio, drive mapping, printing, session sharing, file transfer bounds
 - **Deterministic decision metadata** with stable `reason_code` + severity for machine-checkable analytics
 - **Three enforcement modes:** Observe (log only), Guardrail (warn on unknown), Fail-Closed (deny on unknown)
+
+---
+
+## Enforcement Stack
+
+Six layers. Kernel to chain. Every layer signs its work.
+
+| Layer | What | How |
+|---|---|---|
+| **L0 — Identity** | Workload identity binding | [SPIRE/SPIFFE](docs/specs/06-spire-identity-binding.md) X.509 SVIDs, automated rotation, bound to Spine Ed25519 issuers |
+| **L1 — Kernel** | Syscall-level runtime visibility | [Tetragon](crates/bridges/tetragon-bridge/) eBPF kprobes + LSM hooks — process ancestry, file integrity (IMA), capability enforcement |
+| **L2 — Network** | Identity-based L7 segmentation | [Cilium/Hubble](crates/bridges/hubble-bridge/) CNI with WireGuard encryption, FQDN egress control, flow-level audit |
+| **L3 — Agent** | Tool-boundary policy enforcement | Guard stack + cryptographic receipts + delegation tokens with capability ceilings |
+| **L4 — Attestation** | Tamper-evident proof chain | [AegisNet](docs/specs/13-eas-onchain-anchoring.md) Merkle tree (RFC 6962), witness co-signatures, on-chain anchoring via EAS on Base L2 |
+| **L5 — Transport** | Multi-plane envelope distribution | NATS JetStream (datacenter) · libp2p gossipsub (P2P) · [Reticulum mesh](integrations/transports/reticulum/) (off-grid) · WireGuard overlay (enclaves) |
+
+Every layer produces signed facts that feed into the same append-only Spine protocol. An attestation for a file write carries the process ancestry from Tetragon, the SPIFFE ID from SPIRE, the network policy from Cilium, the guard verdict from Clawdstrike, and a Merkle inclusion proof from AegisNet — in one envelope, verified with one signature check.
 
 ---
 
