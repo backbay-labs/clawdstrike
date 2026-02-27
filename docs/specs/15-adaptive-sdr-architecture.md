@@ -35,7 +35,7 @@ This specification defines the **Adaptive SDR (Security Decision Runtime)** arch
 
 - **`PolicyEngineLike` contract is frozen.** The adaptive engine wraps existing engines; it does not modify the interface.
 - **Fail-closed everywhere.** Every error path denies. Connectivity loss triggers degraded mode with local enforcement, not open access.
-- **NATS auth aligns with `NatsAuthConfig`.** Agents authenticate via creds file, token, or NKey seed.
+- **NATS auth aligns with `NatsAuthConfig`.** Agents authenticate via token, creds file, or NKey seed (enrollment returns token-based auth material by default).
 - **Envelope format uses `build_signed_envelope()` from `spine/src/envelope.rs`.**
 - **Desktop agent port 9878 (default, configurable).** The local API server port is configurable via `agent_api_port` in `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json`.
 - **No breaking changes to existing adapters.** All framework adapters (`openclaw`, `vercel-ai`, `langchain`, etc.) continue to work unchanged.
@@ -555,8 +555,8 @@ Agents authenticate to NATS using one of three methods from `NatsAuthConfig`:
 
 | Method | Use Case | Priority |
 |--------|----------|----------|
-| Credentials file (`.creds`) | Production; issued during enrollment | 1 (highest) |
-| Token | Short-lived access; CI/CD headless mode | 2 |
+| Credentials file (`.creds`) | Optional/manual provisioning path | 1 (highest) |
+| Token | Default enrollment output for desktop agents; also usable in headless mode | 2 |
 | NKey seed | Development; manual provisioning | 3 |
 
 Priority order matches the existing `connect_with_auth` implementation in `spine/src/nats_transport.rs`: first non-None field wins.
@@ -830,11 +830,11 @@ The enterprise maintains an agent registry (PostgreSQL `agents` table from Spec 
 | `now - last_heartbeat_at > 300s` | Status -> `dead`; alert; optionally revoke |
 | Manual revocation | Status -> `revoked`; delete NATS credentials |
 
-Stale detection runs as a periodic job in the Cloud API (every 60 seconds).
+Stale detection runs as a periodic job in the Cloud API (every 60 seconds). The Cloud API default keeps this worker enabled (`STALE_DETECTOR_ENABLED=true`) so stale/dead lifecycle transitions occur unless explicitly disabled.
 
 ### 8.5 Heartbeat Publishing
 
-The agent publishes heartbeats as fire-and-forget NATS messages (not JetStream; heartbeats are ephemeral). The enterprise subscribes to `clawdstrike.agent.heartbeat.>` within the tenant's NATS account to receive all agent heartbeats for that tenant.
+The agent publishes heartbeats as fire-and-forget NATS messages (not JetStream; heartbeats are ephemeral). The enterprise subscribes to `<subject_prefix>.agent.heartbeat.>` within the tenant's NATS account to receive all agent heartbeats for that tenant.
 
 ### 8.6 Session Posture Extraction (G9 Fix)
 
@@ -1129,6 +1129,8 @@ Agent Runtime     engine-adaptive      NATS              SOC Dashboard
 Approval responses **must** be wrapped in a Spine signed envelope, signed by the enterprise service's keypair. This prevents forgery by any entity within the tenant's NATS account that has publish permission on the approval response subject.
 
 The agent **must** verify the envelope signature using `verify_envelope()` before accepting the response. Responses with invalid or missing signatures are treated as if no response was received (timeout -> deny).
+
+Cloud API runtime defaults are aligned with this requirement: `APPROVAL_SIGNING_ENABLED=true` by default, and startup fails fast unless `APPROVAL_SIGNING_KEYPAIR_PATH` is configured.
 
 **Envelope fact payload:**
 

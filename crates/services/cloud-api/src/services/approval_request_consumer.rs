@@ -79,17 +79,11 @@ pub async fn run(
                         None => break,
                     };
 
-                    if let Err(err) = process_approval_request_message(&db, &msg).await {
-                        tracing::warn!(
-                            error = %err,
-                            subject = %msg.subject,
-                            "Failed to process approval request message"
-                        );
-                    }
-
-                    if let Err(err) = msg.ack().await {
-                        tracing::warn!(error = %err, "Failed to ack approval request message");
-                    }
+                    acknowledge_after_processing(
+                        &msg,
+                        process_approval_request_message(&db, &msg).await,
+                        "approval request",
+                    ).await;
                 }
                 _ = shutdown_rx.changed() => {
                     if *shutdown_rx.borrow() {
@@ -106,6 +100,39 @@ pub async fn run(
     }
 
     tracing::info!("Approval request consumer stopped");
+}
+
+fn ack_kind_for_processing_result(result: &Result<(), String>) -> async_nats::jetstream::AckKind {
+    if result.is_ok() {
+        async_nats::jetstream::AckKind::Ack
+    } else {
+        async_nats::jetstream::AckKind::Nak(None)
+    }
+}
+
+async fn acknowledge_after_processing(
+    msg: &async_nats::jetstream::Message,
+    processing_result: Result<(), String>,
+    message_kind: &str,
+) {
+    if let Err(err) = &processing_result {
+        tracing::warn!(
+            error = %err,
+            subject = %msg.subject,
+            message_kind = message_kind,
+            "Message processing failed; requesting JetStream redelivery"
+        );
+    }
+
+    let ack_kind = ack_kind_for_processing_result(&processing_result);
+    if let Err(err) = msg.ack_with(ack_kind).await {
+        tracing::warn!(
+            error = %err,
+            subject = %msg.subject,
+            message_kind = message_kind,
+            "Failed to acknowledge JetStream message"
+        );
+    }
 }
 
 async fn process_approval_request_message(
@@ -279,5 +306,17 @@ mod tests {
         let parsed = parse_request_payload(&serde_json::to_vec(&envelope).unwrap()).unwrap();
         assert_eq!(parsed.request_id, "req-2");
         assert_eq!(parsed.event_data["tool"], "fs.write");
+    }
+
+    #[test]
+    fn ack_kind_tracks_processing_outcome() {
+        assert!(matches!(
+            ack_kind_for_processing_result(&Ok(())),
+            async_nats::jetstream::AckKind::Ack
+        ));
+        assert!(matches!(
+            ack_kind_for_processing_result(&Err("boom".to_string())),
+            async_nats::jetstream::AckKind::Nak(None)
+        ));
     }
 }

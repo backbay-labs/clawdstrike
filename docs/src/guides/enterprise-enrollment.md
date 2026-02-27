@@ -87,7 +87,7 @@ The enrollment process performs the following steps automatically:
 1. Generates a fresh Ed25519 keypair for the agent (stored at `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.key`).
 2. Sends the public key and enrollment token to the Cloud API.
 3. The Cloud API validates the token, registers the agent, and provisions NATS credentials.
-4. The agent persists NATS settings (`nats_url`, `subject_prefix`, `token`, `agent_id`) in `agent.json`.
+4. The agent persists NATS settings (`nats_url`, `subject_prefix`, `token`, `agent_id`, `nats_account`) in `agent.json`.
 5. The agent marks enrollment state (`enrolled`, `agent_uuid`, `tenant_id`) in `agent.json`.
 6. The API returns `restart_required: true` so enterprise features initialize on restart.
 

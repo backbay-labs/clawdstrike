@@ -17,18 +17,33 @@ export function createReceiptQueue(options?: {
   const persistPath = options?.persistPath;
   const items: QueuedReceipt[] = [];
 
+  function serializeItems(): string {
+    return items.map((r) => JSON.stringify(r)).join('\n') + (items.length > 0 ? '\n' : '');
+  }
+
+  function compactPersistedQueue(path: string): void {
+    writeFileSync(path, serializeItems(), 'utf-8');
+  }
+
   return {
     enqueue(receipt: QueuedReceipt): void {
       items.push(receipt);
+      let evicted = false;
 
       // Evict oldest entries when over capacity.
       while (items.length > maxSize) {
         items.shift();
+        evicted = true;
       }
 
       if (persistPath) {
         try {
-          appendFileSync(persistPath, JSON.stringify(receipt) + '\n', 'utf-8');
+          if (evicted) {
+            // Keep persisted queue bounded to maxSize as well.
+            compactPersistedQueue(persistPath);
+          } else {
+            appendFileSync(persistPath, JSON.stringify(receipt) + '\n', 'utf-8');
+          }
         } catch {
           // Persistence is best-effort; failures must not break evaluation.
         }
@@ -63,8 +78,13 @@ export function createReceiptQueue(options?: {
         }
 
         // Trim to maxSize after load.
+        let trimmed = false;
         while (items.length > maxSize) {
           items.shift();
+          trimmed = true;
+        }
+        if (trimmed) {
+          compactPersistedQueue(path);
         }
       } catch {
         // File may not exist yet; that is fine.
@@ -73,8 +93,7 @@ export function createReceiptQueue(options?: {
 
     persistToDisk(path: string): void {
       try {
-        const content = items.map((r) => JSON.stringify(r)).join('\n') + (items.length > 0 ? '\n' : '');
-        writeFileSync(path, content, 'utf-8');
+        writeFileSync(path, serializeItems(), 'utf-8');
       } catch {
         // Best-effort persistence.
       }

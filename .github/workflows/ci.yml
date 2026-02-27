@@ -358,8 +358,16 @@ jobs:
             exit 0
           fi
 
-          git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}"
-          git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.rs' ':(exclude)infra/vendor/**' > changed_rust_files.txt
+          git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+
+          # In shallow PR checkouts, merge-base may be missing even when origin/<base> exists.
+          # Retry after fetching full history so three-dot diff stays stable.
+          if ! git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.rs' ':(exclude)infra/vendor/**' > changed_rust_files.txt; then
+            echo "Shallow diff failed; fetching additional history for merge-base resolution"
+            git fetch --no-tags --prune --unshallow origin || git fetch --no-tags --prune origin
+            git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.rs' ':(exclude)infra/vendor/**' > changed_rust_files.txt
+          fi
 
           if [ ! -s changed_rust_files.txt ]; then
             echo "No changed Rust files; skipping changed-file Rust coverage gate."

@@ -76,6 +76,23 @@ describe('ReceiptQueue', () => {
       expect(afterDrain).toBe('');
     });
 
+    it('compacts persisted queue when maxSize eviction occurs', () => {
+      const filePath = join(tempDir, 'queue.jsonl');
+      const queue = createReceiptQueue({ persistPath: filePath, maxSize: 2 });
+
+      queue.enqueue(makeReceipt('a'));
+      queue.enqueue(makeReceipt('b'));
+      queue.enqueue(makeReceipt('c'));
+
+      const lines = readFileSync(filePath, 'utf-8')
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .map((l) => JSON.parse(l) as QueuedReceipt);
+      expect(lines).toHaveLength(2);
+      expect((lines[0].event as { id: string }).id).toBe('b');
+      expect((lines[1].event as { id: string }).id).toBe('c');
+    });
+
     it('round-trips through loadFromDisk and persistToDisk', () => {
       const filePath = join(tempDir, 'queue.jsonl');
       const q1 = createReceiptQueue({ persistPath: filePath });
@@ -97,7 +114,7 @@ describe('ReceiptQueue', () => {
       expect(queue.size()).toBe(0);
     });
 
-    it('loadFromDisk trims to maxSize', () => {
+    it('loadFromDisk trims to maxSize and compacts persisted file', () => {
       const filePath = join(tempDir, 'queue.jsonl');
       const lines = [makeReceipt('a'), makeReceipt('b'), makeReceipt('c')]
         .map((r) => JSON.stringify(r))
@@ -107,6 +124,14 @@ describe('ReceiptQueue', () => {
       const queue = createReceiptQueue({ maxSize: 2 });
       queue.loadFromDisk(filePath);
       expect(queue.size()).toBe(2);
+
+      const compacted = readFileSync(filePath, 'utf-8')
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .map((l) => JSON.parse(l) as QueuedReceipt);
+      expect(compacted).toHaveLength(2);
+      expect((compacted[0].event as { id: string }).id).toBe('b');
+      expect((compacted[1].event as { id: string }).id).toBe('c');
     });
   });
 });

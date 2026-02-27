@@ -151,7 +151,7 @@ impl Config {
             .ok()
             .as_deref()
             .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
-            .unwrap_or(false);
+            .unwrap_or(true);
         let stale_check_interval_secs = std::env::var("STALE_CHECK_INTERVAL_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())

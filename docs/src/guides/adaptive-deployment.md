@@ -145,6 +145,23 @@ Enterprise administrators can monitor agent health through:
 - **Heartbeat payload:** Heartbeats include session posture and budget state plus host/version metadata for fleet monitoring.
 - **Telemetry stream:** All security decisions flow to the enterprise audit stream for centralized review.
 
+### Cloud API Enterprise Runtime Defaults
+
+The Cloud API enables the core adaptive workers by default. Make these settings explicit in production deployments:
+
+| Environment variable | Default | Notes |
+|----------------------|---------|-------|
+| `NATS_PROVISIONING_MODE` | `external` | Requires `NATS_PROVISIONER_BASE_URL`; startup fails without it. |
+| `APPROVAL_SIGNING_ENABLED` | `true` | Signed approval responses are enabled by default. |
+| `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Required when signing is enabled; startup fails if missing. |
+| `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the cloud DB. |
+| `APPROVAL_RESOLUTION_OUTBOX_ENABLED` | `true` | Retries cloud -> agent resolution delivery until sent. |
+| `HEARTBEAT_CONSUMER_ENABLED` | `true` | Reconciles NATS heartbeats into `agents.last_heartbeat_at`. |
+| `STALE_DETECTOR_ENABLED` | `true` | Periodic stale/dead lifecycle transitions (120s/300s default thresholds). |
+| `AUDIT_CONSUMER_ENABLED` | `false` | Optional; enable when ingesting Spine audit envelopes in this service. |
+
+If you disable any worker in the table above, document the replacement path in your runbook (for example, an external processor or separate service) to avoid silent fleet drift.
+
 ---
 
 ## Headless Mode
