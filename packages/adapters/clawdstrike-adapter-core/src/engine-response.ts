@@ -90,6 +90,11 @@ export function parseDecision(value: unknown, report?: unknown): Decision | null
 
   if (status === 'sanitize') {
     const d = decision as unknown as Record<string, unknown>;
+    const details = value.details !== undefined ? value.details : legacySanitizePayload?.details;
+    if (details !== undefined) {
+      d.details = details;
+    }
+
     const original = typeof value.original === 'string' ? value.original : legacySanitizePayload?.original;
     const sanitized = typeof value.sanitized === 'string' ? value.sanitized : legacySanitizePayload?.sanitized;
     if (original !== undefined) {
@@ -106,6 +111,7 @@ export function parseDecision(value: unknown, report?: unknown): Decision | null
 type SanitizePayload = {
   original?: string;
   sanitized?: string;
+  details: Record<string, unknown>;
 };
 
 function extractLegacySanitizePayload(
@@ -138,7 +144,7 @@ function extractSanitizePayload(details: unknown): SanitizePayload | null {
     return null;
   }
 
-  const payload: SanitizePayload = {};
+  const payload: SanitizePayload = { details };
   if (typeof details.original === 'string') {
     payload.original = details.original;
   }

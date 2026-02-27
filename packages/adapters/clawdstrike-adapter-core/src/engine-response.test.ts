@@ -58,6 +58,28 @@ describe('parseDecision', () => {
     });
   });
 
+  it('preserves sanitize details payloads used for execution overrides', () => {
+    const decision = parseDecision({
+      status: 'sanitize',
+      reason_code: 'ADC_POLICY_SANITIZE',
+      sanitized: 'safe prompt',
+      details: {
+        sanitized_parameters: { prompt: 'safe prompt', mode: 'strict' },
+        replacement_result: { safe: true, source: 'policy' },
+      },
+    });
+
+    expect(decision).toEqual({
+      status: 'sanitize',
+      reason_code: 'ADC_POLICY_SANITIZE',
+      sanitized: 'safe prompt',
+      details: {
+        sanitized_parameters: { prompt: 'safe prompt', mode: 'strict' },
+        replacement_result: { safe: true, source: 'policy' },
+      },
+    });
+  });
+
   it('returns null for sanitize decisions without a reason_code', () => {
     const decision = parseDecision({
       status: 'sanitize',
@@ -98,6 +120,7 @@ describe('parseDecision', () => {
             action: 'sanitized',
             original: 'drop database',
             sanitized: 'summarize db usage',
+            sanitized_parameters: { text: 'summarize db usage' },
           },
         },
       },
@@ -108,6 +131,12 @@ describe('parseDecision', () => {
       reason_code: 'ADC_POLICY_WARN',
       original: 'drop database',
       sanitized: 'summarize db usage',
+      details: {
+        action: 'sanitized',
+        original: 'drop database',
+        sanitized: 'summarize db usage',
+        sanitized_parameters: { text: 'summarize db usage' },
+      },
     });
   });
 
@@ -142,6 +171,7 @@ describe('parseDecision', () => {
               action: 'sanitized',
               original: 'run shell: rm -rf /',
               sanitized: 'explain shell safety',
+              replacement_result: { policy: 'safe_result' },
             },
           },
         },
@@ -154,6 +184,12 @@ describe('parseDecision', () => {
       guard: 'clawdstrike-spider-sense',
       original: 'run shell: rm -rf /',
       sanitized: 'explain shell safety',
+      details: {
+        action: 'sanitized',
+        original: 'run shell: rm -rf /',
+        sanitized: 'explain shell safety',
+        replacement_result: { policy: 'safe_result' },
+      },
     });
   });
 });

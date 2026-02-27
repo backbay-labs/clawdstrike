@@ -502,24 +502,45 @@ impl SpiderSenseGuard {
                     "reason": verdict.reason,
                     "top_matches": format_matches(top_matches),
                 })),
-                "sanitize" => GuardResult::sanitize(
-                    self.name(),
-                    format!(
-                        "Spider-Sense deep analysis: safe after sanitization — {}",
-                        verdict.reason
-                    ),
-                    text.to_string(),
-                    verdict.sanitized_text.clone().unwrap_or_default(),
-                )
-                .with_details(serde_json::json!({
-                    "action": "sanitized",
-                    "original": text,
-                    "sanitized": verdict.sanitized_text,
-                    "analysis": "deep_path",
-                    "verdict": "sanitize",
-                    "reason": verdict.reason,
-                    "top_matches": format_matches(top_matches),
-                })),
+                "sanitize" => {
+                    let sanitized_text = verdict
+                        .sanitized_text
+                        .clone()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty());
+                    match sanitized_text {
+                        Some(sanitized_text) => GuardResult::sanitize(
+                            self.name(),
+                            format!(
+                                "Spider-Sense deep analysis: safe after sanitization — {}",
+                                verdict.reason
+                            ),
+                            text.to_string(),
+                            sanitized_text.clone(),
+                        )
+                        .with_details(serde_json::json!({
+                            "action": "sanitized",
+                            "original": text,
+                            "sanitized": sanitized_text,
+                            "analysis": "deep_path",
+                            "verdict": "sanitize",
+                            "reason": verdict.reason,
+                            "top_matches": format_matches(top_matches),
+                        })),
+                        None => GuardResult::warn(
+                            self.name(),
+                            "Spider-Sense: sanitize verdict missing sanitized_text; treating as suspicious",
+                        )
+                        .with_details(serde_json::json!({
+                            "analysis": "deep_path",
+                            "verdict": "warn",
+                            "original_verdict": "sanitize",
+                            "reason": verdict.reason,
+                            "missing_sanitized_text": true,
+                            "top_matches": format_matches(top_matches),
+                        })),
+                    }
+                }
                 "allow" => GuardResult::allow(self.name()).with_details(serde_json::json!({
                     "analysis": "deep_path",
                     "verdict": "allow",
@@ -577,9 +598,10 @@ impl AsyncGuard for SpiderSenseGuard {
             GuardAction::Custom(action_type, _) => action_type.starts_with("risk_signal."),
             GuardAction::McpTool(_, _)
             | GuardAction::ShellCommand(_)
+            | GuardAction::NetworkEgress(_, _)
+            | GuardAction::FileAccess(_)
             | GuardAction::FileWrite(_, _)
             | GuardAction::Patch(_, _) => true,
-            _ => false,
         }
     }
 
