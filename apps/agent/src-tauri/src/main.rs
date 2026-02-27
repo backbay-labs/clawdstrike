@@ -458,11 +458,13 @@ async fn run_agent<R: Runtime>(
                 // Publish periodic NATS heartbeats alongside the existing HTTP heartbeats.
                 let telemetry_for_heartbeat = telemetry.clone();
                 let session_for_nats_hb = session_manager.clone();
+                let policy_cache_for_nats_hb = policy_cache.clone();
                 let nats_hb_shutdown = shutdown_tx.subscribe();
                 tokio::spawn(async move {
                     nats_heartbeat_loop(
                         telemetry_for_heartbeat,
                         session_for_nats_hb,
+                        policy_cache_for_nats_hb,
                         nats_hb_shutdown,
                     )
                     .await;
@@ -891,6 +893,7 @@ async fn reload_daemon_policy(daemon: &DaemonManager) -> anyhow::Result<()> {
 async fn nats_heartbeat_loop(
     telemetry: Arc<telemetry_publisher::TelemetryPublisher>,
     session_manager: Arc<SessionManager>,
+    policy_cache: Arc<daemon::PolicyCache>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let heartbeat_interval = Duration::from_secs(30);
@@ -903,6 +906,7 @@ async fn nats_heartbeat_loop(
             _ = tokio::time::sleep(heartbeat_interval) => {
                 let state = session_manager.state().await;
                 let hostname = settings::hostname_best_effort();
+                let last_policy_version = policy_cache.cached_policy_version().await;
                 let heartbeat = serde_json::json!({
                     "agent_id": telemetry.agent_id(),
                     "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -910,6 +914,8 @@ async fn nats_heartbeat_loop(
                     "posture": state.posture,
                     "budget_used": state.budget_used,
                     "budget_limit": state.budget_limit,
+                    "mode": "connected",
+                    "last_policy_version": last_policy_version,
                     "hostname": hostname,
                     "version": env!("CARGO_PKG_VERSION"),
                 });

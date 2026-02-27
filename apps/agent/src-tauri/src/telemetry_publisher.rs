@@ -119,6 +119,8 @@ mod tests {
             "posture": "standard",
             "budget_used": 10,
             "budget_limit": 100,
+            "mode": "connected",
+            "last_policy_version": "42",
             "hostname": "dev-machine",
             "version": "0.1.0",
         });
@@ -130,6 +132,8 @@ mod tests {
         assert_eq!(parsed["posture"], "standard");
         assert_eq!(parsed["budget_used"], 10);
         assert_eq!(parsed["budget_limit"], 100);
+        assert_eq!(parsed["mode"], "connected");
+        assert_eq!(parsed["last_policy_version"], "42");
         assert_eq!(parsed["hostname"], "dev-machine");
         assert_eq!(parsed["version"], "0.1.0");
     }

@@ -789,6 +789,12 @@ impl PolicyCache {
         self.cached_policy.lock().await.clone()
     }
 
+    /// Return the cached policy version (best effort) for telemetry/health payloads.
+    pub async fn cached_policy_version(&self) -> Option<String> {
+        let raw = self.cached_policy.lock().await.clone()?;
+        parse_cached_policy_version(&raw)
+    }
+
     /// Start a periodic sync loop that refreshes the policy cache from hushd.
     pub fn start_periodic_sync(
         self: &Arc<Self>,
@@ -813,6 +819,17 @@ impl PolicyCache {
                 }
             }
         });
+    }
+}
+
+fn parse_cached_policy_version(policy_yaml: &str) -> Option<String> {
+    let root: serde_yaml::Value = serde_yaml::from_str(policy_yaml).ok()?;
+    let version = root.get("version")?;
+    match version {
+        serde_yaml::Value::String(value) => Some(value.clone()),
+        serde_yaml::Value::Number(value) => Some(value.to_string()),
+        serde_yaml::Value::Bool(value) => Some(value.to_string()),
+        _ => None,
     }
 }
 
@@ -1669,6 +1686,28 @@ mod tests {
         enabled.nats.enabled = true;
         enabled.nats.nats_url = Some("nats://example:4222".to_string());
         assert!(build_runtime_spine_config(&enabled).is_none());
+    }
+
+    #[test]
+    fn parse_cached_policy_version_accepts_string_or_number() {
+        assert_eq!(
+            parse_cached_policy_version("version: \"42\"\nrules: []\n"),
+            Some("42".to_string())
+        );
+        assert_eq!(
+            parse_cached_policy_version("version: 7\nrules: []\n"),
+            Some("7".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_cached_policy_version_returns_none_for_missing_or_complex_values() {
+        assert_eq!(parse_cached_policy_version("rules: []\n"), None);
+        assert_eq!(
+            parse_cached_policy_version("version:\n  major: 1\n"),
+            None
+        );
+        assert_eq!(parse_cached_policy_version("not: [valid"), None);
     }
 
     #[tokio::test]

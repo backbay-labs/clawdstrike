@@ -16,7 +16,6 @@ use crate::settings::{get_config_dir, hostname_best_effort, EnrollmentState, Set
 pub struct EnrollmentResult {
     pub agent_uuid: String,
     pub tenant_id: String,
-    pub nats_creds_path: String,
 }
 
 /// Request body sent to the cloud API enrollment endpoint.
@@ -160,7 +159,6 @@ impl EnrollmentManager {
         let result = EnrollmentResult {
             agent_uuid: resp.agent_uuid,
             tenant_id: resp.tenant_id,
-            nats_creds_path: String::new(),
         };
 
         tracing::info!(

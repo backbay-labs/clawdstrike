@@ -67,13 +67,37 @@ async fn create_tenant(
 
     let tenant = Tenant::from_row(row).map_err(ApiError::Database)?;
 
-    // Provision NATS account for the new tenant
+    // Provision NATS account for the new tenant.
+    // Fail closed: if provisioning fails, remove the tenant row so we do not
+    // persist a tenant that lacks the required isolation primitives.
     if let Err(e) = state
         .provisioner
         .provision_tenant(tenant.id, &tenant.slug)
         .await
     {
-        tracing::error!(tenant_id = %tenant.id, error = %e, "Failed to provision NATS account");
+        tracing::error!(
+            tenant_id = %tenant.id,
+            error = %e,
+            "Failed to provision NATS account; rolling back tenant creation"
+        );
+        if let Err(cleanup_err) = sqlx::query::query("DELETE FROM tenants WHERE id = $1")
+            .bind(tenant.id)
+            .execute(&state.db)
+            .await
+        {
+            tracing::error!(
+                tenant_id = %tenant.id,
+                error = %cleanup_err,
+                "Failed to rollback tenant after provisioning error"
+            );
+            return Err(ApiError::Internal(
+                "failed to provision tenant NATS account and failed to rollback tenant row"
+                    .to_string(),
+            ));
+        }
+        return Err(ApiError::Nats(format!(
+            "failed to provision tenant NATS account: {e}"
+        )));
     }
 
     Ok(Json(tenant))

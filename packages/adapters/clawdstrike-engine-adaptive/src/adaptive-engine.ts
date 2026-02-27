@@ -44,7 +44,7 @@ function enrichDecision(decision: Decision, provenance: EnrichedProvenance): Dec
 
 export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEngine {
   const { local, remote } = options;
-  const initialMode = options.initialMode ?? (remote ? 'standalone' : 'standalone');
+  const initialMode = options.initialMode ?? 'standalone';
 
   const machine = createModeMachine(initialMode);
   const queue = createReceiptQueue({

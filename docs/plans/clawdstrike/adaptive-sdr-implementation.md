@@ -306,14 +306,14 @@ Addresses research brief gap: **G11** (fleet discovery / registration).
 | File Path | Action | Description |
 |-----------|--------|-------------|
 | `apps/agent/src-tauri/src/enrollment.rs` | create | Enrollment flow: generate Ed25519 keypair, POST to cloud-api `/agents`, store NATS credentials, persist enrollment state |
-| `apps/agent/src-tauri/src/settings.rs` | modify | Add `EnrollmentState` struct (enrolled, enrollment_token, agent_uuid, nats_creds_path) to Settings |
+| `apps/agent/src-tauri/src/settings.rs` | modify | Add `EnrollmentState` and extend `NatsSettings` (token/account/subject_prefix/agent_id) for enrollment persistence |
 | `apps/agent/src-tauri/src/session.rs` | modify | Extend heartbeat to also publish via NATS `telemetry_publisher` when enrolled |
 | `apps/agent/src-tauri/src/api_server.rs` | modify | Add `POST /api/v1/enroll` and `GET /api/v1/enrollment-status` routes |
 | `apps/agent/src-tauri/src/main.rs` | modify | On startup, check enrollment state; if enrolled, init NATS with stored credentials |
 | `crates/services/cloud-api/src/routes/agents.rs` | modify | Add `POST /agents/enroll` endpoint that accepts enrollment token + public key, returns full NATS credentials |
 | `crates/services/cloud-api/src/services/mod.rs` | modify | Add `stale_agent_detector` service module reference |
 | `crates/services/cloud-api/src/services/stale_agent_detector.rs` | create | Background task: query agents where `last_heartbeat_at` < threshold, update status to `stale` |
-| `crates/services/cloud-api/src/models/agent.rs` | modify | Add `enrollment_token` field, `EnrollmentRequest`/`EnrollmentResponse` types |
+| `crates/services/cloud-api/src/models/agent.rs` | modify | Add `EnrollmentRequest`/`EnrollmentResponse` types with structured NATS connection fields |
 
 ### Dependencies
 
@@ -339,13 +339,16 @@ Addresses research brief gap: **G11** (fleet discovery / registration).
 5. cloud-api validates token, creates agent record, provisions NATS account credentials
 6. cloud-api responds:
    {
-     "agent_id": "uuid",
-     "nats_credentials": { "nats_url": "...", "creds_file_content": "..." },
+     "agent_uuid": "...",
      "tenant_id": "...",
-     "subject_prefix": "..."
+     "agent_id": "...",
+     "nats_url": "...",
+     "nats_account": "...",
+     "nats_subject_prefix": "...",
+     "nats_token": "..."
    }
-7. Agent stores credentials to ~/.config/clawdstrike/nats.creds
-8. Agent updates settings with enrollment state
+7. Agent stores private signing key at ~/.config/clawdstrike/agent.key
+8. Agent updates settings with enrollment + NATS connection state in `agent.json`
 9. Agent initializes NATS client with new credentials
 ```
 
@@ -353,7 +356,7 @@ Addresses research brief gap: **G11** (fleet discovery / registration).
 
 - `EnrollmentManager::enroll(cloud_api_url: &str, enrollment_token: &str) -> Result<EnrollmentResult>`
 - Generates keypair, stores private key securely in `~/.config/clawdstrike/agent.key`.
-- Writes NATS creds file to `~/.config/clawdstrike/nats.creds`.
+- Stores NATS token/account/prefix/url directly in `Settings::nats`.
 - Updates `Settings` with `EnrollmentState { enrolled: true, agent_uuid, tenant_id, ... }`.
 - `is_enrolled(settings: &Settings) -> bool` -- checks if valid enrollment state exists.
 
