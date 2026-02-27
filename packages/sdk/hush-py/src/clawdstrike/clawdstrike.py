@@ -91,8 +91,10 @@ class Clawdstrike:
         """
         if policy is None:
             policy = Policy()
-        if fail_fast:
-            policy.settings.fail_fast = fail_fast
+        else:
+            import copy
+            policy = copy.copy(policy)
+        policy.settings.fail_fast = fail_fast
         return cls(PolicyEngine(policy), cwd=cwd)
 
     def _context(self, **kwargs: Any) -> GuardContext:

@@ -44,7 +44,7 @@ def _find_rulesets_dir() -> Path:
         if p.is_dir():
             return p
     except Exception:
-        pass
+        pass  # importlib.resources not available; fall back to monorepo path
     # Fallback: monorepo relative path (dev layout)
     pkg_relative = Path(__file__).resolve().parent / "../../../../../rulesets"
     if pkg_relative.is_dir():

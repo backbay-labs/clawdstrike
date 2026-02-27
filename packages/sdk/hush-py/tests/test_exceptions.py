@@ -32,8 +32,7 @@ class TestExceptionHierarchy:
             assert str(e) == "test"
 
     def test_exceptions_are_distinct(self) -> None:
-        import pytest
-        with pytest.raises(PolicyError):
-            raise PolicyError("p")
-        with pytest.raises(ReceiptError):
-            raise ReceiptError("r")
+        assert not issubclass(PolicyError, ReceiptError)
+        assert not issubclass(ReceiptError, PolicyError)
+        assert not issubclass(GuardError, PolicyError)
+        assert not issubclass(ConfigurationError, PolicyError)

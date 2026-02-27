@@ -76,7 +76,13 @@ class Decision:
             )
 
         if warns:
-            worst = max(warns, key=lambda r: len(r.message) if r.message else 0)
+            severity_order = {
+                Severity.CRITICAL: 4,
+                Severity.ERROR: 3,
+                Severity.WARNING: 2,
+                Severity.INFO: 1,
+            }
+            worst = max(warns, key=lambda r: severity_order.get(r.severity, 0))
             return cls(
                 status=DecisionStatus.WARN,
                 guard=worst.guard,

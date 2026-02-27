@@ -3,13 +3,12 @@
 from clawdstrike.guards.base import (
     FileAccessAction,
     FileWriteAction,
-    NetworkEgressAction,
-    ShellCommandAction,
+    GuardAction,
     McpToolAction,
+    NetworkEgressAction,
     PatchAction,
     CustomAction,
-    Action,
-    GuardAction,
+    ShellCommandAction,
 )
 
 

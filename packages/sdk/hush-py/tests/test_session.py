@@ -1,6 +1,6 @@
 """Tests for ClawdstrikeSession."""
 
-from clawdstrike import Clawdstrike, DecisionStatus
+from clawdstrike import Clawdstrike
 
 
 class TestClawdstrikeSession:

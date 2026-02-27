@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from clawdstrike.exceptions import ConfigurationError
 from clawdstrike.guards.base import Action, Guard, GuardContext, GuardResult, Severity
 
 DEFAULT_BLOCKED_COMMANDS: list[str] = [
@@ -48,7 +49,7 @@ class ShellCommandGuard(Guard):
                 self._compiled.append((pattern, re.compile(pattern)))
             except re.error as e:
                 msg = f"Invalid regex in shell_command blocked pattern: {pattern!r}: {e}"
-                raise ValueError(msg) from e
+                raise ConfigurationError(msg) from e
 
     @property
     def name(self) -> str:
