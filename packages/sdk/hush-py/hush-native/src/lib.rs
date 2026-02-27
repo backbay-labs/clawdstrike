@@ -535,6 +535,27 @@ impl NativeEngine {
         json_value_to_py(py, &v)
     }
 
+    /// Evaluate an arbitrary custom action through the native guard pipeline.
+    #[pyo3(signature = (custom_type, data_json, ctx=None))]
+    fn check_custom(
+        &self,
+        py: Python<'_>,
+        custom_type: &str,
+        data_json: &str,
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let context = build_guard_context(ctx)?;
+        let payload: serde_json::Value = serde_json::from_str(data_json)
+            .map_err(|e| PyValueError::new_err(format!("Invalid JSON data: {}", e)))?;
+        let action = clawdstrike::guards::GuardAction::Custom(custom_type, &payload);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
     fn policy_yaml(&self) -> PyResult<String> {
         self.engine
             .policy_yaml()

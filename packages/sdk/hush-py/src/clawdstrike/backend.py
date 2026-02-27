@@ -29,6 +29,9 @@ class EngineBackend(Protocol):
     def check_untrusted_text(
         self, source: str | None, text: str, ctx: dict[str, Any],
     ) -> dict: pass
+    def check_custom(
+        self, custom_type: str, custom_data: dict[str, Any], ctx: dict[str, Any],
+    ) -> dict: pass
     def policy_yaml(self) -> str: pass
 
 
@@ -63,6 +66,12 @@ class NativeEngineBackend:
         self, source: str | None, text: str, ctx: dict[str, Any],
     ) -> dict:
         return self._engine.check_untrusted_text(source, text, ctx)
+
+    def check_custom(
+        self, custom_type: str, custom_data: dict[str, Any], ctx: dict[str, Any],
+    ) -> dict:
+        data_json = json.dumps(custom_data)
+        return self._engine.check_custom(custom_type, data_json, ctx)
 
     def policy_yaml(self) -> str:
         return self._engine.policy_yaml()
@@ -221,6 +230,16 @@ class PurePythonBackend:
             custom_type="untrusted_text",
             custom_data={"source": source, "text": text},
         )
+        context = GuardContext(**ctx)
+        results = self._engine.check(action, context)
+        return _results_to_report_dict(results)
+
+    def check_custom(
+        self, custom_type: str, custom_data: dict[str, Any], ctx: dict[str, Any],
+    ) -> dict:
+        from clawdstrike.guards.base import CustomAction, GuardContext
+
+        action = CustomAction(custom_type=custom_type, custom_data=custom_data)
         context = GuardContext(**ctx)
         results = self._engine.check(action, context)
         return _results_to_report_dict(results)

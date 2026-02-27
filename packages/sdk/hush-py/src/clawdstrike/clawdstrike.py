@@ -183,15 +183,8 @@ class Clawdstrike:
             text = action.custom_data.get("text", "")
             report = self._backend.check_untrusted_text(source, text, ctx)
         elif isinstance(action, CustomAction):
-            # Other custom actions: route to untrusted_text on native backend,
-            # or fall through to engine on pure python backend
-            if isinstance(self._backend, PurePythonBackend):
-                gc = self._context(**context_kwargs)
-                results = self._backend._engine.check(action, gc)
-                return self._decide(results)
-            data_str = str(action.custom_data)
-            report = self._backend.check_untrusted_text(
-                action.custom_type, data_str, ctx,
+            report = self._backend.check_custom(
+                action.custom_type, action.custom_data, ctx,
             )
         else:
             # Unknown action type — fall through to engine directly if possible
