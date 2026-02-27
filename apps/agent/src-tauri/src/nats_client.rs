@@ -12,7 +12,6 @@ use crate::settings::NatsSettings;
 pub struct NatsClient {
     client: async_nats::Client,
     js: async_nats::jetstream::Context,
-    tenant_id: String,
     agent_id: String,
     subject_prefix: String,
 }
@@ -58,7 +57,6 @@ impl NatsClient {
         Ok(Self {
             client,
             js,
-            tenant_id: tenant_id.to_string(),
             agent_id: agent_id.to_string(),
             subject_prefix: subject_prefix.to_string(),
         })
@@ -72,11 +70,6 @@ impl NatsClient {
     /// Get a reference to the JetStream context.
     pub fn jetstream(&self) -> &async_nats::jetstream::Context {
         &self.js
-    }
-
-    /// Get the tenant ID.
-    pub fn tenant_id(&self) -> &str {
-        &self.tenant_id
     }
 
     /// Get the agent ID.

@@ -153,7 +153,7 @@ The Cloud API enables the core adaptive workers by default. Make these settings 
 |----------------------|---------|-------|
 | `NATS_PROVISIONING_MODE` | `external` | Cloud API starts without a provisioner URL, but tenant/agent provisioning calls fail until `NATS_PROVISIONER_BASE_URL` is set. |
 | `APPROVAL_SIGNING_ENABLED` | `true` | Signed approval responses are enabled by default. |
-| `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Required when signing is enabled; startup fails if missing. |
+| `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Optional but recommended. If unset or unreadable while signing is enabled, cloud-api falls back to an ephemeral keypair and logs a warning. |
 | `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the cloud DB. |
 | `APPROVAL_SUBJECT_FILTER` | `tenant-*.clawdstrike.approval.request.*` | Keep scoped to approval request subjects to avoid consumer redelivery loops on unrelated traffic. |
 | `APPROVAL_RESOLUTION_OUTBOX_ENABLED` | `true` | Retries cloud -> agent resolution delivery until sent. |

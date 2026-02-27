@@ -141,7 +141,6 @@ impl EnrollmentManager {
                 enrolled: true,
                 agent_uuid: Some(resp.agent_uuid.clone()),
                 tenant_id: Some(resp.tenant_id.clone()),
-                nats_creds_path: None,
                 enrollment_in_progress: false,
             };
             settings.nats.enabled = true;
@@ -222,7 +221,6 @@ mod tests {
         assert!(!state.enrollment_in_progress);
         assert!(state.agent_uuid.is_none());
         assert!(state.tenant_id.is_none());
-        assert!(state.nats_creds_path.is_none());
     }
 
     #[test]

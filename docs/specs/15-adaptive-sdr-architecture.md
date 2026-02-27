@@ -442,7 +442,7 @@ Where:
 | Subject Pattern | Type | Direction | Purpose |
 |----------------|------|-----------|---------|
 | `<subject_prefix>.policy.update` | Subject | Enterprise -> Agent | Policy deployment signal |
-| `<subject_prefix>.telemetry.receipts.<agent-id>` | JetStream subject | Agent -> Enterprise | Audit receipt events |
+| `<subject_prefix>.receipts.eval` | JetStream subject | Agent -> Enterprise | Audit receipt envelopes |
 | `<subject_prefix>.agent.heartbeat.<agent-id>` | Subject | Agent -> Enterprise | Periodic agent status |
 | `<subject_prefix>.posture.command.<agent-id>` | Subject | Enterprise -> Agent | Remote posture commands |
 | `<subject_prefix>.approval.response.<agent-id>` | Subject | Enterprise -> Agent | Approval resolution responses |
@@ -953,7 +953,7 @@ Telemetry envelopes use `build_signed_envelope()` from `spine/src/envelope.rs`:
 
 ### 10.3 Publishing
 
-- **Online:** Receipts are published immediately to `<subject_prefix>.telemetry.receipts.<agent-id>`
+- **Online:** Receipts are published immediately to `<subject_prefix>.receipts.eval`
 - **NATS message header:** `Nats-Msg-Id: <envelope_hash>` for server-side deduplication (5-minute window)
 - **Batch mode:** Agent buffers receipts and flushes every `flush_interval_ms` (default: 5000ms) or when the buffer reaches 100 envelopes, whichever comes first
 
@@ -1130,7 +1130,7 @@ Approval responses **must** be wrapped in a Spine signed envelope, signed by the
 
 The agent **must** verify the envelope signature using `verify_envelope()` before accepting the response. Responses with invalid or missing signatures are treated as if no response was received (timeout -> deny).
 
-Cloud API runtime defaults are aligned with this requirement: `APPROVAL_SIGNING_ENABLED=true` by default, and startup fails fast unless `APPROVAL_SIGNING_KEYPAIR_PATH` is configured.
+Cloud API runtime defaults are aligned with this requirement: `APPROVAL_SIGNING_ENABLED=true` by default. If `APPROVAL_SIGNING_KEYPAIR_PATH` is unset or unreadable, cloud-api generates an ephemeral signing keypair and logs a warning.
 
 **Envelope fact payload:**
 
@@ -1369,7 +1369,7 @@ All adaptive SDR components emit structured logs (JSON) with the following stand
 | Path | Description |
 |------|-------------|
 | `packages/adapters/clawdstrike-engine-adaptive/src/index.ts` | Adaptive engine wrapper |
-| `packages/adapters/clawdstrike-engine-adaptive/src/mode-manager.ts` | Mode transition state machine |
+| `packages/adapters/clawdstrike-engine-adaptive/src/mode-machine.ts` | Mode transition state machine |
 | `packages/adapters/clawdstrike-engine-adaptive/src/probe.ts` | Enterprise availability probing |
 | `packages/adapters/clawdstrike-engine-adaptive/src/types.ts` | Adaptive engine types |
 | `packages/adapters/clawdstrike-engine-adaptive/package.json` | Package manifest |

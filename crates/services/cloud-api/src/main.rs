@@ -51,19 +51,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
     tracing::info!(addr = %config.listen_addr, "Starting ClawdStrike Cloud API");
 
-    let signing_keypair = if config.approval_signing_enabled {
-        let key_path = config
-            .approval_signing_keypair_path
-            .as_ref()
-            .ok_or_else(|| {
-                "APPROVAL_SIGNING_ENABLED requires APPROVAL_SIGNING_KEYPAIR_PATH".to_string()
-            })?;
-        let key_hex = std::fs::read_to_string(key_path)?;
-        let keypair = hush_core::Keypair::from_hex(key_hex.trim())?;
-        Some(Arc::new(keypair))
-    } else {
-        None
-    };
+    let signing_keypair = resolve_approval_signing_keypair(
+        config.approval_signing_enabled,
+        config.approval_signing_keypair_path.as_deref(),
+    );
 
     // Connect to PostgreSQL
     let pool = db::create_pool(&config.database_url).await?;
@@ -240,4 +231,79 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Shut down cleanly");
     Ok(())
+}
+
+fn resolve_approval_signing_keypair(
+    signing_enabled: bool,
+    keypair_path: Option<&str>,
+) -> Option<Arc<hush_core::Keypair>> {
+    if !signing_enabled {
+        return None;
+    }
+
+    if let Some(path) = keypair_path {
+        match load_approval_signing_keypair(path) {
+            Ok(keypair) => {
+                tracing::info!(path = %path, "Loaded approval signing keypair from disk");
+                return Some(Arc::new(keypair));
+            }
+            Err(err) => {
+                tracing::warn!(
+                    path = %path,
+                    error = %err,
+                    "Failed to load approval signing keypair; falling back to an ephemeral keypair"
+                );
+            }
+        }
+    } else {
+        tracing::warn!(
+            "APPROVAL_SIGNING_ENABLED is true but APPROVAL_SIGNING_KEYPAIR_PATH is not set; falling back to an ephemeral keypair"
+        );
+    }
+
+    tracing::warn!(
+        "Using ephemeral approval signing keypair; configure APPROVAL_SIGNING_KEYPAIR_PATH for stable signatures across restarts"
+    );
+    Some(Arc::new(hush_core::Keypair::generate()))
+}
+
+fn load_approval_signing_keypair(path: &str) -> Result<hush_core::Keypair, String> {
+    let key_hex = std::fs::read_to_string(path)
+        .map_err(|err| format!("failed to read keypair file: {err}"))?;
+    hush_core::Keypair::from_hex(key_hex.trim())
+        .map_err(|err| format!("failed to parse keypair: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{load_approval_signing_keypair, resolve_approval_signing_keypair};
+
+    #[test]
+    fn signing_keypair_disabled_returns_none() {
+        assert!(resolve_approval_signing_keypair(false, None).is_none());
+    }
+
+    #[test]
+    fn missing_key_path_uses_ephemeral_signing_keypair() {
+        assert!(resolve_approval_signing_keypair(true, None).is_some());
+    }
+
+    #[test]
+    fn configured_keypair_path_loads_keypair() {
+        let keypair = hush_core::Keypair::generate();
+        let path = std::env::temp_dir().join(format!(
+            "clawdstrike-approval-signing-{}-{}.key",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+
+        std::fs::write(&path, keypair.to_hex()).unwrap();
+        let parsed = load_approval_signing_keypair(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(path).unwrap();
+
+        assert_eq!(parsed.public_key(), keypair.public_key());
+    }
 }

@@ -41,6 +41,7 @@ const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
 const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
 const POLICY_VERSION_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
+const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone)]
 pub struct AgentApiServer {
@@ -77,10 +78,25 @@ struct PolicyVersionCache {
     value: Option<String>,
     last_refresh_at: Option<std::time::Instant>,
     refresh_in_flight: bool,
+    refresh_started_at: Option<std::time::Instant>,
 }
 
 impl PolicyVersionCache {
     fn mark_refresh_started_if_due(&mut self, now: std::time::Instant) -> bool {
+        if self.refresh_in_flight {
+            let stuck = self
+                .refresh_started_at
+                .map(|started| {
+                    now.duration_since(started) >= POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT
+                })
+                .unwrap_or(true);
+
+            if stuck {
+                self.refresh_in_flight = false;
+                self.refresh_started_at = None;
+            }
+        }
+
         let stale = self
             .last_refresh_at
             .map(|last| now.duration_since(last) >= POLICY_VERSION_CACHE_REFRESH_INTERVAL)
@@ -91,6 +107,7 @@ impl PolicyVersionCache {
         }
 
         self.refresh_in_flight = true;
+        self.refresh_started_at = Some(now);
         // Mark immediately to avoid concurrent /health calls all spawning refresh tasks.
         self.last_refresh_at = Some(now);
         true
@@ -102,6 +119,7 @@ impl PolicyVersionCache {
         }
         self.last_refresh_at = Some(now);
         self.refresh_in_flight = false;
+        self.refresh_started_at = None;
     }
 }
 
@@ -1548,10 +1566,26 @@ mod tests {
         let started = std::time::Instant::now();
         assert!(cache.mark_refresh_started_if_due(started));
         assert!(cache.refresh_in_flight);
+        assert_eq!(cache.refresh_started_at, Some(started));
 
         cache.finish_refresh(Some("42".to_string()), started);
         assert_eq!(cache.value.as_deref(), Some("42"));
         assert!(!cache.refresh_in_flight);
+        assert!(cache.refresh_started_at.is_none());
+    }
+
+    #[test]
+    fn policy_version_cache_recovers_when_refresh_task_stalls() {
+        let mut cache = PolicyVersionCache::default();
+        let started = std::time::Instant::now();
+        assert!(cache.mark_refresh_started_if_due(started));
+        assert!(!cache.mark_refresh_started_if_due(
+            started + POLICY_VERSION_CACHE_REFRESH_INTERVAL
+        ));
+
+        let after_timeout = started + POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT + Duration::from_millis(1);
+        assert!(cache.mark_refresh_started_if_due(after_timeout));
+        assert!(cache.refresh_in_flight);
     }
 
     #[test]

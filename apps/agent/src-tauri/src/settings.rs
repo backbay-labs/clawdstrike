@@ -135,9 +135,6 @@ pub struct EnrollmentState {
     /// Tenant ID assigned during enrollment.
     #[serde(default)]
     pub tenant_id: Option<String>,
-    /// Path to the NATS credentials file written during enrollment.
-    #[serde(default)]
-    pub nats_creds_path: Option<String>,
     /// Flag indicating enrollment is currently in progress (for crash recovery).
     #[serde(default)]
     pub enrollment_in_progress: bool,
