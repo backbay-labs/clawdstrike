@@ -222,6 +222,8 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 
 ---
 
+<h3 align="center">Jailbreak Detection</h3>
+
 <a id="jailbreak-detection"></a>
 <table>
 <tr>
