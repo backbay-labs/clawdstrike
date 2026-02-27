@@ -212,6 +212,9 @@ describe('createAdaptiveEngine', () => {
       // The probe should have promoted to connected.
       const promotionEvent = modeChanges.find((e) => e.to === 'connected');
       expect(promotionEvent).toBeDefined();
+      expect(modeChanges).toHaveLength(1);
+      expect(promotionEvent?.drainedReceipts).toHaveLength(1);
+      expect(promotionEvent?.drainedReceipts?.[0]?.event).toMatchObject({ eventId: 'queued-1' });
 
       // Next evaluation should use remote.
       const decision = await engine.evaluate(makeEvent('after-promotion'));

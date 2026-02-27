@@ -374,9 +374,19 @@ jobs:
             exit 0
           fi
 
+          # `cargo llvm-cov` in this job targets the root Rust workspace.
+          # Exclude standalone Rust crates outside that workspace from this
+          # specific gate to avoid false negatives from missing LCOV records.
+          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt > changed_rust_files.coverage.txt || true
+
+          if [ ! -s changed_rust_files.coverage.txt ]; then
+            echo "No workspace Rust files changed; skipping changed-file Rust coverage gate."
+            exit 0
+          fi
+
           tools/scripts/check-changed-rust-coverage.py \
             --lcov lcov.info \
-            --changed-files-file changed_rust_files.txt \
+            --changed-files-file changed_rust_files.coverage.txt \
             --threshold "${CHANGED_RUST_COVERAGE_THRESHOLD}"
 
       - name: Upload coverage to Codecov

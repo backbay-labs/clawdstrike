@@ -192,11 +192,17 @@ impl Config {
 }
 
 fn default_approval_subject_filter() -> String {
-    "tenant-*.clawdstrike.approval.request.*".to_string()
+    // Tenant slugs may include dots, which expands the subject token count
+    // before `.approval.request.<agent-id>`. We therefore default to a broad
+    // filter and rely on strict subject parsing inside the consumer.
+    ">".to_string()
 }
 
 fn default_heartbeat_subject_filter() -> String {
-    "tenant-*.clawdstrike.agent.heartbeat.*".to_string()
+    // Tenant slugs may include dots, which expands the subject token count
+    // before `.agent.heartbeat.<agent-id>`. We therefore default to a broad
+    // filter and rely on strict subject parsing inside the consumer.
+    ">".to_string()
 }
 
 #[cfg(test)]
@@ -204,18 +210,12 @@ mod tests {
     use super::{default_approval_subject_filter, default_heartbeat_subject_filter};
 
     #[test]
-    fn default_approval_subject_filter_is_scoped_to_request_shape() {
-        assert_eq!(
-            default_approval_subject_filter(),
-            "tenant-*.clawdstrike.approval.request.*"
-        );
+    fn default_approval_subject_filter_is_dotted_slug_safe() {
+        assert_eq!(default_approval_subject_filter(), ">");
     }
 
     #[test]
-    fn default_heartbeat_subject_filter_is_scoped_to_heartbeat_shape() {
-        assert_eq!(
-            default_heartbeat_subject_filter(),
-            "tenant-*.clawdstrike.agent.heartbeat.*"
-        );
+    fn default_heartbeat_subject_filter_is_dotted_slug_safe() {
+        assert_eq!(default_heartbeat_subject_filter(), ">");
     }
 }

@@ -32,7 +32,7 @@ const ENROLL_TOKEN_LOCK_SQL: &str = r#"SELECT et.id AS enrollment_token_id,
            WHERE et.token_hash = $1
              AND et.consumed_at IS NULL
              AND et.expires_at > now()
-           FOR UPDATE"#;
+           FOR UPDATE OF t, et"#;
 
 const ENROLL_TOKEN_CONSUME_SQL: &str = r#"UPDATE tenant_enrollment_tokens
            SET consumed_at = now()
@@ -412,6 +412,7 @@ mod tests {
     #[test]
     fn enrollment_queries_are_atomic() {
         assert!(ENROLL_TOKEN_LOCK_SQL.contains("FOR UPDATE"));
+        assert!(ENROLL_TOKEN_LOCK_SQL.contains("OF t, et"));
         assert!(ENROLL_TOKEN_LOCK_SQL.contains("expires_at > now()"));
         assert!(ENROLL_TOKEN_CONSUME_SQL.contains("WHERE id = $1"));
     }

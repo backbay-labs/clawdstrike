@@ -20,7 +20,11 @@ export interface ModeMachine {
    * Returns true if the transition was valid and applied, false if rejected.
    * Transitions are serialized — concurrent calls queue behind in-progress ones.
    */
-  transition(to: EngineMode, reason: string): Promise<boolean>;
+  transition(
+    to: EngineMode,
+    reason: string,
+    extras?: Pick<ModeChangeEvent, 'drainedReceipts'>
+  ): Promise<boolean>;
 
   /** Register a listener for mode changes. */
   onModeChange(listener: ModeChangeListener): void;
@@ -49,7 +53,11 @@ export function createModeMachine(initial: EngineMode): ModeMachine {
       return mode;
     },
 
-    transition(to: EngineMode, reason: string): Promise<boolean> {
+    transition(
+      to: EngineMode,
+      reason: string,
+      extras?: Pick<ModeChangeEvent, 'drainedReceipts'>
+    ): Promise<boolean> {
       const result = new Promise<boolean>((resolve) => {
         chain = chain.then(() => {
           if (mode === to) {
@@ -67,6 +75,7 @@ export function createModeMachine(initial: EngineMode): ModeMachine {
             to,
             reason,
             timestamp: new Date().toISOString(),
+            ...(extras?.drainedReceipts ? { drainedReceipts: extras.drainedReceipts } : {}),
           };
 
           mode = to;

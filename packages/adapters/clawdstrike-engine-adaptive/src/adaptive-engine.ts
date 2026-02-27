@@ -75,18 +75,22 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
     const current = machine.current();
 
     if (healthy && (current === 'standalone' || current === 'degraded')) {
-      const promoted = await machine.transition('connected', 'remote health probe succeeded');
-      if (promoted && current === 'degraded') {
-        // Drain the offline receipt queue and surface for replay.
-        const drained = queue.drain();
-        if (drained.length > 0 && options.onModeChange) {
-          options.onModeChange({
-            from: 'degraded',
-            to: 'connected',
-            reason: 'receipts drained for replay',
-            timestamp: new Date().toISOString(),
-            drainedReceipts: drained,
-          });
+      let drainedReceipts: ReturnType<typeof queue.drain> = [];
+      if (current === 'degraded') {
+        drainedReceipts = queue.drain();
+      }
+
+      const promoted = await machine.transition(
+        'connected',
+        'remote health probe succeeded',
+        drainedReceipts.length > 0 ? { drainedReceipts } : undefined
+      );
+
+      // Transition could be rejected if another concurrent transition already
+      // updated state; restore drained receipts in that case.
+      if (!promoted && drainedReceipts.length > 0) {
+        for (const receipt of drainedReceipts) {
+          queue.enqueue(receipt);
         }
       }
     } else if (!healthy && current === 'connected') {

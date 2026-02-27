@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use crate::db::PgPool;
 #[cfg(test)]
 use crate::services::consumer_ack::ack_kind_for_processing_result;
-use crate::services::consumer_ack::acknowledge_after_processing;
+use crate::services::consumer_ack::{acknowledge_after_processing, ProcessingError};
 
 pub async fn run(
     nats: async_nats::Client,
@@ -108,10 +108,13 @@ pub async fn run(
 async fn process_approval_request_message(
     db: &PgPool,
     msg: &async_nats::jetstream::Message,
-) -> Result<(), String> {
+) -> Result<(), ProcessingError> {
     let subject = msg.subject.to_string();
-    let (tenant_slug, agent_id) = parse_approval_subject(&subject)
-        .ok_or_else(|| format!("subject does not match approval request pattern: {subject}"))?;
+    let (tenant_slug, agent_id) = parse_approval_subject(&subject).ok_or_else(|| {
+        ProcessingError::permanent(format!(
+            "subject does not match approval request pattern: {subject}"
+        ))
+    })?;
 
     let payload = parse_request_payload(&msg.payload)?;
 
@@ -129,7 +132,7 @@ async fn process_approval_request_message(
     .bind(payload.event_data)
     .execute(db)
     .await
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| ProcessingError::retryable(err.to_string()))?;
 
     if result.rows_affected() == 0 {
         tracing::debug!(
@@ -148,14 +151,15 @@ struct ApprovalRequestPayload {
     event_data: Value,
 }
 
-fn parse_request_payload(payload: &[u8]) -> Result<ApprovalRequestPayload, String> {
-    let raw: Value = serde_json::from_slice(payload).map_err(|err| err.to_string())?;
+fn parse_request_payload(payload: &[u8]) -> Result<ApprovalRequestPayload, ProcessingError> {
+    let raw: Value = serde_json::from_slice(payload)
+        .map_err(|err| ProcessingError::permanent(err.to_string()))?;
     let decoded = decode_signed_or_plain_payload(raw)?;
 
     let request_id = decoded
         .get("request_id")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "approval request payload missing request_id".to_string())?
+        .ok_or_else(|| ProcessingError::permanent("approval request payload missing request_id"))?
         .to_string();
 
     let event_type = decoded
@@ -184,11 +188,11 @@ fn parse_request_payload(payload: &[u8]) -> Result<ApprovalRequestPayload, Strin
     })
 }
 
-fn decode_signed_or_plain_payload(raw: Value) -> Result<Value, String> {
+fn decode_signed_or_plain_payload(raw: Value) -> Result<Value, ProcessingError> {
     let envelope = if raw.get("replayed").and_then(|v| v.as_bool()) == Some(true) {
         raw.get("envelope")
             .cloned()
-            .ok_or_else(|| "replayed payload missing envelope".to_string())?
+            .ok_or_else(|| ProcessingError::permanent("replayed payload missing envelope"))?
     } else {
         raw
     };
@@ -199,18 +203,22 @@ fn decode_signed_or_plain_payload(raw: Value) -> Result<Value, String> {
 
     match spine::verify_envelope(&envelope) {
         Ok(true) => {}
-        Ok(false) => return Err("signed approval request envelope verification failed".to_string()),
-        Err(err) => {
-            return Err(format!(
-                "signed approval request envelope verification error: {err}"
+        Ok(false) => {
+            return Err(ProcessingError::permanent(
+                "signed approval request envelope verification failed",
             ))
+        }
+        Err(err) => {
+            return Err(ProcessingError::permanent(format!(
+                "signed approval request envelope verification error: {err}"
+            )))
         }
     }
 
     envelope
         .get("fact")
         .cloned()
-        .ok_or_else(|| "signed approval request missing fact".to_string())
+        .ok_or_else(|| ProcessingError::permanent("signed approval request missing fact"))
 }
 
 /// Parse `<tenant-prefix>.approval.request.<agent-id>` where
@@ -281,12 +289,16 @@ mod tests {
     #[test]
     fn ack_kind_tracks_processing_outcome() {
         assert!(matches!(
-            ack_kind_for_processing_result(&Ok::<(), String>(())),
+            ack_kind_for_processing_result(&Ok::<(), ProcessingError>(())),
             async_nats::jetstream::AckKind::Ack
         ));
         assert!(matches!(
-            ack_kind_for_processing_result(&Err("boom".to_string())),
+            ack_kind_for_processing_result(&Err(ProcessingError::retryable("boom"))),
             async_nats::jetstream::AckKind::Nak(None)
+        ));
+        assert!(matches!(
+            ack_kind_for_processing_result(&Err(ProcessingError::permanent("bad subject"))),
+            async_nats::jetstream::AckKind::Term
         ));
     }
 }

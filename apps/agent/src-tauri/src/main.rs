@@ -905,14 +905,22 @@ async fn reload_daemon_policy(daemon: &DaemonManager) -> anyhow::Result<()> {
 
 fn is_nats_auth_failure(error_message: &str) -> bool {
     let lower = error_message.to_ascii_lowercase();
+    if lower.contains("certificate authentication failed")
+        || lower.contains("authentication handshake timeout")
+    {
+        return false;
+    }
+
     [
         "authorization violation",
         "permissions violation",
-        "authentication",
+        "authentication failed",
+        "authorization failed",
         "invalid credentials",
         "invalid token",
         "invalid jwt",
         "user authentication expired",
+        "authentication error",
     ]
     .iter()
     .any(|needle| lower.contains(needle))
@@ -963,7 +971,12 @@ mod tests {
     fn nats_auth_error_detection_matches_expected_strings() {
         assert!(is_nats_auth_failure("Authorization Violation"));
         assert!(is_nats_auth_failure("user authentication expired"));
+        assert!(is_nats_auth_failure("authentication failed"));
         assert!(!is_nats_auth_failure("connection refused"));
         assert!(!is_nats_auth_failure("dial tcp timeout"));
+        assert!(!is_nats_auth_failure("authentication handshake timeout"));
+        assert!(!is_nats_auth_failure(
+            "tls: certificate authentication failed during renegotiation"
+        ));
     }
 }

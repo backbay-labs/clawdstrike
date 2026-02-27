@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use crate::db::PgPool;
 #[cfg(test)]
 use crate::services::consumer_ack::ack_kind_for_processing_result;
-use crate::services::consumer_ack::acknowledge_after_processing;
+use crate::services::consumer_ack::{acknowledge_after_processing, ProcessingError};
 use crate::services::policy_distribution;
 
 /// Run the heartbeat consumer loop until the shutdown receiver signals.
@@ -115,10 +115,13 @@ async fn process_heartbeat_message(
     db: &PgPool,
     nats: &async_nats::Client,
     msg: &async_nats::jetstream::Message,
-) -> Result<(), String> {
+) -> Result<(), ProcessingError> {
     let subject = msg.subject.to_string();
-    let (tenant_slug, agent_id) = parse_heartbeat_subject(&subject)
-        .ok_or_else(|| format!("subject does not match heartbeat pattern: {subject}"))?;
+    let (tenant_slug, agent_id) = parse_heartbeat_subject(&subject).ok_or_else(|| {
+        ProcessingError::permanent(format!(
+            "subject does not match heartbeat pattern: {subject}"
+        ))
+    })?;
 
     let metadata = heartbeat_metadata(&msg.payload);
     let result = sqlx::query::query(
@@ -137,7 +140,7 @@ async fn process_heartbeat_message(
     .bind(metadata)
     .execute(db)
     .await
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| ProcessingError::retryable(err.to_string()))?;
 
     if result.rows_affected() == 0 {
         tracing::debug!(
@@ -150,7 +153,7 @@ async fn process_heartbeat_message(
     if let Some(active_policy) =
         policy_distribution::fetch_active_policy_by_tenant_slug(db, tenant_slug)
             .await
-            .map_err(|err| err.to_string())?
+            .map_err(|err| ProcessingError::retryable(err.to_string()))?
     {
         if let Err(err) =
             policy_distribution::reconcile_policy_for_agent(nats, &active_policy, agent_id).await
@@ -228,12 +231,16 @@ mod tests {
     #[test]
     fn ack_kind_tracks_processing_outcome() {
         assert!(matches!(
-            ack_kind_for_processing_result(&Ok::<(), String>(())),
+            ack_kind_for_processing_result(&Ok::<(), ProcessingError>(())),
             async_nats::jetstream::AckKind::Ack
         ));
         assert!(matches!(
-            ack_kind_for_processing_result(&Err("boom".to_string())),
+            ack_kind_for_processing_result(&Err(ProcessingError::retryable("boom"))),
             async_nats::jetstream::AckKind::Nak(None)
+        ));
+        assert!(matches!(
+            ack_kind_for_processing_result(&Err(ProcessingError::permanent("bad subject"))),
+            async_nats::jetstream::AckKind::Term
         ));
     }
 }
