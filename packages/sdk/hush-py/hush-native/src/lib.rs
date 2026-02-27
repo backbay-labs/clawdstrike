@@ -6,7 +6,7 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyModule;
+use pyo3::types::{PyDict, PyModule};
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -343,6 +343,228 @@ fn extract_watermark_native(py: Python<'_>, text: &str, config_json: &str) -> Py
     json_value_to_py(py, &v)
 }
 
+// ---------------------------------------------------------------------------
+// Guard-context builder helper
+// ---------------------------------------------------------------------------
+
+fn build_guard_context(
+    ctx: Option<&Bound<'_, PyDict>>,
+) -> PyResult<clawdstrike::GuardContext> {
+    let mut gc = clawdstrike::GuardContext::new();
+    if let Some(d) = ctx {
+        if let Some(v) = d.get_item("cwd")? {
+            gc = gc.with_cwd(v.extract::<String>()?);
+        }
+        if let Some(v) = d.get_item("session_id")? {
+            gc = gc.with_session_id(v.extract::<String>()?);
+        }
+        if let Some(v) = d.get_item("agent_id")? {
+            gc = gc.with_agent_id(v.extract::<String>()?);
+        }
+    }
+    Ok(gc)
+}
+
+// ---------------------------------------------------------------------------
+// NativeEngine — wraps the Rust HushEngine for Python
+// ---------------------------------------------------------------------------
+
+#[pyclass]
+struct NativeEngine {
+    engine: clawdstrike::HushEngine,
+}
+
+#[pymethods]
+impl NativeEngine {
+    #[staticmethod]
+    fn from_yaml(yaml_str: &str) -> PyResult<Self> {
+        let policy = clawdstrike::Policy::from_yaml_with_extends(yaml_str, None)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let engine = clawdstrike::HushEngine::with_policy(policy);
+        Ok(Self { engine })
+    }
+
+    #[staticmethod]
+    fn from_ruleset(name: &str) -> PyResult<Self> {
+        let engine = clawdstrike::HushEngine::from_ruleset(name)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { engine })
+    }
+
+    #[pyo3(signature = (path, ctx=None))]
+    fn check_file_access(
+        &self,
+        py: Python<'_>,
+        path: &str,
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let context = build_guard_context(ctx)?;
+        let action = clawdstrike::guards::GuardAction::FileAccess(path);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
+    #[pyo3(signature = (path, content, ctx=None))]
+    fn check_file_write(
+        &self,
+        py: Python<'_>,
+        path: &str,
+        content: &[u8],
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let context = build_guard_context(ctx)?;
+        let action = clawdstrike::guards::GuardAction::FileWrite(path, content);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
+    #[pyo3(signature = (command, ctx=None))]
+    fn check_shell(
+        &self,
+        py: Python<'_>,
+        command: &str,
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let context = build_guard_context(ctx)?;
+        let action = clawdstrike::guards::GuardAction::ShellCommand(command);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
+    #[pyo3(signature = (host, port, ctx=None))]
+    fn check_network(
+        &self,
+        py: Python<'_>,
+        host: &str,
+        port: u16,
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let context = build_guard_context(ctx)?;
+        let action = clawdstrike::guards::GuardAction::NetworkEgress(host, port);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
+    #[pyo3(signature = (tool, args_json, ctx=None))]
+    fn check_mcp_tool(
+        &self,
+        py: Python<'_>,
+        tool: &str,
+        args_json: &str,
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let args: serde_json::Value = serde_json::from_str(args_json)
+            .map_err(|e| PyValueError::new_err(format!("Invalid JSON args: {}", e)))?;
+        let context = build_guard_context(ctx)?;
+        let action = clawdstrike::guards::GuardAction::McpTool(tool, &args);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
+    #[pyo3(signature = (path, diff, ctx=None))]
+    fn check_patch(
+        &self,
+        py: Python<'_>,
+        path: &str,
+        diff: &str,
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let context = build_guard_context(ctx)?;
+        let action = clawdstrike::guards::GuardAction::Patch(path, diff);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
+    #[pyo3(signature = (source, text, ctx=None))]
+    fn check_untrusted_text(
+        &self,
+        py: Python<'_>,
+        source: Option<&str>,
+        text: &str,
+        ctx: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let context = build_guard_context(ctx)?;
+        let result =
+            futures::executor::block_on(self.engine.check_untrusted_text(source, text, &context))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&result)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        json_value_to_py(py, &v)
+    }
+
+    fn policy_yaml(&self) -> PyResult<String> {
+        self.engine
+            .policy_yaml()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn stats(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let stats = futures::executor::block_on(self.engine.stats());
+        let v = serde_json::json!({
+            "action_count": stats.action_count,
+            "violation_count": stats.violation_count,
+        });
+        json_value_to_py(py, &v)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Additional crypto helpers
+// ---------------------------------------------------------------------------
+
+#[pyfunction]
+fn generate_keypair_native(py: Python<'_>) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
+    use hush_core::signing::Keypair;
+
+    let kp = Keypair::generate();
+    let hex_seed = kp.to_hex();
+    let seed_bytes =
+        hex::decode(&hex_seed).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let pub_bytes = kp.public_key().as_bytes().to_vec();
+    Ok((
+        pyo3::types::PyBytes::new(py, &seed_bytes).into(),
+        pyo3::types::PyBytes::new(py, &pub_bytes).into(),
+    ))
+}
+
+#[pyfunction]
+fn sign_message_native(py: Python<'_>, message: &[u8], private_key: &[u8]) -> PyResult<Py<PyAny>> {
+    use hush_core::signing::Keypair;
+
+    if private_key.len() != 32 {
+        return Err(PyValueError::new_err("Private key must be 32 bytes"));
+    }
+    let hex_key = hex::encode(private_key);
+    let kp =
+        Keypair::from_hex(&hex_key).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let sig = kp.sign(message);
+    Ok(pyo3::types::PyBytes::new(py, &sig.to_bytes()).into())
+}
+
 /// Python module definition.
 #[pymodule]
 fn hush_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -359,5 +581,8 @@ fn hush_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(watermark_prompt_native, m)?)?;
     m.add_function(wrap_pyfunction!(extract_watermark_native, m)?)?;
     m.add_function(wrap_pyfunction!(is_native_available, m)?)?;
+    m.add_class::<NativeEngine>()?;
+    m.add_function(wrap_pyfunction!(generate_keypair_native, m)?)?;
+    m.add_function(wrap_pyfunction!(sign_message_native, m)?)?;
     Ok(())
 }

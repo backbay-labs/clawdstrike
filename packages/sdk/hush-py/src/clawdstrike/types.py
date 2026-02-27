@@ -94,6 +94,36 @@ class Decision:
 
         return cls(status=DecisionStatus.ALLOW, per_guard=list(results))
 
+    @classmethod
+    def from_report_dict(cls, report: dict) -> Decision:
+        """Create a Decision from a GuardReport dict (as returned by native or pure-python backend).
+
+        Expected shape::
+
+            {
+                "overall": {"allowed": bool, "guard": str, ...},
+                "per_guard": [{"allowed": bool, "guard": str, ...}, ...]
+            }
+        """
+        severity_map = {
+            "info": Severity.INFO,
+            "warning": Severity.WARNING,
+            "error": Severity.ERROR,
+            "critical": Severity.CRITICAL,
+        }
+
+        per_guard = [
+            GuardResult(
+                allowed=r["allowed"],
+                guard=r["guard"],
+                severity=severity_map.get(str(r.get("severity", "info")).lower(), Severity.INFO),
+                message=r.get("message", ""),
+                details=r.get("details"),
+            )
+            for r in report.get("per_guard", [])
+        ]
+        return cls.from_guard_results(per_guard)
+
 
 @dataclass
 class SessionOptions:
