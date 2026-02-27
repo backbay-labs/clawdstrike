@@ -206,6 +206,28 @@ pub async fn eval_policy_event(
         });
     }
 
+    // Publish to Spine (best-effort, non-blocking).
+    if let Some(ref publisher) = state.spine_publisher {
+        let decision_json = serde_json::to_value(&decision).unwrap_or_default();
+        let event_json = serde_json::to_value(&event).unwrap_or_default();
+        let policy_ref = engine.policy().name.clone();
+        let session_id_ref = mapped.context.session_id.clone();
+        let publisher = publisher.clone();
+        tokio::spawn(async move {
+            if let Err(e) = publisher
+                .publish_eval_receipt(
+                    &decision_json,
+                    &event_json,
+                    &policy_ref,
+                    session_id_ref.as_deref(),
+                )
+                .await
+            {
+                tracing::warn!(error = %e, "Failed to publish eval receipt to Spine");
+            }
+        });
+    }
+
     // Broadcast event (SSE) for real-time monitoring + attribution.
     //
     // Keep the payload close to `/api/v1/check` so clients can build a unified

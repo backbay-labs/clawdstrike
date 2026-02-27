@@ -8,7 +8,7 @@ Rust is the reference implementation for Clawdstrike policy evaluation. Other la
 |----------|------------|----------------------|
 | **Rust** | `clawdstrike`, `hush-core`, `hush-cli`, `clawdstriked` | Full policy engine + guards + prompt-security |
 | **TypeScript** | `@clawdstrike/sdk` | Crypto + receipts + guards + prompt-security utilities (no policy engine) |
-| **Python** | `clawdstrike` | Policy engine + 5 guards + receipts/crypto (no prompt-security utilities yet) |
+| **Python** | `clawdstrike` | Facade API + 9 guards + receipts/crypto; optional native Rust engine with all 12 guards |
 | **WebAssembly** | `@clawdstrike/wasm` | Crypto + receipt verification |
 
 ## TypeScript
@@ -37,16 +37,15 @@ console.log(r.riskScore, r.signals.map(s => s.id));
 
 ## Python
 
-Python includes a small local policy engine and a subset of guards:
+Python provides a `Clawdstrike` facade with built-in rulesets, typed check methods, and a `Decision` return type. When the optional `hush-native` extension is installed, evaluation runs in Rust with all 12 guards.
 
 ```python
-from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
+from clawdstrike import Clawdstrike
 
-policy = Policy.from_yaml_file("policy.yaml")
-engine = PolicyEngine(policy)
-ctx = GuardContext(cwd="/app", session_id="session-123")
-
-print(engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), ctx))
+cs = Clawdstrike.with_defaults("strict")
+decision = cs.check_file("/home/user/.ssh/id_rsa")
+print(decision.denied)   # True
+print(decision.message)  # "Access to forbidden path: ..."
 ```
 
 ## WebAssembly

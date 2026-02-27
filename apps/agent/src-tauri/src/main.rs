@@ -10,15 +10,23 @@
 mod agent_auth;
 mod api_server;
 mod approval;
+mod approval_outbox;
+mod approval_sync;
 mod daemon;
 mod decision;
+mod enrollment;
 mod events;
 mod integrations;
+mod nats_client;
+mod nats_subjects;
 mod notifications;
 mod openclaw;
 mod policy;
+mod policy_sync;
+mod posture_commands;
 mod session;
 mod settings;
+mod telemetry_publisher;
 mod tray;
 mod updater;
 
@@ -148,16 +156,19 @@ fn main() {
         });
     tracing::info!(path = %hushd_path.display(), "Using hushd binary path");
 
-    let daemon_config = DaemonConfig {
-        binary_path: hushd_path,
-        port: settings.daemon_port,
-        policy_path: settings.policy_path.clone(),
-    };
-
     let settings = Arc::new(RwLock::new(settings));
     let (daemon_url, daemon_api_key) = {
         let guard = settings.blocking_read();
         (guard.daemon_url(), guard.api_key.clone())
+    };
+    let daemon_config = {
+        let guard = settings.blocking_read();
+        DaemonConfig {
+            binary_path: hushd_path,
+            port: guard.daemon_port,
+            policy_path: guard.policy_path.clone(),
+            settings: Some(settings.clone()),
+        }
     };
     let daemon_manager = Arc::new(DaemonManager::new(daemon_config));
     let event_manager = Arc::new(EventManager::new(daemon_url, daemon_api_key));
@@ -356,6 +367,120 @@ async fn run_agent<R: Runtime>(
             match audit_queue.flush(&daemon_url, api_key.as_deref()).await {
                 Ok(count) => tracing::info!(count, "Flushed queued audit events on startup"),
                 Err(err) => tracing::warn!(error = %err, "Failed to flush queued audit events"),
+            }
+        }
+    }
+
+    // --- NATS enterprise connectivity (adaptive SDR) ---
+    // If NATS is enabled (either via static config or enrollment), connect and start
+    // policy sync, telemetry publishing, and posture command handling.
+    let mut approval_request_outbox: Option<Arc<approval_outbox::ApprovalRequestOutbox>> = None;
+    let nats_enabled = {
+        let guard = settings.read().await;
+        guard.nats.enabled
+    };
+    if nats_enabled {
+        let nats_settings = {
+            let guard = settings.read().await;
+            guard.nats.clone()
+        };
+        match nats_client::NatsClient::connect(&nats_settings).await {
+            Ok(nats) => {
+                let nats = Arc::new(nats);
+
+                // Policy sync: watch KV for policy updates and reload hushd.
+                let policy_path = {
+                    let guard = settings.read().await;
+                    guard.policy_path.clone()
+                };
+                let policy_sync =
+                    policy_sync::PolicySync::new(nats.clone(), policy_path);
+                let (policy_update_tx, mut policy_update_rx) =
+                    tokio::sync::mpsc::channel::<()>(16);
+                let policy_sync_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    policy_sync
+                        .start(policy_sync_shutdown, Some(policy_update_tx))
+                        .await;
+                });
+
+                // On policy file change from NATS sync, signal hushd reload.
+                let daemon_for_nats = daemon_manager.clone();
+                tokio::spawn(async move {
+                    while policy_update_rx.recv().await.is_some() {
+                        tracing::info!("Policy updated via NATS sync; reloading hushd");
+                        if let Err(err) = daemon_for_nats.restart().await {
+                            tracing::warn!(error = %err, "Failed to reload hushd after NATS policy sync");
+                        }
+                    }
+                });
+
+                // Telemetry publisher.
+                let telemetry = Arc::new(telemetry_publisher::TelemetryPublisher::new(nats.clone()));
+                tracing::info!("NATS telemetry publisher initialized");
+
+                // Posture command handler.
+                let posture_handler = posture_commands::PostureCommandHandler::new(
+                    nats.clone(),
+                    session_manager.clone(),
+                    daemon_manager.clone(),
+                    settings.clone(),
+                );
+                let posture_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    posture_handler.start(posture_shutdown).await;
+                });
+
+                // Approval sync: ingest cloud decisions and apply them to local queue.
+                let approval_sync = approval_sync::ApprovalSync::new(
+                    nats.clone(),
+                    approval_queue.clone(),
+                    nats_settings.require_signed_approval_responses,
+                );
+                let approval_sync_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    approval_sync.start(approval_sync_shutdown).await;
+                });
+
+                // Durable approval-request outbox (agent -> cloud).
+                let outbox = Arc::new(approval_outbox::ApprovalRequestOutbox::load_default());
+                if outbox.len().await > 0 {
+                    match outbox.flush_due(nats.as_ref()).await {
+                        Ok(sent) if sent > 0 => {
+                            tracing::info!(sent, "Flushed persisted approval-request outbox on startup");
+                        }
+                        Ok(_) => {}
+                        Err(err) => {
+                            tracing::warn!(error = %err, "Failed to flush approval-request outbox on startup");
+                        }
+                    }
+                }
+                outbox.clone().start(nats.clone(), shutdown_tx.subscribe());
+                approval_request_outbox = Some(outbox);
+
+                // Publish periodic NATS heartbeats alongside the existing HTTP heartbeats.
+                let telemetry_for_heartbeat = telemetry.clone();
+                let session_for_nats_hb = session_manager.clone();
+                let policy_cache_for_nats_hb = policy_cache.clone();
+                let nats_hb_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    nats_heartbeat_loop(
+                        telemetry_for_heartbeat,
+                        session_for_nats_hb,
+                        policy_cache_for_nats_hb,
+                        nats_hb_shutdown,
+                    )
+                    .await;
+                });
+
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "Failed to connect to NATS; enterprise features disabled");
+                if is_nats_auth_failure(&err.to_string()) {
+                    tracing::warn!(
+                        "NATS connect failed with authentication/authorization error; preserving enrollment identity and existing NATS config for automatic recovery"
+                    );
+                }
             }
         }
     }
@@ -562,6 +687,7 @@ async fn run_agent<R: Runtime>(
     let tray_for_approvals = tray_manager.clone();
     let app_for_approvals = app.clone();
     let approval_queue_for_events = approval_queue.clone();
+    let approval_outbox_for_events = approval_request_outbox.clone();
     tokio::spawn(async move {
         loop {
             let event = match approval_events_rx.recv().await {
@@ -581,6 +707,15 @@ async fn run_agent<R: Runtime>(
 
             match &event {
                 approval::ApprovalEvent::NewRequest { request } => {
+                    if let Some(outbox) = approval_outbox_for_events.as_ref() {
+                        if let Err(err) = outbox.enqueue(request).await {
+                            tracing::warn!(
+                                error = %err,
+                                request_id = %request.id,
+                                "Failed to persist approval request to durable outbox"
+                            );
+                        }
+                    }
                     let title = format!("Approval Required: {}", request.tool);
                     let body = format!("{}\n{}", request.resource, request.reason);
                     notifications::show_notification(&app_for_approvals, &title, &body);
@@ -760,4 +895,82 @@ async fn reload_daemon_policy(daemon: &DaemonManager) -> anyhow::Result<()> {
         anyhow::bail!("Daemon is not running");
     }
     daemon.restart().await
+}
+
+fn is_nats_auth_failure(error_message: &str) -> bool {
+    let lower = error_message.to_ascii_lowercase();
+    if lower.contains("certificate authentication failed")
+        || lower.contains("authentication handshake timeout")
+    {
+        return false;
+    }
+
+    [
+        "authorization violation",
+        "permissions violation",
+        "authentication failed",
+        "authorization failed",
+        "invalid credentials",
+        "invalid token",
+        "invalid jwt",
+        "user authentication expired",
+        "authentication error",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+/// Periodic NATS heartbeat loop that publishes session state to the telemetry stream.
+async fn nats_heartbeat_loop(
+    telemetry: Arc<telemetry_publisher::TelemetryPublisher>,
+    session_manager: Arc<SessionManager>,
+    policy_cache: Arc<daemon::PolicyCache>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) {
+    let heartbeat_interval = Duration::from_secs(30);
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                tracing::debug!("NATS heartbeat loop shutting down");
+                break;
+            }
+            _ = tokio::time::sleep(heartbeat_interval) => {
+                let state = session_manager.state().await;
+                let hostname = settings::hostname_best_effort();
+                let last_policy_version = policy_cache.cached_policy_version().await;
+                let heartbeat = serde_json::json!({
+                    "agent_id": telemetry.agent_id(),
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "session_id": state.session_id,
+                    "posture": state.posture,
+                    "budget_used": state.budget_used,
+                    "budget_limit": state.budget_limit,
+                    "mode": "connected",
+                    "last_policy_version": last_policy_version,
+                    "hostname": hostname,
+                    "version": env!("CARGO_PKG_VERSION"),
+                });
+                let payload = serde_json::to_vec(&heartbeat).unwrap_or_default();
+                telemetry.publish_heartbeat(&payload).await;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_nats_auth_failure;
+
+    #[test]
+    fn nats_auth_error_detection_matches_expected_strings() {
+        assert!(is_nats_auth_failure("Authorization Violation"));
+        assert!(is_nats_auth_failure("user authentication expired"));
+        assert!(is_nats_auth_failure("authentication failed"));
+        assert!(!is_nats_auth_failure("connection refused"));
+        assert!(!is_nats_auth_failure("dial tcp timeout"));
+        assert!(!is_nats_auth_failure("authentication handshake timeout"));
+        assert!(!is_nats_auth_failure(
+            "tls: certificate authentication failed during renegotiation"
+        ));
+    }
 }

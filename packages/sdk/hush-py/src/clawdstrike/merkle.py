@@ -53,6 +53,16 @@ def compute_root(leaves: list[bytes]) -> bytes:
     Raises:
         ValueError: If leaves list is empty
     """
+    from clawdstrike.native import NATIVE_AVAILABLE, merkle_root_native
+
+    if NATIVE_AVAILABLE and merkle_root_native is not None:
+        return bytes(merkle_root_native(leaves))
+
+    return _pure_python_compute_root(leaves)
+
+
+def _pure_python_compute_root(leaves: list[bytes]) -> bytes:
+    """Pure Python Merkle root computation."""
     if not leaves:
         raise ValueError("Cannot compute root of empty tree")
 

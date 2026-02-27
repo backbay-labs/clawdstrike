@@ -61,6 +61,8 @@ pub struct NatsCredentials {
     pub nats_url: String,
     pub account: String,
     pub subject_prefix: String,
+    /// Authentication token for NATS connection.
+    pub token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,4 +71,28 @@ pub struct HeartbeatRequest {
     pub agent_id: String,
     pub status: Option<String>,
     pub metadata: Option<serde_json::Value>,
+}
+
+/// Request body for the enrollment endpoint.
+#[derive(Debug, Deserialize)]
+pub struct EnrollmentRequest {
+    pub enrollment_token: String,
+    pub public_key: String,
+    pub hostname: String,
+    pub version: String,
+}
+
+/// Response from the enrollment endpoint.
+#[derive(Debug, Serialize)]
+pub struct EnrollmentResponse {
+    pub agent_uuid: String,
+    pub tenant_id: String,
+    pub nats_url: String,
+    /// NATS account identifier for scoped access.
+    pub nats_account: String,
+    /// Subject prefix for this agent's NATS topics.
+    pub nats_subject_prefix: String,
+    /// Authentication token for NATS connection.
+    pub nats_token: String,
+    pub agent_id: String,
 }

@@ -1,4 +1,11 @@
+pub mod agent_heartbeat_consumer;
 pub mod alerter;
+pub mod approval_request_consumer;
+pub mod approval_resolution_outbox;
+pub mod audit_consumer;
+pub mod consumer_ack;
 pub mod metering;
+pub mod policy_distribution;
 pub mod retention;
+pub mod stale_agent_detector;
 pub mod tenant_provisioner;

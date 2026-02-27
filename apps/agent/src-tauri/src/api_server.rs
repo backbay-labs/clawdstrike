@@ -39,6 +39,9 @@ use tower_http::services::{ServeDir, ServeFile};
 
 const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
 const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
+const POLICY_VERSION_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
+const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone)]
 pub struct AgentApiServer {
@@ -67,6 +70,57 @@ struct AgentApiState {
     updater: Arc<HushdUpdater>,
     auth_token: String,
     http_client: reqwest::Client,
+    policy_version_cache: Arc<RwLock<PolicyVersionCache>>,
+}
+
+#[derive(Debug, Default)]
+struct PolicyVersionCache {
+    value: Option<String>,
+    last_refresh_at: Option<std::time::Instant>,
+    refresh_in_flight: bool,
+    refresh_started_at: Option<std::time::Instant>,
+}
+
+impl PolicyVersionCache {
+    fn mark_refresh_started_if_due(&mut self, now: std::time::Instant) -> bool {
+        if self.refresh_in_flight {
+            let stuck = self
+                .refresh_started_at
+                .map(|started| {
+                    now.duration_since(started) >= POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT
+                })
+                .unwrap_or(true);
+
+            if stuck {
+                self.refresh_in_flight = false;
+                self.refresh_started_at = None;
+            }
+        }
+
+        let stale = self
+            .last_refresh_at
+            .map(|last| now.duration_since(last) >= POLICY_VERSION_CACHE_REFRESH_INTERVAL)
+            .unwrap_or(true);
+
+        if !stale || self.refresh_in_flight {
+            return false;
+        }
+
+        self.refresh_in_flight = true;
+        self.refresh_started_at = Some(now);
+        // Mark immediately to avoid concurrent /health calls all spawning refresh tasks.
+        self.last_refresh_at = Some(now);
+        true
+    }
+
+    fn finish_refresh(&mut self, fetched: Option<String>, now: std::time::Instant) {
+        if let Some(version) = fetched {
+            self.value = Some(version);
+        }
+        self.last_refresh_at = Some(now);
+        self.refresh_in_flight = false;
+        self.refresh_started_at = None;
+    }
 }
 
 impl AgentApiServer {
@@ -82,6 +136,7 @@ impl AgentApiServer {
                 updater: deps.updater,
                 auth_token: deps.auth_token,
                 http_client: reqwest::Client::new(),
+                policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
             }),
         }
     }
@@ -136,6 +191,8 @@ impl AgentApiServer {
             .route("/api/v1/approval/{id}/status", get(get_approval_status))
             .route("/api/v1/approval/{id}/resolve", post(resolve_approval))
             .route("/api/v1/approval/pending", get(list_pending_approvals))
+            .route("/api/v1/enroll", post(enroll_agent))
+            .route("/api/v1/enrollment-status", get(enrollment_status))
             .with_state(self.state.clone());
 
         if let Some(dashboard_dist) = resolve_cloud_dashboard_dist() {
@@ -615,12 +672,67 @@ async fn fetch_daemon_exporter_status(state: &AgentApiState) -> Option<Value> {
     response.json::<Value>().await.ok()
 }
 
+async fn fetch_daemon_policy_version(state: &AgentApiState) -> Option<String> {
+    let (daemon_url, daemon_api_key) = {
+        let settings = state.settings.read().await;
+        (settings.daemon_url(), settings.api_key.clone())
+    };
+
+    let url = format!("{}/api/v1/policy", daemon_url.trim_end_matches('/'));
+    let mut request = state.http_client.get(url);
+
+    if let Some(key) = daemon_api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        request = request.header(AUTHORIZATION.as_str(), format!("Bearer {}", key));
+    }
+
+    let response = request.send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let json = response.json::<Value>().await.ok()?;
+    json.get("version")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+}
+
+async fn cached_policy_version_for_health(state: &Arc<AgentApiState>) -> Option<String> {
+    let (cached_value, should_refresh) = {
+        let mut cache = state.policy_version_cache.write().await;
+        let should_refresh = cache.mark_refresh_started_if_due(std::time::Instant::now());
+        (cache.value.clone(), should_refresh)
+    };
+
+    if should_refresh {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let fetched = tokio::time::timeout(
+                POLICY_VERSION_FETCH_TIMEOUT,
+                fetch_daemon_policy_version(state.as_ref()),
+            )
+            .await
+            .ok()
+            .flatten();
+
+            let mut cache = state.policy_version_cache.write().await;
+            cache.finish_refresh(fetched, std::time::Instant::now());
+        });
+    }
+
+    cached_value
+}
+
 #[derive(Debug, Serialize)]
 struct AgentHealthResponse {
     status: &'static str,
     daemon: DaemonStatus,
     session: crate::session::SessionState,
     openclaw: serde_json::Value,
+    last_policy_version: Option<String>,
     version: &'static str,
 }
 
@@ -727,6 +839,7 @@ async fn agent_health(
     let daemon = state.daemon_manager.status().await;
     let session = state.session_manager.state().await;
     let openclaw = state.openclaw.list_gateways().await;
+    let last_policy_version = cached_policy_version_for_health(&state).await;
 
     Ok(Json(AgentHealthResponse {
         status: "ok",
@@ -734,6 +847,7 @@ async fn agent_health(
         session,
         openclaw: serde_json::to_value(openclaw)
             .unwrap_or_else(|_| serde_json::json!({"error":"serialize_failed"})),
+        last_policy_version,
         version: env!("CARGO_PKG_VERSION"),
     }))
 }
@@ -1289,6 +1403,56 @@ async fn list_pending_approvals(
     Ok(Json(pending))
 }
 
+// --- Enrollment endpoints ---
+
+#[derive(Deserialize)]
+struct EnrollAgentInput {
+    cloud_api_url: String,
+    enrollment_token: String,
+}
+
+async fn enroll_agent(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<EnrollAgentInput>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let manager = crate::enrollment::EnrollmentManager::new(state.settings.clone());
+    match manager.enroll(&input.cloud_api_url, &input.enrollment_token).await {
+        Ok(result) => {
+            tracing::info!(
+                agent_uuid = %result.agent_uuid,
+                "Enrollment complete — agent restart required to activate NATS enterprise features"
+            );
+            Ok(Json(serde_json::json!({
+                "status": "enrolled",
+                "agent_uuid": result.agent_uuid,
+                "tenant_id": result.tenant_id,
+                "restart_required": true,
+                "message": "Restart the agent to activate enterprise features (policy sync, telemetry, posture commands)",
+            })))
+        }
+        Err(err) => Err((StatusCode::BAD_REQUEST, format!("Enrollment failed: {}", err))),
+    }
+}
+
+async fn enrollment_status(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let settings = state.settings.read().await;
+    let enrollment = &settings.enrollment;
+    Ok(Json(serde_json::json!({
+        "enrolled": enrollment.enrolled,
+        "agent_uuid": enrollment.agent_uuid,
+        "tenant_id": enrollment.tenant_id,
+        "enrollment_in_progress": enrollment.enrollment_in_progress,
+    })))
+}
+
 fn auth_token_from_cookie(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(COOKIE)?.to_str().ok()?;
     for cookie in cookie_header.split(';') {
@@ -1366,6 +1530,7 @@ mod tests {
             binary_path: PathBuf::from("/tmp/hushd"),
             port: 9876,
             policy_path: PathBuf::from("/tmp/policy.yaml"),
+            settings: Some(settings.clone()),
         }));
         let session_manager = Arc::new(crate::session::SessionManager::new());
         let approval_queue = Arc::new(crate::approval::ApprovalQueue::new());
@@ -1384,7 +1549,44 @@ mod tests {
             updater,
             auth_token: "test-token".to_string(),
             http_client: reqwest::Client::new(),
+            policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
         }
+    }
+
+    #[test]
+    fn policy_version_cache_marks_refresh_in_flight_once_per_interval() {
+        let mut cache = PolicyVersionCache::default();
+        let now = std::time::Instant::now();
+        assert!(cache.mark_refresh_started_if_due(now));
+        assert!(!cache.mark_refresh_started_if_due(now));
+    }
+
+    #[test]
+    fn policy_version_cache_finish_refresh_updates_value_and_clears_in_flight() {
+        let mut cache = PolicyVersionCache::default();
+        let started = std::time::Instant::now();
+        assert!(cache.mark_refresh_started_if_due(started));
+        assert!(cache.refresh_in_flight);
+        assert_eq!(cache.refresh_started_at, Some(started));
+
+        cache.finish_refresh(Some("42".to_string()), started);
+        assert_eq!(cache.value.as_deref(), Some("42"));
+        assert!(!cache.refresh_in_flight);
+        assert!(cache.refresh_started_at.is_none());
+    }
+
+    #[test]
+    fn policy_version_cache_recovers_when_refresh_task_stalls() {
+        let mut cache = PolicyVersionCache::default();
+        let started = std::time::Instant::now();
+        assert!(cache.mark_refresh_started_if_due(started));
+        assert!(!cache.mark_refresh_started_if_due(
+            started + POLICY_VERSION_CACHE_REFRESH_INTERVAL
+        ));
+
+        let after_timeout = started + POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT + Duration::from_millis(1);
+        assert!(cache.mark_refresh_started_if_due(after_timeout));
+        assert!(cache.refresh_in_flight);
     }
 
     #[test]

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::Config;
 use crate::db::PgPool;
 use crate::services::alerter::AlerterService;
@@ -15,4 +17,6 @@ pub struct AppState {
     pub metering: MeteringService,
     pub alerter: AlerterService,
     pub retention: RetentionService,
+    /// Optional service-level keypair for signing NATS messages (e.g. approval resolutions).
+    pub signing_keypair: Option<Arc<hush_core::Keypair>>,
 }

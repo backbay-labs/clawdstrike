@@ -71,6 +71,75 @@ pub struct IntegrationSettings {
     pub webhooks: WebhookIntegrationSettings,
 }
 
+/// NATS connectivity settings for enterprise cloud management.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsSettings {
+    /// Whether NATS enterprise connectivity is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// NATS server URL (e.g., "nats://nats.example.com:4222").
+    #[serde(default)]
+    pub nats_url: Option<String>,
+    /// Path to a `.creds` file for NATS authentication.
+    #[serde(default)]
+    pub creds_file: Option<String>,
+    /// Bearer token for NATS authentication.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// NKey seed for NATS authentication.
+    #[serde(default)]
+    pub nkey_seed: Option<String>,
+    /// Tenant identifier for NATS subject namespacing.
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    /// Agent identifier for NATS subject namespacing.
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    /// NATS account identifier assigned during enrollment.
+    #[serde(default)]
+    pub nats_account: Option<String>,
+    /// Subject prefix for NATS topics assigned during enrollment.
+    #[serde(default)]
+    pub subject_prefix: Option<String>,
+    /// Whether approval responses must be Spine-signed envelopes.
+    #[serde(default = "default_require_signed_approval_responses")]
+    pub require_signed_approval_responses: bool,
+}
+
+impl Default for NatsSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            nats_url: None,
+            creds_file: None,
+            token: None,
+            nkey_seed: None,
+            tenant_id: None,
+            agent_id: None,
+            nats_account: None,
+            subject_prefix: None,
+            require_signed_approval_responses: default_require_signed_approval_responses(),
+        }
+    }
+}
+
+/// Enrollment state for cloud-managed agents.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EnrollmentState {
+    /// Whether the agent has completed enrollment.
+    #[serde(default)]
+    pub enrolled: bool,
+    /// Server-assigned agent UUID from the cloud API.
+    #[serde(default)]
+    pub agent_uuid: Option<String>,
+    /// Tenant ID assigned during enrollment.
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    /// Flag indicating enrollment is currently in progress (for crash recovery).
+    #[serde(default)]
+    pub enrollment_in_progress: bool,
+}
+
 /// Agent settings persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -175,10 +244,22 @@ pub struct Settings {
     /// Current hushd version observed/applied by OTA.
     #[serde(default)]
     pub ota_current_hushd_version: Option<String>,
+
+    /// NATS enterprise connectivity settings.
+    #[serde(default)]
+    pub nats: NatsSettings,
+
+    /// Enrollment state for cloud-managed agents.
+    #[serde(default)]
+    pub enrollment: EnrollmentState,
 }
 
 fn default_policy_path() -> PathBuf {
     get_config_dir().join("policy.yaml")
+}
+
+fn default_require_signed_approval_responses() -> bool {
+    true
 }
 
 fn default_daemon_port() -> u16 {
@@ -261,6 +342,8 @@ impl Default for Settings {
             ota_last_check_at: None,
             ota_last_result: None,
             ota_current_hushd_version: None,
+            nats: NatsSettings::default(),
+            enrollment: EnrollmentState::default(),
         }
     }
 }
@@ -301,8 +384,7 @@ impl Settings {
 
         let contents =
             serde_json::to_string_pretty(self).with_context(|| "Failed to serialize settings")?;
-        std::fs::write(&path, contents)
-            .with_context(|| format!("Failed to write settings to {:?}", path))?;
+        write_settings_file(&path, &contents)?;
 
         Ok(())
     }
@@ -317,6 +399,33 @@ fn backfill_dashboard_url_if_missing(settings: &mut Settings, dashboard_url_pres
     if !dashboard_url_present || settings.dashboard_url.trim().is_empty() {
         settings.dashboard_url = default_dashboard_url_for_port(settings.agent_api_port);
     }
+}
+
+fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("Failed to create settings file {:?}", path))?;
+        file.write_all(contents.as_bytes())
+            .with_context(|| format!("Failed to write settings to {:?}", path))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents)
+            .with_context(|| format!("Failed to write settings to {:?}", path))?;
+    }
+
+    Ok(())
 }
 
 /// Get the configuration directory for clawdstrike.
@@ -334,6 +443,21 @@ pub fn get_settings_path() -> PathBuf {
 /// Get the path to the local API auth token file.
 pub fn get_agent_token_path() -> PathBuf {
     get_config_dir().join("agent-local-token")
+}
+
+/// Best-effort hostname retrieval via `libc::gethostname`.
+pub fn hostname_best_effort() -> String {
+    #[cfg(unix)]
+    {
+        let mut buf = vec![0u8; 256];
+        let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) };
+        if ret == 0 {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            buf.truncate(end);
+            return String::from_utf8_lossy(&buf).into_owned();
+        }
+    }
+    "unknown".to_string()
 }
 
 /// Ensure the default policy file exists, copying from bundled if needed.
@@ -404,5 +528,35 @@ mod tests {
         let settings = Settings::default();
         assert_eq!(settings.daemon_url(), "http://127.0.0.1:9876");
         assert_eq!(settings.agent_api_port, 9878);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_settings_file_uses_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let unique = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => duration.as_nanos(),
+            Err(_) => 0,
+        };
+        let dir = std::env::temp_dir().join(format!("clawdstrike-settings-perms-{unique}"));
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            panic!("failed to create temp dir for settings permissions test: {err}");
+        }
+        let path = dir.join("agent.json");
+
+        if let Err(err) = write_settings_file(&path, "{\"nats\":{\"token\":\"secret\"}}") {
+            panic!("failed to write settings file: {err}");
+        }
+
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(err) => panic!("failed to read settings metadata: {err}"),
+        };
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

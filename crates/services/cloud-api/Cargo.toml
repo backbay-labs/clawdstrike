@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 # Internal crates
 hush-core.workspace = true
+spine.workspace = true
 
 # Web framework
 axum.workspace = true

@@ -57,14 +57,14 @@ class Decision:
         denies = [r for r in results if not r.allowed]
         warns = [r for r in results if r.allowed and r.severity == Severity.WARNING]
 
+        severity_order = {
+            Severity.CRITICAL: 4,
+            Severity.ERROR: 3,
+            Severity.WARNING: 2,
+            Severity.INFO: 1,
+        }
+
         if denies:
-            # Sort by severity (CRITICAL > ERROR > WARNING > INFO)
-            severity_order = {
-                Severity.CRITICAL: 4,
-                Severity.ERROR: 3,
-                Severity.WARNING: 2,
-                Severity.INFO: 1,
-            }
             worst = max(denies, key=lambda r: severity_order.get(r.severity, 0))
             return cls(
                 status=DecisionStatus.DENY,
@@ -76,12 +76,6 @@ class Decision:
             )
 
         if warns:
-            severity_order = {
-                Severity.CRITICAL: 4,
-                Severity.ERROR: 3,
-                Severity.WARNING: 2,
-                Severity.INFO: 1,
-            }
             worst = max(warns, key=lambda r: severity_order.get(r.severity, 0))
             return cls(
                 status=DecisionStatus.WARN,
@@ -93,6 +87,55 @@ class Decision:
             )
 
         return cls(status=DecisionStatus.ALLOW, per_guard=list(results))
+
+    @classmethod
+    def from_report_dict(cls, report: dict) -> Decision:
+        """Create a Decision from a GuardReport dict (as returned by native or pure-python backend).
+
+        Expected shape::
+
+            {
+                "overall": {"allowed": bool, "guard": str, ...},
+                "per_guard": [{"allowed": bool, "guard": str, ...}, ...]
+            }
+        """
+        severity_map = {
+            "info": Severity.INFO,
+            "warning": Severity.WARNING,
+            "error": Severity.ERROR,
+            "critical": Severity.CRITICAL,
+        }
+
+        per_guard = [
+            GuardResult(
+                allowed=r["allowed"],
+                guard=r["guard"],
+                severity=severity_map.get(str(r.get("severity", "info")).lower(), Severity.INFO),
+                message=r.get("message", ""),
+                details=r.get("details"),
+            )
+            for r in report.get("per_guard", [])
+        ]
+
+        # Use the backend's overall verdict directly instead of re-aggregating,
+        # since the native engine may have tie-break behavior (e.g. preferring
+        # sanitize warnings) that from_guard_results cannot replicate.
+        overall = report.get("overall", {})
+        if not overall.get("allowed", True):
+            status = DecisionStatus.DENY
+        elif severity_map.get(str(overall.get("severity", "info")).lower(), Severity.INFO) == Severity.WARNING:
+            status = DecisionStatus.WARN
+        else:
+            status = DecisionStatus.ALLOW
+
+        return cls(
+            status=status,
+            guard=overall.get("guard"),
+            severity=severity_map.get(str(overall.get("severity", "info")).lower(), Severity.INFO),
+            message=overall.get("message"),
+            details=overall.get("details"),
+            per_guard=per_guard,
+        )
 
 
 @dataclass

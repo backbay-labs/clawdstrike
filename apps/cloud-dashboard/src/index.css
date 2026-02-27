@@ -1,1 +1,226 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap");
+
 @import "tailwindcss";
+
+:root {
+  /* ── Artifact OS v1 — Forged Gold on Black Glass ── */
+
+  /* Surface palette */
+  --void: #000000;
+  --obsidian: #0b0d10;
+  --graphite: #12151b;
+  --slate: #1b2230;
+
+  /* Text */
+  --text: #e7edf6;
+  --muted: #9aa7b5;
+
+  /* Gold — identity */
+  --gold: #d6b15a;
+  --gold-edge: rgba(214, 177, 90, 0.35);
+  --gold-bloom: rgba(214, 177, 90, 0.12);
+
+  /* Crimson — breach / error */
+  --crimson: #c23b3b;
+  --crimson-bloom: rgba(194, 59, 59, 0.16);
+
+  /* Teal — live telemetry */
+  --teal: #2fa7a0;
+  --teal-bloom: rgba(47, 167, 160, 0.14);
+
+  /* Decision stamps */
+  --stamp-allowed: #2daa6a;
+  --stamp-warn: #d2a34b;
+  --stamp-blocked: #c23b3b;
+
+  /* Radii */
+  --radius-window: 14px;
+  --radius-control: 10px;
+  --radius-stamp: 8px;
+
+  /* ── Bridge to glia-desktop CSS variables ── */
+  --glia-font-display: "Space Grotesk", sans-serif;
+  --glia-font-body: "Inter", sans-serif;
+  --glia-font-mono: "JetBrains Mono", monospace;
+
+  --glia-color-accent: var(--gold);
+  --glia-color-accent-muted: var(--gold-bloom);
+  --glia-color-accent-glow: var(--gold-edge);
+  --glia-color-destructive: var(--crimson);
+  --glia-color-success: var(--stamp-allowed);
+  --glia-color-warning: var(--stamp-warn);
+
+  --glia-color-windowBg: var(--obsidian);
+  --glia-color-windowBorder: rgba(27, 34, 48, 0.8);
+  --glia-color-windowBorderFocused: var(--gold-edge);
+  --glia-color-titlebarBg: var(--obsidian);
+  --glia-color-titlebarText: var(--text);
+  --glia-color-taskbarBg: rgba(11, 13, 16, 0.96);
+  --glia-color-taskbarText: var(--muted);
+  --glia-color-textPrimary: var(--text);
+  --glia-color-textSecondary: var(--muted);
+  --glia-color-textMuted: rgba(154, 167, 181, 0.5);
+  --glia-color-desktopBg: var(--void);
+
+  --glia-spacing-taskbar-height: 48px;
+  --glia-radius-window: var(--radius-window);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--glia-font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Shared glass primitives ── */
+
+.glass-panel {
+  background: linear-gradient(180deg, var(--obsidian) 0%, rgba(7, 8, 10, 0.96) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--slate);
+  border-radius: var(--radius-window);
+  box-shadow: inset 0 1px 0 var(--gold-edge);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-input {
+  background: var(--void);
+  border: 1px solid var(--slate);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.glass-input:focus {
+  border-color: var(--gold);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 2px var(--gold-bloom);
+}
+
+/* ── Font utility classes ── */
+
+.font-display {
+  font-family: var(--glia-font-display, "Space Grotesk", sans-serif);
+}
+.font-mono {
+  font-family: var(--glia-font-mono, "JetBrains Mono", monospace);
+}
+.font-body {
+  font-family: var(--glia-font-body, "Inter", sans-serif);
+}
+
+/* ── Hover classes ── */
+
+.hover-row {
+  transition: background 0.15s ease;
+}
+.hover-row:hover {
+  background: var(--gold-bloom);
+}
+
+.hover-row-violation {
+  transition: background 0.15s ease;
+  background: var(--crimson-bloom);
+}
+.hover-row-violation:hover {
+  background: rgba(194, 59, 59, 0.22);
+}
+
+.hover-glass-button {
+  transition: all 0.2s ease;
+}
+.hover-glass-button:hover:not(:disabled) {
+  border-color: var(--gold-edge);
+  box-shadow: inset 0 1px 0 var(--gold-edge),
+    0 0 14px var(--gold-bloom);
+}
+
+.hover-desktop-icon {
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.hover-desktop-icon:hover {
+  background: var(--gold-bloom);
+  transform: translateY(-1px);
+}
+
+/* ── Keyframes ── */
+
+@keyframes breathe-teal {
+  0%,
+  100% {
+    box-shadow: 0 0 4px 1px rgba(47, 167, 160, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(47, 167, 160, 0.7);
+  }
+}
+
+@keyframes breathe-crimson {
+  0%,
+  100% {
+    box-shadow: 0 0 4px 1px rgba(194, 59, 59, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(194, 59, 59, 0.7);
+  }
+}
+
+@keyframes sseBreathingPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px 1px currentColor;
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 10px 3px currentColor;
+    opacity: 0.7;
+  }
+}
+
+@keyframes stamp-press {
+  0% {
+    transform: scale(1.15);
+    opacity: 0.6;
+  }
+  40% {
+    transform: scale(0.97);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes glint-sweep {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

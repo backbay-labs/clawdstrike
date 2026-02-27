@@ -1,8 +1,11 @@
 """Tests for Clawdstrike facade."""
 
 import pytest
+
 from clawdstrike import Clawdstrike, Decision, DecisionStatus
 from clawdstrike.exceptions import ConfigurationError
+from clawdstrike.native import NATIVE_AVAILABLE
+from clawdstrike.policy import Policy, PolicyEngine
 
 
 class TestClawdstrikeWithDefaults:
@@ -77,3 +80,30 @@ class TestClawdstrikeConfigure:
         # Should have at most 1 deny result in per_guard
         denies = [r for r in d.per_guard if not r.allowed]
         assert len(denies) >= 1
+
+
+class TestClawdstrikeBackendAware:
+    """Tests that exercise both backends via the facade."""
+
+    def test_backend_is_pure_python_by_default(self) -> None:
+        """Without native, the backend should be pure_python."""
+        from unittest.mock import patch
+
+        with patch("clawdstrike.clawdstrike.NativeEngineBackend") as mock:
+            mock.from_ruleset.side_effect = Exception("no native")
+            cs = Clawdstrike.with_defaults("strict")
+            assert cs._backend.name == "pure_python"
+
+    @pytest.mark.skipif(not NATIVE_AVAILABLE, reason="native backend not available")
+    def test_backend_is_native_when_available(self) -> None:
+        cs = Clawdstrike.with_defaults("strict")
+        assert cs._backend.name == "native"
+
+    def test_facade_accepts_policy_engine(self) -> None:
+        """Backward compat: passing a PolicyEngine wraps in PurePythonBackend."""
+        yaml_str = 'version: "1.1.0"\nname: test\nextends: default\n'
+        policy = Policy.from_yaml_with_extends(yaml_str)
+        cs = Clawdstrike(PolicyEngine(policy))
+        assert cs._backend.name == "pure_python"
+        d = cs.check_file("/app/safe.txt")
+        assert d.allowed

@@ -1166,11 +1166,17 @@ async fn test_rate_limiting_returns_429() {
     let daemon = common::TestDaemon::spawn_rate_limited_daemon(3, 1);
     let client = reqwest::Client::new();
 
+    // Loopback connections are exempt from rate limiting, so we use
+    // X-Forwarded-For to simulate a remote client (trust_xff_from_any
+    // is enabled on the rate-limited test daemon).
+    let remote_ip = "203.0.113.50";
+
     // Make requests until we hit the rate limit
     let mut hit_limit = false;
     for _ in 0..20 {
         let resp = client
             .post(format!("{}/api/v1/check", daemon.url))
+            .header("X-Forwarded-For", remote_ip)
             .json(&serde_json::json!({
                 "action_type": "file_access",
                 "target": "/test/file.txt"

@@ -15,6 +15,7 @@ pub mod saml;
 pub mod session;
 pub mod shutdown;
 pub mod siem;
+pub mod spine_replay;
 pub mod v1;
 pub mod webhooks;
 
@@ -312,6 +313,10 @@ pub fn create_router(state: AppState) -> Router {
             post(session::transition_session_posture),
         )
         .route("/api/v1/shutdown", post(shutdown::shutdown))
+        .route(
+            "/api/v1/receipts/replay",
+            post(spine_replay::replay_receipts),
+        )
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     // Note: Rate limiting is applied to all routes except /health (handled in middleware).

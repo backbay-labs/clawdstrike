@@ -83,8 +83,15 @@ class ShellCommandGuard(Guard):
         # Check allowed commands (exact first-word match)
         if self._config.allowed_commands:
             first_word = command.strip().split()[0] if command.strip() else ""
-            for allowed in self._config.allowed_commands:
-                if first_word == allowed:
-                    return GuardResult.allow(self.name)
+            if first_word in self._config.allowed_commands:
+                return GuardResult.allow(self.name)
+            return GuardResult.block(
+                self.name,
+                Severity.ERROR,
+                f"Command not in allowlist: {first_word!r}",
+            ).with_details({
+                "command": command[:200],
+                "allowed_commands": self._config.allowed_commands,
+            })
 
         return GuardResult.allow(self.name)

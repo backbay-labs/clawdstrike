@@ -919,6 +919,51 @@ impl AuditForwardConfig {
         Ok(out)
     }
 }
+/// Spine attestation log configuration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpineConfig {
+    /// Whether to publish eval receipts to Spine (NATS JetStream).
+    #[serde(default)]
+    pub enabled: bool,
+    /// NATS server URL (defaults to `nats://127.0.0.1:4222`).
+    #[serde(default)]
+    pub nats_url: Option<String>,
+    /// Path to a `.creds` file for NATS authentication.
+    #[serde(default)]
+    pub creds_file: Option<String>,
+    /// Bearer token for NATS authentication.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// NKey seed for NATS authentication.
+    #[serde(default)]
+    pub nkey_seed: Option<String>,
+    /// Path to a separate Ed25519 keypair for signing spine envelopes.
+    /// When unset, the daemon's signing key is reused.
+    #[serde(default)]
+    pub keypair_path: Option<String>,
+    /// Subject prefix for NATS subjects (default: `spine`).
+    #[serde(default = "default_spine_subject_prefix")]
+    pub subject_prefix: String,
+}
+
+impl Default for SpineConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            nats_url: None,
+            creds_file: None,
+            token: None,
+            nkey_seed: None,
+            keypair_path: None,
+            subject_prefix: default_spine_subject_prefix(),
+        }
+    }
+}
+
+fn default_spine_subject_prefix() -> String {
+    "spine".to_string()
+}
+
 /// Daemon configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1018,6 +1063,10 @@ pub struct Config {
     /// Remote `extends` configuration (disabled unless allowlisted).
     #[serde(default)]
     pub remote_extends: RemoteExtendsConfig,
+
+    /// Spine attestation log configuration (NATS JetStream).
+    #[serde(default)]
+    pub spine: SpineConfig,
 }
 
 fn default_listen() -> String {
@@ -1071,6 +1120,7 @@ impl Default for Config {
             threat_intel: ThreatIntelConfig::default(),
             siem: SiemSoarConfig::default(),
             remote_extends: RemoteExtendsConfig::default(),
+            spine: SpineConfig::default(),
         }
     }
 }

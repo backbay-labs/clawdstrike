@@ -73,6 +73,8 @@ pub struct DaemonConfig {
     pub port: u16,
     /// Path to policy file.
     pub policy_path: PathBuf,
+    /// Canonical in-memory agent settings (preferred over on-disk reads).
+    pub settings: Option<Arc<RwLock<crate::settings::Settings>>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -83,6 +85,8 @@ struct HushdRuntimeConfig {
     ruleset: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     siem: Option<HushdRuntimeSiemConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    spine: Option<HushdRuntimeSpineConfig>,
 }
 
 #[derive(Debug, Serialize)]
@@ -176,6 +180,22 @@ struct HushdRuntimeWebhookAuthConfig {
     auth_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSpineConfig {
+    enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nats_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    creds_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nkey_seed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keypair_path: Option<PathBuf>,
+    subject_prefix: String,
 }
 
 impl DaemonConfig {
@@ -771,6 +791,12 @@ impl PolicyCache {
         self.cached_policy.lock().await.clone()
     }
 
+    /// Return the cached policy version (best effort) for telemetry/health payloads.
+    pub async fn cached_policy_version(&self) -> Option<String> {
+        let raw = self.cached_policy.lock().await.clone()?;
+        parse_cached_policy_version(&raw)
+    }
+
     /// Start a periodic sync loop that refreshes the policy cache from hushd.
     pub fn start_periodic_sync(
         self: &Arc<Self>,
@@ -795,6 +821,17 @@ impl PolicyCache {
                 }
             }
         });
+    }
+}
+
+fn parse_cached_policy_version(policy_yaml: &str) -> Option<String> {
+    let root: serde_yaml::Value = serde_yaml::from_str(policy_yaml).ok()?;
+    let version = root.get("version")?;
+    match version {
+        serde_yaml::Value::String(value) => Some(value.clone()),
+        serde_yaml::Value::Number(value) => Some(value.to_string()),
+        serde_yaml::Value::Bool(value) => Some(value.to_string()),
+        _ => None,
     }
 }
 
@@ -933,7 +970,8 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
         anyhow::bail!("hushd binary not found at {:?}", config.binary_path);
     }
 
-    let runtime_config_path = write_runtime_config_file(config).await?;
+    let runtime_settings = load_runtime_settings_for_config(config).await;
+    let runtime_config_path = write_runtime_config_file(config, runtime_settings).await?;
 
     let mut cmd = Command::new(&config.binary_path);
     cmd.arg("start").arg("--config").arg(&runtime_config_path);
@@ -949,7 +987,10 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
     Ok(child)
 }
 
-async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
+async fn write_runtime_config_file(
+    config: &DaemonConfig,
+    settings: Option<crate::settings::Settings>,
+) -> Result<PathBuf> {
     // Keep runtime config files in the agent config directory rather than alongside the
     // policy file. Users may point policy_path at a repo directory or read-only location.
     let parent = crate::settings::get_config_dir().join("runtime");
@@ -967,7 +1008,8 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
             listen,
             policy_path,
             ruleset: "default".to_string(),
-            siem: resolve_runtime_siem_config(),
+            siem: settings.as_ref().and_then(build_runtime_siem_config),
+            spine: settings.as_ref().and_then(build_runtime_spine_config),
         };
         let serialized = serde_yaml::to_string(&runtime)
             .with_context(|| "Failed to serialize hushd runtime config")?;
@@ -986,7 +1028,13 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn resolve_runtime_siem_config() -> Option<HushdRuntimeSiemConfig> {
+async fn load_runtime_settings_for_config(
+    config: &DaemonConfig,
+) -> Option<crate::settings::Settings> {
+    if let Some(settings) = config.settings.as_ref() {
+        return Some(settings.read().await.clone());
+    }
+
     let settings = match crate::settings::Settings::load() {
         Ok(settings) => settings,
         Err(err) => {
@@ -998,7 +1046,7 @@ fn resolve_runtime_siem_config() -> Option<HushdRuntimeSiemConfig> {
         }
     };
 
-    build_runtime_siem_config(&settings)
+    Some(settings)
 }
 
 fn build_runtime_siem_config(
@@ -1128,6 +1176,35 @@ fn build_runtime_siem_config(
     Some(HushdRuntimeSiemConfig {
         enabled: true,
         exporters,
+    })
+}
+
+fn build_runtime_spine_config(
+    settings: &crate::settings::Settings,
+) -> Option<HushdRuntimeSpineConfig> {
+    if !settings.nats.enabled {
+        return None;
+    }
+
+    let subject_prefix = settings.nats.subject_prefix.as_ref()?.trim();
+    if subject_prefix.is_empty() {
+        return None;
+    }
+
+    // Reuse the enrollment keypair for signed receipt continuity if available.
+    let agent_keypair_path = {
+        let path = crate::settings::get_config_dir().join("agent.key");
+        if path.exists() { Some(path) } else { None }
+    };
+
+    Some(HushdRuntimeSpineConfig {
+        enabled: true,
+        nats_url: settings.nats.nats_url.clone(),
+        creds_file: settings.nats.creds_file.clone(),
+        token: settings.nats.token.clone(),
+        nkey_seed: settings.nats.nkey_seed.clone(),
+        keypair_path: agent_keypair_path,
+        subject_prefix: subject_prefix.to_string(),
     })
 }
 
@@ -1594,6 +1671,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn runtime_spine_config_is_generated_from_nats_settings() {
+        let mut settings = crate::settings::Settings::default();
+        settings.nats.enabled = true;
+        settings.nats.nats_url = Some("nats://example:4222".to_string());
+        settings.nats.token = Some("nats-token".to_string());
+        settings.nats.subject_prefix = Some("tenant-acme.clawdstrike".to_string());
+
+        let config = build_runtime_spine_config(&settings)
+            .unwrap_or_else(|| panic!("expected runtime spine config"));
+
+        assert!(config.enabled);
+        assert_eq!(config.nats_url.as_deref(), Some("nats://example:4222"));
+        assert_eq!(config.token.as_deref(), Some("nats-token"));
+        assert_eq!(config.subject_prefix, "tenant-acme.clawdstrike");
+    }
+
+    #[test]
+    fn runtime_spine_config_is_none_when_nats_disabled_or_prefix_missing() {
+        let settings = crate::settings::Settings::default();
+        assert!(build_runtime_spine_config(&settings).is_none());
+
+        let mut enabled = crate::settings::Settings::default();
+        enabled.nats.enabled = true;
+        enabled.nats.nats_url = Some("nats://example:4222".to_string());
+        assert!(build_runtime_spine_config(&enabled).is_none());
+    }
+
+    #[test]
+    fn parse_cached_policy_version_accepts_string_or_number() {
+        assert_eq!(
+            parse_cached_policy_version("version: \"42\"\nrules: []\n"),
+            Some("42".to_string())
+        );
+        assert_eq!(
+            parse_cached_policy_version("version: 7\nrules: []\n"),
+            Some("7".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_cached_policy_version_returns_none_for_missing_or_complex_values() {
+        assert_eq!(parse_cached_policy_version("rules: []\n"), None);
+        assert_eq!(
+            parse_cached_policy_version("version:\n  major: 1\n"),
+            None
+        );
+        assert_eq!(parse_cached_policy_version("not: [valid"), None);
+    }
+
     #[tokio::test]
     async fn audit_queue_enqueue_and_len() {
         let queue = AuditQueue::new();
@@ -1620,6 +1747,7 @@ mod tests {
             binary_path: PathBuf::from("/tmp/does-not-exist/hushd"),
             port: 0,
             policy_path: PathBuf::from("/tmp/policy.yaml"),
+            settings: None,
         });
 
         let result = manager.start().await;

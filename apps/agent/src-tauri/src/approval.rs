@@ -94,7 +94,7 @@ pub struct ApprovalResolveInput {
 }
 
 /// Response for approval status queries.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApprovalStatusResponse {
     pub id: String,
     pub status: ApprovalStatus,

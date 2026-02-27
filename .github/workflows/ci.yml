@@ -169,6 +169,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.1.24"
       - name: Install deps
         working-directory: apps/desktop
         run: bun install --frozen-lockfile
@@ -196,6 +198,10 @@ jobs:
       - name: Type check
         working-directory: apps/cloud-dashboard
         run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: apps/cloud-dashboard
+        run: npm test
 
       - name: Build
         working-directory: apps/cloud-dashboard
@@ -345,6 +351,47 @@ jobs:
 
       - name: Generate coverage report
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+
+      - name: Enforce changed-file Rust coverage floor
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          CHANGED_RUST_COVERAGE_THRESHOLD: "70"
+        run: |
+          if [ -z "${GITHUB_BASE_REF}" ]; then
+            echo "No base ref (non-PR run); skipping changed-file Rust coverage gate."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+
+          # In shallow PR checkouts, merge-base may be missing even when origin/<base> exists.
+          # Retry after fetching full history so three-dot diff stays stable.
+          if ! git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.rs' ':(exclude)infra/vendor/**' > changed_rust_files.txt; then
+            echo "Shallow diff failed; fetching additional history for merge-base resolution"
+            git fetch --no-tags --prune --unshallow origin || git fetch --no-tags --prune origin
+            git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.rs' ':(exclude)infra/vendor/**' > changed_rust_files.txt
+          fi
+
+          if [ ! -s changed_rust_files.txt ]; then
+            echo "No changed Rust files; skipping changed-file Rust coverage gate."
+            exit 0
+          fi
+
+          # `cargo llvm-cov` in this job targets the root Rust workspace.
+          # Exclude standalone Rust crates outside that workspace from this
+          # specific gate to avoid false negatives from missing LCOV records.
+          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt > changed_rust_files.coverage.txt || true
+
+          if [ ! -s changed_rust_files.coverage.txt ]; then
+            echo "No workspace Rust files changed; skipping changed-file Rust coverage gate."
+            exit 0
+          fi
+
+          tools/scripts/check-changed-rust-coverage.py \
+            --lcov lcov.info \
+            --changed-files-file changed_rust_files.coverage.txt \
+            --threshold "${CHANGED_RUST_COVERAGE_THRESHOLD}"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

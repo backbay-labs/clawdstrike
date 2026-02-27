@@ -23,6 +23,7 @@
 - [Terminology](concepts/terminology.md)
 - [Schema Governance](concepts/schema-governance.md)
 - [Decisions](concepts/decisions.md)
+- [Adaptive Architecture](concepts/adaptive-architecture.md)
 
 # Guides
 
@@ -38,6 +39,8 @@
 - [Posture Policies](guides/posture-policy.md)
 - [Observe -> Synth -> Tighten](guides/observe-synth.md)
 - [Desktop Agent Deployment](guides/desktop-agent.md)
+- [Adaptive Deployment](guides/adaptive-deployment.md)
+- [Enterprise Enrollment](guides/enterprise-enrollment.md)
 - [Audit Logging](guides/audit-logging.md)
 - [Marketplace Feed](guides/marketplace-feed.md)
 - [Computer Use Gateway](guides/computer-use-gateway.md)

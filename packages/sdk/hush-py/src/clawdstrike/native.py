@@ -71,8 +71,32 @@ except ImportError:
     NATIVE_AVAILABLE = False
 
 
+def get_native_module():
+    """Return the hush_native module, raising NativeBackendError if unavailable."""
+    if not NATIVE_AVAILABLE:
+        from clawdstrike.exceptions import NativeBackendError
+        raise NativeBackendError("hush-native extension not installed")
+    import hush_native
+    return hush_native
+
+
+def init_native() -> bool:
+    """Check if the native backend is available and has the NativeEngine class.
+
+    Returns:
+        True if native engine is available, False otherwise.
+    """
+    try:
+        import hush_native
+        return hasattr(hush_native, "NativeEngine")
+    except ImportError:
+        return False
+
+
 __all__ = [
     "NATIVE_AVAILABLE",
+    "get_native_module",
+    "init_native",
     "is_native_available",
     "sha256_native",
     "keccak256_native",

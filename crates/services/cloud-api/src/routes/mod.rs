@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod alerts;
+pub mod approvals;
 pub mod billing;
 pub mod compliance;
 pub mod events;
@@ -17,12 +18,14 @@ pub fn router(state: AppState) -> Router {
     // Public routes (no auth required)
     let public = Router::new()
         .merge(health::router())
-        .merge(billing::router());
+        .merge(billing::router())
+        .merge(agents::enrollment_router());
 
     // Authenticated routes
     let authenticated = Router::new()
         .merge(tenants::router())
         .merge(agents::router())
+        .merge(approvals::router())
         .merge(policies::router())
         .merge(events::router())
         .merge(alerts::router())

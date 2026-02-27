@@ -1,5 +1,6 @@
 """Clawdstrike - Python SDK for clawdstrike security verification."""
 
+from clawdstrike.backend import EngineBackend, NativeEngineBackend, PurePythonBackend
 from clawdstrike.canonical import canonical_hash, canonicalize
 from clawdstrike.certification_badge import verify_certification_badge
 from clawdstrike.clawdstrike import Clawdstrike, ClawdstrikeSession
@@ -56,7 +57,7 @@ from clawdstrike.merkle import (
     hash_leaf,
     hash_node,
 )
-from clawdstrike.native import NATIVE_AVAILABLE
+from clawdstrike.native import NATIVE_AVAILABLE, init_native
 from clawdstrike.policy import (
     GuardConfigs,
     Policy,
@@ -176,4 +177,9 @@ __all__ = [
     "verify_certification_badge",
     # Native backend
     "NATIVE_AVAILABLE",
+    "init_native",
+    # Backend dispatch
+    "EngineBackend",
+    "NativeEngineBackend",
+    "PurePythonBackend",
 ]

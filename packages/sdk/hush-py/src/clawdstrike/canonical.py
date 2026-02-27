@@ -25,6 +25,34 @@ def canonicalize(obj: Any) -> str:
     Raises:
         ValueError: If object contains non-finite floats (inf, nan)
     """
+    from clawdstrike.native import NATIVE_AVAILABLE, canonicalize_native
+
+    if NATIVE_AVAILABLE and canonicalize_native is not None:
+        _validate_keys(obj)
+        raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=False)
+        return canonicalize_native(raw)
+
+    return _pure_python_canonicalize(obj)
+
+
+def _validate_keys(obj: Any) -> None:
+    """Recursively validate that all dict keys are strings.
+
+    This ensures the native path rejects the same inputs that the pure-Python
+    path rejects, rather than silently coercing non-string keys via json.dumps.
+    """
+    if isinstance(obj, dict):
+        for k in obj:
+            if not isinstance(k, str):
+                raise TypeError("JSON object keys must be strings")
+            _validate_keys(obj[k])
+    elif isinstance(obj, (list, tuple)):
+        for item in obj:
+            _validate_keys(item)
+
+
+def _pure_python_canonicalize(obj: Any) -> str:
+    """Pure Python RFC 8785 canonical JSON serialization."""
     if obj is None:
         return "null"
 
@@ -44,10 +72,10 @@ def canonicalize(obj: Any) -> str:
         return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
     if isinstance(obj, (list, tuple)):
-        return "[" + ",".join(canonicalize(v) for v in obj) + "]"
+        return "[" + ",".join(_pure_python_canonicalize(v) for v in obj) + "]"
 
     if isinstance(obj, dict):
-        for k in obj.keys():
+        for k in obj:
             if not isinstance(k, str):
                 raise TypeError("JSON object keys must be strings")
 
@@ -55,7 +83,7 @@ def canonicalize(obj: Any) -> str:
         parts = []
         for k, v in items:
             key_json = json.dumps(k, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-            parts.append(key_json + ":" + canonicalize(v))
+            parts.append(key_json + ":" + _pure_python_canonicalize(v))
         return "{" + ",".join(parts) + "}"
 
     raise TypeError(f"Unsupported type for canonical JSON: {type(obj).__name__}")

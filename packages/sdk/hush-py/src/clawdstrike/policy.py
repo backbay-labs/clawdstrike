@@ -673,6 +673,35 @@ class Policy:
                 "block": self.guards.mcp_tool.block,
                 "default_action": self.guards.mcp_tool.default_action,
             }
+        if self.guards.shell_command:
+            data["guards"]["shell_command"] = {
+                "blocked_patterns": self.guards.shell_command.blocked_patterns,
+                "additional_blocked": self.guards.shell_command.additional_blocked,
+                "allowed_commands": self.guards.shell_command.allowed_commands,
+                "enabled": self.guards.shell_command.enabled,
+            }
+        if self.guards.path_allowlist:
+            data["guards"]["path_allowlist"] = {
+                "allowed_paths": self.guards.path_allowlist.allowed_paths,
+                "enabled": self.guards.path_allowlist.enabled,
+            }
+        if self.guards.prompt_injection:
+            data["guards"]["prompt_injection"] = {
+                "enabled": self.guards.prompt_injection.enabled,
+                "warn_at_or_above": self.guards.prompt_injection.warn_at_or_above,
+                "block_at_or_above": self.guards.prompt_injection.block_at_or_above,
+                "max_scan_bytes": self.guards.prompt_injection.max_scan_bytes,
+            }
+        if self.guards.jailbreak:
+            data["guards"]["jailbreak"] = {
+                "enabled": self.guards.jailbreak.enabled,
+                "detector": {
+                    "block_threshold": self.guards.jailbreak.block_threshold,
+                    "warn_threshold": self.guards.jailbreak.warn_threshold,
+                    "max_input_bytes": self.guards.jailbreak.max_input_bytes,
+                    "session_aggregation": self.guards.jailbreak.session_aggregation,
+                },
+            }
 
         result: str = yaml.dump(data, default_flow_style=False, sort_keys=False)
         return result

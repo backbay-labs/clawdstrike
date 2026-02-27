@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Any
 
+from clawdstrike.backend import EngineBackend, NativeEngineBackend, PurePythonBackend
 from clawdstrike.exceptions import ConfigurationError
 from clawdstrike.guards.base import (
     Action,
+    CustomAction,
     FileAccessAction,
     FileWriteAction,
     GuardContext,
@@ -22,6 +25,8 @@ from clawdstrike.guards.base import (
 from clawdstrike.policy import Policy, PolicyEngine
 from clawdstrike.types import Decision, DecisionStatus, SessionOptions, SessionSummary
 
+logger = logging.getLogger("clawdstrike")
+
 
 class Clawdstrike:
     """Main facade for Clawdstrike security enforcement.
@@ -33,8 +38,17 @@ class Clawdstrike:
             print(f"Blocked: {decision.message}")
     """
 
-    def __init__(self, engine: PolicyEngine, *, cwd: str | None = None) -> None:
-        self._engine = engine
+    def __init__(
+        self,
+        engine_or_backend: PolicyEngine | EngineBackend,
+        *,
+        cwd: str | None = None,
+    ) -> None:
+        if isinstance(engine_or_backend, PolicyEngine):
+            # Legacy path: wrap in PurePythonBackend for backward compat
+            self._backend: EngineBackend = PurePythonBackend(engine_or_backend)
+        else:
+            self._backend = engine_or_backend
         self._cwd = cwd or os.getcwd()
 
     @classmethod
@@ -51,11 +65,27 @@ class Clawdstrike:
         """
         is_path = not isinstance(yaml_or_path, str) or os.path.exists(yaml_or_path)
         path = Path(yaml_or_path) if is_path else None
+
+        # Read YAML content
+        if path is not None and path.is_file():
+            yaml_str = path.read_text(encoding="utf-8")
+        else:
+            yaml_str = str(yaml_or_path)
+
+        # Try native backend first
+        try:
+            base_path_str = str(path) if path is not None else None
+            backend = NativeEngineBackend.from_yaml(yaml_str, base_path=base_path_str)
+            return cls(backend, cwd=cwd)
+        except Exception:
+            pass
+
+        # Fallback to pure Python
         if path is not None and path.is_file():
             policy = Policy.from_yaml_file_with_extends(str(path))
         else:
-            policy = Policy.from_yaml_with_extends(str(yaml_or_path))
-        return cls(PolicyEngine(policy), cwd=cwd)
+            policy = Policy.from_yaml_with_extends(yaml_str)
+        return cls(PurePythonBackend(PolicyEngine(policy)), cwd=cwd)
 
     @classmethod
     def with_defaults(cls, ruleset: str = "default", *, cwd: str | None = None) -> Clawdstrike:
@@ -65,12 +95,20 @@ class Clawdstrike:
             ruleset: One of "permissive", "default", "strict", "ai-agent", "cicd"
             cwd: Working directory for context
         """
+        # Try native backend first
+        try:
+            backend = NativeEngineBackend.from_ruleset(ruleset)
+            return cls(backend, cwd=cwd)
+        except Exception:
+            pass
+
+        # Fallback to pure Python
         yaml_str = f'version: "1.1.0"\nname: {ruleset}\nextends: {ruleset}\n'
         try:
             policy = Policy.from_yaml_with_extends(yaml_str)
         except Exception as e:
             raise ConfigurationError(f"Failed to load built-in ruleset {ruleset!r}: {e}") from e
-        return cls(PolicyEngine(policy), cwd=cwd)
+        return cls(PurePythonBackend(PolicyEngine(policy)), cwd=cwd)
 
     @classmethod
     def configure(
@@ -93,17 +131,29 @@ class Clawdstrike:
             policy = Policy()
         else:
             import copy
-            policy = copy.copy(policy)
+            policy = copy.deepcopy(policy)
         policy.settings.fail_fast = fail_fast
-        return cls(PolicyEngine(policy), cwd=cwd)
+        return cls(PurePythonBackend(PolicyEngine(policy)), cwd=cwd)
+
+    def _ctx_dict(self, **kwargs: Any) -> dict[str, Any]:
+        """Build context dict for backend calls."""
+        ctx: dict[str, Any] = {"cwd": kwargs.pop("cwd", self._cwd)}
+        for k in ("session_id", "agent_id", "metadata"):
+            if k in kwargs and kwargs[k] is not None:
+                ctx[k] = kwargs[k]
+        return ctx
+
+    def _decide_from_report(self, report: dict) -> Decision:
+        """Convert a backend report dict to a Decision."""
+        return Decision.from_report_dict(report)
 
     def _context(self, **kwargs: Any) -> GuardContext:
-        """Build a GuardContext with defaults."""
+        """Build a GuardContext with defaults (legacy path)."""
         filtered = {k: v for k, v in kwargs.items() if k != "cwd"}
         return GuardContext(cwd=kwargs.get("cwd", self._cwd), **filtered)
 
     def _decide(self, results: list[GuardResult]) -> Decision:
-        """Convert guard results to a Decision."""
+        """Convert guard results to a Decision (legacy path)."""
         return Decision.from_guard_results(results)
 
     def check(self, action: Action, **context_kwargs: Any) -> Decision:
@@ -113,9 +163,31 @@ class Clawdstrike:
             action: The action to check (any typed Action variant)
             **context_kwargs: Additional context (session_id, agent_id, metadata)
         """
-        ctx = self._context(**context_kwargs)
-        results = self._engine.check(action, ctx)
-        return self._decide(results)
+        ctx = self._ctx_dict(**context_kwargs)
+        if isinstance(action, FileAccessAction):
+            report = self._backend.check_file_access(action.path, ctx)
+        elif isinstance(action, FileWriteAction):
+            report = self._backend.check_file_write(action.path, action.content, ctx)
+        elif isinstance(action, ShellCommandAction):
+            report = self._backend.check_shell(action.command, ctx)
+        elif isinstance(action, NetworkEgressAction):
+            report = self._backend.check_network(action.host, action.port, ctx)
+        elif isinstance(action, McpToolAction):
+            report = self._backend.check_mcp_tool(action.tool, action.args, ctx)
+        elif isinstance(action, PatchAction):
+            report = self._backend.check_patch(action.path, action.diff, ctx)
+        elif isinstance(action, CustomAction):
+            report = self._backend.check_custom(
+                action.custom_type, action.custom_data, ctx,
+            )
+        else:
+            # Unknown action type — fall through to engine directly if possible
+            gc = self._context(**context_kwargs)
+            if isinstance(self._backend, PurePythonBackend):
+                results = self._backend._engine.check(action, gc)
+                return self._decide(results)
+            return Decision(status=DecisionStatus.ALLOW)
+        return self._decide_from_report(report)
 
     def check_file(
         self,
@@ -132,27 +204,36 @@ class Clawdstrike:
             content: File content for write operations (used by content-aware guards)
         """
         str_path = str(path)
+        ctx = self._ctx_dict()
         if operation == "write":
-            action: Action = FileWriteAction(path=str_path, content=content or b"")
+            report = self._backend.check_file_write(str_path, content or b"", ctx)
         else:
-            action = FileAccessAction(path=str_path)
-        return self.check(action)
+            report = self._backend.check_file_access(str_path, ctx)
+        return self._decide_from_report(report)
 
     def check_command(self, command: str) -> Decision:
         """Check a shell command."""
-        return self.check(ShellCommandAction(command=command))
+        ctx = self._ctx_dict()
+        report = self._backend.check_shell(command, ctx)
+        return self._decide_from_report(report)
 
     def check_network(self, host: str, port: int = 443) -> Decision:
         """Check network egress."""
-        return self.check(NetworkEgressAction(host=host, port=port))
+        ctx = self._ctx_dict()
+        report = self._backend.check_network(host, port, ctx)
+        return self._decide_from_report(report)
 
     def check_patch(self, path: str | os.PathLike[str], diff: str) -> Decision:
         """Check a code patch."""
-        return self.check(PatchAction(path=str(path), diff=diff))
+        ctx = self._ctx_dict()
+        report = self._backend.check_patch(str(path), diff, ctx)
+        return self._decide_from_report(report)
 
     def check_mcp_tool(self, tool: str, args: dict[str, Any] | None = None) -> Decision:
         """Check an MCP tool invocation."""
-        return self.check(McpToolAction(tool=tool, args=args or {}))
+        ctx = self._ctx_dict()
+        report = self._backend.check_mcp_tool(tool, args or {}, ctx)
+        return self._decide_from_report(report)
 
     def session(self, **options: Any) -> ClawdstrikeSession:
         """Create a stateful session for tracking checks.
