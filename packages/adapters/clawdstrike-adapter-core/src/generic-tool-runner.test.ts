@@ -87,5 +87,48 @@ describe('GenericToolBoundary', () => {
     expect(context?.sessionId).toBe('sess-42');
     expect(context?.metadata.request).toBe('req-9');
   });
-});
 
+  it('passes sanitize-modified parameters to the dispatcher', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({
+        status: 'sanitize',
+        reason_code: 'ADC_POLICY_SANITIZE',
+        sanitized: 'safe query',
+      }),
+    };
+
+    const boundary = new GenericToolBoundary({ engine });
+    let dispatchedInput: unknown = null;
+
+    const wrapped = wrapGenericToolDispatcher(boundary, async (_tool, input) => {
+      dispatchedInput = input;
+      return { ok: true };
+    });
+
+    await wrapped('search', { text: 'drop database', keep: 1 }, 'run-4');
+    expect(dispatchedInput).toEqual({ text: 'safe query', keep: 1 });
+  });
+
+  it('short-circuits dispatcher execution when sanitize provides replacement_result', async () => {
+    const replacement = { result: 'policy-safe' };
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({
+        status: 'sanitize',
+        reason_code: 'ADC_POLICY_SANITIZE',
+        details: { replacement_result: replacement },
+      }),
+    };
+
+    const boundary = new GenericToolBoundary({ engine });
+    let dispatched = false;
+
+    const wrapped = wrapGenericToolDispatcher(boundary, async () => {
+      dispatched = true;
+      return { result: 'dispatcher-output' };
+    });
+
+    const output = await wrapped('tool', { text: 'dangerous' }, 'run-5');
+    expect(dispatched).toBe(false);
+    expect(output).toEqual(replacement);
+  });
+});

@@ -80,13 +80,21 @@ export class GenericToolBoundary<TInput = unknown, TOutput = unknown, TRunId = s
     input: TInput,
     runId: TRunId,
   ): Promise<InterceptResult> {
+    const key = this.keyFromRunId(runId);
     const context = this.getContext(runId);
     const result = await this.interceptor.beforeExecute(toolName, input, context);
     if (!result.proceed) {
       throw new GenericToolCallBlockedError(toolName, result.decision);
     }
 
-    this.pending.set(this.keyFromRunId(runId), { toolName, input, context });
+    const effectiveInput = result.modifiedParameters !== undefined
+      ? (result.modifiedParameters as unknown as TInput)
+      : input;
+    this.pending.set(key, {
+      toolName,
+      input: effectiveInput,
+      context,
+    });
     return result;
   }
 
@@ -156,9 +164,17 @@ export function wrapGenericToolDispatcher<TInput = unknown, TOutput = unknown, T
   dispatch: GenericToolDispatcher<TInput, TOutput, TRunId>,
 ): GenericToolDispatcher<TInput, TOutput, TRunId> {
   return async (toolName, input, runId) => {
-    await boundary.handleToolStart(toolName, input, runId);
+    const intercept = await boundary.handleToolStart(toolName, input, runId);
     try {
-      const output = await dispatch(toolName, input, runId);
+      let output: TOutput;
+      if (intercept.replacementResult !== undefined) {
+        output = intercept.replacementResult as TOutput;
+      } else {
+        const dispatchInput = intercept.modifiedParameters !== undefined
+          ? (intercept.modifiedParameters as unknown as TInput)
+          : input;
+        output = await dispatch(toolName, dispatchInput, runId);
+      }
       return await boundary.handleToolEnd(output, runId);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -167,4 +183,3 @@ export function wrapGenericToolDispatcher<TInput = unknown, TOutput = unknown, T
     }
   };
 }
-

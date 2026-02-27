@@ -1504,6 +1504,7 @@ mod coverage_summary {
         }
 
         // 7-9: supply_chain, evasion, multimodal — WS3 placeholders
+        let pending_attack_types = ["supply_chain", "evasion", "multimodal"];
         for (name, stage) in [
             ("supply_chain", "perception"),
             ("evasion", "cognition"),
@@ -1519,6 +1520,24 @@ mod coverage_summary {
                 }),
             );
         }
+
+        let implemented_attack_types = [
+            "prompt_injection",
+            "jailbreak",
+            "data_exfiltration",
+            "unauthorized_action",
+            "privilege_escalation",
+            "social_engineering",
+        ];
+        results.insert(
+            "coverage_status".into(),
+            serde_json::json!({
+                "implemented_attack_types": implemented_attack_types,
+                "implemented_count": implemented_attack_types.len(),
+                "pending_ws3_attack_types": pending_attack_types,
+                "pending_ws3_count": pending_attack_types.len(),
+            }),
+        );
 
         let json = serde_json::Value::Object(results);
         println!(
@@ -1538,6 +1557,17 @@ mod coverage_summary {
             blocked_count >= 6,
             "Expected at least 6 attack types to be blocked, got {blocked_count}. Coverage:\n{}",
             serde_json::to_string_pretty(&json).unwrap()
+        );
+
+        let pending_count = json
+            .as_object()
+            .unwrap()
+            .values()
+            .filter(|v| v["status"] == "pending_ws3")
+            .count();
+        assert_eq!(
+            pending_count, 3,
+            "Expected exactly 3 pending WS3 attack categories (supply_chain, evasion, multimodal)"
         );
     }
 }

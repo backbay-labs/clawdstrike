@@ -121,10 +121,7 @@ impl PatternDb {
             serde_json::from_str(json).map_err(|e| format!("failed to parse pattern DB: {e}"))?;
 
         if entries.is_empty() {
-            return Ok(Self {
-                entries,
-                expected_dim: None,
-            });
+            return Err("pattern DB must contain at least one entry".to_string());
         }
 
         let dim = entries[0].embedding.len();
@@ -235,8 +232,7 @@ impl SpiderSenseGuard {
     pub fn new(cfg: SpiderSensePolicyConfig, async_cfg: AsyncGuardConfig) -> Result<Self, String> {
         let pattern_db = PatternDb::load_from_json(&cfg.pattern_db_path)?;
 
-        let upper_bound = cfg.similarity_threshold + cfg.ambiguity_band;
-        let lower_bound = cfg.similarity_threshold - cfg.ambiguity_band;
+        let (upper_bound, lower_bound) = validate_policy_config(&cfg)?;
 
         let request_policy = embedding_request_policy(&cfg.embedding_api_url)?;
         let llm_request_policy = cfg
@@ -262,8 +258,7 @@ impl SpiderSenseGuard {
         async_cfg: AsyncGuardConfig,
         pattern_db: PatternDb,
     ) -> Result<Self, String> {
-        let upper_bound = cfg.similarity_threshold + cfg.ambiguity_band;
-        let lower_bound = cfg.similarity_threshold - cfg.ambiguity_band;
+        let (upper_bound, lower_bound) = validate_policy_config(&cfg)?;
 
         let request_policy = embedding_request_policy(&cfg.embedding_api_url)?;
         let llm_request_policy = cfg
@@ -602,16 +597,6 @@ impl AsyncGuard for SpiderSenseGuard {
         // 1. Serialize action to text.
         let text = Self::action_to_text(action, context);
 
-        // Short-circuit if pattern DB is empty (nothing to compare against).
-        if self.pattern_db.is_empty() {
-            return Ok(
-                GuardResult::allow(self.name()).with_details(serde_json::json!({
-                    "analysis": "skip",
-                    "reason": "empty_pattern_db",
-                })),
-            );
-        }
-
         // 2. Get embedding from API.
         let query_embedding = self.get_embedding(&text, http).await?;
 
@@ -729,6 +714,72 @@ fn embedding_request_policy(api_url: &str) -> Result<HttpRequestPolicy, String> 
     })
 }
 
+fn validate_policy_config(cfg: &SpiderSensePolicyConfig) -> Result<(f64, f64), String> {
+    if cfg.embedding_api_url.trim().is_empty() {
+        return Err("embedding_api_url cannot be empty".to_string());
+    }
+    if cfg.embedding_api_key.trim().is_empty() {
+        return Err("embedding_api_key cannot be empty".to_string());
+    }
+    if cfg.embedding_model.trim().is_empty() {
+        return Err("embedding_model cannot be empty".to_string());
+    }
+    if cfg.pattern_db_path.trim().is_empty() {
+        return Err("pattern_db_path cannot be empty".to_string());
+    }
+
+    if !cfg.similarity_threshold.is_finite() {
+        return Err("similarity_threshold must be a finite number".to_string());
+    }
+    if !(0.0..=1.0).contains(&cfg.similarity_threshold) {
+        return Err(format!(
+            "similarity_threshold must be in [0.0, 1.0], got {}",
+            cfg.similarity_threshold
+        ));
+    }
+
+    if !cfg.ambiguity_band.is_finite() {
+        return Err("ambiguity_band must be a finite number".to_string());
+    }
+    if !(0.0..=1.0).contains(&cfg.ambiguity_band) {
+        return Err(format!(
+            "ambiguity_band must be in [0.0, 1.0], got {}",
+            cfg.ambiguity_band
+        ));
+    }
+
+    let upper_bound = cfg.similarity_threshold + cfg.ambiguity_band;
+    let lower_bound = cfg.similarity_threshold - cfg.ambiguity_band;
+    if !(0.0..=1.0).contains(&lower_bound) || !(0.0..=1.0).contains(&upper_bound) {
+        return Err(format!(
+            "threshold/band produce invalid decision range: lower={lower_bound:.3}, upper={upper_bound:.3}; expected both in [0.0, 1.0]"
+        ));
+    }
+
+    let has_llm_url = cfg
+        .llm_api_url
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
+    let has_llm_key = cfg
+        .llm_api_key
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
+
+    if has_llm_url != has_llm_key {
+        return Err(
+            "LLM deep path requires both llm_api_url and llm_api_key (or neither)".to_string(),
+        );
+    }
+
+    if let Some(model) = cfg.llm_model.as_deref() {
+        if model.trim().is_empty() {
+            return Err("llm_model cannot be empty when provided".to_string());
+        }
+    }
+
+    Ok((upper_bound, lower_bound))
+}
+
 fn format_matches(matches: &[PatternMatch]) -> serde_json::Value {
     serde_json::json!(matches
         .iter()
@@ -747,6 +798,45 @@ fn format_matches(matches: &[PatternMatch]) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::async_guards::types::AsyncGuardConfig;
+    use crate::policy::{AsyncExecutionMode, TimeoutBehavior};
+
+    fn test_cfg() -> SpiderSensePolicyConfig {
+        SpiderSensePolicyConfig {
+            embedding_api_url: "http://127.0.0.1:8080/v1/embeddings".to_string(),
+            embedding_api_key: "test-key".to_string(),
+            embedding_model: "test-model".to_string(),
+            similarity_threshold: 0.85,
+            ambiguity_band: 0.10,
+            pattern_db_path: "/tmp/patterns.json".to_string(),
+            llm_api_url: None,
+            llm_api_key: None,
+            llm_model: None,
+        }
+    }
+
+    fn test_async_cfg() -> AsyncGuardConfig {
+        AsyncGuardConfig {
+            timeout: Duration::from_secs(1),
+            on_timeout: TimeoutBehavior::Warn,
+            execution_mode: AsyncExecutionMode::Parallel,
+            cache_enabled: false,
+            cache_ttl: Duration::from_secs(1),
+            cache_max_size_bytes: 1024,
+            rate_limit: None,
+            circuit_breaker: None,
+            retry: None,
+        }
+    }
+
+    fn test_pattern_db() -> PatternDb {
+        PatternDb::parse_json(
+            r#"[
+            { "id": "p1", "category": "prompt_injection", "stage": "perception", "label": "x", "embedding": [1.0, 0.0, 0.0] }
+        ]"#,
+        )
+        .expect("test pattern DB should parse")
+    }
 
     #[test]
     fn cosine_identical_vectors() {
@@ -824,9 +914,8 @@ mod tests {
 
     #[test]
     fn pattern_db_parse_empty() {
-        let db = PatternDb::parse_json("[]").unwrap();
-        assert!(db.is_empty());
-        assert_eq!(db.expected_dim(), None);
+        let err = PatternDb::parse_json("[]").expect_err("empty pattern DB must fail closed");
+        assert!(err.contains("must contain at least one entry"));
     }
 
     #[test]
@@ -856,5 +945,46 @@ mod tests {
         assert_eq!(results[0].entry.id, "p1"); // exact match first
         assert!((results[0].score - 1.0).abs() < 1e-6);
         assert_eq!(results[1].entry.id, "p3"); // close second
+    }
+
+    #[test]
+    fn guard_config_rejects_invalid_similarity_threshold() {
+        let mut cfg = test_cfg();
+        cfg.similarity_threshold = 1.1;
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "invalid threshold should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("similarity_threshold"));
+    }
+
+    #[test]
+    fn guard_config_rejects_invalid_ambiguity_band() {
+        let mut cfg = test_cfg();
+        cfg.ambiguity_band = -0.2;
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "invalid ambiguity band should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("ambiguity_band"));
+    }
+
+    #[test]
+    fn guard_config_rejects_out_of_range_bounds() {
+        let mut cfg = test_cfg();
+        cfg.similarity_threshold = 0.95;
+        cfg.ambiguity_band = 0.10;
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "out-of-range bounds should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("invalid decision range"));
+    }
+
+    #[test]
+    fn guard_config_rejects_partial_llm_configuration() {
+        let mut cfg = test_cfg();
+        cfg.llm_api_url = Some("http://127.0.0.1:8081/v1/messages".to_string());
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "partial LLM config should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("requires both llm_api_url and llm_api_key"));
     }
 }

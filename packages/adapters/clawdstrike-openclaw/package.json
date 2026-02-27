@@ -20,11 +20,14 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:local-deps": "bun --cwd ../../policy/clawdstrike-policy run build && bun --cwd ../clawdstrike-adapter-core run build",
     "e2e": "npm run build && node dist/e2e/openclaw-e2e.js",
     "test": "vitest run",
+    "test:workspace": "bun run build:local-deps && vitest run",
     "test:watch": "vitest",
     "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit",
+    "typecheck:workspace": "bun run build:local-deps && tsc --noEmit",
     "bench": "npm run build && node benchmarks/policy-engine.bench.mjs",
     "bench:json": "npm run build && OUTPUT_JSON=1 node benchmarks/policy-engine.bench.mjs"
   },

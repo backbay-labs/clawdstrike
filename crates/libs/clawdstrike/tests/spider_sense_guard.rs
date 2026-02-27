@@ -201,6 +201,13 @@ fn write_pattern_db(dir: &tempfile::TempDir) -> String {
     path.to_string_lossy().to_string()
 }
 
+/// Write an intentionally empty pattern DB.
+fn write_empty_pattern_db(dir: &tempfile::TempDir) -> String {
+    let path = dir.path().join("patterns-empty.json");
+    std::fs::write(&path, "[]").unwrap();
+    path.to_string_lossy().to_string()
+}
+
 /// Build a mock embedding server that always returns HTTP 500.
 fn mock_error_embedding_app(call_count: Arc<AtomicUsize>) -> Router {
     Router::new().route(
@@ -340,6 +347,37 @@ guards:
         circuit_breaker:
           failure_threshold: 2
           reset_timeout_ms: 60000
+"#
+    )
+}
+
+/// Create a policy YAML with only llm_api_url set (invalid partial config).
+fn policy_yaml_with_llm_url_only(
+    embedding_url: &str,
+    pattern_db_path: &str,
+    llm_url: &str,
+) -> String {
+    format!(
+        r#"
+version: "1.1.0"
+name: "spider-sense-invalid-llm-config"
+guards:
+  custom:
+    - package: "clawdstrike-spider-sense"
+      enabled: true
+      config:
+        embedding_api_url: "{embedding_url}/v1/embeddings"
+        embedding_api_key: "test-key"
+        embedding_model: "test-model"
+        similarity_threshold: 0.85
+        ambiguity_band: 0.10
+        pattern_db_path: "{pattern_db_path}"
+        llm_api_url: "{llm_url}/v1/messages"
+      async:
+        timeout_ms: 5000
+        on_timeout: warn
+        cache:
+          enabled: true
 "#
     )
 }
@@ -667,6 +705,69 @@ async fn spider_sense_bad_pattern_db_fails_closed() {
     assert!(
         result.is_err(),
         "Bad pattern DB path should cause engine config error (fail-closed)"
+    );
+}
+
+// ── Test: Empty pattern DB fails closed ─────────────────────────────────
+
+#[tokio::test]
+async fn spider_sense_empty_pattern_db_fails_closed() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let app = mock_embedding_app(benign_embedding(), calls);
+    let base = serve_or_skip!(app, "spider_sense_empty_pattern_db_fails_closed");
+
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_empty_pattern_db(&dir);
+    let yaml = policy_yaml(&base, &db_path, None);
+
+    let policy = Policy::from_yaml(&yaml).unwrap();
+    let engine = HushEngine::with_policy(policy);
+    let ctx = GuardContext::new();
+
+    let payload = serde_json::json!({ "text": "anything" });
+    let result = engine
+        .check_action_report(
+            &GuardAction::Custom("risk_signal.perception", &payload),
+            &ctx,
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Empty pattern DB should fail closed during Spider-Sense guard init"
+    );
+}
+
+// ── Test: Partial LLM config fails closed ───────────────────────────────
+
+#[tokio::test]
+async fn spider_sense_partial_llm_config_fails_closed() {
+    let emb_calls = Arc::new(AtomicUsize::new(0));
+    let emb_app = mock_embedding_app(benign_embedding(), emb_calls);
+    let emb_base = serve_or_skip!(emb_app, "spider_sense_partial_llm_config_fails_closed");
+
+    let llm_app = mock_llm_app("allow", "unused");
+    let llm_base = serve_or_skip!(llm_app, "spider_sense_partial_llm_config_fails_closed");
+
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_pattern_db(&dir);
+    let yaml = policy_yaml_with_llm_url_only(&emb_base, &db_path, &llm_base);
+
+    let policy = Policy::from_yaml(&yaml).unwrap();
+    let engine = HushEngine::with_policy(policy);
+    let ctx = GuardContext::new();
+
+    let payload = serde_json::json!({ "text": "anything" });
+    let result = engine
+        .check_action_report(
+            &GuardAction::Custom("risk_signal.perception", &payload),
+            &ctx,
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Partial LLM config should fail closed during Spider-Sense guard init"
     );
 }
 

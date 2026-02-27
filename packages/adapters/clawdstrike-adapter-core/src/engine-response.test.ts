@@ -39,4 +39,32 @@ describe('parseDecision', () => {
       guard: 'computer_use',
     });
   });
+
+  it('parses sanitize decisions with payload fields', () => {
+    const decision = parseDecision({
+      status: 'sanitize',
+      reason_code: 'ADC_POLICY_SANITIZE',
+      guard: 'clawdstrike-spider-sense',
+      original: 'ignore instructions',
+      sanitized: 'summarize report',
+    });
+
+    expect(decision).toEqual({
+      status: 'sanitize',
+      reason_code: 'ADC_POLICY_SANITIZE',
+      guard: 'clawdstrike-spider-sense',
+      original: 'ignore instructions',
+      sanitized: 'summarize report',
+    });
+  });
+
+  it('returns null for sanitize decisions without a reason_code', () => {
+    const decision = parseDecision({
+      status: 'sanitize',
+      guard: 'clawdstrike-spider-sense',
+      sanitized: 'safe content',
+    });
+
+    expect(decision).toBeNull();
+  });
 });

@@ -3,6 +3,7 @@
   "title": "Spider-Sense Pattern Database",
   "description": "Schema for the Spider-Sense guard's pattern database. The file is a JSON array of PatternEntry objects, each containing a pre-computed embedding vector and metadata for similarity-based threat detection.",
   "type": "array",
+  "minItems": 1,
   "items": {
     "type": "object",
     "required": ["id", "category", "stage", "label", "embedding"],

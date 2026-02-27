@@ -4,7 +4,9 @@ import type { Decision } from './types.js';
 
 export interface InterceptResult {
   proceed: boolean;
+  /** Optional sanitized/rewritten parameters to dispatch instead of original input. */
   modifiedParameters?: Record<string, unknown>;
+  /** Optional synthetic result to return without dispatching the tool. */
   replacementResult?: unknown;
   warning?: string;
   decision: Decision;
@@ -39,4 +41,3 @@ export interface ToolInterceptor<TInput = unknown, TOutput = unknown> {
     context: SecurityContext,
   ): Promise<void>;
 }
-

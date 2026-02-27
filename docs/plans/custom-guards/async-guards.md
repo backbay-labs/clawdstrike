@@ -16,9 +16,9 @@
 
 The Rust async-guard runtime described in this spec is already implemented and in use:
 
-- Trait + runtime: `crates/clawdstrike/src/async_guards/types.rs` and `crates/clawdstrike/src/async_guards/runtime.rs`
+- Trait + runtime: `crates/libs/clawdstrike/src/async_guards/types.rs` and `crates/libs/clawdstrike/src/async_guards/runtime.rs`
 - Features: timeout behaviors, caching, rate limiting, circuit breaker, retry, and execution modes (parallel/sequential/background)
-- Existing packages: VirusTotal, Safe Browsing, Snyk (`crates/clawdstrike/src/async_guards/threat_intel/`)
+- Existing packages: VirusTotal, Safe Browsing, Snyk (`crates/libs/clawdstrike/src/async_guards/threat_intel/`)
 
 The TypeScript interfaces in this document are still aspirational guidance for cross-SDK parity.
 
