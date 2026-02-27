@@ -278,7 +278,7 @@ type PolicyCheckAction =
   | "tool_call";
 
 interface PluginDecision {
-  status: 'allow' | 'warn' | 'deny';
+  status: 'allow' | 'warn' | 'deny' | 'sanitize';
   guard?: string;
   reason?: string;
   message?: string;
@@ -368,6 +368,10 @@ function formatDecision(decision: PluginDecision): string {
   if (decision.status === 'warn') {
     const msg = decision.message ?? decision.reason ?? "Policy warning";
     return `Warning: ${msg}`;
+  }
+  if (decision.status === 'sanitize') {
+    const reason = decision.reason ? `: ${decision.reason}` : "";
+    return `Sanitized${reason}`;
   }
   return "Action allowed";
 }

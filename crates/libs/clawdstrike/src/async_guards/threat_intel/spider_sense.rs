@@ -308,7 +308,7 @@ impl SpiderSenseGuard {
                 format!("[file_access] {}", path)
             }
             GuardAction::Patch(file, diff) => {
-                let preview = &diff[..diff.len().min(512)];
+                let preview = truncate_str(diff, 512);
                 format!("[patch:{}] {}", file, preview)
             }
         }
@@ -365,8 +365,18 @@ impl SpiderSenseGuard {
 
         let vec: Vec<f32> = embedding
             .iter()
-            .map(|v| v.as_f64().unwrap_or(0.0) as f32)
-            .collect();
+            .enumerate()
+            .map(|(i, v)| {
+                v.as_f64()
+                    .map(|f| f as f32)
+                    .ok_or_else(|| {
+                        AsyncGuardError::new(
+                            AsyncGuardErrorKind::Parse,
+                            format!("embedding element at index {i} is not a number: {v}"),
+                        )
+                    })
+            })
+            .collect::<Result<Vec<f32>, _>>()?;
 
         if vec.is_empty() {
             return Err(AsyncGuardError::new(
@@ -505,15 +515,25 @@ impl SpiderSenseGuard {
                     verdict.sanitized_text.clone().unwrap_or_default(),
                 )
                 .with_details(serde_json::json!({
+                    "action": "sanitized",
+                    "original": text,
+                    "sanitized": verdict.sanitized_text,
                     "analysis": "deep_path",
                     "verdict": "sanitize",
                     "reason": verdict.reason,
-                    "sanitized_text": verdict.sanitized_text,
                     "top_matches": format_matches(top_matches),
                 })),
-                _ => GuardResult::allow(self.name()).with_details(serde_json::json!({
+                other => GuardResult::warn(
+                    self.name(),
+                    format!(
+                        "Spider-Sense: unknown LLM verdict '{}'; treating as suspicious",
+                        other
+                    ),
+                )
+                .with_details(serde_json::json!({
                     "analysis": "deep_path",
-                    "verdict": "allow",
+                    "verdict": "warn",
+                    "original_verdict": other,
                     "reason": verdict.reason,
                     "top_matches": format_matches(top_matches),
                 })),
@@ -528,7 +548,7 @@ impl SpiderSenseGuard {
         .with_details(serde_json::json!({
             "analysis": "deep_path",
             "parse_error": true,
-            "raw_content": &content_text[..content_text.len().min(200)],
+            "raw_content": truncate_str(content_text, 200),
             "top_matches": format_matches(top_matches),
         })))
     }
@@ -590,6 +610,20 @@ impl AsyncGuard for SpiderSenseGuard {
 
         // 2. Get embedding from API.
         let query_embedding = self.get_embedding(&text, http).await?;
+
+        // 2b. Validate embedding dimensions match the pattern DB.
+        if let Some(expected_dim) = self.pattern_db.expected_dim() {
+            if query_embedding.len() != expected_dim {
+                return Err(AsyncGuardError::new(
+                    AsyncGuardErrorKind::Parse,
+                    format!(
+                        "embedding dimension mismatch: API returned {} dims, pattern DB expects {}",
+                        query_embedding.len(),
+                        expected_dim
+                    ),
+                ));
+            }
+        }
 
         // 3. Search pattern DB.
         let matches = self.pattern_db.search(&query_embedding, DEFAULT_TOP_K);
@@ -659,6 +693,19 @@ impl AsyncGuard for SpiderSenseGuard {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
+
+/// Truncate a `&str` to at most `max_bytes` without splitting a multi-byte
+/// UTF-8 code point (which would panic on `&s[..n]`).
+fn truncate_str(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
 
 fn embedding_request_policy(api_url: &str) -> Result<HttpRequestPolicy, String> {
     let parsed =

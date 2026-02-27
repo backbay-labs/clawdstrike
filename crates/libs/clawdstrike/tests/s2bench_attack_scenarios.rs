@@ -572,7 +572,8 @@ mod action_stage {
         let engine = HushEngine::from_ruleset("strict").unwrap();
         let ctx = GuardContext::new();
 
-        let content = b"export GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01\n";
+        // Token must be ghp_ + exactly 36 alphanumeric chars to match strict policy pattern.
+        let content = b"export GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh01\n";
 
         let result = engine
             .check_file_write("/tmp/env.sh", content, &ctx)
@@ -833,7 +834,8 @@ mod feedback_stage {
         let engine = HushEngine::from_ruleset("strict").unwrap();
         let ctx = GuardContext::new().with_session_id("s2bench-fb-exfil-001");
 
-        let content = b"Here are the environment variables:\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nDATABASE_URL=postgres://admin:password@prod-db:5432/main\n";
+        // Include an AKIA access key ID (matches aws_access_key pattern) alongside the secret.
+        let content = b"Here are the environment variables:\nAWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nDATABASE_URL=postgres://admin:password@prod-db:5432/main\n";
 
         let result = engine
             .check_file_write("/tmp/response.log", content, &ctx)

@@ -22,7 +22,7 @@ export interface DecisionReceipt {
   policyHash: string;
   /** The decision that was made */
   decision: {
-    status: 'allow' | 'warn' | 'deny';
+    status: 'allow' | 'warn' | 'deny' | 'sanitize';
     guard?: string;
     reason?: string;
   };

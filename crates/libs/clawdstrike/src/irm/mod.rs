@@ -328,21 +328,21 @@ impl IrmRouter {
                         // Deny takes precedence - return immediately
                         return (decision, applied_monitors);
                     }
-                    Decision::Sanitize { .. } => {
-                        // Sanitize returns immediately (caller applies sanitization)
-                        return (decision, applied_monitors);
-                    }
-                    Decision::Audit { .. } => {
-                        decisions.push(decision);
-                    }
-                    Decision::Allow => {
+                    Decision::Sanitize { .. } | Decision::Audit { .. } | Decision::Allow => {
+                        // Collect non-deny decisions so later monitors can still deny.
                         decisions.push(decision);
                     }
                 }
             }
         }
 
-        // If any audits, return the first audit
+        // Priority: Sanitize > Audit > Allow
+        // (Deny already short-circuited above.)
+        for decision in &decisions {
+            if matches!(decision, Decision::Sanitize { .. }) {
+                return (decision.clone(), applied_monitors);
+            }
+        }
         for decision in &decisions {
             if matches!(decision, Decision::Audit { .. }) {
                 return (decision.clone(), applied_monitors);

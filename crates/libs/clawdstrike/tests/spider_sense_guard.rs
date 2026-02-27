@@ -862,7 +862,7 @@ async fn spider_sense_ambiguous_with_llm_sanitize() {
     assert_eq!(verdict, "sanitize");
 
     let sanitized_text = details
-        .pointer("/sanitized_text")
+        .pointer("/sanitized")
         .and_then(|v| v.as_str())
         .unwrap_or("");
     assert_eq!(sanitized_text, "Please summarize the quarterly report");
