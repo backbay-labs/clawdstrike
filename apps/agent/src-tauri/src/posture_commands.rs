@@ -168,18 +168,48 @@ impl PostureCommandHandler {
                 tracing::warn!(reason = %reason_str, "KILL SWITCH activated via remote command");
 
                 // Set posture to "locked" which deny-all's all policy evaluations.
-                self.session_manager
+                let posture_applied = self
+                    .session_manager
                     .update_posture_from_daemon_event(None, "locked".to_string())
                     .await;
 
-                // Restart the daemon so it reloads with locked posture enforced.
-                if let Err(err) = self.daemon_manager.restart().await {
-                    tracing::error!(error = %err, "Failed to restart daemon for kill switch");
+                if !posture_applied {
+                    tracing::warn!("Kill switch: no active session to set posture to locked");
                 }
 
+                // Restart the daemon so it reloads with locked posture enforced.
+                let restart_ok = match self.daemon_manager.restart().await {
+                    Ok(()) => true,
+                    Err(err) => {
+                        tracing::error!(error = %err, "Failed to restart daemon for kill switch");
+                        false
+                    }
+                };
+
+                let status = if posture_applied || restart_ok {
+                    "ok"
+                } else {
+                    "error"
+                };
+                let msg = match (posture_applied, restart_ok) {
+                    (true, true) => format!("Kill switch activated: {}", reason_str),
+                    (true, false) => format!(
+                        "Kill switch: posture locked but daemon restart failed: {}",
+                        reason_str
+                    ),
+                    (false, true) => format!(
+                        "Kill switch: no active session to lock, daemon restarted: {}",
+                        reason_str
+                    ),
+                    (false, false) => format!(
+                        "Kill switch: posture lock and daemon restart both failed: {}",
+                        reason_str
+                    ),
+                };
+
                 CommandResponse {
-                    status: "ok".to_string(),
-                    message: Some(format!("Kill switch activated: {}", reason_str)),
+                    status: status.to_string(),
+                    message: Some(msg),
                 }
             }
             PostureCommand::RequestPolicyReload => {

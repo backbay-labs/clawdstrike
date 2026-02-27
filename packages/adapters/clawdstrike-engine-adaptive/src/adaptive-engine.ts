@@ -77,8 +77,17 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
     if (healthy && (current === 'standalone' || current === 'degraded')) {
       const promoted = await machine.transition('connected', 'remote health probe succeeded');
       if (promoted && current === 'degraded') {
-        // Drain the offline receipt queue on promotion from degraded.
-        queue.drain();
+        // Drain the offline receipt queue and surface for replay.
+        const drained = queue.drain();
+        if (drained.length > 0 && options.onModeChange) {
+          options.onModeChange({
+            from: 'degraded',
+            to: 'connected',
+            reason: 'receipts drained for replay',
+            timestamp: new Date().toISOString(),
+            drainedReceipts: drained,
+          });
+        }
       }
     } else if (!healthy && current === 'connected') {
       await machine.transition('degraded', 'remote health probe failed');

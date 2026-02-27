@@ -7,6 +7,8 @@ export interface ModeChangeEvent {
   to: EngineMode;
   reason: string;
   timestamp: string;
+  /** Receipts drained from the offline queue on promotion from degraded → connected. */
+  drainedReceipts?: QueuedReceipt[];
 }
 
 export interface EnrichedProvenance {

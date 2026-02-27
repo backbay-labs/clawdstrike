@@ -228,10 +228,7 @@ impl SessionManager {
 
         let url = format!("{}/api/v1/session", daemon_url);
 
-        let hostname = hostname::get()
-            .ok()
-            .and_then(|h| h.into_string().ok())
-            .unwrap_or_else(|| "unknown".to_string());
+        let hostname = crate::settings::hostname_best_effort();
 
         let mut request = self.http_client.post(&url).json(&serde_json::json!({
             "client": "clawdstrike-agent",
@@ -522,30 +519,7 @@ impl SessionManager {
     }
 }
 
-/// Get the system hostname (best-effort).
-mod hostname {
-    use std::ffi::OsString;
-
-    pub fn get() -> Result<OsString, std::io::Error> {
-        #[cfg(unix)]
-        {
-            let mut buf = vec![0u8; 256];
-            let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) };
-            if ret == 0 {
-                let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-                buf.truncate(end);
-                Ok(OsString::from(String::from_utf8_lossy(&buf).into_owned()))
-            } else {
-                Err(std::io::Error::last_os_error())
-            }
-        }
-
-        #[cfg(not(unix))]
-        {
-            Ok(OsString::from("unknown"))
-        }
-    }
-}
+// Hostname retrieval is consolidated in `crate::settings::hostname_best_effort()`.
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]

@@ -228,6 +228,13 @@ async fn enroll_agent(
         .await
         .map_err(|e| ApiError::Nats(e.to_string()))?;
 
+    // Invalidate the enrollment token so it cannot be reused.
+    sqlx::query::query("UPDATE tenants SET enrollment_token = NULL WHERE id = $1")
+        .bind(tenant_id)
+        .execute(&state.db)
+        .await
+        .map_err(ApiError::Database)?;
+
     // Record usage event.
     let _ = state.metering.record(tenant_id, "agent_enrolled", 1).await;
 
@@ -237,6 +244,7 @@ async fn enroll_agent(
         nats_url: nats_creds.nats_url,
         nats_account: nats_creds.account,
         nats_subject_prefix: nats_creds.subject_prefix,
+        nats_token: nats_creds.token,
         agent_id,
     }))
 }

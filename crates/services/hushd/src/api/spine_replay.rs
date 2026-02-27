@@ -27,37 +27,20 @@ pub async fn replay_receipts(
     State(state): State<AppState>,
     Json(req): Json<ReplayRequest>,
 ) -> Result<Json<ReplayResponse>, V1Error> {
-    // Gate: spine must be enabled.
-    if state.spine_publisher.is_none() {
-        return Err(V1Error::bad_request(
+    // Reuse the SpinePublisher's long-lived JetStream context instead of
+    // creating a new NATS connection per request.
+    let publisher = state.spine_publisher.as_ref().ok_or_else(|| {
+        V1Error::bad_request(
             "SPINE_DISABLED",
             "Spine publisher is not enabled".to_string(),
-        ));
-    }
-
-    let nats_url = state
-        .config
-        .spine
-        .nats_url
-        .as_deref()
-        .unwrap_or("nats://127.0.0.1:4222");
-
-    let subject = format!("{}.receipts.eval", state.config.spine.subject_prefix);
+        )
+    })?;
+    let js = publisher.jetstream();
+    let subject = format!("{}.receipts.eval", publisher.subject_prefix());
 
     let mut accepted = 0usize;
     let mut rejected = 0usize;
     let mut errors = Vec::new();
-
-    // Connect once per request, reuse for all envelopes.
-    let auth = spine::nats_transport::NatsAuthConfig {
-        creds_file: state.config.spine.creds_file.clone(),
-        token: state.config.spine.token.clone(),
-        nkey_seed: state.config.spine.nkey_seed.clone(),
-    };
-    let client = spine::nats_transport::connect_with_auth(nats_url, Some(&auth))
-        .await
-        .map_err(|e| V1Error::internal("NATS_CONNECT", format!("NATS connect error: {e}")))?;
-    let js = spine::nats_transport::jetstream(client);
 
     for envelope in &req.envelopes {
         // Verify the envelope signature and hash integrity.

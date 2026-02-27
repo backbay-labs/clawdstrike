@@ -61,6 +61,8 @@ pub struct NatsCredentials {
     pub nats_url: String,
     pub account: String,
     pub subject_prefix: String,
+    /// Authentication token for NATS connection.
+    pub token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,5 +92,7 @@ pub struct EnrollmentResponse {
     pub nats_account: String,
     /// Subject prefix for this agent's NATS topics.
     pub nats_subject_prefix: String,
+    /// Authentication token for NATS connection.
+    pub nats_token: String,
     pub agent_id: String,
 }

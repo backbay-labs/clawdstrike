@@ -36,6 +36,7 @@ struct EnrollResponse {
     nats_url: String,
     nats_account: String,
     nats_subject_prefix: String,
+    nats_token: String,
     agent_id: String,
 }
 
@@ -146,9 +147,7 @@ impl EnrollmentManager {
             .with_context(|| format!("Failed to write agent key to {:?}", key_path))?;
         tracing::info!(path = ?key_path, "Agent private key stored");
 
-        // Update settings with enrollment state and NATS configuration.
-        // NATS connection uses the nats_url and token auth provided by the server —
-        // no creds file needed.
+        // Update settings with enrollment state and all NATS configuration.
         {
             let mut settings = self.settings.write().await;
             settings.enrollment = EnrollmentState {
@@ -162,6 +161,9 @@ impl EnrollmentManager {
             settings.nats.nats_url = Some(resp.nats_url);
             settings.nats.tenant_id = Some(resp.tenant_id.clone());
             settings.nats.agent_id = Some(resp.agent_id);
+            settings.nats.token = Some(resp.nats_token);
+            settings.nats.nats_account = Some(resp.nats_account);
+            settings.nats.subject_prefix = Some(resp.nats_subject_prefix);
             settings
                 .save()
                 .with_context(|| "Failed to persist enrollment settings")?;
@@ -184,20 +186,36 @@ impl EnrollmentManager {
 }
 
 /// Write a file with restricted permissions (owner-only read/write).
+///
+/// On Unix, the file is created with mode 0o600 from the start to avoid
+/// a TOCTOU window where the private key would be world-readable.
 fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create directory {:?}", parent))?;
     }
 
-    std::fs::write(path, data)
-        .with_context(|| format!("Failed to write file {:?}", path))?;
-
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("Failed to set permissions on {:?}", path))?;
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("Failed to create private file {:?}", path))?;
+        file.write_all(data)
+            .with_context(|| format!("Failed to write file {:?}", path))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, data)
+            .with_context(|| format!("Failed to write file {:?}", path))?;
     }
 
     Ok(())

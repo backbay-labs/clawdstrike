@@ -95,6 +95,12 @@ pub struct NatsSettings {
     /// Agent identifier for NATS subject namespacing.
     #[serde(default)]
     pub agent_id: Option<String>,
+    /// NATS account identifier assigned during enrollment.
+    #[serde(default)]
+    pub nats_account: Option<String>,
+    /// Subject prefix for NATS topics assigned during enrollment.
+    #[serde(default)]
+    pub subject_prefix: Option<String>,
 }
 
 /// Enrollment state for cloud-managed agents.

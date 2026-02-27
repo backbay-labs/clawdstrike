@@ -47,6 +47,16 @@ impl SpinePublisher {
         })
     }
 
+    /// Get a reference to the JetStream context for reuse by other handlers.
+    pub fn jetstream(&self) -> &async_nats::jetstream::Context {
+        &self.js
+    }
+
+    /// Get the subject prefix.
+    pub fn subject_prefix(&self) -> &str {
+        &self.subject_prefix
+    }
+
     /// Publish an eval receipt as a signed envelope to JetStream.
     pub async fn publish_eval_receipt(
         &self,

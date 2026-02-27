@@ -862,7 +862,7 @@ async fn nats_heartbeat_loop(
             }
             _ = tokio::time::sleep(heartbeat_interval) => {
                 let state = session_manager.state().await;
-                let hostname = hostname_best_effort();
+                let hostname = settings::hostname_best_effort();
                 let heartbeat = serde_json::json!({
                     "timestamp": chrono::Utc::now().to_rfc3339(),
                     "session_id": state.session_id,
@@ -879,7 +879,3 @@ async fn nats_heartbeat_loop(
     }
 }
 
-/// Re-export from settings for heartbeat usage.
-fn hostname_best_effort() -> String {
-    settings::hostname_best_effort()
-}

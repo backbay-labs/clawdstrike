@@ -50,6 +50,8 @@ impl TenantProvisioner {
     ) -> Result<NatsCredentials, ProvisionerError> {
         let account = format!("tenant-{slug}");
         let subject_prefix = format!("tenant-{slug}.clawdstrike.spine.envelope");
+        // Generate a scoped NATS auth token for this agent.
+        let token = format!("nats-{}-{}", slug, Uuid::new_v4());
 
         tracing::info!(agent_id = %agent_id, account = %account, "Created NATS agent credentials");
 
@@ -57,6 +59,7 @@ impl TenantProvisioner {
             nats_url: self.nats_url.clone(),
             account,
             subject_prefix,
+            token,
         })
     }
 

@@ -25,8 +25,9 @@ impl PolicySync {
 
     /// Build the KV bucket name for this agent's policies.
     pub fn bucket_name(tenant_id: &str, agent_id: &str) -> String {
-        // NATS KV bucket names use dots, not slashes.
-        format!("policies.{}.{}", tenant_id, agent_id)
+        // NATS KV bucket names map to JetStream stream names (KV_<bucket>),
+        // which cannot contain dots — only alphanumeric, dash, and underscore.
+        format!("policies-{}-{}", tenant_id, agent_id)
     }
 
     /// Build the KV key for the agent policy.
@@ -169,7 +170,7 @@ mod tests {
     fn bucket_name_format() {
         assert_eq!(
             PolicySync::bucket_name("tenant-abc", "agent-xyz"),
-            "policies.tenant-abc.agent-xyz"
+            "policies-tenant-abc-agent-xyz"
         );
     }
 
