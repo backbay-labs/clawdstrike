@@ -27,4 +27,13 @@ This repo now includes first-pass implementations of several prompt-security com
     - `packages/adapters/clawdstrike-vercel-ai/src/middleware.ts`
     - `packages/adapters/clawdstrike-vercel-ai/README.md`
 
+## Draft roadmap: Event-driven agent defense (Spider-Sense-style)
+
+Spider-Sense (Yu et al., Feb 2026) is a good fit for this repo’s prompt-security direction:
+
+- Roadmap: `docs/roadmaps/spider-sense-integration.md`
+- Task tracker: `docs/roadmaps/implementation-tasks.md`
+
+The key addition vs current implementations is **selective, stage-aware screening** across query/plan/action/observation, with a **fast similarity-match path** and an optional **LLM deep-analysis path** for ambiguous cases.
+
 Known gaps remain vs the full research specs (e.g., homoglyph mapping, encoding decode before scan, robust watermark encodings, NER-based PII, and fully managed LLM judge calls). See the PR summary for details.

@@ -129,7 +129,7 @@ export interface CuaEventData {
  * - 'warn': Operation is permitted but flagged for review
  * - 'deny': Operation is blocked
  */
-export type DecisionStatus = 'allow' | 'warn' | 'deny';
+export type DecisionStatus = 'allow' | 'warn' | 'deny' | 'sanitize';
 
 export type DecisionReasonCode = string;
 
@@ -166,6 +166,16 @@ export type Decision =
       status: 'warn' | 'deny';
       /** Required machine-readable code for non-allow results */
       reason_code: DecisionReasonCode;
+    })
+  | (DecisionBase & {
+      /** The decision status: 'sanitize' */
+      status: 'sanitize';
+      /** Required machine-readable code for sanitize results */
+      reason_code: DecisionReasonCode;
+      /** Original content before sanitization */
+      original?: string;
+      /** Sanitized content */
+      sanitized?: string;
     });
 
 /**
@@ -194,9 +204,24 @@ export function createDecision(
   },
 ): Decision;
 export function createDecision(
+  status: 'sanitize',
+  options: {
+    reason_code: DecisionReasonCode;
+    original?: string;
+    sanitized?: string;
+    guard?: string;
+    severity?: Severity;
+    message?: string;
+    reason?: string;
+    details?: unknown;
+  },
+): Decision;
+export function createDecision(
   status: DecisionStatus,
   options: {
     reason_code?: DecisionReasonCode;
+    original?: string;
+    sanitized?: string;
     guard?: string;
     severity?: Severity;
     message?: string;
@@ -226,7 +251,9 @@ export function createDecision(
     message: options.message,
     reason: options.reason,
     details: options.details,
-  };
+    ...(status === 'sanitize' && options.original !== undefined && { original: options.original }),
+    ...(status === 'sanitize' && options.sanitized !== undefined && { sanitized: options.sanitized }),
+  } as Decision;
 }
 
 /**
@@ -262,4 +289,20 @@ export function warnDecision(options: {
   details?: unknown;
 }): Decision {
   return createDecision('warn', { severity: 'medium', ...options });
+}
+
+/**
+ * Helper to create a sanitize decision.
+ */
+export function sanitizeDecision(options: {
+  reason_code: DecisionReasonCode;
+  original?: string;
+  sanitized?: string;
+  guard?: string;
+  severity?: Severity;
+  message?: string;
+  reason?: string;
+  details?: unknown;
+}): Decision {
+  return createDecision('sanitize', { severity: 'medium', ...options });
 }

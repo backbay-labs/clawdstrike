@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchAuditEvents, type AuditEvent, type AuditFilters } from "../api/client";
+import { NoiseGrain, GlassButton, Stamp } from "../components/ui";
+import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
+import { EventBookmarks } from "../components/events/EventBookmarks";
+import { exportAsCSV, exportAsJSON } from "../utils/exportData";
+import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 
-export function AuditLog() {
+export function AuditLog(_props: { windowId?: string }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [filters, setFilters] = useState<AuditFilters>({ limit: 50, offset: 0 });
+  const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -28,10 +33,16 @@ export function AuditLog() {
   const page = Math.floor((filters.offset ?? 0) / (filters.limit ?? 50));
   const totalPages = Math.ceil(total / (filters.limit ?? 50));
 
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Audit Log</h1>
+  const debouncedSetFilter = useDebouncedCallback(
+    (key: string, value: string) => {
+      setFilters((f) => ({ ...f, [key]: value || undefined, offset: 0 }));
+    },
+    300,
+  );
 
+  return (
+    <div className="space-y-5" style={{ padding: 20, minHeight: "100%", color: "#e2e8f0", overflow: "auto", height: "100%" }}>
+      {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
         <FilterSelect
           label="Decision"
@@ -47,120 +58,251 @@ export function AuditLog() {
         />
         <FilterInput
           label="Session ID"
-          value={filters.session_id ?? ""}
-          onChange={(v) => setFilters((f) => ({ ...f, session_id: v || undefined, offset: 0 }))}
+          onChange={(v) => debouncedSetFilter("session_id", v)}
         />
         <FilterInput
           label="Agent ID"
-          value={filters.agent_id ?? ""}
-          onChange={(v) => setFilters((f) => ({ ...f, agent_id: v || undefined, offset: 0 }))}
+          onChange={(v) => debouncedSetFilter("agent_id", v)}
         />
-        <button
-          onClick={load}
-          className="rounded bg-gray-700 px-3 py-1.5 text-sm hover:bg-gray-600"
-        >
-          Refresh
-        </button>
+        <GlassButton onClick={load}>Refresh</GlassButton>
+        <GlassButton onClick={() => exportAsCSV(events as unknown as Record<string, unknown>[], "audit-events")}>
+          Export CSV
+        </GlassButton>
+        <GlassButton onClick={() => exportAsJSON(events, "audit-events")}>
+          Export JSON
+        </GlassButton>
       </div>
 
-      {error && <p className="rounded bg-red-900/50 px-4 py-2 text-red-300">{error}</p>}
+      {/* Error banner */}
+      {error && (
+        <p
+          className="font-mono rounded px-4 py-2 text-sm"
+          style={{
+            background: "rgba(194,59,59,0.08)",
+            border: "1px solid rgba(194,59,59,0.4)",
+            boxShadow: "0 0 16px rgba(194,59,59,0.1), inset 0 1px 0 rgba(255,255,255,0.02)",
+            color: "#c23b3b",
+          }}
+        >
+          {error}
+        </p>
+      )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-800">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-gray-800 bg-gray-900 text-xs uppercase text-gray-400">
-            <tr>
-              <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Action</th>
-              <th className="px-4 py-3">Target</th>
-              <th className="px-4 py-3">Decision</th>
-              <th className="px-4 py-3">Guard</th>
-              <th className="px-4 py-3">Session</th>
-              <th className="px-4 py-3">Agent</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">Loading...</td></tr>
-            ) : events.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No events found</td></tr>
-            ) : (
-              events.map((event) => (
-                <tr key={event.id}>
-                  <td className="whitespace-nowrap px-4 py-2 text-xs text-gray-500">
-                    {new Date(event.timestamp).toLocaleString()}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2 font-mono">{event.action_type}</td>
-                  <td className="max-w-xs truncate px-4 py-2 text-gray-400">{event.target ?? "-"}</td>
-                  <td className="whitespace-nowrap px-4 py-2">
-                    <span className={event.decision === "blocked" ? "text-red-400" : "text-green-400"}>
-                      {event.decision}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2">{event.guard ?? "-"}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-xs text-gray-500">
-                    {event.session_id?.slice(0, 12) ?? "-"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2 text-xs text-gray-500">
-                    {event.agent_id?.slice(0, 12) ?? "-"}
+      {/* Table glass panel + drawer wrapper */}
+      <div style={{ position: "relative" }}>
+        <div className="glass-panel overflow-x-auto rounded-lg">
+          <NoiseGrain />
+
+          <table className="relative w-full text-left text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+            <thead>
+              <tr
+                style={{
+                  borderBottom: "1px solid transparent",
+                  backgroundImage: "linear-gradient(to right, rgba(27,34,48,0.0), rgba(27,34,48,0.6), rgba(27,34,48,0.0))",
+                  backgroundSize: "100% 1px",
+                  backgroundPosition: "bottom",
+                  backgroundRepeat: "no-repeat",
+                }}
+              >
+                {["\u2606", "Time", "Action", "Target", "Decision", "Guard", "Session", "Agent"].map((h) => (
+                  <th
+                    key={h}
+                    className="font-mono px-4 py-3 text-[10px] uppercase"
+                    style={{
+                      letterSpacing: "0.1em",
+                      color: "rgba(154,167,181,0.6)",
+                      fontWeight: 500,
+                      width: h === "\u2606" ? "40px" : undefined,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(154,167,181,0.4)" }}>
+                    Loading...
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : events.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(226,232,240,0.3)" }}>
+                    No events found
+                  </td>
+                </tr>
+              ) : (
+                events.map((event) => (
+                  <tr
+                    key={event.id}
+                    className="hover-row"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSelectedEvent(event)}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedEvent(event); } }}
+                  >
+                    <td className="whitespace-nowrap px-4 py-2.5" style={{ width: "40px" }}>
+                      <EventBookmarks eventId={event.id} />
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                      style={{ color: "rgba(226,232,240,0.4)" }}
+                    >
+                      {new Date(event.timestamp).toLocaleString()}
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-sm"
+                      style={{ color: "#e2e8f0" }}
+                    >
+                      {event.action_type}
+                    </td>
+                    <td
+                      className="max-w-xs truncate px-4 py-2.5 text-sm"
+                      style={{ color: "rgba(226,232,240,0.5)" }}
+                    >
+                      {event.target ?? "-"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5">
+                      <Stamp variant={event.decision === "blocked" ? "blocked" : "allowed"}>{event.decision}</Stamp>
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-2.5 text-sm"
+                      style={{ color: "rgba(226,232,240,0.6)" }}
+                    >
+                      {event.guard ?? "-"}
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                      style={{ color: "rgba(226,232,240,0.35)" }}
+                    >
+                      {event.session_id?.slice(0, 12) ?? "-"}
+                    </td>
+                    <td
+                      className="font-mono whitespace-nowrap px-4 py-2.5 text-xs"
+                      style={{ color: "rgba(226,232,240,0.35)" }}
+                    >
+                      {event.agent_id?.slice(0, 12) ?? "-"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <EventDetailDrawer event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       </div>
 
-      <div className="flex items-center justify-between text-sm text-gray-400">
-        <span>{total} total events</span>
-        <div className="flex gap-2">
-          <button
+      {/* Pagination */}
+      <div className="flex items-center justify-between text-sm">
+        <span
+          className="font-mono"
+          style={{
+            fontSize: "11px",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "rgba(226,232,240,0.4)",
+          }}
+        >
+          {total} total events
+        </span>
+        <div className="flex items-center gap-2">
+          <PaginationButton
             disabled={page === 0}
             onClick={() => setFilters((f) => ({ ...f, offset: Math.max(0, (f.offset ?? 0) - (f.limit ?? 50)) }))}
-            className="rounded bg-gray-800 px-3 py-1 disabled:opacity-40"
           >
             Previous
-          </button>
-          <span className="px-2 py-1">Page {page + 1} of {totalPages || 1}</span>
-          <button
+          </PaginationButton>
+          <span
+            className="font-mono px-2 py-1"
+            style={{
+              fontSize: "11px",
+              letterSpacing: "0.05em",
+              color: "rgba(214,177,90,0.6)",
+            }}
+          >
+            Page {page + 1} of {totalPages || 1}
+          </span>
+          <PaginationButton
             disabled={page + 1 >= totalPages}
             onClick={() => setFilters((f) => ({ ...f, offset: (f.offset ?? 0) + (f.limit ?? 50) }))}
-            className="rounded bg-gray-800 px-3 py-1 disabled:opacity-40"
           >
             Next
-          </button>
+          </PaginationButton>
         </div>
       </div>
     </div>
   );
 }
 
+function PaginationButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="glass-panel hover-glass-button font-mono rounded px-3 py-1 text-xs uppercase tracking-wider disabled:opacity-30"
+      style={{
+        color: disabled ? "rgba(154,167,181,0.4)" : "#d6b15a",
+        letterSpacing: "0.08em",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-gray-400">
-      {label}
+    <label className="flex flex-col gap-1">
+      <span
+        className="font-mono text-[10px] uppercase"
+        style={{
+          letterSpacing: "0.1em",
+          color: "rgba(214,177,90,0.5)",
+        }}
+      >
+        {label}
+      </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-200"
+        className="glass-input font-mono rounded px-2 py-1.5 text-sm outline-none"
+        style={{ color: "#e2e8f0" }}
       >
         {options.map((o) => (
-          <option key={o} value={o}>{o || "All"}</option>
+          <option key={o} value={o} style={{ background: "#0b0d10" }}>{o || "All"}</option>
         ))}
       </select>
     </label>
   );
 }
 
-function FilterInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function FilterInput({ label, onChange }: { label: string; onChange: (v: string) => void }) {
+  const [value, setValue] = useState("");
   return (
-    <label className="flex flex-col gap-1 text-xs text-gray-400">
-      {label}
+    <label className="flex flex-col gap-1">
+      <span
+        className="font-mono text-[10px] uppercase"
+        style={{
+          letterSpacing: "0.1em",
+          color: "rgba(214,177,90,0.5)",
+        }}
+      >
+        {label}
+      </span>
       <input
         type="text"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          onChange(e.target.value);
+        }}
         placeholder={`Filter by ${label.toLowerCase()}`}
-        className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-200 placeholder-gray-600"
+        className="glass-input font-mono rounded px-2 py-1.5 text-sm outline-none placeholder:text-[rgba(100,116,139,0.5)]"
+        style={{ color: "#e2e8f0" }}
       />
     </label>
   );

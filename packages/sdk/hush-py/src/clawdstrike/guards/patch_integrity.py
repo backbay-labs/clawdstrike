@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
+from clawdstrike.guards.base import (
+    Action,
+    Guard,
+    GuardContext,
+    GuardResult,
+    Severity,
+)
 
 
 @dataclass
@@ -17,15 +22,15 @@ class PatchIntegrityConfig:
     max_deletions: int = 500
     require_balance: bool = False
     max_imbalance_ratio: float = 5.0
-    forbidden_patterns: List[str] = field(default_factory=list)
+    forbidden_patterns: list[str] = field(default_factory=list)
 
 
 class PatchIntegrityGuard(Guard):
     """Guard that validates patch size, balance, and forbidden patterns."""
 
-    def __init__(self, config: Optional[PatchIntegrityConfig] = None) -> None:
+    def __init__(self, config: PatchIntegrityConfig | None = None) -> None:
         self._config = config or PatchIntegrityConfig()
-        self._compiled_forbidden: List[tuple[str, re.Pattern[str]]] = []
+        self._compiled_forbidden: list[tuple[str, re.Pattern[str]]] = []
         for pattern_str in self._config.forbidden_patterns:
             try:
                 compiled = re.compile(pattern_str)
@@ -39,10 +44,10 @@ class PatchIntegrityGuard(Guard):
     def name(self) -> str:
         return "patch_integrity"
 
-    def handles(self, action: GuardAction) -> bool:
+    def handles(self, action: Action) -> bool:
         return action.action_type == "patch"
 
-    def _count_changes(self, diff: str) -> Tuple[int, int]:
+    def _count_changes(self, diff: str) -> tuple[int, int]:
         """Count additions and deletions in a diff."""
         additions = 0
         deletions = 0
@@ -57,11 +62,11 @@ class PatchIntegrityGuard(Guard):
 
         return additions, deletions
 
-    def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
+    def check(self, action: Action, context: GuardContext) -> GuardResult:
         if not self.handles(action):
             return GuardResult.allow(self.name)
 
-        diff = action.diff
+        diff: str | None = getattr(action, "diff", None)
         if diff is None:
             return GuardResult.allow(self.name)
 
@@ -95,10 +100,12 @@ class PatchIntegrityGuard(Guard):
         if self._config.require_balance and deletions > 0:
             ratio = additions / deletions
             if ratio > self._config.max_imbalance_ratio:
+                msg = (
+                    f"Patch imbalance ratio too high:"
+                    f" {ratio:.1f} > {self._config.max_imbalance_ratio}"
+                )
                 return GuardResult.block(
-                    self.name,
-                    Severity.WARNING,
-                    f"Patch imbalance ratio too high: {ratio:.1f} > {self._config.max_imbalance_ratio}",
+                    self.name, Severity.WARNING, msg,
                 ).with_details({
                     "additions": additions,
                     "deletions": deletions,

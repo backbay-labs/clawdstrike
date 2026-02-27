@@ -1408,6 +1408,10 @@ fn validate_custom_guards(
             "clawdstrike-virustotal" => validate_virustotal_spec(errors, &base, &spec.config),
             "clawdstrike-safe-browsing" => validate_safe_browsing_spec(errors, &base, &spec.config),
             "clawdstrike-snyk" => validate_snyk_spec(errors, &base, &spec.config),
+            #[cfg(feature = "clawdstrike-spider-sense")]
+            "clawdstrike-spider-sense" => {
+                // Spider-Sense config is validated at guard construction time (fail-closed).
+            }
             other => errors.push(PolicyFieldError::new(
                 format!("{base}.package"),
                 format!("unsupported custom guard package: {}", other),

@@ -7,8 +7,20 @@
 | **Status** | Draft |
 | **Version** | 0.1.0 |
 | **Authors** | Clawdstrike Architecture Team |
-| **Last Updated** | 2026-02-02 |
+| **Last Updated** | 2026-02-07 |
 | **Prerequisites** | overview.md, plugin-system.md |
+
+---
+
+## Repo Status (Feb 2026)
+
+The Rust async-guard runtime described in this spec is already implemented and in use:
+
+- Trait + runtime: `crates/libs/clawdstrike/src/async_guards/types.rs` and `crates/libs/clawdstrike/src/async_guards/runtime.rs`
+- Features: timeout behaviors, caching, rate limiting, circuit breaker, retry, and execution modes (parallel/sequential/background)
+- Existing packages: VirusTotal, Safe Browsing, Snyk (`crates/libs/clawdstrike/src/async_guards/threat_intel/`)
+
+The TypeScript interfaces in this document are still aspirational guidance for cross-SDK parity.
 
 ---
 
@@ -179,7 +191,7 @@ export interface AsyncGuardConfig {
 ### 3.1 Async Guard Interface (TypeScript)
 
 ```typescript
-// @backbay/guard-sdk
+// @clawdstrike/guard-sdk
 
 import { Guard, GuardResult, PolicyEvent, Policy, GuardContext } from './types';
 
@@ -424,7 +436,7 @@ import {
   Policy,
   GuardResult,
   EventType,
-} from '@backbay/guard-sdk';
+} from '@clawdstrike/guard-sdk';
 import * as crypto from 'crypto';
 
 interface VirusTotalConfig {
@@ -645,7 +657,7 @@ import {
   Policy,
   GuardResult,
   EventType,
-} from '@backbay/guard-sdk';
+} from '@clawdstrike/guard-sdk';
 
 interface SnykConfig {
   apiToken: string;
@@ -827,7 +839,7 @@ import {
   Policy,
   GuardResult,
   EventType,
-} from '@backbay/guard-sdk';
+} from '@clawdstrike/guard-sdk';
 
 interface SafeBrowsingConfig {
   apiKey: string;
@@ -1136,7 +1148,7 @@ guards:
 ### 6.1 Async Guard Test Utilities
 
 ```typescript
-// @backbay/guard-sdk/testing
+// @clawdstrike/guard-sdk/testing
 
 import { AsyncGuard, PolicyEvent, GuardResult } from '../types';
 
@@ -1286,7 +1298,7 @@ interface MockError {
 // tests/virustotal-guard.test.ts
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AsyncGuardTestHarness, fileWriteEvent } from '@backbay/guard-sdk/testing';
+import { AsyncGuardTestHarness, fileWriteEvent } from '@clawdstrike/guard-sdk/testing';
 import { VirusTotalGuard } from '../src/guard';
 
 describe('VirusTotalGuard', () => {

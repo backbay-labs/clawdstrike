@@ -55,12 +55,16 @@ These show up in 3+ architectures and should be treated as platform workstreams:
 2. **Canonical event model parity**
    - Keep Rust + TS decisions identical on the same `PolicyEvent` corpus.
    - Expand fixtures in `fixtures/policy-events/v1/` and add cross-SDK parity tests.
-3. **Policy distribution + versioning**
+3. **Event-driven agent defense (Spider-Sense-style)**
+   - Standardize adapter-emitted stage artifacts (query/plan/action/observation) so defenses can be selective instead of always-on.
+   - Fast-path similarity screening + optional deep analysis for ambiguous cases.
+   - Draft roadmaps: `docs/roadmaps/spider-sense-integration.md` and `docs/roadmaps/implementation-tasks.md`.
+4. **Policy distribution + versioning**
    - Git-backed policy repo + compilation (inheritance + overlays) + signed policy bundles.
    - Likely implemented as: `hushd` endpoints + a “policy distributor” service/tooling.
-4. **Identity, capabilities, and approvals**
+5. **Identity, capabilities, and approvals**
    - Needed for multi-agent + enterprise rollout (RBAC), and for “dangerous tool” gating.
-5. **Deployment kits**
+6. **Deployment kits**
    - Docker-compose and Kubernetes manifests/Helm charts for `hushd` + optional proxy sidecars.
 
 ## Milestone map (aligns with `docs/plans/implementation-pad.md`)

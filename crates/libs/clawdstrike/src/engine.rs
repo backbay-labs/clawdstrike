@@ -973,6 +973,17 @@ fn aggregate_overall(results: &[GuardResult]) -> GuardResult {
 
         if r_blocks == best_blocks && severity_ord(&r.severity) > severity_ord(&best.severity) {
             best = r;
+            continue;
+        }
+
+        if r_blocks == best_blocks
+            && severity_ord(&r.severity) == severity_ord(&best.severity)
+            && !r_blocks
+            && r.is_sanitized()
+            && !best.is_sanitized()
+        {
+            // Preserve sanitize payloads over plain warnings when severities tie.
+            best = r;
         }
     }
 
@@ -1213,6 +1224,31 @@ mod tests {
         assert!(report.overall.allowed);
         assert_eq!(report.overall.severity, Severity::Warning);
         assert!(report.per_guard.iter().any(|r| r.guard == "secret_leak"));
+    }
+
+    #[test]
+    fn aggregate_overall_prefers_sanitize_over_plain_warning_on_tie() {
+        let plain_warning = GuardResult::warn("warn_guard", "warning only");
+        let sanitize_warning = GuardResult::sanitize(
+            "sanitize_guard",
+            "sanitized content",
+            "dangerous input",
+            "safe input",
+        );
+
+        let overall = aggregate_overall(&[plain_warning, sanitize_warning.clone()]);
+
+        assert!(overall.allowed);
+        assert_eq!(overall.severity, Severity::Warning);
+        assert_eq!(overall.guard, "sanitize_guard");
+        assert!(overall.is_sanitized());
+        assert_eq!(
+            overall.details.as_ref().and_then(|d| d.get("sanitized")),
+            sanitize_warning
+                .details
+                .as_ref()
+                .and_then(|d| d.get("sanitized"))
+        );
     }
 
     #[tokio::test]

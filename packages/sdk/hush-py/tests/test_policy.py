@@ -1,6 +1,7 @@
 """Tests for hush.policy module."""
 
 import pytest
+from clawdstrike.exceptions import PolicyError
 from clawdstrike.policy import (
     Policy,
     PolicyEngine,
@@ -56,19 +57,19 @@ class TestPolicy:
         assert restored.name == original.name
 
     def test_policy_rejects_invalid_semver_version(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(PolicyError):
             Policy.from_yaml('version: "1.0"\nname: test\n')
 
     def test_policy_rejects_unsupported_version(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(PolicyError):
             Policy.from_yaml('version: "2.0.0"\nname: test\n')
 
     def test_policy_rejects_unknown_top_level_keys(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(PolicyError):
             Policy.from_yaml('version: "1.1.0"\nname: test\nunknown: 1\n')
 
     def test_policy_rejects_unknown_guard_names(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(PolicyError):
             Policy.from_yaml(
                 'version: "1.1.0"\nname: test\nguards:\n  unknown_guard: {}\n'
             )
@@ -92,7 +93,7 @@ posture:
       capabilities:
         - file_access
 """
-        with pytest.raises(ValueError, match="posture requires policy version 1.2.0"):
+        with pytest.raises(PolicyError, match="posture requires policy version 1.2.0"):
             Policy.from_yaml(yaml_str)
 
     def test_extends_field_parsed(self) -> None:
@@ -132,8 +133,15 @@ version: "1.1.0"
 name: test
 extends: nonexistent_ruleset
 """
-        with pytest.raises(ValueError, match="Unknown ruleset"):
+        with pytest.raises(PolicyError, match="Unknown ruleset"):
             Policy.from_yaml_with_extends(yaml_str)
+
+    def test_from_yaml_file_with_path_object(self, tmp_path) -> None:
+        p = tmp_path / "policy.yaml"
+        p.write_text('version: "1.1.0"\nname: path-test\n')
+        from pathlib import Path
+        policy = Policy.from_yaml_file(Path(p))
+        assert policy.name == "path-test"
 
 
 class TestGuardConfigs:
@@ -212,23 +220,23 @@ class TestPolicyEngine:
         policy = Policy.from_yaml(sample_policy_yaml)
         engine = PolicyEngine(policy)
 
-        assert len(engine.guards) == 7  # All 7 guards
+        assert len(engine.guards) == 9  # All 9 guards
 
     def test_create_from_v12_policy(self, sample_policy_yaml_v12: str) -> None:
         policy = Policy.from_yaml(sample_policy_yaml_v12)
         engine = PolicyEngine(policy)
 
-        assert len(engine.guards) == 7
+        assert len(engine.guards) == 9
 
     def test_check_allowed_action(self, sample_policy_yaml: str) -> None:
-        from clawdstrike.guards.base import GuardAction, GuardContext
+        from clawdstrike.guards.base import FileAccessAction, NetworkEgressAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         engine = PolicyEngine(policy)
         context = GuardContext()
 
         results = engine.check(
-            GuardAction.file_access("/app/src/main.py"),
+            FileAccessAction(path="/app/src/main.py"),
             context,
         )
 
@@ -236,14 +244,14 @@ class TestPolicyEngine:
         assert all(r.allowed for r in results)
 
     def test_check_forbidden_action(self, sample_policy_yaml: str) -> None:
-        from clawdstrike.guards.base import GuardAction, GuardContext
+        from clawdstrike.guards.base import FileAccessAction, NetworkEgressAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         engine = PolicyEngine(policy)
         context = GuardContext()
 
         results = engine.check(
-            GuardAction.file_access("/home/user/.ssh/id_rsa"),
+            FileAccessAction(path="/home/user/.ssh/id_rsa"),
             context,
         )
 
@@ -251,7 +259,7 @@ class TestPolicyEngine:
         assert any(not r.allowed for r in results)
 
     def test_fail_fast_mode(self, sample_policy_yaml: str) -> None:
-        from clawdstrike.guards.base import GuardAction, GuardContext
+        from clawdstrike.guards.base import FileAccessAction, NetworkEgressAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         policy.settings.fail_fast = True
@@ -260,7 +268,7 @@ class TestPolicyEngine:
 
         # With fail_fast, should stop at first violation
         results = engine.check(
-            GuardAction.file_access("/home/user/.ssh/id_rsa"),
+            FileAccessAction(path="/home/user/.ssh/id_rsa"),
             context,
         )
 
@@ -420,7 +428,7 @@ class TestPostureConfig:
                 "work": {"capabilities": ["file_access"]},
             },
         }
-        with pytest.raises(ValueError, match="initial state.*not found"):
+        with pytest.raises(PolicyError, match="initial state.*not found"):
             PostureConfig.from_dict(data)
 
     def test_posture_rejects_invalid_transition_state(self) -> None:
@@ -433,5 +441,5 @@ class TestPostureConfig:
                 {"from": "work", "to": "nonexistent", "on": "escalate"},
             ],
         }
-        with pytest.raises(ValueError, match="unknown to_state"):
+        with pytest.raises(PolicyError, match="unknown to_state"):
             PostureConfig.from_dict(data)

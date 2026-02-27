@@ -199,6 +199,10 @@ jobs:
         working-directory: apps/cloud-dashboard
         run: npm run typecheck
 
+      - name: Unit tests
+        working-directory: apps/cloud-dashboard
+        run: npm test
+
       - name: Build
         working-directory: apps/cloud-dashboard
         run: npm run build

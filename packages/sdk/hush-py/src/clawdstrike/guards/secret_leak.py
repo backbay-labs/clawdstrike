@@ -3,10 +3,23 @@
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass, field
-from typing import List, Optional
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
+from clawdstrike.guards.base import (
+    Action,
+    Guard,
+    GuardContext,
+    GuardResult,
+    Severity,
+)
+
+_SEVERITY_MAP = {
+    "critical": Severity.CRITICAL,
+    "error": Severity.ERROR,
+    "warning": Severity.WARNING,
+    "info": Severity.INFO,
+}
 
 
 @dataclass
@@ -15,10 +28,23 @@ class SecretPattern:
 
     name: str
     pattern: str
-    severity: str = "critical"
+    severity: Severity | str = "critical"
+
+    def __post_init__(self) -> None:
+        if isinstance(self.severity, str):
+            resolved = _SEVERITY_MAP.get(self.severity.lower())
+            if resolved is not None:
+                object.__setattr__(self, "severity", resolved)
+            else:
+                warnings.warn(
+                    f"Unknown severity {self.severity!r} on SecretPattern {self.name!r}; "
+                    f"defaulting to CRITICAL",
+                    stacklevel=2,
+                )
+                object.__setattr__(self, "severity", Severity.CRITICAL)
 
 
-DEFAULT_SECRET_PATTERNS: List[SecretPattern] = [
+DEFAULT_SECRET_PATTERNS: list[SecretPattern] = [
     SecretPattern(
         name="aws_access_key",
         pattern=r"AKIA[0-9A-Z]{16}",
@@ -77,25 +103,26 @@ DEFAULT_SECRET_PATTERNS: List[SecretPattern] = [
 ]
 
 
-def _severity_from_str(s: str) -> Severity:
-    mapping = {
-        "critical": Severity.CRITICAL,
-        "error": Severity.ERROR,
-        "warning": Severity.WARNING,
-        "info": Severity.INFO,
-    }
-    return mapping.get(s.lower(), Severity.CRITICAL)
+def _severity_from_pattern(sp: SecretPattern) -> Severity:
+    """Get the Severity enum value from a SecretPattern.
+
+    After __post_init__, severity is always a Severity enum, but this
+    provides a safe fallback for any edge cases.
+    """
+    if isinstance(sp.severity, Severity):
+        return sp.severity
+    return _SEVERITY_MAP.get(str(sp.severity).lower(), Severity.CRITICAL)
 
 
 @dataclass
 class SecretLeakConfig:
     """Configuration for SecretLeakGuard."""
 
-    patterns: List[SecretPattern] = field(default_factory=lambda: list(DEFAULT_SECRET_PATTERNS))
-    skip_paths: List[str] = field(default_factory=list)
+    patterns: list[SecretPattern] = field(default_factory=lambda: list(DEFAULT_SECRET_PATTERNS))
+    skip_paths: list[str] = field(default_factory=list)
     enabled: bool = True
     # Legacy field for backwards compatibility
-    secrets: List[str] = field(default_factory=list)
+    secrets: list[str] = field(default_factory=list)
 
 
 class SecretLeakGuard(Guard):
@@ -103,9 +130,9 @@ class SecretLeakGuard(Guard):
 
     OUTPUT_ACTIONS = {"output", "bash_output", "tool_result", "response"}
 
-    def __init__(self, config: Optional[SecretLeakConfig] = None) -> None:
+    def __init__(self, config: SecretLeakConfig | None = None) -> None:
         self._config = config or SecretLeakConfig()
-        self._compiled_patterns: List[tuple[SecretPattern, re.Pattern[str]]] = []
+        self._compiled_patterns: list[tuple[SecretPattern, re.Pattern[str]]] = []
         for sp in self._config.patterns:
             try:
                 compiled = re.compile(sp.pattern)
@@ -121,34 +148,38 @@ class SecretLeakGuard(Guard):
     def name(self) -> str:
         return "secret_leak"
 
-    def handles(self, action: GuardAction) -> bool:
+    def handles(self, action: Action) -> bool:
         if action.action_type in ("file_write", "patch"):
             return True
-        if action.action_type == "custom" and action.custom_type:
-            return action.custom_type in self.OUTPUT_ACTIONS
+        if action.action_type == "custom":
+            custom_type: str | None = getattr(action, "custom_type", None)
+            return custom_type is not None and custom_type in self.OUTPUT_ACTIONS
         return False
 
-    def _extract_text(self, action: GuardAction) -> str:
+    def _extract_text(self, action: Action) -> str:
         """Extract text content from action."""
         if action.action_type == "file_write":
-            if action.content is not None:
+            content: bytes | None = getattr(action, "content", None)
+            if content is not None:
                 try:
-                    return action.content.decode("utf-8", errors="replace")
+                    return content.decode("utf-8", errors="replace")
                 except (AttributeError, UnicodeDecodeError):
-                    return str(action.content)
+                    return str(content)
             return ""
 
         if action.action_type == "patch":
-            if action.diff is not None:
-                return action.diff
-            if action.content is not None:
+            diff: str | None = getattr(action, "diff", None)
+            if diff is not None:
+                return diff
+            content = getattr(action, "content", None)
+            if content is not None:
                 try:
-                    return action.content.decode("utf-8", errors="replace")
+                    return content.decode("utf-8", errors="replace")
                 except (AttributeError, UnicodeDecodeError):
-                    return str(action.content)
+                    return str(content)
             return ""
 
-        data = action.custom_data
+        data: dict | None = getattr(action, "custom_data", None)
         if data is None:
             return ""
         for key in ("content", "output", "result", "error", "text"):
@@ -157,7 +188,7 @@ class SecretLeakGuard(Guard):
                 return value
         return ""
 
-    def _should_skip_path(self, path: Optional[str]) -> bool:
+    def _should_skip_path(self, path: str | None) -> bool:
         """Check if path matches skip_paths patterns."""
         if not path or not self._config.skip_paths:
             return False
@@ -167,14 +198,15 @@ class SecretLeakGuard(Guard):
                 return True
         return False
 
-    def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
+    def check(self, action: Action, context: GuardContext) -> GuardResult:
         if not self._config.enabled:
             return GuardResult.allow(self.name)
 
         if not self.handles(action):
             return GuardResult.allow(self.name)
 
-        if self._should_skip_path(action.path):
+        path: str | None = getattr(action, "path", None)
+        if self._should_skip_path(path):
             return GuardResult.allow(self.name)
 
         text = self._extract_text(action)
@@ -185,26 +217,28 @@ class SecretLeakGuard(Guard):
         for sp, compiled in self._compiled_patterns:
             match = compiled.search(text)
             if match:
+                custom_type: str | None = getattr(action, "custom_type", None)
                 return GuardResult.block(
                     self.name,
-                    _severity_from_str(sp.severity),
+                    _severity_from_pattern(sp),
                     f"Secret pattern matched: {sp.name}",
                 ).with_details({
                     "pattern_name": sp.name,
-                    "action_type": action.custom_type or action.action_type,
+                    "action_type": custom_type or action.action_type,
                 })
 
         # Legacy literal secret matching
         for secret in self._secrets:
             if secret in text:
                 hint = secret[:4] + "..." if len(secret) > 4 else secret[:2] + "..."
+                custom_type = getattr(action, "custom_type", None)
                 return GuardResult.block(
                     self.name,
                     Severity.CRITICAL,
                     "Secret value exposed in output",
                 ).with_details({
                     "secret_hint": hint,
-                    "action_type": action.custom_type or action.action_type,
+                    "action_type": custom_type or action.action_type,
                 })
 
         return GuardResult.allow(self.name)

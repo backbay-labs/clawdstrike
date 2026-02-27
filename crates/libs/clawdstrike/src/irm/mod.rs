@@ -135,12 +135,21 @@ pub enum Decision {
     Deny { reason: String },
     /// Allow but audit/log
     Audit { message: String },
+    /// Allow but with sanitized content
+    Sanitize {
+        original: String,
+        sanitized: String,
+        reason: String,
+    },
 }
 
 impl Decision {
     /// Check if the operation is allowed
     pub fn is_allowed(&self) -> bool {
-        matches!(self, Decision::Allow | Decision::Audit { .. })
+        matches!(
+            self,
+            Decision::Allow | Decision::Audit { .. } | Decision::Sanitize { .. }
+        )
     }
 
     /// Create a deny decision
@@ -154,6 +163,19 @@ impl Decision {
     pub fn audit(message: impl Into<String>) -> Self {
         Decision::Audit {
             message: message.into(),
+        }
+    }
+
+    /// Create a sanitize decision
+    pub fn sanitize(
+        original: impl Into<String>,
+        sanitized: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Decision::Sanitize {
+            original: original.into(),
+            sanitized: sanitized.into(),
+            reason: reason.into(),
         }
     }
 }
@@ -306,17 +328,21 @@ impl IrmRouter {
                         // Deny takes precedence - return immediately
                         return (decision, applied_monitors);
                     }
-                    Decision::Audit { .. } => {
-                        decisions.push(decision);
-                    }
-                    Decision::Allow => {
+                    Decision::Sanitize { .. } | Decision::Audit { .. } | Decision::Allow => {
+                        // Collect non-deny decisions so later monitors can still deny.
                         decisions.push(decision);
                     }
                 }
             }
         }
 
-        // If any audits, return the first audit
+        // Priority: Sanitize > Audit > Allow
+        // (Deny already short-circuited above.)
+        for decision in &decisions {
+            if matches!(decision, Decision::Sanitize { .. }) {
+                return (decision.clone(), applied_monitors);
+            }
+        }
         for decision in &decisions {
             if matches!(decision, Decision::Audit { .. }) {
                 return (decision.clone(), applied_monitors);
@@ -406,6 +432,50 @@ mod tests {
             message: "logged".to_string(),
         };
         assert!(decision.is_allowed());
+    }
+
+    #[test]
+    fn test_decision_sanitize() {
+        let decision = Decision::sanitize("secret-key", "***", "redacted secret");
+        assert!(decision.is_allowed());
+        match &decision {
+            Decision::Sanitize {
+                original,
+                sanitized,
+                reason,
+            } => {
+                assert_eq!(original, "secret-key");
+                assert_eq!(sanitized, "***");
+                assert_eq!(reason, "redacted secret");
+            }
+            _ => panic!("expected Sanitize variant"),
+        }
+    }
+
+    #[test]
+    fn test_decision_sanitize_serialization() {
+        let decision = Decision::sanitize("original-content", "sanitized-content", "test reason");
+        let json = serde_json::to_string(&decision).unwrap();
+        assert!(json.contains("\"decision\":\"sanitize\""));
+        assert!(json.contains("\"original\":\"original-content\""));
+        assert!(json.contains("\"sanitized\":\"sanitized-content\""));
+        assert!(json.contains("\"reason\":\"test reason\""));
+
+        // Round-trip
+        let deserialized: Decision = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.is_allowed());
+        match deserialized {
+            Decision::Sanitize {
+                original,
+                sanitized,
+                reason,
+            } => {
+                assert_eq!(original, "original-content");
+                assert_eq!(sanitized, "sanitized-content");
+                assert_eq!(reason, "test reason");
+            }
+            _ => panic!("expected Sanitize variant after round-trip"),
+        }
     }
 
     #[test]

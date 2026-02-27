@@ -1,0 +1,18 @@
+export const LIGHT_THEME_OVERRIDES: Record<string, string> = {
+  "--void": "#f8fafc",
+  "--obsidian": "#ffffff",
+  "--graphite": "#f1f5f9",
+  "--slate": "#e2e8f0",
+  "--text": "#0f172a",
+  "--muted": "#64748b",
+  "--gold": "#b8860b",
+  "--gold-edge": "rgba(184,134,11,0.3)",
+  "--gold-bloom": "rgba(184,134,11,0.08)",
+  "--crimson": "#dc2626",
+  "--crimson-bloom": "rgba(220,38,38,0.08)",
+  "--teal": "#0d9488",
+  "--teal-bloom": "rgba(13,148,136,0.08)",
+  "--stamp-allowed": "#16a34a",
+  "--stamp-warn": "#ca8a04",
+  "--stamp-blocked": "#dc2626",
+};

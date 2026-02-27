@@ -5,23 +5,29 @@ Provides Policy loading from YAML and PolicyEngine for running guards.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+from enum import Enum as _Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 import yaml
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
-from clawdstrike.guards.forbidden_path import ForbiddenPathGuard, ForbiddenPathConfig
-from clawdstrike.guards.egress_allowlist import EgressAllowlistGuard, EgressAllowlistConfig
-from clawdstrike.guards.secret_leak import SecretLeakGuard, SecretLeakConfig, SecretPattern
-from clawdstrike.guards.patch_integrity import PatchIntegrityGuard, PatchIntegrityConfig
-from clawdstrike.guards.mcp_tool import McpToolGuard, McpToolConfig
+from clawdstrike._version import parse_semver_strict
+from clawdstrike.exceptions import PolicyError
+from clawdstrike.guards.base import Action, Guard, GuardContext, GuardResult, Severity
+from clawdstrike.guards.egress_allowlist import EgressAllowlistConfig, EgressAllowlistGuard
+from clawdstrike.guards.forbidden_path import ForbiddenPathConfig, ForbiddenPathGuard
+from clawdstrike.guards.jailbreak import JailbreakConfig, JailbreakGuard
+from clawdstrike.guards.mcp_tool import McpToolConfig, McpToolGuard
+from clawdstrike.guards.patch_integrity import PatchIntegrityConfig, PatchIntegrityGuard
+from clawdstrike.guards.path_allowlist import PathAllowlistConfig, PathAllowlistGuard
 from clawdstrike.guards.prompt_injection import (
-    PromptInjectionGuard,
     PromptInjectionConfig,
+    PromptInjectionGuard,
 )
-from clawdstrike.guards.jailbreak import JailbreakGuard, JailbreakConfig
+from clawdstrike.guards.secret_leak import SecretLeakConfig, SecretLeakGuard, SecretPattern
+from clawdstrike.guards.shell_command import ShellCommandConfig, ShellCommandGuard
 
 POLICY_SCHEMA_VERSION = "1.2.0"
 POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0"}
@@ -30,24 +36,20 @@ POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0"}
 # Try package-relative path first (works in both monorepo and installed layouts),
 # then fall back to importlib.resources for installed packages.
 def _find_rulesets_dir() -> Path:
-    # Relative from this file: packages/sdk/hush-py/src/clawdstrike -> repo root
-    pkg_relative = Path(__file__).resolve().parent / "../../../../../rulesets"
-    if pkg_relative.is_dir():
-        return pkg_relative.resolve()
-    # Fallback: try importlib.resources (rulesets shipped as package data)
+    # Try importlib.resources first (pip-installed packages)
     try:
         import importlib.resources as _res
         ref = _res.files("clawdstrike") / "rulesets"
         p = Path(str(ref))
         if p.is_dir():
             return p
-    except Exception as exc:
-        import warnings
-        warnings.warn(
-            f"Could not locate 'clawdstrike' rulesets via importlib.resources: {exc}",
-            stacklevel=2,
-        )
-    # Last resort: return the relative path and let callers handle missing files
+    except Exception:
+        pass  # importlib.resources not available; fall back to monorepo path
+    # Fallback: monorepo relative path (dev layout)
+    pkg_relative = Path(__file__).resolve().parent / "../../../../../rulesets"
+    if pkg_relative.is_dir():
+        return pkg_relative.resolve()
+    # Last resort
     return pkg_relative.resolve()
 
 
@@ -56,48 +58,128 @@ _RULESETS_DIR = _find_rulesets_dir()
 MAX_EXTENDS_DEPTH = 32
 
 
-def _parse_semver_strict(version: str) -> Optional[tuple[int, int, int]]:
-    parts = version.split(".")
-    if len(parts) != 3:
-        return None
-    try:
-        major, minor, patch = (int(p) for p in parts)
-    except ValueError:
-        return None
-    if major < 0 or minor < 0 or patch < 0:
-        return None
-    return major, minor, patch
-
-
 def _validate_policy_version(version: str) -> None:
-    if _parse_semver_strict(version) is None:
-        raise ValueError(f"Invalid policy version: {version!r} (expected X.Y.Z)")
+    if parse_semver_strict(version) is None:
+        raise PolicyError(f"Invalid policy version: {version!r} (expected X.Y.Z)")
     if version not in POLICY_SUPPORTED_VERSIONS:
         supported = ", ".join(sorted(POLICY_SUPPORTED_VERSIONS))
-        raise ValueError(
+        raise PolicyError(
             f"Unsupported policy version: {version!r} (supported: {supported})"
         )
 
 
-def _require_mapping(value: Any, *, path: str) -> Dict[str, Any]:
+def _require_mapping(value: Any, *, path: str) -> dict[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, dict):
-        raise ValueError(f"Expected mapping for {path}, got {type(value).__name__}")
+        raise PolicyError(f"Expected mapping for {path}, got {type(value).__name__}")
     return value
 
 
-def _reject_unknown_keys(data: Dict[str, Any], allowed: set[str], *, path: str) -> None:
+def _reject_unknown_keys(data: dict[str, Any], allowed: set[str], *, path: str) -> None:
     unknown = set(data.keys()) - allowed
     if unknown:
         unknown_str = ", ".join(sorted(unknown))
-        raise ValueError(f"Unknown {path} field(s): {unknown_str}")
+        raise PolicyError(f"Unknown {path} field(s): {unknown_str}")
+
+
+class _MergeMode(_Enum):
+    OVERRIDE = "override"
+    MERGE_LIST = "merge_list"
+    MERGE_PATTERNS = "merge_patterns"
+
+
+_GUARD_MERGE_SPECS: dict[str, dict[str, _MergeMode]] = {
+    "forbidden_path": {
+        "patterns": _MergeMode.MERGE_LIST,
+        "exceptions": _MergeMode.MERGE_LIST,
+    },
+    "egress_allowlist": {
+        "allow": _MergeMode.MERGE_LIST,
+        "block": _MergeMode.MERGE_LIST,
+        "default_action": _MergeMode.OVERRIDE,
+    },
+    "secret_leak": {
+        "patterns": _MergeMode.MERGE_PATTERNS,
+        "skip_paths": _MergeMode.MERGE_LIST,
+        "enabled": _MergeMode.OVERRIDE,
+        "secrets": _MergeMode.MERGE_LIST,
+    },
+    "patch_integrity": {
+        "max_additions": _MergeMode.OVERRIDE,
+        "max_deletions": _MergeMode.OVERRIDE,
+        "require_balance": _MergeMode.OVERRIDE,
+        "max_imbalance_ratio": _MergeMode.OVERRIDE,
+        "forbidden_patterns": _MergeMode.MERGE_LIST,
+    },
+    "mcp_tool": {
+        "allow": _MergeMode.MERGE_LIST,
+        "block": _MergeMode.MERGE_LIST,
+        "require_confirmation": _MergeMode.MERGE_LIST,
+        "default_action": _MergeMode.OVERRIDE,
+        "max_args_size": _MergeMode.OVERRIDE,
+        "additional_allow": _MergeMode.MERGE_LIST,
+        "remove_allow": _MergeMode.MERGE_LIST,
+        "additional_block": _MergeMode.MERGE_LIST,
+        "remove_block": _MergeMode.MERGE_LIST,
+        "enabled": _MergeMode.OVERRIDE,
+    },
+    "prompt_injection": {
+        "enabled": _MergeMode.OVERRIDE,
+        "warn_at_or_above": _MergeMode.OVERRIDE,
+        "block_at_or_above": _MergeMode.OVERRIDE,
+        "max_scan_bytes": _MergeMode.OVERRIDE,
+    },
+    "jailbreak": {
+        "enabled": _MergeMode.OVERRIDE,
+        "block_threshold": _MergeMode.OVERRIDE,
+        "warn_threshold": _MergeMode.OVERRIDE,
+        "max_input_bytes": _MergeMode.OVERRIDE,
+        "session_aggregation": _MergeMode.OVERRIDE,
+    },
+    "shell_command": {
+        "blocked_patterns": _MergeMode.MERGE_LIST,
+        "additional_blocked": _MergeMode.MERGE_LIST,
+        "allowed_commands": _MergeMode.MERGE_LIST,
+        "enabled": _MergeMode.OVERRIDE,
+    },
+    "path_allowlist": {
+        "allowed_paths": _MergeMode.MERGE_LIST,
+        "enabled": _MergeMode.OVERRIDE,
+    },
+}
+
+
+def _merge_str_list(base_list: list[str], child_list: list[str]) -> list[str]:
+    out = list(base_list)
+    for item in child_list:
+        if item not in out:
+            out.append(item)
+    return out
+
+
+def _merge_secret_patterns(
+    base: list[SecretPattern],
+    child: list[SecretPattern],
+) -> list[SecretPattern]:
+    out = list(base)
+    idx_by_name = {sp.name: i for i, sp in enumerate(out)}
+    for sp in child:
+        i = idx_by_name.get(sp.name)
+        if i is None:
+            idx_by_name[sp.name] = len(out)
+            out.append(sp)
+        else:
+            out[i] = sp
+    return out
 
 
 class PolicyResolver:
     """Resolves policy extends references to YAML content."""
 
-    def resolve(self, reference: str, from_path: Optional[Path] = None) -> tuple[str, str, Optional[Path]]:
+    def resolve(
+        self, reference: str, from_path: Path | None = None,
+    ) -> tuple[str, str, Path | None]:
         """Resolve a reference to (yaml_content, canonical_key, location_path).
 
         Supports:
@@ -105,7 +187,10 @@ class PolicyResolver:
         - Local file paths (relative to from_path)
         """
         # Try built-in rulesets
-        ruleset_id = reference.removeprefix("clawdstrike:") if reference.startswith("clawdstrike:") else reference
+        if reference.startswith("clawdstrike:"):
+            ruleset_id = reference.removeprefix("clawdstrike:")
+        else:
+            ruleset_id = reference
         builtin_names = {
             "default", "strict", "ai-agent", "ai-agent-posture", "cicd", "permissive",
         }
@@ -128,7 +213,7 @@ class PolicyResolver:
             canonical = str(extends_path.resolve())
             return yaml_content, f"file:{canonical}", extends_path
 
-        raise ValueError(f"Unknown ruleset or file not found: {reference}")
+        raise PolicyError(f"Unknown ruleset or file not found: {reference}")
 
 
 _DEFAULT_RESOLVER = PolicyResolver()
@@ -139,8 +224,8 @@ class PostureState:
     """A single posture state."""
 
     description: str = ""
-    capabilities: List[str] = field(default_factory=list)
-    budgets: Dict[str, int] = field(default_factory=dict)
+    capabilities: list[str] = field(default_factory=list)
+    budgets: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -150,7 +235,7 @@ class PostureTransition:
     from_state: str = ""
     to_state: str = ""
     on: str = ""
-    after: Optional[str] = None
+    after: str | None = None
 
 
 @dataclass
@@ -158,12 +243,12 @@ class PostureConfig:
     """Posture configuration."""
 
     initial: str = ""
-    states: Dict[str, PostureState] = field(default_factory=dict)
-    transitions: List[PostureTransition] = field(default_factory=list)
+    states: dict[str, PostureState] = field(default_factory=dict)
+    transitions: list[PostureTransition] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> PostureConfig:
-        states: Dict[str, PostureState] = {}
+    def from_dict(cls, data: dict[str, Any]) -> PostureConfig:
+        states: dict[str, PostureState] = {}
         for name, state_data in data.get("states", {}).items():
             if not isinstance(state_data, dict):
                 continue
@@ -173,7 +258,7 @@ class PostureConfig:
                 budgets=dict(state_data.get("budgets", {})),
             )
 
-        transitions: List[PostureTransition] = []
+        transitions: list[PostureTransition] = []
         for t_data in data.get("transitions", []):
             if not isinstance(t_data, dict):
                 continue
@@ -186,18 +271,18 @@ class PostureConfig:
 
         initial = str(data.get("initial", ""))
         if initial and states and initial not in states:
-            raise ValueError(
+            raise PolicyError(
                 f"Posture initial state {initial!r} not found in states: {sorted(states.keys())}"
             )
 
         for t in transitions:
             if states:
                 if t.from_state and t.from_state not in states:
-                    raise ValueError(
+                    raise PolicyError(
                         f"Posture transition references unknown from_state {t.from_state!r}"
                     )
                 if t.to_state and t.to_state not in states:
-                    raise ValueError(
+                    raise PolicyError(
                         f"Posture transition references unknown to_state {t.to_state!r}"
                     )
 
@@ -221,16 +306,18 @@ class PolicySettings:
 class GuardConfigs:
     """Configuration for all guards."""
 
-    forbidden_path: Optional[ForbiddenPathConfig] = None
-    egress_allowlist: Optional[EgressAllowlistConfig] = None
-    secret_leak: Optional[SecretLeakConfig] = None
-    patch_integrity: Optional[PatchIntegrityConfig] = None
-    mcp_tool: Optional[McpToolConfig] = None
-    prompt_injection: Optional[PromptInjectionConfig] = None
-    jailbreak: Optional[JailbreakConfig] = None
+    forbidden_path: ForbiddenPathConfig | None = None
+    egress_allowlist: EgressAllowlistConfig | None = None
+    secret_leak: SecretLeakConfig | None = None
+    patch_integrity: PatchIntegrityConfig | None = None
+    mcp_tool: McpToolConfig | None = None
+    prompt_injection: PromptInjectionConfig | None = None
+    jailbreak: JailbreakConfig | None = None
+    shell_command: ShellCommandConfig | None = None
+    path_allowlist: PathAllowlistConfig | None = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> GuardConfigs:
+    def from_dict(cls, data: dict[str, Any]) -> GuardConfigs:
         """Create from dictionary."""
         allowed = {
             "forbidden_path",
@@ -240,30 +327,33 @@ class GuardConfigs:
             "mcp_tool",
             "prompt_injection",
             "jailbreak",
+            "shell_command",
+            "path_allowlist",
         }
         _reject_unknown_keys(data, allowed, path="guards")
 
         def parse_guard_config(
             config_type: Any, value: Any, *, path: str
-        ) -> Optional[Any]:
+        ) -> Any | None:
             if value is None:
                 return None
             if not isinstance(value, dict):
-                raise ValueError(
+                raise PolicyError(
                     f"Expected mapping for {path}, got {type(value).__name__}"
                 )
             try:
                 return config_type(**value)
             except TypeError as e:
-                raise ValueError(f"Invalid {path} config: {e}") from e
+                raise PolicyError(f"Invalid {path} config: {e}") from e
 
         # Special handling for secret_leak: convert pattern dicts to SecretPattern objects
         secret_leak_data = data.get("secret_leak")
         secret_leak_config = None
         if secret_leak_data is not None:
             if not isinstance(secret_leak_data, dict):
-                raise ValueError(
-                    f"Expected mapping for guards.secret_leak, got {type(secret_leak_data).__name__}"
+                got = type(secret_leak_data).__name__
+                raise PolicyError(
+                    f"Expected mapping for guards.secret_leak, got {got}"
                 )
             patterns_data = secret_leak_data.get("patterns")
             patterns = None
@@ -284,7 +374,7 @@ class GuardConfigs:
         patch_config = None
         if patch_data is not None:
             if not isinstance(patch_data, dict):
-                raise ValueError(
+                raise PolicyError(
                     f"Expected mapping for guards.patch_integrity, got {type(patch_data).__name__}"
                 )
             patch_config = PatchIntegrityConfig(
@@ -300,7 +390,7 @@ class GuardConfigs:
         jailbreak_config = None
         if jailbreak_data is not None:
             if not isinstance(jailbreak_data, dict):
-                raise ValueError(
+                raise PolicyError(
                     f"Expected mapping for guards.jailbreak, got {type(jailbreak_data).__name__}"
                 )
             detector_data = jailbreak_data.get("detector", {})
@@ -336,6 +426,16 @@ class GuardConfigs:
                 path="guards.prompt_injection",
             ),
             jailbreak=jailbreak_config,
+            shell_command=parse_guard_config(
+                ShellCommandConfig,
+                data.get("shell_command"),
+                path="guards.shell_command",
+            ),
+            path_allowlist=parse_guard_config(
+                PathAllowlistConfig,
+                data.get("path_allowlist"),
+                path="guards.path_allowlist",
+            ),
         )
 
 
@@ -346,20 +446,20 @@ class Policy:
     version: str = POLICY_SCHEMA_VERSION
     name: str = ""
     description: str = ""
-    extends: Optional[str] = None
+    extends: str | None = None
     merge_strategy: str = "deep_merge"
     guards: GuardConfigs = field(default_factory=GuardConfigs)
     settings: PolicySettings = field(default_factory=PolicySettings)
-    posture: Optional[PostureConfig] = None
-    _raw_guards: Dict[str, Any] = field(default_factory=dict, repr=False)
-    _raw_settings: Dict[str, Any] = field(default_factory=dict, repr=False)
+    posture: PostureConfig | None = None
+    _raw_guards: dict[str, Any] = field(default_factory=dict, repr=False)
+    _raw_settings: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_yaml(cls, yaml_str: str) -> Policy:
         """Parse from YAML string (no extends resolution)."""
         data = yaml.safe_load(yaml_str) or {}
         if not isinstance(data, dict):
-            raise ValueError("Policy YAML must be a mapping (YAML object)")
+            raise PolicyError("Policy YAML must be a mapping (YAML object)")
 
         _reject_unknown_keys(
             data,
@@ -370,7 +470,7 @@ class Policy:
 
         version = data.get("version", POLICY_SCHEMA_VERSION)
         if not isinstance(version, str):
-            raise ValueError("policy.version must be a string")
+            raise PolicyError("policy.version must be a string")
         _validate_policy_version(version)
 
         guards_data = _require_mapping(data.get("guards"), path="policy.guards")
@@ -379,9 +479,9 @@ class Policy:
         posture = None
         posture_data = data.get("posture")
         if posture_data is not None:
-            parsed_version = _parse_semver_strict(version)
+            parsed_version = parse_semver_strict(version)
             if parsed_version is not None and parsed_version < (1, 2, 0):
-                raise ValueError("posture requires policy version 1.2.0")
+                raise PolicyError("posture requires policy version 1.2.0")
             posture = PostureConfig.from_dict(posture_data)
 
         return cls(
@@ -398,17 +498,18 @@ class Policy:
         )
 
     @classmethod
-    def from_yaml_file(cls, path: str) -> Policy:
+    def from_yaml_file(cls, path: str | os.PathLike[str]) -> Policy:
         """Load from YAML file."""
-        with open(path, "r") as f:
+        p = Path(path)
+        with open(p) as f:
             return cls.from_yaml(f.read())
 
     @classmethod
     def from_yaml_with_extends(
         cls,
         yaml_str: str,
-        base_path: Optional[str] = None,
-        resolver: Optional[PolicyResolver] = None,
+        base_path: str | None = None,
+        resolver: PolicyResolver | None = None,
     ) -> Policy:
         """Parse from YAML string with extends resolution.
 
@@ -423,25 +524,26 @@ class Policy:
     @classmethod
     def from_yaml_file_with_extends(
         cls,
-        path: str,
-        resolver: Optional[PolicyResolver] = None,
+        path: str | os.PathLike[str],
+        resolver: PolicyResolver | None = None,
     ) -> Policy:
         """Load from YAML file with extends resolution."""
-        with open(path, "r") as f:
+        p = Path(path)
+        with open(p) as f:
             yaml_str = f.read()
-        return cls.from_yaml_with_extends(yaml_str, base_path=path, resolver=resolver)
+        return cls.from_yaml_with_extends(yaml_str, base_path=str(p), resolver=resolver)
 
     @classmethod
     def _resolve_extends(
         cls,
         yaml_str: str,
-        from_path: Optional[Path],
+        from_path: Path | None,
         resolver: PolicyResolver,
-        visited: Set[str],
+        visited: set[str],
         depth: int,
     ) -> Policy:
         if depth > MAX_EXTENDS_DEPTH:
-            raise ValueError(f"Policy extends depth exceeded (limit: {MAX_EXTENDS_DEPTH})")
+            raise PolicyError(f"Policy extends depth exceeded (limit: {MAX_EXTENDS_DEPTH})")
 
         child = cls.from_yaml(yaml_str)
 
@@ -451,7 +553,7 @@ class Policy:
             )
 
             if canonical_key in visited:
-                raise ValueError(f"Circular policy extension detected: {child.extends}")
+                raise PolicyError(f"Circular policy extension detected: {child.extends}")
             visited.add(canonical_key)
 
             base = cls._resolve_extends(resolved_yaml, location, resolver, visited, depth + 1)
@@ -465,7 +567,7 @@ class Policy:
         Child settings explicitly declared in YAML override base settings.
         Settings not declared in the child inherit from the base.
         """
-        merged_settings_data: Dict[str, Any] = {
+        merged_settings_data: dict[str, Any] = {
             "fail_fast": self.settings.fail_fast,
             "verbose_logging": self.settings.verbose_logging,
             "session_timeout_secs": self.settings.session_timeout_secs,
@@ -485,254 +587,52 @@ class Policy:
             _raw_settings=merged_settings_data,
         )
 
-    def _merge_guards(self, child: GuardConfigs, child_raw: Dict[str, Any]) -> GuardConfigs:
-        """Deep merge guard configs.
+    def _merge_guards(self, child: GuardConfigs, child_raw: dict[str, Any]) -> GuardConfigs:
+        """Deep merge guard configs using data-driven merge specs.
 
         The child policy may omit fields, but guard dataclasses fill omitted fields with defaults.
         To avoid silently dropping inherited restrictions, consult the raw YAML mapping to detect
         which fields were explicitly specified by the child.
         """
         raw = child_raw or {}
+        result_kwargs: dict[str, Any] = {}
 
-        def guard_raw(key: str) -> Dict[str, Any]:
-            g = raw.get(key)
-            return g if isinstance(g, dict) else {}
+        for guard_name in GuardConfigs.__dataclass_fields__:
+            base_cfg = getattr(self.guards, guard_name)
+            child_cfg = getattr(child, guard_name)
+            guard_raw = raw.get(guard_name)
 
-        def merge_str_list(base_list: List[str], child_list: List[str]) -> List[str]:
-            out = list(base_list)
-            for item in child_list:
-                if item not in out:
-                    out.append(item)
-            return out
+            if base_cfg is None:
+                result_kwargs[guard_name] = child_cfg
+                continue
+            if child_cfg is None or not isinstance(guard_raw, dict):
+                result_kwargs[guard_name] = base_cfg
+                continue
 
-        def merge_secret_patterns(
-            base_patterns: List[SecretPattern],
-            child_patterns: List[SecretPattern],
-        ) -> List[SecretPattern]:
-            out = list(base_patterns)
-            idx_by_name = {sp.name: i for i, sp in enumerate(out) if getattr(sp, "name", None)}
-            for sp in child_patterns:
-                i = idx_by_name.get(sp.name)
-                if i is None:
-                    idx_by_name[sp.name] = len(out)
-                    out.append(sp)
+            spec = _GUARD_MERGE_SPECS.get(guard_name, {})
+            merged_fields: dict[str, Any] = {}
+
+            for field_name in base_cfg.__dataclass_fields__:
+                base_val = getattr(base_cfg, field_name)
+                child_val = getattr(child_cfg, field_name)
+                mode = spec.get(field_name, _MergeMode.OVERRIDE)
+
+                if field_name not in guard_raw:
+                    merged_fields[field_name] = base_val
+                elif mode == _MergeMode.MERGE_LIST:
+                    merged_fields[field_name] = _merge_str_list(base_val, child_val)
+                elif mode == _MergeMode.MERGE_PATTERNS:
+                    merged_fields[field_name] = _merge_secret_patterns(base_val, child_val)
                 else:
-                    out[i] = sp
-            return out
+                    merged_fields[field_name] = child_val
 
-        # Forbidden path guard
-        forbidden_path = self.guards.forbidden_path
-        if forbidden_path is None:
-            forbidden_path = child.forbidden_path
-        elif child.forbidden_path is not None:
-            g = guard_raw("forbidden_path")
-            patterns = forbidden_path.patterns
-            if "patterns" in g:
-                patterns = merge_str_list(patterns, child.forbidden_path.patterns)
-            exceptions = forbidden_path.exceptions
-            if "exceptions" in g:
-                exceptions = merge_str_list(exceptions, child.forbidden_path.exceptions)
-            forbidden_path = ForbiddenPathConfig(patterns=patterns, exceptions=exceptions)
+            result_kwargs[guard_name] = type(base_cfg)(**merged_fields)
 
-        # Egress allowlist guard
-        egress_allowlist = self.guards.egress_allowlist
-        if egress_allowlist is None:
-            egress_allowlist = child.egress_allowlist
-        elif child.egress_allowlist is not None:
-            g = guard_raw("egress_allowlist")
-            allow = egress_allowlist.allow
-            if "allow" in g:
-                allow = merge_str_list(allow, child.egress_allowlist.allow)
-            block = egress_allowlist.block
-            if "block" in g:
-                block = merge_str_list(block, child.egress_allowlist.block)
-            default_action = egress_allowlist.default_action
-            if "default_action" in g:
-                default_action = child.egress_allowlist.default_action
-            egress_allowlist = EgressAllowlistConfig(
-                allow=allow,
-                block=block,
-                default_action=default_action,
-            )
-
-        # Secret leak guard
-        secret_leak = self.guards.secret_leak
-        if secret_leak is None:
-            secret_leak = child.secret_leak
-        elif child.secret_leak is not None:
-            g = guard_raw("secret_leak")
-            sl_patterns: List[SecretPattern] = secret_leak.patterns
-            if "patterns" in g:
-                sl_patterns = merge_secret_patterns(sl_patterns, child.secret_leak.patterns)
-            skip_paths = secret_leak.skip_paths
-            if "skip_paths" in g:
-                skip_paths = merge_str_list(skip_paths, child.secret_leak.skip_paths)
-            enabled = secret_leak.enabled
-            if "enabled" in g:
-                enabled = child.secret_leak.enabled
-            secrets = secret_leak.secrets
-            if "secrets" in g:
-                secrets = merge_str_list(secrets, child.secret_leak.secrets)
-            secret_leak = SecretLeakConfig(
-                patterns=sl_patterns,
-                skip_paths=skip_paths,
-                enabled=enabled,
-                secrets=secrets,
-            )
-
-        # Patch integrity guard
-        patch_integrity = self.guards.patch_integrity
-        if patch_integrity is None:
-            patch_integrity = child.patch_integrity
-        elif child.patch_integrity is not None:
-            g = guard_raw("patch_integrity")
-            max_additions = patch_integrity.max_additions
-            if "max_additions" in g:
-                max_additions = child.patch_integrity.max_additions
-            max_deletions = patch_integrity.max_deletions
-            if "max_deletions" in g:
-                max_deletions = child.patch_integrity.max_deletions
-            require_balance = patch_integrity.require_balance
-            if "require_balance" in g:
-                require_balance = child.patch_integrity.require_balance
-            max_imbalance_ratio = patch_integrity.max_imbalance_ratio
-            if "max_imbalance_ratio" in g:
-                max_imbalance_ratio = child.patch_integrity.max_imbalance_ratio
-            forbidden_patterns = patch_integrity.forbidden_patterns
-            if "forbidden_patterns" in g:
-                forbidden_patterns = merge_str_list(
-                    forbidden_patterns, child.patch_integrity.forbidden_patterns
-                )
-            patch_integrity = PatchIntegrityConfig(
-                max_additions=max_additions,
-                max_deletions=max_deletions,
-                require_balance=require_balance,
-                max_imbalance_ratio=max_imbalance_ratio,
-                forbidden_patterns=forbidden_patterns,
-            )
-
-        # MCP tool guard
-        mcp_tool = self.guards.mcp_tool
-        if mcp_tool is None:
-            mcp_tool = child.mcp_tool
-        elif child.mcp_tool is not None:
-            g = guard_raw("mcp_tool")
-            allow = mcp_tool.allow
-            if "allow" in g:
-                allow = merge_str_list(allow, child.mcp_tool.allow)
-            block = mcp_tool.block
-            if "block" in g:
-                block = merge_str_list(block, child.mcp_tool.block)
-            require_confirmation = mcp_tool.require_confirmation
-            if "require_confirmation" in g:
-                require_confirmation = merge_str_list(
-                    require_confirmation, child.mcp_tool.require_confirmation
-                )
-            default_action = mcp_tool.default_action
-            if "default_action" in g:
-                default_action = child.mcp_tool.default_action
-            max_args_size = mcp_tool.max_args_size
-            if "max_args_size" in g:
-                max_args_size = child.mcp_tool.max_args_size
-            additional_allow = mcp_tool.additional_allow
-            if "additional_allow" in g:
-                additional_allow = merge_str_list(
-                    additional_allow, child.mcp_tool.additional_allow
-                )
-            remove_allow = mcp_tool.remove_allow
-            if "remove_allow" in g:
-                remove_allow = merge_str_list(remove_allow, child.mcp_tool.remove_allow)
-            additional_block = mcp_tool.additional_block
-            if "additional_block" in g:
-                additional_block = merge_str_list(
-                    additional_block, child.mcp_tool.additional_block
-                )
-            remove_block = mcp_tool.remove_block
-            if "remove_block" in g:
-                remove_block = merge_str_list(remove_block, child.mcp_tool.remove_block)
-            enabled = mcp_tool.enabled
-            if "enabled" in g:
-                enabled = child.mcp_tool.enabled
-            mcp_tool = McpToolConfig(
-                allow=allow,
-                block=block,
-                require_confirmation=require_confirmation,
-                default_action=default_action,
-                max_args_size=max_args_size,
-                additional_allow=additional_allow,
-                remove_allow=remove_allow,
-                additional_block=additional_block,
-                remove_block=remove_block,
-                enabled=enabled,
-            )
-
-        # Prompt injection guard
-        prompt_injection = self.guards.prompt_injection
-        if prompt_injection is None:
-            prompt_injection = child.prompt_injection
-        elif child.prompt_injection is not None:
-            g = guard_raw("prompt_injection")
-            enabled = prompt_injection.enabled
-            if "enabled" in g:
-                enabled = child.prompt_injection.enabled
-            warn_at_or_above = prompt_injection.warn_at_or_above
-            if "warn_at_or_above" in g:
-                warn_at_or_above = child.prompt_injection.warn_at_or_above
-            block_at_or_above = prompt_injection.block_at_or_above
-            if "block_at_or_above" in g:
-                block_at_or_above = child.prompt_injection.block_at_or_above
-            max_scan_bytes = prompt_injection.max_scan_bytes
-            if "max_scan_bytes" in g:
-                max_scan_bytes = child.prompt_injection.max_scan_bytes
-            prompt_injection = PromptInjectionConfig(
-                enabled=enabled,
-                warn_at_or_above=warn_at_or_above,
-                block_at_or_above=block_at_or_above,
-                max_scan_bytes=max_scan_bytes,
-            )
-
-        # Jailbreak detection guard
-        jailbreak = self.guards.jailbreak
-        if jailbreak is None:
-            jailbreak = child.jailbreak
-        elif child.jailbreak is not None:
-            g = guard_raw("jailbreak")
-            enabled = jailbreak.enabled
-            if "enabled" in g:
-                enabled = child.jailbreak.enabled
-            block_threshold = jailbreak.block_threshold
-            if "block_threshold" in g:
-                block_threshold = child.jailbreak.block_threshold
-            warn_threshold = jailbreak.warn_threshold
-            if "warn_threshold" in g:
-                warn_threshold = child.jailbreak.warn_threshold
-            max_input_bytes = jailbreak.max_input_bytes
-            if "max_input_bytes" in g:
-                max_input_bytes = child.jailbreak.max_input_bytes
-            session_aggregation = jailbreak.session_aggregation
-            if "session_aggregation" in g:
-                session_aggregation = child.jailbreak.session_aggregation
-            jailbreak = JailbreakConfig(
-                enabled=enabled,
-                block_threshold=block_threshold,
-                warn_threshold=warn_threshold,
-                max_input_bytes=max_input_bytes,
-                session_aggregation=session_aggregation,
-            )
-
-        return GuardConfigs(
-            forbidden_path=forbidden_path,
-            egress_allowlist=egress_allowlist,
-            secret_leak=secret_leak,
-            patch_integrity=patch_integrity,
-            mcp_tool=mcp_tool,
-            prompt_injection=prompt_injection,
-            jailbreak=jailbreak,
-        )
+        return GuardConfigs(**result_kwargs)
 
     def to_yaml(self) -> str:
         """Export to YAML string."""
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "version": self.version,
             "name": self.name,
             "description": self.description,
@@ -785,9 +685,9 @@ class PolicyEngine:
         self.policy = policy
         self.guards = self._create_guards()
 
-    def _create_guards(self) -> List[Guard]:
+    def _create_guards(self) -> list[Guard]:
         """Create guard instances from policy configuration."""
-        guards: List[Guard] = []
+        guards: list[Guard] = []
 
         guards.append(
             ForbiddenPathGuard(self.policy.guards.forbidden_path)
@@ -824,12 +724,22 @@ class PolicyEngine:
             if self.policy.guards.jailbreak
             else JailbreakGuard()
         )
+        guards.append(
+            ShellCommandGuard(self.policy.guards.shell_command)
+            if self.policy.guards.shell_command
+            else ShellCommandGuard()
+        )
+        guards.append(
+            PathAllowlistGuard(self.policy.guards.path_allowlist)
+            if self.policy.guards.path_allowlist
+            else PathAllowlistGuard()
+        )
 
         return guards
 
-    def check(self, action: GuardAction, context: GuardContext) -> List[GuardResult]:
+    def check(self, action: Action, context: GuardContext) -> list[GuardResult]:
         """Check an action against all guards."""
-        results: List[GuardResult] = []
+        results: list[GuardResult] = []
 
         for guard in self.guards:
             if guard.handles(action):
@@ -848,7 +758,7 @@ class PolicyEngine:
 
         return results
 
-    def is_allowed(self, action: GuardAction, context: GuardContext) -> bool:
+    def is_allowed(self, action: Action, context: GuardContext) -> bool:
         """Check if an action is allowed (convenience method)."""
         results = self.check(action, context)
         return all(r.allowed for r in results)

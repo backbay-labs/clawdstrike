@@ -128,6 +128,38 @@ impl GuardResult {
         }
     }
 
+    /// Create a sanitize result (allowed but with modified content)
+    pub fn sanitize(
+        guard: impl Into<String>,
+        message: impl Into<String>,
+        original: impl Into<String>,
+        sanitized: impl Into<String>,
+    ) -> Self {
+        Self {
+            allowed: true,
+            guard: guard.into(),
+            severity: Severity::Warning,
+            message: message.into(),
+            details: Some(serde_json::json!({
+                "action": "sanitized",
+                "original": original.into(),
+                "sanitized": sanitized.into(),
+            })),
+        }
+    }
+
+    /// Returns true when the result represents a sanitize outcome.
+    pub fn is_sanitized(&self) -> bool {
+        if !self.allowed {
+            return false;
+        }
+        self.details
+            .as_ref()
+            .and_then(|value| value.get("action"))
+            .and_then(|value| value.as_str())
+            .is_some_and(|action| action == "sanitized")
+    }
+
     /// Add details to the result
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);

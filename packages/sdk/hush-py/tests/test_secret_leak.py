@@ -6,7 +6,13 @@ from clawdstrike.guards.secret_leak import (
     SecretLeakConfig,
     SecretPattern,
 )
-from clawdstrike.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.base import (
+    CustomAction,
+    FileAccessAction,
+    FileWriteAction,
+    GuardContext,
+    Severity,
+)
 
 
 class TestSecretLeakConfig:
@@ -36,7 +42,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "AWS key: AKIAIOSFODNN7EXAMPLE",
         })
 
@@ -50,7 +56,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "Token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
         })
 
@@ -63,7 +69,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBAI...",
         })
 
@@ -76,7 +82,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "This is safe output with no secrets",
         })
 
@@ -87,9 +93,9 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.file_write(
-            "/tmp/config.env",
-            b"AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+        action = FileWriteAction(
+            path="/tmp/config.env",
+            content=b"AWS_KEY=AKIAIOSFODNN7EXAMPLE",
         )
 
         result = guard.check(action, context)
@@ -100,9 +106,9 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        action = GuardAction.file_write(
-            "/project/test/fixtures.py",
-            b"AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+        action = FileWriteAction(
+            path="/project/test/fixtures.py",
+            content=b"AWS_KEY=AKIAIOSFODNN7EXAMPLE",
         )
 
         result = guard.check(action, context)
@@ -113,7 +119,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "AKIAIOSFODNN7EXAMPLE",
         })
 
@@ -128,7 +134,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "The API key is sk-abc123secretkey",
         })
 
@@ -140,11 +146,11 @@ class TestSecretLeakGuard:
     def test_handles_output_actions(self) -> None:
         guard = SecretLeakGuard()
 
-        assert guard.handles(GuardAction.custom("output", {})) is True
-        assert guard.handles(GuardAction.custom("bash_output", {})) is True
-        assert guard.handles(GuardAction.custom("tool_result", {})) is True
-        assert guard.handles(GuardAction.file_write("/test", b"")) is True
-        assert guard.handles(GuardAction.file_access("/test")) is False
+        assert guard.handles(CustomAction(custom_type="output", custom_data={})) is True
+        assert guard.handles(CustomAction(custom_type="bash_output", custom_data={})) is True
+        assert guard.handles(CustomAction(custom_type="tool_result", custom_data={})) is True
+        assert guard.handles(FileWriteAction(path="/test", content=b"")) is True
+        assert guard.handles(FileAccessAction(path="/test")) is False
 
     def test_guard_name(self) -> None:
         guard = SecretLeakGuard()
@@ -155,7 +161,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        action = GuardAction.custom("output", {"content": "valid secret"})
+        action = CustomAction(custom_type="output", custom_data={"content": "valid secret"})
         result = guard.check(action, context)
         assert result.allowed is False
 
@@ -164,11 +170,11 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard(config)
         context = GuardContext()
 
-        action = GuardAction.custom("output", {"output": "secret123 leaked"})
+        action = CustomAction(custom_type="output", custom_data={"output": "secret123 leaked"})
         result = guard.check(action, context)
         assert result.allowed is False
 
-        action = GuardAction.custom("tool_result", {"result": "secret123 leaked"})
+        action = CustomAction(custom_type="tool_result", custom_data={"result": "secret123 leaked"})
         result = guard.check(action, context)
         assert result.allowed is False
 
@@ -183,7 +189,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "Use sk-something for the key name",
         })
         result = guard.check(action, context)
@@ -194,7 +200,7 @@ class TestSecretLeakGuard:
         context = GuardContext()
 
         key = "sk-proj-" + "A" * 48
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": f"Key: {key}",
         })
         result = guard.check(action, context)
@@ -205,7 +211,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "sk_live_" + "X" * 24,
         })
         result = guard.check(action, context)
@@ -216,7 +222,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "ID: 550e8400-e29b-41d4-a716-446655440000",
         })
         result = guard.check(action, context)
@@ -226,7 +232,7 @@ class TestSecretLeakGuard:
         guard = SecretLeakGuard()
         context = GuardContext()
 
-        action = GuardAction.custom("output", {
+        action = CustomAction(custom_type="output", custom_data={
             "content": "data: SGVsbG8gV29ybGQ=",
         })
         result = guard.check(action, context)

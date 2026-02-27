@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from clawdstrike.core import generate_keypair
+from clawdstrike.exceptions import ReceiptError
 from clawdstrike.receipt import (
     RECEIPT_SCHEMA_VERSION,
     PublicKeySet,
@@ -27,7 +28,7 @@ def test_validate_receipt_version_matches_vectors():
         if c["supported"]:
             validate_receipt_version(c["version"])
         else:
-            with pytest.raises(ValueError, match=c.get("error_contains", "Invalid receipt version")):
+            with pytest.raises(ReceiptError, match=c.get("error_contains", "Invalid receipt version")):
                 validate_receipt_version(c["version"])
 
 
@@ -50,7 +51,7 @@ def test_receipt_canonical_json_and_hashes():
 
 
 def test_receipt_fails_closed_on_unknown_fields():
-    with pytest.raises(ValueError, match="Unknown receipt field"):
+    with pytest.raises(ReceiptError, match="Unknown receipt field"):
         Receipt.from_dict(
             {
                 "version": RECEIPT_SCHEMA_VERSION,

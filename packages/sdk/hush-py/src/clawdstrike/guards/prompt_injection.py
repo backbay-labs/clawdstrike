@@ -9,9 +9,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
+from clawdstrike.guards.base import (
+    Action,
+    Guard,
+    GuardContext,
+    GuardResult,
+    Severity,
+)
 
 
 class PromptInjectionLevel(IntEnum):
@@ -24,31 +30,33 @@ class PromptInjectionLevel(IntEnum):
 
 
 # Heuristic signal patterns (case-insensitive)
-_SIGNALS: List[tuple[str, str, int]] = [
+_SIGNALS: list[tuple[str, str, int]] = [  # noqa: E501
     # (signal_id, pattern, score_contribution)
-    ("ignore_previous_instructions", r"(?i)ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)", 40),
-    ("reveal_system_prompt", r"(?i)(reveal|show|display|output|print|repeat)\s+(the\s+)?(system\s+)?(prompt|instructions|rules)", 35),
-    ("new_instructions", r"(?i)(new|updated|override|replacement)\s+(system\s+)?(instructions|prompt|rules)", 30),
-    ("you_are_now", r"(?i)you\s+are\s+now\s+(a|an|the|my)\s+(unrestricted|unfiltered|uncensored|jailbroken?|evil|new|different)\s", 25),
+    ("ignore_previous_instructions", r"(?i)ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)", 40),  # noqa: E501
+    ("reveal_system_prompt", r"(?i)(reveal|show|display|output|print|repeat)\s+(the\s+)?(system\s+)?(prompt|instructions|rules)", 35),  # noqa: E501
+    ("new_instructions", r"(?i)(new|updated|override|replacement)\s+(system\s+)?(instructions|prompt|rules)", 30),  # noqa: E501
+    ("you_are_now", r"(?i)you\s+are\s+now\s+(a|an|the|my)\s+(unrestricted|unfiltered|uncensored|jailbroken?|evil|new|different)\s", 25),  # noqa: E501
     ("do_anything_now", r"(?i)(DAN|do\s+anything\s+now)", 30),
     ("jailbreak_prefix", r"(?i)(ignore\s+safety|bypass\s+restrictions|disable\s+filter)", 35),
     ("role_play_override", r"(?i)pretend\s+(you\s+are|to\s+be|you're)\s+", 20),
     ("encoding_evasion", r"(?i)(base64|rot13|hex|unicode)\s*(encode|decode|convert)", 15),
-    ("delimiter_injection", r"(?i)(<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\]|<\|system\|>|<\|user\|>|<\|assistant\|>)", 25),
-    ("exfiltration_request", r"(?i)(send|transmit|exfiltrate|post)\s+(to|data|secrets|keys)\s+(http|url|endpoint|server)", 40),
+    ("delimiter_injection", r"(?i)(<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\]|<\|system\|>|<\|user\|>|<\|assistant\|>)", 25),  # noqa: E501
+    ("exfiltration_request", r"(?i)(send|transmit|exfiltrate|post)\s+(to|data|secrets|keys)\s+(http|url|endpoint|server)", 40),  # noqa: E501
 ]
 
 _COMPILED_SIGNALS = [(sid, re.compile(pat), score) for sid, pat, score in _SIGNALS]
 
 
-def _detect(text: str, max_scan_bytes: int = 200_000) -> tuple[PromptInjectionLevel, int, List[str]]:
+def _detect(
+    text: str, max_scan_bytes: int = 200_000,
+) -> tuple[PromptInjectionLevel, int, list[str]]:
     """Run heuristic detection on text prefix.
 
     Returns (level, score, list_of_signal_ids).
     """
     scanned = text[:max_scan_bytes]
     total_score = 0
-    matched_signals: List[str] = []
+    matched_signals: list[str] = []
 
     for signal_id, compiled, score in _COMPILED_SIGNALS:
         if compiled.search(scanned):
@@ -95,7 +103,7 @@ class PromptInjectionGuard(Guard):
 
     UNTRUSTED_TEXT_KINDS = {"untrusted_text", "hushclaw.untrusted_text"}
 
-    def __init__(self, config: Optional[PromptInjectionConfig] = None) -> None:
+    def __init__(self, config: PromptInjectionConfig | None = None) -> None:
         self._config = config or PromptInjectionConfig()
         self._warn_level = _level_from_str(self._config.warn_at_or_above)
         self._block_level = _level_from_str(self._config.block_at_or_above)
@@ -104,18 +112,19 @@ class PromptInjectionGuard(Guard):
     def name(self) -> str:
         return "prompt_injection"
 
-    def handles(self, action: GuardAction) -> bool:
+    def handles(self, action: Action) -> bool:
         if not self._config.enabled:
             return False
+        custom_type: str | None = getattr(action, "custom_type", None)
         return (
             action.action_type == "custom"
-            and action.custom_type is not None
-            and action.custom_type in self.UNTRUSTED_TEXT_KINDS
+            and custom_type is not None
+            and custom_type in self.UNTRUSTED_TEXT_KINDS
         )
 
-    def _extract_text(self, action: GuardAction) -> Optional[str]:
+    def _extract_text(self, action: Action) -> str | None:
         """Extract text from action payload."""
-        data = action.custom_data
+        data: dict | None = getattr(action, "custom_data", None)
         if data is None:
             return None
         text = data.get("text")
@@ -123,7 +132,7 @@ class PromptInjectionGuard(Guard):
             return text
         return None
 
-    def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
+    def check(self, action: Action, context: GuardContext) -> GuardResult:
         if not self._config.enabled:
             return GuardResult.allow(self.name)
 
@@ -140,12 +149,13 @@ class PromptInjectionGuard(Guard):
 
         level, score, signals = _detect(text, self._config.max_scan_bytes)
 
-        details: Dict[str, Any] = {
+        details: dict[str, Any] = {
             "level": level.name.lower(),
             "score": score,
             "signals": signals,
         }
-        source = action.custom_data.get("source") if action.custom_data else None
+        custom_data: dict | None = getattr(action, "custom_data", None)
+        source = custom_data.get("source") if custom_data else None
         if source:
             details["source"] = source
 

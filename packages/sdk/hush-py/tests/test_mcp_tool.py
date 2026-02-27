@@ -1,7 +1,7 @@
 """Tests for McpToolGuard."""
 
 from clawdstrike.guards.mcp_tool import McpToolGuard, McpToolConfig
-from clawdstrike.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.base import FileAccessAction, McpToolAction, GuardContext, Severity
 
 
 class TestMcpToolConfig:
@@ -22,7 +22,7 @@ class TestMcpToolGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.mcp_tool("read_file", {"path": "/test"}),
+            McpToolAction(tool="read_file", args={"path": "/test"}),
             context,
         )
         assert result.allowed is True
@@ -36,13 +36,13 @@ class TestMcpToolGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.mcp_tool("list_directory", {}),
+            McpToolAction(tool="list_directory", args={}),
             context,
         )
         assert result.allowed is True
 
         result = guard.check(
-            GuardAction.mcp_tool("list_files", {}),
+            McpToolAction(tool="list_files", args={}),
             context,
         )
         assert result.allowed is True
@@ -57,7 +57,7 @@ class TestMcpToolGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.mcp_tool("execute_command", {"cmd": "rm -rf /"}),
+            McpToolAction(tool="execute_command", args={"cmd": "rm -rf /"}),
             context,
         )
         assert result.allowed is False
@@ -72,7 +72,7 @@ class TestMcpToolGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.mcp_tool("unknown_tool", {}),
+            McpToolAction(tool="unknown_tool", args={}),
             context,
         )
         assert result.allowed is False
@@ -86,7 +86,7 @@ class TestMcpToolGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.mcp_tool("unknown_tool", {}),
+            McpToolAction(tool="unknown_tool", args={}),
             context,
         )
         assert result.allowed is True
@@ -94,8 +94,8 @@ class TestMcpToolGuard:
     def test_handles_mcp_tool_actions(self) -> None:
         guard = McpToolGuard()
 
-        assert guard.handles(GuardAction.mcp_tool("tool", {})) is True
-        assert guard.handles(GuardAction.file_access("/test")) is False
+        assert guard.handles(McpToolAction(tool="tool", args={})) is True
+        assert guard.handles(FileAccessAction(path="/test")) is False
 
     def test_guard_name(self) -> None:
         guard = McpToolGuard()
@@ -110,7 +110,7 @@ class TestMcpToolGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.mcp_tool("any_tool", {}),
+            McpToolAction(tool="any_tool", args={}),
             context,
         )
         assert result.allowed is False
