@@ -111,7 +111,9 @@ Google's 2026 Cybersecurity Forecast calls it the **"Shadow Agent" crisis**: emp
 
 Your org provisioned 50 agents. Shadow IT spun up 50 more outside your asset inventory. One is exfiltrating `.env` secrets to an unclassified endpoint. Another is patching auth middleware with no peer review, no receipt, no rollback. A third just ran `chmod 777` against a production filesystem. Your SIEM shows green across the board because none of these actions generate the signals it was built to detect.
 
-**Logs tell you what happened after the damage is done. Clawdstrike stops it before the action fires and cryptographically proves what it decided.**
+**Logs tell you what happened. Clawdstrike stops it before it happens.**
+
+**Every decision is signed. Every receipt is non-repudiable. If it didn't get a signature, it didn't get permission.**
 
 ## What Clawdstrike Is
 
