@@ -163,6 +163,18 @@ flowchart LR
 
 ## Core Capabilities
 
+<p align="center">
+  <a href="#guard-stack"><strong>Guard Stack</strong></a>
+  &nbsp;&middot;&nbsp;
+  <a href="#jailbreak-detection"><strong>Jailbreak Detection</strong></a>
+  &nbsp;&middot;&nbsp;
+  <a href="#cryptographic-receipts"><strong>Receipts</strong></a>
+  &nbsp;&middot;&nbsp;
+  <a href="#multi-agent-security-primitives"><strong>Multi-Agent</strong></a>
+  &nbsp;&middot;&nbsp;
+  <a href="#irm--output-sanitization--watermarking--threat-intel"><strong>IRM &middot; Sanitization &middot; Watermarking &middot; Threat Intel</strong></a>
+</p>
+
 ### Guard Stack
 
 Composable, policy-driven security checks at the tool boundary. Each guard handles a specific threat surface and returns a verdict with evidence. Fail-fast or aggregate, your call.
@@ -181,6 +193,7 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 
 ---
 
+<a id="jailbreak-detection"></a>
 <table>
 <tr>
 <td width="50%">
@@ -231,6 +244,7 @@ When agents spawn agents, who controls whom? Clawdstrike's multi-agent layer pro
 
 ---
 
+<a id="irm--output-sanitization--watermarking--threat-intel"></a>
 <table>
 <tr>
 <td width="50%" valign="top">
