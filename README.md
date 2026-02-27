@@ -63,10 +63,11 @@
 
 ## Quick Start
 
-### Rust CLI
+### CLI
 
 ```bash
-cargo install --path crates/services/hush-cli
+brew tap backbay-labs/tap
+brew install clawdstrike
 
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 # → DENIED: forbidden_path guard matched pattern "**/.ssh/**"
