@@ -7,9 +7,13 @@ or a pinned remote reference when enabled via the remote-extends allowlist.
 
 - `clawdstrike:default`
 - `clawdstrike:ai-agent`
+- `clawdstrike:ai-agent-posture`
 - `clawdstrike:strict`
 - `clawdstrike:cicd`
 - `clawdstrike:permissive`
+- `clawdstrike:remote-desktop`
+- `clawdstrike:remote-desktop-permissive`
+- `clawdstrike:remote-desktop-strict`
 
 List them via:
 
@@ -20,7 +24,7 @@ clawdstrike policy list
 ## Extend a ruleset
 
 ```yaml
-version: "1.1.0"
+version: "1.2.0"
 name: My Policy
 extends: clawdstrike:default
 ```

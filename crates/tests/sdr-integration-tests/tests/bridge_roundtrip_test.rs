@@ -19,7 +19,7 @@ use hubble_bridge::hubble::proto::{self as hub};
 /// Helper: create a Tetragon Process with optional namespace.
 fn make_tetragon_process(binary: &str, ns: Option<&str>) -> tet::Process {
     tet::Process {
-        exec_id: None,
+        exec_id: String::new(),
         pid: Some(1234),
         uid: Some(0),
         cwd: "/".to_string(),
@@ -29,19 +29,20 @@ fn make_tetragon_process(binary: &str, ns: Option<&str>) -> tet::Process {
         start_time: None,
         auid: None,
         pod: ns.map(|n| tet::Pod {
-            namespace: Some(tet::Namespace {
-                value: n.to_string(),
-            }),
+            namespace: n.to_string(),
             name: "test-pod".to_string(),
             container: None,
             pod_labels: Default::default(),
-            workload: None,
+            workload: String::new(),
+            workload_kind: String::new(),
         }),
         docker: String::new(),
-        parent_exec_id: None,
+        parent_exec_id: String::new(),
+        refcnt: 0,
         cap: None,
         ns: None,
         tid: None,
+        process_credentials: None,
     }
 }
 
@@ -107,11 +108,12 @@ async fn test_tetragon_process_exec_mapping() {
         event: Some(Event::ProcessExec(tet::ProcessExec {
             process: Some(make_tetragon_process("/usr/bin/curl", Some("default"))),
             parent: Some(make_tetragon_process("/usr/bin/bash", Some("default"))),
-            ancestors: String::new(),
+            ancestors: vec![],
         })),
         node_name: "worker-1".to_string(),
         time: None,
-        aggregation_info_count: 0,
+        aggregation_info: None,
+        cluster_name: String::new(),
     };
 
     let fact = tetragon_bridge::mapper::map_event(&resp);
@@ -150,14 +152,19 @@ async fn test_tetragon_file_event_mapping() {
                 })),
                 label: "file".to_string(),
             }],
-            action: "Override".to_string(),
+            return_arg: None,
+            action: 5, // KPROBE_ACTION_OVERRIDE
+            kernel_stack_trace: vec![],
             policy_name: "sensitive-file-access".to_string(),
+            return_action: 0,
             message: "file access to /etc/shadow".to_string(),
             tags: vec!["security".to_string()],
+            user_stack_trace: vec![],
         })),
         node_name: "worker-2".to_string(),
         time: None,
-        aggregation_info_count: 0,
+        aggregation_info: None,
+        cluster_name: String::new(),
     };
 
     let fact = tetragon_bridge::mapper::map_event(&resp);
@@ -254,7 +261,8 @@ async fn test_tetragon_process_exit_mapping() {
         })),
         node_name: "worker-1".to_string(),
         time: None,
-        aggregation_info_count: 0,
+        aggregation_info: None,
+        cluster_name: String::new(),
     };
 
     let fact = tetragon_bridge::mapper::map_event(&resp);
@@ -281,7 +289,8 @@ async fn test_tetragon_none_event_mapping() {
         event: None,
         node_name: "worker-1".to_string(),
         time: None,
-        aggregation_info_count: 0,
+        aggregation_info: None,
+        cluster_name: String::new(),
     };
 
     let fact = tetragon_bridge::mapper::map_event(&resp);
@@ -321,11 +330,12 @@ async fn test_bridge_envelope_signature_valid() {
         event: Some(Event::ProcessExec(tet::ProcessExec {
             process: Some(make_tetragon_process("/usr/bin/ls", Some("production"))),
             parent: None,
-            ancestors: String::new(),
+            ancestors: vec![],
         })),
         node_name: "sig-test-node".to_string(),
         time: None,
-        aggregation_info_count: 0,
+        aggregation_info: None,
+        cluster_name: String::new(),
     };
 
     let tet_fact = tetragon_bridge::mapper::map_event(&tet_resp).unwrap();

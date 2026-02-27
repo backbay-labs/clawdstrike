@@ -1,18 +1,23 @@
 # Guards Reference
 
-Clawdstrike ships with seven built-in guards. Guards evaluate a `GuardAction` plus `GuardContext` and return a `GuardResult`.
+Clawdstrike ships with 12 built-in guards. Guards evaluate a `GuardAction` plus `GuardContext` and return a `GuardResult`.
 
 ## Built-in Guards
 
 | Guard | Purpose | Config key |
 |-------|---------|------------|
 | [ForbiddenPathGuard](./forbidden-path.md) | Block access to sensitive paths | `guards.forbidden_path` |
+| [PathAllowlistGuard](./path-allowlist.md) | Deny-by-default path allowlisting | `guards.path_allowlist` |
 | [EgressAllowlistGuard](./egress.md) | Control network egress | `guards.egress_allowlist` |
 | [SecretLeakGuard](./secret-leak.md) | Detect secrets in writes/patches | `guards.secret_leak` |
 | [PatchIntegrityGuard](./patch-integrity.md) | Block dangerous patches | `guards.patch_integrity` |
+| [ShellCommandGuard](./shell-command.md) | Validate shell commands against forbidden patterns | `guards.shell_command` |
 | [McpToolGuard](./mcp-tool.md) | Restrict MCP tool usage | `guards.mcp_tool` |
 | [PromptInjectionGuard](./prompt-injection.md) | Detect prompt-injection in untrusted text | `guards.prompt_injection` |
 | [JailbreakGuard](./jailbreak.md) | Detect jailbreak attempts with 4-layer analysis | `guards.jailbreak` |
+| [ComputerUseGuard](./computer-use.md) | CUA gateway with configurable enforcement modes | `guards.computer_use` |
+| [RemoteDesktopSideChannelGuard](./remote-desktop-side-channel.md) | Control remote desktop channels | `guards.remote_desktop_side_channel` |
+| [InputInjectionCapabilityGuard](./input-injection-capability.md) | Control input injection types and probes | `guards.input_injection_capability` |
 
 ## Prompt-security utilities (not policy guards)
 
@@ -23,47 +28,54 @@ Some prompt-security features are implemented as standalone utilities and are wi
 
 ## Action Coverage
 
-| Guard | FileAccess | FileWrite | Patch | NetworkEgress | McpTool | Custom |
-|-------|------------|-----------|-------|---------------|---------|--------|
-| ForbiddenPath | ✓ | ✓ | ✓ | | | |
-| EgressAllowlist | | | | ✓ | | |
-| SecretLeak | | ✓ | ✓ | | | |
-| PatchIntegrity | | | ✓ | | | |
-| McpTool | | | | | ✓ | |
-| PromptInjection | | | | | | ✓ (`untrusted_text`) |
-| Jailbreak | | | | | | ✓ (`user_input`) |
+| Guard | FileAccess | FileWrite | Patch | NetworkEgress | ShellCommand | McpTool | Custom |
+|-------|------------|-----------|-------|---------------|--------------|---------|--------|
+| ForbiddenPath | ✓ | ✓ | ✓ | | | | |
+| PathAllowlist | ✓ | ✓ | ✓ | | | | |
+| EgressAllowlist | | | | ✓ | | | |
+| SecretLeak | | ✓ | ✓ | | | | |
+| PatchIntegrity | | | ✓ | | | | |
+| ShellCommand | | | | | ✓ | | |
+| McpTool | | | | | | ✓ | |
+| PromptInjection | | | | | | | ✓ (`untrusted_text`) |
+| Jailbreak | | | | | | | ✓ (`user_input`) |
+| ComputerUse | | | | | | | ✓ (`remote.*`, `input.*`) |
+| RemoteDesktopSideChannel | | | | | | | ✓ (`remote.*` side channels) |
+| InputInjectionCapability | | | | | | | ✓ (`input.inject`) |
 
 ## Evaluation Order and Fail-Fast
 
 `HushEngine` evaluates applicable guards in this order:
 
 1. `forbidden_path`
-2. `egress_allowlist`
-3. `secret_leak`
-4. `patch_integrity`
-5. `mcp_tool`
-6. `prompt_injection` (only for `Custom("untrusted_text", ...)`)
-7. `jailbreak` (only for `Custom("user_input", ...)`)
-8. Custom/extra guards (if registered)
+2. `path_allowlist`
+3. `egress_allowlist`
+4. `secret_leak`
+5. `patch_integrity`
+6. `shell_command`
+7. `mcp_tool`
+8. `prompt_injection` (only for `Custom("untrusted_text", ...)`)
+9. `jailbreak` (only for `Custom("user_input", ...)`)
+10. `computer_use` (only for `Custom("remote.*"|"input.*", ...)`)
+11. `remote_desktop_side_channel` (only for `Custom("remote.*", ...)` side channels)
+12. `input_injection_capability` (only for `Custom("input.inject", ...)`)
+13. Custom/extra guards (if registered)
 
 If `settings.fail_fast: true`, evaluation stops on the first blocked result. Otherwise, all applicable guards run and the final verdict is the highest severity across results (block > warn > allow).
 
-## Defaults and "Disabling" a Guard
+## Defaults and Disabling a Guard
 
 If a guard config is omitted from the policy, the guard runs with its default configuration.
 
-There is no `enabled: false` toggle in the current policy schema. To effectively disable a guard, configure it to allow everything:
+Every guard config supports an `enabled` field. Set `enabled: false` to disable a guard:
 
 ```yaml
-# "Disable" ForbiddenPathGuard by having no patterns
 guards:
   forbidden_path:
-    patterns: []
+    enabled: false
 
-# "Disable" EgressAllowlist by allowing all
-guards:
   egress_allowlist:
-    default_action: allow
+    enabled: false
 ```
 
 ## Custom Guards
@@ -107,8 +119,10 @@ See [Custom Guards Guide](../../guides/custom-guards.md) for more details.
 
 Control what resources can be accessed:
 
-- **ForbiddenPathGuard** — Filesystem paths
+- **ForbiddenPathGuard** — Block sensitive filesystem paths
+- **PathAllowlistGuard** — Deny-by-default path allowlisting
 - **EgressAllowlistGuard** — Network destinations
+- **ShellCommandGuard** — Shell command validation
 - **McpToolGuard** — Tool invocations
 
 ### Content Analysis Guards
@@ -119,6 +133,14 @@ Analyze content for security issues:
 - **PatchIntegrityGuard** — Validate patch safety
 - **PromptInjectionGuard** — Detect instruction hijacking
 - **JailbreakGuard** — Detect safety bypass attempts
+
+### Computer Use (CUA) Guards
+
+Control AI agent interactions with remote desktops:
+
+- **ComputerUseGuard** — CUA gateway with enforcement modes
+- **RemoteDesktopSideChannelGuard** — Channel-level control (clipboard, file transfer, etc.)
+- **InputInjectionCapabilityGuard** — Input type validation and postcondition probes
 
 ### Output Processing
 

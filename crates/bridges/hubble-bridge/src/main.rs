@@ -51,6 +51,14 @@ struct Cli {
     /// Number of JetStream replicas for the envelope stream.
     #[arg(long, default_value = "1", env = "STREAM_REPLICAS")]
     stream_replicas: usize,
+
+    /// Maximum bytes retained for the Hubble JetStream stream (0 = unlimited).
+    #[arg(long, default_value = "1073741824", env = "STREAM_MAX_BYTES")]
+    stream_max_bytes: i64,
+
+    /// Maximum age retained for the Hubble JetStream stream in seconds (0 = unlimited).
+    #[arg(long, default_value = "86400", env = "STREAM_MAX_AGE_SECONDS")]
+    stream_max_age_seconds: u64,
 }
 
 fn parse_verdicts(verdicts: &[String]) -> Vec<FlowVerdict> {
@@ -88,6 +96,8 @@ async fn main() -> anyhow::Result<()> {
         namespace_allowlist: cli.namespace_allowlist,
         verdict_filter: parse_verdicts(&cli.verdict_filter),
         stream_replicas: cli.stream_replicas,
+        stream_max_bytes: cli.stream_max_bytes,
+        stream_max_age_seconds: cli.stream_max_age_seconds,
         ..BridgeConfig::default()
     };
 

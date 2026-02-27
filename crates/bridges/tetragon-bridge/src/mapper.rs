@@ -63,6 +63,11 @@ pub fn map_event(resp: &GetEventsResponse) -> Option<Value> {
 fn map_process_exec(exec: &proto::ProcessExec, node_name: &str) -> Value {
     let process_json = process_to_json(exec.process.as_ref());
     let parent_json = process_to_json(exec.parent.as_ref());
+    let ancestors_json: Vec<Value> = exec
+        .ancestors
+        .iter()
+        .map(|p| process_to_json(Some(p)))
+        .collect();
     let severity = classify_exec_severity(exec);
 
     json!({
@@ -72,7 +77,7 @@ fn map_process_exec(exec: &proto::ProcessExec, node_name: &str) -> Value {
         "node_name": node_name,
         "process": process_json,
         "parent": parent_json,
-        "ancestors": &exec.ancestors,
+        "ancestors": ancestors_json,
     })
 }
 
@@ -123,7 +128,7 @@ fn process_to_json(process: Option<&Process>) -> Value {
 
     let pod_json = p.pod.as_ref().map(|pod| {
         json!({
-            "namespace": pod.namespace.as_ref().map(|ns| &ns.value),
+            "namespace": &pod.namespace,
             "name": &pod.name,
             "container": pod.container.as_ref().map(|c| json!({
                 "id": &c.id,
@@ -134,10 +139,8 @@ fn process_to_json(process: Option<&Process>) -> Value {
                 })),
             })),
             "labels": &pod.pod_labels,
-            "workload": pod.workload.as_ref().map(|w| json!({
-                "name": &w.name,
-                "kind": &w.kind,
-            })),
+            "workload": &pod.workload,
+            "workload_kind": &pod.workload_kind,
         })
     });
 
@@ -160,13 +163,11 @@ fn classify_exec_severity(exec: &proto::ProcessExec) -> Severity {
     if let Some(process) = &exec.process {
         // Exec in a sensitive namespace = high baseline.
         if let Some(pod) = &process.pod {
-            if let Some(ns) = &pod.namespace {
-                if SENSITIVE_NAMESPACES
-                    .iter()
-                    .any(|s| ns.value.eq_ignore_ascii_case(s))
-                {
-                    severity = Severity::High;
-                }
+            if SENSITIVE_NAMESPACES
+                .iter()
+                .any(|s| pod.namespace.eq_ignore_ascii_case(s))
+            {
+                severity = Severity::High;
             }
         }
 
@@ -253,7 +254,7 @@ mod tests {
 
     fn make_process(binary: &str, ns: Option<&str>) -> proto::Process {
         proto::Process {
-            exec_id: None,
+            exec_id: String::new(),
             pid: Some(1234),
             uid: Some(0),
             cwd: "/".to_string(),
@@ -263,19 +264,20 @@ mod tests {
             start_time: None,
             auid: None,
             pod: ns.map(|n| proto::Pod {
-                namespace: Some(proto::Namespace {
-                    value: n.to_string(),
-                }),
+                namespace: n.to_string(),
                 name: "test-pod".to_string(),
                 container: None,
                 pod_labels: Default::default(),
-                workload: None,
+                workload: "test-workload".to_string(),
+                workload_kind: "Deployment".to_string(),
             }),
             docker: String::new(),
-            parent_exec_id: None,
+            parent_exec_id: String::new(),
+            refcnt: 0,
             cap: None,
             ns: None,
             tid: None,
+            process_credentials: None,
         }
     }
 
@@ -284,7 +286,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/usr/bin/bash", Some("kube-system"))),
             parent: None,
-            ancestors: String::new(),
+            ancestors: vec![],
         };
         assert_eq!(classify_exec_severity(&exec), Severity::High);
     }
@@ -294,7 +296,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/etc/shadow", None)),
             parent: None,
-            ancestors: String::new(),
+            ancestors: vec![],
         };
         assert_eq!(classify_exec_severity(&exec), Severity::Critical);
     }
@@ -304,7 +306,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/etc/shadow", Some("kube-system"))),
             parent: None,
-            ancestors: String::new(),
+            ancestors: vec![],
         };
         assert_eq!(classify_exec_severity(&exec), Severity::Critical);
     }
@@ -314,7 +316,7 @@ mod tests {
         let exec = proto::ProcessExec {
             process: Some(make_process("/usr/bin/ls", Some("default"))),
             parent: None,
-            ancestors: String::new(),
+            ancestors: vec![],
         };
         assert_eq!(classify_exec_severity(&exec), Severity::Medium);
     }
@@ -334,10 +336,14 @@ mod tests {
                 })),
                 label: "file".to_string(),
             }],
-            action: String::new(),
+            return_arg: None,
+            action: proto::KprobeAction::Unknown.into(),
+            kernel_stack_trace: vec![],
             policy_name: "file-access".to_string(),
+            return_action: proto::KprobeAction::Unknown.into(),
             message: String::new(),
             tags: vec![],
+            user_stack_trace: vec![],
         };
         assert_eq!(classify_kprobe_severity(&kprobe), Severity::Critical);
     }
@@ -360,7 +366,7 @@ mod tests {
                         daddr: "10.0.0.20".to_string(),
                         sport: 12345,
                         dport: 443,
-                        cookie: String::new(),
+                        cookie: 0,
                         state: String::new(),
                     })),
                     label: "sock".to_string(),
@@ -370,14 +376,19 @@ mod tests {
                         mount: String::new(),
                         path: "/etc/shadow".to_string(),
                         flags: String::new(),
+                        permission: String::new(),
                     })),
                     label: "path".to_string(),
                 },
             ],
-            action: String::new(),
+            return_arg: None,
+            action: proto::KprobeAction::Unknown.into(),
+            kernel_stack_trace: vec![],
             policy_name: "mixed-args".to_string(),
+            return_action: proto::KprobeAction::Unknown.into(),
             message: String::new(),
             tags: vec![],
+            user_stack_trace: vec![],
         };
         assert_eq!(classify_kprobe_severity(&kprobe), Severity::Critical);
     }
@@ -388,7 +399,8 @@ mod tests {
             event: None,
             node_name: "node-1".to_string(),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         };
         assert!(map_event(&resp).is_none());
     }
@@ -399,11 +411,12 @@ mod tests {
             event: Some(Event::ProcessExec(proto::ProcessExec {
                 process: Some(make_process("/usr/bin/curl", Some("default"))),
                 parent: None,
-                ancestors: String::new(),
+                ancestors: vec![],
             })),
             node_name: "worker-1".to_string(),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         };
         let fact = map_event(&resp);
         assert!(fact.is_some());

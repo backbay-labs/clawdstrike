@@ -9,7 +9,7 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 ## Install
 
 ```bash
-npm install @clawdstrike/claude @clawdstrike/adapter-core @clawdstrike/engine-local
+npm install @clawdstrike/claude @clawdstrike/engine-local
 ```
 
 ## Usage

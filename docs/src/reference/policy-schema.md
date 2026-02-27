@@ -69,11 +69,47 @@ guards:
     max_deletions: 500
     forbidden_patterns: ["(?i)rm\\s+-rf\\s+/"]
 
+  shell_command:
+    enabled: true
+    forbidden_patterns:
+      - '(?i)\brm\s+(-rf?|--recursive)\s+/\s*(?:$|\*)'
+      - '(?i)\bcurl\s+[^|]*\|\s*(bash|sh|zsh)\b'
+    enforce_forbidden_paths: true
+
   mcp_tool:
     allow: []
     block: ["shell_exec"]
     require_confirmation: ["git_push"]
     default_action: allow
+
+  prompt_injection:
+    enabled: true
+
+  jailbreak:
+    enabled: true
+
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - "remote.session.connect"
+      - "remote.session.disconnect"
+      - "input.inject"
+
+  remote_desktop_side_channel:
+    enabled: true
+    clipboard_enabled: false
+    file_transfer_enabled: false
+    session_share_enabled: false
+    audio_enabled: true
+    drive_mapping_enabled: false
+    printing_enabled: false
+    max_transfer_size_bytes: 104857600
+
+  input_injection_capability:
+    enabled: true
+    allowed_input_types: ["keyboard", "mouse"]
+    require_postcondition_probe: false
 
 settings:
   fail_fast: false

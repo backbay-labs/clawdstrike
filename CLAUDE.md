@@ -51,15 +51,23 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 **Rust Crates (`crates/`):**
 - `hush-core` - Cryptographic primitives (Ed25519, SHA-256, Keccak-256, Merkle trees, canonical JSON RFC 8785)
 - `clawdstrike` - Main library: guards, policy engine, receipts
+- `spine` - Signed envelopes, checkpoints, NATS transport, Merkle proofs
 - `hush-cli` - CLI binary (commands: `clawdstrike`, `hush`)
+- `spine-cli` - Spine protocol CLI tools
 - `hushd` - HTTP daemon for centralized enforcement (experimental)
+- `cloud-api` - Cloud API service (early-stage)
+- `eas-anchor` - Ethereum Attestation Service anchoring
 - `hush-proxy` - Network proxy utilities
 - `hush-wasm` - WebAssembly bindings
+- `hush-ffi` - C ABI foreign function interface for C#/Go/C bindings
 - `hush-certification` - Compliance templates
 - `hush-multi-agent` - Multi-agent orchestration
+- `hush-native` - Native Python extension (in `packages/sdk/hush-py/hush-native`)
+- `tetragon-bridge` - Tetragon gRPC to Spine bridge
+- `hubble-bridge` - Cilium Hubble to Spine bridge
 
 **TypeScript Packages (`packages/`):**
-- `hush-ts` - Core TypeScript SDK (`@backbay/sdk`)
+- `hush-ts` - Core TypeScript SDK (`@clawdstrike/sdk`)
 - `clawdstrike-policy` - Canonical policy engine (TS)
 - `clawdstrike-adapter-core` - Base adapter interface
 - Framework adapters: `clawdstrike-openclaw`, `clawdstrike-vercel-ai`, `clawdstrike-langchain`, `clawdstrike-claude`, `clawdstrike-openai`, `clawdstrike-opencode`
@@ -70,24 +78,29 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 ### Core Abstractions
 
 - **Guard** - A security check implementing the `Guard` trait (sync) or `AsyncGuard` trait (async)
-- **Policy** - YAML configuration (schema v1.1.0) with `extends` for inheritance
+- **Policy** - YAML configuration (schema v1.2.0, backward-compatible with v1.1.0) with `extends` for inheritance
 - **Receipt** - Ed25519-signed attestation of decision, policy, and evidence
 - **HushEngine** - Facade orchestrating guards and signing
 
-### Built-in Guards (7)
+### Built-in Guards (12)
 
 1. `ForbiddenPathGuard` - Blocks sensitive filesystem paths
-2. `EgressAllowlistGuard` - Controls network egress by domain
-3. `SecretLeakGuard` - Detects secrets in file writes
-4. `PatchIntegrityGuard` - Validates patch safety
-5. `McpToolGuard` - Restricts MCP tool invocations
-6. `PromptInjectionGuard` - Detects prompt injection
-7. `JailbreakGuard` - 4-layer detection (heuristic + statistical + ML + optional LLM-judge)
+2. `PathAllowlistGuard` - Allowlist-based path access control
+3. `EgressAllowlistGuard` - Controls network egress by domain
+4. `SecretLeakGuard` - Detects secrets in file writes
+5. `PatchIntegrityGuard` - Validates patch safety
+6. `ShellCommandGuard` - Blocks dangerous shell commands before execution
+7. `McpToolGuard` - Restricts MCP tool invocations
+8. `PromptInjectionGuard` - Detects prompt injection
+9. `JailbreakGuard` - 4-layer detection (heuristic + statistical + ML + optional LLM-judge)
+10. `ComputerUseGuard` - Controls CUA actions for remote desktop sessions
+11. `RemoteDesktopSideChannelGuard` - Side-channel controls for clipboard, audio, drive mapping, file transfer
+12. `InputInjectionCapabilityGuard` - Restricts input injection capabilities in CUA environments
 
 ### Policy System
 
-Policies are YAML files with schema version 1.1.0. They support inheritance via `extends`:
-- Built-in rulesets: `permissive`, `default`, `strict`, `ai-agent`, `cicd`
+Policies are YAML files with schema version 1.2.0 (backward-compatible with 1.1.0). They support inheritance via `extends`:
+- Built-in rulesets: `permissive`, `default`, `strict`, `ai-agent`, `cicd`, `ai-agent-posture`, `remote-desktop`, `remote-desktop-permissive`, `remote-desktop-strict`
 - Local file references
 - Remote URLs
 - Git refs

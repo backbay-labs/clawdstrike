@@ -7,6 +7,7 @@ Clawdstrike returns a `GuardResult` for an evaluated action.
 In Rust, a `GuardResult` contains:
 
 - `allowed` (`bool`)
+- `guard` (`String`) -- name of the guard that produced this result
 - `severity` (`info` | `warning` | `error` | `critical`)
 - `message` (string)
 - `details` (optional JSON)

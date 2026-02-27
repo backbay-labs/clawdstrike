@@ -29,14 +29,19 @@ Guards operate on `GuardAction`:
 
 ## Built-in guards
 
-Clawdstrike ships with:
+Clawdstrike ships with 12 built-in guards:
 
 - `ForbiddenPathGuard`
+- `PathAllowlistGuard`
 - `EgressAllowlistGuard`
 - `SecretLeakGuard`
 - `PatchIntegrityGuard`
+- `ShellCommandGuard`
 - `McpToolGuard`
 - `PromptInjectionGuard`
 - `JailbreakGuard`
+- `ComputerUseGuard`
+- `RemoteDesktopSideChannelGuard`
+- `InputInjectionCapabilityGuard`
 
 See the [Guards reference](../reference/guards/README.md) for configs and details.

@@ -1,10 +1,10 @@
-// Minimal Cilium Hubble flow API definitions.
-// Derived from github.com/cilium/cilium/api/v1/flow and observer
+// Minimal Cilium Hubble observer API definitions.
+// Derived from github.com/cilium/cilium/api/v1/observer and flow
 // Only the types needed for the bridge are included.
 
 syntax = "proto3";
 
-package flow;
+package observer;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
@@ -237,12 +237,13 @@ message Flow {
 // --- Observer service ---
 
 message GetFlowsRequest {
-  uint32 number = 1;
-  bool follow = 7;
+  uint64 number = 1;
+  bool follow = 3;
   repeated FlowFilter blacklist = 5;
   repeated FlowFilter whitelist = 6;
-  google.protobuf.Timestamp since = 8;
-  google.protobuf.Timestamp until = 9;
+  google.protobuf.Timestamp since = 7;
+  google.protobuf.Timestamp until = 8;
+  bool first = 9;
 }
 
 message FlowFilter {

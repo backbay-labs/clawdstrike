@@ -36,6 +36,12 @@ spec:
               value: {{ .Values.bridges.tetragon.grpcEndpoint | quote }}
             - name: RUST_LOG
               value: {{ .Values.bridges.tetragon.env.RUST_LOG | quote }}
+            - name: STREAM_MAX_BYTES
+              value: {{ .Values.bridges.tetragon.env.STREAM_MAX_BYTES | int64 | quote }}
+            - name: STREAM_MAX_AGE_SECONDS
+              value: {{ .Values.bridges.tetragon.env.STREAM_MAX_AGE_SECONDS | int64 | quote }}
+            - name: NATS_STARTUP_TIMEOUT_SECS
+              value: {{ .Values.bridges.tetragon.env.NATS_STARTUP_TIMEOUT_SECS | int64 | quote }}
           livenessProbe:
             exec:
               command: ["test", "-f", "/proc/1/status"]

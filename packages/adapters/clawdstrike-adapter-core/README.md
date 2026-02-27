@@ -16,7 +16,8 @@ npm install @clawdstrike/adapter-core
 import { BaseToolInterceptor, createSecurityContext } from "@clawdstrike/adapter-core";
 
 // Create an engine for policy evaluation (implementation-specific).
-// For example, use @clawdstrike/engine-local to shell out to `hush`.
+// Use @clawdstrike/engine-local (shell out to `hush`) or
+// @clawdstrike/engine-remote (HTTP calls to hushd daemon).
 const engine = /* ... */;
 
 const interceptor = new BaseToolInterceptor(engine, { blockOnViolation: true });
@@ -32,10 +33,10 @@ if (!preflight.proceed) throw new Error("Blocked by policy");
 dispatcher directly:
 
 ```ts
-import { createStrikeCell } from '@clawdstrike/engine-local';
 import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
 
-const engine = createStrikeCell({ policyRef: 'default' });
+// Use @clawdstrike/engine-local or @clawdstrike/engine-remote:
+const engine = /* createStrikeCell({ policyRef: 'default' }) */;
 const boundary = new GenericToolBoundary({ engine });
 
 const dispatchTool = wrapGenericToolDispatcher(
