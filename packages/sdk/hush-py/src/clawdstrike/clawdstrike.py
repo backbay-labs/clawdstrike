@@ -12,6 +12,7 @@ from clawdstrike.backend import EngineBackend, NativeEngineBackend, PurePythonBa
 from clawdstrike.exceptions import ConfigurationError
 from clawdstrike.guards.base import (
     Action,
+    CustomAction,
     FileAccessAction,
     FileWriteAction,
     GuardContext,
@@ -73,7 +74,8 @@ class Clawdstrike:
 
         # Try native backend first
         try:
-            backend = NativeEngineBackend.from_yaml(yaml_str)
+            base_path_str = str(path) if path is not None else None
+            backend = NativeEngineBackend.from_yaml(yaml_str, base_path=base_path_str)
             return cls(backend, cwd=cwd)
         except Exception:
             pass
@@ -129,7 +131,7 @@ class Clawdstrike:
             policy = Policy()
         else:
             import copy
-            policy = copy.copy(policy)
+            policy = copy.deepcopy(policy)
         policy.settings.fail_fast = fail_fast
         return cls(PurePythonBackend(PolicyEngine(policy)), cwd=cwd)
 
@@ -174,15 +176,21 @@ class Clawdstrike:
             report = self._backend.check_mcp_tool(action.tool, action.args, ctx)
         elif isinstance(action, PatchAction):
             report = self._backend.check_patch(action.path, action.diff, ctx)
+        elif isinstance(action, CustomAction) and action.action_type == "untrusted_text":
+            source = action.data.get("source") if action.data else None
+            text = action.data.get("text", "") if action.data else ""
+            report = self._backend.check_untrusted_text(source, text, ctx)
         else:
-            # CustomAction or unknown — fall through to pure python engine if possible
+            # CustomAction or unknown — fall through to engine directly
+            gc = self._context(**context_kwargs)
             if isinstance(self._backend, PurePythonBackend):
-                gc = self._context(**context_kwargs)
                 results = self._backend._engine.check(action, gc)
                 return self._decide(results)
-            # Native backend doesn't support custom actions via report dict,
-            # but we can still return an allow decision
-            return Decision(status=DecisionStatus.ALLOW)
+            # Native backend: evaluate as untrusted_text with action data
+            data_str = str(getattr(action, "data", ""))
+            report = self._backend.check_untrusted_text(
+                action.action_type, data_str, ctx,
+            )
         return self._decide_from_report(report)
 
     def check_file(

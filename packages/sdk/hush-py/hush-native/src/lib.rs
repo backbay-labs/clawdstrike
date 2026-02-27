@@ -361,6 +361,15 @@ fn build_guard_context(
         if let Some(v) = d.get_item("agent_id")? {
             gc = gc.with_agent_id(v.extract::<String>()?);
         }
+        if let Some(v) = d.get_item("metadata")? {
+            let json_mod = PyModule::import(d.py(), "json")?;
+            let json_str: String = json_mod
+                .call_method1("dumps", (v,))?
+                .extract()?;
+            let value: serde_json::Value = serde_json::from_str(&json_str)
+                .map_err(|e| PyValueError::new_err(format!("Invalid metadata JSON: {}", e)))?;
+            gc.metadata = Some(value);
+        }
     }
     Ok(gc)
 }
@@ -377,9 +386,14 @@ struct NativeEngine {
 #[pymethods]
 impl NativeEngine {
     #[staticmethod]
-    fn from_yaml(yaml_str: &str) -> PyResult<Self> {
-        let policy = clawdstrike::Policy::from_yaml_with_extends(yaml_str, None)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    #[pyo3(signature = (yaml_str, base_path=None))]
+    fn from_yaml(yaml_str: &str, base_path: Option<&str>) -> PyResult<Self> {
+        let bp = base_path.map(std::path::PathBuf::from);
+        let policy = clawdstrike::Policy::from_yaml_with_extends(
+            yaml_str,
+            bp.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let engine = clawdstrike::HushEngine::with_policy(policy);
         Ok(Self { engine })
     }

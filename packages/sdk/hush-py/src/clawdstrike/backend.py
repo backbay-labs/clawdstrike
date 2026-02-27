@@ -26,6 +26,9 @@ class EngineBackend(Protocol):
     def check_network(self, host: str, port: int, ctx: dict[str, Any]) -> dict: ...
     def check_mcp_tool(self, tool: str, args: dict[str, Any], ctx: dict[str, Any]) -> dict: ...
     def check_patch(self, path: str, diff: str, ctx: dict[str, Any]) -> dict: ...
+    def check_untrusted_text(
+        self, source: str | None, text: str, ctx: dict[str, Any],
+    ) -> dict: ...
     def policy_yaml(self) -> str: ...
 
 
@@ -56,15 +59,22 @@ class NativeEngineBackend:
     def check_patch(self, path: str, diff: str, ctx: dict[str, Any]) -> dict:
         return self._engine.check_patch(path, diff, ctx)
 
+    def check_untrusted_text(
+        self, source: str | None, text: str, ctx: dict[str, Any],
+    ) -> dict:
+        return self._engine.check_untrusted_text(source, text, ctx)
+
     def policy_yaml(self) -> str:
         return self._engine.policy_yaml()
 
     @classmethod
-    def from_yaml(cls, yaml_str: str) -> NativeEngineBackend:
+    def from_yaml(
+        cls, yaml_str: str, *, base_path: str | None = None,
+    ) -> NativeEngineBackend:
         from clawdstrike.native import get_native_module
 
         mod = get_native_module()
-        engine = mod.NativeEngine.from_yaml(yaml_str)
+        engine = mod.NativeEngine.from_yaml(yaml_str, base_path)
         return cls(engine)
 
     @classmethod
@@ -95,23 +105,33 @@ def _results_to_report_dict(results: list) -> dict:
         })
 
     # Determine overall result (same aggregation logic as Decision.from_guard_results)
+    severity_order = {
+        Severity.CRITICAL: 4,
+        Severity.ERROR: 3,
+        Severity.WARNING: 2,
+        Severity.INFO: 1,
+    }
     denies = [r for r in results if not r.allowed]
+    warns = [r for r in results if r.allowed and r.severity == Severity.WARNING]
+
+    def _sev_value(sev: Any) -> str:
+        return sev.value if isinstance(sev, Severity) else str(sev)
+
     if denies:
-        severity_order = {
-            Severity.CRITICAL: 4,
-            Severity.ERROR: 3,
-            Severity.WARNING: 2,
-            Severity.INFO: 1,
-        }
         worst = max(denies, key=lambda r: severity_order.get(r.severity, 0))
         overall = {
             "allowed": False,
             "guard": worst.guard,
-            "severity": (
-                worst.severity.value
-                if isinstance(worst.severity, Severity)
-                else str(worst.severity)
-            ),
+            "severity": _sev_value(worst.severity),
+            "message": worst.message,
+            "details": worst.details,
+        }
+    elif warns:
+        worst = max(warns, key=lambda r: severity_order.get(r.severity, 0))
+        overall = {
+            "allowed": True,
+            "guard": worst.guard,
+            "severity": "warning",
             "message": worst.message,
             "details": worst.details,
         }
@@ -188,6 +208,19 @@ class PurePythonBackend:
         from clawdstrike.guards.base import GuardContext, PatchAction
 
         action = PatchAction(path=path, diff=diff)
+        context = GuardContext(**ctx)
+        results = self._engine.check(action, context)
+        return _results_to_report_dict(results)
+
+    def check_untrusted_text(
+        self, source: str | None, text: str, ctx: dict[str, Any],
+    ) -> dict:
+        from clawdstrike.guards.base import CustomAction, GuardContext
+
+        action = CustomAction(
+            action_type="untrusted_text",
+            data={"source": source, "text": text},
+        )
         context = GuardContext(**ctx)
         results = self._engine.check(action, context)
         return _results_to_report_dict(results)
