@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any, Optional
 

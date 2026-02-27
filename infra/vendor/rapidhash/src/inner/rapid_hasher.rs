@@ -125,6 +125,7 @@ impl<const AVALANCHE: bool, const SPONGE: bool, const COMPACT: bool, const PROTE
     #[inline(always)]
     fn finish(&self) -> u64 {
         // written to minimise the LLVM-IR lines, as rust should remove the const if statements
+        #[allow(clippy::collapsible_else_if)]
         if SPONGE {
             if !AVALANCHE {
                 if self.sponge_len > 0 {

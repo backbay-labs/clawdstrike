@@ -15,23 +15,25 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type HidReportInfo;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "HidReportItem")]
     #[doc = "Get the `items` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `HidReportInfo`*"]
+    #[doc = "*This API requires the following crate features to be activated: `HidReportInfo`, `HidReportItem`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "items")]
-    pub fn get_items(this: &HidReportInfo) -> Option<::js_sys::Array>;
+    pub fn get_items(this: &HidReportInfo) -> Option<::js_sys::Array<HidReportItem>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "HidReportItem")]
     #[doc = "Change the `items` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `HidReportInfo`*"]
+    #[doc = "*This API requires the following crate features to be activated: `HidReportInfo`, `HidReportItem`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "items")]
-    pub fn set_items(this: &HidReportInfo, val: &::wasm_bindgen::JsValue);
+    pub fn set_items(this: &HidReportInfo, val: &[HidReportItem]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `reportId` field of this object."]
     #[doc = ""]
@@ -65,8 +67,9 @@ impl HidReportInfo {
         ret
     }
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "HidReportItem")]
     #[deprecated = "Use `set_items()` instead."]
-    pub fn items(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn items(&mut self, val: &[HidReportItem]) -> &mut Self {
         self.set_items(val);
         self
     }

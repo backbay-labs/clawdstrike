@@ -143,9 +143,6 @@ def classify_cua_action(suite: Dict[str, Any], tool_name: str, params: Dict[str,
     if not action_token:
         return None, fail_code(suite, "missing_metadata", "OCLAW_CUA_MISSING_METADATA")
 
-    # Map action token to kind using the event_type_map
-    event_type_map = suite.get("event_type_map", {})
-
     # Build a token-to-kind lookup from the suite
     token_to_kind = _build_token_map(cua_action_kinds)
     kind = token_to_kind.get(action_token)
@@ -223,7 +220,6 @@ def evaluate_case(suite: Dict[str, Any], case: Dict[str, Any]) -> Dict[str, Any]
     source = query.get("source", "openclaw")
     tool_name = query.get("tool_name", "")
     params = query.get("params", {})
-    session_id = query.get("session_id", "")
 
     # Special handling for parity cases
     if source == "parity":

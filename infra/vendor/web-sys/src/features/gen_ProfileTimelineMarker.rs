@@ -157,6 +157,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ProfileTimelineMarker`*"]
     #[wasm_bindgen(method, setter = "unixTime")]
     pub fn set_unix_time(this: &ProfileTimelineMarker, val: f64);
+    #[doc = "Change the `unixTime` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ProfileTimelineMarker`*"]
+    #[wasm_bindgen(method, setter = "unixTime")]
+    pub fn set_unix_time_u32(this: &ProfileTimelineMarker, val: u32);
+    #[doc = "Change the `unixTime` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ProfileTimelineMarker`*"]
+    #[wasm_bindgen(method, setter = "unixTime")]
+    pub fn set_unix_time_f64(this: &ProfileTimelineMarker, val: f64);
     #[cfg(feature = "ProfileTimelineWorkerOperationType")]
     #[doc = "Get the `workerOperation` field of this object."]
     #[doc = ""]

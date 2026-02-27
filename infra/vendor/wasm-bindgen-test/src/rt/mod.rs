@@ -99,8 +99,9 @@ use core::future::Future;
 use core::panic::AssertUnwindSafe;
 use core::pin::Pin;
 use core::task::{self, Poll};
-use js_sys::{Array, Function, Promise};
+use js_sys::{Array, Function, Number, Promise, Undefined};
 pub use wasm_bindgen;
+
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
@@ -230,7 +231,7 @@ impl Display for TestResult {
             TestResult::Ok => write!(f, "ok"),
             TestResult::Err(_) => write!(f, "FAIL"),
             TestResult::Ignored(None) => write!(f, "ignored"),
-            TestResult::Ignored(Some(reason)) => write!(f, "ignored, {}", reason),
+            TestResult::Ignored(Some(reason)) => write!(f, "ignored, {reason}"),
         }
     }
 }
@@ -242,7 +243,7 @@ trait Formatter {
     /// Log the result of a test, either passing or failing.
     fn log_test(&self, is_bench: bool, name: &str, result: &TestResult) {
         if !is_bench {
-            self.writeln(&format!("test {} ... {}", name, result));
+            self.writeln(&format!("test {name} ... {result}"));
         }
     }
 
@@ -393,16 +394,19 @@ impl Context {
             let noun = if tests.len() == 1 { "test" } else { "tests" };
             self.state
                 .formatter
-                .writeln(&format!("running {} {}", tests.len(), noun));
+                .writeln(&format!("running {} {noun}", tests.len()));
         }
 
         // Execute all our test functions through their Wasm shims (unclear how
         // to pass native function pointers around here). Each test will
         // execute one of the `execute_*` tests below which will push a
         // future onto our `remaining` list, which we'll process later.
-        let cx_arg = (self as *const Context as u32).into();
+        let cx_arg = Number::from(self as *const Context as u32);
         for test in tests {
-            match Function::from(test).call1(&JsValue::null(), &cx_arg) {
+            match test
+                .unchecked_into::<Function<fn(Number) -> Undefined>>()
+                .call(&JsValue::null(), (&cx_arg,))
+            {
                 Ok(_) => {}
                 Err(e) => {
                     panic!(
@@ -499,7 +503,7 @@ impl Termination for () {
 
 impl<E: core::fmt::Debug> Termination for Result<(), E> {
     fn into_js_result(self) -> Result<(), JsValue> {
-        self.map_err(|e| JsError::new(&format!("{:?}", e)).into())
+        self.map_err(|e| JsError::new(&format!("{e:?}")).into())
     }
 }
 
@@ -610,6 +614,8 @@ impl Future for ExecuteTests {
                 Some(test) => test,
                 None => break,
             };
+            // Output test invocation log for debugging failures with --nocapture
+            console_log!("Invoking test: {}", test.name);
             let result = match test.future.as_mut().poll(cx) {
                 Poll::Ready(result) => result,
                 Poll::Pending => {
@@ -701,13 +707,12 @@ impl State {
              {} failed; \
              {} ignored; \
              {} filtered out\
-             {}\n",
+             {finished_in}\n",
             if failures.is_empty() { "ok" } else { "FAILED" },
             self.succeeded_count.get(),
             failures.len(),
             self.ignored_count.get(),
-            self.filtered_count.get(),
-            finished_in,
+            self.filtered_count.get()
         ));
     }
 
@@ -795,7 +800,7 @@ struct TestFuture<F> {
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(catch)]
-    fn __wbg_test_invoke(f: &mut dyn FnMut()) -> Result<(), JsValue>;
+    fn __wbg_test_invoke(f: &ScopedClosure<dyn FnMut()>) -> Result<(), JsValue>;
 }
 
 impl<F: Future<Output = Result<(), JsValue>>> Future for TestFuture<F> {
@@ -805,14 +810,16 @@ impl<F: Future<Output = Result<(), JsValue>>> Future for TestFuture<F> {
         let output = self.output.clone();
         // Use `new_unchecked` here to project our own pin, and we never
         // move `test` so this should be safe
-        let test = unsafe { Pin::map_unchecked_mut(self, |me| &mut me.test) };
+        let test: Pin<&mut F> = unsafe { Pin::map_unchecked_mut(self, |me| &mut me.test) };
         let mut future_output = None;
         let result = CURRENT_OUTPUT.set(&output, || {
             let mut test = Some(test);
-            __wbg_test_invoke(&mut || {
+            let mut func = AssertUnwindSafe(|| {
                 let test = test.take().unwrap_throw();
                 future_output = Some(test.poll(cx))
-            })
+            });
+            let closure = ScopedClosure::borrow_mut(&mut func);
+            __wbg_test_invoke(&closure)
         });
         match (result, future_output) {
             (_, Some(Poll::Ready(result))) => Poll::Ready(result),

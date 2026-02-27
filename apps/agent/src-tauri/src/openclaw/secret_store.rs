@@ -6,11 +6,40 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use zeroize::Zeroize;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct GatewaySecrets {
     pub token: Option<String>,
     pub device_token: Option<String>,
+}
+
+impl GatewaySecrets {
+    /// Zeroize all token fields in place, overwriting the heap-allocated string
+    /// contents with zeroes before dropping.
+    fn zeroize_tokens(&mut self) {
+        if let Some(ref mut t) = self.token {
+            t.zeroize();
+        }
+        if let Some(ref mut t) = self.device_token {
+            t.zeroize();
+        }
+    }
+}
+
+impl Drop for GatewaySecrets {
+    fn drop(&mut self) {
+        self.zeroize_tokens();
+    }
+}
+
+impl std::fmt::Debug for GatewaySecrets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GatewaySecrets")
+            .field("token", &self.token.as_ref().map(|_| "[REDACTED]"))
+            .field("device_token", &self.device_token.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +49,34 @@ pub enum SecretStoreMode {
     MemoryFallback,
 }
 
+/// Persistent secret storage for OpenClaw gateway credentials.
+///
+/// The store prefers the OS keyring (via the `keyring` crate) for at-rest
+/// encryption.  When the keyring is unavailable — common in headless CI,
+/// containers, or sandboxed environments — it falls back to an in-memory
+/// `HashMap`.
+///
+/// ## Fallback behaviour
+///
+/// The fallback is **non-sticky**: every [`set`](Self::set) call re-attempts
+/// the keyring first.  If the keyring recovers (e.g. after a transient D-Bus
+/// timeout), `fallback_active` is cleared and the entry is removed from the
+/// in-memory map.  This avoids the previous bug where a single keyring
+/// failure permanently pinned all future operations to the memory path.
+///
+/// ## Memory protection
+///
+/// Token fields inside [`GatewaySecrets`] are zeroized on [`Drop`] and when
+/// entries are explicitly removed from or replaced in the in-memory map.
+/// This limits the window in which plaintext credentials are observable on
+/// the heap.
+///
+/// **Security trade-off:** in fallback mode, tokens still reside in
+/// process-accessible heap memory for the duration of the session.  A
+/// sufficiently privileged attacker with read access to process memory could
+/// extract them.  The long-term plan is to use an encrypted in-memory vault
+/// (e.g. `ring::aead` with a process-lifetime ephemeral key) so that tokens
+/// are never stored in plaintext, even in fallback mode.
 #[derive(Clone)]
 pub struct OpenClawSecretStore {
     service_name: String,
@@ -55,38 +112,63 @@ impl OpenClawSecretStore {
                 .unwrap_or_default();
         }
 
-        if let Some(value) = self.get_keyring(gateway_id) {
-            return value;
+        match self.get_keyring(gateway_id) {
+            Some(value) => value,
+            None => {
+                // Transient keyring read failure — fall back to the
+                // write-through memory copy so we never return empty
+                // credentials when the keyring is temporarily unavailable.
+                self.memory
+                    .read()
+                    .await
+                    .get(gateway_id)
+                    .cloned()
+                    .unwrap_or_default()
+            }
         }
-
-        self.memory
-            .read()
-            .await
-            .get(gateway_id)
-            .cloned()
-            .unwrap_or_default()
     }
 
     pub async fn set(&self, gateway_id: &str, secrets: GatewaySecrets) -> Result<()> {
-        if self.set_keyring(gateway_id, &secrets).is_err() {
+        // Always attempt the keyring first — even if a previous call failed —
+        // so that a recovered keyring is picked up immediately.
+        // Always keep a write-through memory copy so that transient keyring
+        // read failures in `get()` can fall back to a valid credential instead
+        // of returning empty/default secrets.
+        {
+            let mut mem = self.memory.write().await;
+            if let Some(mut old) = mem.remove(gateway_id) {
+                old.zeroize_tokens();
+            }
+            mem.insert(gateway_id.to_string(), secrets.clone());
+        }
+
+        if self.set_keyring(gateway_id, &secrets).is_ok() {
+            // Keyring succeeded — clear fallback flag.  The memory copy is
+            // intentionally kept as a read-through cache for resilience
+            // against transient keyring read failures.
+            if self.fallback_active.swap(false, Ordering::Relaxed) {
+                tracing::info!(
+                    gateway_id = %gateway_id,
+                    "Keyring recovered — leaving in-memory fallback mode"
+                );
+            }
+        } else {
             self.fallback_active.store(true, Ordering::Relaxed);
             tracing::warn!(
                 gateway_id = %gateway_id,
                 "Falling back to in-memory OpenClaw secret storage"
             );
+            // Memory copy was already written above (write-through).
         }
-
-        // Keep an in-memory mirror so transient keyring read failures do not drop active sessions.
-        self.memory
-            .write()
-            .await
-            .insert(gateway_id.to_string(), secrets);
 
         Ok(())
     }
 
     pub async fn delete(&self, gateway_id: &str) -> Result<()> {
-        self.memory.write().await.remove(gateway_id);
+        // Remove from memory first; Drop impl zeroizes the token fields.
+        if let Some(mut old) = self.memory.write().await.remove(gateway_id) {
+            old.zeroize_tokens();
+        }
 
         if self.delete_keyring(gateway_id).is_err() {
             self.fallback_active.store(true, Ordering::Relaxed);

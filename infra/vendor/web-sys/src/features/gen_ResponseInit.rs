@@ -20,6 +20,22 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ResponseInit`*"]
     #[wasm_bindgen(method, setter = "headers")]
     pub fn set_headers(this: &ResponseInit, val: &::wasm_bindgen::JsValue);
+    #[cfg(feature = "Headers")]
+    #[doc = "Change the `headers` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ResponseInit`*"]
+    #[wasm_bindgen(method, setter = "headers")]
+    pub fn set_headers_headers(this: &ResponseInit, val: &Headers);
+    #[doc = "Change the `headers` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ResponseInit`*"]
+    #[wasm_bindgen(method, setter = "headers")]
+    pub fn set_headers_str_sequence_sequence(this: &ResponseInit, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `headers` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ResponseInit`*"]
+    #[wasm_bindgen(method, setter = "headers")]
+    pub fn set_headers_record_from_str_to_str(this: &ResponseInit, val: &::js_sys::Object);
     #[doc = "Get the `status` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ResponseInit`*"]

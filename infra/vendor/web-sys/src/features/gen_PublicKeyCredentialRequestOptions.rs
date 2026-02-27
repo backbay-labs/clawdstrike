@@ -55,7 +55,7 @@ extern "C" {
     #[wasm_bindgen(method, getter = "attestationFormats")]
     pub fn get_attestation_formats(
         this: &PublicKeyCredentialRequestOptions,
-    ) -> Option<::js_sys::Array>;
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `attestationFormats` field of this object."]
     #[doc = ""]
@@ -66,7 +66,7 @@ extern "C" {
     #[wasm_bindgen(method, setter = "attestationFormats")]
     pub fn set_attestation_formats(
         this: &PublicKeyCredentialRequestOptions,
-        val: &::wasm_bindgen::JsValue,
+        val: &[::js_sys::JsString],
     );
     #[doc = "Get the `challenge` field of this object."]
     #[doc = ""]
@@ -78,6 +78,27 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptions`*"]
     #[wasm_bindgen(method, setter = "challenge")]
     pub fn set_challenge(this: &PublicKeyCredentialRequestOptions, val: &::js_sys::Object);
+    #[doc = "Change the `challenge` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptions`*"]
+    #[wasm_bindgen(method, setter = "challenge")]
+    pub fn set_challenge_buffer_source(
+        this: &PublicKeyCredentialRequestOptions,
+        val: &::js_sys::Object,
+    );
+    #[doc = "Change the `challenge` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptions`*"]
+    #[wasm_bindgen(method, setter = "challenge")]
+    pub fn set_challenge_u8_slice(this: &PublicKeyCredentialRequestOptions, val: &mut [u8]);
+    #[doc = "Change the `challenge` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptions`*"]
+    #[wasm_bindgen(method, setter = "challenge")]
+    pub fn set_challenge_u8_array(
+        this: &PublicKeyCredentialRequestOptions,
+        val: &::js_sys::Uint8Array,
+    );
     #[cfg(feature = "AuthenticationExtensionsClientInputs")]
     #[doc = "Get the `extensions` field of this object."]
     #[doc = ""]
@@ -103,7 +124,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "hints")]
-    pub fn get_hints(this: &PublicKeyCredentialRequestOptions) -> Option<::js_sys::Array>;
+    pub fn get_hints(
+        this: &PublicKeyCredentialRequestOptions,
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `hints` field of this object."]
     #[doc = ""]
@@ -112,7 +135,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "hints")]
-    pub fn set_hints(this: &PublicKeyCredentialRequestOptions, val: &::wasm_bindgen::JsValue);
+    pub fn set_hints(this: &PublicKeyCredentialRequestOptions, val: &[::js_sys::JsString]);
     #[doc = "Get the `rpId` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptions`*"]
@@ -161,6 +184,24 @@ impl PublicKeyCredentialRequestOptions {
         ret.set_challenge(challenge);
         ret
     }
+    #[doc = "Construct a new `PublicKeyCredentialRequestOptions`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptions`*"]
+    pub fn new_with_u8_slice(challenge: &mut [u8]) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_challenge_u8_slice(challenge);
+        ret
+    }
+    #[doc = "Construct a new `PublicKeyCredentialRequestOptions`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptions`*"]
+    pub fn new_with_u8_array(challenge: &::js_sys::Uint8Array) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_challenge_u8_array(challenge);
+        ret
+    }
     #[deprecated = "Use `set_allow_credentials()` instead."]
     pub fn allow_credentials(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
         self.set_allow_credentials(val);
@@ -174,7 +215,7 @@ impl PublicKeyCredentialRequestOptions {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_attestation_formats()` instead."]
-    pub fn attestation_formats(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn attestation_formats(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_attestation_formats(val);
         self
     }
@@ -191,7 +232,7 @@ impl PublicKeyCredentialRequestOptions {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_hints()` instead."]
-    pub fn hints(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn hints(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_hints(val);
         self
     }

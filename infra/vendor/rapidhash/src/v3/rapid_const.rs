@@ -26,11 +26,11 @@ pub const fn rapidhash_v3_seeded(data: &[u8], secrets: &RapidSecrets) -> u64 {
 ///
 /// Compile time arguments:
 /// - `AVALANCHE`: Perform an extra mix step to avalanche the bits for higher hash quality. Enabled
-///     by default to match the C++ implementation.
+///   by default to match the C++ implementation.
 /// - `COMPACT`: Generates fewer instructions at compile time with less manual loop unrolling, but
-///     may be slower on some platforms. Disabled by default.
+///   may be slower on some platforms. Disabled by default.
 /// - `PROTECTED`: Slightly stronger hash quality and DoS resistance by performing two extra XOR
-///     instructions on every mix step. Disabled by default.
+///   instructions on every mix step. Disabled by default.
 #[inline(always)]
 pub const fn rapidhash_v3_inline<const AVALANCHE: bool, const COMPACT: bool, const PROTECTED: bool>(data: &[u8], secrets: &RapidSecrets) -> u64 {
     rapidhash_core::<AVALANCHE, COMPACT, PROTECTED>(secrets.seed, &secrets.secrets, data)
@@ -46,9 +46,9 @@ pub const fn rapidhash_v3_inline<const AVALANCHE: bool, const COMPACT: bool, con
 ///
 /// Compile time arguments:
 /// - `AVALANCHE`: Perform an extra mix step to avalanche the bits for higher hash quality. Enabled
-///     by default to match the C++ implementation.
+///   by default to match the C++ implementation.
 /// - `PROTECTED`: Slightly stronger hash quality and DoS resistance by performing two extra XOR
-///     instructions on every mix step. Disabled by default.
+///   instructions on every mix step. Disabled by default.
 #[inline(always)]
 pub const fn rapidhash_v3_micro_inline<const AVALANCHE: bool, const PROTECTED: bool>(data: &[u8], seed: &RapidSecrets) -> u64 {
     rapidhash_micro_core::<AVALANCHE, PROTECTED>(seed.seed, &seed.secrets, data)
@@ -65,9 +65,9 @@ pub const fn rapidhash_v3_micro_inline<const AVALANCHE: bool, const PROTECTED: b
 ///
 /// Compile time arguments:
 /// - `AVALANCHE`: Perform an extra mix step to avalanche the bits for higher hash quality. Enabled
-///     by default to match the C++ implementation.
+///   by default to match the C++ implementation.
 /// - `PROTECTED`: Slightly stronger hash quality and DoS resistance by performing two extra XOR
-///     instructions on every mix step. Disabled by default.
+///   instructions on every mix step. Disabled by default.
 #[inline(always)]
 pub const fn rapidhash_v3_nano_inline<const AVALANCHE: bool, const PROTECTED: bool>(data: &[u8], seed: &RapidSecrets) -> u64 {
     rapidhash_nano_core::<AVALANCHE, PROTECTED>(seed.seed, &seed.secrets, data)

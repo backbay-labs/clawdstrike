@@ -13,7 +13,6 @@ The adapter can run in two modes:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import suppress
 from typing import Any, Optional

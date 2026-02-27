@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.90.0"
 name = "cranelift-frontend"
-version = "0.128.3"
+version = "0.128.4"
 authors = ["The Cranelift Project Developers"]
 build = false
 autolib = false
@@ -42,7 +42,7 @@ name = "cranelift_frontend"
 path = "src/lib.rs"
 
 [dependencies.cranelift-codegen]
-version = "0.128.3"
+version = "0.128.4"
 features = [
     "std",
     "unwind",
@@ -66,7 +66,7 @@ features = ["union"]
 version = "0.13.0"
 
 [dev-dependencies.cranelift-codegen]
-version = "0.128.3"
+version = "0.128.4"
 features = [
     "std",
     "unwind",

@@ -20,6 +20,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `RtcCertificateExpiration`*"]
     #[wasm_bindgen(method, setter = "expires")]
     pub fn set_expires(this: &RtcCertificateExpiration, val: f64);
+    #[doc = "Change the `expires` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcCertificateExpiration`*"]
+    #[wasm_bindgen(method, setter = "expires")]
+    pub fn set_expires_u32(this: &RtcCertificateExpiration, val: u32);
+    #[doc = "Change the `expires` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcCertificateExpiration`*"]
+    #[wasm_bindgen(method, setter = "expires")]
+    pub fn set_expires_f64(this: &RtcCertificateExpiration, val: f64);
 }
 impl RtcCertificateExpiration {
     #[doc = "Construct a new `RtcCertificateExpiration`."]

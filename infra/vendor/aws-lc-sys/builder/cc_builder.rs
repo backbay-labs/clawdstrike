@@ -20,8 +20,8 @@ mod win_x86_64;
 use crate::nasm_builder::NasmBuilder;
 use crate::{
     cargo_env, disable_jitter_entropy, emit_warning, env_var_to_bool, execute_command,
-    get_crate_cflags, is_no_asm, optional_env_optional_crate_target, optional_env_target, out_dir,
-    requested_c_std, set_env_for_target, target, target_arch, target_env, target_os, target_vendor,
+    get_crate_cc, get_crate_cflags, get_crate_cxx, is_no_asm, out_dir, requested_c_std,
+    set_env_for_target, target, target_arch, target_env, target_os, target_vendor,
     test_clang_cl_command, CStdRequested, OutputLibType,
 };
 use std::cell::Cell;
@@ -211,10 +211,10 @@ impl CcBuilder {
             }
         }
 
-        if let Some(cc) = optional_env_optional_crate_target("CC") {
+        if let Some(cc) = get_crate_cc() {
             set_env_for_target("CC", &cc);
         }
-        if let Some(cxx) = optional_env_optional_crate_target("CXX") {
+        if let Some(cxx) = get_crate_cxx() {
             set_env_for_target("CXX", &cxx);
         }
 
@@ -358,8 +358,7 @@ impl CcBuilder {
     }
 
     pub fn prepare_builder(&self) -> cc::Build {
-        let cflags = get_crate_cflags();
-        if !cflags.is_empty() {
+        if let Some(cflags) = get_crate_cflags() {
             set_env_for_target("CFLAGS", cflags);
         }
 
@@ -431,7 +430,7 @@ impl CcBuilder {
             option.apply_cc(&mut je_builder);
         }
 
-        if let Some(original_cflags) = optional_env_target("CFLAGS") {
+        if let Some(original_cflags) = get_crate_cflags() {
             let mut new_cflags = original_cflags.clone();
             if is_like_msvc {
                 new_cflags.push_str(" -Od");
@@ -450,7 +449,10 @@ impl CcBuilder {
             // Certain MacOS system headers are guarded by _POSIX_C_SOURCE and _DARWIN_C_SOURCE
             je_builder.define("_DARWIN_C_SOURCE", "1");
         }
-        je_builder.pic(true);
+        // Only enable PIC on non-Windows targets. Windows doesn't support -fPIC.
+        if target_os() != "windows" {
+            je_builder.pic(true);
+        }
         if is_like_msvc {
             je_builder.flag("-Od").flag("-W4").flag("-DYNAMICBASE");
         } else {
@@ -651,6 +653,14 @@ impl CcBuilder {
     // This should be kept in alignment with the same check performed by the CMake build.
     // See: https://github.com/search?q=repo%3Aaws%2Faws-lc%20check_run&type=code
     fn memcmp_check(&self) {
+        // This check compiles, links, and executes a test program. When cross-compiling
+        // (HOST != TARGET), we cannot execute the resulting binary, so we skip this check.
+        // This also avoids linker configuration issues with cross-compilation toolchains
+        // (e.g., cross-rs Darwin toolchains that set invalid -fuse-ld= flags in CFLAGS).
+        if cargo_env("HOST") != target() {
+            return;
+        }
+
         let basename = "memcmp_invalid_stripped_check";
         let exec_path = out_dir().join(basename);
         let memcmp_build = cc::Build::default();
@@ -705,24 +715,21 @@ impl CcBuilder {
             memcmp_compile_result.stdout
         );
 
-        // We can only execute the binary when the host and target platforms match.
-        if cargo_env("HOST") == target() {
-            let result = execute_command(exec_path.as_os_str(), &[]);
-            assert!(
-                result.status,
-                "### COMPILER BUG DETECTED ###\nYour compiler ({}) is not supported due to a memcmp related bug reported in \
-                https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189. \
-                We strongly recommend against using this compiler. \n\
-                EXECUTED: {}\n\
-                ERROR: {}\n\
-                OUTPUT: {}\n\
-                ",
-                memcmp_compiler.path().display(),
-                memcmp_compile_result.executed,
-                memcmp_compile_result.stderr,
-                memcmp_compile_result.stdout
-            );
-        }
+        let result = execute_command(exec_path.as_os_str(), &[]);
+        assert!(
+            result.status,
+            "### COMPILER BUG DETECTED ###\nYour compiler ({}) is not supported due to a memcmp related bug reported in \
+            https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189. \
+            We strongly recommend against using this compiler. \n\
+            EXECUTED: {}\n\
+            ERROR: {}\n\
+            OUTPUT: {}\n\
+            ",
+            memcmp_compiler.path().display(),
+            memcmp_compile_result.executed,
+            memcmp_compile_result.stderr,
+            memcmp_compile_result.stdout
+        );
         let _ = fs::remove_file(exec_path);
     }
     fn run_compiler_checks(&self, cc_build: &mut cc::Build) {
@@ -774,7 +781,7 @@ impl crate::Builder for CcBuilder {
         if target_os() == "windows"
             && target_arch() == "aarch64"
             && target_env() == "msvc"
-            && optional_env_optional_crate_target("CC").is_none()
+            && get_crate_cc().is_none()
             && test_clang_cl_command()
         {
             set_env_for_target("CC", "clang-cl");

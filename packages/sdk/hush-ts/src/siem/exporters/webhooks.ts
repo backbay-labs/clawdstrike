@@ -40,6 +40,7 @@ export interface WebhookExporterConfig extends Partial<ExporterConfig> {
   excludeGuards?: string[];
 }
 
+/** @experimental */
 export class WebhookExporter extends BaseExporter {
   readonly name = "webhooks";
   readonly schema = SchemaFormat.Native;
@@ -71,11 +72,12 @@ export class WebhookExporter extends BaseExporter {
     }
 
     let exported = 0;
+    let filtered = 0;
     const errors: ExportError[] = [];
 
     for (const event of events) {
       if (!this.shouldNotify(event)) {
-        exported += 1;
+        filtered += 1;
         continue;
       }
 
@@ -91,7 +93,7 @@ export class WebhookExporter extends BaseExporter {
       }
     }
 
-    return { exported, failed: errors.length, errors };
+    return { exported, failed: errors.length, filtered, errors };
   }
 
   private shouldNotify(event: SecurityEvent): boolean {

@@ -4,6 +4,7 @@ mod rapid_const;
 #[cfg(any(feature = "std", docsrs))]
 mod rapid_file;
 mod seed;
+mod rapid_stream_hasher;
 
 #[doc(inline)]
 pub use rapid_const::*;
@@ -11,6 +12,9 @@ pub use rapid_const::*;
 #[doc(inline)]
 #[cfg(any(feature = "std", docsrs))]
 pub use rapid_file::*;
+
+#[doc(inline)]
+pub use rapid_stream_hasher::*;
 
 #[doc(inline)]
 pub use seed::*;

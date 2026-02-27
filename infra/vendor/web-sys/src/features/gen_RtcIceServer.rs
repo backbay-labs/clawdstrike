@@ -52,6 +52,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `RtcIceServer`*"]
     #[wasm_bindgen(method, setter = "urls")]
     pub fn set_urls(this: &RtcIceServer, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `urls` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIceServer`*"]
+    #[wasm_bindgen(method, setter = "urls")]
+    pub fn set_urls_str(this: &RtcIceServer, val: &str);
+    #[doc = "Change the `urls` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcIceServer`*"]
+    #[wasm_bindgen(method, setter = "urls")]
+    pub fn set_urls_str_sequence(this: &RtcIceServer, val: &::wasm_bindgen::JsValue);
     #[doc = "Get the `username` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `RtcIceServer`*"]

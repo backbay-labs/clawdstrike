@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 
 /// Re-export generated protobuf types.
 pub mod proto {
-    tonic::include_proto!("flow");
+    tonic::include_proto!("observer");
 }
 
 pub use proto::observer_client::ObserverClient;
@@ -45,6 +45,7 @@ impl HubbleClient {
     ) -> Result<tonic::Streaming<GetFlowsResponse>> {
         let request = GetFlowsRequest {
             number: 0, // 0 = no limit when following
+            first: false,
             follow,
             whitelist,
             blacklist,

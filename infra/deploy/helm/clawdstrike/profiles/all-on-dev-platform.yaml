@@ -13,7 +13,7 @@ namespace:
 
 spine:
   image:
-    tag: "allon-20260212-1"
+    tag: "spine-checkpointer-48ec2077d540c2d30ba4228934f9fbffcc15e00d"
   checkpointer:
     logSeedHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     streamReplicas: 1
@@ -22,17 +22,21 @@ spine:
 
 hushd:
   image:
-    tag: "allon-20260212-1"
+    tag: "48ec2077d540c2d30ba4228934f9fbffcc15e00d"
   auth:
     enabled: false
   persistence:
     enabled: false
 
+nats:
+  jetstream:
+    maxFileStoreBytes: "25769803776"
+
 bridges:
   tetragon:
     enabled: true
     image:
-      tag: "allon-20260212-2"
+      tag: "48ec2077d540c2d30ba4228934f9fbffcc15e00d"
     grpcEndpoint: "http://localhost:54321"
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
@@ -42,8 +46,8 @@ bridges:
     enabled: true
     replicas: 1
     image:
-      tag: "allon-20260212-2"
-    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
+      tag: "48ec2077d540c2d30ba4228934f9fbffcc15e00d"
+    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:4245"
     nodeSelector:
       kubernetes.io/arch: amd64
 
@@ -51,26 +55,26 @@ ingress:
   enabled: true
   className: alb
   commonAnnotations:
-    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
     alb.ingress.kubernetes.io/group.name: clawdstrike
   hushd:
     enabled: true
-    host: hushd.clawdstrike.dev.backbay.industries
+    host: hushd.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /health
-      external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.industries
+      external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.io
   proofsApi:
     enabled: true
-    host: proofs-api.clawdstrike.dev.backbay.industries
+    host: proofs-api.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /healthz
-      external-dns.alpha.kubernetes.io/hostname: proofs-api.clawdstrike.dev.backbay.industries
+      external-dns.alpha.kubernetes.io/hostname: proofs-api.clawdstrike.dev.backbay.io
 
 serviceMonitor:
   enabled: true

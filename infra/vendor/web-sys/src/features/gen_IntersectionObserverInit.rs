@@ -42,6 +42,19 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `IntersectionObserverInit`*"]
     #[wasm_bindgen(method, setter = "threshold")]
     pub fn set_threshold(this: &IntersectionObserverInit, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `threshold` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IntersectionObserverInit`*"]
+    #[wasm_bindgen(method, setter = "threshold")]
+    pub fn set_threshold_f64(this: &IntersectionObserverInit, val: f64);
+    #[doc = "Change the `threshold` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `IntersectionObserverInit`*"]
+    #[wasm_bindgen(method, setter = "threshold")]
+    pub fn set_threshold_f64_sequence(
+        this: &IntersectionObserverInit,
+        val: &::wasm_bindgen::JsValue,
+    );
 }
 impl IntersectionObserverInit {
     #[doc = "Construct a new `IntersectionObserverInit`."]

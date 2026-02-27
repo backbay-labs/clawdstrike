@@ -2,7 +2,7 @@
  * @clawdstrike/openclaw - Hook Handler Tests
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { homedir } from 'os';
 import toolGuardHandler, { initialize as initToolGuard } from '../src/hooks/tool-guard/handler.js';
 import agentBootstrapHandler, { initialize as initBootstrap } from '../src/hooks/agent-bootstrap/handler.js';
@@ -116,7 +116,7 @@ describe('Tool Guard Hook', () => {
       context: {
         sessionId: 'test-session',
         toolResult: {
-          toolName: 'api_call',
+          toolName: 'custom_action',
           params: {},
           result: { data: 'safe content' },
         },

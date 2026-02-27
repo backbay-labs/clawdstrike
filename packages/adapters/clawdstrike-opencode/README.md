@@ -7,7 +7,7 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 ## Install
 
 ```bash
-npm install @clawdstrike/opencode @clawdstrike/adapter-core @clawdstrike/engine-local
+npm install @clawdstrike/opencode @clawdstrike/engine-local
 ```
 
 ## Usage

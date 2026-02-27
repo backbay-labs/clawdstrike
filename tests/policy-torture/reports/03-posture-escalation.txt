@@ -1,8 +1,0 @@
-Policy test: Policy Torture 03 - Posture Escalation
-Policy: tests/policy-torture/suites/../policies/posture-escalation.yaml
-Total: 3, Passed: 3, Failed: 0
-Guard coverage: 1/8 (12.50%)
-Coverage (by guard):
-  egress_allowlist: 1
-  posture: 1
-Exit: 0

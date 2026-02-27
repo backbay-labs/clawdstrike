@@ -52,6 +52,7 @@ interface HecResponse {
   ackId?: number;
 }
 
+/** @experimental */
 export class SplunkExporter extends BaseExporter {
   readonly name = "splunk";
   readonly schema = SchemaFormat.Native;

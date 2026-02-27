@@ -50,6 +50,24 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `TrackEventInit`*"]
     #[wasm_bindgen(method, setter = "track")]
     pub fn set_track(this: &TrackEventInit, val: Option<&::js_sys::Object>);
+    #[cfg(feature = "VideoTrack")]
+    #[doc = "Change the `track` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `TrackEventInit`*"]
+    #[wasm_bindgen(method, setter = "track")]
+    pub fn set_track_opt_video_track(this: &TrackEventInit, val: Option<&VideoTrack>);
+    #[cfg(feature = "AudioTrack")]
+    #[doc = "Change the `track` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `TrackEventInit`*"]
+    #[wasm_bindgen(method, setter = "track")]
+    pub fn set_track_opt_audio_track(this: &TrackEventInit, val: Option<&AudioTrack>);
+    #[cfg(feature = "TextTrack")]
+    #[doc = "Change the `track` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `TrackEventInit`*"]
+    #[wasm_bindgen(method, setter = "track")]
+    pub fn set_track_opt_text_track(this: &TrackEventInit, val: Option<&TextTrack>);
 }
 impl TrackEventInit {
     #[doc = "Construct a new `TrackEventInit`."]

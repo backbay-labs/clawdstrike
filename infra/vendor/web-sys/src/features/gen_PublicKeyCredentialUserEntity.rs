@@ -52,6 +52,21 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialUserEntity`*"]
     #[wasm_bindgen(method, setter = "id")]
     pub fn set_id(this: &PublicKeyCredentialUserEntity, val: &::js_sys::Object);
+    #[doc = "Change the `id` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialUserEntity`*"]
+    #[wasm_bindgen(method, setter = "id")]
+    pub fn set_id_buffer_source(this: &PublicKeyCredentialUserEntity, val: &::js_sys::Object);
+    #[doc = "Change the `id` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialUserEntity`*"]
+    #[wasm_bindgen(method, setter = "id")]
+    pub fn set_id_u8_slice(this: &PublicKeyCredentialUserEntity, val: &mut [u8]);
+    #[doc = "Change the `id` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialUserEntity`*"]
+    #[wasm_bindgen(method, setter = "id")]
+    pub fn set_id_u8_array(this: &PublicKeyCredentialUserEntity, val: &::js_sys::Uint8Array);
 }
 impl PublicKeyCredentialUserEntity {
     #[doc = "Construct a new `PublicKeyCredentialUserEntity`."]
@@ -63,6 +78,28 @@ impl PublicKeyCredentialUserEntity {
         ret.set_name(name);
         ret.set_display_name(display_name);
         ret.set_id(id);
+        ret
+    }
+    #[doc = "Construct a new `PublicKeyCredentialUserEntity`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialUserEntity`*"]
+    pub fn new_with_u8_slice(name: &str, display_name: &str, id: &mut [u8]) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_display_name(display_name);
+        ret.set_id_u8_slice(id);
+        ret
+    }
+    #[doc = "Construct a new `PublicKeyCredentialUserEntity`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialUserEntity`*"]
+    pub fn new_with_u8_array(name: &str, display_name: &str, id: &::js_sys::Uint8Array) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_display_name(display_name);
+        ret.set_id_u8_array(id);
         ret
     }
     #[deprecated = "Use `set_icon()` instead."]

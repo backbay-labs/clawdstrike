@@ -31,7 +31,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "bytesAcknowledged")]
-    pub fn set_bytes_acknowledged(this: &WebTransportSendStreamStats, val: f64);
+    pub fn set_bytes_acknowledged(this: &WebTransportSendStreamStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `bytesAcknowledged` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportSendStreamStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "bytesAcknowledged")]
+    pub fn set_bytes_acknowledged_f64(this: &WebTransportSendStreamStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `bytesSent` field of this object."]
     #[doc = ""]
@@ -49,7 +58,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "bytesSent")]
-    pub fn set_bytes_sent(this: &WebTransportSendStreamStats, val: f64);
+    pub fn set_bytes_sent(this: &WebTransportSendStreamStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `bytesSent` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportSendStreamStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "bytesSent")]
+    pub fn set_bytes_sent_f64(this: &WebTransportSendStreamStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `bytesWritten` field of this object."]
     #[doc = ""]
@@ -67,7 +85,16 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "bytesWritten")]
-    pub fn set_bytes_written(this: &WebTransportSendStreamStats, val: f64);
+    pub fn set_bytes_written(this: &WebTransportSendStreamStats, val: u32);
+    #[cfg(web_sys_unstable_apis)]
+    #[doc = "Change the `bytesWritten` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `WebTransportSendStreamStats`*"]
+    #[doc = ""]
+    #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
+    #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
+    #[wasm_bindgen(method, setter = "bytesWritten")]
+    pub fn set_bytes_written_f64(this: &WebTransportSendStreamStats, val: f64);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `timestamp` field of this object."]
     #[doc = ""]
@@ -102,19 +129,19 @@ impl WebTransportSendStreamStats {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_bytes_acknowledged()` instead."]
-    pub fn bytes_acknowledged(&mut self, val: f64) -> &mut Self {
+    pub fn bytes_acknowledged(&mut self, val: u32) -> &mut Self {
         self.set_bytes_acknowledged(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_bytes_sent()` instead."]
-    pub fn bytes_sent(&mut self, val: f64) -> &mut Self {
+    pub fn bytes_sent(&mut self, val: u32) -> &mut Self {
         self.set_bytes_sent(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_bytes_written()` instead."]
-    pub fn bytes_written(&mut self, val: f64) -> &mut Self {
+    pub fn bytes_written(&mut self, val: u32) -> &mut Self {
         self.set_bytes_written(val);
         self
     }

@@ -42,7 +42,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "autoGainControl")]
-    pub fn get_auto_gain_control(this: &MediaTrackCapabilities) -> Option<::js_sys::Array>;
+    pub fn get_auto_gain_control(
+        this: &MediaTrackCapabilities,
+    ) -> Option<::js_sys::Array<::js_sys::Boolean>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `autoGainControl` field of this object."]
     #[doc = ""]
@@ -51,7 +53,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "autoGainControl")]
-    pub fn set_auto_gain_control(this: &MediaTrackCapabilities, val: &::wasm_bindgen::JsValue);
+    pub fn set_auto_gain_control(this: &MediaTrackCapabilities, val: &[::js_sys::Boolean]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `backgroundBlur` field of this object."]
     #[doc = ""]
@@ -60,7 +62,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "backgroundBlur")]
-    pub fn get_background_blur(this: &MediaTrackCapabilities) -> Option<::js_sys::Array>;
+    pub fn get_background_blur(
+        this: &MediaTrackCapabilities,
+    ) -> Option<::js_sys::Array<::js_sys::Boolean>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `backgroundBlur` field of this object."]
     #[doc = ""]
@@ -69,7 +73,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "backgroundBlur")]
-    pub fn set_background_blur(this: &MediaTrackCapabilities, val: &::wasm_bindgen::JsValue);
+    pub fn set_background_blur(this: &MediaTrackCapabilities, val: &[::js_sys::Boolean]);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "ULongRange")]
     #[doc = "Get the `channelCount` field of this object."]
@@ -116,7 +120,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "echoCancellation")]
-    pub fn get_echo_cancellation(this: &MediaTrackCapabilities) -> Option<::js_sys::Array>;
+    pub fn get_echo_cancellation(
+        this: &MediaTrackCapabilities,
+    ) -> Option<::js_sys::Array<::js_sys::Boolean>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `echoCancellation` field of this object."]
     #[doc = ""]
@@ -125,7 +131,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "echoCancellation")]
-    pub fn set_echo_cancellation(this: &MediaTrackCapabilities, val: &::wasm_bindgen::JsValue);
+    pub fn set_echo_cancellation(this: &MediaTrackCapabilities, val: &[::js_sys::Boolean]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `facingMode` field of this object."]
     #[doc = ""]
@@ -134,7 +140,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "facingMode")]
-    pub fn get_facing_mode(this: &MediaTrackCapabilities) -> Option<::js_sys::Array>;
+    pub fn get_facing_mode(
+        this: &MediaTrackCapabilities,
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `facingMode` field of this object."]
     #[doc = ""]
@@ -143,7 +151,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "facingMode")]
-    pub fn set_facing_mode(this: &MediaTrackCapabilities, val: &::wasm_bindgen::JsValue);
+    pub fn set_facing_mode(this: &MediaTrackCapabilities, val: &[::js_sys::JsString]);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "DoubleRange")]
     #[doc = "Get the `frameRate` field of this object."]
@@ -230,7 +238,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "noiseSuppression")]
-    pub fn get_noise_suppression(this: &MediaTrackCapabilities) -> Option<::js_sys::Array>;
+    pub fn get_noise_suppression(
+        this: &MediaTrackCapabilities,
+    ) -> Option<::js_sys::Array<::js_sys::Boolean>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `noiseSuppression` field of this object."]
     #[doc = ""]
@@ -239,7 +249,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "noiseSuppression")]
-    pub fn set_noise_suppression(this: &MediaTrackCapabilities, val: &::wasm_bindgen::JsValue);
+    pub fn set_noise_suppression(this: &MediaTrackCapabilities, val: &[::js_sys::Boolean]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `resizeMode` field of this object."]
     #[doc = ""]
@@ -248,7 +258,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "resizeMode")]
-    pub fn get_resize_mode(this: &MediaTrackCapabilities) -> Option<::js_sys::Array>;
+    pub fn get_resize_mode(
+        this: &MediaTrackCapabilities,
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `resizeMode` field of this object."]
     #[doc = ""]
@@ -257,7 +269,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "resizeMode")]
-    pub fn set_resize_mode(this: &MediaTrackCapabilities, val: &::wasm_bindgen::JsValue);
+    pub fn set_resize_mode(this: &MediaTrackCapabilities, val: &[::js_sys::JsString]);
     #[cfg(web_sys_unstable_apis)]
     #[cfg(feature = "ULongRange")]
     #[doc = "Get the `sampleRate` field of this object."]
@@ -341,13 +353,13 @@ impl MediaTrackCapabilities {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_auto_gain_control()` instead."]
-    pub fn auto_gain_control(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn auto_gain_control(&mut self, val: &[::js_sys::Boolean]) -> &mut Self {
         self.set_auto_gain_control(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_background_blur()` instead."]
-    pub fn background_blur(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn background_blur(&mut self, val: &[::js_sys::Boolean]) -> &mut Self {
         self.set_background_blur(val);
         self
     }
@@ -366,13 +378,13 @@ impl MediaTrackCapabilities {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_echo_cancellation()` instead."]
-    pub fn echo_cancellation(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn echo_cancellation(&mut self, val: &[::js_sys::Boolean]) -> &mut Self {
         self.set_echo_cancellation(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_facing_mode()` instead."]
-    pub fn facing_mode(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn facing_mode(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_facing_mode(val);
         self
     }
@@ -405,13 +417,13 @@ impl MediaTrackCapabilities {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_noise_suppression()` instead."]
-    pub fn noise_suppression(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn noise_suppression(&mut self, val: &[::js_sys::Boolean]) -> &mut Self {
         self.set_noise_suppression(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_resize_mode()` instead."]
-    pub fn resize_mode(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn resize_mode(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_resize_mode(val);
         self
     }

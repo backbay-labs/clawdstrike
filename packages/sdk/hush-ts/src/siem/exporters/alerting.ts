@@ -132,6 +132,9 @@ class PagerDutyClient {
       this.autoResolveTimer = setInterval(() => {
         void this.checkAutoResolve();
       }, 60_000);
+      if (typeof this.autoResolveTimer === 'object' && 'unref' in this.autoResolveTimer) {
+        this.autoResolveTimer.unref();
+      }
     }
   }
 
@@ -304,6 +307,9 @@ class OpsGenieClient {
     this.heartbeatTimer = setInterval(() => {
       void this.pingHeartbeat();
     }, intervalMs);
+    if (typeof this.heartbeatTimer === 'object' && 'unref' in this.heartbeatTimer) {
+      this.heartbeatTimer.unref();
+    }
     void this.pingHeartbeat();
   }
 
@@ -320,6 +326,7 @@ class OpsGenieClient {
   }
 }
 
+/** @experimental */
 export class AlertingExporter extends BaseExporter {
   readonly name = "alerting";
   readonly schema = SchemaFormat.Native;
@@ -377,8 +384,9 @@ export class AlertingExporter extends BaseExporter {
 
   async export(events: SecurityEvent[]): Promise<ExportResult> {
     const alertEvents = events.filter(e => this.shouldAlert(e));
+    const filtered = events.length - alertEvents.length;
     if (alertEvents.length === 0) {
-      return { exported: 0, failed: 0, errors: [] };
+      return { exported: 0, failed: 0, filtered, errors: [] };
     }
 
     const errors: ExportError[] = [];
@@ -397,7 +405,7 @@ export class AlertingExporter extends BaseExporter {
       }
     }
 
-    return { exported, failed: errors.length, errors };
+    return { exported, failed: errors.length, filtered, errors };
   }
 
   private async sendAlerts(event: SecurityEvent): Promise<void> {
@@ -419,6 +427,7 @@ export class AlertingExporter extends BaseExporter {
   }
 
   async shutdown(): Promise<void> {
+    await super.shutdown();
     this.pagerduty?.shutdown();
     this.opsgenie?.stopHeartbeat();
   }

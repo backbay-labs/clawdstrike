@@ -37,6 +37,8 @@ nats:
   replicas: 1
   jetstream:
     enabled: true
+    # -- JetStream max file store bytes (0 lets NATS auto-compute from disk)
+    maxFileStoreBytes: 0
     storage:
       size: 10Gi
       storageClassName: ""
@@ -178,6 +180,9 @@ bridges:
     dnsPolicy: ClusterFirstWithHostNet
     env:
       RUST_LOG: "info,tetragon_bridge=debug"
+      STREAM_MAX_BYTES: 1073741824
+      STREAM_MAX_AGE_SECONDS: 86400
+      NATS_STARTUP_TIMEOUT_SECS: 90
     resources:
       requests:
         cpu: 50m
@@ -195,11 +200,13 @@ bridges:
     image:
       repository: ghcr.io/backbay-labs/clawdstrike/hubble-bridge
       tag: ""
-    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
+    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:4245"
     hostNetwork: false
     dnsPolicy: ClusterFirst
     env:
       RUST_LOG: "info,hubble_bridge=debug"
+      STREAM_MAX_BYTES: 1073741824
+      STREAM_MAX_AGE_SECONDS: 86400
     resources:
       requests:
         cpu: 50m

@@ -15,27 +15,29 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type PublicKeyCredentialRequestOptionsJson;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PublicKeyCredentialDescriptorJson")]
     #[doc = "Get the `allowCredentials` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptionsJson`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialDescriptorJson`, `PublicKeyCredentialRequestOptionsJson`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "allowCredentials")]
     pub fn get_allow_credentials(
         this: &PublicKeyCredentialRequestOptionsJson,
-    ) -> Option<::js_sys::Array>;
+    ) -> Option<::js_sys::Array<PublicKeyCredentialDescriptorJson>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PublicKeyCredentialDescriptorJson")]
     #[doc = "Change the `allowCredentials` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialRequestOptionsJson`*"]
+    #[doc = "*This API requires the following crate features to be activated: `PublicKeyCredentialDescriptorJson`, `PublicKeyCredentialRequestOptionsJson`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "allowCredentials")]
     pub fn set_allow_credentials(
         this: &PublicKeyCredentialRequestOptionsJson,
-        val: &::wasm_bindgen::JsValue,
+        val: &[PublicKeyCredentialDescriptorJson],
     );
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `attestation` field of this object."]
@@ -67,7 +69,7 @@ extern "C" {
     #[wasm_bindgen(method, getter = "attestationFormats")]
     pub fn get_attestation_formats(
         this: &PublicKeyCredentialRequestOptionsJson,
-    ) -> Option<::js_sys::Array>;
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `attestationFormats` field of this object."]
     #[doc = ""]
@@ -78,7 +80,7 @@ extern "C" {
     #[wasm_bindgen(method, setter = "attestationFormats")]
     pub fn set_attestation_formats(
         this: &PublicKeyCredentialRequestOptionsJson,
-        val: &::wasm_bindgen::JsValue,
+        val: &[::js_sys::JsString],
     );
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `challenge` field of this object."]
@@ -131,7 +133,9 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "hints")]
-    pub fn get_hints(this: &PublicKeyCredentialRequestOptionsJson) -> Option<::js_sys::Array>;
+    pub fn get_hints(
+        this: &PublicKeyCredentialRequestOptionsJson,
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `hints` field of this object."]
     #[doc = ""]
@@ -140,7 +144,7 @@ extern "C" {
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "hints")]
-    pub fn set_hints(this: &PublicKeyCredentialRequestOptionsJson, val: &::wasm_bindgen::JsValue);
+    pub fn set_hints(this: &PublicKeyCredentialRequestOptionsJson, val: &[::js_sys::JsString]);
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Get the `rpId` field of this object."]
     #[doc = ""]
@@ -215,8 +219,9 @@ impl PublicKeyCredentialRequestOptionsJson {
         ret
     }
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "PublicKeyCredentialDescriptorJson")]
     #[deprecated = "Use `set_allow_credentials()` instead."]
-    pub fn allow_credentials(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn allow_credentials(&mut self, val: &[PublicKeyCredentialDescriptorJson]) -> &mut Self {
         self.set_allow_credentials(val);
         self
     }
@@ -228,7 +233,7 @@ impl PublicKeyCredentialRequestOptionsJson {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_attestation_formats()` instead."]
-    pub fn attestation_formats(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn attestation_formats(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_attestation_formats(val);
         self
     }
@@ -247,7 +252,7 @@ impl PublicKeyCredentialRequestOptionsJson {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_hints()` instead."]
-    pub fn hints(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn hints(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_hints(val);
         self
     }

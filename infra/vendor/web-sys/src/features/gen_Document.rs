@@ -622,6 +622,20 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `Document`*"]
     pub fn set_onfocus(this: &Document, value: Option<&::js_sys::Function>);
+    # [wasm_bindgen (structural , method , getter , js_class = "Document" , js_name = oncancel)]
+    #[doc = "Getter for the `oncancel` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Document/oncancel)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Document`*"]
+    pub fn oncancel(this: &Document) -> Option<::js_sys::Function>;
+    # [wasm_bindgen (structural , method , setter , js_class = "Document" , js_name = oncancel)]
+    #[doc = "Setter for the `oncancel` field of this object."]
+    #[doc = ""]
+    #[doc = "[MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Document/oncancel)"]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Document`*"]
+    pub fn set_oncancel(this: &Document, value: Option<&::js_sys::Function>);
     # [wasm_bindgen (structural , method , getter , js_class = "Document" , js_name = onauxclick)]
     #[doc = "Getter for the `onauxclick` field of this object."]
     #[doc = ""]
@@ -2119,7 +2133,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
-    pub fn exit_picture_in_picture(this: &Document) -> ::js_sys::Promise;
+    pub fn exit_picture_in_picture(this: &Document) -> ::js_sys::Promise<::js_sys::Undefined>;
     # [wasm_bindgen (method , structural , js_class = "Document" , js_name = exitPointerLock)]
     #[doc = "The `exitPointerLock()` method."]
     #[doc = ""]
@@ -2256,7 +2270,7 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub fn start_view_transition_with_update_callback(
         this: &Document,
-        update_callback: Option<&::js_sys::Function>,
+        update_callback: Option<&::js_sys::Function<fn() -> ::js_sys::Promise>>,
     ) -> Result<ViewTransition, JsValue>;
     #[cfg(feature = "Element")]
     # [wasm_bindgen (method , structural , js_class = "Document" , js_name = elementFromPoint)]

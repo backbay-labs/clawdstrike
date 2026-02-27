@@ -690,7 +690,7 @@ Update the provenance type to support EAS:
 | `backbay-sdk/packages/witness/src/fetchers/spine-eas.ts` | Spine-specific EAS verification for `fetchAndVerifyChain()` | 100 |
 | `backbay-sdk/packages/notary/tests/spine-eas.test.ts` | Schema encoding + attestation tests | 100 |
 | `scripts/register-eas-schemas.ts` | One-time schema registration script | 80 |
-| `scripts/eas-anchor.toml` | Reference config for anchor service | 30 |
+| `crates/services/eas-anchor/eas-anchor.example.toml` | Reference config for anchor service | 30 |
 | **Total estimated** | | **~845** |
 
 ### Modified Files

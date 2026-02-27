@@ -121,6 +121,40 @@ macro_rules! compare_rapidhash_file {
     };
 }
 
+macro_rules! compare_rapid_stream_hasher {
+    ($test:ident, $hash:path, $hasher:path) => {
+        #[test]
+        fn $test() {
+            extern crate alloc;
+            use rand::RngCore;
+
+            type H<'a> = $hasher;
+
+            // test every length and every chunking size for the stream hasher
+            for len in 0..1024 {
+                let mut data = alloc::vec![0u8; len];
+                rand::rng().fill_bytes(&mut data);
+
+                let expected_hash = $hash(&data, &DEFAULT_RAPID_SECRETS);
+
+                let mut hasher = H::new(&DEFAULT_RAPID_SECRETS);
+
+                for chunk_size in 1..512 {
+                    for chunk in data.chunks(chunk_size) {
+                        hasher.write(chunk);
+                    }
+
+                    let actual_hash = hasher.finish();
+                    assert_eq!(expected_hash, actual_hash, "Mismatch for input len: {} and chunk size: {}", len, chunk_size);
+
+                    hasher.reset();
+                }
+            }
+        }
+    };
+}
+
 pub(crate) use compare_to_c;
 pub(crate) use flip_bit_trial;
 pub(crate) use compare_rapidhash_file;
+pub(crate) use compare_rapid_stream_hasher;

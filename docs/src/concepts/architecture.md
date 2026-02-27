@@ -45,12 +45,21 @@ The intended integration is at the **tool boundary** (your agent runtime calls C
 
 | Crate | Description |
 |-------|-------------|
-| `clawdstrike` | Policy type, built-in guards, `HushEngine`, jailbreak detection, output sanitization |
+| `clawdstrike` | Policy type, built-in guards (12), `HushEngine`, jailbreak detection, output sanitization, watermarking |
 | `hush-core` | Hashing/signing, Merkle trees, `SignedReceipt`, canonical JSON |
 | `hush-proxy` | DNS/SNI parsing utilities and domain matching |
 | `hush-cli` | `clawdstrike` CLI for ad-hoc checks and verification |
 | `hush-wasm` | WebAssembly bindings for browser/Node.js |
 | `hushd` | `clawdstriked` HTTP daemon for centralized checks (WIP) |
+
+### Prompt-Security Components
+
+These are standalone utilities wired into integrations (not policy guards):
+
+| Component | Description |
+|-----------|-------------|
+| **OutputSanitizer** | Inspects and redacts secrets/PII from model output, including streaming responses. |
+| **Watermarking** | Embeds signed provenance markers in prompts for attribution, tracing, and forensics. |
 
 ### TypeScript Packages
 

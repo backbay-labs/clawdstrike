@@ -11,10 +11,11 @@
 
 [package]
 edition = "2018"
-rust-version = "1.56"
+rust-version = "1.71"
 name = "futures-executor"
-version = "0.3.31"
+version = "0.3.32"
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -34,6 +35,15 @@ rustdoc-args = [
     "docsrs",
 ]
 
+[features]
+default = ["std"]
+std = [
+    "futures-core/std",
+    "futures-task/std",
+    "futures-util/std",
+]
+thread-pool = ["std"]
+
 [lib]
 name = "futures_executor"
 path = "src/lib.rs"
@@ -47,34 +57,18 @@ name = "thread_notify"
 path = "benches/thread_notify.rs"
 
 [dependencies.futures-core]
-version = "0.3.31"
+version = "0.3.32"
 default-features = false
 
 [dependencies.futures-task]
-version = "0.3.31"
+version = "0.3.32"
 default-features = false
 
 [dependencies.futures-util]
-version = "0.3.31"
+version = "0.3.32"
 default-features = false
 
-[dependencies.num_cpus]
-version = "1.8.0"
-optional = true
-
 [dev-dependencies]
-
-[features]
-default = ["std"]
-std = [
-    "futures-core/std",
-    "futures-task/std",
-    "futures-util/std",
-]
-thread-pool = [
-    "std",
-    "num_cpus",
-]
 
 [lints.rust]
 missing_debug_implementations = "warn"

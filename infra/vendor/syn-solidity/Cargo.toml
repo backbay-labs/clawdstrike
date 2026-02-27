@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "syn-solidity"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]

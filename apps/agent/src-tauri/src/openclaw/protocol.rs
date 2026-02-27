@@ -98,6 +98,8 @@ pub struct GatewayAuth {
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,5 +118,11 @@ pub fn create_request_id(prefix: &str) -> String {
 }
 
 pub fn parse_gateway_frame(text: &str) -> Option<GatewayFrame> {
-    serde_json::from_str::<GatewayFrame>(text).ok()
+    match serde_json::from_str::<GatewayFrame>(text) {
+        Ok(frame) => Some(frame),
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to parse gateway frame");
+            None
+        }
+    }
 }

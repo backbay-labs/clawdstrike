@@ -44,7 +44,7 @@ extern "C" {
     #[wasm_bindgen(method, getter = "attestationFormats")]
     pub fn get_attestation_formats(
         this: &AuthenticationExtensionsDevicePublicKeyInputs,
-    ) -> Option<::js_sys::Array>;
+    ) -> Option<::js_sys::Array<::js_sys::JsString>>;
     #[cfg(web_sys_unstable_apis)]
     #[doc = "Change the `attestationFormats` field of this object."]
     #[doc = ""]
@@ -55,7 +55,7 @@ extern "C" {
     #[wasm_bindgen(method, setter = "attestationFormats")]
     pub fn set_attestation_formats(
         this: &AuthenticationExtensionsDevicePublicKeyInputs,
-        val: &::wasm_bindgen::JsValue,
+        val: &[::js_sys::JsString],
     );
 }
 #[cfg(web_sys_unstable_apis)]
@@ -79,7 +79,7 @@ impl AuthenticationExtensionsDevicePublicKeyInputs {
     }
     #[cfg(web_sys_unstable_apis)]
     #[deprecated = "Use `set_attestation_formats()` instead."]
-    pub fn attestation_formats(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn attestation_formats(&mut self, val: &[::js_sys::JsString]) -> &mut Self {
         self.set_attestation_formats(val);
         self
     }

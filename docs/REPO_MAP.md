@@ -1,6 +1,6 @@
 # Repository Map
 
-Last updated: 2026-02-10
+Last updated: 2026-02-26
 
 This document is the newcomer index for the monorepo layout.
 
@@ -17,6 +17,8 @@ This document is the newcomer index for the monorepo layout.
 | `infra/docker/` | Container build assets. |
 | `infra/vendor/` | Vendored Rust dependencies for offline builds. |
 | `docs/` | Public docs, plans, specs, and research. |
+| `docs/ops/` | Operational guidance (limits, rollout plans, safe defaults). |
+| `docs/audits/` | Point-in-time repository and quality audits. |
 | `examples/` | End-to-end and SDK examples. |
 | `fixtures/` | Golden fixtures and test vectors. |
 | `rulesets/` | Preconfigured policy rulesets. |
@@ -33,6 +35,7 @@ This document is the newcomer index for the monorepo layout.
 | Spine protocol services | `crates/libs/spine`, `crates/services/spine-cli` | alpha | Active protocol iteration and performance work. |
 | Cloud API | `crates/services/cloud-api` | alpha | Early-stage service surface. |
 | EAS anchoring | `crates/services/eas-anchor` | alpha | Functional but still under active hardening. |
+| FFI bindings | `crates/libs/hush-ffi` | alpha | C ABI for C#/Go/C language bindings. |
 | Bridge services | `crates/bridges/tetragon-bridge`, `crates/bridges/hubble-bridge` | alpha | Integration-focused components. |
 | Desktop app | `apps/desktop` | alpha | Product UX and architecture still moving. |
 | Agent app | `apps/agent` | alpha | Product UX and runtime still moving. |

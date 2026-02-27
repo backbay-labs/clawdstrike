@@ -1,6 +1,5 @@
 """Tests for EgressAllowlistGuard."""
 
-import pytest
 from clawdstrike.guards.egress_allowlist import EgressAllowlistGuard, EgressAllowlistConfig
 from clawdstrike.guards.base import GuardAction, GuardContext, Severity
 

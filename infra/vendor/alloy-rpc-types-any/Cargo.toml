@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy-rpc-types-any"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -45,16 +45,16 @@ name = "alloy_rpc_types_any"
 path = "src/lib.rs"
 
 [dependencies.alloy-consensus-any]
-version = "1.6.3"
+version = "1.7.3"
 features = ["serde"]
 default-features = false
 
 [dependencies.alloy-rpc-types-eth]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.alloy-serde]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dev-dependencies.alloy-primitives]
@@ -62,7 +62,7 @@ version = "1.4.1"
 default-features = false
 
 [dev-dependencies.alloy-rpc-types-eth]
-version = "1.6.3"
+version = "1.7.3"
 features = ["serde"]
 default-features = false
 

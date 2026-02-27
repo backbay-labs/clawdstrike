@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy-consensus"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -112,7 +112,7 @@ name = "alloy_consensus"
 path = "src/lib.rs"
 
 [dependencies.alloy-eips]
-version = "1.6.3"
+version = "1.7.3"
 features = ["kzg-sidecar"]
 default-features = false
 
@@ -126,7 +126,7 @@ version = "0.3.9"
 default-features = false
 
 [dependencies.alloy-serde]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
@@ -136,7 +136,7 @@ features = ["ethereum"]
 default-features = false
 
 [dependencies.alloy-tx-macros]
-version = "1.6.3"
+version = "1.7.3"
 default-features = false
 
 [dependencies.arbitrary]
@@ -231,7 +231,7 @@ version = "2.0"
 default-features = false
 
 [dev-dependencies.alloy-eips]
-version = "1.6.3"
+version = "1.7.3"
 features = [
     "arbitrary",
     "kzg",

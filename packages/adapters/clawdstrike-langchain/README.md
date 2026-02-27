@@ -7,7 +7,7 @@ See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/c
 ## Install
 
 ```bash
-npm install @clawdstrike/langchain @clawdstrike/adapter-core @clawdstrike/engine-local
+npm install @clawdstrike/langchain @clawdstrike/engine-local
 ```
 
 ## Usage
@@ -53,6 +53,52 @@ import { ClawdstrikeCallbackHandler } from '@clawdstrike/langchain';
 const engine = createStrikeCell({ policyRef: 'default' });
 const handler = new ClawdstrikeCallbackHandler({ engine });
 ```
+
+## LangGraph integration
+
+### Security checkpoint
+
+```ts
+import { createSecurityCheckpoint } from '@clawdstrike/langchain';
+
+const checkpoint = createSecurityCheckpoint({ engine });
+
+// Use in a LangGraph node to check pending tool calls
+const decision = await checkpoint.check(graphState);
+if (decision.status === 'deny') {
+  // block the tool execution
+}
+```
+
+### Conditional routing
+
+```ts
+import { addSecurityRouting, createSecurityCheckpoint } from '@clawdstrike/langchain';
+
+const checkpoint = createSecurityCheckpoint({ engine });
+
+addSecurityRouting(graph, 'plan_node', checkpoint, {
+  allow: 'execute_tools',
+  block: 'blocked_handler',
+  warn: 'warn_handler',
+});
+```
+
+### Wrap a tool node
+
+```ts
+import { wrapToolNode, createSecurityCheckpoint } from '@clawdstrike/langchain';
+
+const checkpoint = createSecurityCheckpoint({ engine });
+wrapToolNode(graph, 'tool_node', checkpoint, { sanitize: true });
+```
+
+### LangGraph API reference
+
+- `createSecurityCheckpoint(options)` -- Creates a `SecurityCheckpointNode` that evaluates pending tool calls against policy
+- `addSecurityRouting(graph, fromNode, checkpoint, mapping)` -- Adds conditional edges that route based on security decisions (`allow`, `block`, `warn`)
+- `wrapToolNode(graph, nodeName, checkpoint, options?)` -- Wraps an existing graph node with preflight security checks and optional output sanitization
+- `sanitizeState(value, engine)` -- Recursively redacts secrets from graph state
 
 ## Errors
 

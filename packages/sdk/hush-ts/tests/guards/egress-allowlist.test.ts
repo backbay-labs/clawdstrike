@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EgressAllowlistGuard, EgressAllowlistConfig } from "../../src/guards/egress-allowlist";
-import { GuardAction, GuardContext, Severity } from "../../src/guards/types";
+import { GuardAction, GuardContext } from "../../src/guards/types";
 
 describe("EgressAllowlistGuard", () => {
   it("has correct name", () => {

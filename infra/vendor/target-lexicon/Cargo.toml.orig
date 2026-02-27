@@ -1,6 +1,6 @@
 [package]
 name = "target-lexicon"
-version = "0.13.4"
+version = "0.13.5"
 authors = ["Dan Gohman <sunfish@mozilla.com>"]
 description = "LLVM target triple types"
 documentation = "https://docs.rs/target-lexicon/"
@@ -29,3 +29,6 @@ arch_z80 = []
 
 [badges]
 maintenance = { status = "passively-maintained" }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("rust_1_40", "cargo-clippy"))'] }

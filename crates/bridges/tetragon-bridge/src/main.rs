@@ -54,6 +54,18 @@ struct Cli {
     /// Number of JetStream replicas for the envelope stream.
     #[arg(long, default_value = "1", env = "STREAM_REPLICAS")]
     stream_replicas: usize,
+
+    /// Maximum bytes retained for the Tetragon JetStream stream (0 = unlimited).
+    #[arg(long, default_value = "1073741824", env = "STREAM_MAX_BYTES")]
+    stream_max_bytes: i64,
+
+    /// Maximum age retained for the Tetragon JetStream stream in seconds (0 = unlimited).
+    #[arg(long, default_value = "86400", env = "STREAM_MAX_AGE_SECONDS")]
+    stream_max_age_seconds: u64,
+
+    /// Maximum startup wait for NATS connectivity before backing off and retrying.
+    #[arg(long, default_value = "90", env = "NATS_STARTUP_TIMEOUT_SECS")]
+    nats_startup_timeout_secs: u64,
 }
 
 fn parse_event_types(types: &[String]) -> Vec<TetragonEventKind> {
@@ -69,6 +81,52 @@ fn parse_event_types(types: &[String]) -> Vec<TetragonEventKind> {
             }
         })
         .collect()
+}
+
+fn is_transient_nats_bootstrap_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("failed to lookup address information")
+        || lower.contains("temporary failure in name resolution")
+        || lower.contains("name or service not known")
+        || lower.contains("connection refused")
+        || lower.contains("connection reset")
+        || lower.contains("no route to host")
+        || lower.contains("timed out")
+}
+
+async fn wait_for_nats_startup(nats_url: &str, timeout: Duration) -> anyhow::Result<()> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    let mut attempt: u32 = 0;
+    let mut backoff = Duration::from_millis(250);
+
+    loop {
+        attempt = attempt.saturating_add(1);
+        match spine::nats_transport::connect(nats_url).await {
+            Ok(client) => {
+                drop(client);
+                if attempt > 1 {
+                    warn!(attempt, "NATS became reachable during startup");
+                }
+                return Ok(());
+            }
+            Err(err) => {
+                let transient = is_transient_nats_bootstrap_error(&err.to_string());
+                if !transient || tokio::time::Instant::now() >= deadline {
+                    return Err(anyhow::anyhow!(
+                        "NATS startup readiness failed after {attempt} attempts: {err}"
+                    ));
+                }
+                warn!(
+                    attempt,
+                    backoff_ms = backoff.as_millis() as u64,
+                    error = %err,
+                    "waiting for NATS startup readiness"
+                );
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(Duration::from_secs(5));
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -89,11 +147,25 @@ async fn main() -> anyhow::Result<()> {
         namespace_allowlist: cli.namespace_allowlist,
         event_types: parse_event_types(&cli.event_types),
         stream_replicas: cli.stream_replicas,
+        stream_max_bytes: cli.stream_max_bytes,
+        stream_max_age_seconds: cli.stream_max_age_seconds,
         ..BridgeConfig::default()
     };
 
     let mut backoff = Duration::from_secs(1);
     loop {
+        let startup_timeout = Duration::from_secs(cli.nats_startup_timeout_secs);
+        if let Err(e) = wait_for_nats_startup(&config.nats_url, startup_timeout).await {
+            warn!(error = %e, "NATS startup readiness check failed, retrying");
+            warn!(
+                backoff_secs = backoff.as_secs(),
+                "reconnecting after backoff"
+            );
+            tokio::time::sleep(backoff).await;
+            backoff = (backoff * 2).min(Duration::from_secs(60));
+            continue;
+        }
+
         match Bridge::new(config.clone()).await {
             Ok(bridge) => {
                 backoff = Duration::from_secs(1);

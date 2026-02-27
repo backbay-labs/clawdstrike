@@ -15,41 +15,45 @@ extern "C" {
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     pub type LockManagerSnapshot;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "LockInfo")]
     #[doc = "Get the `held` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `LockManagerSnapshot`*"]
+    #[doc = "*This API requires the following crate features to be activated: `LockInfo`, `LockManagerSnapshot`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "held")]
-    pub fn get_held(this: &LockManagerSnapshot) -> Option<::js_sys::Array>;
+    pub fn get_held(this: &LockManagerSnapshot) -> Option<::js_sys::Array<LockInfo>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "LockInfo")]
     #[doc = "Change the `held` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `LockManagerSnapshot`*"]
+    #[doc = "*This API requires the following crate features to be activated: `LockInfo`, `LockManagerSnapshot`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "held")]
-    pub fn set_held(this: &LockManagerSnapshot, val: &::wasm_bindgen::JsValue);
+    pub fn set_held(this: &LockManagerSnapshot, val: &[LockInfo]);
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "LockInfo")]
     #[doc = "Get the `pending` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `LockManagerSnapshot`*"]
+    #[doc = "*This API requires the following crate features to be activated: `LockInfo`, `LockManagerSnapshot`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, getter = "pending")]
-    pub fn get_pending(this: &LockManagerSnapshot) -> Option<::js_sys::Array>;
+    pub fn get_pending(this: &LockManagerSnapshot) -> Option<::js_sys::Array<LockInfo>>;
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "LockInfo")]
     #[doc = "Change the `pending` field of this object."]
     #[doc = ""]
-    #[doc = "*This API requires the following crate features to be activated: `LockManagerSnapshot`*"]
+    #[doc = "*This API requires the following crate features to be activated: `LockInfo`, `LockManagerSnapshot`*"]
     #[doc = ""]
     #[doc = "*This API is unstable and requires `--cfg=web_sys_unstable_apis` to be activated, as"]
     #[doc = "[described in the `wasm-bindgen` guide](https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html)*"]
     #[wasm_bindgen(method, setter = "pending")]
-    pub fn set_pending(this: &LockManagerSnapshot, val: &::wasm_bindgen::JsValue);
+    pub fn set_pending(this: &LockManagerSnapshot, val: &[LockInfo]);
 }
 #[cfg(web_sys_unstable_apis)]
 impl LockManagerSnapshot {
@@ -65,14 +69,16 @@ impl LockManagerSnapshot {
         ret
     }
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "LockInfo")]
     #[deprecated = "Use `set_held()` instead."]
-    pub fn held(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn held(&mut self, val: &[LockInfo]) -> &mut Self {
         self.set_held(val);
         self
     }
     #[cfg(web_sys_unstable_apis)]
+    #[cfg(feature = "LockInfo")]
     #[deprecated = "Use `set_pending()` instead."]
-    pub fn pending(&mut self, val: &::wasm_bindgen::JsValue) -> &mut Self {
+    pub fn pending(&mut self, val: &[LockInfo]) -> &mut Self {
         self.set_pending(val);
         self
     }

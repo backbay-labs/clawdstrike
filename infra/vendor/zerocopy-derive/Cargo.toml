@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "zerocopy-derive"
-version = "0.8.38"
+version = "0.8.39"
 authors = [
     "Joshua Liebow-Feeser <joshlf@google.com>",
     "Jack Wrenn <jswrenn@amazon.com>",
@@ -97,6 +97,10 @@ path = "tests/issue_2880.rs"
 [[test]]
 name = "issue_2915"
 path = "tests/issue_2915.rs"
+
+[[test]]
+name = "on_error"
+path = "tests/on_error.rs"
 
 [[test]]
 name = "paths_and_modules"
@@ -209,4 +213,7 @@ features = ["diff"]
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
-check-cfg = ["cfg(zerocopy_derive_union_into_bytes)"]
+check-cfg = [
+    "cfg(zerocopy_derive_union_into_bytes)",
+    "cfg(zerocopy_unstable_derive_on_error)",
+]

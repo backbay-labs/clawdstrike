@@ -176,7 +176,7 @@ pub(crate) mod secrets {
     /// Get the global secrets, slow(ish).
     ///
     /// Short for `GlobalSecrets::new().get()`.
-    #[inline]
+    #[inline(always)]
     pub fn get_secrets() -> &'static [u64; 7] {
         GlobalSecrets::new().get()
     }

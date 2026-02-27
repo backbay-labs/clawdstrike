@@ -30,6 +30,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
     #[wasm_bindgen(method, setter = "hash")]
     pub fn set_hash(this: &Pbkdf2Params, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `hash` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
+    #[wasm_bindgen(method, setter = "hash")]
+    pub fn set_hash_object(this: &Pbkdf2Params, val: &::js_sys::Object);
+    #[doc = "Change the `hash` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
+    #[wasm_bindgen(method, setter = "hash")]
+    pub fn set_hash_str(this: &Pbkdf2Params, val: &str);
     #[doc = "Get the `iterations` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
@@ -50,6 +60,21 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
     #[wasm_bindgen(method, setter = "salt")]
     pub fn set_salt(this: &Pbkdf2Params, val: &::js_sys::Object);
+    #[doc = "Change the `salt` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
+    #[wasm_bindgen(method, setter = "salt")]
+    pub fn set_salt_buffer_source(this: &Pbkdf2Params, val: &::js_sys::Object);
+    #[doc = "Change the `salt` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
+    #[wasm_bindgen(method, setter = "salt")]
+    pub fn set_salt_u8_slice(this: &Pbkdf2Params, val: &mut [u8]);
+    #[doc = "Change the `salt` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
+    #[wasm_bindgen(method, setter = "salt")]
+    pub fn set_salt_u8_array(this: &Pbkdf2Params, val: &::js_sys::Uint8Array);
 }
 impl Pbkdf2Params {
     #[doc = "Construct a new `Pbkdf2Params`."]
@@ -65,6 +90,35 @@ impl Pbkdf2Params {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret.set_name(name);
         ret.set_hash(hash);
+        ret.set_iterations(iterations);
+        ret.set_salt(salt);
+        ret
+    }
+    #[doc = "Construct a new `Pbkdf2Params`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
+    pub fn new_with_object(
+        name: &str,
+        hash: &::js_sys::Object,
+        iterations: u32,
+        salt: &::js_sys::Object,
+    ) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_hash_object(hash);
+        ret.set_iterations(iterations);
+        ret.set_salt(salt);
+        ret
+    }
+    #[doc = "Construct a new `Pbkdf2Params`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `Pbkdf2Params`*"]
+    pub fn new_with_str(name: &str, hash: &str, iterations: u32, salt: &::js_sys::Object) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_hash_str(hash);
         ret.set_iterations(iterations);
         ret.set_salt(salt);
         ret

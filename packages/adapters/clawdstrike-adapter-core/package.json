@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/adapter-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Framework-agnostic adapter interfaces for Clawdstrike",
   "type": "module",
   "main": "dist/index.js",
@@ -15,6 +15,7 @@
     "build": "tsc",
     "prepare": "npm run build",
     "test": "vitest run",
+    "test:cross-adapter": "vitest run --config vitest.cross-adapter.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
@@ -28,6 +29,7 @@
     "README.md"
   ],
   "license": "Apache-2.0",
+  "author": "Clawdstrike Contributors",
   "repository": {
     "type": "git",
     "url": "https://github.com/backbay-labs/clawdstrike.git",

@@ -1,8 +1,0 @@
-Policy test: Policy Torture 01 - Deep Merge
-Policy: tests/policy-torture/suites/../policies/deep-merge-overlay.yaml
-Total: 6, Passed: 6, Failed: 0
-Guard coverage: 2/8 (25.00%)
-Coverage (by guard):
-  egress_allowlist: 5
-  forbidden_path: 1
-Exit: 0

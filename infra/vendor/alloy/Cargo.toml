@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.91"
 name = "alloy"
-version = "1.6.3"
+version = "1.7.3"
 authors = ["Alloy Contributors"]
 build = false
 exclude = [
@@ -300,10 +300,6 @@ rpc-types-eth = [
     "rpc-types",
     "alloy-rpc-types?/eth",
 ]
-rpc-types-json = [
-    "rpc-types",
-    "alloy-rpc-types?/jsonrpsee-types",
-]
 rpc-types-mev = [
     "rpc-types",
     "alloy-rpc-types?/mev",
@@ -426,12 +422,12 @@ name = "alloy"
 path = "src/lib.rs"
 
 [dependencies.alloy-consensus]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-contract]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
@@ -440,12 +436,12 @@ version = "1.4.1"
 default-features = false
 
 [dependencies.alloy-eips]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-ens]
-version = "1.6.3"
+version = "1.7.3"
 features = [
     "contract",
     "provider",
@@ -454,102 +450,102 @@ optional = true
 default-features = false
 
 [dependencies.alloy-genesis]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-json-rpc]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-network]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-node-bindings]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-provider]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-pubsub]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-client]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-rpc-types]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-serde]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-signer]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-signer-aws]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-signer-gcp]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-signer-ledger]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-signer-local]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-signer-trezor]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-signer-turnkey]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-transport]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-transport-http]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-transport-ipc]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 
 [dependencies.alloy-transport-ws]
-version = "1.6.3"
+version = "1.7.3"
 optional = true
 default-features = false
 

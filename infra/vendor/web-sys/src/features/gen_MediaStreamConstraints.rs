@@ -20,6 +20,20 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `MediaStreamConstraints`*"]
     #[wasm_bindgen(method, setter = "audio")]
     pub fn set_audio(this: &MediaStreamConstraints, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `audio` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MediaStreamConstraints`*"]
+    #[wasm_bindgen(method, setter = "audio")]
+    pub fn set_audio_bool(this: &MediaStreamConstraints, val: bool);
+    #[cfg(feature = "MediaTrackConstraints")]
+    #[doc = "Change the `audio` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MediaStreamConstraints`*"]
+    #[wasm_bindgen(method, setter = "audio")]
+    pub fn set_audio_media_track_constraints(
+        this: &MediaStreamConstraints,
+        val: &MediaTrackConstraints,
+    );
     #[doc = "Get the `fake` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `MediaStreamConstraints`*"]
@@ -60,6 +74,20 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `MediaStreamConstraints`*"]
     #[wasm_bindgen(method, setter = "video")]
     pub fn set_video(this: &MediaStreamConstraints, val: &::wasm_bindgen::JsValue);
+    #[doc = "Change the `video` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MediaStreamConstraints`*"]
+    #[wasm_bindgen(method, setter = "video")]
+    pub fn set_video_bool(this: &MediaStreamConstraints, val: bool);
+    #[cfg(feature = "MediaTrackConstraints")]
+    #[doc = "Change the `video` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `MediaStreamConstraints`*"]
+    #[wasm_bindgen(method, setter = "video")]
+    pub fn set_video_media_track_constraints(
+        this: &MediaStreamConstraints,
+        val: &MediaTrackConstraints,
+    );
 }
 impl MediaStreamConstraints {
     #[doc = "Construct a new `MediaStreamConstraints`."]

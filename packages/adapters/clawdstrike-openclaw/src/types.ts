@@ -2,22 +2,48 @@
  * @clawdstrike/openclaw - Type Definitions
  *
  * Core types for the Clawdstrike security plugin for OpenClaw.
+ *
+ * Types that are structurally identical to @clawdstrike/adapter-core are
+ * re-exported from that package to maintain a single source of truth and
+ * eliminate unsafe casts between parallel definitions.
  */
 
-/**
- * Severity level for policy violations
- */
-export type Severity = 'low' | 'medium' | 'high' | 'critical';
+// ---------------------------------------------------------------------------
+// Re-exports from @clawdstrike/adapter-core (structurally identical types)
+// ---------------------------------------------------------------------------
 
-/**
- * Enforcement mode for policy evaluation
- */
-export type EvaluationMode = 'deterministic' | 'advisory' | 'audit';
+export type {
+  ClawdstrikeConfig,
+  CuaEventData,
+  Decision,
+  DecisionStatus,
+  EventData,
+  EventType,
+  EvaluationMode,
+  GuardToggles,
+  LogLevel,
+  PolicyEvent,
+  Severity,
+} from '@clawdstrike/adapter-core';
 
-/**
- * Log level for plugin output
- */
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+// DecisionReasonCode is a plain `string` alias in both packages.
+// Re-export so consumers keep the same semantic name.
+export type { DecisionReasonCode } from '@clawdstrike/adapter-core';
+
+// Also re-export the concrete event-data interfaces so files that import
+// e.g. `FileEventData` from '../types.js' continue to resolve.
+export type {
+  FileEventData,
+  CommandEventData,
+  NetworkEventData,
+  ToolEventData,
+  PatchEventData,
+  SecretEventData,
+} from '@clawdstrike/adapter-core';
+
+// ---------------------------------------------------------------------------
+// Openclaw-specific types (no adapter-core equivalent)
+// ---------------------------------------------------------------------------
 
 /**
  * Action to take on policy violation
@@ -28,178 +54,6 @@ export type ViolationAction = 'cancel' | 'warn' | 'isolate' | 'escalate';
  * Network egress mode
  */
 export type EgressMode = 'allowlist' | 'denylist' | 'open' | 'deny_all';
-
-/**
- * Event type discriminator for policy evaluation
- */
-export type EventType =
-  | 'file_read'
-  | 'file_write'
-  | 'command_exec'
-  | 'network_egress'
-  | 'tool_call'
-  | 'patch_apply'
-  | 'secret_access'
-  | 'custom'
-  | 'remote.session.connect'
-  | 'remote.session.disconnect'
-  | 'remote.session.reconnect'
-  | 'input.inject'
-  | 'remote.clipboard'
-  | 'remote.file_transfer'
-  | 'remote.audio'
-  | 'remote.drive_mapping'
-  | 'remote.printing'
-  | 'remote.session_share';
-
-/**
- * Plugin configuration schema
- */
-export interface ClawdstrikeConfig {
-  /** Path to policy YAML or built-in ruleset name */
-  policy?: string;
-  /** Enforcement mode */
-  mode?: EvaluationMode;
-  /** Logging level */
-  logLevel?: LogLevel;
-  /** Guard enable/disable toggles */
-  guards?: GuardToggles;
-}
-
-/**
- * Guard enable/disable toggles
- */
-export interface GuardToggles {
-  forbidden_path?: boolean;
-  egress?: boolean;
-  secret_leak?: boolean;
-  patch_integrity?: boolean;
-  mcp_tool?: boolean;
-}
-
-/**
- * Execution event to be evaluated by policy engine
- */
-export interface PolicyEvent {
-  /** Unique event identifier */
-  eventId: string;
-  /** Event type */
-  eventType: EventType;
-  /** Event timestamp (ISO 8601) */
-  timestamp: string;
-  /** Associated session/run identifier */
-  sessionId?: string;
-  /** Event-specific data */
-  data: EventData;
-  /** Optional metadata */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Union type for event-specific data
- */
-export type EventData =
-  | FileEventData
-  | CommandEventData
-  | NetworkEventData
-  | ToolEventData
-  | PatchEventData
-  | SecretEventData
-  | CuaEventData;
-
-/**
- * File read/write event data
- */
-export interface FileEventData {
-  type: 'file';
-  /** Absolute path to the file */
-  path: string;
-  /** Optional raw content (small files only; best-effort) */
-  content?: string;
-  /** Optional base64-encoded content */
-  contentBase64?: string;
-  /** Optional content hash (for write verification) */
-  contentHash?: string;
-  /** Operation type */
-  operation: 'read' | 'write';
-}
-
-/**
- * Command execution event data
- */
-export interface CommandEventData {
-  type: 'command';
-  /** Command name or path */
-  command: string;
-  /** Command arguments */
-  args: string[];
-  /** Working directory */
-  workingDir?: string;
-}
-
-/**
- * Network egress event data
- */
-export interface NetworkEventData {
-  type: 'network';
-  /** Target hostname or IP */
-  host: string;
-  /** Target port */
-  port: number;
-  /** Protocol (tcp, udp, etc.) */
-  protocol?: string;
-  /** Full URL if available */
-  url?: string;
-}
-
-/**
- * Tool invocation event data
- */
-export interface ToolEventData {
-  type: 'tool';
-  /** Tool name (e.g., "bash", "file_write", "web_search") */
-  toolName: string;
-  /** Tool parameters */
-  parameters: Record<string, unknown>;
-  /** Tool result (for post-execution checks) */
-  result?: string;
-}
-
-/**
- * Patch/diff application event data
- */
-export interface PatchEventData {
-  type: 'patch';
-  /** Target file path */
-  filePath: string;
-  /** Patch content (diff or full content) */
-  patchContent: string;
-  /** Optional patch hash */
-  patchHash?: string;
-}
-
-/**
- * Secret access event data
- */
-export interface SecretEventData {
-  type: 'secret';
-  /** Secret identifier or name */
-  secretName: string;
-  /** Scope (environment, file, etc.) */
-  scope: string;
-}
-
-/**
- * CUA (Computer Use Agent) event data
- */
-export interface CuaEventData {
-  type: 'cua';
-  cuaAction: string;
-  direction?: 'read' | 'write' | 'upload' | 'download' | 'inbound' | 'outbound';
-  continuityPrevSessionHash?: string;
-  postconditionProbeHash?: string;
-  [key: string]: unknown;
-}
 
 export type ComputerUseMode = 'observe' | 'guardrail' | 'fail_closed';
 
@@ -226,55 +80,19 @@ export interface InputInjectionCapabilityGuardConfig {
   require_postcondition_probe?: boolean;
 }
 
-export interface PolicyGuards extends GuardToggles {
+// NOTE: GuardToggles is re-exported from adapter-core above.
+// Import it as a type-only reference for the `extends` clause.
+import type { GuardToggles as _GuardToggles } from '@clawdstrike/adapter-core';
+
+export interface PolicyGuards extends _GuardToggles {
   custom?: unknown;
   computer_use?: ComputerUseGuardConfig;
   remote_desktop_side_channel?: RemoteDesktopSideChannelGuardConfig;
   input_injection_capability?: InputInjectionCapabilityGuardConfig;
 }
 
-/**
- * Decision status for security checks.
- * - 'allow': Operation is permitted
- * - 'warn': Operation is permitted but flagged for review
- * - 'deny': Operation is blocked
- */
-export type DecisionStatus = 'allow' | 'warn' | 'deny';
-
-export type DecisionReasonCode = string;
-
-/**
- * Result of policy evaluation
- */
-export type Decision =
-  | {
-      /** The decision status: 'allow' */
-      status: 'allow';
-      /** Optional machine-readable reason code */
-      reason_code?: DecisionReasonCode;
-      /** Reason for allow/observe outcome */
-      reason?: string;
-      /** Guard that made the decision */
-      guard?: string;
-      /** Severity of the violation */
-      severity?: Severity;
-      /** Additional message */
-      message?: string;
-    }
-  | {
-      /** The decision status: 'warn' or 'deny' */
-      status: 'warn' | 'deny';
-      /** Required machine-readable reason code for non-allow outcomes */
-      reason_code: DecisionReasonCode;
-      /** Human-readable reason */
-      reason?: string;
-      /** Guard that made the decision */
-      guard?: string;
-      /** Severity of the violation */
-      severity?: Severity;
-      /** Additional message */
-      message?: string;
-    };
+// Import Severity for use in local interfaces below.
+import type { Severity as _Severity } from '@clawdstrike/adapter-core';
 
 /**
  * Result from a single guard check
@@ -285,13 +103,17 @@ export interface GuardResult {
   /** Reason message */
   reason?: string;
   /** Severity (for deny) */
-  severity?: Severity;
+  severity?: _Severity;
   /** Guard name */
   guard: string;
 }
 
 /**
  * Security policy configuration
+ *
+ * NOTE: This is intentionally NOT re-exported from adapter-core.
+ * adapter-core defines Policy as `Record<string, unknown>` (opaque),
+ * whereas openclaw requires a rich structured type for guard evaluation.
  */
 export interface Policy {
   /** Policy version identifier */
@@ -393,7 +215,7 @@ export interface SecretPattern {
   /** Regex pattern */
   pattern: RegExp;
   /** Severity if detected */
-  severity: Severity;
+  severity: _Severity;
   /** Description */
   description: string;
 }
@@ -407,17 +229,20 @@ export interface DangerousPattern {
   /** Regex pattern */
   pattern: RegExp;
   /** Severity if detected */
-  severity: Severity;
+  severity: _Severity;
   /** Description */
   description: string;
 }
+
+// Import ClawdstrikeConfig for use in local interfaces.
+import type { ClawdstrikeConfig as _ClawdstrikeConfig } from '@clawdstrike/adapter-core';
 
 /**
  * OpenClaw Plugin API interface (minimal for type safety)
  */
 export interface PluginAPI {
   /** Get plugin configuration */
-  getConfig<T = ClawdstrikeConfig>(): T;
+  getConfig<T = _ClawdstrikeConfig>(): T;
   /** Register a tool */
   registerTool(tool: ToolDefinition): void;
   /** Register CLI commands */
@@ -515,15 +340,16 @@ export interface AgentBootstrapEvent {
       path: string;
       content: string;
     }>;
-    cfg: ClawdstrikeConfig;
+    cfg: _ClawdstrikeConfig;
   };
 }
 
 /**
- * Hook event context for tool_call (pre-execution)
+ * Hook event context for tool_call (pre-execution).
+ * Accepts both 'tool_call' (legacy) and 'before_tool_call' (v2026.2.1+).
  */
 export interface ToolCallEvent {
-  type: 'tool_call';
+  type: 'tool_call' | 'before_tool_call';
   timestamp: string;
   context: {
     sessionId: string;
@@ -539,6 +365,24 @@ export interface ToolCallEvent {
 }
 
 /**
+ * Modern OpenClaw before_tool_call hook payload (v2026 runtime).
+ */
+export interface BeforeToolCallHookEvent {
+  toolName: string;
+  params: Record<string, unknown>;
+}
+
+/**
+ * Modern OpenClaw hook context payload.
+ */
+export interface OpenClawHookContext {
+  agentId?: string;
+  sessionKey?: string;
+  toolName?: string;
+  toolCallId?: string;
+}
+
+/**
  * Generic hook event type
  */
 export type HookEvent = ToolResultPersistEvent | AgentBootstrapEvent | ToolCallEvent;
@@ -546,4 +390,15 @@ export type HookEvent = ToolResultPersistEvent | AgentBootstrapEvent | ToolCallE
 /**
  * Hook handler function type
  */
-export type HookHandler = (event: HookEvent) => Promise<void> | void;
+export interface BeforeToolCallHookResult {
+  block: boolean;
+  blockReason?: string;
+  params?: Record<string, unknown>;
+}
+
+export type HookHandlerResult = void | BeforeToolCallHookResult;
+
+export type HookHandler = (
+  event: HookEvent,
+  ctx?: OpenClawHookContext,
+) => Promise<HookHandlerResult> | HookHandlerResult;

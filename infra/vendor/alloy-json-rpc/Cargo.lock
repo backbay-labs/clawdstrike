@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "alloy-json-rpc"
-version = "1.6.3"
+version = "1.7.3"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",

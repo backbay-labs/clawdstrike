@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.90.0"
 name = "wasmtime"
-version = "41.0.3"
+version = "41.0.4"
 authors = ["The Wasmtime Project Developers"]
 build = "build.rs"
 autolib = false
@@ -333,7 +333,7 @@ features = ["alloc"]
 default-features = false
 
 [dependencies.pulley-interpreter]
-version = "=41.0.3"
+version = "=41.0.4"
 
 [dependencies.rayon]
 version = "1.5.3"
@@ -386,69 +386,69 @@ features = ["simd"]
 default-features = false
 
 [dependencies.wasmtime-cache]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-cache"
 
 [dependencies.wasmtime-component-macro]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-component-macro"
 
 [dependencies.wasmtime-component-util]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-component-util"
 
 [dependencies.wasmtime-cranelift]
-version = "=41.0.3"
+version = "=41.0.4"
 features = ["pulley"]
 optional = true
 package = "wasmtime-internal-cranelift"
 
 [dependencies.wasmtime-environ]
-version = "=41.0.3"
+version = "=41.0.4"
 
 [dependencies.wasmtime-fiber]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-fiber"
 
 [dependencies.wasmtime-jit-debug]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-jit-debug"
 
 [dependencies.wasmtime-jit-icache-coherence]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-jit-icache-coherence"
 
 [dependencies.wasmtime-math]
-version = "=41.0.3"
+version = "=41.0.4"
 package = "wasmtime-internal-math"
 
 [dependencies.wasmtime-slab]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-slab"
 
 [dependencies.wasmtime-unwinder]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-unwinder"
 
 [dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.3"
+version = "=41.0.4"
 package = "wasmtime-internal-versioned-export-macros"
 
 [dependencies.wasmtime-winch]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-winch"
 
 [dependencies.wasmtime-wmemcheck]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-wmemcheck"
 
@@ -457,7 +457,7 @@ version = "1.243.0"
 optional = true
 
 [dev-dependencies.cranelift-native]
-version = "0.128.3"
+version = "0.128.4"
 
 [dev-dependencies.env_logger]
 version = "0.11.5"
@@ -490,7 +490,7 @@ version = "1.2.41"
 optional = true
 
 [build-dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 package = "wasmtime-internal-versioned-export-macros"
 

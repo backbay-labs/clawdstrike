@@ -1,6 +1,5 @@
 """Integration tests for hush SDK."""
 
-import pytest
 from clawdstrike import (
     Policy,
     PolicyEngine,
@@ -104,11 +103,11 @@ class TestFullWorkflow:
 
 class TestVersionInfo:
     def test_version_available(self) -> None:
-        from importlib.metadata import version
         import re
+        from importlib.metadata import version
 
-        import clawdstrike
+        from clawdstrike import __version__
 
         # Keep the public module version aligned with installed package metadata.
-        assert clawdstrike.__version__ == version("clawdstrike")
-        assert re.fullmatch(r"\d+\.\d+\.\d+", clawdstrike.__version__) is not None
+        assert __version__ == version("clawdstrike")
+        assert re.fullmatch(r"\d+\.\d+\.\d+", __version__) is not None

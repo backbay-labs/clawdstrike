@@ -135,12 +135,10 @@ class Guard(ABC):
     @abstractmethod
     def name(self) -> str:
         """Name of the guard."""
-        ...
 
     @abstractmethod
     def handles(self, action: GuardAction) -> bool:
         """Check if this guard handles the given action type."""
-        ...
 
     @abstractmethod
     def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
@@ -153,7 +151,6 @@ class Guard(ABC):
         Returns:
             GuardResult indicating whether action is allowed
         """
-        ...
 
 
 __all__ = [

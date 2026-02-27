@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "target-lexicon"
-version = "0.13.4"
+version = "0.13.5"
 dependencies = [
  "serde",
  "serde_json",

@@ -1,6 +1,6 @@
 [package]
 name = "rapidhash"
-version = "4.3.0"
+version = "4.4.1"
 edition = "2021"
 publish = true
 rust-version = "1.71.0"  # const split_at and read_unaligned are our limitations

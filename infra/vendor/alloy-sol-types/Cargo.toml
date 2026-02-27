@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-sol-types"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -72,16 +72,16 @@ name = "alloy_sol_types"
 path = "src/lib.rs"
 
 [dependencies.alloy-json-abi]
-version = "1.5.4"
+version = "1.5.7"
 optional = true
 default-features = false
 
 [dependencies.alloy-primitives]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.alloy-sol-macro]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.serde]
@@ -94,7 +94,7 @@ optional = true
 default-features = false
 
 [dev-dependencies.alloy-primitives]
-version = "1.5.4"
+version = "1.5.7"
 features = [
     "arbitrary",
     "serde",
@@ -104,6 +104,10 @@ default-features = false
 
 [dev-dependencies.alloy-rlp]
 version = "0.3"
+features = [
+    "core-net",
+    "core-error",
+]
 default-features = false
 
 [dev-dependencies.derive_more]

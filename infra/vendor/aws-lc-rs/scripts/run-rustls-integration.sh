@@ -196,8 +196,18 @@ if [[ $latest_release != "1" ]]; then
 else
   cargo update -p aws-lc-rs -p aws-lc-sys
 fi
-cargo tree -i aws-lc-rs --features aws-lc-rs
-cargo test --features aws-lc-rs
+# Extract just the [features] section and check for aws-lc-rs feature there.
+FEATURES_SECTION=$(sed -n '/^\[features\]/,/^\[/p' Cargo.toml)
+if echo "$FEATURES_SECTION" | grep -qE '^aws(-|_)lc(-|_)rs\s*='; then
+  WEBPKI_FEATURE="aws-lc-rs"
+  cargo tree -i aws-lc-rs --features "$WEBPKI_FEATURE"
+  cargo test --features "$WEBPKI_FEATURE"
+else
+  # No aws-lc-rs feature - newer structure uses rustls-aws-lc-rs dev-dependency
+  echo "No aws-lc-rs feature found, running tests with default configuration"
+  cargo tree -i aws-lc-rs
+  cargo test
+fi
 popd > /dev/null
 
 echo "=== Testing rustls with aws-lc-rs ==="
@@ -223,11 +233,22 @@ else
   cargo update -p aws-lc-rs -p aws-lc-sys
 fi
 
-# Run from rustls subdirectory to test the main library
-pushd ./rustls
-cargo tree -i aws-lc-rs --features aws-lc-rs
-cargo test --features aws-lc-rs
-popd > /dev/null # ./rustls
+# Detect which package has the aws-lc-rs feature by checking [features] section.
+# Old structure (<=0.23.x): aws-lc-rs feature is in rustls/Cargo.toml
+# New structure (>=0.24.x): aws-lc-rs feature is in rustls-test/Cargo.toml
+if grep -q '^aws-lc-rs\s*=' ./rustls/Cargo.toml; then
+  # Old structure: aws-lc-rs feature is in the main rustls crate
+  pushd ./rustls
+  cargo tree -i aws-lc-rs --features aws-lc-rs
+  cargo test --features aws-lc-rs
+  popd > /dev/null # ./rustls
+else
+  # New structure: aws-lc-rs feature is in rustls-test
+  pushd ./rustls-test
+  cargo tree -i aws-lc-rs --features aws-lc-rs
+  cargo test --features aws-lc-rs
+  popd > /dev/null # ./rustls-test
+fi
 popd > /dev/null # "$RUSTLS_DIR"
 
 echo "=== All rustls integration tests passed ==="

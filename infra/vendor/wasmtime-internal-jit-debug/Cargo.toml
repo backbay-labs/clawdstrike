@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.90.0"
 name = "wasmtime-internal-jit-debug"
-version = "41.0.3"
+version = "41.0.4"
 authors = ["The Wasmtime Project Developers"]
 build = "build.rs"
 autolib = false
@@ -55,14 +55,14 @@ optional = true
 default-features = false
 
 [dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.3"
+version = "=41.0.4"
 package = "wasmtime-internal-versioned-export-macros"
 
 [build-dependencies.cc]
 version = "1.2.41"
 
 [build-dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.3"
+version = "=41.0.4"
 package = "wasmtime-internal-versioned-export-macros"
 
 [target.'cfg(target_os = "linux")'.dependencies.rustix]

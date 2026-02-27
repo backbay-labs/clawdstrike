@@ -13,99 +13,41 @@ import type {
   HookHandler,
   HookEvent,
   ToolCallEvent,
+  BeforeToolCallHookEvent,
+  BeforeToolCallHookResult,
+  OpenClawHookContext,
   ClawdstrikeConfig,
   PolicyEvent,
   EventType,
 } from '../../types.js';
-import { PolicyEngine } from '../../policy/engine.js';
+import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
 import { peekApproval, recordApproval, type ApprovalResolutionType } from '../approval-state.js';
 import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
-
-/** Shared policy engine instance */
-let engine: PolicyEngine | null = null;
+import {
+  tokenize,
+  classifyTool,
+  NETWORK_TOKENS,
+  DESTRUCTIVE_EVENT_MAP,
+} from '../../classification.js';
 
 /**
- * Initialize the hook with configuration
+ * Initialize the hook with configuration.
+ * Delegates to the shared engine holder so all hooks share one PolicyEngine.
  */
 export function initialize(config: ClawdstrikeConfig): void {
-  engine = new PolicyEngine(config);
+  initializeEngine(config);
 }
 
 /**
- * Get or create the policy engine
+ * Get or create the policy engine.
+ * Delegates to the shared engine holder.
  */
-function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
-  if (!engine) {
-    engine = new PolicyEngine(config ?? {});
-  }
-  return engine;
+export function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
+  return getSharedEngine(config);
 }
 
-/** Read-only tokens: if ANY token matches and no destructive token is present, tool is read-only */
-const READ_ONLY_TOKENS = new Set([
-  'read', 'list', 'get', 'search', 'view', 'show', 'find', 'describe',
-  'info', 'status', 'check', 'ls', 'cat', 'head', 'tail', 'type',
-  'which', 'echo', 'pwd', 'env', 'whoami', 'hostname', 'uname', 'date',
-  'glob', 'grep',
-]);
-
-/** Destructive tokens: if ANY token matches, tool is destructive */
-const DESTRUCTIVE_TOKENS = new Set([
-  'write', 'delete', 'remove', 'rm', 'kill', 'exec', 'run', 'install',
-  'uninstall', 'create', 'update', 'modify', 'patch', 'put', 'post',
-  'move', 'mv', 'rename', 'chmod', 'chown', 'drop', 'truncate',
-  'edit', 'command', 'bash', 'save', 'overwrite', 'unlink', 'terminal',
-]);
-
-/** Destructive token-to-event-type mapping for specific policy routing */
-const DESTRUCTIVE_EVENT_MAP: Array<{ tokens: Set<string>; eventType: EventType }> = [
-  { tokens: new Set(['write', 'edit', 'create', 'save', 'overwrite']), eventType: 'file_write' },
-  { tokens: new Set(['delete', 'remove', 'unlink', 'rm']), eventType: 'file_write' },
-  { tokens: new Set(['shell', 'bash', 'exec', 'command', 'terminal', 'run']), eventType: 'command_exec' },
-  { tokens: new Set(['patch', 'diff']), eventType: 'patch_apply' },
-];
-
-/** Network tokens for egress classification */
-const NETWORK_TOKENS = new Set(['fetch', 'http', 'web', 'curl', 'request']);
-
-/**
- * Tokenize a tool name by splitting on common delimiters and camel-case boundaries.
- */
-function tokenize(toolName: string): string[] {
-  return toolName
-    // Split `fooBar` -> `foo Bar`, `HTTPFetch` -> `HTTP Fetch`
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[_\-/\s.]+/)
-    .filter(Boolean);
-}
-
-type ToolClassification = 'read_only' | 'destructive' | 'unknown';
-
-/**
- * Classify a tool based on its name tokens.
- * - If ANY token is destructive → destructive
- * - If ANY token is read-only and NO token is destructive → read-only
- * - Otherwise → unknown (treated as potentially destructive)
- */
-function classifyTool(tokens: string[]): ToolClassification {
-  let hasReadOnly = false;
-  let hasDestructive = false;
-
-  for (const token of tokens) {
-    if (DESTRUCTIVE_TOKENS.has(token)) {
-      hasDestructive = true;
-    }
-    if (READ_ONLY_TOKENS.has(token)) {
-      hasReadOnly = true;
-    }
-  }
-
-  if (hasDestructive) return 'destructive';
-  if (hasReadOnly) return 'read_only';
-  return 'unknown';
-}
+// Re-export PolicyEngine type so existing `getEngine` callers can use it.
+import type { PolicyEngine } from '../../policy/engine.js';
 
 /**
  * Infer the event type for a tool based on its name tokens and parameters.
@@ -166,7 +108,7 @@ function buildPolicyEvent(
   params: Record<string, unknown>,
   eventType: EventType,
 ): PolicyEvent {
-  const eventId = `preflight-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const eventId = `preflight-${sessionId}-${Date.now()}-${crypto.randomUUID()}`;
   const timestamp = new Date().toISOString();
 
   switch (eventType) {
@@ -303,8 +245,7 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
 function looksLikePatchApply(params: Record<string, unknown>): boolean {
   return typeof params.patch === 'string'
     || typeof params.diff === 'string'
-    || typeof params.patchContent === 'string'
-    || typeof params.filePath === 'string';
+    || typeof params.patchContent === 'string';
 }
 
 function looksLikeCommandExec(params: Record<string, unknown>): boolean {
@@ -391,6 +332,7 @@ async function requestApproval(details: {
     const submitRes = await fetch(`${approvalUrl}/api/v1/approval/request`, {
       method: 'POST',
       headers: authHeaders,
+      signal: AbortSignal.timeout(10_000),
       body: JSON.stringify({
         tool: details.toolName,
         resource: details.resource,
@@ -416,6 +358,7 @@ async function requestApproval(details: {
     try {
       const pollRes = await fetch(`${approvalUrl}/api/v1/approval/${id}/status`, {
         headers: { 'Authorization': 'Bearer ' + token },
+        signal: AbortSignal.timeout(10_000),
       });
       if (!pollRes.ok) {
         return null;
@@ -448,14 +391,43 @@ async function requestApproval(details: {
  * On warn: adds a warning message but allows execution.
  * On allow / read-only: no-op.
  */
-const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'tool_call') {
-    return;
+const handler: HookHandler = async (
+  event: HookEvent | BeforeToolCallHookEvent,
+  hookCtx?: OpenClawHookContext,
+): Promise<void | BeforeToolCallHookResult> => {
+  const isModernBeforeToolCallEvent = (value: HookEvent | BeforeToolCallHookEvent): value is BeforeToolCallHookEvent => {
+    if (value && typeof value === 'object' && 'type' in value) return false;
+    return Boolean(
+      value &&
+      typeof value === 'object' &&
+      typeof (value as { toolName?: unknown }).toolName === 'string' &&
+      typeof (value as { params?: unknown }).params === 'object' &&
+      (value as { params?: unknown }).params !== null,
+    );
+  };
+
+  const isModern = isModernBeforeToolCallEvent(event);
+  if (!isModern) {
+    if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
+      return;
+    }
   }
 
-  const toolEvent = event as ToolCallEvent;
-  const { toolName, params } = toolEvent.context.toolCall;
-  const sessionId = toolEvent.context.sessionId;
+  const legacyToolEvent = isModern ? null : event as ToolCallEvent;
+
+  // Skip if already handled by another hook registration (e.g. before_tool_call + tool_call dual registration)
+  if (!isModern && legacyToolEvent!.preventDefault) return;
+
+  // Skip if the CUA bridge handler already evaluated this tool call.
+  // CUA tools receive specialized policy evaluation via the bridge; running
+  // the general preflight handler as well would cause double evaluation.
+  if ((event as any).__cuaBridgeEvaluated) return;
+
+  const toolName = isModern ? event.toolName : legacyToolEvent!.context.toolCall.toolName;
+  const params = isModern ? event.params : legacyToolEvent!.context.toolCall.params;
+  const sessionId = isModern
+    ? (hookCtx?.sessionKey ?? hookCtx?.agentId ?? 'openclaw-runtime')
+    : legacyToolEvent!.context.sessionId;
 
   // Determine if this tool is destructive
   const eventType = inferPolicyEventType(toolName, params);
@@ -478,9 +450,11 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     if (severity !== 'critical') {
       const prior = peekApproval(sessionId, toolName, resource);
       if (prior) {
-        toolEvent.messages.push(
-          `[clawdstrike] Pre-flight check: using prior ${prior.resolution} approval for ${toolName} on ${resource}`,
-        );
+        if (!isModern) {
+          legacyToolEvent!.messages.push(
+            `[clawdstrike] Pre-flight check: using prior ${prior.resolution} approval for ${toolName} on ${resource}`,
+          );
+        }
         return;
       }
     }
@@ -499,22 +473,30 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
       if (approvalResult) {
         const resolution = approvalResult.resolution as ApprovalResolutionType;
         recordApproval(sessionId, toolName, resource, resolution);
-        toolEvent.messages.push(
-          `[clawdstrike] Pre-flight check: ${toolName} on ${resource} was approved by user`,
-        );
+        if (!isModern) {
+          legacyToolEvent!.messages.push(
+            `[clawdstrike] Pre-flight check: ${toolName} on ${resource} was approved by user`,
+          );
+        }
         return;
       }
     }
 
-    toolEvent.preventDefault = true;
-    toolEvent.messages.push(
-      `[clawdstrike] Pre-flight check: blocked ${toolName} on ${resource}${decision.reason ? ` — ${decision.reason}` : ''}`,
-    );
+    const blockReason =
+      `blocked ${toolName} on ${resource}${decision.reason ? ` — ${decision.reason}` : ''}`;
+    if (isModern) {
+      return { block: true, blockReason, params };
+    }
+    legacyToolEvent!.preventDefault = true;
+    legacyToolEvent!.messages.push(`[clawdstrike] Pre-flight check: ${blockReason}`);
+    if (legacyToolEvent!.type === 'before_tool_call') {
+      return { block: true, blockReason, params };
+    }
     return;
   }
 
-  if (decision.status === 'warn') {
-    toolEvent.messages.push(
+  if (!isModern && decision.status === 'warn') {
+    legacyToolEvent!.messages.push(
       `[clawdstrike] Pre-flight warning: ${decision.message ?? decision.reason ?? 'Policy warning'} (${toolName})`,
     );
   }

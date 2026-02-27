@@ -9,6 +9,7 @@ This module implements the Rust `hush-core` receipt schema and signing contract:
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -105,7 +106,7 @@ class Verdict:
             raise ValueError("verdict.gate_id must be a string")
         threshold = data.get("threshold")
         if threshold is not None:
-            if not isinstance(threshold, (int, float)) or threshold != threshold:
+            if not isinstance(threshold, (int, float)) or math.isnan(threshold):
                 raise ValueError("verdict.threshold must be a finite number")
             threshold = float(threshold)
         return cls(passed=passed, gate_id=gate_id, scores=data.get("scores"), threshold=threshold)

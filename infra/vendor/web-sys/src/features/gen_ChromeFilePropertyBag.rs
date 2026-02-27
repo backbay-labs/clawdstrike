@@ -20,6 +20,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `ChromeFilePropertyBag`*"]
     #[wasm_bindgen(method, setter = "lastModified")]
     pub fn set_last_modified(this: &ChromeFilePropertyBag, val: f64);
+    #[doc = "Change the `lastModified` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ChromeFilePropertyBag`*"]
+    #[wasm_bindgen(method, setter = "lastModified")]
+    pub fn set_last_modified_i32(this: &ChromeFilePropertyBag, val: i32);
+    #[doc = "Change the `lastModified` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `ChromeFilePropertyBag`*"]
+    #[wasm_bindgen(method, setter = "lastModified")]
+    pub fn set_last_modified_f64(this: &ChromeFilePropertyBag, val: f64);
     #[doc = "Get the `type` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `ChromeFilePropertyBag`*"]

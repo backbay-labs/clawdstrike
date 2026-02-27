@@ -1,5 +1,0 @@
-Policy test: Policy Torture 05 - Extends Depth/Loop Stress
-Cases:
-  - extends-loop-stress: PASS (Circular policy extension detected)
-  - extends-depth-stress: PASS (Policy extends depth exceeded)
-Exit: 0

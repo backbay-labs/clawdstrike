@@ -191,7 +191,7 @@ def test_generate_proof_invalid_index():
 
 def test_merkle_tree_from_data():
     """MerkleTree.from_data should hash leaves automatically."""
-    from clawdstrike.merkle import MerkleTree, hash_leaf
+    from clawdstrike.merkle import MerkleTree
 
     tree = MerkleTree.from_data([b"a", b"b", b"c"])
 

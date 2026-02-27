@@ -67,14 +67,14 @@ Kubernetes Cluster                    NATS JetStream               Desktop / CLI
 
 | Crate | Purpose | Status |
 |-------|---------|--------|
-| `hush-core` | Ed25519, SHA-256, Keccak-256, Merkle trees, RFC 8785 canonical JSON | Stable |
-| `clawdstrike` | Policy engine, guards, receipts, marketplace feed | Stable |
-| `spine` | Signed envelopes, checkpoints, NATS transport, trust bundles, proofs API | **New in SDR** |
-| `tetragon-bridge` | Tetragon gRPC → Spine envelopes | **New in SDR** |
-| `hubble-bridge` | Hubble gRPC → Spine envelopes | **New in SDR** |
-| `hushd` | HTTP daemon for centralized enforcement | Experimental |
-| `hush-multi-agent` | Delegation tokens, agent identity, revocation | Stable |
-| `hush-cli` | CLI binary | Stable |
+| `hush-core` | Ed25519, SHA-256, Keccak-256, Merkle trees, RFC 8785 canonical JSON | alpha |
+| `clawdstrike` | Policy engine, guards, receipts, marketplace feed | alpha |
+| `spine` | Signed envelopes, checkpoints, NATS transport, trust bundles, proofs API | alpha |
+| `tetragon-bridge` | Tetragon gRPC → Spine envelopes | alpha |
+| `hubble-bridge` | Hubble gRPC → Spine envelopes | alpha |
+| `hushd` | HTTP daemon for centralized enforcement | alpha |
+| `hush-multi-agent` | Delegation tokens, agent identity, revocation | alpha |
+| `hush-cli` | CLI binary | alpha |
 
 ### Key conventions
 

@@ -135,7 +135,10 @@ macro_rules! unsafe_impl {
         fn only_derive_is_allowed_to_implement_this_trait() {}
 
         #[inline]
-        fn is_bit_valid($candidate: Maybe<'_, Self>) -> bool {
+        fn is_bit_valid<Alignment>($candidate: Maybe<'_, Self, Alignment>) -> bool
+        where
+            Alignment: crate::invariant::Alignment,
+        {
             $is_bit_valid
         }
     };
@@ -143,7 +146,13 @@ macro_rules! unsafe_impl {
         #[allow(clippy::missing_inline_in_public_items)]
         #[cfg_attr(all(coverage_nightly, __ZEROCOPY_INTERNAL_USE_ONLY_NIGHTLY_FEATURES_IN_TESTS), coverage(off))]
         fn only_derive_is_allowed_to_implement_this_trait() {}
-        #[inline(always)] fn is_bit_valid(_candidate: Maybe<'_, Self>) -> bool { true }
+        #[inline(always)]
+        fn is_bit_valid<Alignment>(_candidate: Maybe<'_, Self, Alignment>) -> bool
+        where
+            Alignment: crate::invariant::Alignment,
+        {
+            true
+        }
     };
     (@method $trait:ident) => {
         #[allow(clippy::missing_inline_in_public_items, dead_code)]
@@ -217,8 +226,11 @@ macro_rules! impl_for_transmute_from {
         $(<$tyvar:ident $(: $(? $optbound:ident $(+)?)* $($bound:ident $(+)?)* )?>)?
         TryFromBytes for $ty:ty [$repr:ty]
     ) => {
-        #[inline]
-        fn is_bit_valid(candidate: $crate::Maybe<'_, Self>) -> bool {
+        #[inline(always)]
+        fn is_bit_valid<Alignment>(candidate: $crate::Maybe<'_, Self, Alignment>) -> bool
+        where
+            Alignment: $crate::invariant::Alignment,
+        {
             // SAFETY: This macro ensures that `$repr` and `Self` have the same
             // size and bit validity. Thus, a bit-valid instance of `$repr` is
             // also a bit-valid instance of `Self`.
@@ -310,6 +322,9 @@ macro_rules! opt_unsafe_fn {
     ($($args:ident),* -> $ret:ident) => { Option<unsafe fn($($args),*) -> $ret> };
 }
 
+// This `allow` is needed because, when testing, we export this macro so it can
+// be used in `doctests`.
+#[allow(rustdoc::private_intra_doc_links)]
 /// Implements trait(s) for a type or verifies the given implementation by
 /// referencing an existing (derived) implementation.
 ///
@@ -330,8 +345,7 @@ macro_rules! opt_unsafe_fn {
 /// `const _: () = unsafe` macro). The reason for this restriction is that,
 /// while `impl_or_verify!` can guarantee that the provided impl is sound when
 /// it is compiled with the appropriate cfgs, there is no way to guarantee that
-/// it is
-/// ever compiled with those cfgs. In particular, it would be possible to
+/// it is ever compiled with those cfgs. In particular, it would be possible to
 /// accidentally place an `impl_or_verify!` call in a context that is only ever
 /// compiled when the `derive` feature is disabled. If that were to happen,
 /// there would be nothing to prevent an unsound trait impl from being emitted.
@@ -360,6 +374,7 @@ macro_rules! opt_unsafe_fn {
 ///     impl_or_verify!(T: Unaligned => Unaligned for Wrapper<T>);
 /// }
 /// ```
+#[cfg_attr(__ZEROCOPY_INTERNAL_USE_ONLY_DEV_MODE, macro_export)] // Used in `doctests.rs`
 macro_rules! impl_or_verify {
     // The following two match arms follow the same pattern as their
     // counterparts in `unsafe_impl!`; see the documentation on those arms for

@@ -10,7 +10,7 @@ Preferred channel:
 
 Alternative channel:
 
-- Email: [security@clawdstrike.io](mailto:security@clawdstrike.io)
+- Email: [connor@backbay.io](mailto:connor@backbay.io)
 
 ## What to Include in a Report
 

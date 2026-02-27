@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "alloy-eips"
-version = "1.6.3"
+version = "1.7.3"
 dependencies = [
  "alloy-eip2124",
  "alloy-eip2930",
@@ -144,9 +144,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-serde"
-version = "1.6.3"
+version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e6d631f8b975229361d8af7b2c749af31c73b3cf1352f90e144ddb06227105e"
+checksum = "e2ce1e0dbf7720eee747700e300c99aac01b1a95bb93f493a01e78ee28bb1a37"
 dependencies = [
  "alloy-primitives",
  "arbitrary",

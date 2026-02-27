@@ -402,6 +402,57 @@ bitflags! {
         const FD_CLONE = 1 << 13;
         const FD_UPPER = 1 << 14;
         const FD_CLOEXEC = 1 << 15;
+
+        /// Call is a standard fs call, with metadata defined in `StdFsCallMeta`
+        const STD_FS = 1 << 16;
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StdFsCallKind {
+    /*TODO: remove old syscalls
+    Fchmod = 1,
+    Fchown = 2,
+    Getdents = 3,
+    Fstat = 4,
+    Fstatvfs = 5,
+    Fsync = 6,
+    Ftruncate = 7,
+    Futimens = 8,
+    // 9 reserved in fscall RFC
+    Unlinkat = 10,
+    */
+    Realpathat = 11,
+    Lock = 12,
+    Unlock = 13,
+    GetLock = 14,
+}
+
+impl StdFsCallKind {
+    pub fn try_from_raw(raw: u8) -> Option<Self> {
+        use StdFsCallKind::*;
+
+        // TODO: Use a library where this match can be automated.
+        Some(match raw {
+            /*
+            1 => Fchmod,
+            2 => Fchown,
+            3 => Getdents,
+            4 => Fstat,
+            5 => Fstatvfs,
+            6 => Fsync,
+            7 => Ftruncate,
+            8 => Futimens,
+            // 9 reserved in fscall RFC
+            10 => Unlinkat,
+            */
+            11 => Realpathat,
+            12 => Lock,
+            13 => Unlock,
+            14 => GetLock,
+            _ => return None,
+        })
     }
 }
 

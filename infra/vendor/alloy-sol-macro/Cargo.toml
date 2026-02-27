@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85"
 name = "alloy-sol-macro"
-version = "1.5.4"
+version = "1.5.7"
 authors = ["Alloy Contributors"]
 build = false
 exclude = ["tests"]
@@ -57,11 +57,11 @@ path = "src/lib.rs"
 proc-macro = true
 
 [dependencies.alloy-sol-macro-expander]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.alloy-sol-macro-input]
-version = "1.5.4"
+version = "1.5.7"
 default-features = false
 
 [dependencies.proc-macro-error2]

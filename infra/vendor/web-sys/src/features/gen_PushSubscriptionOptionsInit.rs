@@ -25,6 +25,38 @@ extern "C" {
         this: &PushSubscriptionOptionsInit,
         val: &::wasm_bindgen::JsValue,
     );
+    #[doc = "Change the `applicationServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionOptionsInit`*"]
+    #[wasm_bindgen(method, setter = "applicationServerKey")]
+    pub fn set_application_server_key_opt_buffer_source(
+        this: &PushSubscriptionOptionsInit,
+        val: Option<&::js_sys::Object>,
+    );
+    #[doc = "Change the `applicationServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionOptionsInit`*"]
+    #[wasm_bindgen(method, setter = "applicationServerKey")]
+    pub fn set_application_server_key_opt_u8_slice(
+        this: &PushSubscriptionOptionsInit,
+        val: Option<&mut [u8]>,
+    );
+    #[doc = "Change the `applicationServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionOptionsInit`*"]
+    #[wasm_bindgen(method, setter = "applicationServerKey")]
+    pub fn set_application_server_key_opt_u8_array(
+        this: &PushSubscriptionOptionsInit,
+        val: Option<&::js_sys::Uint8Array>,
+    );
+    #[doc = "Change the `applicationServerKey` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionOptionsInit`*"]
+    #[wasm_bindgen(method, setter = "applicationServerKey")]
+    pub fn set_application_server_key_opt_str(
+        this: &PushSubscriptionOptionsInit,
+        val: Option<&str>,
+    );
     #[doc = "Get the `userVisibleOnly` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `PushSubscriptionOptionsInit`*"]

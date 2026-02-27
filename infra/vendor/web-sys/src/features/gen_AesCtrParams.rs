@@ -30,6 +30,21 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `AesCtrParams`*"]
     #[wasm_bindgen(method, setter = "counter")]
     pub fn set_counter(this: &AesCtrParams, val: &::js_sys::Object);
+    #[doc = "Change the `counter` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AesCtrParams`*"]
+    #[wasm_bindgen(method, setter = "counter")]
+    pub fn set_counter_buffer_source(this: &AesCtrParams, val: &::js_sys::Object);
+    #[doc = "Change the `counter` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AesCtrParams`*"]
+    #[wasm_bindgen(method, setter = "counter")]
+    pub fn set_counter_u8_slice(this: &AesCtrParams, val: &mut [u8]);
+    #[doc = "Change the `counter` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AesCtrParams`*"]
+    #[wasm_bindgen(method, setter = "counter")]
+    pub fn set_counter_u8_array(this: &AesCtrParams, val: &::js_sys::Uint8Array);
     #[doc = "Get the `length` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `AesCtrParams`*"]
@@ -50,6 +65,28 @@ impl AesCtrParams {
         let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
         ret.set_name(name);
         ret.set_counter(counter);
+        ret.set_length(length);
+        ret
+    }
+    #[doc = "Construct a new `AesCtrParams`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AesCtrParams`*"]
+    pub fn new_with_u8_slice(name: &str, counter: &mut [u8], length: u8) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_counter_u8_slice(counter);
+        ret.set_length(length);
+        ret
+    }
+    #[doc = "Construct a new `AesCtrParams`."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `AesCtrParams`*"]
+    pub fn new_with_u8_array(name: &str, counter: &::js_sys::Uint8Array, length: u8) -> Self {
+        #[allow(unused_mut)]
+        let mut ret: Self = ::wasm_bindgen::JsCast::unchecked_into(::js_sys::Object::new());
+        ret.set_name(name);
+        ret.set_counter_u8_array(counter);
         ret.set_length(length);
         ret
     }

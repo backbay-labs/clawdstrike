@@ -1,0 +1,123 @@
+name: Promote Dev Profile Images
+
+on:
+  workflow_run:
+    workflows: ["Docker Build & Push"]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROFILE_PATH: infra/deploy/helm/clawdstrike/profiles/all-on-dev-platform.yaml
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  EKS_ROLE_ARN: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+  ARGOCD_NAMESPACE: argocd
+  ARGO_APP_NAME: clawdstrike-helm
+
+concurrency:
+  group: promote-dev-profile-images
+  cancel-in-progress: true
+
+jobs:
+  promote:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GHCR_PUSH_TOKEN }}
+
+      - name: Validate workflow SHA is current main tip
+        id: sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="${{ github.event.workflow_run.head_sha }}"
+          latest_sha="$(git rev-parse origin/main)"
+
+          echo "target_sha=${target_sha}" >> "$GITHUB_OUTPUT"
+          echo "latest_sha=${latest_sha}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$target_sha" != "$latest_sha" ]]; then
+            echo "stale_run=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale promotion for ${target_sha}; main is ${latest_sha}"
+            exit 0
+          fi
+
+          echo "stale_run=false" >> "$GITHUB_OUTPUT"
+
+      - name: Update all-on profile tags
+        if: steps.sha.outputs.stale_run != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/update-all-on-profile-tags.sh \
+            --profile "${PROFILE_PATH}" \
+            --sha "${{ steps.sha.outputs.target_sha }}"
+
+      - name: Commit and push promoted profile
+        if: steps.sha.outputs.stale_run != 'true'
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- "${PROFILE_PATH}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No profile tag changes required"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          short_sha="${{ steps.sha.outputs.target_sha }}"
+          short_sha="${short_sha:0:8}"
+
+          git add "${PROFILE_PATH}"
+          git commit -m "chore(deploy): promote dev profile images for ${short_sha}"
+          git push origin HEAD:main
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Setup kubectl
+        if: steps.commit.outputs.changed == 'true' && env.EKS_CLUSTER_NAME != '' && env.EKS_ROLE_ARN != ''
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: steps.commit.outputs.changed == 'true' && env.EKS_CLUSTER_NAME != '' && env.EKS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.EKS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Force Argo sync operation
+        if: steps.commit.outputs.changed == 'true' && env.EKS_CLUSTER_NAME != '' && env.EKS_ROLE_ARN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+          kubectl -n "${ARGOCD_NAMESPACE}" patch application "${ARGO_APP_NAME}" --type merge \
+            -p '{"operation":{"initiatedBy":{"username":"github-actions"},"sync":{"revision":"main","prune":true,"syncOptions":["CreateNamespace=true"]}}}'
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Promote Dev Profile Images"
+            echo ""
+            echo "- source workflow run: ${{ github.event.workflow_run.html_url }}"
+            echo "- target sha: \`${{ steps.sha.outputs.target_sha }}\`"
+            echo "- latest sha at execution: \`${{ steps.sha.outputs.latest_sha }}\`"
+            echo "- stale skipped: \`${{ steps.sha.outputs.stale_run }}\`"
+            echo "- profile changed: \`${{ steps.commit.outputs.changed || 'false' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -73,7 +73,7 @@ impl RapidSecrets {
     ///
     /// This is useful for in-memory hashing, so we can quickly use a different seed for other
     /// HashMaps.
-    #[inline]
+    #[inline(always)]
     pub const fn reseed(&self) -> Self {
         Self {
             seed: premix_seed(self.seed, 6),
@@ -87,7 +87,7 @@ impl RapidSecrets {
     /// Note that these **use the default secrets** and therefore are liable to some trivial
     /// collision attacks, as randomising both the seed and secrets is necessary to provide minimal
     /// HashDoS resistance.
-    #[inline]
+    #[inline(always)]
     pub const fn seed_cpp(seed: u64) -> Self {
         Self {
             seed: rapidhash_seed(seed),

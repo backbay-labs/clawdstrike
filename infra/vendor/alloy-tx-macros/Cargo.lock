@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "alloy-tx-macros"
-version = "1.6.3"
+version = "1.7.3"
 dependencies = [
  "darling",
  "proc-macro2",

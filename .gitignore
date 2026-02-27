@@ -55,5 +55,8 @@ packages/sdk/hush-csharp/**/bin/
 packages/sdk/hush-csharp/**/obj/
 packages/sdk/hush-csharp/.vs/
 
+# Playwright test results
+**/test-results/
+
 # Agent bundled daemon staging artifact
 apps/agent/src-tauri/resources/bin/

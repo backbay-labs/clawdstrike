@@ -1,3 +1,8 @@
+/**
+ * SIEM integration module.
+ * @experimental This module is experimental and its API may change in future releases.
+ * Exporters have not been validated against production SIEM services.
+ */
 export * from "./types";
 export * from "./framework";
 export * from "./filter";

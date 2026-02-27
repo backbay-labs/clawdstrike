@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "wasm-bindgen-test-shared"
-version = "0.2.108"
+version = "0.2.112"
 authors = ["The wasm-bindgen Developers"]
 build = false
 include = [

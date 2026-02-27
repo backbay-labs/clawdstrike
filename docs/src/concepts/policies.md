@@ -7,7 +7,7 @@ Policies are YAML files parsed into `clawdstrike::Policy`. They configure the bu
 At a high level:
 
 ```yaml
-version: "1.1.0"
+version: "1.2.0"
 name: Example
 description: Optional
 
@@ -28,6 +28,8 @@ settings:
 ```
 
 See the [Policy Schema](../reference/policy-schema.md) for exact fields.
+
+> **Note:** Schema version `1.1.0` is backward-compatible and still accepted by the engine. New policies should use `1.2.0`.
 
 ## Inheritance (`extends`)
 

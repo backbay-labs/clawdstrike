@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.90.0"
 name = "wasmtime-internal-cranelift"
-version = "41.0.3"
+version = "41.0.4"
 authors = ["The Wasmtime Project Developers"]
 build = false
 autolib = false
@@ -64,7 +64,7 @@ path = "src/lib.rs"
 version = "1.0"
 
 [dependencies.cranelift-codegen]
-version = "0.128.3"
+version = "0.128.4"
 features = [
     "std",
     "unwind",
@@ -74,16 +74,16 @@ features = [
 default-features = false
 
 [dependencies.cranelift-control]
-version = "0.128.3"
+version = "0.128.4"
 
 [dependencies.cranelift-entity]
-version = "0.128.3"
+version = "0.128.4"
 
 [dependencies.cranelift-frontend]
-version = "0.128.3"
+version = "0.128.4"
 
 [dependencies.cranelift-native]
-version = "0.128.3"
+version = "0.128.4"
 
 [dependencies.gimli]
 version = "0.32.3"
@@ -111,7 +111,7 @@ features = [
 default-features = false
 
 [dependencies.pulley-interpreter]
-version = "=41.0.3"
+version = "=41.0.4"
 optional = true
 
 [dependencies.smallvec]
@@ -130,20 +130,20 @@ features = ["simd"]
 default-features = false
 
 [dependencies.wasmtime-environ]
-version = "=41.0.3"
+version = "=41.0.4"
 features = ["compile"]
 
 [dependencies.wasmtime-math]
-version = "=41.0.3"
+version = "=41.0.4"
 package = "wasmtime-internal-math"
 
 [dependencies.wasmtime-unwinder]
-version = "=41.0.3"
+version = "=41.0.4"
 features = ["cranelift"]
 package = "wasmtime-internal-unwinder"
 
 [dependencies.wasmtime-versioned-export-macros]
-version = "=41.0.3"
+version = "=41.0.4"
 package = "wasmtime-internal-versioned-export-macros"
 
 [lints.clippy]

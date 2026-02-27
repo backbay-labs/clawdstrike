@@ -192,6 +192,16 @@ extern "C" {
     #[doc = "*This API requires the following crate features to be activated: `RtcInboundRtpStreamStats`*"]
     #[wasm_bindgen(method, setter = "bytesReceived")]
     pub fn set_bytes_received(this: &RtcInboundRtpStreamStats, val: f64);
+    #[doc = "Change the `bytesReceived` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcInboundRtpStreamStats`*"]
+    #[wasm_bindgen(method, setter = "bytesReceived")]
+    pub fn set_bytes_received_u32(this: &RtcInboundRtpStreamStats, val: u32);
+    #[doc = "Change the `bytesReceived` field of this object."]
+    #[doc = ""]
+    #[doc = "*This API requires the following crate features to be activated: `RtcInboundRtpStreamStats`*"]
+    #[wasm_bindgen(method, setter = "bytesReceived")]
+    pub fn set_bytes_received_f64(this: &RtcInboundRtpStreamStats, val: f64);
     #[doc = "Get the `discardedPackets` field of this object."]
     #[doc = ""]
     #[doc = "*This API requires the following crate features to be activated: `RtcInboundRtpStreamStats`*"]
