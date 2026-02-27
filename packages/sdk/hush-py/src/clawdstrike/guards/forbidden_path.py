@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from wcmatch import glob as wcglob
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
+from clawdstrike.guards.base import (
+    Action,
+    Guard,
+    GuardContext,
+    GuardResult,
+    Severity,
+)
 
 
-def default_forbidden_patterns() -> List[str]:
+def default_forbidden_patterns() -> list[str]:
     """Default patterns for forbidden paths."""
     return [
         # SSH keys
@@ -50,21 +55,21 @@ def default_forbidden_patterns() -> List[str]:
 class ForbiddenPathConfig:
     """Configuration for ForbiddenPathGuard."""
 
-    patterns: List[str] = field(default_factory=default_forbidden_patterns)
-    exceptions: List[str] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=default_forbidden_patterns)
+    exceptions: list[str] = field(default_factory=list)
 
 
 class ForbiddenPathGuard(Guard):
     """Guard that blocks access to sensitive paths."""
 
-    def __init__(self, config: Optional[ForbiddenPathConfig] = None) -> None:
+    def __init__(self, config: ForbiddenPathConfig | None = None) -> None:
         self._config = config or ForbiddenPathConfig()
 
     @property
     def name(self) -> str:
         return "forbidden_path"
 
-    def handles(self, action: GuardAction) -> bool:
+    def handles(self, action: Action) -> bool:
         return action.action_type in ("file_access", "file_write", "patch")
 
     def is_forbidden(self, path: str) -> bool:
@@ -91,7 +96,7 @@ class ForbiddenPathGuard(Guard):
 
         return False
 
-    def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
+    def check(self, action: Action, context: GuardContext) -> GuardResult:
         """Check if file access is allowed.
 
         Args:
@@ -104,7 +109,7 @@ class ForbiddenPathGuard(Guard):
         if not self.handles(action):
             return GuardResult.allow(self.name)
 
-        path = action.path
+        path: str | None = getattr(action, "path", None)
         if path is None:
             return GuardResult.allow(self.name)
 

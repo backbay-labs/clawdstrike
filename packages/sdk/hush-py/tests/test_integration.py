@@ -6,7 +6,8 @@ from clawdstrike import (
     PublicKeySet,
     Receipt,
     SignedReceipt,
-    GuardAction,
+    FileAccessAction,
+    NetworkEgressAction,
     GuardContext,
     Verdict,
     generate_keypair,
@@ -24,22 +25,22 @@ class TestFullWorkflow:
 
         # Test various actions
         assert engine.is_allowed(
-            GuardAction.file_access("/app/src/main.py"),
+            FileAccessAction(path="/app/src/main.py"),
             context,
         )
 
         assert not engine.is_allowed(
-            GuardAction.file_access("/home/user/.ssh/id_rsa"),
+            FileAccessAction(path="/home/user/.ssh/id_rsa"),
             context,
         )
 
         assert engine.is_allowed(
-            GuardAction.network_egress("api.example.com", 443),
+            NetworkEgressAction(host="api.example.com", port=443),
             context,
         )
 
         assert not engine.is_allowed(
-            GuardAction.network_egress("unknown.com", 443),
+            NetworkEgressAction(host="unknown.com", port=443),
             context,
         )
 

@@ -8,8 +8,8 @@ Provides deterministic JSON serialization for hashing and signing:
 """
 from __future__ import annotations
 
-import math
 import json
+import math
 from typing import Any
 
 
@@ -171,7 +171,7 @@ def canonical_hash(obj: Any, algorithm: str = "sha256") -> bytes:
     Raises:
         ValueError: If algorithm is not supported
     """
-    from .core import sha256, keccak256
+    from .core import keccak256, sha256
 
     canonical = canonicalize(obj).encode("utf-8")
 

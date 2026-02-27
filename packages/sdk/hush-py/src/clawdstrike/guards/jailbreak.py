@@ -8,37 +8,42 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
-
+from clawdstrike.guards.base import (
+    Action,
+    Guard,
+    GuardContext,
+    GuardResult,
+    Severity,
+)
 
 # Heuristic signal patterns (case-insensitive)
-_SIGNALS: List[tuple[str, str, int]] = [
+_SIGNALS: list[tuple[str, str, int]] = [  # noqa: E501
     # (signal_id, pattern, score_contribution)
     ("dan_persona", r"(?i)\b(DAN|do\s+anything\s+now)\b", 30),
-    ("ignore_safety", r"(?i)ignore\s+(all\s+)?(safety|ethical|moral|content)\s+(policies|guidelines|restrictions|filters|rules)", 35),
-    ("roleplay_override", r"(?i)(pretend|act\s+as\s+if|imagine|suppose)\s+(you\s+)?(are|have|don't\s+have|no\s+longer)\s+(restrict|filter|limit|bound|constraint|rule)", 25),
-    ("system_override", r"(?i)(override|disable|remove|bypass|turn\s+off)\s+(your|the|all)\s+(restrictions|filters|safety|limits|guidelines|rules)", 35),
-    ("evil_persona", r"(?i)(evil|unrestricted|unfiltered|uncensored|jailbroken?)\s+(mode|version|personality|AI|assistant)", 30),
+    ("ignore_safety", r"(?i)ignore\s+(all\s+)?(safety|ethical|moral|content)\s+(policies|guidelines|restrictions|filters|rules)", 35),  # noqa: E501
+    ("roleplay_override", r"(?i)(pretend|act\s+as\s+if|imagine|suppose)\s+(you\s+)?(are|have|don't\s+have|no\s+longer)\s+(restrict|filter|limit|bound|constraint|rule)", 25),  # noqa: E501
+    ("system_override", r"(?i)(override|disable|remove|bypass|turn\s+off)\s+(your|the|all)\s+(restrictions|filters|safety|limits|guidelines|rules)", 35),  # noqa: E501
+    ("evil_persona", r"(?i)(evil|unrestricted|unfiltered|uncensored|jailbroken?)\s+(mode|version|personality|AI|assistant)", 30),  # noqa: E501
     ("token_smuggling", r"(?i)(token|prompt)\s*(smuggl|inject|manipulat)", 25),
-    ("hypothetical_bypass", r"(?i)(hypothetical|theoretical|fictional)\s+(scenario|situation)\s+(where|in\s+which)\s+(you|AI)", 15),
-    ("developer_mode", r"(?i)(developer|dev|debug|admin|root|sudo)\s*(mode|access|override|privilege)", 25),
-    ("opposite_day", r"(?i)(opposite\s+day|opposite\s+mode|reverse\s+psychology|anti[_\-]?filter)", 20),
-    ("prompt_leak", r"(?i)(show|reveal|display|output|print)\s+(me\s+)?(your|the)\s+(system\s+)?(prompt|instructions|rules|guidelines)", 30),
+    ("hypothetical_bypass", r"(?i)(hypothetical|theoretical|fictional)\s+(scenario|situation)\s+(where|in\s+which)\s+(you|AI)", 15),  # noqa: E501
+    ("developer_mode", r"(?i)(developer|dev|debug|admin|root|sudo)\s*(mode|access|override|privilege)", 25),  # noqa: E501
+    ("opposite_day", r"(?i)(opposite\s+day|opposite\s+mode|reverse\s+psychology|anti[_\-]?filter)", 20),  # noqa: E501
+    ("prompt_leak", r"(?i)(show|reveal|display|output|print)\s+(me\s+)?(your|the)\s+(system\s+)?(prompt|instructions|rules|guidelines)", 30),  # noqa: E501
 ]
 
 _COMPILED_SIGNALS = [(sid, re.compile(pat), score) for sid, pat, score in _SIGNALS]
 
 
-def _detect(text: str, max_input_bytes: int = 200_000) -> tuple[int, List[str]]:
+def _detect(text: str, max_input_bytes: int = 200_000) -> tuple[int, list[str]]:
     """Run heuristic detection on text prefix.
 
     Returns (risk_score 0-100, list_of_signal_ids).
     """
     scanned = text[:max_input_bytes]
     total_score = 0
-    matched_signals: List[str] = []
+    matched_signals: list[str] = []
 
     for signal_id, compiled, score in _COMPILED_SIGNALS:
         if compiled.search(scanned):
@@ -72,25 +77,26 @@ class JailbreakGuard(Guard):
 
     USER_INPUT_KINDS = {"user_input", "hushclaw.user_input"}
 
-    def __init__(self, config: Optional[JailbreakConfig] = None) -> None:
+    def __init__(self, config: JailbreakConfig | None = None) -> None:
         self._config = config or JailbreakConfig()
 
     @property
     def name(self) -> str:
         return "jailbreak_detection"
 
-    def handles(self, action: GuardAction) -> bool:
+    def handles(self, action: Action) -> bool:
         if not self._config.enabled:
             return False
+        custom_type: str | None = getattr(action, "custom_type", None)
         return (
             action.action_type == "custom"
-            and action.custom_type is not None
-            and action.custom_type in self.USER_INPUT_KINDS
+            and custom_type is not None
+            and custom_type in self.USER_INPUT_KINDS
         )
 
-    def _extract_text(self, action: GuardAction) -> Optional[str]:
+    def _extract_text(self, action: Action) -> str | None:
         """Extract text from action payload."""
-        data = action.custom_data
+        data: dict | None = getattr(action, "custom_data", None)
         if data is None:
             return None
         text = data.get("text")
@@ -98,7 +104,7 @@ class JailbreakGuard(Guard):
             return text
         return None
 
-    def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
+    def check(self, action: Action, context: GuardContext) -> GuardResult:
         if not self._config.enabled:
             return GuardResult.allow(self.name)
 
@@ -115,7 +121,7 @@ class JailbreakGuard(Guard):
 
         risk_score, signals = _detect(text, self._config.max_input_bytes)
 
-        details: Dict[str, Any] = {
+        details: dict[str, Any] = {
             "risk_score": risk_score,
             "signals": signals,
         }

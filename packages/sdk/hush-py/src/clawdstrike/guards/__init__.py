@@ -4,23 +4,34 @@ Guards implement checks that can allow, block, or log actions.
 """
 
 from clawdstrike.guards.base import (
-    Severity,
-    GuardResult,
-    GuardContext,
-    GuardAction,
+    Action,
+    AsyncGuard,
+    CustomAction,
+    FileAccessAction,
+    FileWriteAction,
     Guard,
+    GuardAction,
+    GuardContext,
+    GuardResult,
+    McpToolAction,
+    NetworkEgressAction,
+    PatchAction,
+    Severity,
+    ShellCommandAction,
 )
-from clawdstrike.guards.forbidden_path import ForbiddenPathGuard, ForbiddenPathConfig
-from clawdstrike.guards.egress_allowlist import EgressAllowlistGuard, EgressAllowlistConfig
-from clawdstrike.guards.secret_leak import SecretLeakGuard, SecretLeakConfig, SecretPattern
-from clawdstrike.guards.patch_integrity import PatchIntegrityGuard, PatchIntegrityConfig
-from clawdstrike.guards.mcp_tool import McpToolGuard, McpToolConfig
+from clawdstrike.guards.egress_allowlist import EgressAllowlistConfig, EgressAllowlistGuard
+from clawdstrike.guards.forbidden_path import ForbiddenPathConfig, ForbiddenPathGuard
+from clawdstrike.guards.jailbreak import JailbreakConfig, JailbreakGuard
+from clawdstrike.guards.mcp_tool import McpToolConfig, McpToolGuard
+from clawdstrike.guards.patch_integrity import PatchIntegrityConfig, PatchIntegrityGuard
+from clawdstrike.guards.path_allowlist import PathAllowlistConfig, PathAllowlistGuard
 from clawdstrike.guards.prompt_injection import (
-    PromptInjectionGuard,
     PromptInjectionConfig,
+    PromptInjectionGuard,
     PromptInjectionLevel,
 )
-from clawdstrike.guards.jailbreak import JailbreakGuard, JailbreakConfig
+from clawdstrike.guards.secret_leak import SecretLeakConfig, SecretLeakGuard, SecretPattern
+from clawdstrike.guards.shell_command import ShellCommandConfig, ShellCommandGuard
 
 __all__ = [
     # Base types
@@ -29,6 +40,16 @@ __all__ = [
     "GuardContext",
     "GuardAction",
     "Guard",
+    "AsyncGuard",
+    # Typed action variants
+    "Action",
+    "FileAccessAction",
+    "FileWriteAction",
+    "NetworkEgressAction",
+    "ShellCommandAction",
+    "McpToolAction",
+    "PatchAction",
+    "CustomAction",
     # Guards
     "ForbiddenPathGuard",
     "ForbiddenPathConfig",
@@ -46,4 +67,8 @@ __all__ = [
     "PromptInjectionLevel",
     "JailbreakGuard",
     "JailbreakConfig",
+    "ShellCommandGuard",
+    "ShellCommandConfig",
+    "PathAllowlistGuard",
+    "PathAllowlistConfig",
 ]

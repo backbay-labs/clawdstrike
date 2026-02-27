@@ -7,14 +7,13 @@ Uses PyNaCl for cryptographic operations and pycryptodome for Keccak-256.
 from __future__ import annotations
 
 import hashlib
-from typing import Union
 
 from Crypto.Hash import keccak as keccak_hash
-from nacl.signing import SigningKey, VerifyKey
 from nacl.exceptions import BadSignatureError, CryptoError
+from nacl.signing import SigningKey, VerifyKey
 
 
-def sha256(data: Union[bytes, str]) -> bytes:
+def sha256(data: bytes | str) -> bytes:
     """Compute SHA-256 hash.
 
     Args:
@@ -28,7 +27,7 @@ def sha256(data: Union[bytes, str]) -> bytes:
     return hashlib.sha256(data).digest()
 
 
-def keccak256(data: Union[bytes, str]) -> bytes:
+def keccak256(data: bytes | str) -> bytes:
     """Compute Keccak-256 hash.
 
     Uses the original Keccak-256 algorithm (pre-SHA3 standardization),

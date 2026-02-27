@@ -4,45 +4,50 @@ from __future__ import annotations
 
 import fnmatch
 from dataclasses import dataclass, field
-from typing import List, Optional
 
-from clawdstrike.guards.base import Guard, GuardAction, GuardContext, GuardResult, Severity
+from clawdstrike.guards.base import (
+    Action,
+    Guard,
+    GuardContext,
+    GuardResult,
+    Severity,
+)
 
 
 @dataclass
 class McpToolConfig:
     """Configuration for McpToolGuard."""
 
-    allow: List[str] = field(default_factory=list)
-    block: List[str] = field(default_factory=list)
-    require_confirmation: List[str] = field(default_factory=list)
+    allow: list[str] = field(default_factory=list)
+    block: list[str] = field(default_factory=list)
+    require_confirmation: list[str] = field(default_factory=list)
     default_action: str = "block"  # "block" or "allow"
-    max_args_size: Optional[int] = None
-    additional_allow: List[str] = field(default_factory=list)
-    remove_allow: List[str] = field(default_factory=list)
-    additional_block: List[str] = field(default_factory=list)
-    remove_block: List[str] = field(default_factory=list)
+    max_args_size: int | None = None
+    additional_allow: list[str] = field(default_factory=list)
+    remove_allow: list[str] = field(default_factory=list)
+    additional_block: list[str] = field(default_factory=list)
+    remove_block: list[str] = field(default_factory=list)
     enabled: bool = True
 
 
 class McpToolGuard(Guard):
     """Guard that controls MCP tool invocation."""
 
-    def __init__(self, config: Optional[McpToolConfig] = None) -> None:
+    def __init__(self, config: McpToolConfig | None = None) -> None:
         self._config = config or McpToolConfig()
 
     @property
     def name(self) -> str:
         return "mcp_tool"
 
-    def handles(self, action: GuardAction) -> bool:
+    def handles(self, action: Action) -> bool:
         return action.action_type == "mcp_tool"
 
-    def _matches_any(self, tool: str, patterns: List[str]) -> bool:
+    def _matches_any(self, tool: str, patterns: list[str]) -> bool:
         """Check if tool name matches any pattern."""
         return any(fnmatch.fnmatch(tool, pattern) for pattern in patterns)
 
-    def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
+    def check(self, action: Action, context: GuardContext) -> GuardResult:
         """Check if MCP tool invocation is allowed.
 
         Args:
@@ -55,7 +60,7 @@ class McpToolGuard(Guard):
         if not self.handles(action):
             return GuardResult.allow(self.name)
 
-        tool = action.tool
+        tool: str | None = getattr(action, "tool", None)
         if tool is None:
             return GuardResult.allow(self.name)
 

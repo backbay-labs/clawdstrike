@@ -1,14 +1,15 @@
 """Base guard types and interfaces.
 
-Provides the Guard abstract base class and supporting types.
+Provides the Guard abstract base class, typed action variants, and supporting types.
 """
 
 from __future__ import annotations
 
+import dataclasses
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class Severity(str, Enum):
@@ -20,7 +21,7 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
 
-@dataclass
+@dataclass(frozen=True)
 class GuardResult:
     """Result of a guard check."""
 
@@ -28,7 +29,7 @@ class GuardResult:
     guard: str
     severity: Severity
     message: str
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
     @classmethod
     def allow(cls, guard: str) -> GuardResult:
@@ -60,72 +61,139 @@ class GuardResult:
             message=message,
         )
 
-    def with_details(self, details: Dict[str, Any]) -> GuardResult:
-        """Add details to the result."""
-        self.details = details
-        return self
+    def with_details(self, details: dict[str, Any]) -> GuardResult:
+        """Return a new GuardResult with the given details."""
+        return dataclasses.replace(self, details=details)
 
 
 @dataclass
 class GuardContext:
     """Context passed to guards for evaluation."""
 
-    cwd: Optional[str] = None
-    session_id: Optional[str] = None
-    agent_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    cwd: str | None = None
+    session_id: str | None = None
+    agent_id: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
-@dataclass
+# ---------------------------------------------------------------------------
+# Typed action variants (frozen dataclasses)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FileAccessAction:
+    """Action representing a file access (read)."""
+
+    path: str
+    action_type: str = "file_access"
+
+
+@dataclass(frozen=True)
+class FileWriteAction:
+    """Action representing a file write."""
+
+    path: str
+    content: bytes
+    action_type: str = "file_write"
+
+
+@dataclass(frozen=True)
+class NetworkEgressAction:
+    """Action representing outbound network access."""
+
+    host: str
+    port: int
+    action_type: str = "network_egress"
+
+
+@dataclass(frozen=True)
+class ShellCommandAction:
+    """Action representing a shell command execution."""
+
+    command: str
+    action_type: str = "shell_command"
+
+
+@dataclass(frozen=True)
+class McpToolAction:
+    """Action representing an MCP tool invocation."""
+
+    tool: str
+    args: dict[str, Any]
+    action_type: str = "mcp_tool"
+
+
+@dataclass(frozen=True)
+class PatchAction:
+    """Action representing a code patch."""
+
+    path: str
+    diff: str
+    action_type: str = "patch"
+
+
+@dataclass(frozen=True)
+class CustomAction:
+    """Action representing a custom/extension action."""
+
+    custom_type: str
+    custom_data: dict[str, Any]
+    action_type: str = "custom"
+
+
+Action = (
+    FileAccessAction
+    | FileWriteAction
+    | NetworkEgressAction
+    | ShellCommandAction
+    | McpToolAction
+    | PatchAction
+    | CustomAction
+)
+
 class GuardAction:
-    """Action to be checked by guards."""
+    """Backward-compatible factory for creating typed Action variants.
 
-    action_type: str
-    path: Optional[str] = None
-    content: Optional[bytes] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    tool: Optional[str] = None
-    args: Optional[Dict[str, Any]] = None
-    command: Optional[str] = None
-    diff: Optional[str] = None
-    custom_type: Optional[str] = None
-    custom_data: Optional[Dict[str, Any]] = None
+    Existing code that calls GuardAction.file_access(...) etc. will get
+    the appropriate typed action dataclass. New code should use the typed
+    action constructors directly.
+    """
 
     @classmethod
-    def file_access(cls, path: str) -> GuardAction:
+    def file_access(cls, path: str) -> FileAccessAction:
         """Create a file access action."""
-        return cls(action_type="file_access", path=path)
+        return FileAccessAction(path=path)
 
     @classmethod
-    def file_write(cls, path: str, content: bytes) -> GuardAction:
+    def file_write(cls, path: str, content: bytes) -> FileWriteAction:
         """Create a file write action."""
-        return cls(action_type="file_write", path=path, content=content)
+        return FileWriteAction(path=path, content=content)
 
     @classmethod
-    def network_egress(cls, host: str, port: int) -> GuardAction:
+    def network_egress(cls, host: str, port: int) -> NetworkEgressAction:
         """Create a network egress action."""
-        return cls(action_type="network_egress", host=host, port=port)
+        return NetworkEgressAction(host=host, port=port)
 
     @classmethod
-    def shell_command(cls, command: str) -> GuardAction:
+    def shell_command(cls, command: str) -> ShellCommandAction:
         """Create a shell command action."""
-        return cls(action_type="shell_command", command=command)
+        return ShellCommandAction(command=command)
 
     @classmethod
-    def mcp_tool(cls, tool: str, args: Dict[str, Any]) -> GuardAction:
+    def mcp_tool(cls, tool: str, args: dict[str, Any]) -> McpToolAction:
         """Create an MCP tool action."""
-        return cls(action_type="mcp_tool", tool=tool, args=args)
+        return McpToolAction(tool=tool, args=args)
 
     @classmethod
-    def patch(cls, path: str, diff: str) -> GuardAction:
+    def patch(cls, path: str, diff: str) -> PatchAction:
         """Create a patch action."""
-        return cls(action_type="patch", path=path, diff=diff)
+        return PatchAction(path=path, diff=diff)
 
     @classmethod
-    def custom(cls, custom_type: str, data: Dict[str, Any]) -> GuardAction:
+    def custom(cls, custom_type: str, data: dict[str, Any]) -> CustomAction:
         """Create a custom action."""
-        return cls(action_type="custom", custom_type=custom_type, custom_data=data)
+        return CustomAction(custom_type=custom_type, custom_data=data)
 
 
 class Guard(ABC):
@@ -137,12 +205,37 @@ class Guard(ABC):
         """Name of the guard."""
 
     @abstractmethod
-    def handles(self, action: GuardAction) -> bool:
+    def handles(self, action: Action) -> bool:
         """Check if this guard handles the given action type."""
 
     @abstractmethod
-    def check(self, action: GuardAction, context: GuardContext) -> GuardResult:
+    def check(self, action: Action, context: GuardContext) -> GuardResult:
         """Evaluate the action.
+
+        Args:
+            action: The action to check
+            context: Execution context
+
+        Returns:
+            GuardResult indicating whether action is allowed
+        """
+
+
+class AsyncGuard(ABC):
+    """Abstract base class for asynchronous security guards."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Name of the guard."""
+
+    @abstractmethod
+    def handles(self, action: Action) -> bool:
+        """Check if this guard handles the given action type."""
+
+    @abstractmethod
+    async def check(self, action: Action, context: GuardContext) -> GuardResult:
+        """Evaluate the action asynchronously.
 
         Args:
             action: The action to check
@@ -157,6 +250,18 @@ __all__ = [
     "Severity",
     "GuardResult",
     "GuardContext",
+    # Typed action variants
+    "FileAccessAction",
+    "FileWriteAction",
+    "NetworkEgressAction",
+    "ShellCommandAction",
+    "McpToolAction",
+    "PatchAction",
+    "CustomAction",
+    "Action",
+    # Backward-compatible alias
     "GuardAction",
+    # Guard ABCs
     "Guard",
+    "AsyncGuard",
 ]

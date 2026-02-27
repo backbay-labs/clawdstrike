@@ -9,7 +9,6 @@ The tree uses left-balanced semantics (odd node carried upward unchanged).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 from .core import sha256
 
@@ -39,7 +38,7 @@ def hash_node(left: bytes, right: bytes) -> bytes:
     return sha256(b'\x01' + left + right)
 
 
-def compute_root(leaves: List[bytes]) -> bytes:
+def compute_root(leaves: list[bytes]) -> bytes:
     """Compute Merkle root from leaf hashes.
 
     Uses left-balanced tree semantics: when a level has an odd number of
@@ -63,7 +62,7 @@ def compute_root(leaves: List[bytes]) -> bytes:
     # Build tree bottom-up
     current = list(leaves)
     while len(current) > 1:
-        next_level: List[bytes] = []
+        next_level: list[bytes] = []
         i = 0
         while i < len(current):
             if i + 1 < len(current):
@@ -89,7 +88,7 @@ class MerkleProof:
     """
     tree_size: int
     leaf_index: int
-    audit_path: List[bytes]
+    audit_path: list[bytes]
 
     def verify(self, leaf_hash: bytes, expected_root: bytes) -> bool:
         """Verify this proof against an expected root.
@@ -160,12 +159,12 @@ class MerkleTree:
     Stores all tree levels for efficient proof generation.
     """
 
-    def __init__(self, levels: List[List[bytes]]) -> None:
+    def __init__(self, levels: list[list[bytes]]) -> None:
         """Initialize with pre-computed levels (internal use)."""
         self._levels = levels
 
     @classmethod
-    def from_data(cls, data: List[bytes]) -> "MerkleTree":
+    def from_data(cls, data: list[bytes]) -> MerkleTree:
         """Build tree from raw leaf data (will be hashed).
 
         Args:
@@ -184,7 +183,7 @@ class MerkleTree:
         return cls.from_hashes(leaves)
 
     @classmethod
-    def from_hashes(cls, leaf_hashes: List[bytes]) -> "MerkleTree":
+    def from_hashes(cls, leaf_hashes: list[bytes]) -> MerkleTree:
         """Build tree from pre-hashed leaves.
 
         Args:
@@ -199,11 +198,11 @@ class MerkleTree:
         if not leaf_hashes:
             raise ValueError("Cannot build tree from empty leaves")
 
-        levels: List[List[bytes]] = [list(leaf_hashes)]
+        levels: list[list[bytes]] = [list(leaf_hashes)]
         current = list(leaf_hashes)
 
         while len(current) > 1:
-            next_level: List[bytes] = []
+            next_level: list[bytes] = []
             i = 0
             while i < len(current):
                 if i + 1 < len(current):
@@ -243,7 +242,7 @@ class MerkleTree:
         if leaf_index < 0 or leaf_index >= self.leaf_count:
             raise ValueError(f"Index {leaf_index} out of range for {self.leaf_count} leaves")
 
-        audit_path: List[bytes] = []
+        audit_path: list[bytes] = []
         idx = leaf_index
 
         for level in self._levels[:-1]:
@@ -266,7 +265,7 @@ class MerkleTree:
         )
 
 
-def generate_proof(leaves: List[bytes], index: int) -> MerkleProof:
+def generate_proof(leaves: list[bytes], index: int) -> MerkleProof:
     """Generate a Merkle inclusion proof for a leaf at the given index.
 
     Args:
@@ -285,11 +284,11 @@ def generate_proof(leaves: List[bytes], index: int) -> MerkleProof:
         raise ValueError(f"Index {index} out of range for {len(leaves)} leaves")
 
     # Build tree levels
-    levels: List[List[bytes]] = [list(leaves)]
+    levels: list[list[bytes]] = [list(leaves)]
     current = list(leaves)
 
     while len(current) > 1:
-        next_level: List[bytes] = []
+        next_level: list[bytes] = []
         i = 0
         while i < len(current):
             if i + 1 < len(current):
@@ -301,7 +300,7 @@ def generate_proof(leaves: List[bytes], index: int) -> MerkleProof:
         current = next_level
 
     # Collect audit path
-    audit_path: List[bytes] = []
+    audit_path: list[bytes] = []
     idx = index
 
     for level in levels[:-1]:  # Skip root level

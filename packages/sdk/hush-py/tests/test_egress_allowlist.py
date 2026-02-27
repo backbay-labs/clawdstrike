@@ -1,7 +1,12 @@
 """Tests for EgressAllowlistGuard."""
 
 from clawdstrike.guards.egress_allowlist import EgressAllowlistGuard, EgressAllowlistConfig
-from clawdstrike.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.base import (
+    FileAccessAction,
+    NetworkEgressAction,
+    GuardContext,
+    Severity,
+)
 
 
 class TestEgressAllowlistConfig:
@@ -31,7 +36,7 @@ class TestEgressAllowlistGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.network_egress("api.example.com", 443),
+            NetworkEgressAction(host="api.example.com", port=443),
             context,
         )
         assert result.allowed is True
@@ -45,13 +50,13 @@ class TestEgressAllowlistGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.network_egress("api.github.com", 443),
+            NetworkEgressAction(host="api.github.com", port=443),
             context,
         )
         assert result.allowed is True
 
         result = guard.check(
-            GuardAction.network_egress("raw.githubusercontent.com", 443),
+            NetworkEgressAction(host="raw.githubusercontent.com", port=443),
             context,
         )
         assert result.allowed is False  # Different domain
@@ -66,7 +71,7 @@ class TestEgressAllowlistGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.network_egress("malicious.com", 80),
+            NetworkEgressAction(host="malicious.com", port=80),
             context,
         )
         assert result.allowed is False
@@ -81,7 +86,7 @@ class TestEgressAllowlistGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.network_egress("unknown.com", 443),
+            NetworkEgressAction(host="unknown.com", port=443),
             context,
         )
         assert result.allowed is False
@@ -95,7 +100,7 @@ class TestEgressAllowlistGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.network_egress("unknown.com", 443),
+            NetworkEgressAction(host="unknown.com", port=443),
             context,
         )
         assert result.allowed is True
@@ -103,8 +108,8 @@ class TestEgressAllowlistGuard:
     def test_handles_network_actions(self) -> None:
         guard = EgressAllowlistGuard()
 
-        assert guard.handles(GuardAction.network_egress("host", 80)) is True
-        assert guard.handles(GuardAction.file_access("/test")) is False
+        assert guard.handles(NetworkEgressAction(host="host", port=80)) is True
+        assert guard.handles(FileAccessAction(path="/test")) is False
 
     def test_guard_name(self) -> None:
         guard = EgressAllowlistGuard()
@@ -120,14 +125,14 @@ class TestEgressAllowlistGuard:
 
         # Exact match
         result = guard.check(
-            GuardAction.network_egress("github.com", 443),
+            NetworkEgressAction(host="github.com", port=443),
             context,
         )
         assert result.allowed is True
 
         # Subdomain should NOT match without an explicit glob
         result = guard.check(
-            GuardAction.network_egress("api.github.com", 443),
+            NetworkEgressAction(host="api.github.com", port=443),
             context,
         )
         assert result.allowed is False
@@ -141,14 +146,14 @@ class TestEgressAllowlistGuard:
         context = GuardContext()
 
         assert (
-            guard.check(GuardAction.network_egress("api-1.example.com", 443), context).allowed
+            guard.check(NetworkEgressAction(host="api-1.example.com", port=443), context).allowed
             is True
         )
         assert (
-            guard.check(GuardAction.network_egress("API-a.EXAMPLE.com", 443), context).allowed
+            guard.check(NetworkEgressAction(host="API-a.EXAMPLE.com", port=443), context).allowed
             is True
         )
         assert (
-            guard.check(GuardAction.network_egress("api-aa.example.com", 443), context).allowed
+            guard.check(NetworkEgressAction(host="api-aa.example.com", port=443), context).allowed
             is False
         )

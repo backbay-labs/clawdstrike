@@ -3,7 +3,10 @@
 from clawdstrike.guards.base import (
     GuardResult,
     GuardContext,
-    GuardAction,
+    FileAccessAction,
+    FileWriteAction,
+    NetworkEgressAction,
+    McpToolAction,
     Severity,
 )
 
@@ -35,10 +38,12 @@ class TestGuardResult:
         assert result.allowed is True
         assert result.severity == Severity.WARNING
 
-    def test_with_details(self) -> None:
-        result = GuardResult.block("test_guard", Severity.ERROR, "blocked")
-        result = result.with_details({"path": "/secret"})
-        assert result.details == {"path": "/secret"}
+    def test_with_details_returns_new_object(self) -> None:
+        original = GuardResult.block("test_guard", Severity.ERROR, "blocked")
+        updated = original.with_details({"path": "/secret"})
+        assert updated.details == {"path": "/secret"}
+        # Original is unchanged (frozen)
+        assert original.details is None
 
 
 class TestGuardContext:
@@ -58,26 +63,26 @@ class TestGuardContext:
         assert ctx.agent_id == "agent-456"
 
 
-class TestGuardAction:
+class TestTypedActions:
     def test_file_access_action(self) -> None:
-        action = GuardAction.file_access("/path/to/file")
+        action = FileAccessAction(path="/path/to/file")
         assert action.action_type == "file_access"
         assert action.path == "/path/to/file"
 
     def test_file_write_action(self) -> None:
-        action = GuardAction.file_write("/path/to/file", b"content")
+        action = FileWriteAction(path="/path/to/file", content=b"content")
         assert action.action_type == "file_write"
         assert action.path == "/path/to/file"
         assert action.content == b"content"
 
     def test_network_egress_action(self) -> None:
-        action = GuardAction.network_egress("api.example.com", 443)
+        action = NetworkEgressAction(host="api.example.com", port=443)
         assert action.action_type == "network_egress"
         assert action.host == "api.example.com"
         assert action.port == 443
 
     def test_mcp_tool_action(self) -> None:
-        action = GuardAction.mcp_tool("read_file", {"path": "/test"})
+        action = McpToolAction(tool="read_file", args={"path": "/test"})
         assert action.action_type == "mcp_tool"
         assert action.tool == "read_file"
         assert action.args == {"path": "/test"}

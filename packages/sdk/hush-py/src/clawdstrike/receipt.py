@@ -12,37 +12,21 @@ import json
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+from clawdstrike._version import parse_semver_strict
 from clawdstrike.canonical import canonicalize
 from clawdstrike.core import keccak256, sha256, sign_message, verify_signature
+from clawdstrike.exceptions import ReceiptError
 
 RECEIPT_SCHEMA_VERSION = "1.0.0"
 
 
-def _parse_semver_strict(version: str) -> Optional[tuple[int, int, int]]:
-    parts = version.split(".")
-    if len(parts) != 3:
-        return None
-
-    out: list[int] = []
-    for part in parts:
-        if not part:
-            return None
-        if len(part) > 1 and part.startswith("0"):
-            return None
-        if not part.isdigit():
-            return None
-        out.append(int(part))
-
-    return out[0], out[1], out[2]
-
-
 def validate_receipt_version(version: str) -> None:
-    if _parse_semver_strict(version) is None:
-        raise ValueError(f"Invalid receipt version: {version}")
+    if parse_semver_strict(version) is None:
+        raise ReceiptError(f"Invalid receipt version: {version}")
     if version != RECEIPT_SCHEMA_VERSION:
-        raise ValueError(
+        raise ReceiptError(
             f"Unsupported receipt version: {version} (supported: {RECEIPT_SCHEMA_VERSION})"
         )
 
@@ -50,11 +34,11 @@ def validate_receipt_version(version: str) -> None:
 def _normalize_hex(s: str, bytes_len: int, prefix: str, label: str) -> str:
     raw = s[2:] if s.startswith("0x") else s
     if len(raw) != bytes_len * 2:
-        raise ValueError(f"{label} must be {bytes_len} bytes")
+        raise ReceiptError(f"{label} must be {bytes_len} bytes")
     try:
         bytes.fromhex(raw)
     except ValueError as e:
-        raise ValueError(f"{label} must be hex") from e
+        raise ReceiptError(f"{label} must be hex") from e
     raw = raw.lower()
     return f"0x{raw}" if prefix == "0x" else raw
 
@@ -71,22 +55,22 @@ def normalize_signature(s: str) -> str:
     return _normalize_hex(s, 64, "none", "signature")
 
 
-def _deny_unknown_fields(data: Dict[str, Any], allowed: set[str], label: str) -> None:
+def _deny_unknown_fields(data: dict[str, Any], allowed: set[str], label: str) -> None:
     unknown = set(data.keys()) - allowed
     if unknown:
         key = sorted(unknown)[0]
-        raise ValueError(f"Unknown {label} field: {key}")
+        raise ReceiptError(f"Unknown {label} field: {key}")
 
 
 @dataclass(frozen=True)
 class Verdict:
     passed: bool
-    gate_id: Optional[str] = None
-    scores: Optional[Any] = None
-    threshold: Optional[float] = None
+    gate_id: str | None = None
+    scores: Any | None = None
+    threshold: float | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {"passed": self.passed}
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"passed": self.passed}
         if self.gate_id is not None:
             out["gate_id"] = self.gate_id
         if self.scores is not None:
@@ -96,18 +80,18 @@ class Verdict:
         return out
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Verdict:
+    def from_dict(cls, data: dict[str, Any]) -> Verdict:
         _deny_unknown_fields(data, {"passed", "gate_id", "scores", "threshold"}, "verdict")
         passed = data.get("passed")
         if not isinstance(passed, bool):
-            raise ValueError("verdict.passed must be a boolean")
+            raise ReceiptError("verdict.passed must be a boolean")
         gate_id = data.get("gate_id")
         if gate_id is not None and not isinstance(gate_id, str):
-            raise ValueError("verdict.gate_id must be a string")
+            raise ReceiptError("verdict.gate_id must be a string")
         threshold = data.get("threshold")
         if threshold is not None:
             if not isinstance(threshold, (int, float)) or math.isnan(threshold):
-                raise ValueError("verdict.threshold must be a finite number")
+                raise ReceiptError("verdict.threshold must be a finite number")
             threshold = float(threshold)
         return cls(passed=passed, gate_id=gate_id, scores=data.get("scores"), threshold=threshold)
 
@@ -117,10 +101,10 @@ class ViolationRef:
     guard: str
     severity: str
     message: str
-    action: Optional[str] = None
+    action: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
             "guard": self.guard,
             "severity": self.severity,
             "message": self.message,
@@ -130,33 +114,33 @@ class ViolationRef:
         return out
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> ViolationRef:
+    def from_dict(cls, data: dict[str, Any]) -> ViolationRef:
         _deny_unknown_fields(data, {"guard", "severity", "message", "action"}, "violation")
         guard = data.get("guard")
         severity = data.get("severity")
         message = data.get("message")
         if not isinstance(guard, str):
-            raise ValueError("violation.guard must be a string")
+            raise ReceiptError("violation.guard must be a string")
         if not isinstance(severity, str):
-            raise ValueError("violation.severity must be a string")
+            raise ReceiptError("violation.severity must be a string")
         if not isinstance(message, str):
-            raise ValueError("violation.message must be a string")
+            raise ReceiptError("violation.message must be a string")
         action = data.get("action")
         if action is not None and not isinstance(action, str):
-            raise ValueError("violation.action must be a string")
+            raise ReceiptError("violation.action must be a string")
         return cls(guard=guard, severity=severity, message=message, action=action)
 
 
 @dataclass(frozen=True)
 class Provenance:
-    clawdstrike_version: Optional[str] = None
-    provider: Optional[str] = None
-    policy_hash: Optional[str] = None
-    ruleset: Optional[str] = None
-    violations: List[ViolationRef] = field(default_factory=list)
+    clawdstrike_version: str | None = None
+    provider: str | None = None
+    policy_hash: str | None = None
+    ruleset: str | None = None
+    violations: list[ViolationRef] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
         if self.clawdstrike_version is not None:
             out["clawdstrike_version"] = self.clawdstrike_version
         if self.provider is not None:
@@ -170,7 +154,7 @@ class Provenance:
         return out
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Provenance:
+    def from_dict(cls, data: dict[str, Any]) -> Provenance:
         _deny_unknown_fields(
             data,
             {"clawdstrike_version", "provider", "policy_hash", "ruleset", "violations"},
@@ -183,17 +167,17 @@ class Provenance:
         violations_raw = data.get("violations", [])
 
         if clawdstrike_version is not None and not isinstance(clawdstrike_version, str):
-            raise ValueError("provenance.clawdstrike_version must be a string")
+            raise ReceiptError("provenance.clawdstrike_version must be a string")
         if provider is not None and not isinstance(provider, str):
-            raise ValueError("provenance.provider must be a string")
+            raise ReceiptError("provenance.provider must be a string")
         if policy_hash is not None:
             if not isinstance(policy_hash, str):
-                raise ValueError("provenance.policy_hash must be a string")
+                raise ReceiptError("provenance.policy_hash must be a string")
             policy_hash = normalize_hash(policy_hash)
         if ruleset is not None and not isinstance(ruleset, str):
-            raise ValueError("provenance.ruleset must be a string")
+            raise ReceiptError("provenance.ruleset must be a string")
         if not isinstance(violations_raw, list):
-            raise ValueError("provenance.violations must be a list")
+            raise ReceiptError("provenance.violations must be a list")
         violations = [ViolationRef.from_dict(v) for v in violations_raw]
         return cls(
             clawdstrike_version=clawdstrike_version,
@@ -210,9 +194,9 @@ class Receipt:
     timestamp: str
     content_hash: str
     verdict: Verdict
-    receipt_id: Optional[str] = None
-    provenance: Optional[Provenance] = None
-    metadata: Optional[Any] = None
+    receipt_id: str | None = None
+    provenance: Provenance | None = None
+    metadata: Any | None = None
 
     @classmethod
     def new(cls, content_hash: str, verdict: Verdict) -> Receipt:
@@ -230,9 +214,9 @@ class Receipt:
     def validate_version(self) -> None:
         validate_receipt_version(self.version)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         self.validate_version()
-        out: Dict[str, Any] = {
+        out: dict[str, Any] = {
             "version": self.version,
             "timestamp": self.timestamp,
             "content_hash": normalize_hash(self.content_hash),
@@ -264,11 +248,11 @@ class Receipt:
     def from_json(cls, json_str: str) -> Receipt:
         data = json.loads(json_str)
         if not isinstance(data, dict):
-            raise ValueError("receipt JSON must be an object")
+            raise ReceiptError("receipt JSON must be an object")
         return cls.from_dict(data)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Receipt:
+    def from_dict(cls, data: dict[str, Any]) -> Receipt:
         _deny_unknown_fields(
             data,
             {
@@ -284,31 +268,31 @@ class Receipt:
         )
         version = data.get("version")
         if not isinstance(version, str):
-            raise ValueError("receipt.version must be a string")
+            raise ReceiptError("receipt.version must be a string")
         validate_receipt_version(version)
 
         timestamp = data.get("timestamp")
         if not isinstance(timestamp, str):
-            raise ValueError("receipt.timestamp must be a string")
+            raise ReceiptError("receipt.timestamp must be a string")
 
         content_hash = data.get("content_hash")
         if not isinstance(content_hash, str):
-            raise ValueError("receipt.content_hash must be a string")
+            raise ReceiptError("receipt.content_hash must be a string")
 
         verdict_raw = data.get("verdict")
         if not isinstance(verdict_raw, dict):
-            raise ValueError("receipt.verdict must be an object")
+            raise ReceiptError("receipt.verdict must be an object")
 
         provenance_raw = data.get("provenance")
         provenance = None
         if provenance_raw is not None:
             if not isinstance(provenance_raw, dict):
-                raise ValueError("receipt.provenance must be an object")
+                raise ReceiptError("receipt.provenance must be an object")
             provenance = Provenance.from_dict(provenance_raw)
 
         receipt_id = data.get("receipt_id")
         if receipt_id is not None and not isinstance(receipt_id, str):
-            raise ValueError("receipt.receipt_id must be a string")
+            raise ReceiptError("receipt.receipt_id must be a string")
 
         return cls(
             version=version,
@@ -324,24 +308,25 @@ class Receipt:
 @dataclass(frozen=True)
 class Signatures:
     signer: str
-    cosigner: Optional[str] = None
+    cosigner: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {"signer": normalize_signature(self.signer)}
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"signer": normalize_signature(self.signer)}
         if self.cosigner is not None:
             out["cosigner"] = normalize_signature(self.cosigner)
         return out
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Signatures:
+    def from_dict(cls, data: dict[str, Any]) -> Signatures:
         _deny_unknown_fields(data, {"signer", "cosigner"}, "signatures")
         signer = data.get("signer")
         if not isinstance(signer, str):
-            raise ValueError("signatures.signer must be a string")
+            raise ReceiptError("signatures.signer must be a string")
         cosigner = data.get("cosigner")
         if cosigner is not None and not isinstance(cosigner, str):
-            raise ValueError("signatures.cosigner must be a string")
-        return cls(signer=normalize_signature(signer), cosigner=None if cosigner is None else normalize_signature(cosigner))
+            raise ReceiptError("signatures.cosigner must be a string")
+        cosigner_norm = None if cosigner is None else normalize_signature(cosigner)
+        return cls(signer=normalize_signature(signer), cosigner=cosigner_norm)
 
 
 @dataclass(frozen=True)
@@ -360,9 +345,10 @@ class SignedReceipt:
         self.receipt.validate_version()
         message = self.receipt.to_canonical_json().encode("utf-8")
         sig = sign_message(message, private_key).hex()
-        return SignedReceipt(receipt=self.receipt, signatures=Signatures(signer=self.signatures.signer, cosigner=sig))
+        sigs = Signatures(signer=self.signatures.signer, cosigner=sig)
+        return SignedReceipt(receipt=self.receipt, signatures=sigs)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"receipt": self.receipt.to_dict(), "signatures": self.signatures.to_dict()}
 
     def to_canonical_json(self) -> str:
@@ -372,21 +358,21 @@ class SignedReceipt:
         return self.to_canonical_json()
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> SignedReceipt:
+    def from_dict(cls, data: dict[str, Any]) -> SignedReceipt:
         _deny_unknown_fields(data, {"receipt", "signatures"}, "signed receipt")
         receipt_raw = data.get("receipt")
         sig_raw = data.get("signatures")
         if not isinstance(receipt_raw, dict):
-            raise ValueError("signed_receipt.receipt must be an object")
+            raise ReceiptError("signed_receipt.receipt must be an object")
         if not isinstance(sig_raw, dict):
-            raise ValueError("signed_receipt.signatures must be an object")
+            raise ReceiptError("signed_receipt.signatures must be an object")
         return cls(receipt=Receipt.from_dict(receipt_raw), signatures=Signatures.from_dict(sig_raw))
 
     @classmethod
     def from_json(cls, json_str: str) -> SignedReceipt:
         data = json.loads(json_str)
         if not isinstance(data, dict):
-            raise ValueError("signed receipt JSON must be an object")
+            raise ReceiptError("signed receipt JSON must be an object")
         return cls.from_dict(data)
 
     def verify(self, public_keys: PublicKeySet) -> VerificationResult:
@@ -406,11 +392,11 @@ class SignedReceipt:
         signer_pk = bytes.fromhex(normalize_public_key(public_keys.signer))
         signer_valid = verify_signature(message, signer_sig, signer_pk)
 
-        errors: List[str] = []
+        errors: list[str] = []
         if not signer_valid:
             errors.append("Invalid signer signature")
 
-        cosigner_valid: Optional[bool] = None
+        cosigner_valid: bool | None = None
         valid = signer_valid
         if self.signatures.cosigner is not None and public_keys.cosigner is not None:
             cosigner_sig = bytes.fromhex(normalize_signature(self.signatures.cosigner))
@@ -431,15 +417,15 @@ class SignedReceipt:
 @dataclass(frozen=True)
 class PublicKeySet:
     signer: str
-    cosigner: Optional[str] = None
+    cosigner: str | None = None
 
 
 @dataclass(frozen=True)
 class VerificationResult:
     valid: bool
     signer_valid: bool
-    cosigner_valid: Optional[bool]
-    errors: List[str]
+    cosigner_valid: bool | None
+    errors: list[str]
 
 
 __all__ = [

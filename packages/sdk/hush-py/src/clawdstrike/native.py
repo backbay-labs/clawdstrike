@@ -6,29 +6,35 @@ will be None.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional, Tuple, List
+from collections.abc import Callable
 
 # Try to import native bindings
 NATIVE_AVAILABLE: bool = False
-is_native_available: Optional[Callable[[], bool]] = None
-sha256_native: Optional[Callable[[bytes], bytes]] = None
-keccak256_native: Optional[Callable[[bytes], bytes]] = None
-merkle_root_native: Optional[Callable[[List[bytes]], bytes]] = None
-verify_receipt_native: Optional[Callable[[str, str, str], bool]] = None
-verify_ed25519_native: Optional[Callable[[bytes, bytes, bytes], bool]] = None
-generate_merkle_proof_native: Optional[Callable[[List[bytes], int], Tuple[int, int, List[str]]]] = None
-canonicalize_native: Optional[Callable[[str], str]] = None
-detect_jailbreak_native: Optional[Callable[..., dict]] = None
-sanitize_output_native: Optional[Callable[..., dict]] = None
-watermark_public_key_native: Optional[Callable[[str], str]] = None
-watermark_prompt_native: Optional[Callable[..., dict]] = None
-extract_watermark_native: Optional[Callable[..., dict]] = None
+is_native_available: Callable[[], bool] | None = None
+sha256_native: Callable[[bytes], bytes] | None = None
+keccak256_native: Callable[[bytes], bytes] | None = None
+merkle_root_native: Callable[[list[bytes]], bytes] | None = None
+verify_receipt_native: Callable[[str, str, str], bool] | None = None
+verify_ed25519_native: Callable[[bytes, bytes, bytes], bool] | None = None
+generate_merkle_proof_native: Callable[[list[bytes], int], tuple[int, int, list[str]]] | None = None
+canonicalize_native: Callable[[str], str] | None = None
+detect_jailbreak_native: Callable[..., dict] | None = None
+sanitize_output_native: Callable[..., dict] | None = None
+watermark_public_key_native: Callable[[str], str] | None = None
+watermark_prompt_native: Callable[..., dict] | None = None
+extract_watermark_native: Callable[..., dict] | None = None
 
 try:
     from hush_native import (
         is_native_available as _is_native_available,
-        sha256_native as _sha256_native,
+    )
+    from hush_native import (
         merkle_root_native as _merkle_root_native,
+    )
+    from hush_native import (
+        sha256_native as _sha256_native,
+    )
+    from hush_native import (
         verify_receipt_native as _verify_receipt_native,
     )
 

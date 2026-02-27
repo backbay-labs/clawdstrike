@@ -1,7 +1,14 @@
 """Tests for ForbiddenPathGuard."""
 
 from clawdstrike.guards.forbidden_path import ForbiddenPathGuard, ForbiddenPathConfig
-from clawdstrike.guards.base import GuardAction, GuardContext, Severity
+from clawdstrike.guards.base import (
+    FileAccessAction,
+    FileWriteAction,
+    NetworkEgressAction,
+    PatchAction,
+    GuardContext,
+    Severity,
+)
 
 
 class TestForbiddenPathConfig:
@@ -59,17 +66,17 @@ class TestForbiddenPathGuard:
     def test_handles_file_actions(self) -> None:
         guard = ForbiddenPathGuard()
 
-        assert guard.handles(GuardAction.file_access("/test")) is True
-        assert guard.handles(GuardAction.file_write("/test", b"")) is True
-        assert guard.handles(GuardAction.patch("/test", "")) is True
-        assert guard.handles(GuardAction.network_egress("host", 80)) is False
+        assert guard.handles(FileAccessAction(path="/test")) is True
+        assert guard.handles(FileWriteAction(path="/test", content=b"")) is True
+        assert guard.handles(PatchAction(path="/test", diff="")) is True
+        assert guard.handles(NetworkEgressAction(host="host", port=80)) is False
 
     def test_check_forbidden_path(self) -> None:
         guard = ForbiddenPathGuard()
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.file_access("/home/user/.ssh/id_rsa"),
+            FileAccessAction(path="/home/user/.ssh/id_rsa"),
             context,
         )
         assert result.allowed is False
@@ -81,7 +88,7 @@ class TestForbiddenPathGuard:
         context = GuardContext()
 
         result = guard.check(
-            GuardAction.file_access("/app/src/main.py"),
+            FileAccessAction(path="/app/src/main.py"),
             context,
         )
         assert result.allowed is True

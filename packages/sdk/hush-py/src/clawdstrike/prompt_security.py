@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from clawdstrike.native import (
     NATIVE_AVAILABLE,
     detect_jailbreak_native,
-    sanitize_output_native,
-    watermark_public_key_native,
-    watermark_prompt_native,
     extract_watermark_native,
+    sanitize_output_native,
+    watermark_prompt_native,
+    watermark_public_key_native,
 )
 
 
@@ -37,7 +37,7 @@ def _require_native() -> None:
 
     if missing:
         raise ImportError(
-            "hush.prompt_security requires the optional native extension (hush-native). "
+            "clawdstrike.prompt_security requires the optional native extension (hush-native). "
             f"Missing: {', '.join(missing)}. "
             "Build/install it from `packages/sdk/hush-py/hush-native`."
         )
@@ -46,11 +46,11 @@ def _require_native() -> None:
 class JailbreakDetector:
     """Detect jailbreak attempts in user input (native-backed)."""
 
-    def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         _require_native()
         self._config_json = json.dumps(config) if config is not None else None
 
-    def detect(self, text: str, *, session_id: Optional[str] = None) -> dict[str, Any]:
+    def detect(self, text: str, *, session_id: str | None = None) -> dict[str, Any]:
         assert detect_jailbreak_native is not None
         return detect_jailbreak_native(text, session_id, self._config_json)
 
@@ -58,7 +58,7 @@ class JailbreakDetector:
 class OutputSanitizer:
     """Sanitize model output for secret/PII leakage (native-backed)."""
 
-    def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         _require_native()
         self._config_json = json.dumps(config) if config is not None else None
 
@@ -66,7 +66,7 @@ class OutputSanitizer:
         assert sanitize_output_native is not None
         return sanitize_output_native(text, self._config_json)
 
-    def create_stream(self) -> "SanitizationStream":
+    def create_stream(self) -> SanitizationStream:
         return SanitizationStream(self)
 
 
@@ -106,7 +106,7 @@ class PromptWatermarker:
 
     def __init__(
         self,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         *,
         application_id: str = "unknown",
         session_id: str = "unknown",
@@ -120,7 +120,7 @@ class PromptWatermarker:
         assert watermark_public_key_native is not None
         return watermark_public_key_native(self._config_json)
 
-    def watermark(self, prompt: str, *, payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    def watermark(self, prompt: str, *, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         if payload is not None:
             raise NotImplementedError("Custom payload override is not supported yet")
         assert watermark_prompt_native is not None
@@ -135,7 +135,7 @@ class PromptWatermarker:
 class WatermarkExtractor:
     """Extract and verify watermarks (native-backed)."""
 
-    def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         _require_native()
         self._config_json = json.dumps(config or {})
 
