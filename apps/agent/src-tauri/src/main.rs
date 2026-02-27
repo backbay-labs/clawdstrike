@@ -478,17 +478,8 @@ async fn run_agent<R: Runtime>(
                 tracing::error!(error = %err, "Failed to connect to NATS; enterprise features disabled");
                 if is_nats_auth_failure(&err.to_string()) {
                     tracing::warn!(
-                        "NATS connect failed with authentication/authorization error; resetting enrollment and NATS settings to standalone mode"
+                        "NATS connect failed with authentication/authorization error; preserving enrollment identity and existing NATS config for automatic recovery"
                     );
-                    let mut guard = settings.write().await;
-                    guard.nats = settings::NatsSettings::default();
-                    guard.enrollment = settings::EnrollmentState::default();
-                    if let Err(save_err) = guard.save() {
-                        tracing::warn!(
-                            error = %save_err,
-                            "Failed to persist standalone fallback after invalid NATS credentials"
-                        );
-                    }
                 }
             }
         }

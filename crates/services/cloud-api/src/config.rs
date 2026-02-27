@@ -271,8 +271,14 @@ fn subject_filter_tokens_overlap(
 
     let result = if left_idx == left.len() && right_idx == right.len() {
         true
-    } else if left_idx == left.len() || right_idx == right.len() {
-        false
+    } else if left_idx == left.len() {
+        // Conservative overlap detection: if either side has a trailing `>`
+        // wildcard, treat it as potentially overlapping at token boundaries.
+        right[right_idx..].iter().any(|token| *token == ">")
+    } else if right_idx == right.len() {
+        // Conservative overlap detection: if either side has a trailing `>`
+        // wildcard, treat it as potentially overlapping at token boundaries.
+        left[left_idx..].iter().any(|token| *token == ">")
     } else {
         let left_token = left[left_idx];
         let right_token = right[right_idx];
@@ -400,6 +406,8 @@ mod tests {
             "tenant-*.>",
             "tenant-*.clawdstrike.agent.heartbeat.*"
         ));
+        assert!(subject_filters_overlap("a.b", "a.>"));
+        assert!(subject_filters_overlap("a.>", "a.b"));
     }
 
     #[test]
