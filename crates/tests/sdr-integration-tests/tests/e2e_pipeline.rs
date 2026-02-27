@@ -47,7 +47,7 @@ fn event_kind_suffix(resp: &GetEventsResponse) -> &'static str {
 /// Helper: create a Tetragon Process.
 fn make_process(binary: &str, ns: &str) -> tet::Process {
     tet::Process {
-        exec_id: None,
+        exec_id: String::new(),
         pid: Some(1234),
         uid: Some(0),
         cwd: "/".to_string(),
@@ -57,19 +57,20 @@ fn make_process(binary: &str, ns: &str) -> tet::Process {
         start_time: None,
         auid: None,
         pod: Some(tet::Pod {
-            namespace: Some(tet::Namespace {
-                value: ns.to_string(),
-            }),
+            namespace: ns.to_string(),
             name: "test-pod".to_string(),
             container: None,
             pod_labels: Default::default(),
-            workload: None,
+            workload: String::new(),
+            workload_kind: String::new(),
         }),
         docker: String::new(),
-        parent_exec_id: None,
+        parent_exec_id: String::new(),
+        refcnt: 0,
         cap: None,
         ns: None,
         tid: None,
+        process_credentials: None,
     }
 }
 
@@ -89,31 +90,34 @@ async fn test_e2e_tetragon_to_checkpoint_proof() {
             event: Some(Event::ProcessExec(tet::ProcessExec {
                 process: Some(make_process("/usr/bin/curl", "default")),
                 parent: Some(make_process("/usr/bin/bash", "default")),
-                ancestors: String::new(),
+                ancestors: vec![],
             })),
             node_name: "worker-1".to_string(),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         },
         GetEventsResponse {
             event: Some(Event::ProcessExec(tet::ProcessExec {
                 process: Some(make_process("/usr/bin/wget", "production")),
                 parent: None,
-                ancestors: String::new(),
+                ancestors: vec![],
             })),
             node_name: "worker-2".to_string(),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         },
         GetEventsResponse {
             event: Some(Event::ProcessExec(tet::ProcessExec {
                 process: Some(make_process("/usr/bin/python3", "staging")),
                 parent: None,
-                ancestors: String::new(),
+                ancestors: vec![],
             })),
             node_name: "worker-3".to_string(),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         },
         GetEventsResponse {
             event: Some(Event::ProcessKprobe(tet::ProcessKprobe {
@@ -129,24 +133,30 @@ async fn test_e2e_tetragon_to_checkpoint_proof() {
                     })),
                     label: "file".to_string(),
                 }],
-                action: String::new(),
+                return_arg: None,
+                action: 0,
+                kernel_stack_trace: vec![],
                 policy_name: "file-monitor".to_string(),
+                return_action: 0,
                 message: String::new(),
                 tags: vec![],
+                user_stack_trace: vec![],
             })),
             node_name: "worker-1".to_string(),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         },
         GetEventsResponse {
             event: Some(Event::ProcessExec(tet::ProcessExec {
                 process: Some(make_process("/bin/sh", "kube-system")),
                 parent: None,
-                ancestors: String::new(),
+                ancestors: vec![],
             })),
             node_name: "control-1".to_string(),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         },
     ];
 
@@ -333,11 +343,12 @@ async fn test_envelope_chain_integrity() {
             event: Some(Event::ProcessExec(tet::ProcessExec {
                 process: Some(make_process(&format!("/usr/bin/tool-{i}"), "default")),
                 parent: None,
-                ancestors: String::new(),
+                ancestors: vec![],
             })),
             node_name: format!("node-{i}"),
             time: None,
-            aggregation_info_count: 0,
+            aggregation_info: None,
+            cluster_name: String::new(),
         })
         .collect();
 
@@ -417,11 +428,12 @@ async fn test_mixed_bridge_checkpoint() {
         event: Some(Event::ProcessExec(tet::ProcessExec {
             process: Some(make_process("/usr/bin/curl", "default")),
             parent: None,
-            ancestors: String::new(),
+            ancestors: vec![],
         })),
         node_name: "worker-1".to_string(),
         time: None,
-        aggregation_info_count: 0,
+        aggregation_info: None,
+        cluster_name: String::new(),
     };
     let tet_fact = tetragon_bridge::mapper::map_event(&tet_resp).unwrap();
     let tet_env =
@@ -509,11 +521,12 @@ async fn test_mixed_bridge_checkpoint() {
         event: Some(Event::ProcessExec(tet::ProcessExec {
             process: Some(make_process("/usr/bin/python3", "staging")),
             parent: None,
-            ancestors: String::new(),
+            ancestors: vec![],
         })),
         node_name: "worker-2".to_string(),
         time: None,
-        aggregation_info_count: 0,
+        aggregation_info: None,
+        cluster_name: String::new(),
     };
     let tet_fact_2 = tetragon_bridge::mapper::map_event(&tet_resp_2).unwrap();
     let tet_env_2 =

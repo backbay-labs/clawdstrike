@@ -61,177 +61,13 @@
 
 > **Alpha software.** APIs and import paths may change between releases.
 
-## The Problem
-
-Google's 2026 Cybersecurity Forecast calls it the **"Shadow Agent" crisis**: employees and teams spinning up AI agents without corporate oversight, creating invisible pipelines that exfiltrate sensitive data, violate compliance, and leak IP. No one sanctioned them. No one is watching them. And your security stack wasn't built for this.
-
-You deployed 50 agents. Someone on another team deployed 50 more you don't know about. One of them just `curl`'d your `.env` to an unknown IP. Another rewrote your auth middleware. A third is running `chmod 777` on production. Your logging pipeline says everything looks fine.
-
-**Logs tell you what happened after the damage is done. Clawdstrike stops it before the action fires and cryptographically proves what it decided.**
-
-## What Clawdstrike Is
-
-Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for autonomous AI agents. It sits at the tool boundary, the exact point where an agent's intent becomes a real-world action, and enforces security policy with signed proof.
-
-Every action. Every agent. Every time. No exceptions.
-
-```mermaid
-flowchart LR
-    A[Agent Swarm<br/>OpenAI / Claude / OpenClaw / LangChain] --> B[Clawdstrike Adapter]
-    B --> C[Canonical Action Event]
-    C --> D[Policy Engine<br/>+ Guard Stack]
-    D -->|allow| E[Tool Execution]
-    D -->|deny| F[Fail-Closed Block]
-    D --> G[Ed25519 Signed Receipt]
-```
-
----
-
-## Why This Matters
-
-<table>
-<tr>
-<td width="50%">
-
-### Without Clawdstrike
-- Agent reads `~/.ssh/id_rsa`. You find out from the incident report
-- Secret leaks into model output. Compliance discovers it 3 months later
-- Jailbreak prompt bypasses safety. No one notices until the damage is public
-- Multi-agent delegation escalates privileges. Who authorized what?
-- "We have logging." Logs are stories anyone can rewrite
-
-</td>
-<td width="50%">
-
-### With Clawdstrike
-- `ForbiddenPathGuard` blocks the read, signs a receipt
-- `OutputSanitizer` redacts the secret before it ever leaves the pipeline
-- 4-layer jailbreak detection catches it across the session, even across multi-turn grooming attempts
-- Delegation tokens with cryptographic capability ceilings. Privilege escalation is mathematically impossible
-- Ed25519 signed receipts. Tamper-evident proof, not narratives
-
-</td>
-</tr>
-</table>
-
----
-
-## Core Capabilities
-
-### Guard Stack
-
-Composable, policy-driven security checks at the tool boundary. Each guard handles a specific threat surface and returns a verdict with evidence. Fail-fast or aggregate, your call.
-
-| Guard | What It Catches |
-|-------|----------------|
-| **ForbiddenPathGuard** | Blocks access to `.ssh`, `.env`, `.aws`, credential stores, registry hives |
-| **EgressAllowlistGuard** | Controls outbound network by domain. Deny-by-default or allowlist |
-| **SecretLeakGuard** | Detects AWS keys, GitHub tokens, private keys, API secrets in file writes |
-| **PatchIntegrityGuard** | Validates patch safety. Catches `rm -rf /`, `chmod 777`, `disable security` |
-| **McpToolGuard** | Restricts which MCP tools agents can invoke, with confirmation gates |
-| **PromptInjectionGuard** | Detects injection attacks in untrusted input |
-| **JailbreakGuard** | 4-layer detection engine with session aggregation (see below) |
-| **ComputerUseGuard** | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
-| **ShellCommandGuard** | Blocks dangerous shell commands before execution |
-
-### 4-Layer Jailbreak Detection
-
-Not a regex and a prayer. A tiered detection engine that catches what single-layer approaches miss:
-
-```
-Layer 1: Heuristic      Pattern matching for known jailbreak taxonomies
-                         (role-play, authority confusion, encoding attacks,
-                          system prompt extraction, multi-turn grooming)
-
-Layer 2: Statistical    Shannon entropy analysis, punctuation ratio,
-                         zero-width character obfuscation, adversarial suffix detection
-
-Layer 3: ML             Lightweight linear model with configurable weights,
-                         no external API calls, sub-millisecond inference
-
-Layer 4: LLM-as-Judge   Optional external model scoring for high-stakes environments
-```
-
-**Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores. An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Their cumulative risk score rises until it crosses the threshold. Persistent session state survives across connections via pluggable storage backends.
-
-### Cryptographic Receipts
-
-Every policy decision produces an **Ed25519-signed receipt**: a tamper-evident attestation proving what was decided, under which policy, with what evidence. Receipts are portable across Rust, TypeScript, and Python via RFC 8785 canonical JSON serialization.
-
-```rust
-// A receipt proves: "Under policy X, action Y was evaluated with verdict Z"
-// Signed with Ed25519. Forge one and we'll be impressed
-let receipt = engine.create_signed_receipt(content_hash).await?;
-```
-
-This isn't logging. This is **cryptographic proof** that holds up under audit.
-
-### Multi-Agent Security Primitives
-
-When agents spawn agents, who controls whom? Clawdstrike's multi-agent layer provides:
-
-- **Agent Identity Registry.** Ed25519 public key identity with role-based trust levels (Untrusted through System)
-- **Signed Delegation Tokens.** Cryptographically signed capability grants between agents with time bounds, audience validation, and revocation
-- **Capability Attenuation.** Agents can delegate subsets of their capabilities, never escalate. Ceiling enforcement is validated at the cryptographic layer, so privilege escalation is structurally impossible
-- **Delegation Chains.** Full provenance tracking through multi-hop delegation with chain validation
-- **Replay Protection.** Nonce-based replay prevention with configurable TTL, backed by in-memory or SQLite stores
-- **Token Revocation.** Instant revocation with durable SQLite-backed or in-memory stores
-- **W3C Traceparent Correlation.** Cross-agent audit trails following the W3C trace context standard
-
-### Inline Reference Monitors
-
-For sandboxed execution environments, Clawdstrike provides **IRMs**, runtime interceptors that sit between sandboxed modules and host calls:
-
-```
-Sandboxed Module
-       │ host call
-       ▼
-IRM Router ──┬── Filesystem Monitor (path access, content hashing)
-             ├── Network Monitor    (egress control, DNS filtering)
-             └── Execution Monitor  (command allowlisting, signal control)
-```
-
-Every intercepted call produces an `IrmEvent` with a decision, enabling complete behavioral audit of sandboxed agent code.
-
-### Output Sanitization
-
-Secrets that make it into model output get caught on the way out. The output sanitizer scans model and tool output for:
-
-- **Secrets:** API keys, tokens, private keys, connection strings
-- **PII:** Email addresses, phone numbers, SSNs, credit cards
-- **Internal data:** Internal URLs, IP addresses, hostnames
-- **Custom patterns:** Your own regex-based detectors
-
-Redaction strategies include full replacement, partial masking, type labels, and stable SHA-256 hashing for correlation without re-identification. Supports both batch and streaming modes with configurable entropy-based detection.
-
-### Prompt Watermarking
-
-Embed **Ed25519-signed provenance markers** into prompts for attribution and forensic tracing. Each watermark carries an application ID, session ID, sequence number, and timestamp, all canonically serialized (RFC 8785) and cryptographically signed.
-
-Watermarks survive round-trips through model inference and can be extracted and verified downstream to prove chain of custody.
-
-### Threat Intelligence Integration
-
-Async guards connect to external threat feeds for real-time enrichment:
-
-- **VirusTotal:** File hash and URL reputation checks
-- **Snyk:** Dependency vulnerability scanning
-- **Google Safe Browsing:** URL threat detection
-
-Built with circuit breakers, rate limiting, retry logic, and caching. External service failures never block the pipeline (fail-closed still applies to the core guards).
-
-### WebAssembly Plugin Runtime
-
-Extend the guard stack with custom guards running in sandboxed WebAssembly. Plugin manifests define capabilities, resource limits, and trust levels. The WASM runtime enforces sandbox boundaries, so a plugin cannot escape its declared capability set.
-
----
-
 ## Quick Start
 
-### Rust CLI
+### CLI
 
 ```bash
-cargo install --path crates/services/hush-cli
+brew tap backbay-labs/tap
+brew install clawdstrike
 
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 # → DENIED: forbidden_path guard matched pattern "**/.ssh/**"
@@ -269,26 +105,209 @@ allowed = engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), c
 
 ---
 
+## The Problem
+
+Google's 2026 Cybersecurity Forecast calls it the **"Shadow Agent" crisis**: employees and teams spinning up AI agents without corporate oversight, creating invisible pipelines that exfiltrate sensitive data, violate compliance, and leak IP. No one sanctioned them. No one is watching them. And your security stack wasn't built for this.
+
+You deployed 50 agents. Someone on another team deployed 50 more you don't know about. One of them just `curl`'d your `.env` to an unknown IP. Another rewrote your auth middleware. A third is running `chmod 777` on production. Your logging pipeline says everything looks fine.
+
+**Logs tell you what happened after the damage is done. Clawdstrike stops it before the action fires and cryptographically proves what it decided.**
+
+## What Clawdstrike Is
+
+Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for autonomous AI agents. It sits at the tool boundary, the exact point where an agent's intent becomes a real-world action, and enforces security policy with signed proof.
+
+Every action. Every agent. Every time. No exceptions.
+
+```mermaid
+flowchart LR
+    A[Agent Swarm<br/>OpenAI / Claude / OpenClaw / LangChain] --> B[Clawdstrike Adapter]
+    B --> C[Canonical Action Event]
+    C --> D[Policy Engine<br/>+ Guard Stack]
+    D -->|allow| E[Tool Execution]
+    D -->|deny| F[Fail-Closed Block]
+    D --> G[Ed25519 Signed Receipt]
+```
+
+---
+
+## Why This Matters
+
+<table>
+<tr>
+<td width="50%">
+
+### Without Clawdstrike
+
+- Agent reads `~/.ssh/id_rsa`. You find out from the incident report
+- Secret leaks into model output. Compliance discovers it 3 months later
+- Jailbreak prompt bypasses safety. No one notices until the damage is public
+- Multi-agent delegation escalates privileges. Who authorized what?
+- "We have logging." Logs are stories anyone can rewrite
+
+</td>
+<td width="50%">
+
+### With Clawdstrike
+
+- `ForbiddenPathGuard` blocks the read, signs a receipt
+- `OutputSanitizer` redacts the secret before it ever leaves the pipeline
+- 4-layer jailbreak detection catches it across the session, even across multi-turn grooming attempts
+- Delegation tokens with cryptographic capability ceilings. Privilege escalation is mathematically impossible
+- Ed25519 signed receipts. Tamper-evident proof, not narratives
+
+</td>
+</tr>
+</table>
+
+---
+
+## Core Capabilities
+
+<p align="center">
+  <a href="#guard-stack"><kbd>Guard Stack</kbd></a>&nbsp;&nbsp;
+  <a href="#jailbreak-detection"><kbd>Jailbreak Detection</kbd></a>&nbsp;&nbsp;
+  <a href="#cryptographic-receipts"><kbd>Receipts</kbd></a>&nbsp;&nbsp;
+  <a href="#multi-agent-security-primitives"><kbd>Multi-Agent</kbd></a>&nbsp;&nbsp;
+  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>
+</p>
+
+### Guard Stack
+
+Composable, policy-driven security checks at the tool boundary. Each guard handles a specific threat surface and returns a verdict with evidence. Fail-fast or aggregate, your call.
+
+| Guard                    | What It Catches                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| **ForbiddenPathGuard**   | Blocks access to `.ssh`, `.env`, `.aws`, credential stores, registry hives       |
+| **EgressAllowlistGuard** | Controls outbound network by domain. Deny-by-default or allowlist                |
+| **SecretLeakGuard**      | Detects AWS keys, GitHub tokens, private keys, API secrets in file writes        |
+| **PatchIntegrityGuard**  | Validates patch safety. Catches `rm -rf /`, `chmod 777`, `disable security`      |
+| **McpToolGuard**         | Restricts which MCP tools agents can invoke, with confirmation gates             |
+| **PromptInjectionGuard** | Detects injection attacks in untrusted input                                     |
+| **JailbreakGuard**       | 4-layer detection engine with session aggregation (see below)                    |
+| **ComputerUseGuard**     | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
+| **ShellCommandGuard**    | Blocks dangerous shell commands before execution                                 |
+
+---
+
+<a id="jailbreak-detection"></a>
+<table>
+<tr>
+<td width="50%">
+<img src="docs/static/jailbreak-intro.png" alt="4-Layer Jailbreak Detection" width="100%" />
+</td>
+<td width="50%" valign="top">
+
+**~15ms total latency.** All four layers run in sequence without external API calls (unless you opt into the LLM judge). The ML layer is a configurable linear model with sigmoid activation — weights live in your YAML policy, not a black box.
+
+**9 attack taxonomies.** Role-play, authority confusion, encoding attacks, hypothetical framing, adversarial suffixes, system impersonation, instruction extraction, multi-turn grooming, and payload splitting.
+
+**Session aggregation** tracks cumulative risk across an entire conversation with a time-decaying rolling score (15-minute half-life). An attacker who spreads a jailbreak across 20 innocuous messages still triggers detection — their score rises until it crosses the threshold.
+
+**Privacy-safe.** Raw input never appears in detection results. Only match spans and SHA-256 fingerprints are stored. Unicode NFKC normalization and zero-width character stripping happen before any pattern matching.
+
+**[Try this out for yourself in our Attack Range!](https://backbay.io/attack-range)**
+
+</td>
+</tr>
+</table>
+
+---
+
+### Cryptographic Receipts
+
+Every policy decision produces an **Ed25519-signed receipt**: a tamper-evident attestation proving what was decided, under which policy, with what evidence. Portable across Rust, TypeScript, and Python via RFC 8785 canonical JSON.
+
+```rust
+// A receipt proves: "Under policy X, action Y was evaluated with verdict Z"
+// Signed with Ed25519. Forge one and we'll be impressed
+let receipt = engine.create_signed_receipt(content_hash).await?;
+```
+
+This isn't logging. This is **cryptographic proof** that holds up under audit.
+
+---
+
+### Multi-Agent Security Primitives
+
+When agents spawn agents, who controls whom? Clawdstrike's multi-agent layer provides:
+
+- **Agent Identity Registry.** Ed25519 public key identity with role-based trust levels (Untrusted through System)
+- **Signed Delegation Tokens.** Cryptographically signed capability grants with time bounds, audience validation, and revocation
+- **Capability Attenuation.** Agents delegate subsets of their capabilities, never escalate. Privilege escalation is structurally impossible
+- **Delegation Chains.** Full provenance tracking through multi-hop delegation with chain validation
+- **Replay Protection & Revocation.** Nonce-based replay prevention with configurable TTL, instant revocation via SQLite or in-memory stores
+- **W3C Traceparent Correlation.** Cross-agent audit trails following the W3C trace context standard
+
+---
+
+<a id="irm--output-sanitization--watermarking--threat-intel"></a>
+<table>
+<tr>
+<td width="50%" valign="top">
+<h4 align="center">Inline Reference Monitors</h4>
+
+Runtime interceptors between sandboxed modules and host calls. Every intercepted call produces an `IrmEvent` with a decision for complete behavioral audit.
+
+```
+Sandboxed Module
+            │
+IRM Router ─┬─ Filesystem Monitor
+            ├─ Network Monitor
+            └─ Execution Monitor
+```
+
+</td>
+<td width="50%" valign="top">
+<h4 align="center">Output Sanitization</h4>
+
+Catches secrets that make it into model output on the way out. Scans for API keys, tokens, PII, internal URLs, and custom patterns. Redaction strategies: full replacement, partial masking, type labels, stable SHA-256 hashing. Batch and streaming modes.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h4 align="center">Prompt Watermarking</h4>
+
+Ed25519-signed provenance markers embedded in prompts for attribution and forensic tracing. Carries app ID, session ID, sequence number, and timestamp (RFC 8785). Survives model inference round-trips.
+
+</td>
+<td width="50%" valign="top">
+<h4 align="center">Threat Intel & WASM Plugins</h4>
+
+**Threat feeds:** VirusTotal, Snyk, Google Safe Browsing — with circuit breakers, rate limiting, and caching. External failures never block the pipeline.
+
+**WASM runtime:** Custom guards in sandboxed WebAssembly with declared capability sets and resource limits.
+
+</td>
+</tr>
+</table>
+
+---
+
 ## Framework Adapters
 
 Drop Clawdstrike into your existing agent stack. Every adapter normalizes framework-specific tool calls into canonical action events and routes them through the guard stack.
 
-| Framework | Package | Install |
-|-----------|---------|---------|
-| **OpenAI Agents SDK** | `@clawdstrike/openai` | `npm install @clawdstrike/openai @clawdstrike/engine-local` |
-| **Claude / Agent SDK** | `@clawdstrike/claude` | `npm install @clawdstrike/claude @clawdstrike/engine-local` |
-| **Vercel AI SDK** | `@clawdstrike/vercel-ai` | `npm install @clawdstrike/vercel-ai @clawdstrike/engine-local` |
-| **LangChain** | `@clawdstrike/langchain` | `npm install @clawdstrike/langchain @clawdstrike/engine-local` |
-| **OpenClaw** | `@clawdstrike/openclaw` | `openclaw plugins install @clawdstrike/openclaw` |
+| Framework              | Package                  | Install                                                        |
+| ---------------------- | ------------------------ | -------------------------------------------------------------- |
+| **OpenAI Agents SDK**  | `@clawdstrike/openai`    | `npm install @clawdstrike/openai @clawdstrike/engine-local`    |
+| **Claude / Agent SDK** | `@clawdstrike/claude`    | `npm install @clawdstrike/claude @clawdstrike/engine-local`    |
+| **Vercel AI SDK**      | `@clawdstrike/vercel-ai` | `npm install @clawdstrike/vercel-ai @clawdstrike/engine-local` |
+| **LangChain**          | `@clawdstrike/langchain` | `npm install @clawdstrike/langchain @clawdstrike/engine-local` |
+| **OpenClaw**           | `@clawdstrike/openclaw`  | `openclaw plugins install @clawdstrike/openclaw`               |
 
 ```typescript
 // 3 lines to secure any OpenAI agent
 import { createStrikeCell } from "@clawdstrike/engine-local";
-import { OpenAIToolBoundary, wrapOpenAIToolDispatcher } from "@clawdstrike/openai";
+import {
+  OpenAIToolBoundary,
+  wrapOpenAIToolDispatcher,
+} from "@clawdstrike/openai";
 
 const secure = wrapOpenAIToolDispatcher(
   new OpenAIToolBoundary({ engine: createStrikeCell({ policyRef: "strict" }) }),
-  yourToolDispatcher
+  yourToolDispatcher,
 );
 ```
 
@@ -316,8 +335,8 @@ guards:
   jailbreak:
     enabled: true
     detector:
-      block_threshold: 40        # aggressive - catch even suspicious prompts
-      session_aggregation: true   # track risk across the conversation
+      block_threshold: 40 # aggressive - catch even suspicious prompts
+      session_aggregation: true # track risk across the conversation
 
 settings:
   fail_fast: true
@@ -356,13 +375,13 @@ Full CUA policy enforcement for agents operating remote desktop surfaces:
 
 ## Documentation
 
-| Category | Links |
-|----------|-------|
-| **Getting Started** | [Rust](docs/src/getting-started/quick-start.md) &middot; [TypeScript](docs/src/getting-started/quick-start-typescript.md) &middot; [Python](docs/src/getting-started/quick-start-python.md) |
-| **Concepts** | [Design Philosophy](docs/src/concepts/design-philosophy.md) &middot; [Enforcement Tiers](docs/src/concepts/enforcement-tiers.md) &middot; [Multi-Language](docs/src/concepts/multi-language.md) |
+| Category             | Links                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Getting Started**  | [Rust](docs/src/getting-started/quick-start.md) &middot; [TypeScript](docs/src/getting-started/quick-start-typescript.md) &middot; [Python](docs/src/getting-started/quick-start-python.md)                                                                                                                           |
+| **Concepts**         | [Design Philosophy](docs/src/concepts/design-philosophy.md) &middot; [Enforcement Tiers](docs/src/concepts/enforcement-tiers.md) &middot; [Multi-Language](docs/src/concepts/multi-language.md)                                                                                                                       |
 | **Framework Guides** | [OpenAI](packages/adapters/clawdstrike-openai/README.md) &middot; [Claude](packages/adapters/clawdstrike-claude/README.md) &middot; [Vercel AI](docs/src/guides/vercel-ai-integration.md) &middot; [LangChain](docs/src/guides/langchain-integration.md) &middot; [OpenClaw](docs/src/guides/openclaw-integration.md) |
-| **Reference** | [Guards](docs/src/reference/guards/README.md) &middot; [Policy Schema](docs/src/reference/policy-schema.md) &middot; [Repo Map](docs/REPO_MAP.md) |
-| **Operations** | [OpenClaw Runbook](docs/src/guides/agent-openclaw-operations.md) &middot; [CUA Gateway Testing](apps/desktop/docs/openclaw-gateway-testing.md) &middot; [CUA Roadmap](docs/roadmaps/cua/INDEX.md) |
+| **Reference**        | [Guards](docs/src/reference/guards/README.md) &middot; [Policy Schema](docs/src/reference/policy-schema.md) &middot; [Repo Map](docs/REPO_MAP.md)                                                                                                                                                                     |
+| **Operations**       | [OpenClaw Runbook](docs/src/guides/agent-openclaw-operations.md) &middot; [CUA Gateway Testing](apps/desktop/docs/openclaw-gateway-testing.md) &middot; [CUA Roadmap](docs/roadmaps/cua/INDEX.md)                                                                                                                     |
 
 ## Security
 

@@ -6,6 +6,7 @@ use tracing::{debug, info};
 use crate::error::{Error, Result};
 
 /// Re-export generated protobuf types.
+#[allow(clippy::large_enum_variant)]
 pub mod proto {
     tonic::include_proto!("tetragon");
 }

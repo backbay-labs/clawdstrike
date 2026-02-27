@@ -19,11 +19,12 @@ This is the main Rust library crate for the Clawdstrike system. It provides secu
 ## Quick Start
 
 ```rust
-use clawdstrike::{ForbiddenPathGuard, SecretLeakGuard, Guard, GuardAction, GuardContext};
+use clawdstrike::{ForbiddenPathGuard, SecretLeakGuard, Guard, GuardContext};
+use clawdstrike::guards::GuardAction;
 
 // Check if a path is forbidden
 let guard = ForbiddenPathGuard::new();
-let result = guard.check(&GuardAction::file_read("~/.ssh/id_rsa"), &GuardContext::default());
+let result = guard.check(&GuardAction::FileAccess("~/.ssh/id_rsa"), &GuardContext::default()).await;
 assert!(!result.allowed);
 
 // Scan content for secrets

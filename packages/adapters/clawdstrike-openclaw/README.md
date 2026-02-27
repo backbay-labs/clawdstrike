@@ -38,11 +38,12 @@ if (!result.proceed) {
 ### Policy checking
 
 ```ts
-import { checkPolicy, PolicyEngine } from '@clawdstrike/openclaw';
+import { checkPolicy } from '@clawdstrike/openclaw';
+import type { ClawdstrikeConfig } from '@clawdstrike/openclaw';
 
-const engine = new PolicyEngine({ policy: 'default' });
-const decision = await checkPolicy(engine, 'file_read', '~/.ssh/id_rsa');
-console.log(decision.allowed); // false
+const config: ClawdstrikeConfig = { policy: 'default' };
+const decision = await checkPolicy(config, 'file_read', '~/.ssh/id_rsa');
+console.log(decision.status); // "deny"
 ```
 
 ### OpenClaw plugin hooks
@@ -58,7 +59,9 @@ The package exports hook handlers for direct OpenClaw integration:
 ```bash
 # Installed via the bin entry
 clawdstrike policy lint ./policy.yaml
-clawdstrike audit show --session latest
+clawdstrike audit query --denied
+clawdstrike audit export ./audit-dump.jsonl
+clawdstrike why <event-id>
 ```
 
 ## API Overview
