@@ -406,7 +406,7 @@ fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
     {
         use std::fs::OpenOptions;
         use std::io::Write;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        use std::os::unix::fs::OpenOptionsExt;
 
         let mut file = OpenOptions::new()
             .write(true)
@@ -417,8 +417,6 @@ fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
             .with_context(|| format!("Failed to create settings file {:?}", path))?;
         file.write_all(contents.as_bytes())
             .with_context(|| format!("Failed to write settings to {:?}", path))?;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("Failed to set settings file permissions for {:?}", path))?;
     }
 
     #[cfg(not(unix))]
