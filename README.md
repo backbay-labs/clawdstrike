@@ -129,6 +129,12 @@ openclaw plugins enable clawdstrike-security
 
 [Configure the plugin](docs/src/guides/openclaw-integration.md#configuration) in your project's `openclaw.json`.
 
+### Additional SDKs & Bindings
+
+Framework adapters: [OpenAI](packages/adapters/clawdstrike-openai/README.md) · [Claude](packages/adapters/clawdstrike-claude/README.md) · [Vercel AI](docs/src/guides/vercel-ai-integration.md) · [LangChain](docs/src/guides/langchain-integration.md)
+
+[C, Go, C#](docs/src/concepts/multi-language.md) via FFI · [WebAssembly](crates/libs/hush-wasm/README.md)
+
 ---
 
 ## The Problem
