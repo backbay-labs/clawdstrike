@@ -133,10 +133,14 @@ async fn test_e2e_tetragon_to_checkpoint_proof() {
                     })),
                     label: "file".to_string(),
                 }],
-                action: String::new(),
+                return_arg: None,
+                action: 0,
+                kernel_stack_trace: vec![],
                 policy_name: "file-monitor".to_string(),
+                return_action: 0,
                 message: String::new(),
                 tags: vec![],
+                user_stack_trace: vec![],
             })),
             node_name: "worker-1".to_string(),
             time: None,
@@ -429,7 +433,7 @@ async fn test_mixed_bridge_checkpoint() {
         node_name: "worker-1".to_string(),
         time: None,
         aggregation_info: None,
-            cluster_name: String::new(),
+        cluster_name: String::new(),
     };
     let tet_fact = tetragon_bridge::mapper::map_event(&tet_resp).unwrap();
     let tet_env =
@@ -522,7 +526,7 @@ async fn test_mixed_bridge_checkpoint() {
         node_name: "worker-2".to_string(),
         time: None,
         aggregation_info: None,
-            cluster_name: String::new(),
+        cluster_name: String::new(),
     };
     let tet_fact_2 = tetragon_bridge::mapper::map_event(&tet_resp_2).unwrap();
     let tet_env_2 =
