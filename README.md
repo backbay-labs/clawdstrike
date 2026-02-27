@@ -61,6 +61,49 @@
 
 > **Alpha software.** APIs and import paths may change between releases.
 
+## Quick Start
+
+### Rust CLI
+
+```bash
+cargo install --path crates/services/hush-cli
+
+clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
+# → DENIED: forbidden_path guard matched pattern "**/.ssh/**"
+```
+
+### TypeScript
+
+```bash
+npm install @clawdstrike/sdk
+```
+
+```typescript
+import { Clawdstrike } from "@clawdstrike/sdk";
+
+const cs = Clawdstrike.withDefaults("strict");
+const decision = await cs.checkNetwork("api.openai.com:443");
+console.log(decision.status); // "denied" - strict blocks all egress by default
+```
+
+### Python
+
+```bash
+pip install clawdstrike
+```
+
+```python
+from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
+
+engine = PolicyEngine(Policy.from_yaml_file("policy.yaml"))
+ctx = GuardContext(cwd="/app", session_id="session-123")
+
+allowed = engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), ctx)
+# → False
+```
+
+---
+
 ## The Problem
 
 Google's 2026 Cybersecurity Forecast calls it the **"Shadow Agent" crisis**: employees and teams spinning up AI agents without corporate oversight, creating invisible pipelines that exfiltrate sensitive data, violate compliance, and leak IP. No one sanctioned them. No one is watching them. And your security stack wasn't built for this.
@@ -195,10 +238,10 @@ Runtime interceptors between sandboxed modules and host calls. Every intercepted
 
 ```
 Sandboxed Module
-       │
+            │
 IRM Router ─┬─ Filesystem Monitor
-             ├─ Network Monitor
-             └─ Execution Monitor
+            ├─ Network Monitor
+            └─ Execution Monitor
 ```
 
 </td>
@@ -229,49 +272,6 @@ Ed25519-signed provenance markers embedded in prompts for attribution and forens
 </td>
 </tr>
 </table>
-
----
-
-## Quick Start
-
-### Rust CLI
-
-```bash
-cargo install --path crates/services/hush-cli
-
-clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
-# → DENIED: forbidden_path guard matched pattern "**/.ssh/**"
-```
-
-### TypeScript
-
-```bash
-npm install @clawdstrike/sdk
-```
-
-```typescript
-import { Clawdstrike } from "@clawdstrike/sdk";
-
-const cs = Clawdstrike.withDefaults("strict");
-const decision = await cs.checkNetwork("api.openai.com:443");
-console.log(decision.status); // "denied" - strict blocks all egress by default
-```
-
-### Python
-
-```bash
-pip install clawdstrike
-```
-
-```python
-from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
-
-engine = PolicyEngine(Policy.from_yaml_file("policy.yaml"))
-ctx = GuardContext(cwd="/app", session_id="session-123")
-
-allowed = engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), ctx)
-# → False
-```
 
 ---
 
