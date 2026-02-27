@@ -230,9 +230,8 @@ When agents spawn agents, who controls whom? Clawdstrike's multi-agent layer pro
 
 <table>
 <tr>
-<td width="50%">
-
-#### Inline Reference Monitors
+<td width="50%" valign="top">
+<h4 align="center">Inline Reference Monitors</h4>
 
 Runtime interceptors between sandboxed modules and host calls. Every intercepted call produces an `IrmEvent` with a decision for complete behavioral audit.
 
@@ -245,25 +244,22 @@ IRM Router ─┬─ Filesystem Monitor
 ```
 
 </td>
-<td width="50%">
-
-#### Output Sanitization
+<td width="50%" valign="top">
+<h4 align="center">Output Sanitization</h4>
 
 Catches secrets that make it into model output on the way out. Scans for API keys, tokens, PII, internal URLs, and custom patterns. Redaction strategies: full replacement, partial masking, type labels, stable SHA-256 hashing. Batch and streaming modes.
 
 </td>
 </tr>
 <tr>
-<td width="50%">
-
-#### Prompt Watermarking
+<td width="50%" valign="top">
+<h4 align="center">Prompt Watermarking</h4>
 
 Ed25519-signed provenance markers embedded in prompts for attribution and forensic tracing. Carries app ID, session ID, sequence number, and timestamp (RFC 8785). Survives model inference round-trips.
 
 </td>
-<td width="50%">
-
-#### Threat Intel & WASM Plugins
+<td width="50%" valign="top">
+<h4 align="center">Threat Intel & WASM Plugins</h4>
 
 **Threat feeds:** VirusTotal, Snyk, Google Safe Browsing — with circuit breakers, rate limiting, and caching. External failures never block the pipeline.
 
