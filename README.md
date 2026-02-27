@@ -134,6 +134,8 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 | **ComputerUseGuard** | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
 | **ShellCommandGuard** | Blocks dangerous shell commands before execution |
 
+---
+
 ### 4-Layer Jailbreak Detection
 
 Not a regex and a prayer. A tiered detection engine that catches what single-layer approaches miss:
@@ -152,11 +154,13 @@ Layer 3: ML             Lightweight linear model with configurable weights,
 Layer 4: LLM-as-Judge   Optional external model scoring for high-stakes environments
 ```
 
-**Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores. An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Their cumulative risk score rises until it crosses the threshold. Persistent session state survives across connections via pluggable storage backends.
+**Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores. An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Persistent session state survives across connections via pluggable storage backends.
+
+---
 
 ### Cryptographic Receipts
 
-Every policy decision produces an **Ed25519-signed receipt**: a tamper-evident attestation proving what was decided, under which policy, with what evidence. Receipts are portable across Rust, TypeScript, and Python via RFC 8785 canonical JSON serialization.
+Every policy decision produces an **Ed25519-signed receipt**: a tamper-evident attestation proving what was decided, under which policy, with what evidence. Portable across Rust, TypeScript, and Python via RFC 8785 canonical JSON.
 
 ```rust
 // A receipt proves: "Under policy X, action Y was evaluated with verdict Z"
@@ -166,63 +170,65 @@ let receipt = engine.create_signed_receipt(content_hash).await?;
 
 This isn't logging. This is **cryptographic proof** that holds up under audit.
 
+---
+
 ### Multi-Agent Security Primitives
 
 When agents spawn agents, who controls whom? Clawdstrike's multi-agent layer provides:
 
 - **Agent Identity Registry.** Ed25519 public key identity with role-based trust levels (Untrusted through System)
-- **Signed Delegation Tokens.** Cryptographically signed capability grants between agents with time bounds, audience validation, and revocation
-- **Capability Attenuation.** Agents can delegate subsets of their capabilities, never escalate. Ceiling enforcement is validated at the cryptographic layer, so privilege escalation is structurally impossible
+- **Signed Delegation Tokens.** Cryptographically signed capability grants with time bounds, audience validation, and revocation
+- **Capability Attenuation.** Agents delegate subsets of their capabilities, never escalate. Privilege escalation is structurally impossible
 - **Delegation Chains.** Full provenance tracking through multi-hop delegation with chain validation
-- **Replay Protection.** Nonce-based replay prevention with configurable TTL, backed by in-memory or SQLite stores
-- **Token Revocation.** Instant revocation with durable SQLite-backed or in-memory stores
+- **Replay Protection & Revocation.** Nonce-based replay prevention with configurable TTL, instant revocation via SQLite or in-memory stores
 - **W3C Traceparent Correlation.** Cross-agent audit trails following the W3C trace context standard
 
-### Inline Reference Monitors
+---
 
-For sandboxed execution environments, Clawdstrike provides **IRMs**, runtime interceptors that sit between sandboxed modules and host calls:
+<table>
+<tr>
+<td width="50%">
+
+#### Inline Reference Monitors
+
+Runtime interceptors between sandboxed modules and host calls. Every intercepted call produces an `IrmEvent` with a decision for complete behavioral audit.
 
 ```
 Sandboxed Module
-       │ host call
-       ▼
-IRM Router ──┬── Filesystem Monitor (path access, content hashing)
-             ├── Network Monitor    (egress control, DNS filtering)
-             └── Execution Monitor  (command allowlisting, signal control)
+       │
+IRM Router ─┬─ Filesystem Monitor
+             ├─ Network Monitor
+             └─ Execution Monitor
 ```
 
-Every intercepted call produces an `IrmEvent` with a decision, enabling complete behavioral audit of sandboxed agent code.
+</td>
+<td width="50%">
 
-### Output Sanitization
+#### Output Sanitization
 
-Secrets that make it into model output get caught on the way out. The output sanitizer scans model and tool output for:
+Catches secrets that make it into model output on the way out. Scans for API keys, tokens, PII, internal URLs, and custom patterns. Redaction strategies: full replacement, partial masking, type labels, stable SHA-256 hashing. Batch and streaming modes.
 
-- **Secrets:** API keys, tokens, private keys, connection strings
-- **PII:** Email addresses, phone numbers, SSNs, credit cards
-- **Internal data:** Internal URLs, IP addresses, hostnames
-- **Custom patterns:** Your own regex-based detectors
+</td>
+</tr>
+<tr>
+<td width="50%">
 
-Redaction strategies include full replacement, partial masking, type labels, and stable SHA-256 hashing for correlation without re-identification. Supports both batch and streaming modes with configurable entropy-based detection.
+#### Prompt Watermarking
 
-### Prompt Watermarking
+Ed25519-signed provenance markers embedded in prompts for attribution and forensic tracing. Carries app ID, session ID, sequence number, and timestamp (RFC 8785). Survives model inference round-trips.
 
-Embed **Ed25519-signed provenance markers** into prompts for attribution and forensic tracing. Each watermark carries an application ID, session ID, sequence number, and timestamp, all canonically serialized (RFC 8785) and cryptographically signed.
+</td>
+<td width="50%">
 
-Watermarks survive round-trips through model inference and can be extracted and verified downstream to prove chain of custody.
+#### Threat Intel & WASM Plugins
 
-### Threat Intelligence Integration
+**Threat feeds:** VirusTotal, Snyk, Google Safe Browsing — with circuit breakers, rate limiting, and caching. External failures never block the pipeline.
 
-Async guards connect to external threat feeds for real-time enrichment:
+**WASM runtime:** Custom guards in sandboxed WebAssembly with declared capability sets and resource limits.
 
-- **VirusTotal:** File hash and URL reputation checks
-- **Snyk:** Dependency vulnerability scanning
-- **Google Safe Browsing:** URL threat detection
-
-Built with circuit breakers, rate limiting, retry logic, and caching. External service failures never block the pipeline (fail-closed still applies to the core guards).
-
-### WebAssembly Plugin Runtime
-
-Extend the guard stack with custom guards running in sandboxed WebAssembly. Plugin manifests define capabilities, resource limits, and trust levels. The WASM runtime enforces sandbox boundaries, so a plugin cannot escape its declared capability set.
+</td>
+</tr>
+</table>
 
 ---
 
