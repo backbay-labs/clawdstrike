@@ -71,6 +71,52 @@ pub struct IntegrationSettings {
     pub webhooks: WebhookIntegrationSettings,
 }
 
+/// NATS connectivity settings for enterprise cloud management.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NatsSettings {
+    /// Whether NATS enterprise connectivity is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// NATS server URL (e.g., "nats://nats.example.com:4222").
+    #[serde(default)]
+    pub nats_url: Option<String>,
+    /// Path to a `.creds` file for NATS authentication.
+    #[serde(default)]
+    pub creds_file: Option<String>,
+    /// Bearer token for NATS authentication.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// NKey seed for NATS authentication.
+    #[serde(default)]
+    pub nkey_seed: Option<String>,
+    /// Tenant identifier for NATS subject namespacing.
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    /// Agent identifier for NATS subject namespacing.
+    #[serde(default)]
+    pub agent_id: Option<String>,
+}
+
+/// Enrollment state for cloud-managed agents.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EnrollmentState {
+    /// Whether the agent has completed enrollment.
+    #[serde(default)]
+    pub enrolled: bool,
+    /// Server-assigned agent UUID from the cloud API.
+    #[serde(default)]
+    pub agent_uuid: Option<String>,
+    /// Tenant ID assigned during enrollment.
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    /// Path to the NATS credentials file written during enrollment.
+    #[serde(default)]
+    pub nats_creds_path: Option<String>,
+    /// Flag indicating enrollment is currently in progress (for crash recovery).
+    #[serde(default)]
+    pub enrollment_in_progress: bool,
+}
+
 /// Agent settings persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -175,6 +221,14 @@ pub struct Settings {
     /// Current hushd version observed/applied by OTA.
     #[serde(default)]
     pub ota_current_hushd_version: Option<String>,
+
+    /// NATS enterprise connectivity settings.
+    #[serde(default)]
+    pub nats: NatsSettings,
+
+    /// Enrollment state for cloud-managed agents.
+    #[serde(default)]
+    pub enrollment: EnrollmentState,
 }
 
 fn default_policy_path() -> PathBuf {
@@ -261,6 +315,8 @@ impl Default for Settings {
             ota_last_check_at: None,
             ota_last_result: None,
             ota_current_hushd_version: None,
+            nats: NatsSettings::default(),
+            enrollment: EnrollmentState::default(),
         }
     }
 }

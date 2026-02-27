@@ -37,6 +37,7 @@ use crate::siem::manager::{
 use crate::siem::threat_intel::guard::ThreatIntelGuard;
 use crate::siem::threat_intel::service::{ThreatIntelService, ThreatIntelState};
 use crate::siem::types::{SecurityEvent, SecurityEventContext};
+use crate::spine_publisher::SpinePublisher;
 use crate::v1_rate_limit::V1RateLimitState;
 
 /// Event broadcast for SSE streaming
@@ -111,6 +112,8 @@ pub struct AppState {
     pub siem_exporters: Arc<RwLock<Vec<ExporterStatusHandle>>>,
     /// Exporter manager (fanout task) if SIEM is enabled
     pub siem_manager: Arc<Mutex<Option<ExporterManager>>>,
+    /// Optional Spine publisher for eval receipt attestation
+    pub spine_publisher: Option<Arc<SpinePublisher>>,
     /// Shutdown notifier (used for API-triggered shutdown)
     pub shutdown: Arc<Notify>,
 }
@@ -272,6 +275,18 @@ impl AppState {
                 "Loaded trusted policy bundle keys"
             );
         }
+
+        // Initialize optional Spine publisher.
+        let spine_publisher = {
+            let signing_kp = engine.keypair().cloned().unwrap_or_else(Keypair::generate);
+            match crate::spine_publisher::init_spine_publisher(&config.spine, &signing_kp).await {
+                Ok(publisher) => publisher,
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to initialize Spine publisher, continuing without it");
+                    None
+                }
+            }
+        };
 
         // Create rate limiter state
         let rate_limit = RateLimitState::new(&config.rate_limit, metrics.clone());
@@ -473,6 +488,7 @@ impl AppState {
             threat_intel_task: Arc::new(Mutex::new(threat_intel_task)),
             siem_exporters: Arc::new(RwLock::new(siem_exporters)),
             siem_manager: Arc::new(Mutex::new(siem_manager)),
+            spine_publisher,
             shutdown: Arc::new(Notify::new()),
         };
 

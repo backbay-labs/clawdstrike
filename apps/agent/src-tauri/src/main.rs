@@ -12,13 +12,18 @@ mod api_server;
 mod approval;
 mod daemon;
 mod decision;
+mod enrollment;
 mod events;
 mod integrations;
+mod nats_client;
 mod notifications;
 mod openclaw;
 mod policy;
+mod policy_sync;
+mod posture_commands;
 mod session;
 mod settings;
+mod telemetry_publisher;
 mod tray;
 mod updater;
 
@@ -356,6 +361,86 @@ async fn run_agent<R: Runtime>(
             match audit_queue.flush(&daemon_url, api_key.as_deref()).await {
                 Ok(count) => tracing::info!(count, "Flushed queued audit events on startup"),
                 Err(err) => tracing::warn!(error = %err, "Failed to flush queued audit events"),
+            }
+        }
+    }
+
+    // --- NATS enterprise connectivity (adaptive SDR) ---
+    // If NATS is enabled (either via static config or enrollment), connect and start
+    // policy sync, telemetry publishing, and posture command handling.
+    let nats_enabled = {
+        let guard = settings.read().await;
+        guard.nats.enabled
+    };
+    if nats_enabled {
+        let nats_settings = {
+            let guard = settings.read().await;
+            guard.nats.clone()
+        };
+        match nats_client::NatsClient::connect(&nats_settings).await {
+            Ok(nats) => {
+                let nats = Arc::new(nats);
+
+                // Policy sync: watch KV for policy updates and reload hushd.
+                let policy_path = {
+                    let guard = settings.read().await;
+                    guard.policy_path.clone()
+                };
+                let policy_sync =
+                    policy_sync::PolicySync::new(nats.clone(), policy_path);
+                let (policy_update_tx, mut policy_update_rx) =
+                    tokio::sync::mpsc::channel::<()>(16);
+                let policy_sync_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    policy_sync
+                        .start(policy_sync_shutdown, Some(policy_update_tx))
+                        .await;
+                });
+
+                // On policy file change from NATS sync, signal hushd reload.
+                let daemon_for_nats = daemon_manager.clone();
+                tokio::spawn(async move {
+                    while policy_update_rx.recv().await.is_some() {
+                        tracing::info!("Policy updated via NATS sync; reloading hushd");
+                        if let Err(err) = daemon_for_nats.restart().await {
+                            tracing::warn!(error = %err, "Failed to reload hushd after NATS policy sync");
+                        }
+                    }
+                });
+
+                // Telemetry publisher.
+                let telemetry = Arc::new(telemetry_publisher::TelemetryPublisher::new(nats.clone()));
+                tracing::info!("NATS telemetry publisher initialized");
+
+                // Posture command handler.
+                let posture_handler = posture_commands::PostureCommandHandler::new(
+                    nats.clone(),
+                    session_manager.clone(),
+                    daemon_manager.clone(),
+                );
+                let posture_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    posture_handler.start(posture_shutdown).await;
+                });
+
+                // Publish periodic NATS heartbeats alongside the existing HTTP heartbeats.
+                let telemetry_for_heartbeat = telemetry.clone();
+                let session_for_nats_hb = session_manager.clone();
+                let nats_hb_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    nats_heartbeat_loop(
+                        telemetry_for_heartbeat,
+                        session_for_nats_hb,
+                        nats_hb_shutdown,
+                    )
+                    .await;
+                });
+
+                // Keep a reference so it's not dropped (used by spawned tasks above).
+                let _telemetry = telemetry;
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "Failed to connect to NATS; enterprise features disabled");
             }
         }
     }
@@ -760,4 +845,51 @@ async fn reload_daemon_policy(daemon: &DaemonManager) -> anyhow::Result<()> {
         anyhow::bail!("Daemon is not running");
     }
     daemon.restart().await
+}
+
+/// Periodic NATS heartbeat loop that publishes session state to the telemetry stream.
+async fn nats_heartbeat_loop(
+    telemetry: Arc<telemetry_publisher::TelemetryPublisher>,
+    session_manager: Arc<SessionManager>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) {
+    let heartbeat_interval = Duration::from_secs(30);
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                tracing::debug!("NATS heartbeat loop shutting down");
+                break;
+            }
+            _ = tokio::time::sleep(heartbeat_interval) => {
+                let state = session_manager.state().await;
+                let hostname = hostname_best_effort();
+                let heartbeat = serde_json::json!({
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "session_id": state.session_id,
+                    "posture": state.posture,
+                    "budget_used": state.budget_used,
+                    "budget_limit": state.budget_limit,
+                    "hostname": hostname,
+                    "version": env!("CARGO_PKG_VERSION"),
+                });
+                let payload = serde_json::to_vec(&heartbeat).unwrap_or_default();
+                telemetry.publish_heartbeat(&payload).await;
+            }
+        }
+    }
+}
+
+/// Best-effort hostname retrieval for heartbeats.
+fn hostname_best_effort() -> String {
+    #[cfg(unix)]
+    {
+        let mut buf = vec![0u8; 256];
+        let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) };
+        if ret == 0 {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            buf.truncate(end);
+            return String::from_utf8_lossy(&buf).into_owned();
+        }
+    }
+    "unknown".to_string()
 }

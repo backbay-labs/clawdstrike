@@ -136,6 +136,8 @@ impl AgentApiServer {
             .route("/api/v1/approval/{id}/status", get(get_approval_status))
             .route("/api/v1/approval/{id}/resolve", post(resolve_approval))
             .route("/api/v1/approval/pending", get(list_pending_approvals))
+            .route("/api/v1/enroll", post(enroll_agent))
+            .route("/api/v1/enrollment-status", get(enrollment_status))
             .with_state(self.state.clone());
 
         if let Some(dashboard_dist) = resolve_cloud_dashboard_dist() {
@@ -1287,6 +1289,49 @@ async fn list_pending_approvals(
     require_auth(&headers, &state)?;
     let pending = state.approval_queue.list_pending().await;
     Ok(Json(pending))
+}
+
+// --- Enrollment endpoints ---
+
+#[derive(Deserialize)]
+struct EnrollAgentInput {
+    cloud_api_url: String,
+    enrollment_token: String,
+}
+
+async fn enroll_agent(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<EnrollAgentInput>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let manager = crate::enrollment::EnrollmentManager::new(state.settings.clone());
+    match manager.enroll(&input.cloud_api_url, &input.enrollment_token).await {
+        Ok(result) => Ok(Json(serde_json::json!({
+            "status": "enrolled",
+            "agent_uuid": result.agent_uuid,
+            "tenant_id": result.tenant_id,
+            "nats_creds_path": result.nats_creds_path,
+        }))),
+        Err(err) => Err((StatusCode::BAD_REQUEST, format!("Enrollment failed: {}", err))),
+    }
+}
+
+async fn enrollment_status(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let settings = state.settings.read().await;
+    let enrollment = &settings.enrollment;
+    Ok(Json(serde_json::json!({
+        "enrolled": enrollment.enrolled,
+        "agent_uuid": enrollment.agent_uuid,
+        "tenant_id": enrollment.tenant_id,
+        "enrollment_in_progress": enrollment.enrollment_in_progress,
+    })))
 }
 
 fn auth_token_from_cookie(headers: &HeaderMap) -> Option<String> {

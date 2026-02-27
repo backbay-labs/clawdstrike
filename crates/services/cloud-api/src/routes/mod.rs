@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod alerts;
+pub mod approvals;
 pub mod billing;
 pub mod compliance;
 pub mod events;
@@ -23,6 +24,7 @@ pub fn router(state: AppState) -> Router {
     let authenticated = Router::new()
         .merge(tenants::router())
         .merge(agents::router())
+        .merge(approvals::router())
         .merge(policies::router())
         .merge(events::router())
         .merge(alerts::router())

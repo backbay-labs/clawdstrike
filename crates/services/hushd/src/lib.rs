@@ -21,6 +21,7 @@ pub mod rbac;
 pub mod remote_extends;
 pub mod session;
 pub mod siem;
+pub mod spine_publisher;
 pub mod state;
 pub mod tls;
 pub mod v1_rate_limit;

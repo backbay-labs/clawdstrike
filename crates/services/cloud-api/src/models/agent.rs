@@ -70,3 +70,22 @@ pub struct HeartbeatRequest {
     pub status: Option<String>,
     pub metadata: Option<serde_json::Value>,
 }
+
+/// Request body for the enrollment endpoint.
+#[derive(Debug, Deserialize)]
+pub struct EnrollmentRequest {
+    pub enrollment_token: String,
+    pub public_key: String,
+    pub hostname: String,
+    pub version: String,
+}
+
+/// Response from the enrollment endpoint.
+#[derive(Debug, Serialize)]
+pub struct EnrollmentResponse {
+    pub agent_uuid: String,
+    pub tenant_id: String,
+    pub nats_url: String,
+    pub nats_credentials: String,
+    pub agent_id: String,
+}

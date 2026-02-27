@@ -63,6 +63,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         metering,
         alerter,
         retention,
+        signing_keypair: None, // TODO: load from config for approval response signing
     };
 
     let app = routes::router(state)
