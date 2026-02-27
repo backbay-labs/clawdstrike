@@ -392,6 +392,21 @@ pub fn get_agent_token_path() -> PathBuf {
     get_config_dir().join("agent-local-token")
 }
 
+/// Best-effort hostname retrieval via `libc::gethostname`.
+pub fn hostname_best_effort() -> String {
+    #[cfg(unix)]
+    {
+        let mut buf = vec![0u8; 256];
+        let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) };
+        if ret == 0 {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            buf.truncate(end);
+            return String::from_utf8_lossy(&buf).into_owned();
+        }
+    }
+    "unknown".to_string()
+}
+
 /// Ensure the default policy file exists, copying from bundled if needed.
 pub fn ensure_default_policy(bundled_policy: &str) -> Result<PathBuf> {
     let policy_path = default_policy_path();

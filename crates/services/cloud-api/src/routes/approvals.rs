@@ -49,6 +49,14 @@ async fn resolve_approval(
         return Err(ApiError::Forbidden);
     }
 
+    // Validate resolution against known values.
+    if input.resolution != "approved" && input.resolution != "denied" {
+        return Err(ApiError::BadRequest(format!(
+            "Invalid resolution '{}'. Must be 'approved' or 'denied'",
+            input.resolution
+        )));
+    }
+
     let resolved_by = input.resolved_by.unwrap_or_else(|| "cloud-api".to_string());
 
     let row = sqlx::query::query(

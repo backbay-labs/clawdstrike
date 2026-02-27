@@ -1308,12 +1308,19 @@ async fn enroll_agent(
 
     let manager = crate::enrollment::EnrollmentManager::new(state.settings.clone());
     match manager.enroll(&input.cloud_api_url, &input.enrollment_token).await {
-        Ok(result) => Ok(Json(serde_json::json!({
-            "status": "enrolled",
-            "agent_uuid": result.agent_uuid,
-            "tenant_id": result.tenant_id,
-            "nats_creds_path": result.nats_creds_path,
-        }))),
+        Ok(result) => {
+            tracing::info!(
+                agent_uuid = %result.agent_uuid,
+                "Enrollment complete — agent restart required to activate NATS enterprise features"
+            );
+            Ok(Json(serde_json::json!({
+                "status": "enrolled",
+                "agent_uuid": result.agent_uuid,
+                "tenant_id": result.tenant_id,
+                "restart_required": true,
+                "message": "Restart the agent to activate enterprise features (policy sync, telemetry, posture commands)",
+            })))
+        }
         Err(err) => Err((StatusCode::BAD_REQUEST, format!("Enrollment failed: {}", err))),
     }
 }

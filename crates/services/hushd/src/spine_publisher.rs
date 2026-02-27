@@ -55,8 +55,11 @@ impl SpinePublisher {
         policy_ref: &str,
         session_id: Option<&str>,
     ) -> Result<()> {
+        // Hold the lock for the entire build→publish→update cycle to prevent
+        // concurrent calls from reading the same prev_hash (broken chain).
+        let mut prev_hash_guard = self.prev_hash.lock().await;
+
         let seq = self.seq.fetch_add(1, Ordering::SeqCst);
-        let prev_hash = self.prev_hash.lock().await.clone();
 
         let fact = json!({
             "type": "policy.eval",
@@ -67,8 +70,14 @@ impl SpinePublisher {
             "session_id": session_id,
         });
 
-        let envelope = build_signed_envelope(&self.keypair, seq, prev_hash, fact, now_rfc3339())
-            .map_err(|e| anyhow::anyhow!("Failed to build signed envelope: {e}"))?;
+        let envelope = build_signed_envelope(
+            &self.keypair,
+            seq,
+            prev_hash_guard.clone(),
+            fact,
+            now_rfc3339(),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to build signed envelope: {e}"))?;
 
         let hash = envelope
             .get("envelope_hash")
@@ -81,9 +90,11 @@ impl SpinePublisher {
         self.js
             .publish(subject, payload.into())
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to publish eval receipt: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to publish eval receipt: {e}"))?
+            .await
+            .map_err(|e| anyhow::anyhow!("JetStream ack error: {e}"))?;
 
-        *self.prev_hash.lock().await = Some(hash);
+        *prev_hash_guard = Some(hash);
 
         Ok(())
     }

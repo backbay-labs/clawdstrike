@@ -167,7 +167,12 @@ impl PostureCommandHandler {
                 let reason_str = reason.as_deref().unwrap_or("remote kill switch activated");
                 tracing::warn!(reason = %reason_str, "KILL SWITCH activated via remote command");
 
-                // Restart the daemon to force deny-all behavior.
+                // Set posture to "locked" which deny-all's all policy evaluations.
+                self.session_manager
+                    .update_posture_from_daemon_event(None, "locked".to_string())
+                    .await;
+
+                // Restart the daemon so it reloads with locked posture enforced.
                 if let Err(err) = self.daemon_manager.restart().await {
                     tracing::error!(error = %err, "Failed to restart daemon for kill switch");
                 }

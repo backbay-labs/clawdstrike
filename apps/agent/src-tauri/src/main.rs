@@ -879,17 +879,7 @@ async fn nats_heartbeat_loop(
     }
 }
 
-/// Best-effort hostname retrieval for heartbeats.
+/// Re-export from settings for heartbeat usage.
 fn hostname_best_effort() -> String {
-    #[cfg(unix)]
-    {
-        let mut buf = vec![0u8; 256];
-        let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) };
-        if ret == 0 {
-            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-            buf.truncate(end);
-            return String::from_utf8_lossy(&buf).into_owned();
-        }
-    }
-    "unknown".to_string()
+    settings::hostname_best_effort()
 }

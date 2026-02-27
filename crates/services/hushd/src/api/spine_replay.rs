@@ -48,6 +48,17 @@ pub async fn replay_receipts(
     let mut rejected = 0usize;
     let mut errors = Vec::new();
 
+    // Connect once per request, reuse for all envelopes.
+    let auth = spine::nats_transport::NatsAuthConfig {
+        creds_file: state.config.spine.creds_file.clone(),
+        token: state.config.spine.token.clone(),
+        nkey_seed: state.config.spine.nkey_seed.clone(),
+    };
+    let client = spine::nats_transport::connect_with_auth(nats_url, Some(&auth))
+        .await
+        .map_err(|e| V1Error::internal("NATS_CONNECT", format!("NATS connect error: {e}")))?;
+    let js = spine::nats_transport::jetstream(client);
+
     for envelope in &req.envelopes {
         // Verify the envelope signature and hash integrity.
         match spine::verify_envelope(envelope) {
@@ -73,10 +84,18 @@ pub async fn replay_receipts(
 
         match serde_json::to_vec(&wrapper) {
             Ok(payload) => {
-                // Replay is a low-frequency admin operation, so a one-off NATS
-                // connection per request is acceptable.
-                match connect_and_publish(nats_url, &state.config.spine, &subject, payload).await {
-                    Ok(()) => accepted += 1,
+                match js
+                    .publish(subject.clone(), payload.into())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("JetStream publish error: {e}"))
+                {
+                    Ok(ack_future) => match ack_future.await {
+                        Ok(_) => accepted += 1,
+                        Err(e) => {
+                            rejected += 1;
+                            errors.push(format!("JetStream ack error: {e}"));
+                        }
+                    },
                     Err(e) => {
                         rejected += 1;
                         errors.push(format!("Publish failed: {e}"));
@@ -95,31 +114,6 @@ pub async fn replay_receipts(
         rejected,
         errors,
     }))
-}
-
-/// Connect to NATS and publish a single message to JetStream.
-async fn connect_and_publish(
-    nats_url: &str,
-    config: &crate::config::SpineConfig,
-    subject: &str,
-    payload: Vec<u8>,
-) -> anyhow::Result<()> {
-    let auth = spine::nats_transport::NatsAuthConfig {
-        creds_file: config.creds_file.clone(),
-        token: config.token.clone(),
-        nkey_seed: config.nkey_seed.clone(),
-    };
-
-    let client = spine::nats_transport::connect_with_auth(nats_url, Some(&auth))
-        .await
-        .map_err(|e| anyhow::anyhow!("NATS connect error: {e}"))?;
-
-    let js = spine::nats_transport::jetstream(client);
-    js.publish(subject.to_string(), payload.into())
-        .await
-        .map_err(|e| anyhow::anyhow!("JetStream publish error: {e}"))?;
-
-    Ok(())
 }
 
 #[cfg(test)]

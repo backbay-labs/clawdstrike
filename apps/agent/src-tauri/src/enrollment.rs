@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::settings::{get_config_dir, EnrollmentState, Settings};
+use crate::settings::{get_config_dir, hostname_best_effort, EnrollmentState, Settings};
 
 /// Result of a successful enrollment.
 #[derive(Debug, Clone, Serialize)]
@@ -108,7 +108,7 @@ impl EnrollmentManager {
         let keypair = hush_core::Keypair::generate();
         let public_key_hex = keypair.public_key().to_hex();
 
-        let hostname = get_hostname();
+        let hostname = hostname_best_effort();
 
         let enroll_url = format!("{}/api/v1/agents/enroll", cloud_api_url.trim_end_matches('/'));
 
@@ -124,7 +124,6 @@ impl EnrollmentManager {
         let response = self
             .http_client
             .post(&enroll_url)
-            .header("authorization", format!("Bearer {}", enrollment_token))
             .json(&body)
             .send()
             .await
@@ -204,21 +203,6 @@ fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Get the system hostname (best-effort).
-fn get_hostname() -> String {
-    #[cfg(unix)]
-    {
-        let mut buf = vec![0u8; 256];
-        let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) };
-        if ret == 0 {
-            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-            buf.truncate(end);
-            return String::from_utf8_lossy(&buf).into_owned();
-        }
-    }
-    "unknown".to_string()
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -236,7 +220,7 @@ mod tests {
 
     #[test]
     fn get_hostname_returns_something() {
-        let hostname = get_hostname();
+        let hostname = hostname_best_effort();
         assert!(!hostname.is_empty());
     }
 }

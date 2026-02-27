@@ -18,7 +18,8 @@ pub fn router(state: AppState) -> Router {
     // Public routes (no auth required)
     let public = Router::new()
         .merge(health::router())
-        .merge(billing::router());
+        .merge(billing::router())
+        .merge(agents::enrollment_router());
 
     // Authenticated routes
     let authenticated = Router::new()

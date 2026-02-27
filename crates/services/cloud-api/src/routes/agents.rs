@@ -12,13 +12,18 @@ use crate::models::agent::{
 };
 use crate::state::AppState;
 
+/// Authenticated agent routes (behind require_auth middleware).
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/agents", post(register_agent))
         .route("/agents", get(list_agents))
         .route("/agents/{id}", get(get_agent))
         .route("/agents/heartbeat", post(heartbeat))
-        .route("/agents/enroll", post(enroll_agent))
+}
+
+/// Public enrollment route — uses enrollment_token for auth, not JWT/API key.
+pub fn enrollment_router() -> Router<AppState> {
+    Router::new().route("/agents/enroll", post(enroll_agent))
 }
 
 async fn register_agent(
@@ -151,31 +156,27 @@ async fn heartbeat(
 
 /// Enroll an agent using a one-time enrollment token.
 ///
-/// Unlike `register_agent`, this endpoint validates an HMAC enrollment token
-/// and automatically provisions the agent with NATS credentials.
+/// This endpoint is NOT behind `require_auth` — the enrollment_token itself
+/// authenticates the request (solving the bootstrap chicken-and-egg problem
+/// where the agent has no JWT or API key yet).
 async fn enroll_agent(
     State(state): State<AppState>,
-    auth: AuthenticatedTenant,
     Json(req): Json<EnrollmentRequest>,
 ) -> Result<Json<EnrollmentResponse>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    // Look up the tenant by enrollment_token (this IS the auth for enrollment).
+    let tenant_row =
+        sqlx::query::query("SELECT id, slug, agent_limit FROM tenants WHERE enrollment_token = $1")
+            .bind(&req.enrollment_token)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(ApiError::Database)?
+            .ok_or_else(|| ApiError::BadRequest("invalid enrollment token".to_string()))?;
 
-    // Validate enrollment token against the tenant's stored token.
-    let token_row = sqlx::query::query("SELECT enrollment_token FROM tenants WHERE id = $1")
-        .bind(auth.tenant_id)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(ApiError::Database)?
-        .ok_or(ApiError::NotFound)?;
-    let stored_token: Option<String> = token_row
-        .try_get("enrollment_token")
+    let tenant_id: Uuid = tenant_row.try_get("id").map_err(ApiError::Database)?;
+    let slug: String = tenant_row.try_get("slug").map_err(ApiError::Database)?;
+    let agent_limit: i32 = tenant_row
+        .try_get("agent_limit")
         .map_err(ApiError::Database)?;
-    match stored_token {
-        Some(ref expected) if expected == &req.enrollment_token => {}
-        _ => return Err(ApiError::BadRequest("invalid enrollment token".to_string())),
-    }
 
     // Validate the Ed25519 public key.
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
@@ -184,13 +185,13 @@ async fn enroll_agent(
     let count_row = sqlx::query::query(
         "SELECT COUNT(*)::bigint as cnt FROM agents WHERE tenant_id = $1 AND status = 'active'",
     )
-    .bind(auth.tenant_id)
+    .bind(tenant_id)
     .fetch_one(&state.db)
     .await
     .map_err(ApiError::Database)?;
     let count: i64 = count_row.try_get("cnt").map_err(ApiError::Database)?;
 
-    if count >= i64::from(auth.agent_limit) {
+    if count >= i64::from(agent_limit) {
         return Err(ApiError::AgentLimitReached);
     }
 
@@ -209,7 +210,7 @@ async fn enroll_agent(
            VALUES ($1, $2, $3, $4, 'coder', 'medium', $5)
            RETURNING *"#,
     )
-    .bind(auth.tenant_id)
+    .bind(tenant_id)
     .bind(&agent_id)
     .bind(&req.hostname)
     .bind(&req.public_key)
@@ -223,19 +224,16 @@ async fn enroll_agent(
     // Provision NATS credentials.
     let nats_creds = state
         .provisioner
-        .create_agent_credentials(auth.tenant_id, &auth.slug, &agent_id)
+        .create_agent_credentials(tenant_id, &slug, &agent_id)
         .await
         .map_err(|e| ApiError::Nats(e.to_string()))?;
 
     // Record usage event.
-    let _ = state
-        .metering
-        .record(auth.tenant_id, "agent_enrolled", 1)
-        .await;
+    let _ = state.metering.record(tenant_id, "agent_enrolled", 1).await;
 
     Ok(Json(EnrollmentResponse {
         agent_uuid: agent.id.to_string(),
-        tenant_id: auth.tenant_id.to_string(),
+        tenant_id: tenant_id.to_string(),
         nats_url: nats_creds.nats_url,
         nats_account: nats_creds.account,
         nats_subject_prefix: nats_creds.subject_prefix,
