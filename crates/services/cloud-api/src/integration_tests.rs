@@ -264,6 +264,15 @@ async fn approvals_list_and_resolve_publish_signed_payload_and_mark_outbox_sent(
         tenant_subject_prefix(&harness.tenant_slug),
         agent_id
     );
+    let js = async_nats::jetstream::new(harness.nats.clone());
+    spine::nats_transport::ensure_stream(
+        &js,
+        "approval-response-integration",
+        vec![subject.clone()],
+        1,
+    )
+    .await
+    .expect("approval response stream should exist");
     let mut subscriber = harness
         .nats
         .subscribe(subject.clone())
