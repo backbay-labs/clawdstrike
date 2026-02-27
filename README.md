@@ -127,7 +127,11 @@ flowchart LR
     D -->|allow| E[Tool Execution]
     D -->|deny| F[Fail-Closed Block]
     D --> G[Ed25519 Signed Receipt]
+    G -.->|enterprise| H[Spine Audit Trail]
+    H -.-> I[Cloud API + Dashboard]
 ```
+
+From a single `npm install` to a fleet of 10,000 managed agents — same policy engine, same receipts, same fail-closed guarantees. See [Deployment Modes](#deployment-modes) below.
 
 ---
 
@@ -169,7 +173,9 @@ flowchart LR
   <a href="#jailbreak-detection"><kbd>Jailbreak Detection</kbd></a>&nbsp;&nbsp;
   <a href="#cryptographic-receipts"><kbd>Receipts</kbd></a>&nbsp;&nbsp;
   <a href="#multi-agent-security-primitives"><kbd>Multi-Agent</kbd></a>&nbsp;&nbsp;
-  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>
+  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>&nbsp;&nbsp;
+  <a href="#deployment-modes"><kbd>Deployment Modes</kbd></a>&nbsp;&nbsp;
+  <a href="#enterprise-architecture"><kbd>Enterprise</kbd></a>
 </p>
 
 ### Guard Stack
@@ -315,6 +321,143 @@ Additional language bindings (C, Go, C#) available via FFI. See [Multi-Language 
 
 ---
 
+## Deployment Modes
+
+Clawdstrike scales from a single developer's laptop to a fleet of thousands of managed agents. The same policy engine and receipt format work at every tier.
+
+| Mode | How You Run It | Who It's For |
+| ---- | -------------- | ------------ |
+| **SDK** | `npm install @clawdstrike/sdk` or `pip install clawdstrike` | Individual devs, CI/CD pipelines |
+| **Desktop Agent** | Tauri app with system tray, hushd daemon, local dashboard | Teams, workstation security |
+| **Enterprise Fleet** | Cloud API + NATS + enrollment + cloud dashboard | Security teams managing org-wide agent fleets |
+
+### Adaptive Engine
+
+The `@clawdstrike/engine-adaptive` package bridges standalone and enterprise deployments. It wraps a local and remote engine behind the same `PolicyEngineLike` interface and automatically transitions between three modes:
+
+```
+ ┌────────────┐    remote healthy    ┌────────────┐
+ │ standalone │ ──────────────────► │ connected  │
+ └────────────┘                     └─────┬──────┘
+                                          │ remote fails
+                                          ▼
+                                    ┌────────────┐
+                                    │  degraded  │
+                                    └─────┬──────┘
+                                          │ remote recovers
+                                          ▼
+                                    ┌────────────┐
+                                    │ connected  │
+                                    └────────────┘
+```
+
+- **Standalone** — local policy engine only. Zero network dependency.
+- **Connected** — remote (enterprise) engine for centrally managed policy. Falls back to local on connectivity failure.
+- **Degraded** — local engine with offline receipt queue. Queued receipts are drained and replayed when the remote recovers.
+
+Every error path produces a **fail-closed deny**. The agent is never unprotected, regardless of network conditions.
+
+---
+
+## Enterprise Architecture
+
+For organizations managing agent fleets across teams and environments, Clawdstrike provides a full enterprise control plane.
+
+```mermaid
+flowchart TB
+    subgraph agents ["Agent Fleet"]
+        A1[Desktop Agent 1]
+        A2[Desktop Agent 2]
+        AN[Desktop Agent N]
+    end
+
+    subgraph nats ["NATS JetStream"]
+        KV[(Policy KV)]
+        JS[(Telemetry Stream)]
+        CMD[Command Subjects]
+    end
+
+    subgraph cloud ["Cloud Control Plane"]
+        API[Cloud API]
+        DB[(PostgreSQL)]
+        DASH[Cloud Dashboard]
+    end
+
+    A1 & A2 & AN <-->|policy sync<br/>telemetry<br/>posture commands| nats
+    nats <--> API
+    API <--> DB
+    DASH <--> API
+```
+
+### Enrollment
+
+Agents bootstrap into enterprise management with a single enrollment token. No pre-shared keys, no manual certificate provisioning.
+
+```bash
+# From the cloud dashboard, generate an enrollment token for your tenant.
+# On the agent machine:
+curl -X POST http://localhost:9878/api/v1/enroll \
+  -H "Content-Type: application/json" \
+  -d '{"cloud_api_url": "https://api.clawdstrike.io", "enrollment_token": "cs_enroll_..."}'
+```
+
+The enrollment handshake:
+1. Agent generates an Ed25519 keypair
+2. Sends the public key + enrollment token to the cloud API
+3. Cloud API validates the token, provisions NATS credentials, and returns connection details
+4. Agent stores credentials and activates enterprise features on next restart
+5. Enrollment token is invalidated after first use
+
+### Spine — Tamper-Evident Audit Trail
+
+Every policy evaluation produces a **Spine envelope**: an Ed25519-signed, hash-chained attestation record published to NATS JetStream.
+
+```json
+{
+  "seq": 42,
+  "prev_envelope_hash": "sha256:abc123...",
+  "fact": { "type": "policy.eval", "decision": { "allowed": false }, ... },
+  "signature": "ed25519:...",
+  "envelope_hash": "sha256:def456..."
+}
+```
+
+Hash chaining means tampering with any single record breaks the chain for every subsequent record. The cloud API's audit consumer verifies each envelope on ingestion, providing a cryptographically verifiable audit log across your entire fleet.
+
+### Real-Time Fleet Management
+
+All enterprise features run over NATS JetStream with scoped credentials per agent:
+
+| Capability | Direction | Mechanism |
+| ---------- | --------- | --------- |
+| **Policy Sync** | Cloud → Agent | KV watch — policy updates propagate to agents in real time |
+| **Telemetry** | Agent → Cloud | JetStream publish — heartbeats, eval receipts, agent metadata |
+| **Posture Commands** | Cloud → Agent | NATS request/reply — `set_posture`, `request_policy_reload` |
+| **Kill Switch** | Cloud → Agent | Immediate posture lock to deny-all + daemon restart |
+| **Approval Escalation** | Agent → Cloud → Agent | High-risk actions escalated for human review via cloud dashboard |
+
+### Kill Switch
+
+When a compromised agent is detected, a single command from the cloud dashboard:
+1. Sets the agent's posture to `locked` (deny-all for every policy evaluation)
+2. Restarts the enforcement daemon with the locked posture
+3. Reports status back to the operator
+
+The agent is locked down before the next tool invocation fires, regardless of what code is running.
+
+### Cloud Dashboard
+
+Web UI for security teams to manage their agent fleet:
+- Real-time agent status, heartbeats, and enrollment state
+- Pending approval queue for high-risk actions escalated by agents
+- Policy management and distribution
+- Compliance reporting and audit log viewer
+- Alert management and stale agent detection
+
+See [Enterprise Enrollment Guide](docs/src/guides/enterprise-enrollment.md) and [Adaptive Deployment Guide](docs/src/guides/adaptive-deployment.md) for detailed setup instructions.
+
+---
+
 ## Policy System
 
 Declarative YAML policies with inheritance, composable guards, and built-in rulesets.
@@ -381,6 +524,7 @@ Full CUA policy enforcement for agents operating remote desktop surfaces:
 | **Concepts**         | [Design Philosophy](docs/src/concepts/design-philosophy.md) &middot; [Enforcement Tiers](docs/src/concepts/enforcement-tiers.md) &middot; [Multi-Language](docs/src/concepts/multi-language.md)                                                                                                                       |
 | **Framework Guides** | [OpenAI](packages/adapters/clawdstrike-openai/README.md) &middot; [Claude](packages/adapters/clawdstrike-claude/README.md) &middot; [Vercel AI](docs/src/guides/vercel-ai-integration.md) &middot; [LangChain](docs/src/guides/langchain-integration.md) &middot; [OpenClaw](docs/src/guides/openclaw-integration.md) |
 | **Reference**        | [Guards](docs/src/reference/guards/README.md) &middot; [Policy Schema](docs/src/reference/policy-schema.md) &middot; [Repo Map](docs/REPO_MAP.md)                                                                                                                                                                     |
+| **Enterprise**       | [Enrollment Guide](docs/src/guides/enterprise-enrollment.md) &middot; [Adaptive Deployment](docs/src/guides/adaptive-deployment.md) &middot; [Adaptive Architecture](docs/src/concepts/adaptive-architecture.md)                                                                                                       |
 | **Operations**       | [OpenClaw Runbook](docs/src/guides/agent-openclaw-operations.md) &middot; [CUA Gateway Testing](apps/desktop/docs/openclaw-gateway-testing.md) &middot; [CUA Roadmap](docs/roadmaps/cua/INDEX.md)                                                                                                                     |
 
 ## Security
