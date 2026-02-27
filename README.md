@@ -137,6 +137,7 @@ flowchart LR
 <td width="50%">
 
 ### Without Clawdstrike
+
 - Agent reads `~/.ssh/id_rsa`. You find out from the incident report
 - Secret leaks into model output. Compliance discovers it 3 months later
 - Jailbreak prompt bypasses safety. No one notices until the damage is public
@@ -147,6 +148,7 @@ flowchart LR
 <td width="50%">
 
 ### With Clawdstrike
+
 - `ForbiddenPathGuard` blocks the read, signs a receipt
 - `OutputSanitizer` redacts the secret before it ever leaves the pipeline
 - 4-layer jailbreak detection catches it across the session, even across multi-turn grooming attempts
@@ -165,26 +167,22 @@ flowchart LR
 
 Composable, policy-driven security checks at the tool boundary. Each guard handles a specific threat surface and returns a verdict with evidence. Fail-fast or aggregate, your call.
 
-| Guard | What It Catches |
-|-------|----------------|
-| **ForbiddenPathGuard** | Blocks access to `.ssh`, `.env`, `.aws`, credential stores, registry hives |
-| **EgressAllowlistGuard** | Controls outbound network by domain. Deny-by-default or allowlist |
-| **SecretLeakGuard** | Detects AWS keys, GitHub tokens, private keys, API secrets in file writes |
-| **PatchIntegrityGuard** | Validates patch safety. Catches `rm -rf /`, `chmod 777`, `disable security` |
-| **McpToolGuard** | Restricts which MCP tools agents can invoke, with confirmation gates |
-| **PromptInjectionGuard** | Detects injection attacks in untrusted input |
-| **JailbreakGuard** | 4-layer detection engine with session aggregation (see below) |
-| **ComputerUseGuard** | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
-| **ShellCommandGuard** | Blocks dangerous shell commands before execution |
+| Guard                    | What It Catches                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| **ForbiddenPathGuard**   | Blocks access to `.ssh`, `.env`, `.aws`, credential stores, registry hives       |
+| **EgressAllowlistGuard** | Controls outbound network by domain. Deny-by-default or allowlist                |
+| **SecretLeakGuard**      | Detects AWS keys, GitHub tokens, private keys, API secrets in file writes        |
+| **PatchIntegrityGuard**  | Validates patch safety. Catches `rm -rf /`, `chmod 777`, `disable security`      |
+| **McpToolGuard**         | Restricts which MCP tools agents can invoke, with confirmation gates             |
+| **PromptInjectionGuard** | Detects injection attacks in untrusted input                                     |
+| **JailbreakGuard**       | 4-layer detection engine with session aggregation (see below)                    |
+| **ComputerUseGuard**     | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
+| **ShellCommandGuard**    | Blocks dangerous shell commands before execution                                 |
 
 ---
 
-### 4-Layer Jailbreak Detection
-
-Not a regex and a prayer. A tiered detection engine that catches what single-layer approaches miss:
-
 <p align="center">
-  <img src="docs/static/jailbreak-explain.png" alt="4-Layer Jailbreak Detection" width="520" />
+  <img src="docs/static/jailbreak-intro.png" alt="4-Layer Jailbreak Detection" width="100%" />
 </p>
 
 **Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores. An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Persistent session state survives across connections via pluggable storage backends.
@@ -265,22 +263,25 @@ Ed25519-signed provenance markers embedded in prompts for attribution and forens
 
 Drop Clawdstrike into your existing agent stack. Every adapter normalizes framework-specific tool calls into canonical action events and routes them through the guard stack.
 
-| Framework | Package | Install |
-|-----------|---------|---------|
-| **OpenAI Agents SDK** | `@clawdstrike/openai` | `npm install @clawdstrike/openai @clawdstrike/engine-local` |
-| **Claude / Agent SDK** | `@clawdstrike/claude` | `npm install @clawdstrike/claude @clawdstrike/engine-local` |
-| **Vercel AI SDK** | `@clawdstrike/vercel-ai` | `npm install @clawdstrike/vercel-ai @clawdstrike/engine-local` |
-| **LangChain** | `@clawdstrike/langchain` | `npm install @clawdstrike/langchain @clawdstrike/engine-local` |
-| **OpenClaw** | `@clawdstrike/openclaw` | `openclaw plugins install @clawdstrike/openclaw` |
+| Framework              | Package                  | Install                                                        |
+| ---------------------- | ------------------------ | -------------------------------------------------------------- |
+| **OpenAI Agents SDK**  | `@clawdstrike/openai`    | `npm install @clawdstrike/openai @clawdstrike/engine-local`    |
+| **Claude / Agent SDK** | `@clawdstrike/claude`    | `npm install @clawdstrike/claude @clawdstrike/engine-local`    |
+| **Vercel AI SDK**      | `@clawdstrike/vercel-ai` | `npm install @clawdstrike/vercel-ai @clawdstrike/engine-local` |
+| **LangChain**          | `@clawdstrike/langchain` | `npm install @clawdstrike/langchain @clawdstrike/engine-local` |
+| **OpenClaw**           | `@clawdstrike/openclaw`  | `openclaw plugins install @clawdstrike/openclaw`               |
 
 ```typescript
 // 3 lines to secure any OpenAI agent
 import { createStrikeCell } from "@clawdstrike/engine-local";
-import { OpenAIToolBoundary, wrapOpenAIToolDispatcher } from "@clawdstrike/openai";
+import {
+  OpenAIToolBoundary,
+  wrapOpenAIToolDispatcher,
+} from "@clawdstrike/openai";
 
 const secure = wrapOpenAIToolDispatcher(
   new OpenAIToolBoundary({ engine: createStrikeCell({ policyRef: "strict" }) }),
-  yourToolDispatcher
+  yourToolDispatcher,
 );
 ```
 
@@ -308,8 +309,8 @@ guards:
   jailbreak:
     enabled: true
     detector:
-      block_threshold: 40        # aggressive - catch even suspicious prompts
-      session_aggregation: true   # track risk across the conversation
+      block_threshold: 40 # aggressive - catch even suspicious prompts
+      session_aggregation: true # track risk across the conversation
 
 settings:
   fail_fast: true
@@ -348,13 +349,13 @@ Full CUA policy enforcement for agents operating remote desktop surfaces:
 
 ## Documentation
 
-| Category | Links |
-|----------|-------|
-| **Getting Started** | [Rust](docs/src/getting-started/quick-start.md) &middot; [TypeScript](docs/src/getting-started/quick-start-typescript.md) &middot; [Python](docs/src/getting-started/quick-start-python.md) |
-| **Concepts** | [Design Philosophy](docs/src/concepts/design-philosophy.md) &middot; [Enforcement Tiers](docs/src/concepts/enforcement-tiers.md) &middot; [Multi-Language](docs/src/concepts/multi-language.md) |
+| Category             | Links                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Getting Started**  | [Rust](docs/src/getting-started/quick-start.md) &middot; [TypeScript](docs/src/getting-started/quick-start-typescript.md) &middot; [Python](docs/src/getting-started/quick-start-python.md)                                                                                                                           |
+| **Concepts**         | [Design Philosophy](docs/src/concepts/design-philosophy.md) &middot; [Enforcement Tiers](docs/src/concepts/enforcement-tiers.md) &middot; [Multi-Language](docs/src/concepts/multi-language.md)                                                                                                                       |
 | **Framework Guides** | [OpenAI](packages/adapters/clawdstrike-openai/README.md) &middot; [Claude](packages/adapters/clawdstrike-claude/README.md) &middot; [Vercel AI](docs/src/guides/vercel-ai-integration.md) &middot; [LangChain](docs/src/guides/langchain-integration.md) &middot; [OpenClaw](docs/src/guides/openclaw-integration.md) |
-| **Reference** | [Guards](docs/src/reference/guards/README.md) &middot; [Policy Schema](docs/src/reference/policy-schema.md) &middot; [Repo Map](docs/REPO_MAP.md) |
-| **Operations** | [OpenClaw Runbook](docs/src/guides/agent-openclaw-operations.md) &middot; [CUA Gateway Testing](apps/desktop/docs/openclaw-gateway-testing.md) &middot; [CUA Roadmap](docs/roadmaps/cua/INDEX.md) |
+| **Reference**        | [Guards](docs/src/reference/guards/README.md) &middot; [Policy Schema](docs/src/reference/policy-schema.md) &middot; [Repo Map](docs/REPO_MAP.md)                                                                                                                                                                     |
+| **Operations**       | [OpenClaw Runbook](docs/src/guides/agent-openclaw-operations.md) &middot; [CUA Gateway Testing](apps/desktop/docs/openclaw-gateway-testing.md) &middot; [CUA Roadmap](docs/roadmaps/cua/INDEX.md)                                                                                                                     |
 
 ## Security
 
