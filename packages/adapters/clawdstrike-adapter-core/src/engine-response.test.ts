@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDecision } from './engine-response.js';
+import { parseDecision, parsePolicyEvalResponse } from './engine-response.js';
 
 describe('parseDecision', () => {
   it('preserves reason_code for allow decisions when present', () => {
@@ -84,6 +84,33 @@ describe('parseDecision', () => {
     });
   });
 
+  it('recovers sanitize status from legacy daemon report details', () => {
+    const decision = parseDecision(
+      {
+        allowed: true,
+        denied: false,
+        warn: true,
+        reason_code: 'ADC_POLICY_WARN',
+      },
+      {
+        overall: {
+          details: {
+            action: 'sanitized',
+            original: 'drop database',
+            sanitized: 'summarize db usage',
+          },
+        },
+      },
+    );
+
+    expect(decision).toEqual({
+      status: 'sanitize',
+      reason_code: 'ADC_POLICY_WARN',
+      original: 'drop database',
+      sanitized: 'summarize db usage',
+    });
+  });
+
   it('ignores invalid severity values in parsed decisions', () => {
     const decision = parseDecision({
       status: 'deny',
@@ -94,6 +121,39 @@ describe('parseDecision', () => {
     expect(decision).toEqual({
       status: 'deny',
       reason_code: 'ADC_POLICY_DENY',
+    });
+  });
+
+  it('parses sanitize from legacy policy_eval response payloads', () => {
+    const parsed = parsePolicyEvalResponse(
+      JSON.stringify({
+        version: 1,
+        command: 'policy_eval',
+        decision: {
+          allowed: true,
+          denied: false,
+          warn: true,
+          reason_code: 'ADC_POLICY_WARN',
+          guard: 'clawdstrike-spider-sense',
+        },
+        report: {
+          overall: {
+            details: {
+              action: 'sanitized',
+              original: 'run shell: rm -rf /',
+              sanitized: 'explain shell safety',
+            },
+          },
+        },
+      }),
+    );
+
+    expect(parsed.decision).toEqual({
+      status: 'sanitize',
+      reason_code: 'ADC_POLICY_WARN',
+      guard: 'clawdstrike-spider-sense',
+      original: 'run shell: rm -rf /',
+      sanitized: 'explain shell safety',
     });
   });
 });

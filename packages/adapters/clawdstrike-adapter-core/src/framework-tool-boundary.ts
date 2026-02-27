@@ -3,7 +3,7 @@ import type { AuditEvent } from './audit.js';
 import { BaseToolInterceptor } from './base-tool-interceptor.js';
 import { createSecurityContext, type SecurityContext } from './context.js';
 import type { PolicyEngineLike } from './engine.js';
-import type { ToolInterceptor } from './interceptor.js';
+import type { InterceptResult, ToolInterceptor } from './interceptor.js';
 import { ClawdstrikeBlockedError } from './errors.js';
 
 export interface FrameworkToolBoundaryOptions {
@@ -55,14 +55,20 @@ export class FrameworkToolBoundary {
         }));
   }
 
-  async handleToolStart(toolName: string, input: unknown, runId: string): Promise<void> {
+  async handleToolStart(toolName: string, input: unknown, runId: string): Promise<InterceptResult> {
     const context = this.getContext(runId);
     const result = await this.interceptor.beforeExecute(toolName, input, context);
     if (!result.proceed) {
       throw new ClawdstrikeBlockedError(toolName, result.decision);
     }
 
-    this.pending.set(runId, { toolName, input, context });
+    const effectiveInput = result.modifiedInput !== undefined
+      ? result.modifiedInput
+      : result.modifiedParameters !== undefined
+        ? result.modifiedParameters
+        : input;
+    this.pending.set(runId, { toolName, input: effectiveInput, context });
+    return result;
   }
 
   async handleToolEnd(output: unknown, runId: string): Promise<unknown> {
@@ -123,9 +129,19 @@ export function wrapFrameworkToolDispatcher<TOutput = unknown>(
   dispatch: FrameworkToolDispatcher<TOutput>,
 ): FrameworkToolDispatcher<TOutput> {
   return async (toolName, input, runId) => {
-    await boundary.handleToolStart(toolName, input, runId);
+    const intercept = await boundary.handleToolStart(toolName, input, runId);
     try {
-      const output = await dispatch(toolName, input, runId);
+      let output: TOutput;
+      if (intercept.replacementResult !== undefined) {
+        output = intercept.replacementResult as TOutput;
+      } else {
+        const dispatchInput = intercept.modifiedInput !== undefined
+          ? intercept.modifiedInput
+          : intercept.modifiedParameters !== undefined
+            ? intercept.modifiedParameters
+            : input;
+        output = await dispatch(toolName, dispatchInput, runId);
+      }
       return (await boundary.handleToolEnd(output, runId)) as TOutput;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

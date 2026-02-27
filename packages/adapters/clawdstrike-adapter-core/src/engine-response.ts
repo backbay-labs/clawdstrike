@@ -20,7 +20,7 @@ export function parsePolicyEvalResponse(raw: string, label = 'hush'): PolicyEval
     throw new Error(`Invalid ${label} JSON: expected command="policy_eval"`);
   }
 
-  const decision = parseDecision(parsed.decision);
+  const decision = parseDecision(parsed.decision, parsed.report);
   if (!decision) {
     throw new Error(`Invalid ${label} JSON: missing/invalid decision`);
   }
@@ -32,21 +32,28 @@ export function parsePolicyEvalResponse(raw: string, label = 'hush'): PolicyEval
   };
 }
 
-export function parseDecision(value: unknown): Decision | null {
+export function parseDecision(value: unknown, report?: unknown): Decision | null {
   if (!isRecord(value)) {
     return null;
   }
 
+  const legacySanitizePayload = extractLegacySanitizePayload(value, report);
+  const legacyStatus = typeof value.allowed === 'boolean'
+    && typeof value.denied === 'boolean'
+    && typeof value.warn === 'boolean'
+    ? value.denied
+      ? 'deny'
+      : legacySanitizePayload
+        ? 'sanitize'
+        : value.warn
+          ? 'warn'
+          : 'allow'
+    : null;
+
   const status =
     value.status === 'allow' || value.status === 'warn' || value.status === 'deny' || value.status === 'sanitize'
       ? value.status
-      : typeof value.allowed === 'boolean' && typeof value.denied === 'boolean' && typeof value.warn === 'boolean'
-        ? value.denied
-          ? 'deny'
-          : value.warn
-            ? 'warn'
-            : 'allow'
-        : null;
+      : legacyStatus;
 
   if (!status) {
     return null;
@@ -83,15 +90,62 @@ export function parseDecision(value: unknown): Decision | null {
 
   if (status === 'sanitize') {
     const d = decision as unknown as Record<string, unknown>;
-    if (typeof value.original === 'string') {
-      d.original = value.original;
+    const original = typeof value.original === 'string' ? value.original : legacySanitizePayload?.original;
+    const sanitized = typeof value.sanitized === 'string' ? value.sanitized : legacySanitizePayload?.sanitized;
+    if (original !== undefined) {
+      d.original = original;
     }
-    if (typeof value.sanitized === 'string') {
-      d.sanitized = value.sanitized;
+    if (sanitized !== undefined) {
+      d.sanitized = sanitized;
     }
   }
 
   return decision;
+}
+
+type SanitizePayload = {
+  original?: string;
+  sanitized?: string;
+};
+
+function extractLegacySanitizePayload(
+  value: Record<string, unknown>,
+  report: unknown,
+): SanitizePayload | null {
+  const fromDecisionDetails = extractSanitizePayload(value.details);
+  if (fromDecisionDetails) {
+    return fromDecisionDetails;
+  }
+
+  if (!isRecord(report)) {
+    return null;
+  }
+
+  const overall = report.overall;
+  if (!isRecord(overall)) {
+    return null;
+  }
+
+  return extractSanitizePayload(overall.details);
+}
+
+function extractSanitizePayload(details: unknown): SanitizePayload | null {
+  if (!isRecord(details)) {
+    return null;
+  }
+
+  if (details.action !== 'sanitized') {
+    return null;
+  }
+
+  const payload: SanitizePayload = {};
+  if (typeof details.original === 'string') {
+    payload.original = details.original;
+  }
+  if (typeof details.sanitized === 'string') {
+    payload.sanitized = details.sanitized;
+  }
+  return payload;
 }
 
 export function failClosed(error: unknown): Decision {
