@@ -188,11 +188,13 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 </td>
 <td width="50%" valign="top">
 
-**Session aggregation** tracks risk across an entire conversation with time-decaying rolling scores.
+**~15ms total latency.** All four layers run in sequence without external API calls (unless you opt into the LLM judge). The ML layer is a configurable linear model with sigmoid activation — weights live in your YAML policy, not a black box.
 
-An attacker who spreads a jailbreak across 20 innocuous-looking messages still triggers detection. Their cumulative risk score rises until it crosses the threshold.
+**9 attack taxonomies.** Role-play, authority confusion, encoding attacks, hypothetical framing, adversarial suffixes, system impersonation, instruction extraction, multi-turn grooming, and payload splitting.
 
-Persistent session state survives across connections via pluggable storage backends.
+**Session aggregation** tracks cumulative risk across an entire conversation with a time-decaying rolling score (15-minute half-life). An attacker who spreads a jailbreak across 20 innocuous messages still triggers detection — their score rises until it crosses the threshold.
+
+**Privacy-safe.** Raw input never appears in detection results. Only match spans and SHA-256 fingerprints are stored. Unicode NFKC normalization and zero-width character stripping happen before any pattern matching.
 
 </td>
 </tr>
