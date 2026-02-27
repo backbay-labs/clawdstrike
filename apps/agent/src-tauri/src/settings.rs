@@ -384,8 +384,7 @@ impl Settings {
 
         let contents =
             serde_json::to_string_pretty(self).with_context(|| "Failed to serialize settings")?;
-        std::fs::write(&path, contents)
-            .with_context(|| format!("Failed to write settings to {:?}", path))?;
+        write_settings_file(&path, &contents)?;
 
         Ok(())
     }
@@ -400,6 +399,35 @@ fn backfill_dashboard_url_if_missing(settings: &mut Settings, dashboard_url_pres
     if !dashboard_url_present || settings.dashboard_url.trim().is_empty() {
         settings.dashboard_url = default_dashboard_url_for_port(settings.agent_api_port);
     }
+}
+
+fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("Failed to create settings file {:?}", path))?;
+        file.write_all(contents.as_bytes())
+            .with_context(|| format!("Failed to write settings to {:?}", path))?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to set settings file permissions for {:?}", path))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents)
+            .with_context(|| format!("Failed to write settings to {:?}", path))?;
+    }
+
+    Ok(())
 }
 
 /// Get the configuration directory for clawdstrike.
@@ -502,5 +530,35 @@ mod tests {
         let settings = Settings::default();
         assert_eq!(settings.daemon_url(), "http://127.0.0.1:9876");
         assert_eq!(settings.agent_api_port, 9878);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_settings_file_uses_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let unique = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => duration.as_nanos(),
+            Err(_) => 0,
+        };
+        let dir = std::env::temp_dir().join(format!("clawdstrike-settings-perms-{unique}"));
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            panic!("failed to create temp dir for settings permissions test: {err}");
+        }
+        let path = dir.join("agent.json");
+
+        if let Err(err) = write_settings_file(&path, "{\"nats\":{\"token\":\"secret\"}}") {
+            panic!("failed to write settings file: {err}");
+        }
+
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(err) => panic!("failed to read settings metadata: {err}"),
+        };
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

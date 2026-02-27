@@ -112,7 +112,7 @@ impl Config {
             .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(false);
         let audit_subject_filter =
-            std::env::var("AUDIT_SUBJECT_FILTER").unwrap_or_else(|_| "tenant-*.>".to_string());
+            std::env::var("AUDIT_SUBJECT_FILTER").unwrap_or_else(|_| ">".to_string());
         let audit_stream_name =
             std::env::var("AUDIT_STREAM_NAME").unwrap_or_else(|_| "clawdstrike_audit".to_string());
         let audit_consumer_name = std::env::var("AUDIT_CONSUMER_NAME")
@@ -125,7 +125,7 @@ impl Config {
         let approval_subject_filter = std::env::var("APPROVAL_SUBJECT_FILTER")
             .unwrap_or_else(|_| default_approval_subject_filter());
         let approval_stream_name = std::env::var("APPROVAL_STREAM_NAME")
-            .unwrap_or_else(|_| "clawdstrike_approval_requests".to_string());
+            .unwrap_or_else(|_| default_adaptive_ingress_stream_name());
         let approval_consumer_name = std::env::var("APPROVAL_CONSUMER_NAME")
             .unwrap_or_else(|_| "clawdstrike_approval_request_consumer".to_string());
         let heartbeat_consumer_enabled = std::env::var("HEARTBEAT_CONSUMER_ENABLED")
@@ -136,7 +136,7 @@ impl Config {
         let heartbeat_subject_filter = std::env::var("HEARTBEAT_SUBJECT_FILTER")
             .unwrap_or_else(|_| default_heartbeat_subject_filter());
         let heartbeat_stream_name = std::env::var("HEARTBEAT_STREAM_NAME")
-            .unwrap_or_else(|_| "clawdstrike_agent_heartbeats".to_string());
+            .unwrap_or_else(|_| default_adaptive_ingress_stream_name());
         let heartbeat_consumer_name = std::env::var("HEARTBEAT_CONSUMER_NAME")
             .unwrap_or_else(|_| "clawdstrike_agent_heartbeat_consumer".to_string());
         let stale_detector_enabled = std::env::var("STALE_DETECTOR_ENABLED")
@@ -202,11 +202,15 @@ impl Config {
 }
 
 fn default_approval_subject_filter() -> String {
-    "tenant-*.clawdstrike.approval.request.*".to_string()
+    ">".to_string()
 }
 
 fn default_heartbeat_subject_filter() -> String {
-    "tenant-*.clawdstrike.agent.heartbeat.*".to_string()
+    ">".to_string()
+}
+
+fn default_adaptive_ingress_stream_name() -> String {
+    "clawdstrike_adaptive_ingress".to_string()
 }
 
 fn validate_consumer_stream_configuration(
@@ -354,23 +358,26 @@ fn token_glob_overlap(
 #[cfg(test)]
 mod tests {
     use super::{
-        default_approval_subject_filter, default_heartbeat_subject_filter, subject_filters_overlap,
+        default_adaptive_ingress_stream_name, default_approval_subject_filter,
+        default_heartbeat_subject_filter, subject_filters_overlap,
         validate_consumer_stream_configuration,
     };
 
     #[test]
-    fn default_approval_subject_filter_is_non_overlapping() {
-        assert_eq!(
-            default_approval_subject_filter(),
-            "tenant-*.clawdstrike.approval.request.*"
-        );
+    fn default_approval_subject_filter_is_valid() {
+        assert_eq!(default_approval_subject_filter(), ">");
     }
 
     #[test]
-    fn default_heartbeat_subject_filter_is_non_overlapping() {
+    fn default_heartbeat_subject_filter_is_valid() {
+        assert_eq!(default_heartbeat_subject_filter(), ">");
+    }
+
+    #[test]
+    fn default_ingress_stream_name_is_shared_between_consumers() {
         assert_eq!(
-            default_heartbeat_subject_filter(),
-            "tenant-*.clawdstrike.agent.heartbeat.*"
+            default_adaptive_ingress_stream_name(),
+            "clawdstrike_adaptive_ingress"
         );
     }
 
@@ -393,7 +400,7 @@ mod tests {
             true,
             true,
             ">",
-            "tenant-*.clawdstrike.agent.heartbeat.*",
+            "*.clawdstrike.agent.heartbeat.*",
             "approval-stream",
             "heartbeat-stream",
         );
@@ -408,13 +415,5 @@ mod tests {
         ));
         assert!(subject_filters_overlap("a.b", "a.>"));
         assert!(subject_filters_overlap("a.>", "a.b"));
-    }
-
-    #[test]
-    fn overlap_detection_distinguishes_approval_and_heartbeat_defaults() {
-        assert!(!subject_filters_overlap(
-            "tenant-*.clawdstrike.approval.request.*",
-            "tenant-*.clawdstrike.agent.heartbeat.*"
-        ));
     }
 }

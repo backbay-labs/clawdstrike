@@ -39,6 +39,14 @@ impl TelemetryPublisher {
         nats_subjects::heartbeat_subject(subject_prefix, agent_id)
     }
 
+    /// Build stream subjects scoped to this agent to avoid cross-agent overlap.
+    fn stream_subjects(subject_prefix: &str, agent_id: &str) -> Vec<String> {
+        vec![
+            format!("{subject_prefix}.telemetry.{agent_id}.>"),
+            Self::heartbeat_subject(subject_prefix, agent_id),
+        ]
+    }
+
     /// Ensure the telemetry stream exists (lazy initialization).
     async fn ensure_stream(&self) -> Result<()> {
         let mut initialized = self.stream_initialized.lock().await;
@@ -49,10 +57,7 @@ impl TelemetryPublisher {
         let subject_prefix = self.nats.subject_prefix();
         let agent_id = self.nats.agent_id();
         let stream_name = Self::stream_name(subject_prefix, agent_id);
-        let subjects = vec![
-            format!("{subject_prefix}.telemetry.>"),
-            format!("{subject_prefix}.agent.heartbeat.>"),
-        ];
+        let subjects = Self::stream_subjects(subject_prefix, agent_id);
 
         spine::nats_transport::ensure_stream(self.nats.jetstream(), &stream_name, subjects, 1)
             .await
@@ -105,6 +110,18 @@ mod tests {
         assert_eq!(
             TelemetryPublisher::heartbeat_subject("tenant-abc.clawdstrike", "agent-xyz"),
             "tenant-abc.clawdstrike.agent.heartbeat.agent-xyz"
+        );
+    }
+
+    #[test]
+    fn stream_subjects_are_agent_scoped() {
+        let subjects = TelemetryPublisher::stream_subjects("tenant-abc.clawdstrike", "agent-xyz");
+        assert_eq!(
+            subjects,
+            vec![
+                "tenant-abc.clawdstrike.telemetry.agent-xyz.>".to_string(),
+                "tenant-abc.clawdstrike.agent.heartbeat.agent-xyz".to_string()
+            ]
         );
     }
 
