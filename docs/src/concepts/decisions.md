@@ -36,3 +36,24 @@ When a policy includes `posture`, the engine adds posture checks around guard ev
 3. Postcheck: budget consumption + transition triggers.
 
 This means denials can come from posture precheck (`posture` or `posture_budget`) before any guard runs.
+
+## Python `Decision` Type
+
+The Python SDK wraps per-guard results in a `Decision` object:
+
+```python
+from clawdstrike import Clawdstrike, DecisionStatus
+
+cs = Clawdstrike.with_defaults("strict")
+decision = cs.check_command("rm -rf /")
+
+decision.status     # DecisionStatus.DENY
+decision.denied     # True
+decision.allowed    # False
+decision.guard      # "shell_command"
+decision.severity   # "critical"
+decision.message    # "Blocked dangerous command: ..."
+decision.per_guard  # List[GuardResult] — individual results from each guard
+```
+
+`DecisionStatus` has three values: `ALLOW`, `WARN`, `DENY`. The aggregation logic matches Rust: any block means deny, otherwise any warning means warn, otherwise allow.

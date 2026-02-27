@@ -59,10 +59,11 @@ pip install clawdstrike
 ```
 
 ```python
-from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
+from clawdstrike import Clawdstrike
 
-policy = Policy.from_yaml_file("policy.yaml")
-engine = PolicyEngine(policy)
+cs = Clawdstrike.with_defaults("strict")
+decision = cs.check_file("/etc/shadow")
+print(decision.denied)  # True
 ```
 
 ## Requirements

@@ -114,13 +114,12 @@ pip install clawdstrike
 ```
 
 ```python
-from clawdstrike import Policy, PolicyEngine, GuardAction, GuardContext
+from clawdstrike import Clawdstrike
 
-engine = PolicyEngine(Policy.from_yaml_file("policy.yaml"))
-ctx = GuardContext(cwd="/app", session_id="session-123")
-
-allowed = engine.is_allowed(GuardAction.file_access("/home/user/.ssh/id_rsa"), ctx)
-# → False
+cs = Clawdstrike.with_defaults("strict")
+decision = cs.check_file("/home/user/.ssh/id_rsa")
+print(decision.denied)   # True
+print(decision.message)  # "Access to forbidden path: ..."
 ```
 
 ### OpenClaw Plugin
