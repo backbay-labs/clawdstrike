@@ -76,6 +76,33 @@ struct AgentApiState {
 struct PolicyVersionCache {
     value: Option<String>,
     last_refresh_at: Option<std::time::Instant>,
+    refresh_in_flight: bool,
+}
+
+impl PolicyVersionCache {
+    fn mark_refresh_started_if_due(&mut self, now: std::time::Instant) -> bool {
+        let stale = self
+            .last_refresh_at
+            .map(|last| now.duration_since(last) >= POLICY_VERSION_CACHE_REFRESH_INTERVAL)
+            .unwrap_or(true);
+
+        if !stale || self.refresh_in_flight {
+            return false;
+        }
+
+        self.refresh_in_flight = true;
+        // Mark immediately to avoid concurrent /health calls all spawning refresh tasks.
+        self.last_refresh_at = Some(now);
+        true
+    }
+
+    fn finish_refresh(&mut self, fetched: Option<String>, now: std::time::Instant) {
+        if let Some(version) = fetched {
+            self.value = Some(version);
+        }
+        self.last_refresh_at = Some(now);
+        self.refresh_in_flight = false;
+    }
 }
 
 impl AgentApiServer {
@@ -657,11 +684,8 @@ async fn fetch_daemon_policy_version(state: &AgentApiState) -> Option<String> {
 
 async fn cached_policy_version_for_health(state: &Arc<AgentApiState>) -> Option<String> {
     let (cached_value, should_refresh) = {
-        let cache = state.policy_version_cache.read().await;
-        let should_refresh = cache
-            .last_refresh_at
-            .map(|last| last.elapsed() >= POLICY_VERSION_CACHE_REFRESH_INTERVAL)
-            .unwrap_or(true);
+        let mut cache = state.policy_version_cache.write().await;
+        let should_refresh = cache.mark_refresh_started_if_due(std::time::Instant::now());
         (cache.value.clone(), should_refresh)
     };
 
@@ -677,10 +701,7 @@ async fn cached_policy_version_for_health(state: &Arc<AgentApiState>) -> Option<
             .flatten();
 
             let mut cache = state.policy_version_cache.write().await;
-            if let Some(version) = fetched {
-                cache.value = Some(version);
-            }
-            cache.last_refresh_at = Some(std::time::Instant::now());
+            cache.finish_refresh(fetched, std::time::Instant::now());
         });
     }
 
@@ -1511,6 +1532,26 @@ mod tests {
             http_client: reqwest::Client::new(),
             policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
         }
+    }
+
+    #[test]
+    fn policy_version_cache_marks_refresh_in_flight_once_per_interval() {
+        let mut cache = PolicyVersionCache::default();
+        let now = std::time::Instant::now();
+        assert!(cache.mark_refresh_started_if_due(now));
+        assert!(!cache.mark_refresh_started_if_due(now));
+    }
+
+    #[test]
+    fn policy_version_cache_finish_refresh_updates_value_and_clears_in_flight() {
+        let mut cache = PolicyVersionCache::default();
+        let started = std::time::Instant::now();
+        assert!(cache.mark_refresh_started_if_due(started));
+        assert!(cache.refresh_in_flight);
+
+        cache.finish_refresh(Some("42".to_string()), started);
+        assert_eq!(cache.value.as_deref(), Some("42"));
+        assert!(!cache.refresh_in_flight);
     }
 
     #[test]

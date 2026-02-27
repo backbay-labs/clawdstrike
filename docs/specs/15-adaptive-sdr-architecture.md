@@ -450,29 +450,29 @@ Where:
 ### 5.3 KV Bucket: Policy Sync
 
 ```
-Bucket:   clawdstrike.policy.sync  (within tenant's NATS account)
-Purpose:  Enterprise distributes policy configuration to agents
-History:  5 revisions (enables rollback)
-Replicas: 3 (matches NATS cluster size)
+Bucket:   <sanitized_subject_prefix>-policy-sync-<agent-id>
+Purpose:  Per-agent policy distribution consumed by the desktop PolicySync watcher
+History:  1 revision (latest value only)
+Replicas: 1 (current implementation default)
 TTL:      0 (no expiry; explicit deletion only)
 
 Key Schema:
-  "current"         -> { version, policy_yaml, checksum_sha256, updated_at }
-  "metadata"        -> { schema_version, last_author }
-  "rollback/<rev>"  -> { version, policy_yaml, checksum_sha256, rolled_back_at }
+  "policy.yaml" -> raw YAML policy payload
 ```
 
-**Entry format (JSON-encoded value):**
+`<sanitized_subject_prefix>` replaces non `[A-Za-z0-9_-]` bytes with `-` so bucket names remain valid JetStream stream identifiers.
 
-```json
-{
-  "version": 42,
-  "schema_version": "1.1.0",
-  "policy_yaml": "<base64-encoded YAML>",
-  "checksum_sha256": "0xabc123...",
-  "updated_at": "2026-02-26T12:00:00Z",
-  "author": "admin@acme.com"
-}
+Tenant-level active policy versioning/metadata is persisted in the cloud database (`tenant_active_policies`) and backfilled to agent buckets on deploy/enroll/heartbeat reconciliation.
+
+**Entry format (`policy.yaml` value):**
+
+```yaml
+version: "1.0.0"
+rules:
+  - guard: ForbiddenPathGuard
+    config:
+      paths:
+        - "/etc/ssh"
 ```
 
 ### 5.4 JetStream Stream: Telemetry Receipts
@@ -612,7 +612,7 @@ Priority order matches the existing `connect_with_auth` implementation in `spine
 ```
 
 - Enrollment tokens are single-use, time-limited (default: 24 hours)
-- Cloud persists only `token_hash` (SHA-256), `expires_at`, and `consumed_at`
+- Cloud persists only `token_hash` (salted SHA-256 derived from token format), `expires_at`, and `consumed_at`
 - Expired or consumed tokens are rejected; fail-closed
 
 ### 6.4 Agent Identity Binding
@@ -854,7 +854,13 @@ The enterprise dashboard should alert when agents report `posture: "unknown"`, i
 
 ### 9.1 Mechanism
 
-Policy sync uses NATS KV watch on the `clawdstrike.policy.sync` bucket. The agent establishes a KV watcher at startup and receives updates in real-time when the enterprise publishes new policy versions.
+Policy sync uses NATS KV watch on a per-agent bucket:
+
+- Bucket name: `<sanitized_subject_prefix>-policy-sync-<agent-id>`
+- Key: `policy.yaml`
+- Value: raw YAML policy payload
+
+The agent establishes a watcher at startup and receives updates in real time when the enterprise writes `policy.yaml` for that agent.
 
 ### 9.2 Sync Flow
 
@@ -863,34 +869,28 @@ Enterprise Admin         Cloud API            NATS KV              Agent
      |                      |                    |                    |
      | Update policy        |                    |                    |
      |--------------------->|                    |                    |
-     |                      | PUT key="current"  |                    |
-     |                      | val={version:43,...}|                    |
+     |                      | PUT key="policy.yaml"                 |
+     |                      | val="<raw policy yaml>"               |
      |                      |------------------->|                    |
      |                      |                    |  KV watch fires    |
      |                      |                    |------------------->|
      |                      |                    |                    |
-     |                      |                    |    1. Validate     |
-     |                      |                    |       checksum     |
-     |                      |                    |    2. Parse YAML   |
-     |                      |                    |    3. Validate     |
-     |                      |                    |       schema       |
-     |                      |                    |    4. Write to     |
-     |                      |                    |       local cache  |
-     |                      |                    |    5. Update       |
-     |                      |                    |       engine ref   |
+     |                      |                    |    1. Write to local
+     |                      |                    |       policy file
+     |                      |                    |    2. Trigger hushd
+     |                      |                    |       restart/reload
      |                      |                    |                    |
      |                      |                    |    ACK (implicit   |
      |                      |                    |    via next        |
      |                      |                    |    heartbeat with  |
-     |                      |                    |    policy_version) |
+     |                      |                    |    last_policy_version) |
 ```
 
 ### 9.3 Version Tracking
 
-- Each policy update increments a monotonic version number
-- The agent tracks `last_policy_version` and reports it in heartbeats
-- The enterprise can detect agents running stale policies
-- On reconnect after disconnection, the agent checks the current KV value; if the version is newer than its cache, it performs a full sync
+- Cloud persists tenant-level active policy metadata in `tenant_active_policies` (including monotonic `version`).
+- Agent health/heartbeat includes `last_policy_version` from hushd state for observability.
+- On reconnect/startup, the agent reads current `policy.yaml`; if missing, it keeps the last local policy (fail-closed).
 
 ### 9.4 Local Cache
 
@@ -905,13 +905,13 @@ ${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/
 
 ### 9.5 Policy Validation
 
-On receiving a policy update, the agent validates before applying:
+Current validation path:
 
-1. **Checksum:** SHA-256 of decoded YAML matches `checksum_sha256` in the KV entry
-2. **Schema:** Policy YAML conforms to schema v1.1.0
-3. **Parse:** Policy loads without errors in the local `hush` engine
+1. Cloud validates policy YAML at deploy time before writing to KV.
+2. Agent writes `policy.yaml` payload atomically to local disk.
+3. Agent restarts/reloads hushd; hushd parsing/enforcement is the final validation gate.
 
-If any validation step fails, the agent rejects the update, keeps the previous policy, and publishes a telemetry event with the error. This is fail-closed: a corrupt policy update does not downgrade or disable enforcement.
+If apply/reload fails, the previous effective policy remains in force and errors are logged (fail-closed).
 
 ---
 

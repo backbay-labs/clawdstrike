@@ -130,8 +130,8 @@ impl Config {
             .as_deref()
             .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(true);
-        let approval_subject_filter =
-            std::env::var("APPROVAL_SUBJECT_FILTER").unwrap_or_else(|_| "tenant-*.>".to_string());
+        let approval_subject_filter = std::env::var("APPROVAL_SUBJECT_FILTER")
+            .unwrap_or_else(|_| default_approval_subject_filter());
         let approval_stream_name = std::env::var("APPROVAL_STREAM_NAME")
             .unwrap_or_else(|_| "clawdstrike_approval_requests".to_string());
         let approval_consumer_name = std::env::var("APPROVAL_CONSUMER_NAME")
@@ -141,8 +141,8 @@ impl Config {
             .as_deref()
             .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(true);
-        let heartbeat_subject_filter =
-            std::env::var("HEARTBEAT_SUBJECT_FILTER").unwrap_or_else(|_| "tenant-*.>".to_string());
+        let heartbeat_subject_filter = std::env::var("HEARTBEAT_SUBJECT_FILTER")
+            .unwrap_or_else(|_| default_heartbeat_subject_filter());
         let heartbeat_stream_name = std::env::var("HEARTBEAT_STREAM_NAME")
             .unwrap_or_else(|_| "clawdstrike_agent_heartbeats".to_string());
         let heartbeat_consumer_name = std::env::var("HEARTBEAT_CONSUMER_NAME")
@@ -197,5 +197,34 @@ impl Config {
             stale_threshold_secs,
             dead_threshold_secs,
         })
+    }
+}
+
+fn default_approval_subject_filter() -> String {
+    "tenant-*.clawdstrike.approval.request.*".to_string()
+}
+
+fn default_heartbeat_subject_filter() -> String {
+    "tenant-*.clawdstrike.agent.heartbeat.*".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_approval_subject_filter, default_heartbeat_subject_filter};
+
+    #[test]
+    fn default_approval_subject_filter_is_scoped_to_request_shape() {
+        assert_eq!(
+            default_approval_subject_filter(),
+            "tenant-*.clawdstrike.approval.request.*"
+        );
+    }
+
+    #[test]
+    fn default_heartbeat_subject_filter_is_scoped_to_heartbeat_shape() {
+        assert_eq!(
+            default_heartbeat_subject_filter(),
+            "tenant-*.clawdstrike.agent.heartbeat.*"
+        );
     }
 }

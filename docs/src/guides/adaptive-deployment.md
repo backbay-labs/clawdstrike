@@ -155,8 +155,10 @@ The Cloud API enables the core adaptive workers by default. Make these settings 
 | `APPROVAL_SIGNING_ENABLED` | `true` | Signed approval responses are enabled by default. |
 | `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Required when signing is enabled; startup fails if missing. |
 | `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the cloud DB. |
+| `APPROVAL_SUBJECT_FILTER` | `tenant-*.clawdstrike.approval.request.*` | Keep scoped to approval request subjects to avoid consumer redelivery loops on unrelated traffic. |
 | `APPROVAL_RESOLUTION_OUTBOX_ENABLED` | `true` | Retries cloud -> agent resolution delivery until sent. |
 | `HEARTBEAT_CONSUMER_ENABLED` | `true` | Reconciles NATS heartbeats into `agents.last_heartbeat_at`. |
+| `HEARTBEAT_SUBJECT_FILTER` | `tenant-*.clawdstrike.agent.heartbeat.*` | Keep scoped to heartbeat subjects for stable JetStream ACK behavior. |
 | `STALE_DETECTOR_ENABLED` | `true` | Periodic stale/dead lifecycle transitions (120s/300s default thresholds). |
 | `AUDIT_CONSUMER_ENABLED` | `false` | Optional; enable when ingesting Spine audit envelopes in this service. |
 

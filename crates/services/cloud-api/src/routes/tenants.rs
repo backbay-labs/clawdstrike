@@ -249,11 +249,9 @@ fn is_valid_tenant_slug(slug: &str) -> bool {
 }
 
 fn generate_enrollment_token() -> String {
-    format!(
-        "cset_{}{}",
-        Uuid::new_v4().simple(),
-        Uuid::new_v4().simple()
-    )
+    let salt = Uuid::new_v4().simple().to_string();
+    let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    format!("cset_{}_{}", salt, secret)
 }
 
 fn is_unique_violation(err: &sqlx::error::Error) -> bool {
@@ -314,6 +312,7 @@ mod tests {
     fn enrollment_token_generation_and_hash_contract() {
         let token = generate_enrollment_token();
         assert!(token.starts_with("cset_"));
+        assert_eq!(token.matches('_').count(), 2);
         assert_eq!(hash_enrollment_token(&token).len(), 64);
     }
 }

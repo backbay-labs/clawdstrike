@@ -6,6 +6,7 @@
 
 use anyhow::{Context, Result};
 use async_nats::jetstream::kv;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -138,8 +139,7 @@ impl PolicySync {
                 .with_context(|| format!("Failed to create policy directory {:?}", parent))?;
         }
 
-        std::fs::write(&self.policy_path, data)
-            .with_context(|| format!("Failed to write policy to {:?}", self.policy_path))?;
+        atomic_write_policy(&self.policy_path, data)?;
 
         Ok(())
     }
@@ -160,6 +160,34 @@ async fn watcher_next(
     watcher.next().await
 }
 
+fn atomic_write_policy(path: &PathBuf, data: &[u8]) -> Result<()> {
+    let tmp_path = path.with_extension("tmp");
+    let mut tmp_file = std::fs::File::create(&tmp_path)
+        .with_context(|| format!("Failed to create temporary policy file {:?}", tmp_path))?;
+    tmp_file
+        .write_all(data)
+        .with_context(|| format!("Failed to write temporary policy file {:?}", tmp_path))?;
+    // Best effort: force file contents to disk before replacement.
+    let _ = tmp_file.sync_all();
+    drop(tmp_file);
+
+    #[cfg(windows)]
+    if path.exists() {
+        // Windows rename cannot replace existing destination atomically.
+        std::fs::remove_file(path)
+            .with_context(|| format!("Failed to remove existing policy file {:?}", path))?;
+    }
+
+    std::fs::rename(&tmp_path, path).with_context(|| {
+        format!(
+            "Failed to atomically replace policy file {:?} from {:?}",
+            path, tmp_path
+        )
+    })?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -176,5 +204,27 @@ mod tests {
     #[test]
     fn policy_key_is_stable() {
         assert_eq!(PolicySync::policy_key(), "policy.yaml");
+    }
+
+    #[test]
+    fn atomic_write_policy_creates_and_overwrites_file() {
+        let base = std::env::temp_dir().join(format!(
+            "policy-sync-write-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("policy.yaml");
+
+        atomic_write_policy(&path, b"version: 1\n").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"version: 1\n");
+
+        atomic_write_policy(&path, b"version: 2\n").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"version: 2\n");
+
+        let tmp_path = path.with_extension("tmp");
+        assert!(!tmp_path.exists());
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(base);
     }
 }

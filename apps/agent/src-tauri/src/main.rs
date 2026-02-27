@@ -473,6 +473,20 @@ async fn run_agent<R: Runtime>(
             }
             Err(err) => {
                 tracing::error!(error = %err, "Failed to connect to NATS; enterprise features disabled");
+                if is_nats_auth_failure(&err.to_string()) {
+                    tracing::warn!(
+                        "NATS connect failed with authentication/authorization error; resetting enrollment and NATS settings to standalone mode"
+                    );
+                    let mut guard = settings.write().await;
+                    guard.nats = settings::NatsSettings::default();
+                    guard.enrollment = settings::EnrollmentState::default();
+                    if let Err(save_err) = guard.save() {
+                        tracing::warn!(
+                            error = %save_err,
+                            "Failed to persist standalone fallback after invalid NATS credentials"
+                        );
+                    }
+                }
             }
         }
     }
@@ -889,6 +903,21 @@ async fn reload_daemon_policy(daemon: &DaemonManager) -> anyhow::Result<()> {
     daemon.restart().await
 }
 
+fn is_nats_auth_failure(error_message: &str) -> bool {
+    let lower = error_message.to_ascii_lowercase();
+    [
+        "authorization violation",
+        "permissions violation",
+        "authentication",
+        "invalid credentials",
+        "invalid token",
+        "invalid jwt",
+        "user authentication expired",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
 /// Periodic NATS heartbeat loop that publishes session state to the telemetry stream.
 async fn nats_heartbeat_loop(
     telemetry: Arc<telemetry_publisher::TelemetryPublisher>,
@@ -923,5 +952,18 @@ async fn nats_heartbeat_loop(
                 telemetry.publish_heartbeat(&payload).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_nats_auth_failure;
+
+    #[test]
+    fn nats_auth_error_detection_matches_expected_strings() {
+        assert!(is_nats_auth_failure("Authorization Violation"));
+        assert!(is_nats_auth_failure("user authentication expired"));
+        assert!(!is_nats_auth_failure("connection refused"));
+        assert!(!is_nats_auth_failure("dial tcp timeout"));
     }
 }

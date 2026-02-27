@@ -178,7 +178,8 @@ This file stores the most recently synced policy payload from hushd.
 
 **Resolution:** Restart the agent. On startup, the agent performs a consistency check:
 - If NATS credentials exist but the mode is still `standalone`, the agent attempts to connect with the stored credentials. If successful, it completes the transition to connected mode automatically.
-- If the credentials are invalid (revoked or expired due to the failed enrollment), the agent deletes them and remains in standalone mode. You can then retry enrollment with a new token.
+- If NATS connection fails with an authentication/authorization error (for example revoked or invalid credentials), the agent clears enrollment/NATS state and remains in standalone mode. You can then retry enrollment with a new token.
+- If the failure is a transient network/connectivity error, the agent keeps enrollment settings and retries on next startup.
 
 ### Agent Shows as Disconnected
 
