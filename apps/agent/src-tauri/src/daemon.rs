@@ -83,6 +83,8 @@ struct HushdRuntimeConfig {
     ruleset: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     siem: Option<HushdRuntimeSiemConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    spine: Option<HushdRuntimeSpineConfig>,
 }
 
 #[derive(Debug, Serialize)]
@@ -176,6 +178,22 @@ struct HushdRuntimeWebhookAuthConfig {
     auth_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSpineConfig {
+    enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nats_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    creds_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nkey_seed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keypair_path: Option<PathBuf>,
+    subject_prefix: String,
 }
 
 impl DaemonConfig {
@@ -968,6 +986,7 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
             policy_path,
             ruleset: "default".to_string(),
             siem: resolve_runtime_siem_config(),
+            spine: resolve_runtime_spine_config(),
         };
         let serialized = serde_yaml::to_string(&runtime)
             .with_context(|| "Failed to serialize hushd runtime config")?;
@@ -999,6 +1018,21 @@ fn resolve_runtime_siem_config() -> Option<HushdRuntimeSiemConfig> {
     };
 
     build_runtime_siem_config(&settings)
+}
+
+fn resolve_runtime_spine_config() -> Option<HushdRuntimeSpineConfig> {
+    let settings = match crate::settings::Settings::load() {
+        Ok(settings) => settings,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "Failed to load agent settings while generating hushd runtime spine config"
+            );
+            return None;
+        }
+    };
+
+    build_runtime_spine_config(&settings)
 }
 
 fn build_runtime_siem_config(
@@ -1128,6 +1162,35 @@ fn build_runtime_siem_config(
     Some(HushdRuntimeSiemConfig {
         enabled: true,
         exporters,
+    })
+}
+
+fn build_runtime_spine_config(
+    settings: &crate::settings::Settings,
+) -> Option<HushdRuntimeSpineConfig> {
+    if !settings.nats.enabled {
+        return None;
+    }
+
+    let subject_prefix = settings.nats.subject_prefix.as_ref()?.trim();
+    if subject_prefix.is_empty() {
+        return None;
+    }
+
+    // Reuse the enrollment keypair for signed receipt continuity if available.
+    let agent_keypair_path = {
+        let path = crate::settings::get_config_dir().join("agent.key");
+        if path.exists() { Some(path) } else { None }
+    };
+
+    Some(HushdRuntimeSpineConfig {
+        enabled: true,
+        nats_url: settings.nats.nats_url.clone(),
+        creds_file: settings.nats.creds_file.clone(),
+        token: settings.nats.token.clone(),
+        nkey_seed: settings.nats.nkey_seed.clone(),
+        keypair_path: agent_keypair_path,
+        subject_prefix: subject_prefix.to_string(),
     })
 }
 
@@ -1592,6 +1655,34 @@ mod tests {
                 .and_then(|auth| auth.token.as_deref()),
             Some("hook-secret")
         );
+    }
+
+    #[test]
+    fn runtime_spine_config_is_generated_from_nats_settings() {
+        let mut settings = crate::settings::Settings::default();
+        settings.nats.enabled = true;
+        settings.nats.nats_url = Some("nats://example:4222".to_string());
+        settings.nats.token = Some("nats-token".to_string());
+        settings.nats.subject_prefix = Some("tenant-acme.clawdstrike".to_string());
+
+        let config = build_runtime_spine_config(&settings)
+            .unwrap_or_else(|| panic!("expected runtime spine config"));
+
+        assert!(config.enabled);
+        assert_eq!(config.nats_url.as_deref(), Some("nats://example:4222"));
+        assert_eq!(config.token.as_deref(), Some("nats-token"));
+        assert_eq!(config.subject_prefix, "tenant-acme.clawdstrike");
+    }
+
+    #[test]
+    fn runtime_spine_config_is_none_when_nats_disabled_or_prefix_missing() {
+        let settings = crate::settings::Settings::default();
+        assert!(build_runtime_spine_config(&settings).is_none());
+
+        let mut enabled = crate::settings::Settings::default();
+        enabled.nats.enabled = true;
+        enabled.nats.nats_url = Some("nats://example:4222".to_string());
+        assert!(build_runtime_spine_config(&enabled).is_none());
     }
 
     #[tokio::test]

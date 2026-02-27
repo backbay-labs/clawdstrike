@@ -10,6 +10,7 @@
 mod agent_auth;
 mod api_server;
 mod approval;
+mod approval_sync;
 mod daemon;
 mod decision;
 mod enrollment;
@@ -369,7 +370,7 @@ async fn run_agent<R: Runtime>(
     // --- NATS enterprise connectivity (adaptive SDR) ---
     // If NATS is enabled (either via static config or enrollment), connect and start
     // policy sync, telemetry publishing, and posture command handling.
-    let mut nats_telemetry: Option<Arc<telemetry_publisher::TelemetryPublisher>> = None;
+    let mut nats_client: Option<Arc<nats_client::NatsClient>> = None;
     let nats_enabled = {
         let guard = settings.read().await;
         guard.nats.enabled
@@ -426,6 +427,14 @@ async fn run_agent<R: Runtime>(
                     posture_handler.start(posture_shutdown).await;
                 });
 
+                // Approval sync: ingest cloud decisions and apply them to local queue.
+                let approval_sync =
+                    approval_sync::ApprovalSync::new(nats.clone(), approval_queue.clone());
+                let approval_sync_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    approval_sync.start(approval_sync_shutdown).await;
+                });
+
                 // Publish periodic NATS heartbeats alongside the existing HTTP heartbeats.
                 let telemetry_for_heartbeat = telemetry.clone();
                 let session_for_nats_hb = session_manager.clone();
@@ -439,8 +448,8 @@ async fn run_agent<R: Runtime>(
                     .await;
                 });
 
-                // Keep a reference so it's not dropped (used by spawned tasks above).
-                nats_telemetry = Some(telemetry);
+                // Keep a reference so publish-side event loops can use this connection.
+                nats_client = Some(nats);
             }
             Err(err) => {
                 tracing::error!(error = %err, "Failed to connect to NATS; enterprise features disabled");
@@ -523,18 +532,10 @@ async fn run_agent<R: Runtime>(
     let mut events_rx = event_manager.subscribe();
     let notification_manager = NotificationManager::new(app.clone(), settings.clone());
     let tray_for_events = tray_manager.clone();
-    let telemetry_for_events = nats_telemetry.clone();
     tokio::spawn(async move {
         loop {
             match events_rx.recv().await {
                 Ok(event) => {
-                    if let Some(telemetry) = telemetry_for_events.as_ref() {
-                        if let Ok(payload) = serde_json::to_vec(&event) {
-                            telemetry.publish_receipt(&payload).await;
-                        } else {
-                            tracing::warn!("Failed to serialize policy event receipt for NATS publish");
-                        }
-                    }
                     tray_for_events.add_event(event.clone()).await;
                     notification_manager.notify(&event).await;
                 }
@@ -658,6 +659,7 @@ async fn run_agent<R: Runtime>(
     let tray_for_approvals = tray_manager.clone();
     let app_for_approvals = app.clone();
     let approval_queue_for_events = approval_queue.clone();
+    let nats_for_approvals = nats_client.clone();
     tokio::spawn(async move {
         loop {
             let event = match approval_events_rx.recv().await {
@@ -677,6 +679,16 @@ async fn run_agent<R: Runtime>(
 
             match &event {
                 approval::ApprovalEvent::NewRequest { request } => {
+                    if let Some(nats) = nats_for_approvals.as_ref() {
+                        if let Err(err) = approval_sync::publish_approval_request(nats, request).await
+                        {
+                            tracing::warn!(
+                                error = %err,
+                                request_id = %request.id,
+                                "Failed to publish approval request to cloud"
+                            );
+                        }
+                    }
                     let title = format!("Approval Required: {}", request.tool);
                     let body = format!("{}\n{}", request.resource, request.reason);
                     notifications::show_notification(&app_for_approvals, &title, &body);

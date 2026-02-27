@@ -19,24 +19,36 @@ Before starting, confirm you have the following:
 
 ## Step 1: Generate an Enrollment Token (Admin)
 
-Enterprise administrators generate enrollment tokens via the Cloud API dashboard or CLI. Each token is single-use and expires after 24 hours by default.
+Enterprise administrators generate enrollment tokens via the Cloud API or dashboard. Each token is single-use and expires after 24 hours by default (configurable at creation time).
 
-**Via the dashboard:**
+**Via the Cloud API:**
+
+```bash
+TENANT_ID="00000000-0000-0000-0000-000000000000"
+TOKEN="cloud-api-admin-token"
+
+curl -fsS -X POST \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"expires_in_hours":24}' \
+  "https://api.acme.clawdstrike.cloud/api/v1/tenants/${TENANT_ID}/enrollment-tokens" | jq .
+```
+
+Example response:
+
+```json
+{
+  "enrollment_token": "cset_...",
+  "expires_at": "2026-02-28T15:04:05Z"
+}
+```
+
+**Via the dashboard (if enabled in your deployment):**
 
 1. Navigate to **Fleet Management > Agents** in the Cloud API dashboard.
 2. Select **Generate Enrollment Token**.
 3. Copy the token (format: `cset_...`).
 4. Deliver the token to the agent operator via a secure channel (email, internal messaging, etc.).
-
-**Via the CLI:**
-
-```bash
-clawdstrike admin generate-enrollment-token \
-  --tenant acme \
-  --expires-in 24h
-```
-
-The command outputs an enrollment token. Deliver it to the agent operator.
 
 > **Warning:** Enrollment tokens are sensitive credentials. They are single-use, but an attacker with a valid token could enroll an unauthorized agent. Deliver tokens through secure, authenticated channels.
 
@@ -179,7 +191,7 @@ This file stores the most recently synced policy payload from hushd.
 
 **Resolution:**
 1. Check agent health: `curl -fsS http://127.0.0.1:9878/api/v1/agent/health | jq .`
-2. Verify the agent shows `nats_connected: true` in the enrollment status.
+2. Verify enrollment state remains `enrolled: true` via `/api/v1/enrollment-status`.
 3. Check for NATS connectivity errors in the agent logs.
 4. If credentials were revoked, the agent transitions back to standalone mode. Re-enroll with a new token.
 

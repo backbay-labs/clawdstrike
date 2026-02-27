@@ -348,6 +348,29 @@ jobs:
       - name: Generate coverage report
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
 
+      - name: Enforce changed-file Rust coverage floor
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          CHANGED_RUST_COVERAGE_THRESHOLD: "70"
+        run: |
+          if [ -z "${GITHUB_BASE_REF}" ]; then
+            echo "No base ref (non-PR run); skipping changed-file Rust coverage gate."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}"
+          git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- '*.rs' ':(exclude)infra/vendor/**' > changed_rust_files.txt
+
+          if [ ! -s changed_rust_files.txt ]; then
+            echo "No changed Rust files; skipping changed-file Rust coverage gate."
+            exit 0
+          fi
+
+          tools/scripts/check-changed-rust-coverage.py \
+            --lcov lcov.info \
+            --changed-files-file changed_rust_files.txt \
+            --threshold "${CHANGED_RUST_COVERAGE_THRESHOLD}"
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:

@@ -1,6 +1,7 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use sha2::{Digest, Sha256};
 use sqlx::row::Row;
 use uuid::Uuid;
 
@@ -20,13 +21,22 @@ const HEARTBEAT_UPDATE_SQL: &str = r#"UPDATE agents
              AND agent_id = $2
              AND status IN ('active', 'stale', 'dead')"#;
 
-const ENROLL_TENANT_LOCK_SQL: &str = r#"SELECT id, slug, agent_limit
-           FROM tenants
-           WHERE enrollment_token = $1
+const ENROLL_TOKEN_LOCK_SQL: &str = r#"SELECT et.id AS enrollment_token_id,
+                  et.tenant_id,
+                  t.slug,
+                  t.agent_limit
+           FROM tenant_enrollment_tokens AS et
+           JOIN tenants AS t
+             ON t.id = et.tenant_id
+           WHERE et.token_hash = $1
+             AND et.consumed_at IS NULL
+             AND et.expires_at > now()
            FOR UPDATE"#;
 
-const ENROLL_TOKEN_CONSUME_SQL: &str =
-    "UPDATE tenants SET enrollment_token = NULL WHERE id = $1 AND enrollment_token = $2";
+const ENROLL_TOKEN_CONSUME_SQL: &str = r#"UPDATE tenant_enrollment_tokens
+           SET consumed_at = now()
+           WHERE id = $1
+             AND consumed_at IS NULL"#;
 
 /// Authenticated agent routes (behind require_auth middleware).
 pub fn router() -> Router<AppState> {
@@ -180,16 +190,22 @@ async fn enroll_agent(
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let enrollment_token_hash = hash_enrollment_token(&req.enrollment_token);
 
     // Lock the tenant row for this token to make consumption atomic and race-free.
-    let tenant_row = sqlx::query::query(ENROLL_TENANT_LOCK_SQL)
-        .bind(&req.enrollment_token)
+    let tenant_row = sqlx::query::query(ENROLL_TOKEN_LOCK_SQL)
+        .bind(enrollment_token_hash)
         .fetch_optional(&mut *tx)
         .await
         .map_err(ApiError::Database)?
-        .ok_or_else(|| ApiError::BadRequest("invalid enrollment token".to_string()))?;
+        .ok_or_else(|| ApiError::BadRequest("invalid or expired enrollment token".to_string()))?;
 
-    let tenant_id: Uuid = tenant_row.try_get("id").map_err(ApiError::Database)?;
+    let enrollment_token_id: Uuid = tenant_row
+        .try_get("enrollment_token_id")
+        .map_err(ApiError::Database)?;
+    let tenant_id: Uuid = tenant_row
+        .try_get("tenant_id")
+        .map_err(ApiError::Database)?;
     let slug: String = tenant_row.try_get("slug").map_err(ApiError::Database)?;
     let agent_limit: i32 = tenant_row
         .try_get("agent_limit")
@@ -244,8 +260,7 @@ async fn enroll_agent(
 
     // Invalidate the enrollment token so it cannot be reused.
     let token_consumed = sqlx::query::query(ENROLL_TOKEN_CONSUME_SQL)
-        .bind(tenant_id)
-        .bind(&req.enrollment_token)
+        .bind(enrollment_token_id)
         .execute(&mut *tx)
         .await
         .map_err(ApiError::Database)?;
@@ -271,6 +286,12 @@ async fn enroll_agent(
     }))
 }
 
+fn hash_enrollment_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,7 +310,15 @@ mod tests {
 
     #[test]
     fn enrollment_queries_are_atomic() {
-        assert!(ENROLL_TENANT_LOCK_SQL.contains("FOR UPDATE"));
-        assert!(ENROLL_TOKEN_CONSUME_SQL.contains("WHERE id = $1 AND enrollment_token = $2"));
+        assert!(ENROLL_TOKEN_LOCK_SQL.contains("FOR UPDATE"));
+        assert!(ENROLL_TOKEN_LOCK_SQL.contains("expires_at > now()"));
+        assert!(ENROLL_TOKEN_CONSUME_SQL.contains("WHERE id = $1"));
+    }
+
+    #[test]
+    fn enrollment_token_hash_is_sha256_hex() {
+        let hash = hash_enrollment_token("cset_example");
+        assert_eq!(hash.len(), 64);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

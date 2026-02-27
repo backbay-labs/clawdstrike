@@ -156,21 +156,10 @@ fn heartbeat_metadata(payload: &[u8]) -> Option<Value> {
 /// Parse `<tenant-prefix>.agent.heartbeat.<agent-id>` where
 /// `<tenant-prefix>` is `tenant-<slug>.clawdstrike`.
 fn parse_heartbeat_subject(subject: &str) -> Option<(&str, &str)> {
-    let mut parts = subject.split('.');
-    let tenant_prefix = parts.next()?;
-    let scope = parts.next()?;
-    let agent_token = parts.next()?;
-    let heartbeat_token = parts.next()?;
-    let agent_id = parts.next()?;
-
-    if parts.next().is_some() {
-        return None;
-    }
-    if scope != "clawdstrike" || agent_token != "agent" || heartbeat_token != "heartbeat" {
-        return None;
-    }
-
-    let tenant_slug = tenant_prefix.strip_prefix("tenant-")?;
+    let (tenant_prefix, agent_id) = subject.rsplit_once(".agent.heartbeat.")?;
+    let tenant_slug = tenant_prefix
+        .strip_prefix("tenant-")?
+        .strip_suffix(".clawdstrike")?;
     if tenant_slug.is_empty() || agent_id.is_empty() {
         return None;
     }
@@ -186,6 +175,13 @@ mod tests {
     fn parse_heartbeat_subject_valid() {
         let parsed = parse_heartbeat_subject("tenant-acme.clawdstrike.agent.heartbeat.agent-123");
         assert_eq!(parsed, Some(("acme", "agent-123")));
+    }
+
+    #[test]
+    fn parse_heartbeat_subject_allows_dotted_slugs() {
+        let parsed =
+            parse_heartbeat_subject("tenant-acme.dev.clawdstrike.agent.heartbeat.agent-123");
+        assert_eq!(parsed, Some(("acme.dev", "agent-123")));
     }
 
     #[test]

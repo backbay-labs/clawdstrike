@@ -19,6 +19,16 @@ pub fn posture_command_subject(subject_prefix: &str, agent_id: &str) -> String {
     format!("{subject_prefix}.posture.command.{agent_id}")
 }
 
+/// Build the approval request publish subject.
+pub fn approval_request_subject(subject_prefix: &str, agent_id: &str) -> String {
+    format!("{subject_prefix}.approval.request.{agent_id}")
+}
+
+/// Build the approval response subscription subject.
+pub fn approval_response_subject(subject_prefix: &str, agent_id: &str) -> String {
+    format!("{subject_prefix}.approval.response.{agent_id}")
+}
+
 /// Build a KV bucket name for policy sync.
 ///
 /// JetStream KV bucket names map to stream names and allow only
@@ -67,6 +77,14 @@ mod tests {
         assert_eq!(
             posture_command_subject(prefix, "agent-1"),
             "tenant-acme.clawdstrike.posture.command.agent-1"
+        );
+        assert_eq!(
+            approval_request_subject(prefix, "agent-1"),
+            "tenant-acme.clawdstrike.approval.request.agent-1"
+        );
+        assert_eq!(
+            approval_response_subject(prefix, "agent-1"),
+            "tenant-acme.clawdstrike.approval.response.agent-1"
         );
     }
 

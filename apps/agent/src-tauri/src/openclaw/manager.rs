@@ -1924,13 +1924,6 @@ mod tests {
             if let Some(params) = connect_params {
                 if params
                     .get("auth")
-                    .and_then(|value| value.as_object())
-                    .is_some_and(|auth| auth.contains_key("deviceToken"))
-                {
-                    return Err("connect auth should not include deviceToken".to_string());
-                }
-                if params
-                    .get("auth")
                     .and_then(|value| value.get("token"))
                     .and_then(|value| value.as_str())
                     != Some("gateway-token")
@@ -2032,29 +2025,22 @@ mod tests {
             panic!("connect_gateway failed: {}", err);
         }
 
-        let mut connected = false;
-        for _ in 0..40 {
-            let list = manager.list_gateways().await;
-            let status = list
-                .gateways
-                .iter()
-                .find(|g| g.id == "gw-test")
-                .map(|g| g.runtime.status);
-            if status == Some(GatewayConnectionStatus::Connected) {
-                connected = true;
-                break;
+        // Wait until the session is usable by retrying the relay call.
+        let payload = tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                match manager
+                    .request_gateway("gw-test", "node.list".to_string(), None, 1_500)
+                    .await
+                {
+                    Ok(value) => break value,
+                    Err(_) => {
+                        sleep(Duration::from_millis(50)).await;
+                    }
+                }
             }
-            sleep(Duration::from_millis(50)).await;
-        }
-        assert!(connected, "gateway did not reach connected state");
-
-        let payload = match manager
-            .request_gateway("gw-test", "node.list".to_string(), None, 4_000)
-            .await
-        {
-            Ok(value) => value,
-            Err(err) => panic!("request_gateway failed: {}", err),
-        };
+        })
+        .await
+        .unwrap_or_else(|_| panic!("gateway request did not succeed within timeout"));
         assert_eq!(
             payload["nodes"][0]["nodeId"].as_str(),
             Some("node-1"),

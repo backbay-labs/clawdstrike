@@ -1,6 +1,6 @@
-//! JetStream-based telemetry publisher for enterprise observability.
+//! JetStream heartbeat publisher for enterprise observability.
 //!
-//! Publishes receipts and heartbeats to tenant/agent-scoped JetStream streams.
+//! Publishes heartbeat telemetry to tenant/agent-scoped JetStream streams.
 //! All publish operations are best-effort: failures are logged but never block
 //! the agent's critical path.
 
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::nats_client::NatsClient;
 use crate::nats_subjects;
 
-/// Publishes telemetry data (receipts, heartbeats) to NATS JetStream.
+/// Publishes heartbeat telemetry to NATS JetStream.
 pub struct TelemetryPublisher {
     nats: Arc<NatsClient>,
     stream_initialized: tokio::sync::Mutex<bool>,
@@ -32,11 +32,6 @@ impl TelemetryPublisher {
     /// Build the stream name for this agent's telemetry.
     pub fn stream_name(subject_prefix: &str, agent_id: &str) -> String {
         nats_subjects::telemetry_stream_name(subject_prefix, agent_id)
-    }
-
-    /// Build the subject for receipt telemetry.
-    pub fn receipts_subject(subject_prefix: &str, agent_id: &str) -> String {
-        nats_subjects::receipts_subject(subject_prefix, agent_id)
     }
 
     /// Build the subject for heartbeat telemetry.
@@ -65,29 +60,6 @@ impl TelemetryPublisher {
 
         *initialized = true;
         tracing::info!(stream = %stream_name, "Telemetry stream initialized");
-        Ok(())
-    }
-
-    /// Publish a receipt to the telemetry stream (best-effort).
-    pub async fn publish_receipt(&self, receipt_json: &[u8]) {
-        if let Err(err) = self.try_publish_receipt(receipt_json).await {
-            tracing::warn!(error = %err, "Failed to publish receipt to NATS (best-effort)");
-        }
-    }
-
-    async fn try_publish_receipt(&self, receipt_json: &[u8]) -> Result<()> {
-        self.ensure_stream().await?;
-
-        let subject = Self::receipts_subject(self.nats.subject_prefix(), self.nats.agent_id());
-
-        self.nats
-            .jetstream()
-            .publish(subject, receipt_json.to_vec().into())
-            .await
-            .map_err(|e| anyhow::anyhow!("JetStream publish error: {}", e))?
-            .await
-            .map_err(|e| anyhow::anyhow!("JetStream ack error: {}", e))?;
-
         Ok(())
     }
 
@@ -125,14 +97,6 @@ mod tests {
         assert_eq!(
             TelemetryPublisher::stream_name("tenant-abc.clawdstrike", "agent-xyz"),
             "tenant-abc-clawdstrike-telemetry-agent-xyz"
-        );
-    }
-
-    #[test]
-    fn receipts_subject_format() {
-        assert_eq!(
-            TelemetryPublisher::receipts_subject("tenant-abc.clawdstrike", "agent-xyz"),
-            "tenant-abc.clawdstrike.telemetry.receipts.agent-xyz"
         );
     }
 

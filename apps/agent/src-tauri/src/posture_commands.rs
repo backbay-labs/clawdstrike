@@ -151,65 +151,37 @@ impl PostureCommandHandler {
                 }
 
                 tracing::info!(posture = %posture, "Received set_posture command");
-                // Update the session's posture via the session manager.
-                let applied = self
-                    .session_manager
-                    .update_posture_from_daemon_event(None, posture.clone())
-                    .await;
-
-                if applied {
-                    CommandResponse {
-                        status: "ok".to_string(),
-                        message: Some(format!("Posture set to {}", posture)),
-                    }
-                } else {
-                    CommandResponse {
-                        status: "ok".to_string(),
-                        message: Some("No active session to update posture".to_string()),
-                    }
-                }
+                transition_posture_command(
+                    self.session_manager.as_ref(),
+                    self.settings.as_ref(),
+                    &posture,
+                    "remote_command",
+                    format!("Posture set to {}", posture),
+                    "No active session to transition posture".to_string(),
+                    "Failed to transition posture via hushd API".to_string(),
+                )
+                .await
             }
             PostureCommand::KillSwitch { reason } => {
                 let reason_str = reason.as_deref().unwrap_or("remote kill switch activated");
                 tracing::warn!(reason = %reason_str, "KILL SWITCH activated via remote command");
 
-                let (daemon_url, api_key) = {
-                    let guard = self.settings.read().await;
-                    (guard.daemon_url(), guard.api_key.clone())
-                };
-
-                match self
-                    .session_manager
-                    .transition_current_session_posture(
-                        &daemon_url,
-                        api_key.as_deref(),
-                        "locked",
-                        "user_denial",
-                    )
-                    .await
-                {
-                    Ok(true) => CommandResponse {
-                        status: "ok".to_string(),
-                        message: Some(format!(
-                            "Kill switch activated: transitioned active session to locked ({})",
-                            reason_str
-                        )),
-                    },
-                    Ok(false) => CommandResponse {
-                        status: "error".to_string(),
-                        message: Some(format!(
-                            "Kill switch rejected: no active session to transition ({})",
-                            reason_str
-                        )),
-                    },
-                    Err(err) => CommandResponse {
-                        status: "error".to_string(),
-                        message: Some(format!(
-                            "Kill switch failed to transition posture via hushd: {}",
-                            err
-                        )),
-                    },
-                }
+                transition_posture_command(
+                    self.session_manager.as_ref(),
+                    self.settings.as_ref(),
+                    "locked",
+                    "user_denial",
+                    format!(
+                        "Kill switch activated: transitioned active session to locked ({})",
+                        reason_str
+                    ),
+                    format!(
+                        "Kill switch rejected: no active session to transition ({})",
+                        reason_str
+                    ),
+                    "Kill switch failed to transition posture via hushd".to_string(),
+                )
+                .await
             }
             PostureCommand::RequestPolicyReload => {
                 tracing::info!("Received request_policy_reload command");
@@ -226,6 +198,39 @@ impl PostureCommandHandler {
                 }
             }
         }
+    }
+}
+
+async fn transition_posture_command(
+    session_manager: &SessionManager,
+    settings: &RwLock<Settings>,
+    to_state: &str,
+    trigger: &str,
+    success_message: String,
+    no_session_message: String,
+    failure_prefix: String,
+) -> CommandResponse {
+    let (daemon_url, api_key) = {
+        let guard = settings.read().await;
+        (guard.daemon_url(), guard.api_key.clone())
+    };
+
+    match session_manager
+        .transition_current_session_posture(&daemon_url, api_key.as_deref(), to_state, trigger)
+        .await
+    {
+        Ok(true) => CommandResponse {
+            status: "ok".to_string(),
+            message: Some(success_message),
+        },
+        Ok(false) => CommandResponse {
+            status: "error".to_string(),
+            message: Some(no_session_message),
+        },
+        Err(err) => CommandResponse {
+            status: "error".to_string(),
+            message: Some(format!("{failure_prefix}: {err}")),
+        },
     }
 }
 
@@ -250,6 +255,14 @@ impl SubscriberNext for async_nats::Subscriber {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use axum::{
+        extract::Path,
+        http::StatusCode,
+        routing::post,
+        Json, Router,
+    };
+    use std::sync::Mutex as StdMutex;
+    use tokio::net::TcpListener;
 
     #[test]
     fn command_subject_format() {
@@ -318,5 +331,134 @@ mod tests {
         assert!(!VALID_POSTURES.contains(&"bogus"));
         assert!(!VALID_POSTURES.contains(&""));
         assert!(!VALID_POSTURES.contains(&"STANDARD")); // case-sensitive
+    }
+
+    async fn start_transition_test_server(events: std::sync::Arc<StdMutex<Vec<String>>>) -> String {
+        let events_for_create = events.clone();
+        let events_for_transition = events.clone();
+        let app = Router::new()
+            .route(
+                "/api/v1/session",
+                post(move || {
+                    let events_for_create = events_for_create.clone();
+                    async move {
+                        events_for_create
+                            .lock()
+                            .unwrap()
+                            .push("create:sess-1".to_string());
+                        (
+                            StatusCode::OK,
+                            Json(serde_json::json!({
+                                "session": { "session_id": "sess-1" }
+                            })),
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/session/{id}/transition",
+                post(move |Path(id): Path<String>, Json(body): Json<serde_json::Value>| {
+                    let events_for_transition = events_for_transition.clone();
+                    async move {
+                        let to_state = body
+                            .get("to_state")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let trigger = body
+                            .get("trigger")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        events_for_transition
+                            .lock()
+                            .unwrap()
+                            .push(format!("transition:{id}:{to_state}:{trigger}"));
+                        StatusCode::OK
+                    }
+                }),
+            );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|err| panic!("failed to bind transition test server: {err}"));
+        let addr = listener
+            .local_addr()
+            .unwrap_or_else(|err| panic!("failed to read transition test server address: {err}"));
+        tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .unwrap_or_else(|err| panic!("transition test server failed: {err}"));
+        });
+        format!("http://{}", addr)
+    }
+
+    #[tokio::test]
+    async fn set_posture_transition_uses_hushd_api_path() {
+        let events = std::sync::Arc::new(StdMutex::new(Vec::new()));
+        let daemon_url = start_transition_test_server(events.clone()).await;
+
+        let session_manager = SessionManager::new();
+        session_manager
+            .create_session(&daemon_url, None)
+            .await
+            .unwrap_or_else(|err| panic!("create_session failed: {err}"));
+
+        let mut settings = Settings::default();
+        settings.daemon_port = daemon_url
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or_else(|| panic!("failed to parse daemon test port from {daemon_url}"));
+        let settings = RwLock::new(settings);
+
+        let response = transition_posture_command(
+            &session_manager,
+            &settings,
+            "restricted",
+            "remote_command",
+            "Posture set to restricted".to_string(),
+            "No active session".to_string(),
+            "transition failed".to_string(),
+        )
+        .await;
+        assert_eq!(response.status, "ok");
+
+        let got = events.lock().unwrap().clone();
+        assert!(got.contains(&"create:sess-1".to_string()));
+        assert!(got.contains(&"transition:sess-1:restricted:remote_command".to_string()));
+    }
+
+    #[tokio::test]
+    async fn kill_switch_transition_uses_hushd_api_path() {
+        let events = std::sync::Arc::new(StdMutex::new(Vec::new()));
+        let daemon_url = start_transition_test_server(events.clone()).await;
+
+        let session_manager = SessionManager::new();
+        session_manager
+            .create_session(&daemon_url, None)
+            .await
+            .unwrap_or_else(|err| panic!("create_session failed: {err}"));
+
+        let mut settings = Settings::default();
+        settings.daemon_port = daemon_url
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or_else(|| panic!("failed to parse daemon test port from {daemon_url}"));
+        let settings = RwLock::new(settings);
+
+        let response = transition_posture_command(
+            &session_manager,
+            &settings,
+            "locked",
+            "user_denial",
+            "Kill switch activated".to_string(),
+            "No active session".to_string(),
+            "kill switch failed".to_string(),
+        )
+        .await;
+        assert_eq!(response.status, "ok");
+
+        let got = events.lock().unwrap().clone();
+        assert!(got.contains(&"transition:sess-1:locked:user_denial".to_string()));
     }
 }

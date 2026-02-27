@@ -22,6 +22,7 @@ use tracing_subscriber::EnvFilter;
 use crate::config::Config;
 use crate::services::agent_heartbeat_consumer;
 use crate::services::alerter::AlerterService;
+use crate::services::approval_request_consumer;
 use crate::services::audit_consumer;
 use crate::services::metering::MeteringService;
 use crate::services::retention::RetentionService;
@@ -88,6 +89,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Background service shutdown channels.
     let (stale_shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(8);
     let (audit_shutdown_tx, audit_shutdown_rx) = tokio::sync::watch::channel(false);
+    let (approval_shutdown_tx, approval_shutdown_rx) = tokio::sync::watch::channel(false);
     let (heartbeat_shutdown_tx, heartbeat_shutdown_rx) = tokio::sync::watch::channel(false);
 
     if config.stale_detector_enabled {
@@ -133,6 +135,32 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    if config.approval_consumer_enabled {
+        let nats = state.nats.clone();
+        let db = state.db.clone();
+        let subject_filter = config.approval_subject_filter.clone();
+        let stream_name = config.approval_stream_name.clone();
+        let consumer_name = config.approval_consumer_name.clone();
+        let shutdown_rx = approval_shutdown_rx.clone();
+        tokio::spawn(async move {
+            approval_request_consumer::run(
+                nats,
+                db,
+                &subject_filter,
+                &stream_name,
+                &consumer_name,
+                shutdown_rx,
+            )
+            .await;
+        });
+        tracing::info!(
+            subject = %config.approval_subject_filter,
+            stream = %config.approval_stream_name,
+            consumer = %config.approval_consumer_name,
+            "Approval request consumer enabled"
+        );
+    }
+
     if config.heartbeat_consumer_enabled {
         let nats = state.nats.clone();
         let db = state.db.clone();
@@ -168,12 +196,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let stale_shutdown_tx_signal = stale_shutdown_tx.clone();
     let audit_shutdown_tx_signal = audit_shutdown_tx.clone();
+    let approval_shutdown_tx_signal = approval_shutdown_tx.clone();
     let heartbeat_shutdown_tx_signal = heartbeat_shutdown_tx.clone();
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             tokio::signal::ctrl_c().await.ok();
             let _ = stale_shutdown_tx_signal.send(());
             let _ = audit_shutdown_tx_signal.send(true);
+            let _ = approval_shutdown_tx_signal.send(true);
             let _ = heartbeat_shutdown_tx_signal.send(true);
             tracing::info!("Received shutdown signal");
         })

@@ -132,6 +132,7 @@ async fn resolve_approval(
     let subject = approval_response_subject(&auth.slug, &approval.agent_id);
     let payload = serde_json::json!({
         "approval_id": approval.id,
+        "request_id": approval.request_id,
         "resolution": input.resolution,
         "resolved_by": resolved_by,
     });

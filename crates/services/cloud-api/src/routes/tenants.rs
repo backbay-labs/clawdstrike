@@ -1,6 +1,9 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
+use chrono::{Duration, Utc};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
@@ -14,6 +17,23 @@ pub fn router() -> Router<AppState> {
         .route("/tenants", get(list_tenants))
         .route("/tenants/{id}", get(get_tenant))
         .route("/tenants/{id}", put(update_tenant))
+        .route(
+            "/tenants/{id}/enrollment-tokens",
+            post(create_enrollment_token),
+        )
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateEnrollmentTokenRequest {
+    #[serde(default)]
+    expires_in_hours: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateEnrollmentTokenResponse {
+    enrollment_token: String,
+    expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 async fn create_tenant(
@@ -23,6 +43,12 @@ async fn create_tenant(
 ) -> Result<Json<Tenant>, ApiError> {
     if auth.role != "owner" && auth.role != "admin" {
         return Err(ApiError::Forbidden);
+    }
+    if !is_valid_tenant_slug(&req.slug) {
+        return Err(ApiError::BadRequest(
+            "tenant slug must use lowercase letters, digits, '-' or '.', and cannot start/end with separators"
+                .to_string(),
+        ));
     }
 
     let plan = req.plan.as_deref().unwrap_or("team");
@@ -125,11 +151,98 @@ async fn update_tenant(
     Ok(Json(tenant))
 }
 
+async fn create_enrollment_token(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CreateEnrollmentTokenRequest>,
+) -> Result<Json<CreateEnrollmentTokenResponse>, ApiError> {
+    if auth.role != "owner" && auth.role != "admin" {
+        return Err(ApiError::Forbidden);
+    }
+    ensure_tenant_scope(&auth, id)?;
+
+    let expires_in_hours = req.expires_in_hours.unwrap_or(24).clamp(1, 168);
+    let expires_at = Utc::now() + Duration::hours(expires_in_hours);
+
+    // Retry a few times in the extremely unlikely event of a token hash collision.
+    for _ in 0..3 {
+        let enrollment_token = generate_enrollment_token();
+        let token_hash = hash_enrollment_token(&enrollment_token);
+        let inserted = sqlx::query::query(
+            r#"INSERT INTO tenant_enrollment_tokens (tenant_id, token_hash, expires_at)
+               VALUES ($1, $2, $3)
+               RETURNING id"#,
+        )
+        .bind(id)
+        .bind(token_hash)
+        .bind(expires_at)
+        .fetch_optional(&state.db)
+        .await;
+
+        match inserted {
+            Ok(Some(_)) => {
+                return Ok(Json(CreateEnrollmentTokenResponse {
+                    enrollment_token,
+                    expires_at,
+                }));
+            }
+            Ok(None) => return Err(ApiError::NotFound),
+            Err(err) => {
+                if is_unique_violation(&err) {
+                    continue;
+                }
+                return Err(ApiError::Database(err));
+            }
+        }
+    }
+
+    Err(ApiError::Internal(
+        "failed to generate unique enrollment token".to_string(),
+    ))
+}
+
 fn ensure_tenant_scope(auth: &AuthenticatedTenant, tenant_id: Uuid) -> Result<(), ApiError> {
     if auth.tenant_id != tenant_id {
         return Err(ApiError::Forbidden);
     }
     Ok(())
+}
+
+fn is_valid_tenant_slug(slug: &str) -> bool {
+    if slug.is_empty()
+        || slug.starts_with('-')
+        || slug.starts_with('.')
+        || slug.ends_with('-')
+        || slug.ends_with('.')
+        || slug.contains("..")
+    {
+        return false;
+    }
+
+    slug.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.')
+}
+
+fn generate_enrollment_token() -> String {
+    format!(
+        "cset_{}{}",
+        Uuid::new_v4().simple(),
+        Uuid::new_v4().simple()
+    )
+}
+
+fn hash_enrollment_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+fn is_unique_violation(err: &sqlx::error::Error) -> bool {
+    match err {
+        sqlx::error::Error::Database(db) => db.code().as_deref() == Some("23505"),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -164,5 +277,25 @@ mod tests {
             ensure_tenant_scope(&auth, other_tenant),
             Err(ApiError::Forbidden)
         ));
+    }
+
+    #[test]
+    fn tenant_slug_validation_supports_dotted_slugs() {
+        assert!(is_valid_tenant_slug("acme"));
+        assert!(is_valid_tenant_slug("acme.dev"));
+        assert!(is_valid_tenant_slug("acme-prod.01"));
+        assert!(!is_valid_tenant_slug(""));
+        assert!(!is_valid_tenant_slug("Acme"));
+        assert!(!is_valid_tenant_slug("acme..dev"));
+        assert!(!is_valid_tenant_slug(".acme"));
+        assert!(!is_valid_tenant_slug("acme."));
+        assert!(!is_valid_tenant_slug("acme/*"));
+    }
+
+    #[test]
+    fn enrollment_token_generation_and_hash_contract() {
+        let token = generate_enrollment_token();
+        assert!(token.starts_with("cset_"));
+        assert_eq!(hash_enrollment_token(&token).len(), 64);
     }
 }

@@ -29,11 +29,40 @@ fn adaptive_sdr_migration_adds_required_schema() {
 }
 
 #[test]
+fn adaptive_sdr_followup_migration_hardens_token_and_approval_flow() {
+    let sql = fs::read_to_string(migration_path(
+        "003_adaptive_sdr_token_and_approval_flow.sql",
+    ))
+    .expect("failed to read 003 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS tenant_enrollment_tokens"),
+        "003 migration must create tenant_enrollment_tokens"
+    );
+    assert!(
+        sql.contains("DROP COLUMN IF EXISTS enrollment_token"),
+        "003 migration must remove legacy tenants.enrollment_token"
+    );
+    assert!(
+        sql.contains("ADD COLUMN IF NOT EXISTS request_id"),
+        "003 migration must add approvals.request_id"
+    );
+    assert!(
+        sql.contains("idx_approvals_tenant_request_id"),
+        "003 migration must add unique (tenant_id, request_id) index"
+    );
+}
+
+#[test]
 fn init_and_adaptive_migrations_are_ordered() {
     let init_sql =
         fs::read_to_string(migration_path("001_init.sql")).expect("failed to read 001 migration");
     let adaptive_sql = fs::read_to_string(migration_path("002_adaptive_sdr_schema.sql"))
         .expect("failed to read 002 migration");
+    let followup_sql = fs::read_to_string(migration_path(
+        "003_adaptive_sdr_token_and_approval_flow.sql",
+    ))
+    .expect("failed to read 003 migration");
 
     assert!(
         init_sql.contains("CREATE TABLE tenants"),
@@ -46,5 +75,9 @@ fn init_and_adaptive_migrations_are_ordered() {
     assert!(
         adaptive_sql.contains("ALTER TABLE agents"),
         "002 must alter agents table after initial creation"
+    );
+    assert!(
+        followup_sql.contains("tenant_enrollment_tokens"),
+        "003 must apply after 001/002 and extend enrollment + approvals flow"
     );
 }

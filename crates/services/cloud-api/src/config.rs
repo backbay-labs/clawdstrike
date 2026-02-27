@@ -15,6 +15,10 @@ pub struct Config {
     pub audit_subject_filter: String,
     pub audit_stream_name: String,
     pub audit_consumer_name: String,
+    pub approval_consumer_enabled: bool,
+    pub approval_subject_filter: String,
+    pub approval_stream_name: String,
+    pub approval_consumer_name: String,
     pub heartbeat_consumer_enabled: bool,
     pub heartbeat_subject_filter: String,
     pub heartbeat_stream_name: String,
@@ -61,19 +65,30 @@ impl Config {
             .as_deref()
             .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(false);
-        let audit_subject_filter = std::env::var("AUDIT_SUBJECT_FILTER")
-            .unwrap_or_else(|_| "tenant-*.clawdstrike.>".to_string());
+        let audit_subject_filter =
+            std::env::var("AUDIT_SUBJECT_FILTER").unwrap_or_else(|_| "tenant-*.>".to_string());
         let audit_stream_name =
             std::env::var("AUDIT_STREAM_NAME").unwrap_or_else(|_| "clawdstrike_audit".to_string());
         let audit_consumer_name = std::env::var("AUDIT_CONSUMER_NAME")
             .unwrap_or_else(|_| "clawdstrike_audit_consumer".to_string());
+        let approval_consumer_enabled = std::env::var("APPROVAL_CONSUMER_ENABLED")
+            .ok()
+            .as_deref()
+            .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(true);
+        let approval_subject_filter =
+            std::env::var("APPROVAL_SUBJECT_FILTER").unwrap_or_else(|_| "tenant-*.>".to_string());
+        let approval_stream_name = std::env::var("APPROVAL_STREAM_NAME")
+            .unwrap_or_else(|_| "clawdstrike_approval_requests".to_string());
+        let approval_consumer_name = std::env::var("APPROVAL_CONSUMER_NAME")
+            .unwrap_or_else(|_| "clawdstrike_approval_request_consumer".to_string());
         let heartbeat_consumer_enabled = std::env::var("HEARTBEAT_CONSUMER_ENABLED")
             .ok()
             .as_deref()
             .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(true);
-        let heartbeat_subject_filter = std::env::var("HEARTBEAT_SUBJECT_FILTER")
-            .unwrap_or_else(|_| "tenant-*.clawdstrike.agent.heartbeat.*".to_string());
+        let heartbeat_subject_filter =
+            std::env::var("HEARTBEAT_SUBJECT_FILTER").unwrap_or_else(|_| "tenant-*.>".to_string());
         let heartbeat_stream_name = std::env::var("HEARTBEAT_STREAM_NAME")
             .unwrap_or_else(|_| "clawdstrike_agent_heartbeats".to_string());
         let heartbeat_consumer_name = std::env::var("HEARTBEAT_CONSUMER_NAME")
@@ -109,6 +124,10 @@ impl Config {
             audit_subject_filter,
             audit_stream_name,
             audit_consumer_name,
+            approval_consumer_enabled,
+            approval_subject_filter,
+            approval_stream_name,
+            approval_consumer_name,
             heartbeat_consumer_enabled,
             heartbeat_subject_filter,
             heartbeat_stream_name,

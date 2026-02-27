@@ -612,8 +612,7 @@ Priority order matches the existing `connect_with_auth` implementation in `spine
 ```
 
 - Enrollment tokens are single-use, time-limited (default: 24 hours)
-- Token format: `cset_<base64url(tenant_id + random_bytes + expiry + hmac)>`
-- HMAC is computed with a server-side secret; no cryptographic material is embedded
+- Cloud persists only `token_hash` (SHA-256), `expires_at`, and `consumed_at`
 - Expired or consumed tokens are rejected; fail-closed
 
 ### 6.4 Agent Identity Binding
@@ -643,14 +642,14 @@ Within a tenant's NATS account, two credential classes exist with distinct permi
 
 | Credential | Publish | Subscribe |
 |------------|---------|-----------|
-| **Agent credential** | `<subject_prefix>.telemetry.receipts.<own-agent-id>`, `<subject_prefix>.agent.heartbeat.<own-agent-id>` | `<subject_prefix>.posture.command.<own-agent-id>` |
-| **Enterprise service** | `<subject_prefix>.policy.update`, `<subject_prefix>.posture.command.>`, `<subject_prefix>.approval.response.>` | `<subject_prefix>.telemetry.>`, `<subject_prefix>.agent.heartbeat.>` |
+| **Agent credential** | `<subject_prefix>.agent.heartbeat.<own-agent-id>`, `<subject_prefix>.approval.request.<own-agent-id>`, `<subject_prefix>.receipts.eval` | `<subject_prefix>.posture.command.<own-agent-id>`, `<subject_prefix>.approval.response.<own-agent-id>` |
+| **Enterprise service** | `<subject_prefix>.posture.command.>`, `<subject_prefix>.approval.response.>` | `<subject_prefix>.>` |
 
 Key restrictions:
 - Agents **cannot** publish to `<subject_prefix>.posture.command.*` -- prevents spoofed command injection
 - Agents **cannot** publish to `<subject_prefix>.approval.response.*` -- prevents forged approval responses
 - Agents can only publish heartbeats to their own agent-id subject, not to other agents' heartbeat subjects
-- Enterprise services have full publish/subscribe on all subjects within the tenant account
+- Enterprise services maintain policy sync via per-agent JetStream KV bucket writes (`policy.yaml`)
 
 ### 6.6 Fail-Closed Guarantees
 
@@ -695,20 +694,17 @@ Agent                              Cloud API (HTTPS)
   |  (if not already present)               |
   |                                         |
   |  2. POST /api/v1/agents/enroll          |
-  |  Authorization: Bearer cset_...         |
   |  {                                      |
-  |    agent_id: "<uuid>",                  |
+  |    enrollment_token: "cset_...",        |
   |    public_key: "<hex>",                 |
   |    hostname: "dev-macbook",             |
-  |    version: "0.1.2",                    |
-  |    os: "darwin",                        |
-  |    capabilities: ["cli", "desktop"]     |
+  |    version: "0.1.2"                     |
   |  }                                      |
   |---------------------------------------->|
   |                                         |  3. Validate token:
   |                                         |     - Not expired
   |                                         |     - Not consumed
-  |                                         |     - HMAC valid
+  |                                         |     - Hash exists
   |                                         |     - Tenant active
   |                                         |
   |                                         |  4. Check agent limit
@@ -746,16 +742,13 @@ The enrollment endpoint (`POST /api/v1/agents/enroll`) is the client-facing API.
 
 ### 7.4 Enrollment Token Format
 
-```
-cset_<base64url(payload)>
+Tokens are generated as opaque `cset_...` values. Cloud stores only:
 
-payload = tenant_id (16 bytes, UUID)
-        + random   (32 bytes, crypto random)
-        + expiry   (8 bytes, Unix timestamp, big-endian)
-        + hmac     (32 bytes, HMAC-SHA256 of above with server secret)
+- `token_hash` (SHA-256)
+- `expires_at`
+- `consumed_at`
 
-Total: 88 bytes -> ~120 chars base64url
-```
+This keeps enrollment validation server-side and prevents plaintext token recovery from DB rows.
 
 ### 7.5 Credential Types
 
