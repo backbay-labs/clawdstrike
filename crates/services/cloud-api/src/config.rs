@@ -202,11 +202,11 @@ impl Config {
 }
 
 fn default_approval_subject_filter() -> String {
-    "tenant-*.>".to_string()
+    ">".to_string()
 }
 
 fn default_heartbeat_subject_filter() -> String {
-    "tenant-*.>".to_string()
+    ">".to_string()
 }
 
 fn default_adaptive_ingress_stream_name() -> String {
@@ -365,12 +365,12 @@ mod tests {
 
     #[test]
     fn default_approval_subject_filter_is_valid() {
-        assert_eq!(default_approval_subject_filter(), "tenant-*.>");
+        assert_eq!(default_approval_subject_filter(), ">");
     }
 
     #[test]
     fn default_heartbeat_subject_filter_is_valid() {
-        assert_eq!(default_heartbeat_subject_filter(), "tenant-*.>");
+        assert_eq!(default_heartbeat_subject_filter(), ">");
     }
 
     #[test]
@@ -400,7 +400,7 @@ mod tests {
             true,
             true,
             ">",
-            "tenant-*.>",
+            "*.clawdstrike.agent.heartbeat.*",
             "approval-stream",
             "heartbeat-stream",
         );
