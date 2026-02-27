@@ -131,4 +131,26 @@ describe('GenericToolBoundary', () => {
     expect(dispatched).toBe(false);
     expect(output).toEqual(replacement);
   });
+
+  it('preserves string input shape when sanitize rewrites raw string input', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({
+        status: 'sanitize',
+        reason_code: 'ADC_POLICY_SANITIZE',
+        sanitized: 'safe string input',
+      }),
+    };
+
+    const boundary = new GenericToolBoundary<string>({ engine });
+    let dispatchedInput: unknown = null;
+
+    const wrapped = wrapGenericToolDispatcher(boundary, async (_tool, input) => {
+      dispatchedInput = input;
+      return 'ok';
+    });
+
+    await wrapped('string_tool', 'dangerous string input', 'run-6');
+    expect(typeof dispatchedInput).toBe('string');
+    expect(dispatchedInput).toBe('safe string input');
+  });
 });

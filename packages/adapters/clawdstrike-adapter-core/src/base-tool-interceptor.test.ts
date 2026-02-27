@@ -229,12 +229,12 @@ describe('BaseToolInterceptor', () => {
     expect(result.replacementResult).toBeUndefined();
   });
 
-  it('normalizes sanitize string override for raw string input', async () => {
+  it('preserves string input shape for sanitize string overrides', async () => {
     const engine: PolicyEngineLike = {
       evaluate: () => ({
         status: 'sanitize',
         reason_code: 'ADC_POLICY_SANITIZE',
-        sanitized: '{"query":"safe query"}',
+        sanitized: 'safe query',
       }),
     };
 
@@ -244,7 +244,8 @@ describe('BaseToolInterceptor', () => {
 
     expect(result.proceed).toBe(true);
     expect(result.decision.status).toBe('sanitize');
-    expect(result.modifiedParameters).toEqual({ query: 'safe query' });
+    expect(result.modifiedInput).toBe('safe query');
+    expect(result.modifiedParameters).toBeUndefined();
   });
 
   it('falls back to advisory sanitize mode when no applicable execution override exists', async () => {

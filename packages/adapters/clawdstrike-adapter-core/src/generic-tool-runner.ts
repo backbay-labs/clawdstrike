@@ -87,9 +87,11 @@ export class GenericToolBoundary<TInput = unknown, TOutput = unknown, TRunId = s
       throw new GenericToolCallBlockedError(toolName, result.decision);
     }
 
-    const effectiveInput = result.modifiedParameters !== undefined
-      ? (result.modifiedParameters as unknown as TInput)
-      : input;
+    const effectiveInput = result.modifiedInput !== undefined
+      ? (result.modifiedInput as TInput)
+      : result.modifiedParameters !== undefined
+        ? (result.modifiedParameters as unknown as TInput)
+        : input;
     this.pending.set(key, {
       toolName,
       input: effectiveInput,
@@ -170,9 +172,11 @@ export function wrapGenericToolDispatcher<TInput = unknown, TOutput = unknown, T
       if (intercept.replacementResult !== undefined) {
         output = intercept.replacementResult as TOutput;
       } else {
-        const dispatchInput = intercept.modifiedParameters !== undefined
-          ? (intercept.modifiedParameters as unknown as TInput)
-          : input;
+        const dispatchInput = intercept.modifiedInput !== undefined
+          ? (intercept.modifiedInput as TInput)
+          : intercept.modifiedParameters !== undefined
+            ? (intercept.modifiedParameters as unknown as TInput)
+            : input;
         output = await dispatch(toolName, dispatchInput, runId);
       }
       return await boundary.handleToolEnd(output, runId);

@@ -9,6 +9,7 @@ import { PolicyEventFactory } from './policy-event-factory.js';
 import { allowDecision, type Decision, type PolicyEvent } from './types.js';
 
 type SanitizeExecutionOverrides = {
+  modifiedInput?: unknown;
   modifiedParameters?: Record<string, unknown>;
   replacementResult?: unknown;
   mode: 'advisory' | 'enforced';
@@ -169,7 +170,10 @@ export class BaseToolInterceptor implements ToolInterceptor {
       });
     }
 
-    const dispatchParams = sanitizeOverrides?.modifiedParameters ?? params;
+    const dispatchInput = sanitizeOverrides?.modifiedInput
+      ?? sanitizeOverrides?.modifiedParameters
+      ?? input;
+    const dispatchParams = BaseToolInterceptor.asRecord(dispatchInput) ?? this.normalizeParams(dispatchInput);
 
     if (decision.status === 'warn') {
       this.config.handlers?.onWarning?.(toolCall, decision);
@@ -201,6 +205,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
     return {
       proceed: true,
       decision,
+      modifiedInput: sanitizeOverrides?.modifiedInput,
       modifiedParameters: sanitizeOverrides?.modifiedParameters,
       replacementResult: sanitizeOverrides?.replacementResult,
       warning:
@@ -341,7 +346,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
     if (typeof decision.sanitized === 'string') {
       if (typeof input === 'string') {
         return {
-          modifiedParameters: this.normalizeParams(decision.sanitized),
+          modifiedInput: decision.sanitized,
           mode: 'enforced',
           strategy: 'decision.sanitized_string_input',
         };
