@@ -164,15 +164,11 @@ flowchart LR
 ## Core Capabilities
 
 <p align="center">
-  <a href="#guard-stack"><strong>Guard Stack</strong></a>
-  &nbsp;&middot;&nbsp;
-  <a href="#jailbreak-detection"><strong>Jailbreak Detection</strong></a>
-  &nbsp;&middot;&nbsp;
-  <a href="#cryptographic-receipts"><strong>Receipts</strong></a>
-  &nbsp;&middot;&nbsp;
-  <a href="#multi-agent-security-primitives"><strong>Multi-Agent</strong></a>
-  &nbsp;&middot;&nbsp;
-  <a href="#irm--output-sanitization--watermarking--threat-intel"><strong>IRM &middot; Sanitization &middot; Watermarking &middot; Threat Intel</strong></a>
+  <a href="#guard-stack"><kbd>Guard Stack</kbd></a>&nbsp;&nbsp;
+  <a href="#jailbreak-detection"><kbd>Jailbreak Detection</kbd></a>&nbsp;&nbsp;
+  <a href="#cryptographic-receipts"><kbd>Receipts</kbd></a>&nbsp;&nbsp;
+  <a href="#multi-agent-security-primitives"><kbd>Multi-Agent</kbd></a>&nbsp;&nbsp;
+  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>
 </p>
 
 ### Guard Stack
