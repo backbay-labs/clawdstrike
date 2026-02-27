@@ -421,7 +421,7 @@ fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
             .with_context(|| format!("Failed to create settings file {:?}", path))?;
         file.write_all(contents.as_bytes())
             .with_context(|| format!("Failed to write settings to {:?}", path))?;
-        enforce_private_mode(path)?;
+        enforce_private_mode(path, "settings file")?;
     }
 
     #[cfg(not(unix))]
@@ -434,15 +434,15 @@ fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn enforce_private_mode(path: &PathBuf) -> Result<()> {
+pub(crate) fn enforce_private_mode(path: &std::path::Path, target: &str) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     let metadata = std::fs::metadata(path)
-        .with_context(|| format!("Failed to read settings metadata {:?}", path))?;
+        .with_context(|| format!("Failed to read {target} metadata {:?}", path))?;
     let mode = metadata.permissions().mode() & 0o777;
     if mode != 0o600 {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("Failed to set settings permissions on {:?}", path))?;
+            .with_context(|| format!("Failed to set {target} permissions on {:?}", path))?;
     }
     Ok(())
 }

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::settings::{get_config_dir, hostname_best_effort, EnrollmentState, Settings};
+use crate::settings::{enforce_private_mode, get_config_dir, hostname_best_effort, EnrollmentState, Settings};
 
 /// Result of a successful enrollment.
 #[derive(Debug, Clone, Serialize)]
@@ -202,7 +202,7 @@ fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
             .with_context(|| format!("Failed to create private file {:?}", path))?;
         file.write_all(data)
             .with_context(|| format!("Failed to write file {:?}", path))?;
-        enforce_private_mode(path)?;
+        enforce_private_mode(path, "private file")?;
     }
 
     #[cfg(not(unix))]
@@ -211,20 +211,6 @@ fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
             .with_context(|| format!("Failed to write file {:?}", path))?;
     }
 
-    Ok(())
-}
-
-#[cfg(unix)]
-fn enforce_private_mode(path: &PathBuf) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let metadata = std::fs::metadata(path)
-        .with_context(|| format!("Failed to read private file metadata {:?}", path))?;
-    let mode = metadata.permissions().mode() & 0o777;
-    if mode != 0o600 {
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("Failed to set private file permissions on {:?}", path))?;
-    }
     Ok(())
 }
 

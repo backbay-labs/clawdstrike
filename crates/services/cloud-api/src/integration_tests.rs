@@ -540,7 +540,7 @@ async fn apply_migrations(db: &PgPool) {
 
     for file in files {
         let sql = std::fs::read_to_string(&file).expect("read migration file");
-        sqlx::query::query(&sql)
+        sqlx::raw_sql::raw_sql(&sql)
             .execute(db)
             .await
             .unwrap_or_else(|err| panic!("migration {:?} failed: {}", file, err));

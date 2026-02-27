@@ -146,6 +146,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let stream_subjects = stream_subjects_for_consumer(
             &config.approval_stream_name,
             &config.approval_subject_filter,
+            config.heartbeat_consumer_enabled,
             &config.heartbeat_stream_name,
             &config.heartbeat_subject_filter,
         );
@@ -193,6 +194,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let stream_subjects = stream_subjects_for_consumer(
             &config.heartbeat_stream_name,
             &config.heartbeat_subject_filter,
+            config.approval_consumer_enabled,
             &config.approval_stream_name,
             &config.approval_subject_filter,
         );
@@ -250,11 +252,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn stream_subjects_for_consumer(
     consumer_stream_name: &str,
     consumer_subject_filter: &str,
+    sibling_consumer_enabled: bool,
     sibling_stream_name: &str,
     sibling_subject_filter: &str,
 ) -> Vec<String> {
     let mut subjects = vec![consumer_subject_filter.to_string()];
-    if consumer_stream_name == sibling_stream_name {
+    if sibling_consumer_enabled && consumer_stream_name == sibling_stream_name {
         subjects.push(sibling_subject_filter.to_string());
     }
     subjects.sort();
@@ -344,6 +347,7 @@ mod tests {
         let subjects = stream_subjects_for_consumer(
             "adaptive-ingress",
             "tenant-*.clawdstrike.approval.request.*",
+            true,
             "adaptive-ingress",
             "tenant-*.clawdstrike.agent.heartbeat.*",
         );
@@ -361,7 +365,23 @@ mod tests {
         let subjects = stream_subjects_for_consumer(
             "approval-ingress",
             "tenant-*.clawdstrike.approval.request.*",
+            true,
             "heartbeat-ingress",
+            "tenant-*.clawdstrike.agent.heartbeat.*",
+        );
+        assert_eq!(
+            subjects,
+            vec!["tenant-*.clawdstrike.approval.request.*".to_string()]
+        );
+    }
+
+    #[test]
+    fn shared_stream_does_not_add_sibling_subject_when_sibling_consumer_disabled() {
+        let subjects = stream_subjects_for_consumer(
+            "adaptive-ingress",
+            "tenant-*.clawdstrike.approval.request.*",
+            false,
+            "adaptive-ingress",
             "tenant-*.clawdstrike.agent.heartbeat.*",
         );
         assert_eq!(

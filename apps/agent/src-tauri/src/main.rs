@@ -436,6 +436,7 @@ async fn run_agent<R: Runtime>(
                     nats.clone(),
                     approval_queue.clone(),
                     nats_settings.require_signed_approval_responses,
+                    settings.clone(),
                     nats_settings.approval_response_trusted_issuer.clone(),
                 );
                 let approval_sync_shutdown = shutdown_tx.subscribe();
