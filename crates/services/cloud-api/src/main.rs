@@ -6,6 +6,8 @@ mod auth;
 mod config;
 mod db;
 mod error;
+#[cfg(test)]
+mod integration_tests;
 mod models;
 mod routes;
 mod services;
@@ -23,6 +25,7 @@ use crate::config::Config;
 use crate::services::agent_heartbeat_consumer;
 use crate::services::alerter::AlerterService;
 use crate::services::approval_request_consumer;
+use crate::services::approval_resolution_outbox;
 use crate::services::audit_consumer;
 use crate::services::metering::MeteringService;
 use crate::services::retention::RetentionService;
@@ -70,7 +73,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(url = %config.nats_url, "Connected to NATS");
 
     // Initialize services
-    let provisioner = TenantProvisioner::new(pool.clone(), config.nats_url.clone());
+    let provisioner = TenantProvisioner::new(
+        pool.clone(),
+        config.nats_url.clone(),
+        &config.nats_provisioning_mode,
+        config.nats_provisioner_base_url.clone(),
+        config.nats_provisioner_api_token.clone(),
+        config.nats_allow_insecure_mock_provisioner,
+    )?;
     let metering = MeteringService::new(pool.clone());
     let alerter = AlerterService::new(pool.clone());
     let retention = RetentionService::new(pool.clone());
@@ -90,6 +100,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (stale_shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(8);
     let (audit_shutdown_tx, audit_shutdown_rx) = tokio::sync::watch::channel(false);
     let (approval_shutdown_tx, approval_shutdown_rx) = tokio::sync::watch::channel(false);
+    let (approval_outbox_shutdown_tx, approval_outbox_shutdown_rx) =
+        tokio::sync::watch::channel(false);
     let (heartbeat_shutdown_tx, heartbeat_shutdown_rx) = tokio::sync::watch::channel(false);
 
     if config.stale_detector_enabled {
@@ -161,6 +173,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    if config.approval_resolution_outbox_enabled {
+        let nats = state.nats.clone();
+        let db = state.db.clone();
+        let poll = Duration::from_secs(config.approval_resolution_outbox_poll_interval_secs);
+        let shutdown_rx = approval_outbox_shutdown_rx.clone();
+        tokio::spawn(async move {
+            approval_resolution_outbox::run(nats, db, poll, shutdown_rx).await;
+        });
+        tracing::info!(
+            poll_secs = config.approval_resolution_outbox_poll_interval_secs,
+            "Approval resolution outbox worker enabled"
+        );
+    }
+
     if config.heartbeat_consumer_enabled {
         let nats = state.nats.clone();
         let db = state.db.clone();
@@ -197,6 +223,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let stale_shutdown_tx_signal = stale_shutdown_tx.clone();
     let audit_shutdown_tx_signal = audit_shutdown_tx.clone();
     let approval_shutdown_tx_signal = approval_shutdown_tx.clone();
+    let approval_outbox_shutdown_tx_signal = approval_outbox_shutdown_tx.clone();
     let heartbeat_shutdown_tx_signal = heartbeat_shutdown_tx.clone();
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
@@ -204,6 +231,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let _ = stale_shutdown_tx_signal.send(());
             let _ = audit_shutdown_tx_signal.send(true);
             let _ = approval_shutdown_tx_signal.send(true);
+            let _ = approval_outbox_shutdown_tx_signal.send(true);
             let _ = heartbeat_shutdown_tx_signal.send(true);
             tracing::info!("Received shutdown signal");
         })

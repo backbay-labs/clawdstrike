@@ -1033,26 +1033,23 @@ Uses NATS request/reply pattern. The enterprise publishes to `<subject_prefix>.p
 
 ```json
 {
-  "command_id": "cmd-uuid-...",
-  "status": "accepted",
-  "agent_id": "a1b2c3d4-...",
-  "timestamp": "2026-02-26T12:01:01Z",
-  "previous_posture": "standard",
-  "new_posture": "restricted"
+  "status": "ok",
+  "message": "Posture set to restricted"
 }
 ```
 
-Possible status values: `accepted`, `rejected` (with `reason` field).
+Current implementation returns a minimal ACK payload with `status` and optional `message`.
+Possible status values: `ok`, `error`.
 
 ### 11.5 Kill Switch (`kill_switch`)
 
 The kill switch is the highest-priority posture command:
 
-1. Agent immediately transitions posture to `lockdown`
-2. In `lockdown` posture, all actions except `heartbeat` and `posture.command` are denied
+1. Agent immediately transitions posture to `locked`
+2. In `locked` posture, all actions except `heartbeat` and `posture.command` are denied
 3. The agent continues sending heartbeats (so the enterprise knows it is alive and locked down)
-4. Lockdown persists until the enterprise sends a `set_posture` command to restore normal operation
-5. If the agent loses connectivity while in lockdown, it remains in lockdown (fail-closed)
+4. The locked state persists until the enterprise sends a `set_posture` command to restore normal operation
+5. If the agent loses connectivity while locked, it remains locked (fail-closed)
 
 ### 11.6 Timeout and Unresponsive Agents
 
@@ -1137,25 +1134,22 @@ The agent **must** verify the envelope signature using `verify_envelope()` befor
 
 ```json
 {
-  "type": "clawdstrike.approval.response.v1",
+  "type": "approval.response",
   "request_id": "apr-uuid-...",
-  "status": "approved",
-  "responded_by": "analyst@acme.com",
-  "responded_at": "2026-02-26T12:03:15Z",
-  "conditions": {
-    "expires_at": "2026-02-26T13:03:15Z",
-    "note": "Approved for one-time hosts file edit for local dev setup"
-  }
+  "approval_id": "db-row-uuid-...",
+  "resolution": "approved",
+  "resolved_by": "analyst@acme.com"
 }
 ```
 
-Possible `status` values:
+Possible `resolution` values:
 
-| Status | Description |
+| Resolution | Description |
 |--------|-------------|
-| `approved` | Action is allowed; optional `conditions` |
-| `denied` | Action remains denied; optional `reason` |
-| `timeout` | No response within timeout window (system-generated) |
+| `approved` | Action is allowed |
+| `denied` | Action remains denied |
+
+`timeout` is generated locally by the agent when no valid response arrives in time.
 
 ### 12.5 Timeout Behavior
 

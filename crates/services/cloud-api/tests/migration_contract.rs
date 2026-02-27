@@ -63,6 +63,12 @@ fn init_and_adaptive_migrations_are_ordered() {
         "003_adaptive_sdr_token_and_approval_flow.sql",
     ))
     .expect("failed to read 003 migration");
+    let active_policy_sql =
+        fs::read_to_string(migration_path("004_adaptive_sdr_active_policy.sql"))
+            .expect("failed to read 004 migration");
+    let approval_outbox_sql =
+        fs::read_to_string(migration_path("005_adaptive_sdr_approval_outbox.sql"))
+            .expect("failed to read 005 migration");
 
     assert!(
         init_sql.contains("CREATE TABLE tenants"),
@@ -79,5 +85,21 @@ fn init_and_adaptive_migrations_are_ordered() {
     assert!(
         followup_sql.contains("tenant_enrollment_tokens"),
         "003 must apply after 001/002 and extend enrollment + approvals flow"
+    );
+    assert!(
+        active_policy_sql.contains("CREATE TABLE IF NOT EXISTS tenant_active_policies"),
+        "004 must define tenant-level active policy state"
+    );
+    assert!(
+        active_policy_sql.contains("version BIGINT"),
+        "004 must include versioned active policy tracking"
+    );
+    assert!(
+        approval_outbox_sql.contains("CREATE TABLE IF NOT EXISTS approval_resolution_outbox"),
+        "005 must define durable approval resolution outbox"
+    );
+    assert!(
+        approval_outbox_sql.contains("CHECK (status IN ('pending', 'sent'))"),
+        "005 must constrain outbox statuses"
     );
 }

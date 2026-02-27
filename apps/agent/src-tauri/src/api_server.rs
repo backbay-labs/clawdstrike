@@ -617,12 +617,41 @@ async fn fetch_daemon_exporter_status(state: &AgentApiState) -> Option<Value> {
     response.json::<Value>().await.ok()
 }
 
+async fn fetch_daemon_policy_version(state: &AgentApiState) -> Option<String> {
+    let (daemon_url, daemon_api_key) = {
+        let settings = state.settings.read().await;
+        (settings.daemon_url(), settings.api_key.clone())
+    };
+
+    let url = format!("{}/api/v1/policy", daemon_url.trim_end_matches('/'));
+    let mut request = state.http_client.get(url);
+
+    if let Some(key) = daemon_api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        request = request.header(AUTHORIZATION.as_str(), format!("Bearer {}", key));
+    }
+
+    let response = request.send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let json = response.json::<Value>().await.ok()?;
+    json.get("version")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+}
+
 #[derive(Debug, Serialize)]
 struct AgentHealthResponse {
     status: &'static str,
     daemon: DaemonStatus,
     session: crate::session::SessionState,
     openclaw: serde_json::Value,
+    last_policy_version: Option<String>,
     version: &'static str,
 }
 
@@ -729,6 +758,7 @@ async fn agent_health(
     let daemon = state.daemon_manager.status().await;
     let session = state.session_manager.state().await;
     let openclaw = state.openclaw.list_gateways().await;
+    let last_policy_version = fetch_daemon_policy_version(&state).await;
 
     Ok(Json(AgentHealthResponse {
         status: "ok",
@@ -736,6 +766,7 @@ async fn agent_health(
         session,
         openclaw: serde_json::to_value(openclaw)
             .unwrap_or_else(|_| serde_json::json!({"error":"serialize_failed"})),
+        last_policy_version,
         version: env!("CARGO_PKG_VERSION"),
     }))
 }

@@ -10,6 +10,7 @@
 mod agent_auth;
 mod api_server;
 mod approval;
+mod approval_outbox;
 mod approval_sync;
 mod daemon;
 mod decision;
@@ -370,7 +371,7 @@ async fn run_agent<R: Runtime>(
     // --- NATS enterprise connectivity (adaptive SDR) ---
     // If NATS is enabled (either via static config or enrollment), connect and start
     // policy sync, telemetry publishing, and posture command handling.
-    let mut nats_client: Option<Arc<nats_client::NatsClient>> = None;
+    let mut approval_request_outbox: Option<Arc<approval_outbox::ApprovalRequestOutbox>> = None;
     let nats_enabled = {
         let guard = settings.read().await;
         guard.nats.enabled
@@ -428,12 +429,31 @@ async fn run_agent<R: Runtime>(
                 });
 
                 // Approval sync: ingest cloud decisions and apply them to local queue.
-                let approval_sync =
-                    approval_sync::ApprovalSync::new(nats.clone(), approval_queue.clone());
+                let approval_sync = approval_sync::ApprovalSync::new(
+                    nats.clone(),
+                    approval_queue.clone(),
+                    nats_settings.require_signed_approval_responses,
+                );
                 let approval_sync_shutdown = shutdown_tx.subscribe();
                 tokio::spawn(async move {
                     approval_sync.start(approval_sync_shutdown).await;
                 });
+
+                // Durable approval-request outbox (agent -> cloud).
+                let outbox = Arc::new(approval_outbox::ApprovalRequestOutbox::load_default());
+                if outbox.len().await > 0 {
+                    match outbox.flush_due(nats.as_ref()).await {
+                        Ok(sent) if sent > 0 => {
+                            tracing::info!(sent, "Flushed persisted approval-request outbox on startup");
+                        }
+                        Ok(_) => {}
+                        Err(err) => {
+                            tracing::warn!(error = %err, "Failed to flush approval-request outbox on startup");
+                        }
+                    }
+                }
+                outbox.clone().start(nats.clone(), shutdown_tx.subscribe());
+                approval_request_outbox = Some(outbox);
 
                 // Publish periodic NATS heartbeats alongside the existing HTTP heartbeats.
                 let telemetry_for_heartbeat = telemetry.clone();
@@ -448,8 +468,6 @@ async fn run_agent<R: Runtime>(
                     .await;
                 });
 
-                // Keep a reference so publish-side event loops can use this connection.
-                nats_client = Some(nats);
             }
             Err(err) => {
                 tracing::error!(error = %err, "Failed to connect to NATS; enterprise features disabled");
@@ -659,7 +677,7 @@ async fn run_agent<R: Runtime>(
     let tray_for_approvals = tray_manager.clone();
     let app_for_approvals = app.clone();
     let approval_queue_for_events = approval_queue.clone();
-    let nats_for_approvals = nats_client.clone();
+    let approval_outbox_for_events = approval_request_outbox.clone();
     tokio::spawn(async move {
         loop {
             let event = match approval_events_rx.recv().await {
@@ -679,13 +697,12 @@ async fn run_agent<R: Runtime>(
 
             match &event {
                 approval::ApprovalEvent::NewRequest { request } => {
-                    if let Some(nats) = nats_for_approvals.as_ref() {
-                        if let Err(err) = approval_sync::publish_approval_request(nats, request).await
-                        {
+                    if let Some(outbox) = approval_outbox_for_events.as_ref() {
+                        if let Err(err) = outbox.enqueue(request).await {
                             tracing::warn!(
                                 error = %err,
                                 request_id = %request.id,
-                                "Failed to publish approval request to cloud"
+                                "Failed to persist approval request to durable outbox"
                             );
                         }
                     }

@@ -11,6 +11,7 @@ use crate::models::agent::{
     Agent, EnrollmentRequest, EnrollmentResponse, HeartbeatRequest, RegisterAgentRequest,
     RegisterAgentResponse,
 };
+use crate::services::policy_distribution;
 use crate::state::AppState;
 
 const HEARTBEAT_UPDATE_SQL: &str = r#"UPDATE agents
@@ -174,6 +175,36 @@ async fn heartbeat(
         return Err(ApiError::NotFound);
     }
 
+    // Reconciliation path: if a tenant-level active policy exists, ensure this
+    // agent's KV bucket converges even if it missed a historical deploy.
+    match policy_distribution::fetch_active_policy_by_tenant_id(&state.db, auth.tenant_id).await {
+        Ok(Some(active_policy)) => {
+            if let Err(err) = policy_distribution::reconcile_policy_for_agent(
+                &state.nats,
+                &active_policy,
+                &req.agent_id,
+            )
+            .await
+            {
+                tracing::warn!(
+                    error = %err,
+                    tenant = %auth.slug,
+                    agent_id = %req.agent_id,
+                    "Heartbeat policy reconciliation failed"
+                );
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                tenant = %auth.slug,
+                agent_id = %req.agent_id,
+                "Failed to load active policy during heartbeat reconciliation"
+            );
+        }
+    }
+
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
@@ -271,6 +302,36 @@ async fn enroll_agent(
     }
 
     tx.commit().await.map_err(ApiError::Database)?;
+
+    // Backfill policy KV for newly enrolled agents if a tenant-level active
+    // policy already exists.
+    match policy_distribution::fetch_active_policy_by_tenant_id(&state.db, tenant_id).await {
+        Ok(Some(active_policy)) => {
+            if let Err(err) = policy_distribution::reconcile_policy_for_agent(
+                &state.nats,
+                &active_policy,
+                &agent_id,
+            )
+            .await
+            {
+                tracing::warn!(
+                    error = %err,
+                    tenant = %slug,
+                    agent_id = %agent_id,
+                    "Enrollment policy backfill failed"
+                );
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                tenant = %slug,
+                agent_id = %agent_id,
+                "Failed to load active policy during enrollment backfill"
+            );
+        }
+    }
 
     // Record usage event.
     let _ = state.metering.record(tenant_id, "agent_enrolled", 1).await;

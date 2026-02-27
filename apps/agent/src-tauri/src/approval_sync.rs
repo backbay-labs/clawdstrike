@@ -15,13 +15,19 @@ use crate::nats_subjects;
 pub struct ApprovalSync {
     nats: Arc<NatsClient>,
     approval_queue: Arc<ApprovalQueue>,
+    require_signed_responses: bool,
 }
 
 impl ApprovalSync {
-    pub fn new(nats: Arc<NatsClient>, approval_queue: Arc<ApprovalQueue>) -> Self {
+    pub fn new(
+        nats: Arc<NatsClient>,
+        approval_queue: Arc<ApprovalQueue>,
+        require_signed_responses: bool,
+    ) -> Self {
         Self {
             nats,
             approval_queue,
+            require_signed_responses,
         }
     }
 
@@ -52,7 +58,7 @@ impl ApprovalSync {
                         break;
                     };
 
-                    match parse_resolution_payload(&msg.payload) {
+                    match parse_resolution_payload(&msg.payload, self.require_signed_responses) {
                         Ok(resolution) => {
                             if let Some(mapped) = map_resolution(&resolution.resolution) {
                                 if let Err(err) = self.approval_queue.resolve(&resolution.request_id, mapped).await {
@@ -110,9 +116,12 @@ struct ApprovalResolutionPayload {
     resolution: String,
 }
 
-fn parse_resolution_payload(payload: &[u8]) -> Result<ApprovalResolutionPayload> {
+fn parse_resolution_payload(
+    payload: &[u8],
+    require_signed_responses: bool,
+) -> Result<ApprovalResolutionPayload> {
     let raw: Value = serde_json::from_slice(payload)?;
-    let decoded = decode_signed_or_plain_payload(raw)?;
+    let decoded = decode_signed_or_plain_payload(raw, require_signed_responses)?;
 
     let request_id = decoded
         .get("request_id")
@@ -131,7 +140,7 @@ fn parse_resolution_payload(payload: &[u8]) -> Result<ApprovalResolutionPayload>
     })
 }
 
-fn decode_signed_or_plain_payload(raw: Value) -> Result<Value> {
+fn decode_signed_or_plain_payload(raw: Value, require_signed_responses: bool) -> Result<Value> {
     let envelope = if raw.get("replayed").and_then(|v| v.as_bool()) == Some(true) {
         raw.get("envelope")
             .cloned()
@@ -141,6 +150,9 @@ fn decode_signed_or_plain_payload(raw: Value) -> Result<Value> {
     };
 
     if envelope.get("fact").is_none() {
+        if require_signed_responses {
+            anyhow::bail!("approval resolution payload must be a signed envelope");
+        }
         return Ok(envelope);
     }
 
@@ -202,9 +214,22 @@ mod tests {
             "request_id": "req-1",
             "resolution": "approved"
         });
-        let parsed = parse_resolution_payload(&serde_json::to_vec(&payload).unwrap()).unwrap();
+        let parsed =
+            parse_resolution_payload(&serde_json::to_vec(&payload).unwrap(), false).unwrap();
         assert_eq!(parsed.request_id, "req-1");
         assert_eq!(parsed.resolution, "approved");
+    }
+
+    #[test]
+    fn parse_resolution_payload_rejects_plain_json_when_signatures_required() {
+        let payload = serde_json::json!({
+            "request_id": "req-1",
+            "resolution": "approved"
+        });
+        let err = parse_resolution_payload(&serde_json::to_vec(&payload).unwrap(), true).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("must be a signed envelope"));
     }
 
     #[test]
@@ -221,7 +246,7 @@ mod tests {
             now_rfc3339(),
         )
         .unwrap();
-        let parsed = parse_resolution_payload(&serde_json::to_vec(&envelope).unwrap()).unwrap();
+        let parsed = parse_resolution_payload(&serde_json::to_vec(&envelope).unwrap(), true).unwrap();
         assert_eq!(parsed.request_id, "req-2");
         assert_eq!(parsed.resolution, "denied");
     }

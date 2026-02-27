@@ -7,6 +7,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 
 use crate::db::PgPool;
+use crate::services::policy_distribution;
 
 /// Run the heartbeat consumer loop until the shutdown receiver signals.
 ///
@@ -20,6 +21,7 @@ pub async fn run(
     consumer_name: &str,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
+    let nats_client = nats.clone();
     let js = async_nats::jetstream::new(nats);
 
     if let Err(err) =
@@ -83,7 +85,7 @@ pub async fn run(
                         None => break,
                     };
 
-                    if let Err(err) = process_heartbeat_message(&db, &msg).await {
+                    if let Err(err) = process_heartbeat_message(&db, &nats_client, &msg).await {
                         tracing::warn!(
                             error = %err,
                             subject = %msg.subject,
@@ -114,6 +116,7 @@ pub async fn run(
 
 async fn process_heartbeat_message(
     db: &PgPool,
+    nats: &async_nats::Client,
     msg: &async_nats::jetstream::Message,
 ) -> Result<(), String> {
     let subject = msg.subject.to_string();
@@ -144,6 +147,24 @@ async fn process_heartbeat_message(
             subject = %subject,
             "Heartbeat did not match an active/stale/dead agent row"
         );
+        return Ok(());
+    }
+
+    if let Some(active_policy) =
+        policy_distribution::fetch_active_policy_by_tenant_slug(db, tenant_slug)
+            .await
+            .map_err(|err| err.to_string())?
+    {
+        if let Err(err) =
+            policy_distribution::reconcile_policy_for_agent(nats, &active_policy, agent_id).await
+        {
+            tracing::warn!(
+                error = %err,
+                tenant = %tenant_slug,
+                agent_id = %agent_id,
+                "Heartbeat policy reconciliation failed"
+            );
+        }
     }
 
     Ok(())

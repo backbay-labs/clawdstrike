@@ -6,11 +6,17 @@ pub struct Config {
     pub listen_addr: SocketAddr,
     pub database_url: String,
     pub nats_url: String,
+    pub nats_provisioning_mode: String,
+    pub nats_provisioner_base_url: Option<String>,
+    pub nats_provisioner_api_token: Option<String>,
+    pub nats_allow_insecure_mock_provisioner: bool,
     pub jwt_secret: String,
     pub stripe_secret_key: String,
     pub stripe_webhook_secret: String,
     pub approval_signing_enabled: bool,
     pub approval_signing_keypair_path: Option<String>,
+    pub approval_resolution_outbox_enabled: bool,
+    pub approval_resolution_outbox_poll_interval_secs: u64,
     pub audit_consumer_enabled: bool,
     pub audit_subject_filter: String,
     pub audit_stream_name: String,
@@ -35,6 +41,8 @@ pub enum ConfigError {
     MissingVar(String),
     #[error("invalid listen address: {0}")]
     InvalidAddr(#[from] std::net::AddrParseError),
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(String),
 }
 
 impl Config {
@@ -48,6 +56,41 @@ impl Config {
             .map_err(|_| ConfigError::MissingVar("DATABASE_URL".into()))?;
         let nats_url =
             std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
+        let nats_provisioning_mode =
+            std::env::var("NATS_PROVISIONING_MODE").unwrap_or_else(|_| "external".to_string());
+        let nats_provisioner_base_url = std::env::var("NATS_PROVISIONER_BASE_URL").ok();
+        let nats_provisioner_api_token = std::env::var("NATS_PROVISIONER_API_TOKEN").ok();
+        let nats_allow_insecure_mock_provisioner =
+            std::env::var("NATS_ALLOW_INSECURE_MOCK_PROVISIONER")
+                .ok()
+                .as_deref()
+                .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(false);
+        match nats_provisioning_mode.trim().to_ascii_lowercase().as_str() {
+            "external" => {
+                if nats_provisioner_base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_none()
+                {
+                    return Err(ConfigError::MissingVar("NATS_PROVISIONER_BASE_URL".into()));
+                }
+            }
+            "mock" => {
+                if !nats_allow_insecure_mock_provisioner {
+                    return Err(ConfigError::InvalidConfig(
+                        "NATS_PROVISIONING_MODE=mock requires NATS_ALLOW_INSECURE_MOCK_PROVISIONER=true"
+                            .to_string(),
+                    ));
+                }
+            }
+            other => {
+                return Err(ConfigError::InvalidConfig(format!(
+                    "unsupported NATS_PROVISIONING_MODE '{other}' (expected 'external' or 'mock')"
+                )));
+            }
+        }
         let jwt_secret = std::env::var("JWT_SECRET")
             .map_err(|_| ConfigError::MissingVar("JWT_SECRET".into()))?;
         let stripe_secret_key = std::env::var("STRIPE_SECRET_KEY")
@@ -58,8 +101,19 @@ impl Config {
             .ok()
             .as_deref()
             .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
-            .unwrap_or(false);
+            .unwrap_or(true);
         let approval_signing_keypair_path = std::env::var("APPROVAL_SIGNING_KEYPAIR_PATH").ok();
+        let approval_resolution_outbox_enabled =
+            std::env::var("APPROVAL_RESOLUTION_OUTBOX_ENABLED")
+                .ok()
+                .as_deref()
+                .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(true);
+        let approval_resolution_outbox_poll_interval_secs =
+            std::env::var("APPROVAL_RESOLUTION_OUTBOX_POLL_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(5);
         let audit_consumer_enabled = std::env::var("AUDIT_CONSUMER_ENABLED")
             .ok()
             .as_deref()
@@ -115,11 +169,17 @@ impl Config {
             listen_addr,
             database_url,
             nats_url,
+            nats_provisioning_mode,
+            nats_provisioner_base_url,
+            nats_provisioner_api_token,
+            nats_allow_insecure_mock_provisioner,
             jwt_secret,
             stripe_secret_key,
             stripe_webhook_secret,
             approval_signing_enabled,
             approval_signing_keypair_path,
+            approval_resolution_outbox_enabled,
+            approval_resolution_outbox_poll_interval_secs,
             audit_consumer_enabled,
             audit_subject_filter,
             audit_stream_name,

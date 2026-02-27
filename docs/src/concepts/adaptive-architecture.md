@@ -88,7 +88,7 @@ The architecture defines two trust zones separated by authenticated transport:
 - **Agent Trust Zone:** The agent process, local policy cache, local evaluation engine, offline receipt queue, and the agent's Ed25519 keypair. This zone is controlled by the machine owner.
 - **Enterprise Trust Zone:** The enterprise hushd service, Cloud API, Spine services, NATS infrastructure, and the enterprise's Ed25519 keypair. This zone is controlled by the organization's security team.
 
-Communication between zones is authenticated via NATS credentials (issued during enrollment) and hushd API keys. Tenant isolation is enforced at the NATS account level -- each tenant's agents operate in a dedicated NATS account with strict subject-level access controls. Agents cannot publish posture commands or forge approval responses; only enterprise services have those permissions.
+Communication between zones is authenticated via NATS credentials (issued during enrollment) and hushd API keys. Tenant isolation is enforced at the NATS account level -- each tenant's agents operate in a dedicated NATS account with strict subject-level access controls. Cloud API delegates account/user/ACL lifecycle to an external NATS provisioner service (`NATS_PROVISIONING_MODE=external`), and startup fails if that dependency is not configured. Agents cannot publish posture commands or forge approval responses; only enterprise services have those permissions.
 
 ## Relationship to Existing Components
 

@@ -72,7 +72,7 @@ pub struct IntegrationSettings {
 }
 
 /// NATS connectivity settings for enterprise cloud management.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsSettings {
     /// Whether NATS enterprise connectivity is enabled.
     #[serde(default)]
@@ -101,6 +101,26 @@ pub struct NatsSettings {
     /// Subject prefix for NATS topics assigned during enrollment.
     #[serde(default)]
     pub subject_prefix: Option<String>,
+    /// Whether approval responses must be Spine-signed envelopes.
+    #[serde(default = "default_require_signed_approval_responses")]
+    pub require_signed_approval_responses: bool,
+}
+
+impl Default for NatsSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            nats_url: None,
+            creds_file: None,
+            token: None,
+            nkey_seed: None,
+            tenant_id: None,
+            agent_id: None,
+            nats_account: None,
+            subject_prefix: None,
+            require_signed_approval_responses: default_require_signed_approval_responses(),
+        }
+    }
 }
 
 /// Enrollment state for cloud-managed agents.
@@ -239,6 +259,10 @@ pub struct Settings {
 
 fn default_policy_path() -> PathBuf {
     get_config_dir().join("policy.yaml")
+}
+
+fn default_require_signed_approval_responses() -> bool {
+    true
 }
 
 fn default_daemon_port() -> u16 {

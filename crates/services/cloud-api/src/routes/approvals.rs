@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
 use crate::models::approval::{Approval, ResolveApprovalInput};
+use crate::services::approval_resolution_outbox;
 use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
@@ -109,6 +110,7 @@ async fn resolve_approval(
 
     let resolved_by = input.resolved_by.unwrap_or_else(|| "cloud-api".to_string());
 
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let row = sqlx::query::query(
         r#"UPDATE approvals
            SET status = $3, resolved_by = $4, resolved_at = now()
@@ -119,7 +121,7 @@ async fn resolve_approval(
     .bind(auth.tenant_id)
     .bind(&input.resolution)
     .bind(&resolved_by)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
@@ -143,15 +145,32 @@ async fn resolve_approval(
         state.signing_keypair.as_deref(),
     )?;
 
-    if let Err(err) = state
-        .nats
-        .publish(subject.clone(), payload_bytes.into())
-        .await
+    let payload_json: serde_json::Value = serde_json::from_slice(&payload_bytes)
+        .map_err(|err| ApiError::Internal(format!("failed to serialize outbox payload: {err}")))?;
+
+    approval_resolution_outbox::enqueue(
+        &mut *tx,
+        approval.id,
+        approval.tenant_id,
+        &auth.slug,
+        &approval.agent_id,
+        &subject,
+        &payload_json,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    // Best-effort immediate dispatch; background outbox worker guarantees retry.
+    if let Err(err) =
+        approval_resolution_outbox::process_due_for_approval(&state.nats, &state.db, approval.id)
+            .await
     {
         tracing::warn!(
             error = %err,
-            subject = %subject,
-            "Failed to publish approval resolution to NATS"
+            approval_id = %approval.id,
+            "Failed immediate dispatch for approval resolution outbox entry"
         );
     }
 
