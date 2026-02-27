@@ -34,7 +34,8 @@ struct EnrollResponse {
     agent_uuid: String,
     tenant_id: String,
     nats_url: String,
-    nats_credentials: String,
+    nats_account: String,
+    nats_subject_prefix: String,
     agent_id: String,
 }
 
@@ -123,6 +124,7 @@ impl EnrollmentManager {
         let response = self
             .http_client
             .post(&enroll_url)
+            .header("authorization", format!("Bearer {}", enrollment_token))
             .json(&body)
             .send()
             .await
@@ -145,30 +147,20 @@ impl EnrollmentManager {
             .with_context(|| format!("Failed to write agent key to {:?}", key_path))?;
         tracing::info!(path = ?key_path, "Agent private key stored");
 
-        // Store NATS credentials.
-        let creds_path = get_config_dir().join("nats.creds");
-        write_private_file(&creds_path, resp.nats_credentials.as_bytes())
-            .with_context(|| format!("Failed to write NATS credentials to {:?}", creds_path))?;
-        tracing::info!(path = ?creds_path, "NATS credentials stored");
-
-        let creds_path_str = creds_path
-            .to_str()
-            .unwrap_or_default()
-            .to_string();
-
         // Update settings with enrollment state and NATS configuration.
+        // NATS connection uses the nats_url and token auth provided by the server —
+        // no creds file needed.
         {
             let mut settings = self.settings.write().await;
             settings.enrollment = EnrollmentState {
                 enrolled: true,
                 agent_uuid: Some(resp.agent_uuid.clone()),
                 tenant_id: Some(resp.tenant_id.clone()),
-                nats_creds_path: Some(creds_path_str.clone()),
+                nats_creds_path: None,
                 enrollment_in_progress: false,
             };
             settings.nats.enabled = true;
             settings.nats.nats_url = Some(resp.nats_url);
-            settings.nats.creds_file = Some(creds_path_str.clone());
             settings.nats.tenant_id = Some(resp.tenant_id.clone());
             settings.nats.agent_id = Some(resp.agent_id);
             settings
@@ -179,7 +171,7 @@ impl EnrollmentManager {
         let result = EnrollmentResult {
             agent_uuid: resp.agent_uuid,
             tenant_id: resp.tenant_id,
-            nats_creds_path: creds_path_str,
+            nats_creds_path: String::new(),
         };
 
         tracing::info!(

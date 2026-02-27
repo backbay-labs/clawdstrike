@@ -162,6 +162,21 @@ async fn enroll_agent(
         return Err(ApiError::Forbidden);
     }
 
+    // Validate enrollment token against the tenant's stored token.
+    let token_row = sqlx::query::query("SELECT enrollment_token FROM tenants WHERE id = $1")
+        .bind(auth.tenant_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::NotFound)?;
+    let stored_token: Option<String> = token_row
+        .try_get("enrollment_token")
+        .map_err(ApiError::Database)?;
+    match stored_token {
+        Some(ref expected) if expected == &req.enrollment_token => {}
+        _ => return Err(ApiError::BadRequest("invalid enrollment token".to_string())),
+    }
+
     // Validate the Ed25519 public key.
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
 
@@ -222,10 +237,8 @@ async fn enroll_agent(
         agent_uuid: agent.id.to_string(),
         tenant_id: auth.tenant_id.to_string(),
         nats_url: nats_creds.nats_url,
-        nats_credentials: format!(
-            "-----BEGIN NATS CREDENTIALS-----\naccount: {}\nsubject_prefix: {}\n-----END NATS CREDENTIALS-----",
-            nats_creds.account, nats_creds.subject_prefix
-        ),
+        nats_account: nats_creds.account,
+        nats_subject_prefix: nats_creds.subject_prefix,
         agent_id,
     }))
 }

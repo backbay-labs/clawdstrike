@@ -64,13 +64,14 @@ pub async fn replay_receipts(
             }
         }
 
-        // Tag envelope with replayed metadata.
-        let mut tagged = envelope.clone();
-        if let Some(obj) = tagged.as_object_mut() {
-            obj.insert("replayed".to_string(), serde_json::Value::Bool(true));
-        }
+        // Wrap the original envelope in a replay container so the signature
+        // remains valid — downstream consumers verify the inner envelope.
+        let wrapper = serde_json::json!({
+            "replayed": true,
+            "envelope": envelope,
+        });
 
-        match serde_json::to_vec(&tagged) {
+        match serde_json::to_vec(&wrapper) {
             Ok(payload) => {
                 // Replay is a low-frequency admin operation, so a one-off NATS
                 // connection per request is acceptable.
@@ -147,18 +148,17 @@ mod tests {
     }
 
     #[test]
-    fn replay_tags_envelope_with_replayed_flag() {
+    fn replay_wraps_envelope_preserving_signature() {
         let kp = Keypair::generate();
         let envelope =
             build_signed_envelope(&kp, 1, None, json!({"type": "policy.eval"}), now_rfc3339())
                 .unwrap();
-        let mut tagged = envelope.clone();
-        if let Some(obj) = tagged.as_object_mut() {
-            obj.insert("replayed".to_string(), serde_json::Value::Bool(true));
-        }
-        assert_eq!(tagged["replayed"], true);
-        // Original fields are preserved
-        assert!(tagged.get("envelope_hash").is_some());
-        assert!(tagged.get("signature").is_some());
+        let wrapper = json!({
+            "replayed": true,
+            "envelope": envelope,
+        });
+        assert_eq!(wrapper["replayed"], true);
+        // Inner envelope is untouched — signature remains valid.
+        assert!(spine::verify_envelope(&wrapper["envelope"]).unwrap());
     }
 }

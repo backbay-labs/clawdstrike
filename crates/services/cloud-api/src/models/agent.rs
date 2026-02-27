@@ -86,6 +86,9 @@ pub struct EnrollmentResponse {
     pub agent_uuid: String,
     pub tenant_id: String,
     pub nats_url: String,
-    pub nats_credentials: String,
+    /// NATS account identifier for scoped access.
+    pub nats_account: String,
+    /// Subject prefix for this agent's NATS topics.
+    pub nats_subject_prefix: String,
     pub agent_id: String,
 }

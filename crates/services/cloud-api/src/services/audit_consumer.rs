@@ -117,12 +117,26 @@ pub async fn run(
 
 /// Process a single raw envelope payload.
 fn process_envelope(payload: &[u8], last_hash_by_issuer: &mut HashMap<String, String>) {
-    let envelope: Value = match serde_json::from_slice(payload) {
+    let raw: Value = match serde_json::from_slice(payload) {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(error = %e, "Failed to parse envelope JSON");
             return;
         }
+    };
+
+    // Detect replay wrapper: { "replayed": true, "envelope": { ... } }
+    // Unwrap the inner envelope so we verify the original signature.
+    let (envelope, replayed) = if raw.get("replayed").and_then(|v| v.as_bool()) == Some(true) {
+        match raw.get("envelope") {
+            Some(inner) => (inner.clone(), true),
+            None => {
+                tracing::warn!("Replay wrapper missing inner envelope, skipping");
+                return;
+            }
+        }
+    } else {
+        (raw, false)
     };
 
     // Verify signature and hash integrity.
@@ -149,10 +163,6 @@ fn process_envelope(payload: &[u8], last_hash_by_issuer: &mut HashMap<String, St
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let prev_hash = envelope.get("prev_envelope_hash").and_then(|v| v.as_str());
-    let replayed = envelope
-        .get("replayed")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     // Chain integrity check: verify prev_envelope_hash matches our last recorded hash for this issuer.
     if let Some(prev) = prev_hash {
