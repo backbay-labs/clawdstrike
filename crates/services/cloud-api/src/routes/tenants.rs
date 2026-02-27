@@ -3,10 +3,10 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
+use crate::crypto::hash_enrollment_token;
 use crate::error::ApiError;
 use crate::models::tenant::{CreateTenantRequest, Tenant, UpdateTenantRequest};
 use crate::state::AppState;
@@ -230,12 +230,6 @@ fn generate_enrollment_token() -> String {
         Uuid::new_v4().simple(),
         Uuid::new_v4().simple()
     )
-}
-
-fn hash_enrollment_token(token: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    hex::encode(hasher.finalize())
 }
 
 fn is_unique_violation(err: &sqlx::error::Error) -> bool {

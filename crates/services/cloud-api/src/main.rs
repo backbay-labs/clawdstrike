@@ -4,6 +4,7 @@
 
 mod auth;
 mod config;
+mod crypto;
 mod db;
 mod error;
 #[cfg(test)]

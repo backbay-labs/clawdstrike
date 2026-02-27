@@ -166,7 +166,7 @@ impl PostureCommandHandler {
                 let reason_str = reason.as_deref().unwrap_or("remote kill switch activated");
                 tracing::warn!(reason = %reason_str, "KILL SWITCH activated via remote command");
 
-                transition_posture_command(
+                let transition = transition_posture_command(
                     self.session_manager.as_ref(),
                     self.settings.as_ref(),
                     "locked",
@@ -181,7 +181,28 @@ impl PostureCommandHandler {
                     ),
                     "Kill switch failed to transition posture via hushd".to_string(),
                 )
-                .await
+                .await;
+
+                if transition.status != "ok" {
+                    return transition;
+                }
+
+                match self.daemon_manager.restart().await {
+                    Ok(()) => CommandResponse {
+                        status: "ok".to_string(),
+                        message: Some(format!(
+                            "Kill switch activated: transitioned active session to locked ({}) and restarted daemon",
+                            reason_str
+                        )),
+                    },
+                    Err(err) => CommandResponse {
+                        status: "error".to_string(),
+                        message: Some(format!(
+                            "Kill switch posture transitioned to locked but daemon restart failed: {}",
+                            err
+                        )),
+                    },
+                }
             }
             PostureCommand::RequestPolicyReload => {
                 tracing::info!("Received request_policy_reload command");

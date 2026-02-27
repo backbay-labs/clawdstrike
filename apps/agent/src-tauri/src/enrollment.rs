@@ -57,18 +57,6 @@ impl EnrollmentManager {
         }
     }
 
-    /// Check whether the agent is currently enrolled.
-    pub async fn is_enrolled(&self) -> bool {
-        let settings = self.settings.read().await;
-        settings.enrollment.enrolled
-    }
-
-    /// Get the current enrollment state.
-    pub async fn enrollment_state(&self) -> EnrollmentState {
-        let settings = self.settings.read().await;
-        settings.enrollment.clone()
-    }
-
     /// Perform the enrollment handshake with the cloud API.
     pub async fn enroll(
         &self,

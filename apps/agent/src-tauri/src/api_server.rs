@@ -39,6 +39,8 @@ use tower_http::services::{ServeDir, ServeFile};
 
 const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
 const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
+const POLICY_VERSION_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
 
 #[derive(Clone)]
 pub struct AgentApiServer {
@@ -67,6 +69,13 @@ struct AgentApiState {
     updater: Arc<HushdUpdater>,
     auth_token: String,
     http_client: reqwest::Client,
+    policy_version_cache: Arc<RwLock<PolicyVersionCache>>,
+}
+
+#[derive(Debug, Default)]
+struct PolicyVersionCache {
+    value: Option<String>,
+    last_refresh_at: Option<std::time::Instant>,
 }
 
 impl AgentApiServer {
@@ -82,6 +91,7 @@ impl AgentApiServer {
                 updater: deps.updater,
                 auth_token: deps.auth_token,
                 http_client: reqwest::Client::new(),
+                policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
             }),
         }
     }
@@ -645,6 +655,38 @@ async fn fetch_daemon_policy_version(state: &AgentApiState) -> Option<String> {
         .map(|value| value.to_string())
 }
 
+async fn cached_policy_version_for_health(state: &Arc<AgentApiState>) -> Option<String> {
+    let (cached_value, should_refresh) = {
+        let cache = state.policy_version_cache.read().await;
+        let should_refresh = cache
+            .last_refresh_at
+            .map(|last| last.elapsed() >= POLICY_VERSION_CACHE_REFRESH_INTERVAL)
+            .unwrap_or(true);
+        (cache.value.clone(), should_refresh)
+    };
+
+    if should_refresh {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let fetched = tokio::time::timeout(
+                POLICY_VERSION_FETCH_TIMEOUT,
+                fetch_daemon_policy_version(state.as_ref()),
+            )
+            .await
+            .ok()
+            .flatten();
+
+            let mut cache = state.policy_version_cache.write().await;
+            if let Some(version) = fetched {
+                cache.value = Some(version);
+            }
+            cache.last_refresh_at = Some(std::time::Instant::now());
+        });
+    }
+
+    cached_value
+}
+
 #[derive(Debug, Serialize)]
 struct AgentHealthResponse {
     status: &'static str,
@@ -758,7 +800,7 @@ async fn agent_health(
     let daemon = state.daemon_manager.status().await;
     let session = state.session_manager.state().await;
     let openclaw = state.openclaw.list_gateways().await;
-    let last_policy_version = fetch_daemon_policy_version(&state).await;
+    let last_policy_version = cached_policy_version_for_health(&state).await;
 
     Ok(Json(AgentHealthResponse {
         status: "ok",
@@ -1467,6 +1509,7 @@ mod tests {
             updater,
             auth_token: "test-token".to_string(),
             http_client: reqwest::Client::new(),
+            policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
         }
     }
 

@@ -1,11 +1,11 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use sha2::{Digest, Sha256};
 use sqlx::row::Row;
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
+use crate::crypto::hash_enrollment_token;
 use crate::error::ApiError;
 use crate::models::agent::{
     Agent, EnrollmentRequest, EnrollmentResponse, HeartbeatRequest, RegisterAgentRequest,
@@ -282,13 +282,6 @@ async fn enroll_agent(
 
     let agent = Agent::from_row(row).map_err(ApiError::Database)?;
 
-    // Provision NATS credentials.
-    let nats_creds = state
-        .provisioner
-        .create_agent_credentials(tenant_id, &slug, &agent_id)
-        .await
-        .map_err(|e| ApiError::Nats(e.to_string()))?;
-
     // Invalidate the enrollment token so it cannot be reused.
     let token_consumed = sqlx::query::query(ENROLL_TOKEN_CONSUME_SQL)
         .bind(enrollment_token_id)
@@ -302,6 +295,34 @@ async fn enroll_agent(
     }
 
     tx.commit().await.map_err(ApiError::Database)?;
+
+    // Provision NATS credentials after the enrollment transaction commits.
+    // If provisioning fails, compensate by removing the new agent row and
+    // re-opening the one-time token so enrollment can be retried.
+    let nats_creds = match state
+        .provisioner
+        .create_agent_credentials(tenant_id, &slug, &agent_id)
+        .await
+    {
+        Ok(creds) => creds,
+        Err(err) => {
+            if let Err(cleanup_err) =
+                rollback_failed_enrollment(&state.db, agent.id, enrollment_token_id).await
+            {
+                tracing::error!(
+                    error = %cleanup_err,
+                    tenant = %slug,
+                    agent_id = %agent_id,
+                    "Failed to rollback enrollment after NATS credential provisioning error"
+                );
+                return Err(ApiError::Internal(
+                    "failed to provision credentials and failed to rollback enrollment".to_string(),
+                ));
+            }
+
+            return Err(ApiError::Nats(err.to_string()));
+        }
+    };
 
     // Backfill policy KV for newly enrolled agents if a tenant-level active
     // policy already exists.
@@ -347,10 +368,29 @@ async fn enroll_agent(
     }))
 }
 
-fn hash_enrollment_token(token: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    hex::encode(hasher.finalize())
+async fn rollback_failed_enrollment(
+    db: &crate::db::PgPool,
+    agent_uuid: Uuid,
+    enrollment_token_id: Uuid,
+) -> Result<(), sqlx::error::Error> {
+    let mut tx = db.begin().await?;
+
+    sqlx::query::query("DELETE FROM agents WHERE id = $1")
+        .bind(agent_uuid)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query::query(
+        r#"UPDATE tenant_enrollment_tokens
+           SET consumed_at = NULL
+           WHERE id = $1"#,
+    )
+    .bind(enrollment_token_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 #[cfg(test)]

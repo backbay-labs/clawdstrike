@@ -201,9 +201,9 @@ fn persist_entries(path: &PathBuf, entries: &VecDeque<PendingApprovalRequest>) -
 }
 
 fn compute_backoff_secs(attempts: u32) -> i64 {
-    let exp = attempts.saturating_sub(1).min(8);
-    let backoff = 2_i64.pow(exp);
-    std::cmp::min(MAX_BACKOFF_SECS, backoff)
+    let exp = attempts.saturating_sub(1);
+    let backoff = 2_i64.saturating_pow(exp);
+    backoff.clamp(1, MAX_BACKOFF_SECS)
 }
 
 #[cfg(test)]
@@ -249,6 +249,7 @@ mod tests {
         assert_eq!(compute_backoff_secs(2), 2);
         assert_eq!(compute_backoff_secs(3), 4);
         assert_eq!(compute_backoff_secs(9), 256);
-        assert_eq!(compute_backoff_secs(25), 256);
+        assert_eq!(compute_backoff_secs(10), 300);
+        assert_eq!(compute_backoff_secs(25), 300);
     }
 }

@@ -15,12 +15,16 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/events/stream", get(event_stream))
 }
 
+fn stream_subject(slug: &str) -> String {
+    format!("{}.spine.envelope.>", tenant_subject_prefix(slug))
+}
+
 async fn event_stream(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
 ) -> Result<Sse<impl futures::Stream<Item = Result<Event, Infallible>>>, ApiError> {
     // Subscribe to tenant-scoped NATS subjects
-    let subject = format!("{}.>", tenant_subject_prefix(&auth.slug));
+    let subject = stream_subject(&auth.slug);
     let subscriber = state
         .nats
         .subscribe(subject)
@@ -43,4 +47,17 @@ async fn event_stream(
 
     let stream = ReceiverStream::new(rx);
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stream_subject;
+
+    #[test]
+    fn event_stream_subject_is_envelope_scoped() {
+        assert_eq!(
+            stream_subject("acme"),
+            "tenant-acme.clawdstrike.spine.envelope.>"
+        );
+    }
 }
