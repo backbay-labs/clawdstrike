@@ -104,6 +104,9 @@ pub struct NatsSettings {
     /// Whether approval responses must be Spine-signed envelopes.
     #[serde(default = "default_require_signed_approval_responses")]
     pub require_signed_approval_responses: bool,
+    /// Trusted Spine issuer for approval responses from cloud.
+    #[serde(default)]
+    pub approval_response_trusted_issuer: Option<String>,
 }
 
 impl Default for NatsSettings {
@@ -119,6 +122,7 @@ impl Default for NatsSettings {
             nats_account: None,
             subject_prefix: None,
             require_signed_approval_responses: default_require_signed_approval_responses(),
+            approval_response_trusted_issuer: None,
         }
     }
 }
@@ -417,6 +421,7 @@ fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
             .with_context(|| format!("Failed to create settings file {:?}", path))?;
         file.write_all(contents.as_bytes())
             .with_context(|| format!("Failed to write settings to {:?}", path))?;
+        enforce_private_mode(path)?;
     }
 
     #[cfg(not(unix))]
@@ -425,6 +430,20 @@ fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
             .with_context(|| format!("Failed to write settings to {:?}", path))?;
     }
 
+    Ok(())
+}
+
+#[cfg(unix)]
+fn enforce_private_mode(path: &PathBuf) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to read settings metadata {:?}", path))?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode != 0o600 {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to set settings permissions on {:?}", path))?;
+    }
     Ok(())
 }
 
@@ -544,6 +563,42 @@ mod tests {
             panic!("failed to create temp dir for settings permissions test: {err}");
         }
         let path = dir.join("agent.json");
+
+        if let Err(err) = write_settings_file(&path, "{\"nats\":{\"token\":\"secret\"}}") {
+            panic!("failed to write settings file: {err}");
+        }
+
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(err) => panic!("failed to read settings metadata: {err}"),
+        };
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_settings_file_hardens_existing_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let unique = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => duration.as_nanos(),
+            Err(_) => 0,
+        };
+        let dir = std::env::temp_dir().join(format!("clawdstrike-settings-perms-existing-{unique}"));
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            panic!("failed to create temp dir for settings permissions test: {err}");
+        }
+        let path = dir.join("agent.json");
+        if let Err(err) = std::fs::write(&path, "{}") {
+            panic!("failed to seed settings file: {err}");
+        }
+        if let Err(err) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)) {
+            panic!("failed to seed settings file mode: {err}");
+        }
 
         if let Err(err) = write_settings_file(&path, "{\"nats\":{\"token\":\"secret\"}}") {
             panic!("failed to write settings file: {err}");

@@ -15,6 +15,7 @@ pub async fn run(
     nats: async_nats::Client,
     db: PgPool,
     subject_filter: &str,
+    stream_subjects: &[String],
     stream_name: &str,
     consumer_name: &str,
     mut shutdown_rx: watch::Receiver<bool>,
@@ -22,8 +23,7 @@ pub async fn run(
     let js = async_nats::jetstream::new(nats);
 
     if let Err(err) =
-        spine::nats_transport::ensure_stream(&js, stream_name, vec![subject_filter.to_string()], 1)
-            .await
+        spine::nats_transport::ensure_stream(&js, stream_name, stream_subjects.to_vec(), 1).await
     {
         tracing::error!(error = %err, "Failed to ensure approval request stream");
         return;

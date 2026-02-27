@@ -36,6 +36,8 @@ struct EnrollResponse {
     nats_account: String,
     nats_subject_prefix: String,
     nats_token: String,
+    #[serde(default)]
+    approval_response_trusted_issuer: Option<String>,
     agent_id: String,
 }
 
@@ -154,6 +156,7 @@ impl EnrollmentManager {
             settings.nats.token = Some(resp.nats_token);
             settings.nats.nats_account = Some(resp.nats_account);
             settings.nats.subject_prefix = Some(resp.nats_subject_prefix);
+            settings.nats.approval_response_trusted_issuer = resp.approval_response_trusted_issuer;
             settings
                 .save()
                 .with_context(|| "Failed to persist enrollment settings")?;
@@ -199,6 +202,7 @@ fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
             .with_context(|| format!("Failed to create private file {:?}", path))?;
         file.write_all(data)
             .with_context(|| format!("Failed to write file {:?}", path))?;
+        enforce_private_mode(path)?;
     }
 
     #[cfg(not(unix))]
@@ -207,6 +211,20 @@ fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
             .with_context(|| format!("Failed to write file {:?}", path))?;
     }
 
+    Ok(())
+}
+
+#[cfg(unix)]
+fn enforce_private_mode(path: &PathBuf) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to read private file metadata {:?}", path))?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode != 0o600 {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to set private file permissions on {:?}", path))?;
+    }
     Ok(())
 }
 
@@ -228,5 +246,41 @@ mod tests {
     fn get_hostname_returns_something() {
         let hostname = hostname_best_effort();
         assert!(!hostname.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_private_file_hardens_existing_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let unique = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => duration.as_nanos(),
+            Err(_) => 0,
+        };
+        let dir = std::env::temp_dir().join(format!("clawdstrike-private-file-perms-{unique}"));
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            panic!("failed to create temp dir: {err}");
+        }
+        let path = dir.join("agent.key");
+        if let Err(err) = std::fs::write(&path, "seed") {
+            panic!("failed to seed private file: {err}");
+        }
+        if let Err(err) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)) {
+            panic!("failed to set initial private file mode: {err}");
+        }
+
+        if let Err(err) = write_private_file(&path, b"deadbeef") {
+            panic!("failed to write private file: {err}");
+        }
+
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(err) => panic!("failed to read private file metadata: {err}"),
+        };
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

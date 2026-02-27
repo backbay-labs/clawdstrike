@@ -16,6 +16,7 @@ pub struct ApprovalSync {
     nats: Arc<NatsClient>,
     approval_queue: Arc<ApprovalQueue>,
     require_signed_responses: bool,
+    trusted_response_issuer: Option<String>,
 }
 
 impl ApprovalSync {
@@ -23,11 +24,13 @@ impl ApprovalSync {
         nats: Arc<NatsClient>,
         approval_queue: Arc<ApprovalQueue>,
         require_signed_responses: bool,
+        trusted_response_issuer: Option<String>,
     ) -> Self {
         Self {
             nats,
             approval_queue,
             require_signed_responses,
+            trusted_response_issuer,
         }
     }
 
@@ -58,7 +61,11 @@ impl ApprovalSync {
                         break;
                     };
 
-                    match parse_resolution_payload(&msg.payload, self.require_signed_responses) {
+                    match parse_resolution_payload(
+                        &msg.payload,
+                        self.require_signed_responses,
+                        self.trusted_response_issuer.as_deref(),
+                    ) {
                         Ok(resolution) => {
                             if let Some(mapped) = map_resolution(&resolution.resolution) {
                                 if let Err(err) = self.approval_queue.resolve(&resolution.request_id, mapped).await {
@@ -122,9 +129,11 @@ struct ApprovalResolutionPayload {
 fn parse_resolution_payload(
     payload: &[u8],
     require_signed_responses: bool,
+    trusted_response_issuer: Option<&str>,
 ) -> Result<ApprovalResolutionPayload> {
     let raw: Value = serde_json::from_slice(payload)?;
-    let decoded = decode_signed_or_plain_payload(raw, require_signed_responses)?;
+    let decoded =
+        decode_signed_or_plain_payload(raw, require_signed_responses, trusted_response_issuer)?;
 
     let request_id = decoded
         .get("request_id")
@@ -143,7 +152,11 @@ fn parse_resolution_payload(
     })
 }
 
-fn decode_signed_or_plain_payload(raw: Value, require_signed_responses: bool) -> Result<Value> {
+fn decode_signed_or_plain_payload(
+    raw: Value,
+    require_signed_responses: bool,
+    trusted_response_issuer: Option<&str>,
+) -> Result<Value> {
     let envelope = if raw.get("replayed").and_then(|v| v.as_bool()) == Some(true) {
         raw.get("envelope")
             .cloned()
@@ -161,6 +174,20 @@ fn decode_signed_or_plain_payload(raw: Value, require_signed_responses: bool) ->
 
     if !spine::verify_envelope(&envelope)? {
         anyhow::bail!("approval resolution signature verification failed");
+    }
+
+    let issuer = envelope
+        .get("issuer")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| anyhow::anyhow!("signed approval resolution missing issuer"))?;
+    if let Some(expected_issuer) = trusted_response_issuer {
+        if issuer != expected_issuer {
+            anyhow::bail!(
+                "approval resolution issuer mismatch: expected {expected_issuer}, got {issuer}"
+            );
+        }
+    } else if require_signed_responses {
+        anyhow::bail!("missing trusted approval response issuer configuration");
     }
 
     envelope
@@ -203,7 +230,7 @@ mod tests {
             "resolution": "approved"
         });
         let parsed =
-            parse_resolution_payload(&serde_json::to_vec(&payload).unwrap(), false).unwrap();
+            parse_resolution_payload(&serde_json::to_vec(&payload).unwrap(), false, None).unwrap();
         assert_eq!(parsed.request_id, "req-1");
         assert_eq!(parsed.resolution, "approved");
     }
@@ -214,7 +241,8 @@ mod tests {
             "request_id": "req-1",
             "resolution": "approved"
         });
-        let err = parse_resolution_payload(&serde_json::to_vec(&payload).unwrap(), true).unwrap_err();
+        let err =
+            parse_resolution_payload(&serde_json::to_vec(&payload).unwrap(), true, None).unwrap_err();
         assert!(err
             .to_string()
             .contains("must be a signed envelope"));
@@ -234,8 +262,62 @@ mod tests {
             now_rfc3339(),
         )
         .unwrap();
-        let parsed = parse_resolution_payload(&serde_json::to_vec(&envelope).unwrap(), true).unwrap();
+        let trusted_issuer = envelope
+            .get("issuer")
+            .and_then(|value| value.as_str())
+            .unwrap()
+            .to_string();
+        let parsed = parse_resolution_payload(
+            &serde_json::to_vec(&envelope).unwrap(),
+            true,
+            Some(&trusted_issuer),
+        )
+        .unwrap();
         assert_eq!(parsed.request_id, "req-2");
         assert_eq!(parsed.resolution, "denied");
+    }
+
+    #[test]
+    fn parse_resolution_payload_rejects_untrusted_issuer() {
+        let kp = Keypair::generate();
+        let envelope = build_signed_envelope(
+            &kp,
+            1,
+            None,
+            serde_json::json!({
+                "request_id": "req-2",
+                "resolution": "denied"
+            }),
+            now_rfc3339(),
+        )
+        .unwrap();
+        let err = parse_resolution_payload(
+            &serde_json::to_vec(&envelope).unwrap(),
+            true,
+            Some("aegis:ed25519:0000000000000000000000000000000000000000000000000000000000000000"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("issuer mismatch"));
+    }
+
+    #[test]
+    fn parse_resolution_payload_requires_trusted_issuer_when_signed_required() {
+        let kp = Keypair::generate();
+        let envelope = build_signed_envelope(
+            &kp,
+            1,
+            None,
+            serde_json::json!({
+                "request_id": "req-3",
+                "resolution": "approved"
+            }),
+            now_rfc3339(),
+        )
+        .unwrap();
+        let err = parse_resolution_payload(&serde_json::to_vec(&envelope).unwrap(), true, None)
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("missing trusted approval response issuer"));
     }
 }

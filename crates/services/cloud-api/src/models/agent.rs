@@ -94,5 +94,7 @@ pub struct EnrollmentResponse {
     pub nats_subject_prefix: String,
     /// Authentication token for NATS connection.
     pub nats_token: String,
+    /// Trusted Spine issuer for cloud approval response envelopes.
+    pub approval_response_trusted_issuer: Option<String>,
     pub agent_id: String,
 }

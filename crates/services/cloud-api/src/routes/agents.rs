@@ -356,6 +356,10 @@ async fn enroll_agent(
 
     // Record usage event.
     let _ = state.metering.record(tenant_id, "agent_enrolled", 1).await;
+    let approval_response_trusted_issuer = state
+        .signing_keypair
+        .as_ref()
+        .map(|keypair| spine::issuer_from_keypair(keypair.as_ref()));
 
     Ok(Json(EnrollmentResponse {
         agent_uuid: agent.id.to_string(),
@@ -364,6 +368,7 @@ async fn enroll_agent(
         nats_account: nats_creds.account,
         nats_subject_prefix: nats_creds.subject_prefix,
         nats_token: nats_creds.token,
+        approval_response_trusted_issuer,
         agent_id,
     }))
 }
