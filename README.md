@@ -127,33 +127,7 @@ openclaw plugins install @clawdstrike/openclaw
 openclaw plugins enable clawdstrike-security
 ```
 
-Configure the plugin in your project's `openclaw.json`:
-
-```json
-{
-  "plugins": {
-    "clawdstrike-security": {
-      "policy": "clawdstrike:ai-agent",
-      "mode": "deterministic",
-      "guards": {
-        "forbidden_path": true,
-        "egress": true,
-        "secret_leak": true,
-        "patch_integrity": true
-      }
-    }
-  }
-}
-```
-
-The plugin hooks into the agent lifecycle automatically — preflight checks block dangerous operations before execution, post-execution guards redact secrets from tool output, and the audit logger records every decision. Set `mode` to `"advisory"` to warn without blocking, or `"audit"` to log only.
-
-Agents can also self-check permissions at runtime via the auto-registered `policy_check` tool:
-
-```
-policy_check({ action: "file_write", resource: "~/.ssh/authorized_keys" })
-# → { status: "deny", guard: "forbidden_path", reason: "matches **/.ssh/**" }
-```
+[Configure the plugin](docs/src/guides/openclaw-integration.md#configuration) in your project's `openclaw.json`.
 
 ---
 
