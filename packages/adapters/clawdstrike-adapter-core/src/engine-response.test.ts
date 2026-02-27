@@ -67,4 +67,33 @@ describe('parseDecision', () => {
 
     expect(decision).toBeNull();
   });
+
+  it('parses legacy boolean decision payloads', () => {
+    const decision = parseDecision({
+      allowed: true,
+      denied: false,
+      warn: true,
+      reason_code: 'ADC_POLICY_WARN',
+      message: 'legacy payload warning',
+    });
+
+    expect(decision).toEqual({
+      status: 'warn',
+      reason_code: 'ADC_POLICY_WARN',
+      message: 'legacy payload warning',
+    });
+  });
+
+  it('ignores invalid severity values in parsed decisions', () => {
+    const decision = parseDecision({
+      status: 'deny',
+      reason_code: 'ADC_POLICY_DENY',
+      severity: 'urgent',
+    });
+
+    expect(decision).toEqual({
+      status: 'deny',
+      reason_code: 'ADC_POLICY_DENY',
+    });
+  });
 });

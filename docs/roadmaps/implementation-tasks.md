@@ -56,7 +56,7 @@ These systems are **production-grade and already exist on `main`**. Spider-Sense
 - **Spider-Sense events flow through automatically once emitted as `SecurityEvent`**
 
 ### Multi-Agent (fully operational)
-- `crates/hush-multi-agent/src/` — `AgentIdentity`, `TrustLevel` (5 levels), `AgentRole` (7 variants), `AgentCapability` (9 variants incl. `Custom { name, params }`)
+- `crates/libs/hush-multi-agent/src/` — `AgentIdentity`, `TrustLevel` (5 levels), `AgentRole` (7 variants), `AgentCapability` (9 variants incl. `Custom { name, params }`)
 - **Delegation tokens** (`SignedDelegationToken`) — JWS-like claims with capability ceiling, attenuation-only, Ed25519 signing over JCS
 - **Signed messages** (`SignedMessage`) — integrity, replay protection via nonce, delegation chain verification
 - **`RevocationStore`** trait + `InMemoryRevocationStore`

@@ -958,6 +958,16 @@ mod tests {
     }
 
     #[test]
+    fn guard_config_rejects_non_finite_similarity_threshold() {
+        let mut cfg = test_cfg();
+        cfg.similarity_threshold = f64::NAN;
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "non-finite threshold should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("finite"));
+    }
+
+    #[test]
     fn guard_config_rejects_invalid_ambiguity_band() {
         let mut cfg = test_cfg();
         cfg.ambiguity_band = -0.2;
@@ -965,6 +975,16 @@ mod tests {
         assert!(result.is_err(), "invalid ambiguity band should be rejected");
         let err = result.err().expect("error must be present");
         assert!(err.contains("ambiguity_band"));
+    }
+
+    #[test]
+    fn guard_config_rejects_non_finite_ambiguity_band() {
+        let mut cfg = test_cfg();
+        cfg.ambiguity_band = f64::INFINITY;
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "non-finite ambiguity band should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("finite"));
     }
 
     #[test]
@@ -986,5 +1006,27 @@ mod tests {
         assert!(result.is_err(), "partial LLM config should be rejected");
         let err = result.err().expect("error must be present");
         assert!(err.contains("requires both llm_api_url and llm_api_key"));
+    }
+
+    #[test]
+    fn guard_config_rejects_empty_embedding_api_url() {
+        let mut cfg = test_cfg();
+        cfg.embedding_api_url = "   ".to_string();
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "empty embedding url should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("embedding_api_url"));
+    }
+
+    #[test]
+    fn guard_config_rejects_empty_llm_model_when_provided() {
+        let mut cfg = test_cfg();
+        cfg.llm_api_url = Some("http://127.0.0.1:8081/v1/messages".to_string());
+        cfg.llm_api_key = Some("llm-test-key".to_string());
+        cfg.llm_model = Some("   ".to_string());
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(result.is_err(), "empty llm_model should be rejected");
+        let err = result.err().expect("error must be present");
+        assert!(err.contains("llm_model"));
     }
 }

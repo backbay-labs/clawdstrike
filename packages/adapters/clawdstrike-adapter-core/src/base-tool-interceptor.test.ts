@@ -207,4 +207,68 @@ describe('BaseToolInterceptor', () => {
     expect(result.replacementResult).toEqual({ safe: true, source: 'policy' });
     expect(result.modifiedParameters).toBeUndefined();
   });
+
+  it('enforces sanitize details.sanitized_parameters override', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({
+        status: 'sanitize',
+        reason_code: 'ADC_POLICY_SANITIZE',
+        details: {
+          sanitized_parameters: { prompt: 'safe prompt', mode: 'strict' },
+        },
+      }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {});
+    const context = createSecurityContext({ contextId: 'ctx-sanitize-3', sessionId: 'sess-sanitize-3' });
+    const result = await interceptor.beforeExecute('tool_call', { prompt: 'danger', mode: 'strict' }, context);
+
+    expect(result.proceed).toBe(true);
+    expect(result.decision.status).toBe('sanitize');
+    expect(result.modifiedParameters).toEqual({ prompt: 'safe prompt', mode: 'strict' });
+    expect(result.replacementResult).toBeUndefined();
+  });
+
+  it('normalizes sanitize string override for raw string input', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({
+        status: 'sanitize',
+        reason_code: 'ADC_POLICY_SANITIZE',
+        sanitized: '{"query":"safe query"}',
+      }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {});
+    const context = createSecurityContext({ contextId: 'ctx-sanitize-4', sessionId: 'sess-sanitize-4' });
+    const result = await interceptor.beforeExecute('tool_call', 'drop database', context);
+
+    expect(result.proceed).toBe(true);
+    expect(result.decision.status).toBe('sanitize');
+    expect(result.modifiedParameters).toEqual({ query: 'safe query' });
+  });
+
+  it('falls back to advisory sanitize mode when no applicable execution override exists', async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({
+        status: 'sanitize',
+        reason_code: 'ADC_POLICY_SANITIZE',
+        sanitized: 'safe text',
+      }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {});
+    const context = createSecurityContext({ contextId: 'ctx-sanitize-5', sessionId: 'sess-sanitize-5' });
+    const result = await interceptor.beforeExecute('tool_call', { payload: { nested: true } }, context);
+
+    expect(result.proceed).toBe(true);
+    expect(result.modifiedParameters).toBeUndefined();
+    expect(result.replacementResult).toBeUndefined();
+
+    const sanitizeEvent = context.auditEvents.find(e => e.type === 'output_sanitized');
+    expect(sanitizeEvent?.details).toMatchObject({
+      execution: {
+        mode: 'advisory',
+      },
+    });
+  });
 });
