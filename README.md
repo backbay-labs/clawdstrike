@@ -196,6 +196,8 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 
 **Privacy-safe.** Raw input never appears in detection results. Only match spans and SHA-256 fingerprints are stored. Unicode NFKC normalization and zero-width character stripping happen before any pattern matching.
 
+**[Try this out for yourself in our Attack Range!](https://backbay.io/attack-range)**
+
 </td>
 </tr>
 </table>
