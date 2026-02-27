@@ -32,6 +32,7 @@ export {
   allowDecision,
   createDecision,
   denyDecision,
+  sanitizeDecision,
   warnDecision,
 } from './types.js';
 

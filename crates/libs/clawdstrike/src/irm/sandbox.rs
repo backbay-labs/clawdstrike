@@ -169,6 +169,7 @@ impl Sandbox {
                 Decision::Allow => state.allowed_count += 1,
                 Decision::Deny { .. } => state.denied_count += 1,
                 Decision::Audit { .. } => state.audited_count += 1,
+                Decision::Sanitize { .. } => state.allowed_count += 1,
             }
 
             // Record event if under limit

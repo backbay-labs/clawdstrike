@@ -137,6 +137,24 @@ export class BaseToolInterceptor implements ToolInterceptor {
       }
     }
 
+    if (decision.status === 'sanitize') {
+      this.config.handlers?.onWarning?.(toolCall, decision);
+
+      await this.emitAuditEvent(context, {
+        id: `${event.eventId}-sanitized`,
+        type: 'output_sanitized',
+        timestamp: new Date(),
+        contextId: context.id,
+        sessionId: context.sessionId,
+        toolName: normalizedName,
+        decision,
+        details: {
+          original: 'original' in decision ? decision.original : undefined,
+          sanitized: 'sanitized' in decision ? decision.sanitized : undefined,
+        },
+      });
+    }
+
     if (decision.status === 'warn') {
       this.config.handlers?.onWarning?.(toolCall, decision);
 

@@ -38,7 +38,7 @@ export function parseDecision(value: unknown): Decision | null {
   }
 
   const status =
-    value.status === 'allow' || value.status === 'warn' || value.status === 'deny'
+    value.status === 'allow' || value.status === 'warn' || value.status === 'deny' || value.status === 'sanitize'
       ? value.status
       : typeof value.allowed === 'boolean' && typeof value.denied === 'boolean' && typeof value.warn === 'boolean'
         ? value.denied
@@ -79,6 +79,16 @@ export function parseDecision(value: unknown): Decision | null {
 
   if (value.severity === 'low' || value.severity === 'medium' || value.severity === 'high' || value.severity === 'critical') {
     decision.severity = value.severity;
+  }
+
+  if (status === 'sanitize') {
+    const d = decision as unknown as Record<string, unknown>;
+    if (typeof value.original === 'string') {
+      d.original = value.original;
+    }
+    if (typeof value.sanitized === 'string') {
+      d.sanitized = value.sanitized;
+    }
   }
 
   return decision;
