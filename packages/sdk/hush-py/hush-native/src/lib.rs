@@ -522,10 +522,15 @@ impl NativeEngine {
         ctx: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let context = build_guard_context(ctx)?;
-        let result =
-            futures::executor::block_on(self.engine.check_untrusted_text(source, text, &context))
+        let payload = match source {
+            Some(s) => serde_json::json!({ "source": s, "text": text }),
+            None => serde_json::json!({ "text": text }),
+        };
+        let action = clawdstrike::guards::GuardAction::Custom("untrusted_text", &payload);
+        let report =
+            futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&result)
+        let v = serde_json::to_value(&report)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
