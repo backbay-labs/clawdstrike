@@ -527,6 +527,19 @@ async fn spider_sense_ambiguous_with_llm_allow() {
         result.overall.allowed,
         "LLM allow verdict should result in allowed action"
     );
+
+    let ss = result
+        .per_guard
+        .iter()
+        .find(|r| r.guard == "clawdstrike-spider-sense")
+        .expect("Expected spider-sense in results");
+
+    let details = ss.details.as_ref().expect("Expected details");
+    let verdict = details
+        .pointer("/verdict")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert_eq!(verdict, "allow");
 }
 
 // ── Test: Ambiguous without LLM → warn ──────────────────────────────────
@@ -676,6 +689,44 @@ async fn spider_sense_handles_mcp_tool() {
     assert!(
         result.overall.allowed,
         "MCP tool with benign embedding should be allowed"
+    );
+}
+
+// ── Test: Patch flows through spider-sense ──────────────────────────────
+
+#[tokio::test]
+async fn spider_sense_handles_patch_action() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let app = mock_embedding_app(benign_embedding(), calls.clone());
+    let base = serve_or_skip!(app, "spider_sense_handles_patch_action");
+
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_pattern_db(&dir);
+    let yaml = policy_yaml(&base, &db_path, None);
+
+    let policy = Policy::from_yaml(&yaml).unwrap();
+    let engine = HushEngine::with_policy(policy);
+    let ctx = GuardContext::new();
+
+    let result = engine
+        .check_action_report(
+            &GuardAction::Patch(
+                "src/lib.rs",
+                "@@ -1,2 +1,2 @@\n-fn insecure() {}\n+fn secure() {}\n",
+            ),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        result.overall.allowed,
+        "Patch action with benign embedding should be allowed"
+    );
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        1,
+        "Patch action should be evaluated by spider-sense"
     );
 }
 

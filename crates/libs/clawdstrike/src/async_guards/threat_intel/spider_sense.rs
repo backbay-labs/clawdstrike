@@ -366,14 +366,12 @@ impl SpiderSenseGuard {
             .iter()
             .enumerate()
             .map(|(i, v)| {
-                v.as_f64()
-                    .map(|f| f as f32)
-                    .ok_or_else(|| {
-                        AsyncGuardError::new(
-                            AsyncGuardErrorKind::Parse,
-                            format!("embedding element at index {i} is not a number: {v}"),
-                        )
-                    })
+                v.as_f64().map(|f| f as f32).ok_or_else(|| {
+                    AsyncGuardError::new(
+                        AsyncGuardErrorKind::Parse,
+                        format!("embedding element at index {i} is not a number: {v}"),
+                    )
+                })
             })
             .collect::<Result<Vec<f32>, _>>()?;
 
@@ -522,6 +520,12 @@ impl SpiderSenseGuard {
                     "reason": verdict.reason,
                     "top_matches": format_matches(top_matches),
                 })),
+                "allow" => GuardResult::allow(self.name()).with_details(serde_json::json!({
+                    "analysis": "deep_path",
+                    "verdict": "allow",
+                    "reason": verdict.reason,
+                    "top_matches": format_matches(top_matches),
+                })),
                 other => GuardResult::warn(
                     self.name(),
                     format!(
@@ -573,7 +577,8 @@ impl AsyncGuard for SpiderSenseGuard {
             GuardAction::Custom(action_type, _) => action_type.starts_with("risk_signal."),
             GuardAction::McpTool(_, _)
             | GuardAction::ShellCommand(_)
-            | GuardAction::FileWrite(_, _) => true,
+            | GuardAction::FileWrite(_, _)
+            | GuardAction::Patch(_, _) => true,
             _ => false,
         }
     }
@@ -982,7 +987,10 @@ mod tests {
         let mut cfg = test_cfg();
         cfg.ambiguity_band = f64::INFINITY;
         let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
-        assert!(result.is_err(), "non-finite ambiguity band should be rejected");
+        assert!(
+            result.is_err(),
+            "non-finite ambiguity band should be rejected"
+        );
         let err = result.err().expect("error must be present");
         assert!(err.contains("finite"));
     }
