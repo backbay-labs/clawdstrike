@@ -169,7 +169,8 @@ flowchart LR
   <a href="#jailbreak-detection"><kbd>Jailbreak Detection</kbd></a>&nbsp;&nbsp;
   <a href="#cryptographic-receipts"><kbd>Receipts</kbd></a>&nbsp;&nbsp;
   <a href="#multi-agent-security-primitives"><kbd>Multi-Agent</kbd></a>&nbsp;&nbsp;
-  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>
+  <a href="#irm--output-sanitization--watermarking--threat-intel"><kbd>IRM · Sanitization · Watermarking · Threat Intel</kbd></a>&nbsp;&nbsp;
+  <a href="#spider-sense"><kbd>Spider-Sense</kbd></a>
 </p>
 
 ### Guard Stack
@@ -187,6 +188,7 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 | **JailbreakGuard**       | 4-layer detection engine with session aggregation (see below)                    |
 | **ComputerUseGuard**     | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
 | **ShellCommandGuard**    | Blocks dangerous shell commands before execution                                 |
+| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Two-tier semantic screening: fast vector similarity + LLM deep reasoning for ambiguous cases |
 
 ---
 
@@ -263,6 +265,8 @@ IRM Router ─┬─ Filesystem Monitor
 
 Catches secrets that make it into model output on the way out. Scans for API keys, tokens, PII, internal URLs, and custom patterns. Redaction strategies: full replacement, partial masking, type labels, stable SHA-256 hashing. Batch and streaming modes.
 
+The `Sanitize` decision verdict allows operations to proceed with modified content — guards can redact or rewrite dangerous payloads instead of outright blocking.
+
 </td>
 </tr>
 <tr>
@@ -273,9 +277,12 @@ Ed25519-signed provenance markers embedded in prompts for attribution and forens
 
 </td>
 <td width="50%" valign="top">
-<h4 align="center">Threat Intel & WASM Plugins</h4>
+<a id="spider-sense"></a>
+<h4 align="center">Threat Intel · Spider-Sense · WASM</h4>
 
 **Threat feeds:** VirusTotal, Snyk, Google Safe Browsing — with circuit breakers, rate limiting, and caching. External failures never block the pipeline.
+
+**Spider-Sense** <sup>β</sup> adds two-tier semantic screening inspired by [Yu et al. (2026)](https://arxiv.org/abs/2502.17075). Fast-path cosine similarity against an attack pattern database handles the common case; ambiguous inputs escalate to LLM deep reasoning. Covers all four semantic stages (perception, cognition, action, feedback) and nine attack types. Feature-gated: `--features clawdstrike-spider-sense`.
 
 **WASM runtime:** Custom guards in sandboxed WebAssembly with declared capability sets and resource limits.
 
