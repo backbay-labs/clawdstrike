@@ -37,7 +37,7 @@ This specification defines the **Adaptive SDR (Security Decision Runtime)** arch
 - **Fail-closed everywhere.** Every error path denies. Connectivity loss triggers degraded mode with local enforcement, not open access.
 - **NATS auth aligns with `NatsAuthConfig`.** Agents authenticate via creds file, token, or NKey seed.
 - **Envelope format uses `build_signed_envelope()` from `spine/src/envelope.rs`.**
-- **Desktop agent port 9878 (default, configurable).** The local API server port is configurable via `agent.port` in `~/.clawdstrike/config.yaml`.
+- **Desktop agent port 9878 (default, configurable).** The local API server port is configurable via `agent_api_port` in `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json`.
 - **No breaking changes to existing adapters.** All framework adapters (`openclaw`, `vercel-ai`, `langchain`, etc.) continue to work unchanged.
 
 ---
@@ -86,17 +86,14 @@ The agent operates entirely locally with no network dependency on enterprise inf
 
 **Configuration:**
 
-```yaml
-# ~/.clawdstrike/config.yaml (standalone)
-mode: standalone
-engine:
-  type: cli
-  policy_ref: default
-  hush_path: hush
-  timeout_ms: 10000
-agent:
-  port: 9878
-  bind: 127.0.0.1
+```json
+// ${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json (standalone)
+{
+  "policy_path": "/Users/<you>/.config/clawdstrike/policy.yaml",
+  "daemon_port": 9876,
+  "agent_api_port": 9878,
+  "enabled": true
+}
 ```
 
 ### 2.2 Mode 2 -- Connected
@@ -166,29 +163,26 @@ The agent connects to enterprise infrastructure for centralized policy managemen
 
 **Configuration:**
 
-```yaml
-# ~/.clawdstrike/config.yaml (connected)
-mode: connected
-enterprise:
-  hushd_url: https://hushd.acme.clawdstrike.cloud
-  nats_url: nats://nats.acme.clawdstrike.cloud:4222
-  nats_auth:
-    creds_file: ~/.clawdstrike/nats.creds
-engine:
-  remote:
-    timeout_ms: 10000
-    token: ${CLAWDSTRIKE_API_KEY}
-  local:
-    policy_ref: default
-    hush_path: hush
-  fallback: true
-  probe_interval_ms: 30000
-agent:
-  port: 9878
-  bind: 127.0.0.1
-telemetry:
-  flush_interval_ms: 5000
-  offline_queue_max: 10000
+```json
+// ${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json (connected)
+{
+  "daemon_port": 9876,
+  "agent_api_port": 9878,
+  "nats": {
+    "enabled": true,
+    "nats_url": "nats://nats.acme.clawdstrike.cloud:4222",
+    "token": "nats-acme-...",
+    "tenant_id": "2f9f15f9-...",
+    "agent_id": "agent-2f6dbe4b-...",
+    "nats_account": "tenant-acme",
+    "subject_prefix": "tenant-acme.clawdstrike"
+  },
+  "enrollment": {
+    "enrolled": true,
+    "agent_uuid": "f37df9b7-...",
+    "tenant_id": "2f9f15f9-..."
+  }
+}
 ```
 
 ### 2.3 Mode 3 -- Headless (Enterprise-Only)
@@ -432,26 +426,26 @@ standalone connected headless
 All NATS subjects follow the pattern:
 
 ```
-clawdstrike.<domain>.<action>[.<qualifier>]
+<subject_prefix>.<domain>.<action>[.<qualifier>]
 ```
 
 Where:
+- `<subject_prefix>` -- tenant-scoped prefix provisioned at enrollment (for example `tenant-acme.clawdstrike`)
 - `<domain>` -- functional domain (`policy`, `telemetry`, `agent`, `posture`, `approval`)
 - `<action>` -- specific operation within the domain
 - `<qualifier>` -- optional agent-specific or resource-specific suffix
 
-**Tenant isolation** is provided by NATS account boundaries (per Spec 14), not by embedding tenant IDs in subject names. Each tenant's NATS account contains only that tenant's subjects, so `clawdstrike.telemetry.receipts` within tenant A's account is inherently isolated from tenant B's. This aligns with Spec 14's approach (`clawdstrike.spine.envelope.>`) and avoids redundant double-isolation.
+**Tenant isolation** is enforced by both NATS account boundaries and the enrollment-provisioned `subject_prefix` that all publishers/subscribers derive from.
 
 ### 5.2 Subject Inventory
 
 | Subject Pattern | Type | Direction | Purpose |
 |----------------|------|-----------|---------|
-| `clawdstrike.policy.sync` | KV Bucket | Enterprise -> Agent | Policy distribution via KV watch |
-| `clawdstrike.telemetry.receipts` | JetStream Stream | Agent -> Enterprise | Audit receipts (signed envelopes) |
-| `clawdstrike.agent.heartbeat.<agent-id>` | Subject | Agent -> Enterprise | Periodic agent status |
-| `clawdstrike.posture.command.<agent-id>` | Subject | Enterprise -> Agent | Remote posture commands |
-| `clawdstrike.approval.request` | Subject | Agent -> Enterprise | Escalation requests |
-| `clawdstrike.approval.response.<request-id>` | Subject | Enterprise -> Agent | Escalation responses |
+| `<subject_prefix>.policy.update` | Subject | Enterprise -> Agent | Policy deployment signal |
+| `<subject_prefix>.telemetry.receipts.<agent-id>` | JetStream subject | Agent -> Enterprise | Audit receipt events |
+| `<subject_prefix>.agent.heartbeat.<agent-id>` | Subject | Agent -> Enterprise | Periodic agent status |
+| `<subject_prefix>.posture.command.<agent-id>` | Subject | Enterprise -> Agent | Remote posture commands |
+| `<subject_prefix>.approval.response.<agent-id>` | Subject | Enterprise -> Agent | Approval resolution responses |
 
 ### 5.3 KV Bucket: Policy Sync
 
@@ -484,8 +478,8 @@ Key Schema:
 ### 5.4 JetStream Stream: Telemetry Receipts
 
 ```
-Stream:     CLAWDSTRIKE_TELEMETRY
-Subjects:   ["clawdstrike.telemetry.receipts"]
+Stream:     <sanitized_subject_prefix>-telemetry-<agent-id>
+Subjects:   ["<subject_prefix>.telemetry.>", "<subject_prefix>.agent.heartbeat.>"]
 Storage:    File
 Retention:  Limits (max_age based on tenant retention_days from Spec 14)
 Replicas:   3
@@ -498,7 +492,7 @@ Dedup:      Window 5m (by Nats-Msg-Id header = envelope_hash)
 ### 5.5 Heartbeat Subject
 
 ```
-Subject:  clawdstrike.agent.heartbeat.<agent-id>
+Subject:  <subject_prefix>.agent.heartbeat.<agent-id>
 Pattern:  Publish only (fire-and-forget)
 Rate:     Every 30 seconds per agent
 ```
@@ -508,7 +502,7 @@ Rate:     Every 30 seconds per agent
 ### 5.6 Posture Command Subject
 
 ```
-Subject:   clawdstrike.posture.command.<agent-id>
+Subject:   <subject_prefix>.posture.command.<agent-id>
 Pattern:   Request/Reply
 Timeout:   10 seconds (agent must ACK within this window)
 ```
@@ -518,11 +512,8 @@ Timeout:   10 seconds (agent must ACK within this window)
 ### 5.7 Approval Subjects
 
 ```
-Request:   clawdstrike.approval.request
-Pattern:   Publish (agent -> enterprise)
-
-Response:  clawdstrike.approval.response.<request-id>
-Pattern:   Publish (enterprise -> agent, agent subscribes on specific request ID)
+Response:  <subject_prefix>.approval.response.<agent-id>
+Pattern:   Publish (enterprise -> agent)
 Timeout:   5 minutes (default; configurable per tenant)
 ```
 
@@ -652,12 +643,12 @@ Within a tenant's NATS account, two credential classes exist with distinct permi
 
 | Credential | Publish | Subscribe |
 |------------|---------|-----------|
-| **Agent NKey** | `clawdstrike.telemetry.receipts`, `clawdstrike.agent.heartbeat.<own-agent-id>`, `clawdstrike.approval.request` | `clawdstrike.policy.sync` (KV watch), `clawdstrike.posture.command.<own-agent-id>`, `clawdstrike.approval.response.>` |
-| **Enterprise service** | `clawdstrike.posture.command.>`, `clawdstrike.approval.response.>`, `clawdstrike.policy.sync` (KV put) | `clawdstrike.telemetry.receipts`, `clawdstrike.agent.heartbeat.>`, `clawdstrike.approval.request` |
+| **Agent credential** | `<subject_prefix>.telemetry.receipts.<own-agent-id>`, `<subject_prefix>.agent.heartbeat.<own-agent-id>` | `<subject_prefix>.posture.command.<own-agent-id>` |
+| **Enterprise service** | `<subject_prefix>.policy.update`, `<subject_prefix>.posture.command.>`, `<subject_prefix>.approval.response.>` | `<subject_prefix>.telemetry.>`, `<subject_prefix>.agent.heartbeat.>` |
 
 Key restrictions:
-- Agents **cannot** publish to `clawdstrike.posture.command.*` -- prevents agents from spoofing posture commands or kill switches to other agents
-- Agents **cannot** publish to `clawdstrike.approval.response.*` -- prevents agents from forging approval responses
+- Agents **cannot** publish to `<subject_prefix>.posture.command.*` -- prevents spoofed command injection
+- Agents **cannot** publish to `<subject_prefix>.approval.response.*` -- prevents forged approval responses
 - Agents can only publish heartbeats to their own agent-id subject, not to other agents' heartbeat subjects
 - Enterprise services have full publish/subscribe on all subjects within the tenant account
 
@@ -731,20 +722,20 @@ Agent                              Cloud API (HTTPS)
   |  6. HTTP 201 Enrollment Response        |
   |  {                                      |
   |    status: "enrolled",                  |
-  |    agent_id: "<uuid>",                  |
-  |    tenant_id: "acme",                   |
-  |    nats_creds: "<creds file content>",  |
+  |    agent_uuid: "<uuid>",                |
+  |    tenant_id: "<tenant-uuid>",          |
+  |    nats_token: "<opaque token>",        |
   |    nats_url: "nats://...",              |
-  |    hushd_url: "https://...",            |
-  |    policy_version: 42                   |
+  |    nats_subject_prefix: "tenant-...",   |
+  |    agent_id: "agent-..."                |
   |  }                                      |
   |<----------------------------------------|
   |                                         |
-  |  7. Agent persists credentials          |
-  |     to ~/.clawdstrike/nats.creds        |
+  |  7. Agent persists enrollment + NATS    |
+  |     settings in agent.json              |
   |                                         |
-  |  8. Agent transitions mode:             |
-  |     standalone -> connected             |
+  |  8. Agent marks enrolled=true and       |
+  |     requests restart                    |
   |                                         |
   |  9. Agent starts heartbeat,             |
   |     policy sync watch,                  |
@@ -768,33 +759,26 @@ Total: 88 bytes -> ~120 chars base64url
 
 ### 7.5 Credential Types
 
-The enrollment response provides NATS credentials in one of two formats:
-
-| Format | When | Content |
-|--------|------|---------|
-| Credentials file (`.creds`) | Default (production) | NATS JWT + NKey seed; written to `~/.clawdstrike/nats.creds` |
-| NKey seed only | Development / simplified | NKey seed string; stored in config |
-
-The agent stores credentials at `~/.clawdstrike/nats.creds` (chmod 600) and updates `~/.clawdstrike/config.yaml` to set `mode: connected`.
+The enrollment response provides tenant-scoped NATS connection material (`nats_url`, `nats_token`, `nats_subject_prefix`, `agent_id`, `nats_account`) that is persisted in `agent.json`.
 
 ### 7.6 Enrollment Atomicity and Recovery
 
-The enrollment flow (steps 7-9) involves three sequential local mutations: credential write, mode transition, and service startup. If the agent crashes mid-enrollment, orphaned state must be detected and resolved on next startup.
+The enrollment flow (steps 7-9) involves sequential local mutations: key write, settings update, and service startup. If the agent crashes mid-enrollment, inconsistent flags must be detected and resolved on next startup.
 
 **Recovery protocol:**
 
 On startup, the agent checks for enrollment inconsistency:
 
-1. If `~/.clawdstrike/nats.creds` exists but `config.yaml` mode is `standalone`:
-   - **Orphaned credentials** -- enrollment crashed between step 7 (credential write) and step 8 (mode transition).
-   - Recovery: attempt to connect to NATS with the stored credentials. If successful, transition to `connected` mode and continue from step 9. If the credentials are rejected (revoked or invalid), delete the orphaned credential file and remain in `standalone` mode.
+1. If `enrollment.enrollment_in_progress=true` on startup:
+   - **Interrupted enrollment** -- crash happened mid-handshake.
+   - Recovery: clear the in-progress flag and require retry.
 
-2. If `config.yaml` mode is `connected` but `~/.clawdstrike/nats.creds` is missing or empty:
-   - **Missing credentials** -- credential file was deleted or corrupted after enrollment.
-   - Recovery: transition back to `standalone` mode. Log a warning. The agent must re-enroll.
+2. If `enrollment.enrolled=true` but required `nats.*` fields are missing:
+   - **Incomplete connected config** -- settings are inconsistent.
+   - Recovery: clear `enrollment` + `nats` blocks and remain local-only until re-enrollment.
 
-3. If `config.yaml` mode is `connected` and `~/.clawdstrike/nats.creds` exists:
-   - **Normal connected startup.** Validate credentials by connecting to NATS. If rejected, transition to `standalone` mode (credentials may have been revoked).
+3. If `enrollment.enrolled=true` and required `nats.*` fields are present:
+   - **Normal connected startup.** Validate by connecting to NATS and starting background enterprise services.
 
 This ensures the agent always reaches a consistent state on startup, regardless of where a previous crash occurred.
 
@@ -918,11 +902,8 @@ Enterprise Admin         Cloud API            NATS KV              Agent
 ### 9.4 Local Cache
 
 ```
-~/.clawdstrike/
-  policy_cache/
-    current.yaml      # Active policy (synced from enterprise)
-    current.meta      # { version, checksum, synced_at, source: "enterprise" }
-    previous.yaml     # Previous version (one-deep rollback)
+${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/
+  policy-cache.yaml   # Last synced policy payload from hushd
 ```
 
 - Cache is used during degraded mode when enterprise is unreachable
@@ -979,19 +960,13 @@ Telemetry envelopes use `build_signed_envelope()` from `spine/src/envelope.rs`:
 
 ### 10.3 Publishing
 
-- **Online:** Envelopes are published immediately to `clawdstrike.telemetry.receipts`
+- **Online:** Receipts are published immediately to `<subject_prefix>.telemetry.receipts.<agent-id>`
 - **NATS message header:** `Nats-Msg-Id: <envelope_hash>` for server-side deduplication (5-minute window)
 - **Batch mode:** Agent buffers receipts and flushes every `flush_interval_ms` (default: 5000ms) or when the buffer reaches 100 envelopes, whichever comes first
 
 ### 10.4 Store-and-Forward (Offline Decisions)
 
-When the agent is in degraded mode (enterprise unreachable), decisions are queued locally:
-
-```
-~/.clawdstrike/
-  offline_queue/
-    <seq>-<envelope_hash>.json    # Individual signed envelopes
-```
+When the agent is in degraded mode (enterprise unreachable), decisions are queued in the local in-memory audit queue until hushd connectivity is restored.
 
 **Queue properties:**
 
@@ -1036,9 +1011,8 @@ This addresses **Gap G7** from the research brief.
 | Command | Description | Params |
 |---------|-------------|--------|
 | `set_posture` | Transition agent to a specified posture | `{ "posture": "restricted" }` |
-| `force_lockdown` | Kill switch: immediately deny all non-essential actions | `{ "reason": "Incident response" }` |
-| `request_sync` | Request immediate policy re-sync | `{}` |
-| `request_telemetry_flush` | Request immediate flush of buffered/queued telemetry | `{}` |
+| `kill_switch` | Kill switch: immediately transition active session posture to `locked` | `{ "reason": "Incident response" }` |
+| `request_policy_reload` | Request immediate hushd restart/policy reload | `{}` |
 
 ### 11.3 Protocol
 
@@ -1060,7 +1034,7 @@ Enterprise            NATS                    Agent
     |<------------------|                       |
 ```
 
-Uses NATS request/reply pattern. The enterprise publishes to `clawdstrike.posture.command.<agent-id>` with a reply inbox. The agent subscribes to its own command subject and replies with an ACK.
+Uses NATS request/reply pattern. The enterprise publishes to `<subject_prefix>.posture.command.<agent-id>` with a reply inbox. The agent subscribes to its own command subject and replies with an ACK.
 
 ### 11.4 ACK Format
 
@@ -1077,7 +1051,7 @@ Uses NATS request/reply pattern. The enterprise publishes to `clawdstrike.postur
 
 Possible status values: `accepted`, `rejected` (with `reason` field).
 
-### 11.5 Kill Switch (`force_lockdown`)
+### 11.5 Kill Switch (`kill_switch`)
 
 The kill switch is the highest-priority posture command:
 
@@ -1414,7 +1388,8 @@ All adaptive SDR components emit structured logs (JSON) with the following stand
 | `apps/agent/src-tauri/src/nats_client.rs` | NATS client for connected mode |
 | `apps/agent/src-tauri/src/enrollment.rs` | Enrollment protocol implementation |
 | `apps/agent/src-tauri/src/policy_sync.rs` | NATS KV policy sync watcher |
-| `apps/agent/src-tauri/src/telemetry.rs` | Telemetry publisher + offline queue |
+| `apps/agent/src-tauri/src/telemetry_publisher.rs` | JetStream telemetry publisher (receipts + heartbeats) |
+| `apps/agent/src-tauri/src/nats_subjects.rs` | Canonical subject/stream naming helpers |
 | `apps/agent/src-tauri/src/posture_commands.rs` | Posture command subscriber |
 | `apps/agent/src-tauri/src/approval.rs` | Approval escalation protocol |
 
@@ -1450,7 +1425,7 @@ All adaptive SDR components emit structured logs (JSON) with the following stand
 - **Telemetry:** Agent publishes receipt -> enterprise receives in JetStream stream
 - **Mode transitions:** Simulate connectivity loss -> verify degraded mode -> restore -> verify reconnection
 - **Store-and-forward:** Make decisions offline -> reconnect -> verify receipts drained to JetStream
-- **Kill switch:** Send force_lockdown -> verify agent denies all actions -> send set_posture -> verify recovery
+- **Kill switch:** Send kill_switch -> verify agent transitions session posture to locked -> send set_posture -> verify recovery
 - **Approval escalation:** Agent denies action -> escalation request published -> response approves -> action allowed
 
 ### Load Tests
@@ -1499,7 +1474,7 @@ All adaptive SDR components emit structured logs (JSON) with the following stand
 
 4. **Approval escalation scope:** Which guards and event types should support escalation? **Recommendation:** Escalation is opt-in per guard via policy configuration. Start with `ForbiddenPathGuard` and `EgressAllowlistGuard`. Other guards can be added later.
 
-5. **Desktop agent port configurability:** ~~Resolved.~~ Port is configurable via `agent.port` in `~/.clawdstrike/config.yaml` (default: 9878). Agent must detect port conflicts at startup and fail with a clear error message if the configured port is in use.
+5. **Desktop agent port configurability:** ~~Resolved.~~ Port is configurable via `agent_api_port` in `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json` (default: 9878). Agent must detect port conflicts at startup and fail with a clear error message if the configured port is in use.
 
 ---
 
@@ -1518,7 +1493,7 @@ All adaptive SDR components emit structured logs (JSON) with the following stand
 - [ ] Heartbeats are published every 30 seconds with correct agent status
 - [ ] Enterprise detects stale agents within 2 minutes of connectivity loss
 - [ ] Enterprise can send posture commands and receive ACKs within 10 seconds
-- [ ] Kill switch (`force_lockdown`) immediately denies all non-essential actions
+- [ ] Kill switch (`kill_switch`) immediately transitions active session posture to `locked`
 - [ ] Approval escalation requests are published and responses received within timeout
 - [ ] No response within approval timeout results in deny (fail-closed)
 - [ ] hushd publishes all decisions as signed Spine envelopes

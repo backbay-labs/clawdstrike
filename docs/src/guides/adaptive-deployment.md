@@ -14,18 +14,15 @@ Standalone mode is the default. The agent runs entirely on the local machine wit
 
 ### Configuration
 
-Create or edit `~/.clawdstrike/config.yaml`:
+Create or edit `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json`:
 
-```yaml
-mode: standalone
-engine:
-  type: cli
-  policy_ref: default        # Built-in ruleset: permissive, default, strict, ai-agent, cicd
-  hush_path: hush            # Path to hush CLI binary
-  timeout_ms: 10000
-agent:
-  port: 9878
-  bind: 127.0.0.1
+```json
+{
+  "policy_path": "/Users/<you>/.config/clawdstrike/policy.yaml",
+  "daemon_port": 9876,
+  "agent_api_port": 9878,
+  "enabled": true
+}
 ```
 
 You can also use a project-level policy by placing a `.hush/policy.yaml` file in your project root. The agent loads project-level policies automatically when working in that directory.
@@ -79,47 +76,43 @@ Before configuring connected mode, you must enroll the agent with your enterpris
 
 ### Configuration
 
-After successful enrollment, the agent updates `~/.clawdstrike/config.yaml` automatically. The resulting configuration looks like this:
+After successful enrollment, the agent updates `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json` automatically. The resulting configuration includes tenant-scoped NATS settings:
 
-```yaml
-mode: connected
-enterprise:
-  hushd_url: https://hushd.acme.clawdstrike.cloud
-  nats_url: nats://nats.acme.clawdstrike.cloud:4222
-  nats_auth:
-    creds_file: ~/.clawdstrike/nats.creds
-engine:
-  remote:
-    timeout_ms: 10000
-    token: ${CLAWDSTRIKE_API_KEY}
-  local:
-    policy_ref: default
-    hush_path: hush
-  fallback: true
-  probe_interval_ms: 30000
-agent:
-  port: 9878
-  bind: 127.0.0.1
-telemetry:
-  flush_interval_ms: 5000
-  offline_queue_max: 10000
+```json
+{
+  "nats": {
+    "enabled": true,
+    "nats_url": "nats://nats.acme.clawdstrike.cloud:4222",
+    "tenant_id": "2f9f15f9-...",
+    "agent_id": "agent-2f6dbe4b-...",
+    "nats_account": "tenant-acme",
+    "subject_prefix": "tenant-acme.clawdstrike",
+    "token": "nats-acme-..."
+  },
+  "enrollment": {
+    "enrolled": true,
+    "agent_uuid": "f37df9b7-...",
+    "tenant_id": "2f9f15f9-...",
+    "enrollment_in_progress": false
+  }
+}
 ```
 
 Key settings:
 
 | Setting | Description |
 |---------|-------------|
-| `enterprise.hushd_url` | Enterprise hushd endpoint for remote policy evaluation |
-| `enterprise.nats_url` | NATS cluster URL for policy sync and telemetry |
-| `enterprise.nats_auth.creds_file` | Path to NATS credentials file (provisioned during enrollment) |
-| `engine.fallback` | Enable local fallback when enterprise is unreachable (default: `true`) |
-| `engine.probe_interval_ms` | How often to check enterprise connectivity (default: 30000ms) |
-| `telemetry.offline_queue_max` | Maximum offline receipts to queue before evicting oldest (default: 10000) |
+| `nats.enabled` | Enables enterprise NATS connectivity features |
+| `nats.nats_url` | NATS cluster URL for policy sync and telemetry |
+| `nats.subject_prefix` | Tenant-scoped prefix used for all publish/subscribe subjects |
+| `nats.token` | Enrolled NATS auth token stored in local settings |
+| `enrollment.enrolled` | Enrollment completion flag |
+| `enrollment.agent_uuid` | Cloud-issued agent UUID |
 
 ### Verifying Connectivity
 
 ```bash
-# Check agent health -- should show mode: connected
+# Check agent health
 curl -fsS http://127.0.0.1:9878/api/v1/agent/health | jq .
 
 # Check enrollment status
@@ -128,7 +121,7 @@ curl -fsS \
   http://127.0.0.1:9878/api/v1/enrollment-status | jq .
 ```
 
-The health response should show `mode: "connected"` and the enrollment status should show `enrolled: true` with your tenant ID.
+The enrollment status should show `enrolled: true` with your `agent_uuid` and `tenant_id`.
 
 ### What Happens During a Network Outage
 
@@ -149,7 +142,7 @@ When the enterprise becomes unreachable, the agent handles the transition automa
 Enterprise administrators can monitor agent health through:
 
 - **Heartbeat:** Each agent sends a status report every 30 seconds. Agents missing heartbeats for 120 seconds are marked stale; after 300 seconds they are marked dead.
-- **Policy version:** Each heartbeat includes the agent's current policy version. Agents running outdated policies are visible in the fleet dashboard.
+- **Heartbeat payload:** Heartbeats include session posture and budget state plus host/version metadata for fleet monitoring.
 - **Telemetry stream:** All security decisions flow to the enterprise audit stream for centralized review.
 
 ---

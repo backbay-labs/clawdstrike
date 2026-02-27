@@ -16,6 +16,7 @@ mod enrollment;
 mod events;
 mod integrations;
 mod nats_client;
+mod nats_subjects;
 mod notifications;
 mod openclaw;
 mod policy;
@@ -368,6 +369,7 @@ async fn run_agent<R: Runtime>(
     // --- NATS enterprise connectivity (adaptive SDR) ---
     // If NATS is enabled (either via static config or enrollment), connect and start
     // policy sync, telemetry publishing, and posture command handling.
+    let mut nats_telemetry: Option<Arc<telemetry_publisher::TelemetryPublisher>> = None;
     let nats_enabled = {
         let guard = settings.read().await;
         guard.nats.enabled
@@ -417,6 +419,7 @@ async fn run_agent<R: Runtime>(
                     nats.clone(),
                     session_manager.clone(),
                     daemon_manager.clone(),
+                    settings.clone(),
                 );
                 let posture_shutdown = shutdown_tx.subscribe();
                 tokio::spawn(async move {
@@ -437,7 +440,7 @@ async fn run_agent<R: Runtime>(
                 });
 
                 // Keep a reference so it's not dropped (used by spawned tasks above).
-                let _telemetry = telemetry;
+                nats_telemetry = Some(telemetry);
             }
             Err(err) => {
                 tracing::error!(error = %err, "Failed to connect to NATS; enterprise features disabled");
@@ -520,10 +523,18 @@ async fn run_agent<R: Runtime>(
     let mut events_rx = event_manager.subscribe();
     let notification_manager = NotificationManager::new(app.clone(), settings.clone());
     let tray_for_events = tray_manager.clone();
+    let telemetry_for_events = nats_telemetry.clone();
     tokio::spawn(async move {
         loop {
             match events_rx.recv().await {
                 Ok(event) => {
+                    if let Some(telemetry) = telemetry_for_events.as_ref() {
+                        if let Ok(payload) = serde_json::to_vec(&event) {
+                            telemetry.publish_receipt(&payload).await;
+                        } else {
+                            tracing::warn!("Failed to serialize policy event receipt for NATS publish");
+                        }
+                    }
                     tray_for_events.add_event(event.clone()).await;
                     notification_manager.notify(&event).await;
                 }
@@ -864,6 +875,7 @@ async fn nats_heartbeat_loop(
                 let state = session_manager.state().await;
                 let hostname = settings::hostname_best_effort();
                 let heartbeat = serde_json::json!({
+                    "agent_id": telemetry.agent_id(),
                     "timestamp": chrono::Utc::now().to_rfc3339(),
                     "session_id": state.session_id,
                     "posture": state.posture,
@@ -878,4 +890,3 @@ async fn nats_heartbeat_loop(
         }
     }
 }
-

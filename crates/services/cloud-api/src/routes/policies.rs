@@ -7,12 +7,17 @@ use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
+use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/policies/deploy", post(deploy_policy))
         .route("/policies/active", get(get_active_policy))
+}
+
+fn policy_update_subject(tenant_slug: &str) -> String {
+    format!("{}.policy.update", tenant_subject_prefix(tenant_slug))
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,7 +59,7 @@ async fn deploy_policy(
     let agent_count: i64 = count_row.try_get("cnt").map_err(ApiError::Database)?;
 
     // Publish policy update to tenant's NATS subject
-    let subject = format!("tenant-{}.clawdstrike.policy.update", auth.slug);
+    let subject = policy_update_subject(&auth.slug);
     state
         .nats
         .publish(subject.clone(), req.policy_yaml.into())
@@ -86,4 +91,17 @@ async fn get_active_policy(
         "tenant": auth.slug,
         "status": "no active policy",
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_subject_uses_tenant_prefix_contract() {
+        assert_eq!(
+            policy_update_subject("acme"),
+            "tenant-acme.clawdstrike.policy.update"
+        );
+    }
 }

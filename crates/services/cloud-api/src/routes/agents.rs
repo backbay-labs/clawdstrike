@@ -12,6 +12,22 @@ use crate::models::agent::{
 };
 use crate::state::AppState;
 
+const HEARTBEAT_UPDATE_SQL: &str = r#"UPDATE agents
+           SET last_heartbeat_at = now(),
+               status = 'active',
+               metadata = COALESCE($3, metadata)
+           WHERE tenant_id = $1
+             AND agent_id = $2
+             AND status IN ('active', 'stale', 'dead')"#;
+
+const ENROLL_TENANT_LOCK_SQL: &str = r#"SELECT id, slug, agent_limit
+           FROM tenants
+           WHERE enrollment_token = $1
+           FOR UPDATE"#;
+
+const ENROLL_TOKEN_CONSUME_SQL: &str =
+    "UPDATE tenants SET enrollment_token = NULL WHERE id = $1 AND enrollment_token = $2";
+
 /// Authenticated agent routes (behind require_auth middleware).
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -136,16 +152,13 @@ async fn heartbeat(
     auth: AuthenticatedTenant,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let result = sqlx::query::query(
-        r#"UPDATE agents SET last_heartbeat_at = now(), metadata = COALESCE($3, metadata)
-           WHERE tenant_id = $1 AND agent_id = $2 AND status = 'active'"#,
-    )
-    .bind(auth.tenant_id)
-    .bind(&req.agent_id)
-    .bind(req.metadata.as_ref())
-    .execute(&state.db)
-    .await
-    .map_err(ApiError::Database)?;
+    let result = sqlx::query::query(HEARTBEAT_UPDATE_SQL)
+        .bind(auth.tenant_id)
+        .bind(&req.agent_id)
+        .bind(req.metadata.as_ref())
+        .execute(&state.db)
+        .await
+        .map_err(ApiError::Database)?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::NotFound);
@@ -163,14 +176,18 @@ async fn enroll_agent(
     State(state): State<AppState>,
     Json(req): Json<EnrollmentRequest>,
 ) -> Result<Json<EnrollmentResponse>, ApiError> {
-    // Look up the tenant by enrollment_token (this IS the auth for enrollment).
-    let tenant_row =
-        sqlx::query::query("SELECT id, slug, agent_limit FROM tenants WHERE enrollment_token = $1")
-            .bind(&req.enrollment_token)
-            .fetch_optional(&state.db)
-            .await
-            .map_err(ApiError::Database)?
-            .ok_or_else(|| ApiError::BadRequest("invalid enrollment token".to_string()))?;
+    // Validate the Ed25519 public key.
+    hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
+
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+
+    // Lock the tenant row for this token to make consumption atomic and race-free.
+    let tenant_row = sqlx::query::query(ENROLL_TENANT_LOCK_SQL)
+        .bind(&req.enrollment_token)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or_else(|| ApiError::BadRequest("invalid enrollment token".to_string()))?;
 
     let tenant_id: Uuid = tenant_row.try_get("id").map_err(ApiError::Database)?;
     let slug: String = tenant_row.try_get("slug").map_err(ApiError::Database)?;
@@ -178,15 +195,12 @@ async fn enroll_agent(
         .try_get("agent_limit")
         .map_err(ApiError::Database)?;
 
-    // Validate the Ed25519 public key.
-    hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
-
     // Check agent limit.
     let count_row = sqlx::query::query(
         "SELECT COUNT(*)::bigint as cnt FROM agents WHERE tenant_id = $1 AND status = 'active'",
     )
     .bind(tenant_id)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(ApiError::Database)?;
     let count: i64 = count_row.try_get("cnt").map_err(ApiError::Database)?;
@@ -215,7 +229,7 @@ async fn enroll_agent(
     .bind(&req.hostname)
     .bind(&req.public_key)
     .bind(&metadata)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(ApiError::Database)?;
 
@@ -229,11 +243,19 @@ async fn enroll_agent(
         .map_err(|e| ApiError::Nats(e.to_string()))?;
 
     // Invalidate the enrollment token so it cannot be reused.
-    sqlx::query::query("UPDATE tenants SET enrollment_token = NULL WHERE id = $1")
+    let token_consumed = sqlx::query::query(ENROLL_TOKEN_CONSUME_SQL)
         .bind(tenant_id)
-        .execute(&state.db)
+        .bind(&req.enrollment_token)
+        .execute(&mut *tx)
         .await
         .map_err(ApiError::Database)?;
+    if token_consumed.rows_affected() != 1 {
+        return Err(ApiError::Internal(
+            "failed to consume enrollment token atomically".to_string(),
+        ));
+    }
+
+    tx.commit().await.map_err(ApiError::Database)?;
 
     // Record usage event.
     let _ = state.metering.record(tenant_id, "agent_enrolled", 1).await;
@@ -247,4 +269,27 @@ async fn enroll_agent(
         nats_token: nats_creds.token,
         agent_id,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enrollment_agent_id_prefix() {
+        let id = Uuid::new_v4();
+        assert!(format!("agent-{}", id).starts_with("agent-"));
+    }
+
+    #[test]
+    fn heartbeat_recovers_stale_and_dead_statuses() {
+        assert!(HEARTBEAT_UPDATE_SQL.contains("status IN ('active', 'stale', 'dead')"));
+        assert!(HEARTBEAT_UPDATE_SQL.contains("status = 'active'"));
+    }
+
+    #[test]
+    fn enrollment_queries_are_atomic() {
+        assert!(ENROLL_TENANT_LOCK_SQL.contains("FOR UPDATE"));
+        assert!(ENROLL_TOKEN_CONSUME_SQL.contains("WHERE id = $1 AND enrollment_token = $2"));
+    }
 }

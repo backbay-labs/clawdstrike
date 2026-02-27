@@ -6,10 +6,13 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tokio::sync::RwLock;
 
 use crate::daemon::DaemonManager;
 use crate::nats_client::NatsClient;
+use crate::nats_subjects;
 use crate::session::SessionManager;
+use crate::settings::Settings;
 
 /// Known posture values accepted by the agent.
 const VALID_POSTURES: &[&str] = &["standard", "restricted", "audit", "locked"];
@@ -44,6 +47,7 @@ pub struct PostureCommandHandler {
     nats: Arc<NatsClient>,
     session_manager: Arc<SessionManager>,
     daemon_manager: Arc<DaemonManager>,
+    settings: Arc<RwLock<Settings>>,
 }
 
 impl PostureCommandHandler {
@@ -51,22 +55,24 @@ impl PostureCommandHandler {
         nats: Arc<NatsClient>,
         session_manager: Arc<SessionManager>,
         daemon_manager: Arc<DaemonManager>,
+        settings: Arc<RwLock<Settings>>,
     ) -> Self {
         Self {
             nats,
             session_manager,
             daemon_manager,
+            settings,
         }
     }
 
     /// Build the command subject for this agent.
-    pub fn command_subject(tenant_id: &str, agent_id: &str) -> String {
-        format!("commands.{}.{}", tenant_id, agent_id)
+    pub fn command_subject(subject_prefix: &str, agent_id: &str) -> String {
+        nats_subjects::posture_command_subject(subject_prefix, agent_id)
     }
 
     /// Start listening for posture commands. Runs until shutdown.
     pub async fn start(&self, mut shutdown_rx: broadcast::Receiver<()>) {
-        let subject = Self::command_subject(self.nats.tenant_id(), self.nats.agent_id());
+        let subject = Self::command_subject(self.nats.subject_prefix(), self.nats.agent_id());
         tracing::info!(subject = %subject, "Starting posture command subscriber");
 
         let mut subscriber = match self.nats.client().subscribe(subject.clone()).await {
@@ -167,49 +173,42 @@ impl PostureCommandHandler {
                 let reason_str = reason.as_deref().unwrap_or("remote kill switch activated");
                 tracing::warn!(reason = %reason_str, "KILL SWITCH activated via remote command");
 
-                // Set posture to "locked" which deny-all's all policy evaluations.
-                let posture_applied = self
+                let (daemon_url, api_key) = {
+                    let guard = self.settings.read().await;
+                    (guard.daemon_url(), guard.api_key.clone())
+                };
+
+                match self
                     .session_manager
-                    .update_posture_from_daemon_event(None, "locked".to_string())
-                    .await;
-
-                if !posture_applied {
-                    tracing::warn!("Kill switch: no active session to set posture to locked");
-                }
-
-                // Restart the daemon so it reloads with locked posture enforced.
-                let restart_ok = match self.daemon_manager.restart().await {
-                    Ok(()) => true,
-                    Err(err) => {
-                        tracing::error!(error = %err, "Failed to restart daemon for kill switch");
-                        false
-                    }
-                };
-
-                let status = if posture_applied || restart_ok {
-                    "ok"
-                } else {
-                    "error"
-                };
-                let msg = match (posture_applied, restart_ok) {
-                    (true, true) => format!("Kill switch activated: {}", reason_str),
-                    (true, false) => format!(
-                        "Kill switch: posture locked but daemon restart failed: {}",
-                        reason_str
-                    ),
-                    (false, true) => format!(
-                        "Kill switch: no active session to lock, daemon restarted: {}",
-                        reason_str
-                    ),
-                    (false, false) => format!(
-                        "Kill switch: posture lock and daemon restart both failed: {}",
-                        reason_str
-                    ),
-                };
-
-                CommandResponse {
-                    status: status.to_string(),
-                    message: Some(msg),
+                    .transition_current_session_posture(
+                        &daemon_url,
+                        api_key.as_deref(),
+                        "locked",
+                        "user_denial",
+                    )
+                    .await
+                {
+                    Ok(true) => CommandResponse {
+                        status: "ok".to_string(),
+                        message: Some(format!(
+                            "Kill switch activated: transitioned active session to locked ({})",
+                            reason_str
+                        )),
+                    },
+                    Ok(false) => CommandResponse {
+                        status: "error".to_string(),
+                        message: Some(format!(
+                            "Kill switch rejected: no active session to transition ({})",
+                            reason_str
+                        )),
+                    },
+                    Err(err) => CommandResponse {
+                        status: "error".to_string(),
+                        message: Some(format!(
+                            "Kill switch failed to transition posture via hushd: {}",
+                            err
+                        )),
+                    },
                 }
             }
             PostureCommand::RequestPolicyReload => {
@@ -255,8 +254,8 @@ mod tests {
     #[test]
     fn command_subject_format() {
         assert_eq!(
-            PostureCommandHandler::command_subject("tenant-abc", "agent-xyz"),
-            "commands.tenant-abc.agent-xyz"
+            PostureCommandHandler::command_subject("tenant-acme.clawdstrike", "agent-xyz"),
+            "tenant-acme.clawdstrike.posture.command.agent-xyz"
         );
     }
 

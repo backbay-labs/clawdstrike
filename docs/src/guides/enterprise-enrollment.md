@@ -72,21 +72,22 @@ curl -fsS -X POST \
 
 The enrollment process performs the following steps automatically:
 
-1. Generates a fresh Ed25519 keypair for the agent (stored at `~/.clawdstrike/agent.key`).
+1. Generates a fresh Ed25519 keypair for the agent (stored at `${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.key`).
 2. Sends the public key and enrollment token to the Cloud API.
 3. The Cloud API validates the token, registers the agent, and provisions NATS credentials.
-4. The agent receives and stores NATS credentials at `~/.clawdstrike/nats.creds`.
-5. The agent updates its configuration to `mode: connected`.
-6. The agent initializes NATS connectivity (policy sync, telemetry, heartbeat).
+4. The agent persists NATS settings (`nats_url`, `subject_prefix`, `token`, `agent_id`) in `agent.json`.
+5. The agent marks enrollment state (`enrolled`, `agent_uuid`, `tenant_id`) in `agent.json`.
+6. The API returns `restart_required: true` so enterprise features initialize on restart.
 
 A successful response looks like:
 
 ```json
 {
   "status": "enrolled",
-  "agent_id": "a1b2c3d4-...",
-  "tenant_id": "acme",
-  "mode": "connected"
+  "agent_uuid": "a1b2c3d4-...",
+  "tenant_id": "2f9f15f9-...",
+  "restart_required": true,
+  "message": "Restart the agent to activate enterprise features (policy sync, telemetry, posture commands)"
 }
 ```
 
@@ -105,21 +106,19 @@ Expected output:
 ```json
 {
   "enrolled": true,
-  "agent_id": "a1b2c3d4-...",
-  "tenant_id": "acme",
-  "mode": "connected",
-  "nats_connected": true,
-  "last_policy_version": 42
+  "agent_uuid": "a1b2c3d4-...",
+  "tenant_id": "2f9f15f9-...",
+  "enrollment_in_progress": false
 }
 ```
 
-Confirm the agent health now shows connected mode:
+Confirm the agent health endpoint is healthy:
 
 ```bash
 curl -fsS http://127.0.0.1:9878/api/v1/agent/health | jq .
 ```
 
-The response should show `mode: "connected"`.
+The response should show `status: "ok"` and a live daemon/session block.
 
 ## Step 5: Test Policy Sync
 
@@ -132,10 +131,10 @@ Verify that the agent is receiving policies from the enterprise:
 You can also inspect the local policy cache:
 
 ```bash
-cat ~/.clawdstrike/policy_cache/current.meta
+cat "${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/policy-cache.yaml"
 ```
 
-This file shows the version, checksum, sync timestamp, and source of the currently active policy.
+This file stores the most recently synced policy payload from hushd.
 
 ## Troubleshooting
 
@@ -190,8 +189,9 @@ To re-enroll an agent (e.g., after moving to a different tenant or after revocat
 
 1. The agent must be in standalone mode. If it is still in connected mode, the enterprise administrator should revoke the agent first, or you can manually reset the configuration:
    ```bash
-   # Remove existing enrollment state
-   rm ~/.clawdstrike/nats.creds
+   # Remove persisted enrollment/NATS fields from the local settings file.
+   CONFIG_JSON="${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike/agent.json"
+   jq '.enrollment = {} | .nats = {}' "${CONFIG_JSON}" > "${CONFIG_JSON}.tmp" && mv "${CONFIG_JSON}.tmp" "${CONFIG_JSON}"
    ```
    Then restart the agent -- it will detect the missing credentials and revert to standalone mode.
 

@@ -477,6 +477,74 @@ impl SessionManager {
         }
     }
 
+    /// Transition the currently tracked session posture via hushd.
+    ///
+    /// Returns:
+    /// - `Ok(true)` when a session existed and transition succeeded.
+    /// - `Ok(false)` when there is no active session (or session became invalid).
+    pub async fn transition_current_session_posture(
+        &self,
+        daemon_url: &str,
+        api_key: Option<&str>,
+        to_state: &str,
+        trigger: &str,
+    ) -> Result<bool> {
+        let session_id = {
+            let state = self.state.read().await;
+            state.session_id.clone()
+        };
+
+        let Some(session_id) = session_id else {
+            return Ok(false);
+        };
+
+        let url = format!("{}/api/v1/session/{}/transition", daemon_url, session_id);
+        let mut request = self.http_client.post(&url).json(&serde_json::json!({
+            "to_state": to_state,
+            "trigger": trigger,
+        }));
+        if let Some(key) = api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("Session posture transition failed at {}", url))?;
+
+        let status_code = response.status();
+        if status_code.is_success() {
+            let to_state = to_state.to_string();
+            let _ = self
+                .with_state_if_current_session_id(&session_id, |state| {
+                    state.posture = to_state;
+                })
+                .await;
+            return Ok(true);
+        }
+
+        if matches!(
+            status_code,
+            reqwest::StatusCode::NOT_FOUND
+                | reqwest::StatusCode::UNAUTHORIZED
+                | reqwest::StatusCode::FORBIDDEN
+        ) {
+            let _ = self
+                .with_state_if_current_session_id(&session_id, |state| {
+                    *state = SessionState::default();
+                })
+                .await;
+            return Ok(false);
+        }
+
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!(
+            "Session posture transition returned {}: {}",
+            status_code,
+            body
+        );
+    }
+
     /// Start the heartbeat loop. Runs until shutdown signal.
     pub fn start_heartbeat(
         self: &Arc<Self>,
@@ -644,6 +712,7 @@ mod tests {
         let post_behavior = Arc::new(post_behavior);
         let events_post = events.clone();
         let events_delete = events.clone();
+        let events_transition = events.clone();
         let app = Router::new()
             .route(
                 "/api/v1/session",
@@ -672,6 +741,33 @@ mod tests {
                             .unwrap()
                             .push(format!("delete:{}", id));
                         StatusCode::NO_CONTENT
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/session/{id}/transition",
+                post({
+                    move |Path(id): Path<String>, Json(body): Json<serde_json::Value>| async move {
+                        let to_state = body
+                            .get("to_state")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let trigger = body
+                            .get("trigger")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        events_transition
+                            .lock()
+                            .unwrap()
+                            .push(format!("transition:{}:{}:{}", id, to_state, trigger));
+                        (
+                            StatusCode::OK,
+                            Json(serde_json::json!({
+                                "success": true,
+                                "from_state": "standard",
+                                "to_state": to_state,
+                            })),
+                        )
                     }
                 }),
             );
@@ -755,5 +851,37 @@ mod tests {
         assert_eq!(sid, "sess-ok");
 
         let _ = shutdown_tx.send(());
+    }
+
+    #[tokio::test]
+    async fn transition_current_session_posture_updates_state_via_hushd_api() {
+        let events: Arc<StdMutex<Vec<String>>> = Arc::new(StdMutex::new(Vec::new()));
+        let daemon_url = start_test_server(|| Ok("sess-1".to_string()), events.clone()).await;
+
+        let manager = SessionManager::new();
+        manager.create_session(&daemon_url, None).await.unwrap();
+
+        let transitioned = manager
+            .transition_current_session_posture(&daemon_url, None, "locked", "user_denial")
+            .await
+            .unwrap();
+        assert!(transitioned);
+
+        let state = manager.state().await;
+        assert_eq!(state.posture, "locked");
+
+        let got = events.lock().unwrap().clone();
+        assert!(got.contains(&"post:sess-1".to_string()));
+        assert!(got.contains(&"transition:sess-1:locked:user_denial".to_string()));
+    }
+
+    #[tokio::test]
+    async fn transition_current_session_posture_without_session_returns_false() {
+        let manager = SessionManager::new();
+        let transitioned = manager
+            .transition_current_session_posture("http://127.0.0.1:9", None, "locked", "user_denial")
+            .await
+            .unwrap();
+        assert!(!transitioned);
     }
 }

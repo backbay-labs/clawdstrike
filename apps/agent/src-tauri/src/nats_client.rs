@@ -14,6 +14,7 @@ pub struct NatsClient {
     js: async_nats::jetstream::Context,
     tenant_id: String,
     agent_id: String,
+    subject_prefix: String,
 }
 
 impl NatsClient {
@@ -39,6 +40,10 @@ impl NatsClient {
             token: settings.token.clone(),
             nkey_seed: settings.nkey_seed.clone(),
         };
+        let subject_prefix = settings
+            .subject_prefix
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("subject_prefix is required when NATS is enabled"))?;
 
         let client = connect_with_auth(nats_url, Some(&auth)).await?;
         let js = jetstream(client.clone());
@@ -55,6 +60,7 @@ impl NatsClient {
             js,
             tenant_id: tenant_id.to_string(),
             agent_id: agent_id.to_string(),
+            subject_prefix: subject_prefix.to_string(),
         })
     }
 
@@ -76,6 +82,11 @@ impl NatsClient {
     /// Get the agent ID.
     pub fn agent_id(&self) -> &str {
         &self.agent_id
+    }
+
+    /// Get the tenant-scoped NATS subject prefix provisioned by cloud enrollment.
+    pub fn subject_prefix(&self) -> &str {
+        &self.subject_prefix
     }
 }
 
@@ -127,6 +138,7 @@ mod tests {
             nats_url: Some("nats://localhost:4222".to_string()),
             tenant_id: Some("t-1".to_string()),
             agent_id: None,
+            subject_prefix: Some("tenant-acme.clawdstrike".to_string()),
             ..Default::default()
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -135,6 +147,25 @@ mod tests {
         assert!(
             result.unwrap_err().to_string().contains("agent_id"),
             "should mention agent_id"
+        );
+    }
+
+    #[test]
+    fn connect_requires_subject_prefix() {
+        let settings = NatsSettings {
+            enabled: true,
+            nats_url: Some("nats://localhost:4222".to_string()),
+            tenant_id: Some("t-1".to_string()),
+            agent_id: Some("a-1".to_string()),
+            subject_prefix: None,
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(NatsClient::connect(&settings));
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("subject_prefix"),
+            "should mention subject_prefix"
         );
     }
 }

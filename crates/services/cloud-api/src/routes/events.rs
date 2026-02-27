@@ -8,6 +8,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
+use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -19,7 +20,7 @@ async fn event_stream(
     auth: AuthenticatedTenant,
 ) -> Result<Sse<impl futures::Stream<Item = Result<Event, Infallible>>>, ApiError> {
     // Subscribe to tenant-scoped NATS subjects
-    let subject = format!("tenant-{}.clawdstrike.spine.envelope.>", auth.slug);
+    let subject = format!("{}.>", tenant_subject_prefix(&auth.slug));
     let subscriber = state
         .nats
         .subscribe(subject)

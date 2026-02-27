@@ -8,12 +8,62 @@ use uuid::Uuid;
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
 use crate::models::approval::{Approval, ResolveApprovalInput};
+use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/approvals", get(list_approvals))
         .route("/approvals/{id}/resolve", post(resolve_approval))
+}
+
+fn is_valid_resolution(resolution: &str) -> bool {
+    resolution == "approved" || resolution == "denied"
+}
+
+fn approval_response_subject(tenant_slug: &str, agent_id: &str) -> String {
+    format!(
+        "{}.approval.response.{}",
+        tenant_subject_prefix(tenant_slug),
+        agent_id
+    )
+}
+
+fn build_resolution_payload_bytes(
+    payload: serde_json::Value,
+    signing_enabled: bool,
+    signing_keypair: Option<&hush_core::Keypair>,
+) -> Result<Vec<u8>, ApiError> {
+    if signing_enabled {
+        let keypair = signing_keypair.ok_or_else(|| {
+            ApiError::Internal("approval signing is enabled but keypair is not loaded".to_string())
+        })?;
+        let envelope =
+            spine::build_signed_envelope(keypair, 0, None, payload, spine::now_rfc3339()).map_err(
+                |e| ApiError::Internal(format!("failed to sign approval resolution: {e}")),
+            )?;
+        return serde_json::to_vec(&envelope).map_err(|e| {
+            ApiError::Internal(format!("failed to serialize signed approval envelope: {e}"))
+        });
+    }
+
+    if let Some(keypair) = signing_keypair {
+        return match spine::build_signed_envelope(
+            keypair,
+            0,
+            None,
+            payload.clone(),
+            spine::now_rfc3339(),
+        ) {
+            Ok(envelope) => Ok(serde_json::to_vec(&envelope).unwrap_or_default()),
+            Err(err) => {
+                tracing::warn!(error = %err, "Failed to sign approval resolution; sending unsigned");
+                Ok(serde_json::to_vec(&payload).unwrap_or_default())
+            }
+        };
+    }
+
+    Ok(serde_json::to_vec(&payload).unwrap_or_default())
 }
 
 /// List pending approvals for the authenticated tenant.
@@ -50,7 +100,7 @@ async fn resolve_approval(
     }
 
     // Validate resolution against known values.
-    if input.resolution != "approved" && input.resolution != "denied" {
+    if !is_valid_resolution(&input.resolution) {
         return Err(ApiError::BadRequest(format!(
             "Invalid resolution '{}'. Must be 'approved' or 'denied'",
             input.resolution
@@ -79,28 +129,18 @@ async fn resolve_approval(
     // Publish resolution to NATS so the agent picks it up.
     // When a signing keypair is available, wrap the payload in a Spine signed envelope
     // so the agent can verify authenticity (review item #4).
-    let subject = format!(
-        "approvals.{}.{}.response",
-        auth.tenant_id, approval.agent_id
-    );
+    let subject = approval_response_subject(&auth.slug, &approval.agent_id);
     let payload = serde_json::json!({
         "approval_id": approval.id,
         "resolution": input.resolution,
         "resolved_by": resolved_by,
     });
 
-    let payload_bytes = if let Some(ref keypair) = state.signing_keypair {
-        match spine::build_signed_envelope(keypair, 0, None, payload.clone(), spine::now_rfc3339())
-        {
-            Ok(envelope) => serde_json::to_vec(&envelope).unwrap_or_default(),
-            Err(err) => {
-                tracing::warn!(error = %err, "Failed to sign approval resolution; sending unsigned");
-                serde_json::to_vec(&payload).unwrap_or_default()
-            }
-        }
-    } else {
-        serde_json::to_vec(&payload).unwrap_or_default()
-    };
+    let payload_bytes = build_resolution_payload_bytes(
+        payload,
+        state.config.approval_signing_enabled,
+        state.signing_keypair.as_deref(),
+    )?;
 
     if let Err(err) = state
         .nats
@@ -115,4 +155,51 @@ async fn resolve_approval(
     }
 
     Ok(Json(approval))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolution_validation_accepts_only_known_values() {
+        assert!(is_valid_resolution("approved"));
+        assert!(is_valid_resolution("denied"));
+        assert!(!is_valid_resolution("pending"));
+        assert!(!is_valid_resolution("approve"));
+    }
+
+    #[test]
+    fn approval_subject_uses_tenant_prefix_contract() {
+        assert_eq!(
+            approval_response_subject("acme", "agent-123"),
+            "tenant-acme.clawdstrike.approval.response.agent-123"
+        );
+    }
+
+    #[test]
+    fn signing_enabled_requires_keypair() {
+        let err =
+            build_resolution_payload_bytes(serde_json::json!({"approval_id": "a-1"}), true, None)
+                .unwrap_err();
+        assert!(matches!(err, ApiError::Internal(_)));
+    }
+
+    #[test]
+    fn signing_enabled_produces_signed_envelope() {
+        let kp = hush_core::Keypair::generate();
+        let bytes = build_resolution_payload_bytes(
+            serde_json::json!({
+                "approval_id": "a-1",
+                "resolution": "approved",
+                "resolved_by": "cloud-api",
+            }),
+            true,
+            Some(&kp),
+        )
+        .unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(spine::verify_envelope(&envelope).unwrap());
+    }
 }

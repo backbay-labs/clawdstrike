@@ -3,6 +3,11 @@ use uuid::Uuid;
 use crate::db::PgPool;
 use crate::models::agent::NatsCredentials;
 
+/// Build the canonical tenant-scoped NATS subject prefix.
+pub fn tenant_subject_prefix(slug: &str) -> String {
+    format!("tenant-{slug}.clawdstrike")
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProvisionerError {
     #[error("database error: {0}")]
@@ -49,7 +54,7 @@ impl TenantProvisioner {
         agent_id: &str,
     ) -> Result<NatsCredentials, ProvisionerError> {
         let account = format!("tenant-{slug}");
-        let subject_prefix = format!("tenant-{slug}.clawdstrike.spine.envelope");
+        let subject_prefix = tenant_subject_prefix(slug);
         // Generate a scoped NATS auth token for this agent.
         let token = format!("nats-{}-{}", slug, Uuid::new_v4());
 
@@ -72,5 +77,19 @@ impl TenantProvisioner {
 
         tracing::info!(tenant_id = %tenant_id, "Deprovisioned NATS account");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tenant_subject_prefix_contract() {
+        assert_eq!(tenant_subject_prefix("acme"), "tenant-acme.clawdstrike");
+        assert_eq!(
+            tenant_subject_prefix("north-america-prod"),
+            "tenant-north-america-prod.clawdstrike"
+        );
     }
 }

@@ -8,6 +8,7 @@ use anyhow::Result;
 use std::sync::Arc;
 
 use crate::nats_client::NatsClient;
+use crate::nats_subjects;
 
 /// Publishes telemetry data (receipts, heartbeats) to NATS JetStream.
 pub struct TelemetryPublisher {
@@ -23,20 +24,24 @@ impl TelemetryPublisher {
         }
     }
 
+    /// Agent identifier associated with this publisher.
+    pub fn agent_id(&self) -> &str {
+        self.nats.agent_id()
+    }
+
     /// Build the stream name for this agent's telemetry.
-    pub fn stream_name(tenant_id: &str, agent_id: &str) -> String {
-        // JetStream stream names use underscores (no dots allowed in stream names).
-        format!("telemetry_{}_{}", tenant_id, agent_id)
+    pub fn stream_name(subject_prefix: &str, agent_id: &str) -> String {
+        nats_subjects::telemetry_stream_name(subject_prefix, agent_id)
     }
 
     /// Build the subject for receipt telemetry.
-    pub fn receipts_subject(tenant_id: &str, agent_id: &str) -> String {
-        format!("telemetry.{}.{}.receipts", tenant_id, agent_id)
+    pub fn receipts_subject(subject_prefix: &str, agent_id: &str) -> String {
+        nats_subjects::receipts_subject(subject_prefix, agent_id)
     }
 
     /// Build the subject for heartbeat telemetry.
-    pub fn heartbeat_subject(tenant_id: &str, agent_id: &str) -> String {
-        format!("telemetry.{}.{}.heartbeat", tenant_id, agent_id)
+    pub fn heartbeat_subject(subject_prefix: &str, agent_id: &str) -> String {
+        nats_subjects::heartbeat_subject(subject_prefix, agent_id)
     }
 
     /// Ensure the telemetry stream exists (lazy initialization).
@@ -46,10 +51,13 @@ impl TelemetryPublisher {
             return Ok(());
         }
 
-        let tenant_id = self.nats.tenant_id();
+        let subject_prefix = self.nats.subject_prefix();
         let agent_id = self.nats.agent_id();
-        let stream_name = Self::stream_name(tenant_id, agent_id);
-        let subjects = vec![format!("telemetry.{}.{}.>", tenant_id, agent_id)];
+        let stream_name = Self::stream_name(subject_prefix, agent_id);
+        let subjects = vec![
+            format!("{subject_prefix}.telemetry.>"),
+            format!("{subject_prefix}.agent.heartbeat.>"),
+        ];
 
         spine::nats_transport::ensure_stream(self.nats.jetstream(), &stream_name, subjects, 1)
             .await
@@ -70,8 +78,7 @@ impl TelemetryPublisher {
     async fn try_publish_receipt(&self, receipt_json: &[u8]) -> Result<()> {
         self.ensure_stream().await?;
 
-        let subject =
-            Self::receipts_subject(self.nats.tenant_id(), self.nats.agent_id());
+        let subject = Self::receipts_subject(self.nats.subject_prefix(), self.nats.agent_id());
 
         self.nats
             .jetstream()
@@ -94,8 +101,7 @@ impl TelemetryPublisher {
     async fn try_publish_heartbeat(&self, heartbeat_json: &[u8]) -> Result<()> {
         self.ensure_stream().await?;
 
-        let subject =
-            Self::heartbeat_subject(self.nats.tenant_id(), self.nats.agent_id());
+        let subject = Self::heartbeat_subject(self.nats.subject_prefix(), self.nats.agent_id());
 
         self.nats
             .jetstream()
@@ -117,24 +123,24 @@ mod tests {
     #[test]
     fn stream_name_format() {
         assert_eq!(
-            TelemetryPublisher::stream_name("tenant-abc", "agent-xyz"),
-            "telemetry_tenant-abc_agent-xyz"
+            TelemetryPublisher::stream_name("tenant-abc.clawdstrike", "agent-xyz"),
+            "tenant-abc-clawdstrike-telemetry-agent-xyz"
         );
     }
 
     #[test]
     fn receipts_subject_format() {
         assert_eq!(
-            TelemetryPublisher::receipts_subject("tenant-abc", "agent-xyz"),
-            "telemetry.tenant-abc.agent-xyz.receipts"
+            TelemetryPublisher::receipts_subject("tenant-abc.clawdstrike", "agent-xyz"),
+            "tenant-abc.clawdstrike.telemetry.receipts.agent-xyz"
         );
     }
 
     #[test]
     fn heartbeat_subject_format() {
         assert_eq!(
-            TelemetryPublisher::heartbeat_subject("tenant-abc", "agent-xyz"),
-            "telemetry.tenant-abc.agent-xyz.heartbeat"
+            TelemetryPublisher::heartbeat_subject("tenant-abc.clawdstrike", "agent-xyz"),
+            "tenant-abc.clawdstrike.agent.heartbeat.agent-xyz"
         );
     }
 
@@ -143,6 +149,7 @@ mod tests {
     #[test]
     fn heartbeat_payload_shape() {
         let heartbeat = serde_json::json!({
+            "agent_id": "agent-xyz",
             "timestamp": "2026-02-26T12:00:00Z",
             "session_id": "sess-123",
             "posture": "standard",
@@ -153,6 +160,7 @@ mod tests {
         });
         let payload = serde_json::to_vec(&heartbeat).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        assert_eq!(parsed["agent_id"], "agent-xyz");
         assert_eq!(parsed["timestamp"], "2026-02-26T12:00:00Z");
         assert_eq!(parsed["session_id"], "sess-123");
         assert_eq!(parsed["posture"], "standard");

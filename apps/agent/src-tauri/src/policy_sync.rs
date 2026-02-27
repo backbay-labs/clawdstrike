@@ -11,6 +11,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use crate::nats_client::NatsClient;
+use crate::nats_subjects;
 
 /// Manages policy synchronization from NATS KV to local disk.
 pub struct PolicySync {
@@ -24,10 +25,8 @@ impl PolicySync {
     }
 
     /// Build the KV bucket name for this agent's policies.
-    pub fn bucket_name(tenant_id: &str, agent_id: &str) -> String {
-        // NATS KV bucket names map to JetStream stream names (KV_<bucket>),
-        // which cannot contain dots — only alphanumeric, dash, and underscore.
-        format!("policies-{}-{}", tenant_id, agent_id)
+    pub fn bucket_name(subject_prefix: &str, agent_id: &str) -> String {
+        nats_subjects::policy_sync_bucket(subject_prefix, agent_id)
     }
 
     /// Build the KV key for the agent policy.
@@ -42,7 +41,7 @@ impl PolicySync {
         mut shutdown_rx: broadcast::Receiver<()>,
         policy_update_tx: Option<tokio::sync::mpsc::Sender<()>>,
     ) {
-        let bucket_name = Self::bucket_name(self.nats.tenant_id(), self.nats.agent_id());
+        let bucket_name = Self::bucket_name(self.nats.subject_prefix(), self.nats.agent_id());
         tracing::info!(bucket = %bucket_name, "Starting NATS policy sync");
 
         let store = match self.ensure_kv_bucket(&bucket_name).await {
@@ -169,8 +168,8 @@ mod tests {
     #[test]
     fn bucket_name_format() {
         assert_eq!(
-            PolicySync::bucket_name("tenant-abc", "agent-xyz"),
-            "policies-tenant-abc-agent-xyz"
+            PolicySync::bucket_name("tenant-acme.clawdstrike", "agent-xyz"),
+            "tenant-acme-clawdstrike-policy-sync-agent-xyz"
         );
     }
 

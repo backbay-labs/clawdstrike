@@ -1,3 +1,4 @@
+pub mod agent_heartbeat_consumer;
 pub mod alerter;
 pub mod audit_consumer;
 pub mod metering;
