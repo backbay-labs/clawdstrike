@@ -148,6 +148,9 @@ impl EnrollmentManager {
             settings.nats.nats_url = Some(resp.nats_url);
             settings.nats.tenant_id = Some(resp.tenant_id.clone());
             settings.nats.agent_id = Some(resp.agent_id);
+            // Clear legacy auth fields so token-based auth is used consistently.
+            settings.nats.creds_file = None;
+            settings.nats.nkey_seed = None;
             settings.nats.token = Some(resp.nats_token);
             settings.nats.nats_account = Some(resp.nats_account);
             settings.nats.subject_prefix = Some(resp.nats_subject_prefix);

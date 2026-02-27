@@ -4,11 +4,6 @@
 //! All adaptive-SDR NATS channels must derive from that prefix to stay aligned
 //! with server-side ACLs and provisioning.
 
-/// Build the receipts telemetry subject.
-pub fn receipts_subject(subject_prefix: &str, agent_id: &str) -> String {
-    format!("{subject_prefix}.telemetry.receipts.{agent_id}")
-}
-
 /// Build the heartbeat telemetry subject.
 pub fn heartbeat_subject(subject_prefix: &str, agent_id: &str) -> String {
     format!("{subject_prefix}.agent.heartbeat.{agent_id}")
@@ -66,10 +61,6 @@ mod tests {
     #[test]
     fn canonical_subjects_use_prefix() {
         let prefix = "tenant-acme.clawdstrike";
-        assert_eq!(
-            receipts_subject(prefix, "agent-1"),
-            "tenant-acme.clawdstrike.telemetry.receipts.agent-1"
-        );
         assert_eq!(
             heartbeat_subject(prefix, "agent-1"),
             "tenant-acme.clawdstrike.agent.heartbeat.agent-1"

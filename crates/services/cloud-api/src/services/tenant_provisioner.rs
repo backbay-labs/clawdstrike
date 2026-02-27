@@ -27,6 +27,9 @@ enum ProvisioningBackend {
         api_token: Option<String>,
         http_client: reqwest::Client,
     },
+    /// External provisioning mode was selected but no control-plane endpoint
+    /// is configured. Startup should still succeed for non-enrollment workloads.
+    ExternalUnconfigured,
     /// Explicitly insecure mode for local/dev only.
     Mock,
 }
@@ -51,22 +54,22 @@ impl TenantProvisioner {
     ) -> Result<Self, ProvisionerError> {
         let backend = match provisioning_mode.trim().to_ascii_lowercase().as_str() {
             "external" => {
-                let base_url = external_base_url
+                if let Some(base_url) = external_base_url
                     .as_deref()
                     .map(str::trim)
                     .filter(|v| !v.is_empty())
-                    .ok_or_else(|| {
-                        ProvisionerError::Nats(
-                            "NATS_PROVISIONER_BASE_URL is required when NATS_PROVISIONING_MODE=external"
-                                .to_string(),
-                        )
-                    })?
-                    .trim_end_matches('/')
-                    .to_string();
-                ProvisioningBackend::External {
-                    base_url,
-                    api_token: external_api_token,
-                    http_client: reqwest::Client::new(),
+                {
+                    ProvisioningBackend::External {
+                        base_url: base_url.trim_end_matches('/').to_string(),
+                        api_token: external_api_token,
+                        http_client: reqwest::Client::new(),
+                    }
+                } else {
+                    tracing::warn!(
+                        "NATS_PROVISIONING_MODE=external but NATS_PROVISIONER_BASE_URL is unset; \
+                         tenant provisioning operations will fail until configured"
+                    );
+                    ProvisioningBackend::ExternalUnconfigured
                 }
             }
             "mock" => {
@@ -105,6 +108,13 @@ impl TenantProvisioner {
             ProvisioningBackend::External { .. } => {
                 self.provision_tenant_external(tenant_id, slug).await?
             }
+            ProvisioningBackend::ExternalUnconfigured => {
+                return Err(ProvisionerError::Nats(
+                    "NATS provisioning is not configured: set NATS_PROVISIONER_BASE_URL \
+                     for NATS_PROVISIONING_MODE=external"
+                        .to_string(),
+                ));
+            }
             ProvisioningBackend::Mock => format!("tenant-{slug}"),
         };
 
@@ -131,6 +141,13 @@ impl TenantProvisioner {
                 self.issue_agent_credentials_external(slug, agent_id, &subject_prefix)
                     .await?
             }
+            ProvisioningBackend::ExternalUnconfigured => {
+                return Err(ProvisionerError::Nats(
+                    "NATS provisioning is not configured: set NATS_PROVISIONER_BASE_URL \
+                     for NATS_PROVISIONING_MODE=external"
+                        .to_string(),
+                ));
+            }
             ProvisioningBackend::Mock => (
                 format!("tenant-{slug}"),
                 format!("nats-{}-{}", slug, Uuid::new_v4()),
@@ -153,6 +170,13 @@ impl TenantProvisioner {
     pub async fn deprovision_tenant(&self, tenant_id: Uuid) -> Result<(), ProvisionerError> {
         if let ProvisioningBackend::External { .. } = &self.backend {
             self.deprovision_tenant_external(tenant_id).await?;
+        }
+        if let ProvisioningBackend::ExternalUnconfigured = &self.backend {
+            return Err(ProvisionerError::Nats(
+                "NATS provisioning is not configured: set NATS_PROVISIONER_BASE_URL \
+                 for NATS_PROVISIONING_MODE=external"
+                    .to_string(),
+            ));
         }
 
         sqlx::query::query("UPDATE tenants SET nats_account_id = NULL WHERE id = $1")

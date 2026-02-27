@@ -67,16 +67,7 @@ impl Config {
                 .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "YES"))
                 .unwrap_or(false);
         match nats_provisioning_mode.trim().to_ascii_lowercase().as_str() {
-            "external" => {
-                if nats_provisioner_base_url
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .is_none()
-                {
-                    return Err(ConfigError::MissingVar("NATS_PROVISIONER_BASE_URL".into()));
-                }
-            }
+            "external" => {}
             "mock" => {
                 if !nats_allow_insecure_mock_provisioner {
                     return Err(ConfigError::InvalidConfig(

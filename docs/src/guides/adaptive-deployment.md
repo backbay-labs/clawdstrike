@@ -151,7 +151,7 @@ The Cloud API enables the core adaptive workers by default. Make these settings 
 
 | Environment variable | Default | Notes |
 |----------------------|---------|-------|
-| `NATS_PROVISIONING_MODE` | `external` | Requires `NATS_PROVISIONER_BASE_URL`; startup fails without it. |
+| `NATS_PROVISIONING_MODE` | `external` | Cloud API starts without a provisioner URL, but tenant/agent provisioning calls fail until `NATS_PROVISIONER_BASE_URL` is set. |
 | `APPROVAL_SIGNING_ENABLED` | `true` | Signed approval responses are enabled by default. |
 | `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Required when signing is enabled; startup fails if missing. |
 | `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the cloud DB. |

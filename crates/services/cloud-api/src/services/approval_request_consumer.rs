@@ -7,6 +7,9 @@ use serde_json::Value;
 use tokio::sync::watch;
 
 use crate::db::PgPool;
+#[cfg(test)]
+use crate::services::consumer_ack::ack_kind_for_processing_result;
+use crate::services::consumer_ack::acknowledge_after_processing;
 
 pub async fn run(
     nats: async_nats::Client,
@@ -100,39 +103,6 @@ pub async fn run(
     }
 
     tracing::info!("Approval request consumer stopped");
-}
-
-fn ack_kind_for_processing_result(result: &Result<(), String>) -> async_nats::jetstream::AckKind {
-    if result.is_ok() {
-        async_nats::jetstream::AckKind::Ack
-    } else {
-        async_nats::jetstream::AckKind::Nak(None)
-    }
-}
-
-async fn acknowledge_after_processing(
-    msg: &async_nats::jetstream::Message,
-    processing_result: Result<(), String>,
-    message_kind: &str,
-) {
-    if let Err(err) = &processing_result {
-        tracing::warn!(
-            error = %err,
-            subject = %msg.subject,
-            message_kind = message_kind,
-            "Message processing failed; requesting JetStream redelivery"
-        );
-    }
-
-    let ack_kind = ack_kind_for_processing_result(&processing_result);
-    if let Err(err) = msg.ack_with(ack_kind).await {
-        tracing::warn!(
-            error = %err,
-            subject = %msg.subject,
-            message_kind = message_kind,
-            "Failed to acknowledge JetStream message"
-        );
-    }
 }
 
 async fn process_approval_request_message(
@@ -311,7 +281,7 @@ mod tests {
     #[test]
     fn ack_kind_tracks_processing_outcome() {
         assert!(matches!(
-            ack_kind_for_processing_result(&Ok(())),
+            ack_kind_for_processing_result(&Ok::<(), String>(())),
             async_nats::jetstream::AckKind::Ack
         ));
         assert!(matches!(
