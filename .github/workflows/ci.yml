@@ -393,6 +393,7 @@ jobs:
           tools/scripts/check-changed-rust-coverage.py \
             --lcov lcov.info \
             --changed-files-file changed_rust_files.coverage.txt \
+            --git-diff-range "origin/${GITHUB_BASE_REF}...HEAD" \
             --threshold "${CHANGED_RUST_COVERAGE_THRESHOLD}"
 
       - name: Upload coverage to Codecov
