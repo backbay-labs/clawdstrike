@@ -232,7 +232,9 @@ fn decode_signed_or_plain_payload(
         .ok_or_else(|| anyhow::anyhow!("signed approval resolution missing issuer"))?;
     let rotated_issuer = if let Some(expected_issuer) = trusted_response_issuer {
         if issuer != expected_issuer {
-            Some(issuer.to_string())
+            anyhow::bail!(
+                "approval resolution issuer mismatch: expected {expected_issuer}, got {issuer}"
+            );
         } else {
             None
         }
@@ -333,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_resolution_payload_flags_untrusted_issuer_for_rotation() {
+    fn parse_resolution_payload_rejects_untrusted_issuer() {
         let kp = Keypair::generate();
         let envelope = build_signed_envelope(
             &kp,
@@ -346,14 +348,13 @@ mod tests {
             now_rfc3339(),
         )
         .unwrap();
-        let parsed = parse_resolution_payload(
+        let err = parse_resolution_payload(
             &serde_json::to_vec(&envelope).unwrap(),
             true,
             Some("aegis:ed25519:0000000000000000000000000000000000000000000000000000000000000000"),
         )
-        .unwrap();
-        assert_eq!(parsed.request_id, "req-2");
-        assert!(parsed.rotated_issuer.is_some());
+        .unwrap_err();
+        assert!(err.to_string().contains("issuer mismatch"));
     }
 
     #[test]
