@@ -347,7 +347,9 @@ fn extract_watermark_native(py: Python<'_>, text: &str, config_json: &str) -> Py
 // Guard-context builder helper
 // ---------------------------------------------------------------------------
 
-fn build_guard_context(ctx: Option<&Bound<'_, PyDict>>) -> PyResult<clawdstrike::GuardContext> {
+fn build_guard_context(
+    ctx: Option<&Bound<'_, PyDict>>,
+) -> PyResult<clawdstrike::GuardContext> {
     let mut gc = clawdstrike::GuardContext::new();
     if let Some(d) = ctx {
         if let Some(v) = d.get_item("cwd")? {
@@ -361,7 +363,9 @@ fn build_guard_context(ctx: Option<&Bound<'_, PyDict>>) -> PyResult<clawdstrike:
         }
         if let Some(v) = d.get_item("metadata")? {
             let json_mod = PyModule::import(d.py(), "json")?;
-            let json_str: String = json_mod.call_method1("dumps", (v,))?.extract()?;
+            let json_str: String = json_mod
+                .call_method1("dumps", (v,))?
+                .extract()?;
             let value: serde_json::Value = serde_json::from_str(&json_str)
                 .map_err(|e| PyValueError::new_err(format!("Invalid metadata JSON: {}", e)))?;
             gc.metadata = Some(value);
@@ -385,8 +389,11 @@ impl NativeEngine {
     #[pyo3(signature = (yaml_str, base_path=None))]
     fn from_yaml(yaml_str: &str, base_path: Option<&str>) -> PyResult<Self> {
         let bp = base_path.map(std::path::PathBuf::from);
-        let policy = clawdstrike::Policy::from_yaml_with_extends(yaml_str, bp.as_deref())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let policy = clawdstrike::Policy::from_yaml_with_extends(
+            yaml_str,
+            bp.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let engine = clawdstrike::HushEngine::with_policy(policy);
         Ok(Self { engine })
     }
@@ -410,7 +417,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -427,7 +435,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -443,7 +452,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -460,7 +470,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -479,7 +490,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -496,7 +508,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -517,7 +530,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -537,7 +551,8 @@ impl NativeEngine {
         let report =
             futures::executor::block_on(self.engine.check_action_report(&action, &context))
                 .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let v = serde_json::to_value(&report).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = serde_json::to_value(&report)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         json_value_to_py(py, &v)
     }
 
@@ -567,7 +582,8 @@ fn generate_keypair_native(py: Python<'_>) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
 
     let kp = Keypair::generate();
     let hex_seed = kp.to_hex();
-    let seed_bytes = hex::decode(&hex_seed).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let seed_bytes =
+        hex::decode(&hex_seed).map_err(|e| PyValueError::new_err(e.to_string()))?;
     let pub_bytes = kp.public_key().as_bytes().to_vec();
     Ok((
         pyo3::types::PyBytes::new(py, &seed_bytes).into(),
@@ -583,7 +599,8 @@ fn sign_message_native(py: Python<'_>, message: &[u8], private_key: &[u8]) -> Py
         return Err(PyValueError::new_err("Private key must be 32 bytes"));
     }
     let hex_key = hex::encode(private_key);
-    let kp = Keypair::from_hex(&hex_key).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let kp =
+        Keypair::from_hex(&hex_key).map_err(|e| PyValueError::new_err(e.to_string()))?;
     let sig = kp.sign(message);
     Ok(pyo3::types::PyBytes::new(py, &sig.to_bytes()).into())
 }
