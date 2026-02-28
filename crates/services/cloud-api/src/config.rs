@@ -278,11 +278,11 @@ fn subject_filter_tokens_overlap(
     } else if left_idx == left.len() {
         // Conservative overlap detection: if either side has a trailing `>`
         // wildcard, treat it as potentially overlapping at token boundaries.
-        right[right_idx..].iter().any(|token| *token == ">")
+        right[right_idx..].contains(&">")
     } else if right_idx == right.len() {
         // Conservative overlap detection: if either side has a trailing `>`
         // wildcard, treat it as potentially overlapping at token boundaries.
-        left[left_idx..].iter().any(|token| *token == ">")
+        left[left_idx..].contains(&">")
     } else {
         let left_token = left[left_idx];
         let right_token = right[right_idx];
