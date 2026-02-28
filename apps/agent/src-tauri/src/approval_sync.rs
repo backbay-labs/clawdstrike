@@ -124,10 +124,13 @@ impl ApprovalSync {
 
         {
             let mut settings = self.settings.write().await;
+            let previous_issuer = settings.nats.approval_response_trusted_issuer.clone();
             settings.nats.approval_response_trusted_issuer = Some(new_issuer.to_string());
-            settings
-                .save()
-                .with_context(|| "failed to persist rotated approval response issuer")?;
+            if let Err(err) = settings.save() {
+                settings.nats.approval_response_trusted_issuer = previous_issuer;
+                return Err(err)
+                    .with_context(|| "failed to persist rotated approval response issuer");
+            }
         }
 
         let mut trusted = self.trusted_response_issuer.write().await;
