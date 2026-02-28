@@ -382,6 +382,7 @@ jobs:
           # Exclude standalone Rust crates outside that workspace and test-only
           # Rust sources that do not emit stable LCOV entries in this job.
           grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
+            | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
             > changed_rust_files.coverage.txt || true
 
