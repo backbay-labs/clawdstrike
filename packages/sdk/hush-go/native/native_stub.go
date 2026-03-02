@@ -26,7 +26,9 @@ func SHA256(data []byte) (string, error) { return "", ErrNativeUnavailable }
 func Keccak256(data []byte) (string, error) { return "", ErrNativeUnavailable }
 
 // VerifyEd25519 is not available without CGo.
-func VerifyEd25519(msg []byte, sigHex, pkHex string) bool { return false }
+func VerifyEd25519(msg []byte, sigHex, pkHex string) (bool, error) {
+	return false, ErrNativeUnavailable
+}
 
 // Canonicalize is not available without CGo.
 func Canonicalize(jsonStr string) (string, error) { return "", ErrNativeUnavailable }
@@ -40,7 +42,9 @@ func GenerateMerkleProof(leafHexes []string, index int) (string, error) {
 }
 
 // VerifyReceipt is not available without CGo.
-func VerifyReceipt(receiptJSON, sigHex, pkHex string) bool { return false }
+func VerifyReceipt(receiptJSON, sigHex, pkHex string) (bool, error) {
+	return false, ErrNativeUnavailable
+}
 
 // DetectJailbreak is not available without CGo.
 func DetectJailbreak(text, sessionID, configJSON string) (string, error) {

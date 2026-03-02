@@ -30,7 +30,6 @@ type AsyncGuardRuntime struct {
 	mu       sync.RWMutex
 }
 
-// NewAsyncGuardRuntime creates a new async guard runtime.
 func NewAsyncGuardRuntime(config AsyncGuardConfig) *AsyncGuardRuntime {
 	r := &AsyncGuardRuntime{
 		config:   config,
@@ -42,7 +41,6 @@ func NewAsyncGuardRuntime(config AsyncGuardConfig) *AsyncGuardRuntime {
 	return r
 }
 
-// AddGuard registers an async guard.
 func (r *AsyncGuardRuntime) AddGuard(g AsyncGuard) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -71,8 +69,14 @@ func (r *AsyncGuardRuntime) CheckAll(ctx context.Context, action, guardCtx inter
 	ctx, cancel := context.WithTimeout(ctx, r.config.Timeout)
 	defer cancel()
 
+	// Default MaxConcurrency to number of guards if not set.
+	maxConcurrency := r.config.MaxConcurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = len(guards)
+	}
+
 	// Semaphore for concurrency control.
-	sem := make(chan struct{}, r.config.MaxConcurrency)
+	sem := make(chan struct{}, maxConcurrency)
 
 	var wg sync.WaitGroup
 	results := make([]GuardResult, len(guards))
@@ -82,8 +86,24 @@ func (r *AsyncGuardRuntime) CheckAll(ctx context.Context, action, guardCtx inter
 		go func(idx int, guard AsyncGuard) {
 			defer wg.Done()
 
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			// Panic recovery for guard goroutines.
+			defer func() {
+				if r := recover(); r != nil {
+					results[idx] = GuardResult{
+						Guard: guard.Name(),
+						Err:   fmt.Errorf("guard %q panicked: %v", guard.Name(), r),
+					}
+				}
+			}()
+
+			// Respect context cancellation on semaphore acquire.
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				results[idx] = GuardResult{Guard: guard.Name(), Err: ctx.Err()}
+				return
+			}
 
 			results[idx] = r.runGuard(ctx, guard, action, guardCtx)
 		}(i, g)
@@ -121,11 +141,15 @@ func (r *AsyncGuardRuntime) runGuard(ctx context.Context, guard AsyncGuard, acti
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			backoff := r.config.BackoffBase * time.Duration(1<<uint(attempt-1))
+			timer := time.NewTimer(backoff)
 			select {
-			case <-time.After(backoff):
+			case <-timer.C:
+				// Timer fired, continue with retry.
 			case <-ctx.Done():
+				timer.Stop()
 				return GuardResult{Guard: name, Err: ctx.Err()}
 			}
+			timer.Stop()
 		}
 
 		result, err := guard.Check(ctx, action, guardCtx)

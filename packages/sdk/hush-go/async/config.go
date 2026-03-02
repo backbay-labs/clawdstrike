@@ -2,7 +2,10 @@
 // and rate limiting support.
 package async
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // AsyncGuardConfig controls the behavior of the async guard runtime.
 type AsyncGuardConfig struct {
@@ -26,7 +29,36 @@ type RateLimitConfig struct {
 	BurstSize         int
 }
 
-// DefaultAsyncGuardConfig returns a sensible default configuration.
+// Validate checks that the configuration values are reasonable.
+func (c AsyncGuardConfig) Validate() error {
+	if c.Timeout <= 0 {
+		return errors.New("async: Timeout must be positive")
+	}
+	if c.MaxRetries < 0 {
+		return errors.New("async: MaxRetries must be non-negative")
+	}
+	if c.BackoffBase < 0 {
+		return errors.New("async: BackoffBase must be non-negative")
+	}
+	if c.CircuitBreaker != nil {
+		if c.CircuitBreaker.FailureThreshold <= 0 {
+			return errors.New("async: CircuitBreaker.FailureThreshold must be positive")
+		}
+		if c.CircuitBreaker.ResetTimeout <= 0 {
+			return errors.New("async: CircuitBreaker.ResetTimeout must be positive")
+		}
+	}
+	if c.RateLimit != nil {
+		if c.RateLimit.RequestsPerSecond <= 0 {
+			return errors.New("async: RateLimit.RequestsPerSecond must be positive")
+		}
+		if c.RateLimit.BurstSize <= 0 {
+			return errors.New("async: RateLimit.BurstSize must be positive")
+		}
+	}
+	return nil
+}
+
 func DefaultAsyncGuardConfig() AsyncGuardConfig {
 	return AsyncGuardConfig{
 		Timeout:        5 * time.Second,

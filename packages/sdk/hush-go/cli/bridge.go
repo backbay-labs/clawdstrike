@@ -21,17 +21,31 @@ const defaultTimeout = 30 * time.Second
 type CLIBridge struct {
 	binaryPath string
 	timeout    time.Duration
+	pathErr    error
+}
+
+// validateBinaryPath checks that a binary path does not contain shell metacharacters.
+func validateBinaryPath(path string) error {
+	for _, c := range path {
+		switch c {
+		case ';', '|', '&', '$', '`', '(', ')':
+			return fmt.Errorf("binary path contains shell metacharacter %q", string(c))
+		}
+	}
+	return nil
 }
 
 // NewCLIBridge creates a bridge to the CLI binary at the given path.
+// If the path contains shell metacharacters, all subsequent checks will deny.
 func NewCLIBridge(binaryPath string) *CLIBridge {
-	return &CLIBridge{
+	b := &CLIBridge{
 		binaryPath: binaryPath,
 		timeout:    defaultTimeout,
 	}
+	b.pathErr = validateBinaryPath(binaryPath)
+	return b
 }
 
-// WithTimeout sets the maximum duration for CLI invocations.
 func (b *CLIBridge) WithTimeout(d time.Duration) *CLIBridge {
 	b.timeout = d
 	return b
@@ -56,8 +70,9 @@ type CLIResponse struct {
 	Details  interface{} `json:"details,omitempty"`
 }
 
-// Decision is the result of a CLI policy evaluation.
-type Decision struct {
+// CLIDecision is the result of a CLI policy evaluation.
+// This is distinct from guards.Decision as it represents the external CLI protocol.
+type CLIDecision struct {
 	Status   string
 	Guard    string
 	Severity string
@@ -67,7 +82,12 @@ type Decision struct {
 
 // Check evaluates a policy event using the CLI binary.
 // Exit codes: 0=allow, 1=warn, 2=deny. Any error returns deny (fail-closed).
-func (b *CLIBridge) Check(ctx context.Context, event PolicyEvent) (*Decision, error) {
+func (b *CLIBridge) Check(ctx context.Context, event PolicyEvent) (*CLIDecision, error) {
+	if b.pathErr != nil {
+		return denyDecision("cli_bridge",
+			fmt.Sprintf("invalid binary path: %v", b.pathErr)), nil
+	}
+
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
 		return denyDecision("cli_bridge", fmt.Sprintf("failed to marshal event: %v", err)), nil
@@ -109,25 +129,29 @@ func (b *CLIBridge) Check(ctx context.Context, event PolicyEvent) (*Decision, er
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
 		// Cannot parse response → fail-closed
 		return denyDecision("cli_bridge",
-			fmt.Sprintf("failed to parse CLI response: %v (stdout: %s)", err, stdout.String())), nil
+			fmt.Sprintf("failed to parse CLI response: %v", err)), nil
 	}
 
-	// Map exit code to status
+	// Prefer the JSON Status field if present; fall back to exit code mapping.
 	var status string
-	switch exitCode {
-	case 0:
-		status = "allow"
-	case 1:
-		status = "warn"
-	case 2:
-		status = "deny"
-	default:
-		// Unknown exit code → fail-closed
-		status = "deny"
-		resp.Message = fmt.Sprintf("unexpected exit code %d: %s", exitCode, resp.Message)
+	if resp.Status != "" {
+		status = resp.Status
+	} else {
+		switch exitCode {
+		case 0:
+			status = "allow"
+		case 1:
+			status = "warn"
+		case 2:
+			status = "deny"
+		default:
+			// Unknown exit code → fail-closed
+			status = "deny"
+			resp.Message = fmt.Sprintf("unexpected exit code %d: %s", exitCode, resp.Message)
+		}
 	}
 
-	return &Decision{
+	return &CLIDecision{
 		Status:   status,
 		Guard:    resp.Guard,
 		Severity: resp.Severity,
@@ -136,9 +160,8 @@ func (b *CLIBridge) Check(ctx context.Context, event PolicyEvent) (*Decision, er
 	}, nil
 }
 
-// denyDecision creates a deny Decision for fail-closed scenarios.
-func denyDecision(guard, message string) *Decision {
-	return &Decision{
+func denyDecision(guard, message string) *CLIDecision {
+	return &CLIDecision{
 		Status:   "deny",
 		Guard:    guard,
 		Severity: "critical",

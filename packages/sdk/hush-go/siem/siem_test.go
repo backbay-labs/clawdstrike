@@ -97,6 +97,53 @@ func TestEventBus_FlushOnStop(t *testing.T) {
 	}
 }
 
+func TestEventBus_DroppedCount(t *testing.T) {
+	// Create a bus with a very small channel buffer.
+	bus := siem.NewEventBus(siem.WithBatchSize(1000), siem.WithFlushInterval(10*time.Second))
+
+	// Don't start the bus, so no events are consumed. Fill the channel.
+	for i := 0; i < 1100; i++ {
+		bus.Emit(sampleEvent("drop"))
+	}
+
+	dropped := bus.DroppedCount()
+	if dropped == 0 {
+		t.Fatal("expected dropped events but got 0")
+	}
+	// Default buffer is 1024, so at least 1100-1024=76 should be dropped.
+	if dropped < 76 {
+		t.Errorf("expected at least 76 dropped, got %d", dropped)
+	}
+}
+
+func TestEventBus_StopWithoutStart(t *testing.T) {
+	bus := siem.NewEventBus()
+	// Should not panic or deadlock.
+	bus.Stop()
+}
+
+func TestEventBus_DoubleStart(t *testing.T) {
+	bus := siem.NewEventBus(siem.WithFlushInterval(50 * time.Millisecond))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// First start in goroutine.
+	go bus.Start(ctx)
+	time.Sleep(10 * time.Millisecond) // let it start
+
+	// Second start should return error.
+	err := bus.Start(ctx)
+	if err == nil {
+		t.Fatal("expected error on double Start")
+	}
+	if err != siem.ErrAlreadyStarted {
+		t.Fatalf("expected ErrAlreadyStarted, got: %v", err)
+	}
+
+	cancel()
+}
+
 func TestToECS(t *testing.T) {
 	ev := sampleEvent("ecs-1")
 	ecs := transforms.ToECS(ev)

@@ -217,3 +217,21 @@ func TestVerifySignature(t *testing.T) {
 		t.Error("VerifySignature rejected valid signature")
 	}
 }
+
+func TestKeypairDestroy(t *testing.T) {
+	kp, err := GenerateKeypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kp.Destroy()
+	allZero := true
+	for _, b := range kp.privateKey {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if !allZero {
+		t.Error("expected private key to be zeroed after Destroy")
+	}
+}

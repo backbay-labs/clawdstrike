@@ -29,7 +29,6 @@ type EgressAllowlistGuard struct {
 	defaultAction string
 }
 
-// NewEgressAllowlistGuard creates a guard with the given config. Nil config uses defaults.
 func NewEgressAllowlistGuard(cfg *policy.EgressAllowlistConfig) *EgressAllowlistGuard {
 	g := &EgressAllowlistGuard{
 		defaultAction: "block",

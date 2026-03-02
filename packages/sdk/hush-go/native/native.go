@@ -63,7 +63,7 @@ func Keccak256(data []byte) (string, error) {
 
 // VerifyEd25519 verifies an Ed25519 signature using the Rust implementation.
 // sigHex and pkHex are hex-encoded (with or without 0x prefix).
-func VerifyEd25519(msg []byte, sigHex, pkHex string) bool {
+func VerifyEd25519(msg []byte, sigHex, pkHex string) (bool, error) {
 	cSig := C.CString(sigHex)
 	defer C.free(unsafe.Pointer(cSig))
 	cPk := C.CString(pkHex)
@@ -80,7 +80,7 @@ func VerifyEd25519(msg []byte, sigHex, pkHex string) bool {
 			cPk,
 		)
 	}
-	return bool(result)
+	return bool(result), nil
 }
 
 // Canonicalize performs RFC 8785 canonical JSON via the Rust implementation.
@@ -137,7 +137,7 @@ func GenerateMerkleProof(leafHexes []string, index int) (string, error) {
 // VerifyReceipt verifies a receipt signature.
 // receiptJSON is the canonical JSON of the receipt body.
 // sigHex and pkHex are hex-encoded Ed25519 signature and public key.
-func VerifyReceipt(receiptJSON, sigHex, pkHex string) bool {
+func VerifyReceipt(receiptJSON, sigHex, pkHex string) (bool, error) {
 	cReceipt := C.CString(receiptJSON)
 	defer C.free(unsafe.Pointer(cReceipt))
 	cSig := C.CString(sigHex)
@@ -145,7 +145,7 @@ func VerifyReceipt(receiptJSON, sigHex, pkHex string) bool {
 	cPk := C.CString(pkHex)
 	defer C.free(unsafe.Pointer(cPk))
 
-	return bool(C.hush_verify_receipt(cReceipt, cSig, cPk))
+	return bool(C.hush_verify_receipt(cReceipt, cSig, cPk)), nil
 }
 
 // DetectJailbreak runs jailbreak detection on the given text.

@@ -69,6 +69,39 @@ func TestPolicyEventJSON(t *testing.T) {
 	}
 }
 
+func TestShellMetacharacterRejection(t *testing.T) {
+	metacharPaths := []string{
+		"/usr/bin/hush;rm -rf /",
+		"/usr/bin/hush|cat",
+		"/usr/bin/hush&",
+		"/usr/bin/hush$(cmd)",
+		"/usr/bin/hush`cmd`",
+		"/usr/bin/hush()",
+	}
+	for _, p := range metacharPaths {
+		t.Run(p, func(t *testing.T) {
+			bridge := NewCLIBridge(p)
+			decision, err := bridge.Check(context.Background(), PolicyEvent{
+				Type: "file_access",
+				Path: "/tmp/test",
+			})
+			if err != nil {
+				t.Fatalf("expected no error (fail-closed), got: %v", err)
+			}
+			if decision.Status != "deny" {
+				t.Errorf("expected deny for shell metacharacter path, got %s", decision.Status)
+			}
+		})
+	}
+}
+
+func TestValidBinaryPath(t *testing.T) {
+	bridge := NewCLIBridge("/usr/local/bin/hush")
+	if bridge.pathErr != nil {
+		t.Errorf("expected no path error for valid path, got: %v", bridge.pathErr)
+	}
+}
+
 func TestDenyDecision(t *testing.T) {
 	d := denyDecision("test_guard", "something failed")
 	if d.Status != "deny" {

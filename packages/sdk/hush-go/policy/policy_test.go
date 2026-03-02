@@ -3,6 +3,7 @@ package policy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -233,6 +234,81 @@ name: NewVersionTest
 	}
 	if p.Version != "1.2.0" {
 		t.Errorf("expected version 1.2.0, got %q", p.Version)
+	}
+}
+
+func TestCycleDetection(t *testing.T) {
+	dir := t.TempDir()
+
+	// A extends B, B extends A → cycle
+	aPath := filepath.Join(dir, "a.yaml")
+	bPath := filepath.Join(dir, "b.yaml")
+
+	aYAML := []byte("version: \"1.1.0\"\nname: A\nextends:\n  - " + bPath + "\n")
+	bYAML := []byte("version: \"1.1.0\"\nname: B\nextends:\n  - " + aPath + "\n")
+
+	if err := os.WriteFile(aPath, aYAML, 0644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := os.WriteFile(bPath, bYAML, 0644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+
+	_, err := Resolve(aPath)
+	if err == nil {
+		t.Fatal("expected cycle detection error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("expected error to mention cycle, got: %v", err)
+	}
+}
+
+func TestDeepMerge(t *testing.T) {
+	base := &Policy{
+		Version: "1.1.0",
+		Name:    "Base",
+		Guards: GuardConfigs{
+			ForbiddenPath: &ForbiddenPathConfig{
+				Patterns:   []string{"a", "b"},
+				Exceptions: []string{"exc1"},
+			},
+			EgressAllowlist: &EgressAllowlistConfig{
+				Allow:         []string{"base.com"},
+				DefaultAction: "block",
+			},
+		},
+	}
+	child := &Policy{
+		Version:       "1.1.0",
+		Name:          "Child",
+		MergeStrategy: MergeDeep,
+		Guards: GuardConfigs{
+			ForbiddenPath: &ForbiddenPathConfig{
+				Patterns: []string{"c"},
+				// Exceptions not set → should inherit from parent
+			},
+			// EgressAllowlist not set at all → should inherit from parent entirely
+		},
+	}
+	result := Merge(base, child)
+
+	// ForbiddenPath: patterns overridden, exceptions inherited
+	if result.Guards.ForbiddenPath == nil {
+		t.Fatal("expected ForbiddenPath")
+	}
+	if len(result.Guards.ForbiddenPath.Patterns) != 1 || result.Guards.ForbiddenPath.Patterns[0] != "c" {
+		t.Errorf("expected child patterns [c], got %v", result.Guards.ForbiddenPath.Patterns)
+	}
+	if len(result.Guards.ForbiddenPath.Exceptions) != 1 || result.Guards.ForbiddenPath.Exceptions[0] != "exc1" {
+		t.Errorf("expected inherited exceptions [exc1], got %v", result.Guards.ForbiddenPath.Exceptions)
+	}
+
+	// EgressAllowlist: fully inherited from parent
+	if result.Guards.EgressAllowlist == nil {
+		t.Fatal("expected EgressAllowlist inherited from parent")
+	}
+	if len(result.Guards.EgressAllowlist.Allow) != 1 || result.Guards.EgressAllowlist.Allow[0] != "base.com" {
+		t.Errorf("expected inherited allow [base.com], got %v", result.Guards.EgressAllowlist.Allow)
 	}
 }
 

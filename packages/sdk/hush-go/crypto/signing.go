@@ -21,7 +21,6 @@ type Keypair struct {
 	privateKey ed25519.PrivateKey
 }
 
-// GenerateKeypair creates a new random Ed25519 keypair.
 func GenerateKeypair() (*Keypair, error) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -30,13 +29,11 @@ func GenerateKeypair() (*Keypair, error) {
 	return &Keypair{privateKey: priv}, nil
 }
 
-// KeypairFromSeed creates a keypair from a 32-byte seed.
 func KeypairFromSeed(seed [32]byte) *Keypair {
 	priv := ed25519.NewKeyFromSeed(seed[:])
 	return &Keypair{privateKey: priv}
 }
 
-// KeypairFromHex creates a keypair from a hex-encoded 32-byte seed.
 func KeypairFromHex(hexSeed string) (*Keypair, error) {
 	hexSeed = strings.TrimPrefix(hexSeed, "0x")
 	b, err := hex.DecodeString(hexSeed)
@@ -51,7 +48,6 @@ func KeypairFromHex(hexSeed string) (*Keypair, error) {
 	return KeypairFromSeed(seed), nil
 }
 
-// PublicKey returns the public key for this keypair.
 func (kp *Keypair) PublicKey() PublicKey {
 	pub := kp.privateKey.Public().(ed25519.PublicKey)
 	var pk PublicKey
@@ -59,7 +55,6 @@ func (kp *Keypair) PublicKey() PublicKey {
 	return pk
 }
 
-// Sign signs a message and returns the signature.
 func (kp *Keypair) Sign(message []byte) (Signature, error) {
 	sig := ed25519.Sign(kp.privateKey, message)
 	var s Signature
@@ -67,7 +62,13 @@ func (kp *Keypair) Sign(message []byte) (Signature, error) {
 	return s, nil
 }
 
-// Hex returns the seed as a hex string.
+// Destroy zeros the private key material. The keypair must not be used after calling Destroy.
+func (kp *Keypair) Destroy() {
+	for i := range kp.privateKey {
+		kp.privateKey[i] = 0
+	}
+}
+
 func (kp *Keypair) Hex() string {
 	return hex.EncodeToString(kp.privateKey.Seed())
 }
@@ -101,31 +102,29 @@ func PublicKeyFromBytes(b []byte) (PublicKey, error) {
 }
 
 // Verify checks an Ed25519 signature against this public key.
+// Note: Go's ed25519.Verify performs point validation at call time, unlike
+// Rust's ed25519-dalek which validates at key construction. Invalid public
+// keys will return false.
 func (pk PublicKey) Verify(message []byte, sig *Signature) bool {
 	return ed25519.Verify(ed25519.PublicKey(pk[:]), message, sig[:])
 }
 
-// Hex returns the public key as a lowercase hex string.
 func (pk PublicKey) Hex() string {
 	return hex.EncodeToString(pk[:])
 }
 
-// HexPrefixed returns the public key as a "0x"-prefixed hex string.
 func (pk PublicKey) HexPrefixed() string {
 	return "0x" + pk.Hex()
 }
 
-// Bytes returns the raw 32-byte array.
 func (pk PublicKey) Bytes() [32]byte {
 	return [32]byte(pk)
 }
 
-// MarshalJSON serializes as a hex string.
 func (pk PublicKey) MarshalJSON() ([]byte, error) {
 	return json.Marshal(pk.Hex())
 }
 
-// UnmarshalJSON deserializes from a hex string.
 func (pk *PublicKey) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
@@ -157,27 +156,22 @@ func SignatureFromHex(s string) (Signature, error) {
 	return sig, nil
 }
 
-// Hex returns the signature as a lowercase hex string.
 func (s Signature) Hex() string {
 	return hex.EncodeToString(s[:])
 }
 
-// HexPrefixed returns the signature as a "0x"-prefixed hex string.
 func (s Signature) HexPrefixed() string {
 	return "0x" + s.Hex()
 }
 
-// Bytes returns the raw 64-byte array.
 func (s Signature) Bytes() [64]byte {
 	return [64]byte(s)
 }
 
-// MarshalJSON serializes as a hex string.
 func (s Signature) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.Hex())
 }
 
-// UnmarshalJSON deserializes from a hex string.
 func (s *Signature) UnmarshalJSON(data []byte) error {
 	var str string
 	if err := json.Unmarshal(data, &str); err != nil {
@@ -191,7 +185,6 @@ func (s *Signature) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// VerifySignature is a convenience function that verifies a signature.
 func VerifySignature(pk PublicKey, message []byte, sig *Signature) bool {
 	return pk.Verify(message, sig)
 }

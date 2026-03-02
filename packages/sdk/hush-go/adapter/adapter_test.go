@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/backbay/clawdstrike-go/engine"
+	"github.com/backbay/clawdstrike-go/guards"
 )
 
 func TestBaseToolInterceptorAllow(t *testing.T) {
@@ -25,7 +26,7 @@ func TestBaseToolInterceptorAllow(t *testing.T) {
 	if !result.Proceed {
 		t.Error("expected Proceed=true for engine with no guards")
 	}
-	if result.Decision.Status != "allow" {
+	if result.Decision.Status != guards.StatusAllow {
 		t.Errorf("expected allow, got %s", result.Decision.Status)
 	}
 	if secCtx.CheckCount.Load() != 1 {
@@ -51,7 +52,7 @@ func TestBaseToolInterceptorDenyOnConfigError(t *testing.T) {
 	if result.Proceed {
 		t.Error("expected Proceed=false when engine has config error")
 	}
-	if result.Decision.Status != "deny" {
+	if result.Decision.Status != guards.StatusDeny {
 		t.Errorf("expected deny, got %s", result.Decision.Status)
 	}
 	if secCtx.ViolationCount.Load() != 1 {
@@ -102,7 +103,7 @@ func TestBaseToolInterceptorOnError(t *testing.T) {
 
 func TestInMemoryAuditLoggerExport(t *testing.T) {
 	logger := NewInMemoryAuditLogger()
-	decision := &Decision{Status: "allow", Guard: "test"}
+	decision := &guards.Decision{Status: guards.StatusAllow, Guard: "test"}
 	event := NewAuditEvent("check", "my_tool", decision)
 	event.SessionID = "sess-1"
 
@@ -121,6 +122,29 @@ func TestInMemoryAuditLoggerExport(t *testing.T) {
 	_, err = logger.Export("xml")
 	if err == nil {
 		t.Error("expected error for unsupported format")
+	}
+}
+
+func TestBeforeExecuteContextCancellation(t *testing.T) {
+	eng, err := engine.NewBuilder().Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	interceptor := NewBaseToolInterceptor(eng, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	result, err := interceptor.BeforeExecute(ctx, "read_file", nil)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if result != nil {
+		t.Error("expected nil result on context cancellation")
 	}
 }
 

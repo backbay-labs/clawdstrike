@@ -55,26 +55,34 @@ type Policy struct {
 
 var placeholderRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
-// substitutePlaceholders replaces ${VAR} with os.Getenv(VAR) in raw YAML bytes.
-func substitutePlaceholders(data []byte) []byte {
-	return placeholderRe.ReplaceAllFunc(data, func(match []byte) []byte {
-		// Extract variable name from ${VAR}
-		name := string(match[2 : len(match)-1])
-		val := os.Getenv(name)
-		return []byte(val)
+// substituteString replaces ${VAR} placeholders with os.Getenv(VAR) in a string value.
+func substituteString(s string) string {
+	return placeholderRe.ReplaceAllStringFunc(s, func(match string) string {
+		name := match[2 : len(match)-1]
+		return os.Getenv(name)
 	})
 }
 
-// FromYAML parses a policy from YAML bytes. Unknown fields are rejected.
-func FromYAML(data []byte) (*Policy, error) {
-	data = substitutePlaceholders(data)
+// substitutePolicy performs environment variable substitution on string fields
+// of a parsed policy. This runs AFTER YAML parsing so that substitution cannot
+// alter YAML structure or inject additional YAML keys.
+func substitutePolicy(p *Policy) {
+	p.Version = substituteString(p.Version)
+	p.Name = substituteString(p.Name)
+	p.Description = substituteString(p.Description)
+}
 
+// FromYAML parses a policy from YAML bytes. Unknown fields are rejected.
+// Environment variable substitution (${VAR}) is applied to string fields
+// after parsing, so it cannot alter YAML structure.
+func FromYAML(data []byte) (*Policy, error) {
 	var p Policy
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
 	dec.KnownFields(true)
 	if err := dec.Decode(&p); err != nil {
 		return nil, fmt.Errorf("policy: parse YAML: %w", err)
 	}
+	substitutePolicy(&p)
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}

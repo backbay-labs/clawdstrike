@@ -2,6 +2,7 @@ package guards
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 
 	"github.com/backbay/clawdstrike-go/internal"
@@ -64,18 +65,27 @@ func NewSecretLeakGuard(cfg *policy.SecretLeakConfig) (*SecretLeakGuard, error) 
 func (g *SecretLeakGuard) Name() string { return "secret_leak" }
 
 func (g *SecretLeakGuard) Handles(action GuardAction) bool {
-	return action.Type == "file_write"
+	return action.Type == "file_write" || action.Type == "patch"
 }
 
 func (g *SecretLeakGuard) Check(action GuardAction, ctx *GuardContext) GuardResult {
+	// Normalize path before skip_paths check
+	normalizedPath := filepath.Clean(action.Path)
+
 	// Check skip_paths
 	for _, skip := range g.skipPaths {
-		if internal.DoubleStarMatch(skip, action.Path) {
+		if internal.DoubleStarMatch(skip, normalizedPath) {
 			return Allow(g.Name())
 		}
 	}
 
-	content := string(action.Content)
+	// For patch actions, scan the diff instead of content
+	var content string
+	if action.Type == "patch" {
+		content = action.Diff
+	} else {
+		content = string(action.Content)
+	}
 
 	for _, pat := range g.patterns {
 		match := pat.re.FindString(content)

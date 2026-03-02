@@ -23,9 +23,10 @@ func doubleStarMatch(pattern, path string) bool {
 	// Split pattern on "**"
 	parts := strings.SplitN(pattern, "**", 2)
 	if len(parts) == 1 {
-		// No "**" — fall back to filepath.Match
-		ok, _ := filepath.Match(pattern, path)
-		return ok
+		// No "**" — fall back to filepath.Match.
+		// Malformed patterns return error; treat as no-match (fail-closed).
+		ok, err := filepath.Match(pattern, path)
+		return err == nil && ok
 	}
 
 	prefix := parts[0]
@@ -45,8 +46,8 @@ func doubleStarMatch(pattern, path string) bool {
 				return false
 			}
 			for i, pp := range prefixParts {
-				ok, _ := filepath.Match(pp, pathParts[i])
-				if !ok {
+				ok, err := filepath.Match(pp, pathParts[i])
+				if err != nil || !ok {
 					return false
 				}
 			}

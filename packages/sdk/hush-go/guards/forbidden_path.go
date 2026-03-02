@@ -2,7 +2,6 @@ package guards
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/backbay/clawdstrike-go/internal"
@@ -38,7 +37,6 @@ type ForbiddenPathGuard struct {
 	exceptions []string
 }
 
-// NewForbiddenPathGuard creates a guard with the given config. Nil config uses defaults.
 func NewForbiddenPathGuard(cfg *policy.ForbiddenPathConfig) *ForbiddenPathGuard {
 	g := &ForbiddenPathGuard{}
 	if cfg != nil {
@@ -54,40 +52,55 @@ func NewForbiddenPathGuard(cfg *policy.ForbiddenPathConfig) *ForbiddenPathGuard 
 func (g *ForbiddenPathGuard) Name() string { return "forbidden_path" }
 
 func (g *ForbiddenPathGuard) Handles(action GuardAction) bool {
-	return action.Type == "file_access" || action.Type == "file_write"
+	return action.Type == "file_access" || action.Type == "file_write" || action.Type == "patch"
 }
 
 func (g *ForbiddenPathGuard) Check(action GuardAction, ctx *GuardContext) GuardResult {
-	path := normalizePath(action.Path)
+	path := action.Path
 
-	// Check exceptions first
+	// Resolve relative paths using ctx.Cwd
+	if !filepath.IsAbs(path) && ctx != nil && ctx.Cwd != "" {
+		path = filepath.Join(ctx.Cwd, path)
+	}
+
+	cleaned := filepath.Clean(path)
+	resolved := normalizePath(path)
+
+	// Collect all paths to check (cleaned + resolved, deduplicated)
+	pathsToCheck := []string{cleaned}
+	if resolved != cleaned {
+		pathsToCheck = append(pathsToCheck, resolved)
+	}
+
+	// Check exceptions first — if any path matches an exception, allow
 	for _, exc := range g.exceptions {
-		if internal.DoubleStarMatch(exc, path) {
-			return Allow(g.Name())
+		for _, p := range pathsToCheck {
+			if internal.DoubleStarMatch(exc, p) {
+				return Allow(g.Name())
+			}
 		}
 	}
 
-	// Check forbidden patterns
+	// Check forbidden patterns — if any path matches, block
 	for _, pat := range g.patterns {
-		if internal.DoubleStarMatch(pat, path) {
-			return Block(g.Name(), Critical,
-				fmt.Sprintf("access to %q blocked by pattern %q", action.Path, pat))
+		for _, p := range pathsToCheck {
+			if internal.DoubleStarMatch(pat, p) {
+				return Block(g.Name(), Critical,
+					fmt.Sprintf("access to %q blocked by pattern %q", action.Path, pat))
+			}
 		}
 	}
 
 	return Allow(g.Name())
 }
 
-// normalizePath cleans a path and attempts to resolve symlinks (best effort).
+// normalizePath cleans a path and attempts to resolve full symlink chains (best effort).
 func normalizePath(path string) string {
 	cleaned := filepath.Clean(path)
-	// Try to resolve symlinks; fall back to cleaned path on error.
-	resolved, err := os.Readlink(cleaned)
+	// Try to resolve full symlink chain; fall back to cleaned path on error.
+	resolved, err := filepath.EvalSymlinks(cleaned)
 	if err == nil {
-		if filepath.IsAbs(resolved) {
-			return filepath.Clean(resolved)
-		}
-		return filepath.Clean(filepath.Join(filepath.Dir(cleaned), resolved))
+		return resolved
 	}
 	return cleaned
 }

@@ -2,6 +2,16 @@ package internal
 
 import "testing"
 
+func TestMalformedPatternReturnsFalse(t *testing.T) {
+	// Malformed glob patterns should return false (fail-closed), not panic or match.
+	if DoubleStarMatch("[invalid", "anything") {
+		t.Error("expected malformed pattern to return false")
+	}
+	if DoubleStarMatch("abc/[bad", "abc/file") {
+		t.Error("expected malformed pattern in segment to return false")
+	}
+}
+
 func TestDoubleStarMatch(t *testing.T) {
 	tests := []struct {
 		pattern string

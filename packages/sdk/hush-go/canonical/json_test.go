@@ -158,3 +158,32 @@ func TestDeterministic(t *testing.T) {
 		t.Error("canonicalization should be deterministic")
 	}
 }
+
+func TestLargeUint64Canonicalization(t *testing.T) {
+	// 18446744073709551615 is math.MaxUint64, which exceeds int64 range
+	// but fits in uint64. It must be preserved exactly, not converted to float64.
+	input := `{"big":18446744073709551615}`
+	expected := `{"big":18446744073709551615}`
+
+	result, err := CanonicalizeBytes([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != expected {
+		t.Errorf("large uint64:\ngot:  %s\nwant: %s", result, expected)
+	}
+}
+
+func TestLargePositiveIntegerAboveInt64(t *testing.T) {
+	// Value just above MaxInt64 (9223372036854775808)
+	input := `{"val":9223372036854775808}`
+	expected := `{"val":9223372036854775808}`
+
+	result, err := CanonicalizeBytes([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != expected {
+		t.Errorf("large int above int64:\ngot:  %s\nwant: %s", result, expected)
+	}
+}

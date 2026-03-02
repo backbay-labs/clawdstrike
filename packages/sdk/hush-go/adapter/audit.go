@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/backbay/clawdstrike-go/guards"
 	"github.com/backbay/clawdstrike-go/internal"
 )
 
@@ -17,12 +18,11 @@ type AuditEvent struct {
 	ContextID string
 	SessionID string
 	ToolName  string
-	Decision  *Decision
+	Decision  *guards.Decision
 	Details   interface{}
 }
 
-// NewAuditEvent creates a new audit event with a generated ID and current timestamp.
-func NewAuditEvent(eventType, toolName string, decision *Decision) AuditEvent {
+func NewAuditEvent(eventType, toolName string, decision *guards.Decision) AuditEvent {
 	return AuditEvent{
 		ID:        internal.CreateID("audit"),
 		Type:      eventType,
@@ -45,12 +45,10 @@ type InMemoryAuditLogger struct {
 	events []AuditEvent
 }
 
-// NewInMemoryAuditLogger creates an in-memory audit logger.
 func NewInMemoryAuditLogger() *InMemoryAuditLogger {
 	return &InMemoryAuditLogger{}
 }
 
-// Log records an audit event.
 func (l *InMemoryAuditLogger) Log(event AuditEvent) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -58,7 +56,6 @@ func (l *InMemoryAuditLogger) Log(event AuditEvent) error {
 	return nil
 }
 
-// GetSessionEvents retrieves all events for a session.
 func (l *InMemoryAuditLogger) GetSessionEvents(sessionID string) ([]AuditEvent, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

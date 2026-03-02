@@ -93,6 +93,9 @@ func canonicalWrite(buf *strings.Builder, v interface{}) error {
 		for k := range val {
 			keys = append(keys, k)
 		}
+		// Note: sorts by UTF-8 byte order, matching Rust's implementation.
+		// This is compatible with RFC 8785 for ASCII keys but differs for
+		// non-ASCII. Cross-language compatibility with the Rust SDK is maintained.
 		sort.Strings(keys)
 
 		buf.WriteByte('{')
@@ -116,10 +119,13 @@ func canonicalWrite(buf *strings.Builder, v interface{}) error {
 func canonicalWriteNumber(buf *strings.Builder, n json.Number) error {
 	s := n.String()
 
-	// Try integer first
-	if i, err := n.Int64(); err == nil {
-		// Check that the string representation matches (no decimal point)
-		if strconv.FormatInt(i, 10) == s {
+	// Try integer first (preserves precision for large numbers)
+	if !strings.Contains(s, ".") && !strings.Contains(s, "e") && !strings.Contains(s, "E") {
+		if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+			buf.WriteString(s)
+			return nil
+		}
+		if _, err := strconv.ParseUint(s, 10, 64); err == nil {
 			buf.WriteString(s)
 			return nil
 		}
@@ -192,7 +198,10 @@ func shortestDecimal(abs float64) (string, int) {
 	mantissa := parts[0]
 	expStr := parts[1]
 
-	exp, _ := strconv.Atoi(expStr)
+	exp, err := strconv.Atoi(expStr)
+	if err != nil {
+		return "0", 0
+	}
 
 	// Extract digits from mantissa (remove the dot)
 	digits := strings.Replace(mantissa, ".", "", 1)

@@ -2,9 +2,14 @@ package siem
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// ErrAlreadyStarted is returned when Start is called on an already-running EventBus.
+var ErrAlreadyStarted = errors.New("siem: event bus already started")
 
 // EventExporter sends batches of security events to an external system.
 type EventExporter interface {
@@ -21,12 +26,13 @@ type EventBus struct {
 	flushInterval time.Duration
 	done          chan struct{}
 	stopped       chan struct{}
+	droppedCount  atomic.Int64
+	started       atomic.Bool
 }
 
 // EventBusOption configures an EventBus.
 type EventBusOption func(*EventBus)
 
-// WithBatchSize sets the maximum number of events per export batch.
 func WithBatchSize(n int) EventBusOption {
 	return func(b *EventBus) {
 		if n > 0 {
@@ -35,7 +41,6 @@ func WithBatchSize(n int) EventBusOption {
 	}
 }
 
-// WithFlushInterval sets the maximum time between flushes.
 func WithFlushInterval(d time.Duration) EventBusOption {
 	return func(b *EventBus) {
 		if d > 0 {
@@ -44,7 +49,6 @@ func WithFlushInterval(d time.Duration) EventBusOption {
 	}
 }
 
-// NewEventBus creates a new event bus with the given options.
 func NewEventBus(opts ...EventBusOption) *EventBus {
 	b := &EventBus{
 		ch:            make(chan SecurityEvent, 1024),
@@ -59,7 +63,6 @@ func NewEventBus(opts ...EventBusOption) *EventBus {
 	return b
 }
 
-// AddExporter registers an exporter that will receive event batches.
 func (b *EventBus) AddExporter(e EventExporter) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -73,12 +76,20 @@ func (b *EventBus) Emit(event SecurityEvent) {
 	case b.ch <- event:
 	default:
 		// Drop event if channel is full to avoid blocking the caller.
+		b.droppedCount.Add(1)
 	}
 }
 
+func (b *EventBus) DroppedCount() int64 {
+	return b.droppedCount.Load()
+}
+
 // Start begins the background flush loop. It blocks until Stop is called or
-// the context is cancelled.
-func (b *EventBus) Start(ctx context.Context) {
+// the context is cancelled. Returns ErrAlreadyStarted if called more than once.
+func (b *EventBus) Start(ctx context.Context) error {
+	if !b.started.CompareAndSwap(false, true) {
+		return ErrAlreadyStarted
+	}
 	defer close(b.stopped)
 
 	ticker := time.NewTicker(b.flushInterval)
@@ -109,20 +120,23 @@ func (b *EventBus) Start(ctx context.Context) {
 					if len(batch) > 0 {
 						b.flush(ctx, batch)
 					}
-					return
+					return nil
 				}
 			}
 		case <-ctx.Done():
 			if len(batch) > 0 {
 				b.flush(context.Background(), batch)
 			}
-			return
+			return nil
 		}
 	}
 }
 
-// Stop signals the event bus to flush remaining events and shut down.
+// Safe to call even if Start was never called.
 func (b *EventBus) Stop() {
+	if !b.started.Load() {
+		return
+	}
 	close(b.done)
 	<-b.stopped
 }
@@ -134,7 +148,10 @@ func (b *EventBus) flush(ctx context.Context, batch []SecurityEvent) {
 	b.mu.RUnlock()
 
 	for _, exp := range exporters {
+		// Copy the batch so exporters don't share the backing array.
+		batchCopy := make([]SecurityEvent, len(batch))
+		copy(batchCopy, batch)
 		// Best-effort: ignore individual exporter errors to avoid blocking other exporters.
-		_ = exp.Export(ctx, batch)
+		_ = exp.Export(ctx, batchCopy)
 	}
 }

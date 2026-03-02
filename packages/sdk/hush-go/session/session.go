@@ -40,7 +40,6 @@ type ClawdstrikeSession struct {
 	blockedActions []string
 }
 
-// NewSession creates a new session bound to an engine.
 func NewSession(eng Engine, opts Options) *ClawdstrikeSession {
 	id := opts.ID
 	if id == "" {
@@ -54,62 +53,34 @@ func NewSession(eng Engine, opts Options) *ClawdstrikeSession {
 	}
 }
 
-// ID returns the session identifier.
 func (s *ClawdstrikeSession) ID() string {
 	return s.id
 }
 
-// DecisionStatus represents the outcome of a security check.
-type DecisionStatus string
-
-const (
-	StatusAllow DecisionStatus = "allow"
-	StatusWarn  DecisionStatus = "warn"
-	StatusDeny  DecisionStatus = "deny"
-)
-
-// Decision is the result of a session check.
-type Decision struct {
-	Status   DecisionStatus
-	Guard    string
-	Severity string
-	Message  string
-	Details  interface{}
-}
-
 // Check evaluates an action, updates counters, and returns a decision.
-func (s *ClawdstrikeSession) Check(action guards.GuardAction) Decision {
+func (s *ClawdstrikeSession) Check(action guards.GuardAction) guards.Decision {
 	ctx := guards.NewContext().WithSessionID(s.id)
 	if s.agentID != "" {
 		ctx = ctx.WithAgentID(s.agentID)
 	}
 
-	result := s.engine.CheckAction(action, ctx)
 	s.checkCount.Add(1)
+	result := s.engine.CheckAction(action, ctx)
 
-	var status DecisionStatus
-	switch {
-	case !result.Allowed:
-		status = StatusDeny
+	decision := guards.DecisionFromResult(result)
+	switch decision.Status {
+	case guards.StatusDeny:
 		s.denyCount.Add(1)
 		s.mu.Lock()
 		s.blockedActions = append(s.blockedActions, action.Type)
 		s.mu.Unlock()
-	case result.Severity >= guards.Warning:
-		status = StatusWarn
+	case guards.StatusWarn:
 		s.warnCount.Add(1)
 	default:
-		status = StatusAllow
 		s.allowCount.Add(1)
 	}
 
-	return Decision{
-		Status:   status,
-		Guard:    result.Guard,
-		Severity: result.Severity.String(),
-		Message:  result.Message,
-		Details:  result.Details,
-	}
+	return decision
 }
 
 // SessionSummary captures the aggregated state of a session.
@@ -124,12 +95,13 @@ type SessionSummary struct {
 }
 
 // GetSummary returns a snapshot of the session's state.
+// The mutex is held for the entire snapshot to ensure consistency
+// between the blocked actions list and the atomic counters.
 func (s *ClawdstrikeSession) GetSummary() SessionSummary {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	blocked := make([]string, len(s.blockedActions))
 	copy(blocked, s.blockedActions)
-	s.mu.Unlock()
-
 	return SessionSummary{
 		ID:             s.id,
 		CheckCount:     s.checkCount.Load(),

@@ -2,6 +2,7 @@
 package receipt
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -106,25 +107,22 @@ type Receipt struct {
 func NewReceipt(contentHash crypto.Hash, verdict Verdict) Receipt {
 	return Receipt{
 		Version:     SchemaVersion,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Timestamp:   time.Now().UTC().Format(time.RFC3339Nano),
 		ContentHash: contentHash,
 		Verdict:     verdict,
 	}
 }
 
-// WithID sets the receipt ID.
 func (r Receipt) WithID(id string) Receipt {
 	r.ReceiptID = id
 	return r
 }
 
-// WithProvenance sets the provenance.
 func (r Receipt) WithProvenance(p Provenance) Receipt {
 	r.Provenance = &p
 	return r
 }
 
-// WithMetadata sets the metadata from raw JSON.
 func (r Receipt) WithMetadata(m json.RawMessage) Receipt {
 	r.Metadata = &m
 	return r
@@ -215,12 +213,10 @@ type PublicKeySet struct {
 	Cosigner *crypto.PublicKey
 }
 
-// NewPublicKeySet creates a set with just the primary signer.
 func NewPublicKeySet(signer crypto.PublicKey) PublicKeySet {
 	return PublicKeySet{Signer: signer}
 }
 
-// WithCosigner adds a co-signer public key.
 func (pks PublicKeySet) WithCosigner(cosigner crypto.PublicKey) PublicKeySet {
 	pks.Cosigner = &cosigner
 	return pks
@@ -262,12 +258,17 @@ func (sr *SignedReceipt) Verify(keys PublicKeySet) VerificationResult {
 	}
 
 	// Verify co-signer (optional)
-	if sr.Signatures.Cosigner != nil && keys.Cosigner != nil {
-		valid := keys.Cosigner.Verify(message, sr.Signatures.Cosigner)
-		result.CosignerValid = &valid
-		if !valid {
+	if sr.Signatures.Cosigner != nil {
+		if keys.Cosigner == nil {
 			result.Valid = false
-			result.Errors = append(result.Errors, "Invalid cosigner signature")
+			result.Errors = append(result.Errors, "Cosigner signature present but no cosigner public key provided")
+		} else {
+			valid := keys.Cosigner.Verify(message, sr.Signatures.Cosigner)
+			result.CosignerValid = &valid
+			if !valid {
+				result.Valid = false
+				result.Errors = append(result.Errors, "Invalid cosigner signature")
+			}
 		}
 	}
 
@@ -284,10 +285,13 @@ func (sr *SignedReceipt) ToJSON() (string, error) {
 }
 
 // SignedReceiptFromJSON parses a signed receipt from JSON.
+// Unknown fields are rejected (fail-closed).
 func SignedReceiptFromJSON(data string) (*SignedReceipt, error) {
+	dec := json.NewDecoder(bytes.NewReader([]byte(data)))
+	dec.DisallowUnknownFields()
 	var sr SignedReceipt
-	if err := json.Unmarshal([]byte(data), &sr); err != nil {
-		return nil, err
+	if err := dec.Decode(&sr); err != nil {
+		return nil, fmt.Errorf("invalid signed receipt JSON: %w", err)
 	}
 	return &sr, nil
 }

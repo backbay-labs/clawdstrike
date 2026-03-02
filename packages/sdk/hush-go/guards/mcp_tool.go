@@ -69,14 +69,19 @@ func NewMcpToolGuard(cfg *policy.McpToolConfig) *McpToolGuard {
 
 	if cfg != nil {
 		allowList = cfg.Allow
-		if len(cfg.Block) > 0 || len(cfg.Allow) > 0 {
+		if cfg.Block != nil {
 			blockList = cfg.Block
 		}
 		if cfg.RequireConfirmation != nil {
 			confirmList = cfg.RequireConfirmation
 		}
 		if cfg.DefaultAction != "" {
-			g.defaultAction = cfg.DefaultAction
+			// Validate default_action; fail-closed to "block" for invalid values.
+			if cfg.DefaultAction == "allow" || cfg.DefaultAction == "block" {
+				g.defaultAction = cfg.DefaultAction
+			} else {
+				g.defaultAction = "block"
+			}
 		}
 		if cfg.MaxArgsSize > 0 {
 			g.maxArgsSize = cfg.MaxArgsSize
@@ -107,16 +112,20 @@ func (g *McpToolGuard) Handles(action GuardAction) bool {
 func (g *McpToolGuard) Check(action GuardAction, ctx *GuardContext) GuardResult {
 	toolName := action.ToolName
 
-	// Check args size
+	// Check args size (fail-closed: marshal error blocks)
 	if action.ToolArgs != nil {
 		data, err := json.Marshal(action.ToolArgs)
-		if err == nil && len(data) > g.maxArgsSize {
+		if err != nil {
+			return Block(g.Name(), Error,
+				fmt.Sprintf("failed to serialize tool args: %v", err))
+		}
+		if len(data) > g.maxArgsSize {
 			return Block(g.Name(), Error,
 				fmt.Sprintf("tool %q args size %d exceeds max %d", toolName, len(data), g.maxArgsSize))
 		}
 	}
 
-	decision := g.decide(toolName)
+	decision := g.Decide(toolName)
 
 	switch decision {
 	case ToolBlock:
@@ -133,28 +142,19 @@ func (g *McpToolGuard) Check(action GuardAction, ctx *GuardContext) GuardResult 
 	}
 }
 
-// decide returns the decision for a tool name.
-func (g *McpToolGuard) decide(name string) ToolDecision {
-	// Explicit block takes precedence
+// Decide returns the decision for a tool name.
+func (g *McpToolGuard) Decide(name string) ToolDecision {
 	if g.block[name] {
 		return ToolBlock
 	}
-	// Explicit allow
 	if g.allow[name] {
 		return ToolAllow
 	}
-	// Require confirmation
 	if g.requireConfirmation[name] {
 		return ToolRequireConfirmation
 	}
-	// Default
 	if g.defaultAction == "block" {
 		return ToolBlock
 	}
 	return ToolAllow
-}
-
-// Decide exports the decision logic for a tool name.
-func (g *McpToolGuard) Decide(name string) ToolDecision {
-	return g.decide(name)
 }

@@ -5,16 +5,9 @@ package adapter
 import (
 	"context"
 	"time"
-)
 
-// Decision mirrors the top-level Decision type to avoid import cycles.
-type Decision struct {
-	Status   string
-	Guard    string
-	Severity string
-	Message  string
-	Details  interface{}
-}
+	"github.com/backbay/clawdstrike-go/guards"
+)
 
 // ToolInterceptor is the interface for intercepting tool calls in an
 // AI agent framework. Implementations wrap around tool execution to
@@ -33,22 +26,15 @@ type ToolInterceptor interface {
 
 // InterceptResult is returned by BeforeExecute.
 type InterceptResult struct {
-	// Proceed indicates whether the tool should be executed.
-	Proceed bool
-	// ModifiedParameters contains parameters after potential sanitization.
+	Proceed            bool
 	ModifiedParameters interface{}
-	// Decision is the security decision that led to this result.
-	Decision *Decision
-	// Duration is how long the security check took.
-	Duration time.Duration
+	Decision           *guards.Decision
+	Duration           time.Duration
 }
 
 // ProcessedOutput is returned by AfterExecute.
 type ProcessedOutput struct {
-	// Output is the (potentially modified) tool output.
-	Output interface{}
-	// Modified indicates whether the output was changed.
-	Modified bool
-	// Redactions lists descriptions of any redacted content.
+	Output     interface{}
+	Modified   bool
 	Redactions []string
 }

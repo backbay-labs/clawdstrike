@@ -1,6 +1,8 @@
 package guards
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -693,11 +695,191 @@ func TestGuardResultConstructors(t *testing.T) {
 	}
 }
 
+// --- DecisionFromResult ---
+
+func TestDecisionFromResult(t *testing.T) {
+	// Allow → StatusAllow
+	d := DecisionFromResult(Allow("test"))
+	if d.Status != StatusAllow {
+		t.Errorf("expected allow, got %s", d.Status)
+	}
+
+	// Block → StatusDeny
+	d = DecisionFromResult(Block("test", Critical, "blocked"))
+	if d.Status != StatusDeny {
+		t.Errorf("expected deny, got %s", d.Status)
+	}
+	if d.Severity != "critical" {
+		t.Errorf("expected critical severity, got %s", d.Severity)
+	}
+
+	// Warn (allowed + Warning severity) → StatusWarn
+	d = DecisionFromResult(Warn("test", "suspicious"))
+	if d.Status != StatusWarn {
+		t.Errorf("expected warn, got %s", d.Status)
+	}
+}
+
 // --- GuardContext ---
 
 func TestGuardContextBuilder(t *testing.T) {
 	ctx := NewContext().WithCwd("/project").WithSessionID("s123").WithAgentID("agent1")
 	if ctx.Cwd != "/project" || ctx.SessionID != "s123" || ctx.AgentID != "agent1" {
 		t.Error("GuardContext builder failed")
+	}
+}
+
+// --- Security regression tests ---
+
+func TestForbiddenPathSymlinks(t *testing.T) {
+	// Create a temp dir structure: target file + symlink chain pointing to it
+	tmpDir := t.TempDir()
+
+	// Create a fake .env file as the forbidden target
+	targetDir := filepath.Join(tmpDir, "project")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetFile := filepath.Join(targetDir, ".env")
+	if err := os.WriteFile(targetFile, []byte("SECRET=val"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Create a symlink that points to the .env file
+	link := filepath.Join(tmpDir, "sneaky-link")
+	if err := os.Symlink(targetFile, link); err != nil {
+		t.Skipf("cannot create symlink (permissions): %v", err)
+	}
+
+	g := NewForbiddenPathGuard(nil)
+	ctx := NewContext()
+
+	// Access through symlink should be blocked because it resolves to **/.env
+	result := g.Check(FileAccess(link), ctx)
+	if result.Allowed {
+		t.Error("expected symlink to .env to be blocked")
+	}
+
+	// Also test multi-level symlink chain
+	link2 := filepath.Join(tmpDir, "double-link")
+	if err := os.Symlink(link, link2); err != nil {
+		t.Skipf("cannot create second symlink: %v", err)
+	}
+	result = g.Check(FileAccess(link2), ctx)
+	if result.Allowed {
+		t.Error("expected double symlink to .env to be blocked")
+	}
+}
+
+func TestForbiddenPathPatch(t *testing.T) {
+	g := NewForbiddenPathGuard(nil)
+	ctx := NewContext()
+
+	result := g.Check(Patch("/etc/shadow", "+root:x:0:0::"), ctx)
+	if result.Allowed {
+		t.Error("expected patch action targeting /etc/shadow to be blocked")
+	}
+
+	// Verify the guard handles patch actions
+	if !g.Handles(Patch("/etc/shadow", "+line")) {
+		t.Error("expected Handles(patch) = true")
+	}
+}
+
+func TestForbiddenPathRelativeCwd(t *testing.T) {
+	g := NewForbiddenPathGuard(nil)
+	ctx := NewContext().WithCwd("/home/user")
+
+	// Relative path that resolves to a forbidden location
+	result := g.Check(FileAccess(".ssh/id_rsa"), ctx)
+	if result.Allowed {
+		t.Error("expected relative path .ssh/id_rsa with cwd=/home/user to be blocked")
+	}
+}
+
+func TestSecretLeakPatch(t *testing.T) {
+	g, err := NewSecretLeakGuard(nil)
+	if err != nil {
+		t.Fatalf("NewSecretLeakGuard: %v", err)
+	}
+	ctx := NewContext()
+
+	// Patch with a secret in the diff
+	action := Patch("config.yaml", "+api_key: AKIAIOSFODNN7EXAMPLE\n")
+	result := g.Check(action, ctx)
+	if result.Allowed {
+		t.Error("expected patch with AWS key in diff to be blocked")
+	}
+
+	// Verify the guard handles patch actions
+	if !g.Handles(Patch("file.go", "+line")) {
+		t.Error("expected Handles(patch) = true")
+	}
+}
+
+func TestSecretLeakSkipPathNormalization(t *testing.T) {
+	g, err := NewSecretLeakGuard(&policy.SecretLeakConfig{
+		Patterns:  DefaultSecretPatterns,
+		SkipPaths: []string{"**/test/**"},
+	})
+	if err != nil {
+		t.Fatalf("NewSecretLeakGuard: %v", err)
+	}
+	ctx := NewContext()
+
+	// Non-normalized path should still match after filepath.Clean
+	result := g.Check(FileWrite("./project/../project/test/file.go", []byte("AKIAIOSFODNN7EXAMPLE")), ctx)
+	if !result.Allowed {
+		t.Error("expected non-normalized path ./project/../project/test/file.go to be skipped after normalization")
+	}
+}
+
+func TestMcpToolMarshalError(t *testing.T) {
+	g := NewMcpToolGuard(&policy.McpToolConfig{
+		DefaultAction: "allow",
+	})
+	ctx := NewContext()
+
+	// Channels cannot be marshaled to JSON — should fail-closed (block)
+	result := g.Check(McpTool("test_tool", make(chan int)), ctx)
+	if result.Allowed {
+		t.Error("expected unmarshalable ToolArgs to be blocked (fail-closed)")
+	}
+	if !strings.Contains(result.Message, "failed to serialize tool args") {
+		t.Errorf("expected marshal error message, got: %s", result.Message)
+	}
+}
+
+func TestMcpToolAllowOnlyPreservesDefaultBlockList(t *testing.T) {
+	// When only Allow is set (Block is nil), default block list should be preserved
+	g := NewMcpToolGuard(&policy.McpToolConfig{
+		Allow:         []string{"my_custom_tool"},
+		DefaultAction: "allow",
+	})
+	ctx := NewContext()
+
+	// Default blocked tool should still be blocked
+	result := g.Check(McpTool("shell_exec", nil), ctx)
+	if result.Allowed {
+		t.Error("expected shell_exec to remain blocked when only Allow is set (Block is nil)")
+	}
+
+	// Explicitly allowed tool should be allowed
+	result = g.Check(McpTool("my_custom_tool", nil), ctx)
+	if !result.Allowed {
+		t.Error("expected my_custom_tool to be allowed")
+	}
+}
+
+func TestMcpToolInvalidDefaultAction(t *testing.T) {
+	g := NewMcpToolGuard(&policy.McpToolConfig{
+		DefaultAction: "invalid_action",
+	})
+	ctx := NewContext()
+
+	// With invalid default_action, should fail-closed to block
+	result := g.Check(McpTool("unknown_tool", nil), ctx)
+	if result.Allowed {
+		t.Error("expected invalid default_action to fail-closed (block unknown tools)")
 	}
 }

@@ -39,7 +39,6 @@ type MerkleTree struct {
 	levels [][]crypto.Hash
 }
 
-// FromLeaves builds a Merkle tree from raw leaf data.
 func FromLeaves(leaves [][]byte) (*MerkleTree, error) {
 	if len(leaves) == 0 {
 		return nil, errors.New("merkle: empty tree")
@@ -69,7 +68,6 @@ func FromLeaves(leaves [][]byte) (*MerkleTree, error) {
 	return &MerkleTree{levels: levels}, nil
 }
 
-// FromHashes builds a Merkle tree from pre-computed leaf hashes.
 func FromHashes(leafHashes []crypto.Hash) (*MerkleTree, error) {
 	if len(leafHashes) == 0 {
 		return nil, errors.New("merkle: empty tree")
@@ -94,7 +92,6 @@ func FromHashes(leafHashes []crypto.Hash) (*MerkleTree, error) {
 	return &MerkleTree{levels: levels}, nil
 }
 
-// Root returns the root hash of the tree.
 func (t *MerkleTree) Root() crypto.Hash {
 	if len(t.levels) == 0 {
 		return crypto.Hash{}
@@ -106,7 +103,6 @@ func (t *MerkleTree) Root() crypto.Hash {
 	return last[0]
 }
 
-// LeafCount returns the number of leaves.
 func (t *MerkleTree) LeafCount() int {
 	if len(t.levels) == 0 {
 		return 0
@@ -153,12 +149,10 @@ type MerkleProof struct {
 	AuditPath []crypto.Hash `json:"audit_path"`
 }
 
-// ComputeRoot computes the root from raw leaf data and this proof.
 func (p *MerkleProof) ComputeRoot(leafBytes []byte) (crypto.Hash, error) {
 	return p.ComputeRootFromHash(LeafHash(leafBytes))
 }
 
-// ComputeRootFromHash computes the root from a pre-hashed leaf.
 func (p *MerkleProof) ComputeRootFromHash(leafHash crypto.Hash) (crypto.Hash, error) {
 	if p.TreeSize == 0 || p.LeafIndex >= p.TreeSize {
 		return crypto.Hash{}, errors.New("merkle: invalid proof")
@@ -197,7 +191,6 @@ func (p *MerkleProof) ComputeRootFromHash(leafHash crypto.Hash) (crypto.Hash, er
 	return h, nil
 }
 
-// Verify checks the proof against an expected root using raw leaf data.
 func (p *MerkleProof) Verify(leafBytes []byte, expectedRoot crypto.Hash) bool {
 	root, err := p.ComputeRoot(leafBytes)
 	if err != nil {
@@ -206,7 +199,6 @@ func (p *MerkleProof) Verify(leafBytes []byte, expectedRoot crypto.Hash) bool {
 	return root == expectedRoot
 }
 
-// VerifyHash checks the proof against an expected root using a pre-hashed leaf.
 func (p *MerkleProof) VerifyHash(leafHash crypto.Hash, expectedRoot crypto.Hash) bool {
 	root, err := p.ComputeRootFromHash(leafHash)
 	if err != nil {

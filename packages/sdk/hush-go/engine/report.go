@@ -20,7 +20,6 @@ type GuardReport struct {
 	TotalDuration time.Duration
 }
 
-// DeniedEntries returns only the entries that denied the action.
 func (r *GuardReport) DeniedEntries() []GuardResultEntry {
 	var denied []GuardResultEntry
 	for _, e := range r.Results {
@@ -31,7 +30,6 @@ func (r *GuardReport) DeniedEntries() []GuardResultEntry {
 	return denied
 }
 
-// WarningEntries returns entries that allowed but flagged with warnings.
 func (r *GuardReport) WarningEntries() []GuardResultEntry {
 	var warnings []GuardResultEntry
 	for _, e := range r.Results {

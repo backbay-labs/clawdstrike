@@ -41,7 +41,7 @@ func TestSessionDenyTracking(t *testing.T) {
 
 	d := sess.Check(guards.FileAccess("/etc/passwd"))
 
-	if d.Status != StatusDeny {
+	if d.Status != guards.StatusDeny {
 		t.Errorf("expected deny, got %s", d.Status)
 	}
 
@@ -59,7 +59,7 @@ func TestSessionWarnTracking(t *testing.T) {
 	sess := NewSession(eng, Options{})
 
 	d := sess.Check(guards.FileAccess("/tmp/test"))
-	if d.Status != StatusWarn {
+	if d.Status != guards.StatusWarn {
 		t.Errorf("expected warn, got %s", d.Status)
 	}
 

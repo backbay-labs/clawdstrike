@@ -258,6 +258,61 @@ func TestValidateVersion(t *testing.T) {
 	}
 }
 
+func TestSignedReceiptFromJSONRejectsUnknownFields(t *testing.T) {
+	// Create a valid signed receipt first
+	receipt := makeTestReceipt()
+	kp, err := crypto.GenerateKeypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := Sign(receipt, kp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonStr, err := signed.ToJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject an unknown field at the top level
+	injected := `{"unknown_field":"bad",` + jsonStr[1:]
+	_, err = SignedReceiptFromJSON(injected)
+	if err == nil {
+		t.Error("expected error for unknown field in signed receipt JSON")
+	}
+}
+
+func TestCosignerSigWithoutKeyFailsVerification(t *testing.T) {
+	receipt := makeTestReceipt()
+	signerKP, err := crypto.GenerateKeypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cosignerKP, err := crypto.GenerateKeypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	signed, err := Sign(receipt, signerKP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signed.AddCosigner(cosignerKP); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify with only the signer key, no cosigner key
+	keys := NewPublicKeySet(signerKP.PublicKey())
+	result := signed.Verify(keys)
+
+	if result.Valid {
+		t.Error("expected invalid when cosigner signature present but no cosigner key provided")
+	}
+	if len(result.Errors) == 0 {
+		t.Error("expected errors")
+	}
+}
+
 func indexOf(s, substr string) int {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

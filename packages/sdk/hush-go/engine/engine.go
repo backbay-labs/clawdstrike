@@ -10,6 +10,7 @@ import (
 
 	"github.com/backbay/clawdstrike-go/crypto"
 	"github.com/backbay/clawdstrike-go/guards"
+	"github.com/backbay/clawdstrike-go/policy"
 	"github.com/backbay/clawdstrike-go/receipt"
 )
 
@@ -34,35 +35,25 @@ type Builder struct {
 	ruleset    string
 }
 
-// NewBuilder creates a new engine builder.
 func NewBuilder() *Builder {
 	return &Builder{}
 }
 
-// WithKeypair sets the signing keypair for receipt signing.
 func (b *Builder) WithKeypair(kp *crypto.Keypair) *Builder {
 	b.keypair = kp
 	return b
 }
 
-// WithGuard adds a guard to the pipeline.
 func (b *Builder) WithGuard(g guards.Guard) *Builder {
 	b.guards = append(b.guards, g)
 	return b
 }
 
-// WithExtraGuard is an alias for WithGuard for backward compatibility.
-func (b *Builder) WithExtraGuard(g guards.Guard) *Builder {
-	return b.WithGuard(g)
-}
-
-// WithFailFast enables fail-fast mode: stop after first deny.
 func (b *Builder) WithFailFast(ff bool) *Builder {
 	b.failFast = ff
 	return b
 }
 
-// WithRuleset sets the ruleset name (informational, used in receipts).
 func (b *Builder) WithRuleset(name string) *Builder {
 	b.ruleset = name
 	return b
@@ -71,7 +62,7 @@ func (b *Builder) WithRuleset(name string) *Builder {
 // Build creates the HushEngine. Returns an error if configuration is invalid.
 func (b *Builder) Build() (*HushEngine, error) {
 	if b.configErr != nil {
-		return &HushEngine{configErr: b.configErr}, nil
+		return nil, b.configErr
 	}
 	return &HushEngine{
 		keypair:  b.keypair,
@@ -82,17 +73,51 @@ func (b *Builder) Build() (*HushEngine, error) {
 }
 
 // FromRuleset creates a HushEngine from a named built-in ruleset.
-// Guard instantiation from policy config is deferred to the policy/guards packages;
-// this constructor stores the ruleset name for provenance.
+// Guards are instantiated from the policy's guard configurations.
 func FromRuleset(name string) (*HushEngine, error) {
-	switch name {
-	case "permissive", "default", "strict", "ai-agent", "cicd":
-		return &HushEngine{
-			ruleset: name,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unknown ruleset: %q", name)
+	p, err := policy.ByName(name)
+	if err != nil {
+		return nil, err
 	}
+	return BuildFromPolicy(p)
+}
+
+// BuildFromPolicy creates a HushEngine from a resolved policy, instantiating
+// all guards that have configuration entries.
+func BuildFromPolicy(p *policy.Policy) (*HushEngine, error) {
+	b := NewBuilder().WithRuleset(p.Name).WithFailFast(p.Settings.FailFast)
+
+	if cfg := p.Guards.ForbiddenPath; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		b.WithGuard(guards.NewForbiddenPathGuard(cfg))
+	}
+	if cfg := p.Guards.EgressAllowlist; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		b.WithGuard(guards.NewEgressAllowlistGuard(cfg))
+	}
+	if cfg := p.Guards.SecretLeak; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		g, err := guards.NewSecretLeakGuard(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("engine: instantiate secret_leak guard: %w", err)
+		}
+		b.WithGuard(g)
+	}
+	if cfg := p.Guards.PatchIntegrity; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		g, err := guards.NewPatchIntegrityGuard(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("engine: instantiate patch_integrity guard: %w", err)
+		}
+		b.WithGuard(g)
+	}
+	if cfg := p.Guards.McpTool; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		b.WithGuard(guards.NewMcpToolGuard(cfg))
+	}
+	if cfg := p.Guards.PromptInjection; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		b.WithGuard(guards.NewPromptInjectionGuard(cfg))
+	}
+	if cfg := p.Guards.Jailbreak; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		b.WithGuard(guards.NewJailbreakGuard())
+	}
+
+	return b.Build()
 }
 
 // SetConfigError marks the engine as misconfigured. All subsequent checks
@@ -111,11 +136,11 @@ func (e *HushEngine) AddGuard(g guards.Guard) {
 }
 
 // Ruleset returns the configured ruleset name.
+// Ruleset is safe for concurrent use; the field is immutable after Build().
 func (e *HushEngine) Ruleset() string {
 	return e.ruleset
 }
 
-// Keypair returns the engine's signing keypair, or nil if not set.
 func (e *HushEngine) Keypair() *crypto.Keypair {
 	return e.keypair
 }
@@ -136,7 +161,7 @@ func (e *HushEngine) CheckAction(action guards.GuardAction, ctx *guards.GuardCon
 		ctx = guards.NewContext()
 	}
 
-	var firstDeny *guards.GuardResult
+	var worstDeny *guards.GuardResult
 	for _, g := range e.guards {
 		if !g.Handles(action) {
 			continue
@@ -146,15 +171,15 @@ func (e *HushEngine) CheckAction(action guards.GuardAction, ctx *guards.GuardCon
 			if e.failFast {
 				return result
 			}
-			if firstDeny == nil {
+			if worstDeny == nil || result.Severity > worstDeny.Severity {
 				r := result
-				firstDeny = &r
+				worstDeny = &r
 			}
 		}
 	}
 
-	if firstDeny != nil {
-		return *firstDeny
+	if worstDeny != nil {
+		return *worstDeny
 	}
 	return guards.Allow("engine")
 }
@@ -213,42 +238,34 @@ func (e *HushEngine) CheckActionReport(action guards.GuardAction, ctx *guards.Gu
 
 // --- Convenience check methods ---
 
-// CheckFileAccess checks a file read action.
 func (e *HushEngine) CheckFileAccess(path string) guards.GuardResult {
 	return e.CheckAction(guards.FileAccess(path), nil)
 }
 
-// CheckFileWrite checks a file write action.
 func (e *HushEngine) CheckFileWrite(path string, content []byte) guards.GuardResult {
 	return e.CheckAction(guards.FileWrite(path, content), nil)
 }
 
-// CheckEgress checks an outbound network connection.
 func (e *HushEngine) CheckEgress(host string, port int) guards.GuardResult {
 	return e.CheckAction(guards.NetworkEgress(host, port), nil)
 }
 
-// CheckShell checks a shell command execution.
 func (e *HushEngine) CheckShell(cmd string) guards.GuardResult {
 	return e.CheckAction(guards.ShellCommand(cmd), nil)
 }
 
-// CheckMcpTool checks an MCP tool invocation.
 func (e *HushEngine) CheckMcpTool(name string, args interface{}) guards.GuardResult {
 	return e.CheckAction(guards.McpTool(name, args), nil)
 }
 
-// CheckPatch checks a patch application.
 func (e *HushEngine) CheckPatch(file, diff string) guards.GuardResult {
 	return e.CheckAction(guards.Patch(file, diff), nil)
 }
 
-// CheckUntrustedText checks untrusted text for injection/jailbreak.
 func (e *HushEngine) CheckUntrustedText(text string) guards.GuardResult {
 	return e.CheckAction(guards.Custom("untrusted_text", text), nil)
 }
 
-// SignReceipt signs a receipt with the engine's keypair.
 func (e *HushEngine) SignReceipt(r receipt.Receipt) (*receipt.SignedReceipt, error) {
 	if e.keypair == nil {
 		return nil, errors.New("engine has no signing keypair")

@@ -138,3 +138,117 @@ func TestAsyncRuntime_NoGuards(t *testing.T) {
 		t.Fatalf("expected nil results for empty runtime, got %v", results)
 	}
 }
+
+func TestAsyncRuntime_MaxConcurrencyZeroDefaults(t *testing.T) {
+	config := async.DefaultAsyncGuardConfig()
+	config.MaxConcurrency = 0
+	config.Timeout = 2 * time.Second
+	runtime := async.NewAsyncGuardRuntime(config)
+
+	g1 := &slowGuard{name: "g1", duration: 10 * time.Millisecond, result: "ok"}
+	g2 := &slowGuard{name: "g2", duration: 10 * time.Millisecond, result: "ok"}
+	runtime.AddGuard(g1)
+	runtime.AddGuard(g2)
+
+	results, err := runtime.CheckAll(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Err != nil {
+			t.Errorf("guard %s failed: %v", r.Guard, r.Err)
+		}
+	}
+}
+
+func TestAsyncRuntime_ContextCancellationOnSemaphore(t *testing.T) {
+	config := async.DefaultAsyncGuardConfig()
+	config.MaxConcurrency = 1
+	config.Timeout = 5 * time.Second
+	config.MaxRetries = 0
+	runtime := async.NewAsyncGuardRuntime(config)
+
+	// One guard that blocks long enough for the context to be cancelled.
+	blocker := &slowGuard{name: "blocker", duration: 500 * time.Millisecond, result: "blocked"}
+	waiter := &slowGuard{name: "waiter", duration: 1 * time.Millisecond, result: "waited"}
+	runtime.AddGuard(blocker)
+	runtime.AddGuard(waiter)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	results, err := runtime.CheckAll(ctx, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	// At least one guard should have a context error.
+	hasCtxErr := false
+	for _, r := range results {
+		if r.Err != nil && errors.Is(r.Err, context.DeadlineExceeded) {
+			hasCtxErr = true
+		}
+	}
+	if !hasCtxErr {
+		t.Error("expected at least one guard to fail with context deadline exceeded")
+	}
+}
+
+// panicGuard panics during Check.
+type panicGuard struct {
+	name string
+}
+
+func (g *panicGuard) Name() string { return g.name }
+
+func (g *panicGuard) Check(_ context.Context, _ interface{}, _ interface{}) (interface{}, error) {
+	panic("intentional panic in guard")
+}
+
+func TestAsyncRuntime_PanicRecovery(t *testing.T) {
+	config := async.DefaultAsyncGuardConfig()
+	config.Timeout = 2 * time.Second
+	config.MaxRetries = 0
+	runtime := async.NewAsyncGuardRuntime(config)
+
+	runtime.AddGuard(&panicGuard{name: "panicker"})
+
+	results, err := runtime.CheckAll(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err == nil {
+		t.Fatal("expected error from panicking guard, got nil")
+	}
+}
+
+func TestAsyncGuardConfig_Validate(t *testing.T) {
+	// Default config should be valid.
+	cfg := async.DefaultAsyncGuardConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config should be valid: %v", err)
+	}
+
+	// Zero timeout should fail.
+	bad := cfg
+	bad.Timeout = 0
+	if err := bad.Validate(); err == nil {
+		t.Error("expected error for zero Timeout")
+	}
+
+	// Negative MaxRetries should fail.
+	bad = cfg
+	bad.MaxRetries = -1
+	if err := bad.Validate(); err == nil {
+		t.Error("expected error for negative MaxRetries")
+	}
+}

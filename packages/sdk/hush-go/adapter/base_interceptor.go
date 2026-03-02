@@ -28,24 +28,19 @@ func NewBaseToolInterceptor(eng *engine.HushEngine, logger AuditLogger, secCtx *
 
 // BeforeExecute checks whether a tool invocation is allowed. Fail-closed:
 // any error during evaluation results in a deny decision.
-func (b *BaseToolInterceptor) BeforeExecute(_ context.Context, toolName string, params interface{}) (*InterceptResult, error) {
+func (b *BaseToolInterceptor) BeforeExecute(ctx context.Context, toolName string, params interface{}) (*InterceptResult, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	start := time.Now()
 
 	action := guards.McpTool(toolName, toArgsMap(params))
 	result := b.engine.CheckAction(action, nil)
 
-	decision := &Decision{
-		Guard:    result.Guard,
-		Severity: result.Severity.String(),
-		Message:  result.Message,
-	}
-
+	d := guards.DecisionFromResult(result)
+	decision := &d
 	proceed := result.Allowed
-	if proceed {
-		decision.Status = "allow"
-	} else {
-		decision.Status = "deny"
-	}
 
 	elapsed := time.Since(start)
 
@@ -95,8 +90,8 @@ func (b *BaseToolInterceptor) AfterExecute(_ context.Context, toolName string, o
 // OnError handles tool execution errors. Fail-closed: the error is logged
 // and returned as-is.
 func (b *BaseToolInterceptor) OnError(_ context.Context, toolName string, err error) error {
-	decision := &Decision{
-		Status:   "deny",
+	decision := &guards.Decision{
+		Status:   guards.StatusDeny,
 		Guard:    "error_handler",
 		Severity: "error",
 		Message:  fmt.Sprintf("tool execution error: %v", err),

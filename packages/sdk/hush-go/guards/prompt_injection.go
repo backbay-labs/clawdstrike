@@ -72,9 +72,9 @@ var suspiciousPatterns = []string{
 
 // PromptInjectionGuard detects prompt injection in untrusted text.
 type PromptInjectionGuard struct {
-	warnThreshold  float64
-	blockThreshold float64
-	maxScanBytes   int
+	warnThreshold  float64 // 0 means "use default" per Go zero-value convention
+	blockThreshold float64 // 0 means "use default" per Go zero-value convention
+	maxScanBytes   int     // 0 means "use default" per Go zero-value convention
 }
 
 // NewPromptInjectionGuard creates a guard with the given config. Nil config uses defaults.
