@@ -5,7 +5,6 @@ projects:
   wasm: "crates/libs/hush-wasm"
   python-sdk: "packages/sdk/hush-py"
   cloud-dashboard: "apps/cloud-dashboard"
-  desktop: "apps/desktop"
   guardrails: "scripts"
   policy-torture: "rulesets/tests/policy-torture"
   docs: "docs"
