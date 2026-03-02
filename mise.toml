@@ -81,6 +81,14 @@ bash scripts/move-validation.sh
 bash scripts/architecture-guardrails.sh
 """
 
+[tasks."test:packages:go"]
+description = "Go SDK tests"
+run = "cd packages/sdk/hush-go && CGO_ENABLED=0 go test ./..."
+
+[tasks."test:packages:go:build"]
+description = "Go SDK build check"
+run = "cd packages/sdk/hush-go && CGO_ENABLED=0 go build ./..."
+
 [tasks.ci]
 description = "Run full CI checks locally"
 run = """
