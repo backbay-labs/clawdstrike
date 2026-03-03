@@ -695,84 +695,47 @@ For organizations managing agent fleets across teams and environments, Clawdstri
 
 ```mermaid
 flowchart TB
-    subgraph agents ["Agent Fleet"]
-        A1[Desktop Agent 1]
-        A2[Desktop Agent 2]
-        AN[Desktop Agent N]
-    end
+    AF[Agent Fleet]
+    API[Cloud API]
+    DASH[Cloud Dashboard]
+    DB[(PostgreSQL)]
+    PROV[External NATS Provisioner]
+    KV[(Policy KV)]
+    CMD[(Command Subjects)]
 
-    subgraph nats_control ["NATS Control Plane"]
-        KV[(Policy KV)]
-        CMD[Posture / Command Subjects]
-    end
-
-    subgraph cloud ["Cloud Control Plane"]
-        DASH[Cloud Dashboard]
-        API[Cloud API]
-        DB[(PostgreSQL)]
-        PROV[External NATS Provisioner]
-    end
-
-    DASH <--> API;
-    API <--> DB;
-    API <--> PROV;
-
-    A1 -->|https enrollment| API;
-    A2 -->|https enrollment| API;
-    AN -->|https enrollment| API;
-    API -->|nats creds + subject prefix| A1;
-    API -->|nats creds + subject prefix| A2;
-    API -->|nats creds + subject prefix| AN;
-
-    API -->|policy publish update| KV;
-    KV -->|policy sync kv watch| A1;
-    KV -->|policy sync kv watch| A2;
-    KV -->|policy sync kv watch| AN;
-
-    API -->|set posture reload kill| CMD;
-    CMD -->|request reply ack| A1;
-    CMD -->|request reply ack| A2;
-    CMD -->|request reply ack| AN;
+    DASH <--> API
+    API <--> DB
+    API <--> PROV
+    AF <--> API
+    API --> KV
+    KV --> AF
+    API --> CMD
+    CMD --> AF
 ```
+
+- Enrollment runs over HTTPS (`Agent Fleet <-> Cloud API`), and the API returns NATS credentials + subject prefix.
+- Policy sync is `Cloud API -> Policy KV -> Agent Fleet` (KV watch model).
+- Commands are `Cloud API -> Command Subjects -> Agent Fleet` with request/reply acknowledgements.
 
 ### 2. Telemetry Plane
 
 ```mermaid
 flowchart TB
-    subgraph sources ["Edge Sources"]
-        AG[Desktop Agent / hushd]
-        BR[Bridge Fleet<br/>auditd, k8s-audit, hubble, tetragon, darwin]
-    end
-
-    subgraph reliability ["Publisher Reliability"]
-        ABUF[Agent receipt buffering / replay]
-        BOUT[Bridge durable outbox / retry]
-    end
-
-    subgraph nats_data ["NATS JetStream Data Plane"]
-        ING[(Adaptive Ingress Stream)]
-        AUD[(Bridge Envelope Streams)]
-    end
-
-    subgraph cloud_ingest ["Cloud Ingestion Workers"]
-        APPR[Approval Request Consumer]
-        HEART[Heartbeat Consumer]
-        AUDC[Audit Consumer]
-    end
-
+    AGENT[Desktop Agent / hushd]
+    BRIDGES[Bridge Fleet<br/>auditd, k8s-audit, hubble, tetragon, darwin]
+    REL[Outbox + Retry]
+    NATS[(NATS JetStream)]
+    CONS[Cloud Consumers<br/>approval, heartbeat, audit]
     DB[(PostgreSQL)]
 
-    AG --> ABUF --> ING
-    BR --> BOUT --> AUD
-
-    ING --> APPR
-    ING --> HEART
-    AUD --> AUDC
-
-    APPR --> DB
-    HEART --> DB
-    AUDC --> DB
+    AGENT --> REL
+    BRIDGES --> REL
+    REL --> NATS --> CONS --> DB
 ```
+
+- Telemetry enters from both desktop agents (`hushd`) and the bridge fleet.
+- Publisher reliability layer handles receipt buffering/replay plus durable outbox/retry before NATS.
+- Cloud consumers process approval/heartbeat/audit streams and persist to PostgreSQL.
 
 ### Enrollment
 
