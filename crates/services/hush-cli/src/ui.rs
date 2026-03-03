@@ -96,8 +96,9 @@ pub fn render_box(title: &str, lines: &[String], out: &mut dyn Write) {
     let _ = writeln!(out, "└{}┘", bottom_bar);
 }
 
-/// Truncate a string (by visible characters) to fit within `max_width`,
-/// appending `…` if truncation occurs.
+/// Truncate a string (by display width) to fit within `max_width`,
+/// appending `…` if truncation occurs. Accounts for wide characters
+/// (CJK, emoji) that occupy 2 terminal columns.
 fn truncate_to_width(s: &str, max_width: usize) -> String {
     let visible_width = console::measure_text_width(s);
     if visible_width <= max_width {
@@ -106,10 +107,21 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
     if max_width == 0 {
         return String::new();
     }
-    // For strings with ANSI codes, strip and re-truncate on plain text
+    // Strip ANSI codes first, then truncate by display width (not char count).
     let stripped = console::strip_ansi_codes(s);
-    let truncated: String = stripped.chars().take(max_width.saturating_sub(1)).collect();
-    format!("{}…", truncated)
+    let target = max_width.saturating_sub(1); // reserve 1 column for `…`
+    let mut width = 0;
+    let mut truncated = String::new();
+    for ch in stripped.chars() {
+        let ch_width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width > target {
+            break;
+        }
+        width += ch_width;
+        truncated.push(ch);
+    }
+    truncated.push('…');
+    truncated
 }
 
 /// Print a bold underlined section header.
@@ -130,90 +142,6 @@ pub fn guard_row(allowed: bool, guard: &str, message: &str, out: &mut dyn Write)
         "✗".red().to_string()
     };
     let _ = writeln!(out, "  {} {} {}", icon, guard.bold(), message.dimmed());
-}
-
-/// Render a rustc-style YAML diagnostic with line numbers and caret.
-#[allow(dead_code)]
-pub fn yaml_diagnostic(source: &str, err_msg: &str, out: &mut dyn Write) {
-    let _ = writeln!(out, "{}: {}", "error".red().bold(), err_msg.bold());
-
-    // Try to extract line/col info from serde_yaml error messages.
-    // Format: "... at line N column C"
-    let (line, col) = parse_yaml_line_col(err_msg);
-
-    if let Some(line_num) = line {
-        let lines: Vec<&str> = source.lines().collect();
-        let gutter_width = format!("{}", line_num + 1).len();
-
-        // Context: show 2 lines before and after
-        let start = line_num.saturating_sub(2);
-        let end = (line_num + 3).min(lines.len());
-
-        let _ = writeln!(
-            out,
-            "{}",
-            format!("{:>width$} │", "", width = gutter_width).dimmed()
-        );
-
-        for i in start..end {
-            if i < lines.len() {
-                let num = i + 1;
-                if i == line_num {
-                    let _ = writeln!(
-                        out,
-                        "{} {}",
-                        format!("{:>width$} │", num, width = gutter_width)
-                            .blue()
-                            .bold(),
-                        lines[i]
-                    );
-                    if let Some(c) = col {
-                        let _ = writeln!(
-                            out,
-                            "{} {}{}",
-                            format!("{:>width$} │", "", width = gutter_width).dimmed(),
-                            " ".repeat(c.saturating_sub(1)),
-                            "^".red().bold()
-                        );
-                    }
-                } else {
-                    let _ = writeln!(
-                        out,
-                        "{} {}",
-                        format!("{:>width$} │", num, width = gutter_width).dimmed(),
-                        lines[i]
-                    );
-                }
-            }
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn parse_yaml_line_col(msg: &str) -> (Option<usize>, Option<usize>) {
-    // serde_yaml errors typically contain "at line N column C"
-    let mut line = None;
-    let mut col = None;
-
-    if let Some(idx) = msg.find("at line ") {
-        let rest = &msg[idx + 8..];
-        let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-        if let Ok(n) = num_str.parse::<usize>() {
-            line = Some(n.saturating_sub(1)); // convert to 0-indexed
-        }
-        if let Some(col_idx) = rest.find("column ") {
-            let col_rest = &rest[col_idx + 7..];
-            let col_str: String = col_rest
-                .chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect();
-            if let Ok(c) = col_str.parse::<usize>() {
-                col = Some(c);
-            }
-        }
-    }
-
-    (line, col)
 }
 
 /// Render the ASCII art banner.
@@ -296,6 +224,85 @@ mod tests {
 
     fn setup() {
         colored::control::set_override(false);
+    }
+
+    /// Render a rustc-style YAML diagnostic with line numbers and caret.
+    /// Only used in tests; available for future production use if needed.
+    fn yaml_diagnostic(source: &str, err_msg: &str, out: &mut dyn Write) {
+        let _ = writeln!(out, "{}: {}", "error".red().bold(), err_msg.bold());
+
+        let (line, col) = parse_yaml_line_col(err_msg);
+
+        if let Some(line_num) = line {
+            let lines: Vec<&str> = source.lines().collect();
+            let gutter_width = format!("{}", line_num + 1).len();
+
+            let start = line_num.saturating_sub(2);
+            let end = (line_num + 3).min(lines.len());
+
+            let _ = writeln!(
+                out,
+                "{}",
+                format!("{:>width$} │", "", width = gutter_width).dimmed()
+            );
+
+            for i in start..end {
+                if i < lines.len() {
+                    let num = i + 1;
+                    if i == line_num {
+                        let _ = writeln!(
+                            out,
+                            "{} {}",
+                            format!("{:>width$} │", num, width = gutter_width)
+                                .blue()
+                                .bold(),
+                            lines[i]
+                        );
+                        if let Some(c) = col {
+                            let _ = writeln!(
+                                out,
+                                "{} {}{}",
+                                format!("{:>width$} │", "", width = gutter_width).dimmed(),
+                                " ".repeat(c.saturating_sub(1)),
+                                "^".red().bold()
+                            );
+                        }
+                    } else {
+                        let _ = writeln!(
+                            out,
+                            "{} {}",
+                            format!("{:>width$} │", num, width = gutter_width).dimmed(),
+                            lines[i]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn parse_yaml_line_col(msg: &str) -> (Option<usize>, Option<usize>) {
+        let mut line = None;
+        let mut col = None;
+
+        if let Some(idx) = msg.find("at line ") {
+            let rest = &msg[idx + 8..];
+            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(n) = num_str.parse::<usize>() {
+                line = Some(n.saturating_sub(1));
+            }
+            if let Some(col_idx) = rest.find("column ") {
+                let col_rest = &rest[col_idx + 7..];
+                let col_str: String = col_rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
+                if let Ok(c) = col_str.parse::<usize>() {
+                    col = Some(c);
+                }
+            }
+        }
+
+        (line, col)
     }
 
     #[test]
@@ -463,6 +470,16 @@ mod tests {
     #[test]
     fn truncate_to_width_zero() {
         assert_eq!(truncate_to_width("hello", 0), "");
+    }
+
+    #[test]
+    fn truncate_to_width_wide_chars() {
+        // CJK characters are 2 columns wide each
+        let cjk = "你好世界测试"; // 6 chars, 12 display columns
+        let result = truncate_to_width(cjk, 5);
+        // Should fit 2 wide chars (4 cols) + ellipsis (1 col) = 5
+        assert_eq!(console::measure_text_width(&result), 5);
+        assert!(result.ends_with('…'));
     }
 
     #[test]

@@ -14,6 +14,7 @@ Policy gates:
 | RUSTSEC-2024-0388 | `derivative` (unmaintained) | Temporary exception (transitive via Alloy/EAS stack) | `@deps-maintainers` | 2026-06-30 | Track upstream Alloy dependency updates |
 | RUSTSEC-2024-0436 | `paste` (unmaintained) | Temporary exception (transitive via Alloy stack) | `@deps-maintainers` | 2026-06-30 | Track upstream replacement/removal |
 | RUSTSEC-2025-0134 | `rustls-pemfile` (unmaintained) | Temporary exception (transitive via `async-nats`) | `@messaging-platform` | 2026-06-30 | Track migration to `rustls-pki-types` APIs |
+| RUSTSEC-2025-0119 | `number_prefix` (unmaintained) | Temporary exception (transitive via `indicatif`) | `@deps-maintainers` | 2026-06-30 | Track `indicatif` update to drop `number_prefix` |
 
 Review rules:
 - No advisory exception may be extended without a new review date and rationale.
