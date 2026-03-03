@@ -133,6 +133,15 @@ flowchart LR
 
 ## Quick Start
 
+<p align="center">
+  <a href="#python"><kbd>Python</kbd></a>&nbsp;&nbsp;
+  <a href="#typescript"><kbd>TypeScript</kbd></a>&nbsp;&nbsp;
+  <a href="#go"><kbd>Go</kbd></a>&nbsp;&nbsp;
+  <a href="#cursor-plugin"><kbd>Cursor</kbd></a>&nbsp;&nbsp;
+  <a href="#openclaw-plugin"><kbd>OpenClaw</kbd></a>&nbsp;&nbsp;
+  <a href="#claude-code-plugin"><kbd>Claude Code</kbd></a>
+</p>
+
 #### Install
 
 ```bash
@@ -460,6 +469,24 @@ claude --plugin-dir ./clawdstrike-plugin
 ```
 
 The plugin adds 6 hooks (pre-tool, post-tool, session lifecycle, prompt injection screening), 15 MCP tools, 3 auto-triggering skills, 6 slash commands, and a specialist security reviewer agent. See [`clawdstrike-plugin/README.md`](clawdstrike-plugin/README.md) for the full reference.
+
+### Cursor Plugin
+
+Clawdstrike ships as a native [Cursor](https://cursor.com) plugin with 12 lifecycle hooks, 15 MCP tools, and 2 `.mdc` rules for always-on security context. Every tool call, shell command, file read, file edit, and MCP invocation is policy-checked before execution.
+
+```shell
+# From the Cursor marketplace:
+/plugin marketplace add backbay-labs/clawdstrike
+/plugin install clawdstrike@clawdstrike
+```
+
+Or from a local clone:
+
+```bash
+cursor --plugin-dir ./cursor-plugin
+```
+
+The Cursor plugin includes 6 additional hooks beyond Claude Code (`beforeShellExecution`, `afterShellExecution`, `beforeMCPExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit`) for granular security enforcement. See [`cursor-plugin/README.md`](cursor-plugin/README.md) for the full reference.
 
 ### Additional SDKs & Bindings
 
