@@ -43,7 +43,6 @@ pub mod menu_ids {
     pub const SESSION_INFO: &str = "session_info";
     pub const TOGGLE_ENABLED: &str = "toggle_enabled";
     pub const EVENT_PREFIX: &str = "event_";
-    pub const OPEN_DESKTOP: &str = "open_desktop";
     pub const OPEN_WEB_UI: &str = "open_web_ui";
     pub const INSTALL_HOOKS: &str = "install_hooks";
     pub const INTEGRATIONS_INSTALL_HOOKS: &str = "integrations_install_hooks";
@@ -120,13 +119,6 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
         true,
         None::<&str>,
     )?;
-    let open_desktop = MenuItem::with_id(
-        app,
-        menu_ids::OPEN_DESKTOP,
-        "Open SDR Desktop",
-        true,
-        None::<&str>,
-    )?;
     let open_web_ui = MenuItem::with_id(
         app,
         menu_ids::OPEN_WEB_UI,
@@ -147,7 +139,6 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
             &sep2,
             &integrations_submenu,
             &reload_policy,
-            &open_desktop,
             &open_web_ui,
             &sep3,
             &quit_item,
@@ -344,7 +335,7 @@ fn is_loopback_host(parsed: &reqwest::Url) -> bool {
 }
 
 fn is_local_agent_ui_url(parsed: &reqwest::Url, expected_port: u16) -> bool {
-    if parsed.scheme() != "http" {
+    if !matches!(parsed.scheme(), "http" | "https") {
         return false;
     }
     if !is_loopback_host(parsed) {
@@ -432,12 +423,12 @@ async fn build_dashboard_launch_target(
         request_local_ui_bootstrap(settings.agent_api_port, auth_token, ui_next_path(&parsed))
             .await?;
 
-    let bootstrap_url = format!(
-        "http://127.0.0.1:{}/ui/bootstrap?session_id={}",
-        settings.agent_api_port, bootstrap.session_id
-    );
+    let mut bootstrap_url = parsed;
+    bootstrap_url.set_path("/ui/bootstrap");
+    bootstrap_url.set_query(Some(&format!("session_id={}", bootstrap.session_id)));
+    bootstrap_url.set_fragment(None);
     Some(DashboardLaunchTarget {
-        url: bootstrap_url,
+        url: bootstrap_url.to_string(),
         bootstrap_code: Some(bootstrap.user_code),
         bootstrap_ttl_seconds: Some(bootstrap.expires_in_seconds),
     })
@@ -672,20 +663,6 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             tracing::info!("Reload policy clicked");
             let _ = app.emit("reload_policy", ());
         }
-        menu_ids::OPEN_DESKTOP => {
-            tracing::info!("Open desktop clicked");
-            #[cfg(target_os = "macos")]
-            {
-                let _ = std::process::Command::new("open")
-                    .arg("-a")
-                    .arg("SDR Desktop")
-                    .spawn();
-            }
-            #[cfg(target_os = "linux")]
-            {
-                let _ = std::process::Command::new("sdr-desktop").spawn();
-            }
-        }
         menu_ids::OPEN_WEB_UI => {
             tracing::info!("Open Web UI clicked");
             let settings: Arc<RwLock<Settings>> =
@@ -879,9 +856,11 @@ mod tests {
     fn local_agent_ui_validation_pins_expected_origin() {
         let allowed = reqwest::Url::parse("http://127.0.0.1:9878/ui/settings/siem")
             .unwrap_or_else(|_| panic!("failed to parse allowed test url"));
+        let allowed_https = reqwest::Url::parse("https://127.0.0.1:9878/ui/settings/siem")
+            .unwrap_or_else(|_| panic!("failed to parse allowed-https test url"));
         let wrong_port = reqwest::Url::parse("http://127.0.0.1:9999/ui")
             .unwrap_or_else(|_| panic!("failed to parse wrong-port test url"));
-        let wrong_scheme = reqwest::Url::parse("https://127.0.0.1:9878/ui")
+        let wrong_scheme = reqwest::Url::parse("ftp://127.0.0.1:9878/ui")
             .unwrap_or_else(|_| panic!("failed to parse wrong-scheme test url"));
         let wrong_path = reqwest::Url::parse("http://127.0.0.1:9878/api")
             .unwrap_or_else(|_| panic!("failed to parse wrong-path test url"));
@@ -889,6 +868,7 @@ mod tests {
             .unwrap_or_else(|_| panic!("failed to parse remote-host test url"));
 
         assert!(is_local_agent_ui_url(&allowed, 9878));
+        assert!(is_local_agent_ui_url(&allowed_https, 9878));
         assert!(!is_local_agent_ui_url(&wrong_port, 9878));
         assert!(!is_local_agent_ui_url(&wrong_scheme, 9878));
         assert!(!is_local_agent_ui_url(&wrong_path, 9878));
