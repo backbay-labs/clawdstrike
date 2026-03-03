@@ -41,6 +41,12 @@ struct EnrollResponse {
     agent_id: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum EnrollmentKeyPersistence {
+    Keyring,
+    LegacyFileFallback,
+}
+
 fn extract_trusted_issuer(issuer: Option<&str>) -> Result<String> {
     issuer
         .map(str::trim)
@@ -109,8 +115,16 @@ impl EnrollmentManager {
         let keypair = hush_core::Keypair::generate();
         let key_hex = keypair.to_hex();
         let public_key_hex = keypair.public_key().to_hex();
-        let previous_key_hex = crate::security::key_store::load_enrollment_key_hex()
-            .with_context(|| "Failed to read existing enrollment key before enrollment")?;
+        let previous_key_hex = match load_enrollment_key_hex() {
+            Ok(previous) => previous,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "Failed to read existing enrollment key before enrollment; continuing without rollback key snapshot"
+                );
+                None
+            }
+        };
         let previous_settings_snapshot = self.settings.read().await.clone();
 
         let hostname = hostname_best_effort();
@@ -175,32 +189,40 @@ impl EnrollmentManager {
                 .with_context(|| "Failed to persist enrollment settings")?;
         }
 
-        if let Err(store_err) = crate::security::key_store::store_enrollment_key_hex(&key_hex)
+        let persistence = match persist_enrollment_key(&key_hex)
             .with_context(|| "Failed to persist enrollment key after enrollment response")
         {
-            if let Err(rollback_err) = restore_previous_enrollment_key(previous_key_hex.clone()) {
+            Ok(persistence) => persistence,
+            Err(store_err) => {
+                if let Err(rollback_err) = restore_previous_enrollment_key(previous_key_hex.clone())
+                {
+                    tracing::warn!(
+                        error = %rollback_err,
+                        "Failed to restore previous enrollment key after key-store write error"
+                    );
+                }
+                if let Err(rollback_err) =
+                    restore_previous_settings_snapshot(&self.settings, &previous_settings_snapshot)
+                        .await
+                {
+                    tracing::warn!(
+                        error = %rollback_err,
+                        "Failed to restore previous enrollment settings after key-store write error"
+                    );
+                }
+                return Err(store_err);
+            }
+        };
+        match persistence {
+            EnrollmentKeyPersistence::Keyring => {
+                tracing::info!("Agent private key stored in keyring-backed store");
+            }
+            EnrollmentKeyPersistence::LegacyFileFallback => {
                 tracing::warn!(
-                    error = %rollback_err,
-                    "Failed to restore previous enrollment key after key-store write error"
+                    "Agent private key persisted to legacy on-disk fallback because keyring write failed"
                 );
             }
-            if let Err(rollback_err) =
-                restore_previous_settings_snapshot(&self.settings, &previous_settings_snapshot)
-                    .await
-            {
-                tracing::warn!(
-                    error = %rollback_err,
-                    "Failed to restore previous enrollment settings after key-store write error"
-                );
-            }
-            return Err(store_err);
         }
-
-        let legacy_key_path = legacy_agent_key_path();
-        if legacy_key_path.exists() {
-            let _ = std::fs::remove_file(&legacy_key_path);
-        }
-        tracing::info!("Agent private key stored in keyring-backed store");
 
         let result = EnrollmentResult {
             agent_uuid: resp.agent_uuid,
@@ -221,13 +243,76 @@ fn legacy_agent_key_path() -> PathBuf {
     get_config_dir().join("agent.key")
 }
 
+fn persist_legacy_enrollment_key(key_hex: &str) -> Result<()> {
+    let trimmed = key_hex.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("Enrollment key cannot be empty");
+    }
+    let legacy_path = legacy_agent_key_path();
+    crate::security::fs::write_private_atomic(
+        &legacy_path,
+        trimmed.as_bytes(),
+        "legacy enrollment key",
+    )
+    .with_context(|| {
+        format!(
+            "Failed to persist legacy enrollment key at {:?}",
+            legacy_path
+        )
+    })
+}
+
+fn persist_enrollment_key(key_hex: &str) -> Result<EnrollmentKeyPersistence> {
+    let trimmed = key_hex.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("Enrollment key cannot be empty");
+    }
+
+    match crate::security::key_store::store_enrollment_key_hex(trimmed) {
+        Ok(()) => {
+            let legacy_path = legacy_agent_key_path();
+            if legacy_path.exists() {
+                if let Err(err) = std::fs::remove_file(&legacy_path) {
+                    tracing::warn!(
+                        error = %err,
+                        path = ?legacy_path,
+                        "Failed to remove legacy enrollment key file after keyring write"
+                    );
+                }
+            }
+            Ok(EnrollmentKeyPersistence::Keyring)
+        }
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "Failed to persist enrollment key to keyring; writing legacy fallback file"
+            );
+            persist_legacy_enrollment_key(trimmed)?;
+            Ok(EnrollmentKeyPersistence::LegacyFileFallback)
+        }
+    }
+}
+
 fn restore_previous_enrollment_key(previous_key_hex: Option<String>) -> Result<()> {
     if let Some(previous_key_hex) = previous_key_hex {
-        crate::security::key_store::store_enrollment_key_hex(previous_key_hex.trim())
+        let _ = persist_enrollment_key(previous_key_hex.trim())
             .with_context(|| "Failed to restore previous enrollment key")?;
     } else {
-        crate::security::key_store::delete_enrollment_key_hex()
-            .with_context(|| "Failed to clear newly stored enrollment key")?;
+        if let Err(err) = crate::security::key_store::delete_enrollment_key_hex() {
+            tracing::warn!(
+                error = %err,
+                "Failed to clear keyring enrollment key during rollback"
+            );
+        }
+        let legacy_path = legacy_agent_key_path();
+        if legacy_path.exists() {
+            std::fs::remove_file(&legacy_path).with_context(|| {
+                format!(
+                    "Failed to clear legacy enrollment key file during rollback {:?}",
+                    legacy_path
+                )
+            })?;
+        }
     }
     Ok(())
 }
@@ -317,36 +402,8 @@ pub fn migrate_legacy_enrollment_key_file() -> Result<()> {
 /// a TOCTOU window where the private key would be world-readable.
 #[cfg(test)]
 fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create directory {:?}", parent))?;
-    }
-
-    #[cfg(unix)]
-    {
-        use crate::settings::enforce_private_mode;
-        use std::fs::OpenOptions;
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-            .with_context(|| format!("Failed to create private file {:?}", path))?;
-        file.write_all(data)
-            .with_context(|| format!("Failed to write file {:?}", path))?;
-        enforce_private_mode(path, "private file")?;
-    }
-
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, data).with_context(|| format!("Failed to write file {:?}", path))?;
-    }
-
-    Ok(())
+    crate::security::fs::write_private_atomic(path, data, "private file")
+        .with_context(|| format!("Failed to write file {:?}", path))
 }
 
 #[cfg(test)]

@@ -1597,11 +1597,6 @@ async fn validate_gateway_runtime_target(raw: &str, pinned_ips: &[String]) -> Re
             "gateway_url resolved addresses changed outside the pinned allowlist; re-save gateway configuration"
         );
     }
-    if !pinned.is_empty() && !resolved_ips.iter().any(|ip| pinned.contains(ip)) {
-        anyhow::bail!(
-            "gateway_url resolved addresses no longer match the pinned allowlist; re-save gateway configuration"
-        );
-    }
 
     Ok(())
 }
