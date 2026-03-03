@@ -614,7 +614,7 @@ fn is_local_host_header(headers: &HeaderMap) -> bool {
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
     else {
-        return true;
+        return false;
     };
 
     let host_only = host
@@ -2253,6 +2253,12 @@ mod tests {
     }
 
     #[test]
+    fn local_host_header_rejects_missing_header() {
+        let headers = HeaderMap::new();
+        assert!(!is_local_host_header(&headers));
+    }
+
+    #[test]
     fn map_openclaw_error_classifies_dns_resolution_failure_as_bad_request() {
         let err = anyhow::anyhow!("failed to resolve gateway host bad.example:443");
         let (status, message) = map_openclaw_error(err);
@@ -2326,6 +2332,7 @@ mod tests {
         let unauth_req = axum::http::Request::builder()
             .method("GET")
             .uri("/ui")
+            .header("host", "127.0.0.1:9878")
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| panic!("failed to build unauth request: {e}"));
         let unauth_resp = app
@@ -2339,6 +2346,7 @@ mod tests {
         let deprecated_query_req = axum::http::Request::builder()
             .method("GET")
             .uri("/ui?agent_token=test-token")
+            .header("host", "127.0.0.1:9878")
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| panic!("failed to build deprecated query request: {e}"));
         let deprecated_query_resp = app
@@ -2376,6 +2384,7 @@ mod tests {
         let verify_req = axum::http::Request::builder()
             .method("POST")
             .uri("/ui/bootstrap")
+            .header("host", "127.0.0.1:9878")
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body(axum::body::Body::from(verify_body))
             .unwrap_or_else(|e| panic!("failed to build bootstrap verify request: {e}"));
@@ -2397,6 +2406,7 @@ mod tests {
         let cookie_req = axum::http::Request::builder()
             .method("GET")
             .uri("/ui")
+            .header("host", "127.0.0.1:9878")
             .header(COOKIE, format!("{AGENT_AUTH_COOKIE_NAME}=test-token"))
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| panic!("failed to build cookie request: {e}"));

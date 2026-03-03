@@ -418,12 +418,11 @@ async fn build_dashboard_launch_target(
     }
 
     if !is_local_agent_ui_url(&parsed, settings.agent_api_port) {
-        tracing::warn!(
-            url = %redact_url_for_log(url),
-            expected_port = settings.agent_api_port,
-            "Refusing to open local URL that is not pinned to the local agent UI origin"
-        );
-        return None;
+        return Some(DashboardLaunchTarget {
+            url: parsed.to_string(),
+            bootstrap_code: None,
+            bootstrap_ttl_seconds: None,
+        });
     }
 
     let auth_token = auth_token

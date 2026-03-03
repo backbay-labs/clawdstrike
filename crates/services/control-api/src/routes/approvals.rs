@@ -108,7 +108,9 @@ async fn resolve_approval(
         )));
     }
 
-    let resolved_by = input.resolved_by.unwrap_or_else(|| "control-api".to_string());
+    let resolved_by = input
+        .resolved_by
+        .unwrap_or_else(|| "control-api".to_string());
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let row = sqlx::query::query(
