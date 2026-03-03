@@ -219,6 +219,13 @@ async fn enroll_agent(
 ) -> Result<Json<EnrollmentResponse>, ApiError> {
     // Validate the Ed25519 public key.
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
+    let approval_response_trusted_issuer = state
+        .signing_keypair
+        .as_ref()
+        .map(|keypair| spine::issuer_from_keypair(keypair.as_ref()))
+        .ok_or_else(|| {
+            ApiError::Internal("approval response signing keypair is not configured".to_string())
+        })?;
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let enrollment_token_hash = hash_enrollment_token(&req.enrollment_token);
@@ -356,11 +363,6 @@ async fn enroll_agent(
 
     // Record usage event.
     let _ = state.metering.record(tenant_id, "agent_enrolled", 1).await;
-    let approval_response_trusted_issuer = state
-        .signing_keypair
-        .as_ref()
-        .map(|keypair| spine::issuer_from_keypair(keypair.as_ref()));
-
     Ok(Json(EnrollmentResponse {
         agent_uuid: agent.id.to_string(),
         tenant_id: tenant_id.to_string(),
@@ -368,7 +370,7 @@ async fn enroll_agent(
         nats_account: nats_creds.account,
         nats_subject_prefix: nats_creds.subject_prefix,
         nats_token: nats_creds.token,
-        approval_response_trusted_issuer,
+        approval_response_trusted_issuer: Some(approval_response_trusted_issuer),
         agent_id,
     }))
 }
