@@ -9,7 +9,7 @@
     "includes": [
       "apps/desktop/src/**/*.{ts,tsx}",
       "apps/desktop/*.{ts,js,json}",
-      "apps/cloud-dashboard/src/**/*.{ts,tsx}",
+      "apps/control-console/src/**/*.{ts,tsx}",
       "packages/sdk/hush-ts/src/**/*.ts",
       "packages/sdk/clawdstrike/**/*.ts",
       "packages/policy/clawdstrike-policy/src/**/*.ts",

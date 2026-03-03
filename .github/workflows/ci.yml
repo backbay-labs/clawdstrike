@@ -211,8 +211,8 @@ jobs:
         working-directory: apps/desktop
         run: bun run typecheck
 
-  cloud-dashboard:
-    name: Cloud Dashboard
+  control-console:
+    name: Control Console
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -222,22 +222,22 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: apps/cloud-dashboard/package-lock.json
+          cache-dependency-path: apps/control-console/package-lock.json
 
       - name: Install dependencies
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm ci
 
       - name: Type check
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm run typecheck
 
       - name: Unit tests
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm test
 
       - name: Build
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm run build
 
   sdr-integration-tests:
@@ -278,8 +278,8 @@ jobs:
       - name: E2E pipeline tests
         run: cargo test -p sdr-integration-tests --test e2e_pipeline
 
-  adaptive-cloud-integration:
-    name: Adaptive Cloud Integration (NATS + Postgres)
+  adaptive-control-integration:
+    name: Adaptive Control Integration (NATS + Postgres)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: check
@@ -292,8 +292,8 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Run cloud-api adaptive integration tests
-        run: 'cargo test -p clawdstrike-cloud-api integration_tests:: -- --nocapture'
+      - name: Run control-api adaptive integration tests
+        run: 'cargo test -p clawdstrike-control-api integration_tests:: -- --nocapture'
 
   msrv:
     name: Minimum Supported Rust Version

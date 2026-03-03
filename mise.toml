@@ -44,11 +44,11 @@ cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
 [tasks."test:apps"]
-description = "App checks for cloud dashboard and Tauri backends"
+description = "App checks for control console and Tauri backends"
 run = """
-npm --prefix apps/cloud-dashboard ci
-npm --prefix apps/cloud-dashboard run typecheck
-npm --prefix apps/cloud-dashboard run build
+npm --prefix apps/control-console ci
+npm --prefix apps/control-console run typecheck
+npm --prefix apps/control-console run build
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """

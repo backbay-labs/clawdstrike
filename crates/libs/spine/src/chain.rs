@@ -1,7 +1,7 @@
 //! Per-issuer hash chain verification.
 //!
 //! Verifies that envelopes from each issuer form a contiguous, hash-linked
-//! chain. Reusable by the checkpointer, cloud-api, or any future consumer.
+//! chain. Reusable by the checkpointer, control-api, or any future consumer.
 //!
 //! No async, no NATS — pure library types and verification logic.
 

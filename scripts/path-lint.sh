@@ -22,7 +22,13 @@ SEARCH_PATHS=(
 
 # Old paths that should not appear in operational configs/docs after repo moves.
 FIXED_PATTERNS=(
+  "apps/cloud-dashboard"
   "packages/cloud-dashboard"
+  "crates/services/cloud-api"
+  "clawdstrike-cloud-api"
+  "@backbay/cloud-dashboard"
+  "cloud_api_url"
+  "CLAWDSTRIKE_DASHBOARD_DIST"
   "spine/reticulum"
   "crates/hush-core"
   "crates/hush-proxy"

@@ -4,7 +4,7 @@ projects:
   clawdstrike: "."
   wasm: "crates/libs/hush-wasm"
   python-sdk: "packages/sdk/hush-py"
-  cloud-dashboard: "apps/cloud-dashboard"
+  control-console: "apps/control-console"
   desktop: "apps/desktop"
   guardrails: "scripts"
   policy-torture: "rulesets/tests/policy-torture"

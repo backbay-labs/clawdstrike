@@ -177,8 +177,8 @@ tasks:
       - "apps/desktop/*.ts"
       - "apps/desktop/*.js"
       - "apps/desktop/*.json"
-      - "apps/cloud-dashboard/src/**/*.ts"
-      - "apps/cloud-dashboard/src/**/*.tsx"
+      - "apps/control-console/src/**/*.ts"
+      - "apps/control-console/src/**/*.tsx"
       - "packages/sdk/hush-ts/src/**/*.ts"
       - "packages/sdk/clawdstrike/**/*.ts"
       - "packages/policy/clawdstrike-policy/src/**/*.ts"
@@ -194,8 +194,8 @@ tasks:
       - "apps/desktop/*.ts"
       - "apps/desktop/*.js"
       - "apps/desktop/*.json"
-      - "apps/cloud-dashboard/src/**/*.ts"
-      - "apps/cloud-dashboard/src/**/*.tsx"
+      - "apps/control-console/src/**/*.ts"
+      - "apps/control-console/src/**/*.tsx"
       - "packages/sdk/hush-ts/src/**/*.ts"
       - "packages/sdk/clawdstrike/**/*.ts"
       - "packages/policy/clawdstrike-policy/src/**/*.ts"
@@ -228,14 +228,14 @@ tasks:
       - "~:rust-build"
       - "wasm:size-check"
       - "~:ts-build"
-      - "cloud-dashboard:build"
+      - "control-console:build"
 
   test:
     command: "noop"
     deps:
       - "~:rust-test"
       - "~:ts-test"
-      - "cloud-dashboard:test"
+      - "control-console:test"
       - "python-sdk:test"
 
   lint:
@@ -259,7 +259,7 @@ tasks:
       - "~:rust-lint"
       - "~:rust-check-tauri"
       - "~:ts-typecheck"
-      - "cloud-dashboard:typecheck"
+      - "control-console:typecheck"
 
   ci:
     command: "noop"

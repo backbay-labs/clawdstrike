@@ -133,7 +133,7 @@ pub struct EnrollmentState {
     /// Whether the agent has completed enrollment.
     #[serde(default)]
     pub enrolled: bool,
-    /// Server-assigned agent UUID from the cloud API.
+    /// Server-assigned agent UUID from the Control API.
     #[serde(default)]
     pub agent_uuid: Option<String>,
     /// Tenant ID assigned during enrollment.

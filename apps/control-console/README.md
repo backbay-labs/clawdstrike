@@ -1,4 +1,4 @@
-# ClawdStrike Cloud Dashboard
+# ClawdStrike Control Console
 
 React SPA for managing ClawdStrike security policies, viewing audit logs, and monitoring agent enforcement.
 

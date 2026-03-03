@@ -108,7 +108,7 @@ async fn resolve_approval(
         )));
     }
 
-    let resolved_by = input.resolved_by.unwrap_or_else(|| "cloud-api".to_string());
+    let resolved_by = input.resolved_by.unwrap_or_else(|| "control-api".to_string());
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let row = sqlx::query::query(
@@ -213,7 +213,7 @@ mod tests {
             serde_json::json!({
                 "approval_id": "a-1",
                 "resolution": "approved",
-                "resolved_by": "cloud-api",
+                "resolved_by": "control-api",
             }),
             true,
             Some(&kp),

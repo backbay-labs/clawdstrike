@@ -22,4 +22,4 @@ Current policy/structure guardrails:
 10. `scripts/openclaw-plugin-install-link-smoke.sh` - validates clean-room `plugins install --link` + `plugins enable` flow against the package entry path and emits `summary.json`.
 11. `scripts/openclaw-plugin-runtime-smoke.sh` - validates OpenClaw plugin runtime loading and expected hook registrations from `plugins info ... --json`, emitting `summary.json`.
 12. `scripts/openclaw-plugin-blocked-call-e2e.sh` - validates end-to-end runtime blocking for a destructive `bash` call (no target file creation), emitting `summary.json`.
-13. `scripts/adaptive-openclaw-spine-e2e.sh` - combined smoke that validates OpenClaw blocked-call interception plus cloud-api signed Spine approval envelope emission, emitting `summary.json`.
+13. `scripts/adaptive-openclaw-spine-e2e.sh` - combined smoke that validates OpenClaw blocked-call interception plus control-api signed Spine approval envelope emission, emitting `summary.json`.

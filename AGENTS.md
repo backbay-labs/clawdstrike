@@ -4,7 +4,7 @@
 
 - `crates/`: Rust workspace crates (core engine, guards, CLI, daemon, WASM bindings)
 - `packages/`: TypeScript SDK + framework adapters, plus Python SDK in `packages/sdk/hush-py/`
-- `apps/`: user-facing apps (`desktop/`, `agent/`, `cloud-dashboard/`)
+- `apps/`: user-facing apps (`desktop/`, `agent/`, `control-console/`)
 - `integrations/`: transport/runtime integrations (e.g. `integrations/transports/reticulum/`)
 - `infra/`: packaging assets (e.g. `infra/packaging/HomebrewFormula/`)
 - `rulesets/`: pre-configured YAML policies used by examples and tooling

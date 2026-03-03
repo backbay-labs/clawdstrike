@@ -68,10 +68,10 @@ run_pkg packages/adapters/clawdstrike-openclaw
 bold "TS e2e: openclaw plugin (in-process)"
 npm --prefix packages/adapters/clawdstrike-openclaw run e2e
 
-bold "Cloud dashboard app"
-ensure_node_modules apps/cloud-dashboard
-(cd apps/cloud-dashboard && npm run typecheck)
-(cd apps/cloud-dashboard && npm run build)
+bold "Control console app"
+ensure_node_modules apps/control-console
+(cd apps/control-console && npm run typecheck)
+(cd apps/control-console && npm run build)
 
 bold "Python package"
 VENV_DIR="${VENV_DIR:-/tmp/hushpy-venv}"

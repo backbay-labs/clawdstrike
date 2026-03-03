@@ -55,7 +55,7 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 - `hush-cli` - CLI binary (commands: `clawdstrike`, `hush`)
 - `spine-cli` - Spine protocol CLI tools
 - `hushd` - HTTP daemon for centralized enforcement (experimental)
-- `cloud-api` - Cloud API service (early-stage)
+- `control-api` - Control API service (early-stage)
 - `eas-anchor` - Ethereum Attestation Service anchoring
 - `hush-proxy` - Network proxy utilities
 - `hush-wasm` - WebAssembly bindings
