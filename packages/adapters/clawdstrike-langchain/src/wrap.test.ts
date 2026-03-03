@@ -1,25 +1,23 @@
 import type { PolicyEngineLike, ToolInterceptor } from "@clawdstrike/adapter-core";
 
-import { BaseToolInterceptor } from "@clawdstrike/adapter-core";
+import { ClawdstrikeBlockedError } from "@clawdstrike/adapter-core";
 import { describe, expect, it, vi } from "vitest";
 
-import { ClawdstrikeViolationError } from "./errors.js";
-import { wrapTool, wrapTools, wrapToolWithConfig } from "./wrap.js";
+import { secureTool, secureTools, wrapTool, wrapToolWithConfig } from "./wrap.js";
 
-describe("wrapTool", () => {
+describe("secureTool", () => {
   it("wraps invoke() and allows execution when policy allows", async () => {
     const engine: PolicyEngineLike = {
       evaluate: () => ({ allowed: true, denied: false, warn: false }),
     };
-    const interceptor = new BaseToolInterceptor(engine, {});
 
     const tool = {
       name: "calc",
       invoke: vi.fn(async (input: { value: number }) => input.value + 1),
     };
 
-    const secureTool = wrapTool(tool, interceptor);
-    await expect(secureTool.invoke({ value: 41 })).resolves.toBe(42);
+    const secured = secureTool(tool, engine);
+    await expect(secured.invoke({ value: 41 })).resolves.toBe(42);
     expect(tool.invoke).toHaveBeenCalledTimes(1);
   });
 
@@ -30,16 +28,15 @@ describe("wrapTool", () => {
         message: "blocked",
       }),
     };
-    const interceptor = new BaseToolInterceptor(engine, {});
 
     const tool = {
       name: "bash",
       _call: vi.fn(async () => "ok"),
     };
 
-    const secureTool = wrapTool(tool, interceptor);
-    await expect(secureTool._call({ cmd: "rm -rf /" })).rejects.toBeInstanceOf(
-      ClawdstrikeViolationError,
+    const secured = secureTool(tool, engine);
+    await expect(secured._call({ cmd: "rm -rf /" })).rejects.toBeInstanceOf(
+      ClawdstrikeBlockedError,
     );
     expect(tool._call).toHaveBeenCalledTimes(0);
   });
@@ -63,48 +60,80 @@ describe("wrapTool", () => {
       },
     };
 
-    const secureTool = wrapTool(tool, interceptor);
-    await expect(secureTool.invoke({})).rejects.toThrow("boom");
+    const secured = secureTool(tool, interceptor);
+    await expect(secured.invoke({})).rejects.toThrow("boom");
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards sanitize modifiedInput through wrapped invoke()", async () => {
+    const interceptor: ToolInterceptor = {
+      beforeExecute: async () => ({
+        proceed: true,
+        decision: {
+          status: "sanitize",
+          reason_code: "ADC_POLICY_SANITIZE",
+        },
+        modifiedInput: "safe input",
+        duration: 0,
+      }),
+      afterExecute: async (_name, _input, output) => ({ output, modified: false }),
+      onError: async () => undefined,
+    };
+
+    const tool = {
+      name: "echo",
+      invoke: vi.fn(async (input: string) => input),
+    };
+
+    const secured = secureTool(tool, interceptor);
+    await expect(secured.invoke("unsafe input")).resolves.toBe("safe input");
+    expect(tool.invoke).toHaveBeenCalledWith("safe input", undefined);
+    expect((secured as { getLastDecision?: () => unknown }).getLastDecision?.()).toMatchObject({
+      status: "sanitize",
+    });
   });
 });
 
-describe("wrapTools", () => {
+describe("secureTools", () => {
   it("wraps a list of tools with a shared context", async () => {
     const engine: PolicyEngineLike = {
       evaluate: () => ({ allowed: true, denied: false, warn: false }),
     };
-    const interceptor = new BaseToolInterceptor(engine, {});
 
     const a = { name: "a", invoke: vi.fn(async () => "a") };
     const b = { name: "b", invoke: vi.fn(async () => "b") };
 
-    const [wa, wb] = wrapTools([a, b], interceptor);
+    const [wa, wb] = secureTools([a, b], engine);
     await expect(wa.invoke({})).resolves.toBe("a");
     await expect(wb.invoke({})).resolves.toBe("b");
   });
 });
 
-describe("wrapToolWithConfig", () => {
-  it("supports withConfig override when created from engine+config", async () => {
-    const engine: PolicyEngineLike = {
-      evaluate: (event) => ({
-        status: event.eventType === "command_exec" ? "deny" : "allow",
+describe("legacy wrappers", () => {
+  it("wrapTool remains usable for interceptor-first integrations", async () => {
+    const interceptor: ToolInterceptor = {
+      beforeExecute: async () => ({
+        proceed: true,
+        decision: { status: "allow" },
+        duration: 0,
       }),
+      afterExecute: async (_name, _input, output) => ({ output, modified: false }),
+      onError: async () => undefined,
     };
+    const tool = { name: "echo", invoke: vi.fn(async (input: string) => input) };
+    const wrapped = wrapTool(tool, interceptor);
+    await expect(wrapped.invoke("ok")).resolves.toBe("ok");
+  });
 
-    const tool = {
-      name: "bash",
-      _call: vi.fn(async () => "ok"),
+  it("wrapToolWithConfig exposes withConfig compatibility helper", async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" }),
     };
-
-    const secureTool = wrapToolWithConfig(tool, engine, { blockOnViolation: false });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const secureTool2 = (secureTool as any).withConfig({ blockOnViolation: true });
-
-    await expect(secureTool._call({ cmd: "rm -rf /" })).resolves.toBe("ok");
-    await expect(secureTool2._call({ cmd: "rm -rf /" })).rejects.toBeInstanceOf(
-      ClawdstrikeViolationError,
-    );
+    const tool = { name: "echo", invoke: vi.fn(async (input: string) => input) };
+    const wrapped = wrapToolWithConfig(tool, engine);
+    const withConfig = (wrapped as { withConfig?: (config: unknown) => typeof wrapped }).withConfig;
+    expect(typeof withConfig).toBe("function");
+    const updated = withConfig?.({ blockOnViolation: false });
+    await expect(updated?.invoke("ok")).resolves.toBe("ok");
   });
 });

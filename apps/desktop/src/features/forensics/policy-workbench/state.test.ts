@@ -153,4 +153,113 @@ describe("policyWorkbenchReducer", () => {
     });
     expect(preserved.loadedVersion).toBe("1.4.0");
   });
+
+  it("preserves newer draft when save completes against an older snapshot", () => {
+    const loaded = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_success",
+      yaml: "version: \"1.2.0\"\nname: loaded",
+      hash: "h1",
+      version: "1.2.0",
+    });
+    const edited = policyWorkbenchReducer(loaded, {
+      type: "edit",
+      yaml: "version: \"1.2.0\"\nname: newer",
+    });
+    const saving = policyWorkbenchReducer(edited, { type: "save_start" });
+
+    const saved = policyWorkbenchReducer(saving, {
+      type: "save_success_preserve_draft",
+      loadedYaml: "version: \"1.2.0\"\nname: loaded",
+      hash: "h2",
+    });
+
+    expect(saved.isSaving).toBe(false);
+    expect(saved.loadedHash).toBe("h2");
+    expect(saved.loadedYaml).toContain("name: loaded");
+    expect(saved.draftYaml).toContain("name: newer");
+  });
+
+  it("clears stale loadError on save success", () => {
+    const errored = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_error",
+      message: "Failed to load policy",
+    });
+    expect(errored.loadError).toBe("Failed to load policy");
+
+    const saved = policyWorkbenchReducer(errored, {
+      type: "save_success",
+      yaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(saved.loadError).toBeUndefined();
+
+    const preserved = policyWorkbenchReducer(errored, {
+      type: "save_success_preserve_draft",
+      loadedYaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(preserved.loadError).toBeUndefined();
+  });
+
+  it("preserves loadError while a new load is in-flight", () => {
+    const errored = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_error",
+      message: "Failed to load policy",
+    });
+
+    const loading = policyWorkbenchReducer(errored, { type: "load_start" });
+    expect(loading.loadError).toBe("Failed to load policy");
+  });
+
+  it("clears stale saveError on save success paths", () => {
+    const failed = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "save_error",
+      message: "previous save failed",
+    });
+    expect(failed.saveError).toBe("previous save failed");
+
+    const saved = policyWorkbenchReducer(failed, {
+      type: "save_success",
+      yaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(saved.saveError).toBeUndefined();
+
+    const preserved = policyWorkbenchReducer(failed, {
+      type: "save_success_preserve_draft",
+      loadedYaml: "version: \"1.2.0\"\nname: saved",
+      hash: "h3",
+    });
+    expect(preserved.saveError).toBeUndefined();
+  });
+
+  it("refreshes loadedVersion on save success paths", () => {
+    const loaded = policyWorkbenchReducer(initialPolicyWorkbenchState, {
+      type: "load_success",
+      yaml: 'version: "1.2.0"\nname: demo',
+      hash: "h1",
+      version: "1.2.0",
+    });
+
+    const saved = policyWorkbenchReducer(loaded, {
+      type: "save_success",
+      yaml: 'version: "1.3.0"\nname: demo',
+      hash: "h2",
+      version: "1.3.0",
+    });
+    expect(saved.loadedVersion).toBe("1.3.0");
+
+    const edited = policyWorkbenchReducer(saved, {
+      type: "edit",
+      yaml: 'version: "1.4.0"\nname: demo',
+    });
+    const saving = policyWorkbenchReducer(edited, { type: "save_start" });
+    const preserved = policyWorkbenchReducer(saving, {
+      type: "save_success_preserve_draft",
+      loadedYaml: 'version: "1.4.0"\nname: demo',
+      hash: "h3",
+      version: "1.4.0",
+    });
+    expect(preserved.loadedVersion).toBe("1.4.0");
+  });
 });

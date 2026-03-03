@@ -1,0 +1,11 @@
+[package]
+name = "@clawdstrike/hipaa"
+version = "0.1.0"
+pkg_type = "policy-pack"
+description = "HIPAA compliance policy pack for AI agent environments"
+authors = ["Clawdstrike Security <security@clawdstrike.com>"]
+license = "Apache-2.0"
+keywords = ["hipaa", "healthcare", "compliance", "phi"]
+
+[clawdstrike]
+min_version = "0.1.3"

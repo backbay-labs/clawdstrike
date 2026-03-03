@@ -23,6 +23,23 @@ export interface CryptoBackend {
 
 let currentBackend: CryptoBackend = createNobleBackend();
 
+/**
+ * Raw WASM module reference, stored when `initWasm()` succeeds.
+ * Detection code (JailbreakDetector, OutputSanitizer, etc.) accesses
+ * this via `getWasmModule()` rather than re-importing `@clawdstrike/wasm`.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
+let wasmModule: any = null;
+
+/**
+ * Return the raw WASM module, or `null` if `initWasm()` has not been called
+ * (or failed).
+ */
+// biome-ignore lint/suspicious/noExplicitAny: WASM module shape is dynamic
+export function getWasmModule(): any {
+  return wasmModule;
+}
+
 function isCompatibleWasmModule(wasm: unknown): boolean {
   // Keep this in sync with `packages/sdk/hush-ts/src/crypto/wasm-backend.ts`.
   const required = [
@@ -80,6 +97,7 @@ export async function initWasm(): Promise<boolean> {
       // The package is installed but too old / incompatible.
       return false;
     }
+    wasmModule = wasm;
     currentBackend = createWasmBackend(wasm);
     return true;
   } catch {

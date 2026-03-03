@@ -34,6 +34,69 @@ struct NatsMessage {
     payload: Vec<u8>,
 }
 
+#[derive(Default)]
+struct SimulatedCheckpointerState {
+    envelope_kv: HashMap<String, Vec<u8>>,
+    log_index_kv: HashMap<String, u64>,
+    log_stream: Vec<String>,
+    fact_index_kv: HashMap<String, String>,
+    issuer_heads_kv: HashMap<String, String>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct IngestFailureInjection {
+    fail_envelope_persist: bool,
+    fail_log_append: bool,
+    fail_fact_index: bool,
+    fail_head_persist: bool,
+}
+
+/// Simulated ingest contract used by integration tests:
+/// envelope_kv -> log append/index -> fact index -> issuer head.
+fn simulate_ingest_contract(
+    state: &mut SimulatedCheckpointerState,
+    envelope: &Value,
+    injection: IngestFailureInjection,
+) -> bool {
+    let envelope_hash = envelope
+        .get("envelope_hash")
+        .and_then(|v| v.as_str())
+        .expect("envelope_hash should exist")
+        .to_string();
+    let issuer = envelope
+        .get("issuer")
+        .and_then(|v| v.as_str())
+        .expect("issuer should exist")
+        .to_ascii_lowercase();
+
+    if injection.fail_envelope_persist {
+        return false;
+    }
+    state
+        .envelope_kv
+        .insert(envelope_hash.clone(), serde_json::to_vec(envelope).unwrap());
+
+    if injection.fail_log_append {
+        return false;
+    }
+    let seq = state.log_stream.len() as u64 + 1;
+    state.log_stream.push(envelope_hash.clone());
+    state.log_index_kv.insert(envelope_hash.clone(), seq);
+
+    if !injection.fail_fact_index {
+        state.fact_index_kv.insert(
+            format!("envelope_hash.{envelope_hash}"),
+            envelope_hash.clone(),
+        );
+    }
+
+    if !injection.fail_head_persist {
+        state.issuer_heads_kv.insert(issuer, envelope_hash);
+    }
+
+    true
+}
+
 /// Simulate Tetragon event kind -> NATS subject suffix (mirrors TetragonEventKind).
 fn event_kind_suffix(resp: &GetEventsResponse) -> &'static str {
     match &resp.event {
@@ -72,6 +135,22 @@ fn make_process(binary: &str, ns: &str) -> tet::Process {
         tid: None,
         process_credentials: None,
     }
+}
+
+fn make_signed_exec_envelope(kp: &Keypair, seq: u64, prev_hash: Option<String>) -> Value {
+    let resp = GetEventsResponse {
+        event: Some(Event::ProcessExec(tet::ProcessExec {
+            process: Some(make_process("/usr/bin/failure-injection", "default")),
+            parent: None,
+            ancestors: vec![],
+        })),
+        node_name: "failure-injection-node".to_string(),
+        time: None,
+        aggregation_info: None,
+        cluster_name: String::new(),
+    };
+    let fact = tetragon_bridge::mapper::map_event(&resp).unwrap();
+    spine::build_signed_envelope(kp, seq, prev_hash, fact, spine::now_rfc3339()).unwrap()
 }
 
 /// Full end-to-end pipeline: Tetragon events -> bridge -> NATS -> checkpointer -> proof.
@@ -411,6 +490,151 @@ async fn test_envelope_chain_integrity() {
         unique.len(),
         "envelope hashes should be unique"
     );
+}
+
+/// Test that verify_chain_link detects a tampered prev_envelope_hash.
+#[tokio::test]
+async fn test_chain_verification_detects_tampered_prev_hash() {
+    let kp = Keypair::generate();
+
+    let events: Vec<GetEventsResponse> = (0..3)
+        .map(|i| GetEventsResponse {
+            event: Some(Event::ProcessExec(tet::ProcessExec {
+                process: Some(make_process(&format!("/usr/bin/chain-{i}"), "default")),
+                parent: None,
+                ancestors: vec![],
+            })),
+            node_name: format!("chain-node-{i}"),
+            time: None,
+            aggregation_info: None,
+            cluster_name: String::new(),
+        })
+        .collect();
+
+    let mut envelopes = Vec::new();
+    let mut prev_hash: Option<String> = None;
+
+    for (seq, resp) in events.iter().enumerate() {
+        let fact = tetragon_bridge::mapper::map_event(resp).unwrap();
+        let envelope = spine::build_signed_envelope(
+            &kp,
+            (seq + 1) as u64,
+            prev_hash.clone(),
+            fact,
+            spine::now_rfc3339(),
+        )
+        .unwrap();
+        prev_hash = envelope
+            .get("envelope_hash")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        envelopes.push(envelope);
+    }
+
+    let mut head: Option<spine::IssuerChainHead> = None;
+    for env in &envelopes {
+        let verdict = spine::verify_chain_link(env, head.as_ref()).unwrap();
+        assert!(verdict.is_valid(), "valid chain should pass: {verdict:?}");
+        head = Some(spine::chain_head_from_envelope(env).unwrap());
+    }
+
+    let fork_fact = tetragon_bridge::mapper::map_event(&events[0]).unwrap();
+    let fork_envelope = spine::build_signed_envelope(
+        &kp,
+        4,
+        Some("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string()),
+        fork_fact,
+        spine::now_rfc3339(),
+    )
+    .unwrap();
+
+    assert!(spine::verify_envelope(&fork_envelope).unwrap());
+
+    let verdict = spine::verify_chain_link(&fork_envelope, head.as_ref()).unwrap();
+    assert!(
+        !verdict.is_valid(),
+        "forked envelope should fail chain verification"
+    );
+    assert!(
+        matches!(verdict, spine::ChainLinkVerdict::HashMismatch { .. }),
+        "expected HashMismatch, got: {verdict:?}"
+    );
+
+    let issuer = spine::issuer_from_keypair(&kp);
+    assert!(verdict.into_result(&issuer).is_err());
+}
+
+#[test]
+fn test_ingest_contract_drop_on_envelope_persist_failure() {
+    let kp = Keypair::generate();
+    let envelope = make_signed_exec_envelope(&kp, 1, None);
+    let mut state = SimulatedCheckpointerState::default();
+
+    let accepted = simulate_ingest_contract(
+        &mut state,
+        &envelope,
+        IngestFailureInjection {
+            fail_envelope_persist: true,
+            ..IngestFailureInjection::default()
+        },
+    );
+
+    assert!(!accepted);
+    assert!(state.envelope_kv.is_empty());
+    assert!(state.log_stream.is_empty());
+    assert!(state.log_index_kv.is_empty());
+    assert!(state.fact_index_kv.is_empty());
+    assert!(state.issuer_heads_kv.is_empty());
+}
+
+#[test]
+fn test_ingest_contract_drop_on_log_append_failure() {
+    let kp = Keypair::generate();
+    let envelope = make_signed_exec_envelope(&kp, 1, None);
+    let envelope_hash = envelope["envelope_hash"].as_str().unwrap().to_string();
+    let mut state = SimulatedCheckpointerState::default();
+
+    let accepted = simulate_ingest_contract(
+        &mut state,
+        &envelope,
+        IngestFailureInjection {
+            fail_log_append: true,
+            ..IngestFailureInjection::default()
+        },
+    );
+
+    assert!(!accepted);
+    assert_eq!(state.envelope_kv.len(), 1);
+    assert!(state.envelope_kv.contains_key(&envelope_hash));
+    assert!(state.log_stream.is_empty());
+    assert!(state.log_index_kv.is_empty());
+    assert!(state.fact_index_kv.is_empty());
+    assert!(state.issuer_heads_kv.is_empty());
+}
+
+#[test]
+fn test_ingest_contract_fact_index_failure_does_not_break_commit() {
+    let kp = Keypair::generate();
+    let envelope = make_signed_exec_envelope(&kp, 1, None);
+    let envelope_hash = envelope["envelope_hash"].as_str().unwrap().to_string();
+    let issuer = envelope["issuer"].as_str().unwrap().to_ascii_lowercase();
+    let mut state = SimulatedCheckpointerState::default();
+
+    let accepted = simulate_ingest_contract(
+        &mut state,
+        &envelope,
+        IngestFailureInjection {
+            fail_fact_index: true,
+            ..IngestFailureInjection::default()
+        },
+    );
+
+    assert!(accepted);
+    assert_eq!(state.envelope_kv.len(), 1);
+    assert_eq!(state.log_stream.len(), 1);
+    assert_eq!(state.log_index_kv.get(&envelope_hash), Some(&1));
+    assert!(state.fact_index_kv.is_empty());
+    assert_eq!(state.issuer_heads_kv.get(&issuer), Some(&envelope_hash));
 }
 
 /// Test mixed Tetragon + Hubble events flowing through the same checkpoint.

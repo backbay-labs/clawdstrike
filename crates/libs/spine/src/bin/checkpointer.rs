@@ -4,27 +4,48 @@
 //! signatures, appends to a JetStream log, builds RFC 6962 Merkle trees,
 //! and emits checkpoint envelopes on a timer with witness co-signatures.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use futures::StreamExt;
 use futures::TryStreamExt;
 use serde_json::{json, Value};
-use tokio::time::{interval, timeout, Instant};
+use tokio::time::{interval, sleep, timeout, Instant};
 use tracing::{debug, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
 use async_nats::jetstream::context::Publish;
 use hush_core::{sha256_hex, Hash, Keypair, MerkleTree, PublicKey, Signature};
-use spine::{checkpoint, nats_transport as nats, TrustBundle};
+use spine::{
+    chain_head_from_envelope, checkpoint, nats_transport as nats, next_leaf_batch_size,
+    verify_chain_link, ChainLinkVerdict, IssuerChainHead, TrustBundle,
+};
+
+const INGEST_RETRY_ATTEMPTS: usize = 4;
+const INGEST_RETRY_BASE_BACKOFF_MS: u64 = 100;
+const CHAIN_VIOLATION_SCHEMA: &str = "clawdstrike.spine.event.chain_violation.v1";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum Mode {
+    Run,
+    Repair,
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "spine-checkpointer")]
 #[command(about = "ClawdStrike Spine log checkpointer (RFC6962 Merkle roots + witness co-sign)")]
 struct Args {
+    /// Checkpointer mode: `run` (normal ingest/checkpoint loop) or `repair` (rebuild state from log/index)
+    #[arg(long, default_value = "run", value_enum)]
+    mode: Mode,
+
+    /// Apply destructive repair mutations (purge + rebuild). Without this flag, repair runs as dry-run.
+    #[arg(long, default_value_t = false)]
+    repair_apply: bool,
+
     /// NATS server URL
     #[arg(long, env = "NATS_URL", default_value = "nats://localhost:4222")]
     nats_url: String,
@@ -69,9 +90,9 @@ struct Args {
     #[arg(long, env = "SPINE_TRUST_BUNDLE")]
     trust_bundle: Option<PathBuf>,
 
-    /// Hex-encoded 32-byte Ed25519 seed for the log operator key (env only)
+    /// Hex-encoded 32-byte Ed25519 seed for the log operator key (required in `run` mode)
     #[arg(env = "SPINE_LOG_SEED_HEX")]
-    log_seed_hex: String,
+    log_seed_hex: Option<String>,
 
     /// Minimum number of new leaves required to emit a new checkpoint
     #[arg(long, default_value = "10")]
@@ -88,6 +109,22 @@ struct Args {
     /// JetStream replication factor for log/index/checkpoints (dev default: 3)
     #[arg(long, default_value = "3")]
     replicas: usize,
+
+    /// KV bucket for per-issuer chain head state (restart recovery)
+    #[arg(long, default_value = "CLAWDSTRIKE_ISSUER_HEADS")]
+    issuer_heads_bucket: String,
+
+    /// Chain enforcement mode: `warn` (log violations, accept anyway) or `strict` (reject violations)
+    #[arg(long, default_value = "warn", value_parser = ["warn", "strict"])]
+    chain_enforcement: String,
+
+    /// JetStream stream for strict-mode chain violations
+    #[arg(long, default_value = "CLAWDSTRIKE_CHAIN_VIOLATIONS")]
+    chain_violation_stream: String,
+
+    /// Subject for strict-mode chain violation events
+    #[arg(long, default_value = "clawdstrike.spine.chain_violation.v1")]
+    chain_violation_subject: String,
 }
 
 fn verify_signed_envelope(envelope: &Value) -> Result<(String, Vec<u8>)> {
@@ -144,11 +181,213 @@ fn is_safe_index_key_token(s: &str, max_len: usize) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
+fn normalize_issuer_id(issuer: &str) -> String {
+    issuer.to_ascii_lowercase()
+}
+
+fn issuer_heads_kv_key(issuer: &str) -> String {
+    spine::parse_issuer_pubkey_hex(issuer).unwrap_or_else(|_| issuer.replace(':', "_"))
+}
+
+fn chain_verdict_reason(verdict: &ChainLinkVerdict) -> String {
+    match verdict {
+        ChainLinkVerdict::NewChain | ChainLinkVerdict::ValidContinuation => "valid".to_string(),
+        ChainLinkVerdict::HashMismatch {
+            expected_prev_hash,
+            actual_prev_hash,
+        } => format!(
+            "prev_envelope_hash mismatch: expected {expected_prev_hash}, got {actual_prev_hash}"
+        ),
+        ChainLinkVerdict::SequenceMismatch {
+            expected_seq,
+            actual_seq,
+        } => format!("sequence mismatch: expected {expected_seq}, got {actual_seq}"),
+        ChainLinkVerdict::InvalidChainHead { reason } => reason.clone(),
+    }
+}
+
+fn should_replace_loaded_head(existing: &IssuerChainHead, candidate: &IssuerChainHead) -> bool {
+    if candidate.seq != existing.seq {
+        return candidate.seq > existing.seq;
+    }
+    candidate.envelope_hash > existing.envelope_hash
+}
+
+#[derive(Debug, Clone)]
+struct RetryPolicy {
+    max_attempts: usize,
+    base_backoff: Duration,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: INGEST_RETRY_ATTEMPTS,
+            base_backoff: Duration::from_millis(INGEST_RETRY_BASE_BACKOFF_MS),
+        }
+    }
+}
+
+fn retry_delay(policy: &RetryPolicy, attempt: usize) -> Duration {
+    let mut millis = policy.base_backoff.as_millis() as u64;
+    for _ in 1..attempt {
+        millis = millis.saturating_mul(3);
+    }
+    Duration::from_millis(millis)
+}
+
+async fn run_with_retries<T, F, Fut>(
+    policy: &RetryPolicy,
+    stage: &str,
+    envelope_hash: &str,
+    mut op: F,
+) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    for attempt in 1..=policy.max_attempts {
+        match op().await {
+            Ok(value) => return Ok(value),
+            Err(err) if attempt < policy.max_attempts => {
+                warn!(
+                    stage = %stage,
+                    envelope_hash = %envelope_hash,
+                    attempt = attempt,
+                    max_attempts = policy.max_attempts,
+                    "stage failed, retrying: {err:#}"
+                );
+                sleep(retry_delay(policy, attempt)).await;
+            }
+            Err(err) => {
+                return Err(err).context(format!(
+                    "{stage} failed after {} attempts for envelope_hash={envelope_hash}",
+                    policy.max_attempts
+                ));
+            }
+        }
+    }
+
+    anyhow::bail!("unreachable retry loop termination")
+}
+
+async fn persist_envelope_if_missing(
+    envelope_kv: &async_nats::jetstream::kv::Store,
+    envelope_hash_hex: &str,
+    payload: Vec<u8>,
+) -> Result<()> {
+    match envelope_kv.get(envelope_hash_hex).await {
+        Ok(None) => {
+            envelope_kv
+                .put(envelope_hash_hex, payload.into())
+                .await
+                .context("failed to persist envelope payload")?;
+        }
+        Ok(Some(_)) => {}
+        Err(err) => {
+            return Err(err).context("failed to read envelope KV during persist");
+        }
+    }
+    Ok(())
+}
+
+async fn persist_issuer_head(
+    issuer_heads_kv: &async_nats::jetstream::kv::Store,
+    issuer: &str,
+    head: &IssuerChainHead,
+) -> Result<()> {
+    let head_bytes = serde_json::to_vec(head).context("failed to encode issuer head")?;
+    issuer_heads_kv
+        .put(issuer_heads_kv_key(issuer), head_bytes.into())
+        .await
+        .context("failed to persist issuer head")?;
+    Ok(())
+}
+
+async fn publish_chain_violation_event(
+    js: &async_nats::jetstream::Context,
+    chain_violation_subject: &str,
+    envelope: &Value,
+    envelope_hash_hex: &str,
+    issuer: &str,
+    verdict: &ChainLinkVerdict,
+    enforcement: &str,
+) -> Result<()> {
+    let seq = envelope.get("seq").and_then(|v| v.as_u64());
+    let event = json!({
+        "schema": CHAIN_VIOLATION_SCHEMA,
+        "issuer": issuer,
+        "issuer_pubkey_hex": spine::parse_issuer_pubkey_hex(issuer).ok(),
+        "envelope_hash": envelope_hash_hex,
+        "seq": seq,
+        "enforcement": enforcement,
+        "verdict": format!("{verdict:?}"),
+        "reason": chain_verdict_reason(verdict),
+        "detected_at": spine::now_rfc3339(),
+        "envelope": envelope,
+    });
+
+    let payload = serde_json::to_vec(&event).context("failed to encode chain violation event")?;
+    let ack = js
+        .send_publish(
+            chain_violation_subject.to_string(),
+            Publish::build()
+                .payload(payload.into())
+                .message_id(format!("chain-violation:{envelope_hash_hex}")),
+        )
+        .await
+        .context("failed to publish chain violation event")?;
+    let _ = ack.await.context("failed to ack chain violation event")?;
+    Ok(())
+}
+
 async fn load_latest_checkpoint(kv: &async_nats::jetstream::kv::Store) -> Result<Option<Value>> {
     match kv.get("latest").await? {
         Some(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
         None => Ok(None),
     }
+}
+
+/// Load all persisted issuer chain heads from KV.
+async fn load_issuer_heads(
+    kv: &async_nats::jetstream::kv::Store,
+) -> Result<HashMap<String, IssuerChainHead>> {
+    let mut heads = HashMap::new();
+    let keys = kv.keys().await?.try_collect::<Vec<String>>().await?;
+    for key in keys {
+        let Some(bytes) = kv.get(&key).await? else {
+            continue;
+        };
+        let head: IssuerChainHead = match serde_json::from_slice(&bytes) {
+            Ok(h) => h,
+            Err(err) => {
+                warn!(key = %key, "invalid issuer head JSON in KV: {err}");
+                continue;
+            }
+        };
+        let normalized_issuer = normalize_issuer_id(&head.issuer);
+        if let Some(existing) = heads.get(&normalized_issuer) {
+            if should_replace_loaded_head(existing, &head) {
+                warn!(
+                    issuer = %normalized_issuer,
+                    existing_seq = existing.seq,
+                    candidate_seq = head.seq,
+                    "issuer head collision during load; replacing with higher-order head"
+                );
+                heads.insert(normalized_issuer, head);
+            } else {
+                warn!(
+                    issuer = %normalized_issuer,
+                    existing_seq = existing.seq,
+                    candidate_seq = head.seq,
+                    "issuer head collision during load; keeping existing head"
+                );
+            }
+        } else {
+            heads.insert(normalized_issuer, head);
+        }
+    }
+    Ok(heads)
 }
 
 fn build_checkpoint_statement_from_fact(fact: &Value) -> Result<Value> {
@@ -599,6 +838,18 @@ async fn maybe_checkpoint(
     Ok(())
 }
 
+async fn index_fact_key(
+    fact_index_kv: &async_nats::jetstream::kv::Store,
+    key: &str,
+    value: &[u8],
+) -> Result<()> {
+    fact_index_kv
+        .put(key, value.to_vec().into())
+        .await
+        .with_context(|| format!("failed to index fact key={key}"))?;
+    Ok(())
+}
+
 async fn maybe_index_fact(
     fact_index_kv: &async_nats::jetstream::kv::Store,
     envelope: &Value,
@@ -623,25 +874,16 @@ async fn maybe_index_fact(
             else {
                 return Ok(());
             };
-
-            if let Err(e) = fact_index_kv
-                .put(&policy_key, envelope_hash.as_bytes().to_vec().into())
-                .await
-            {
-                warn!(key = %policy_key, "failed to index fact: {e}");
-            }
+            index_fact_key(fact_index_kv, &policy_key, envelope_hash.as_bytes()).await?;
 
             if let Some(version) = fact.get("policy_version").and_then(|v| v.as_str()) {
                 if is_safe_index_key_token(version, 200) {
-                    if let Err(e) = fact_index_kv
-                        .put(
-                            &format!("policy_version.{version}"),
-                            normalized_policy_hash.as_bytes().to_vec().into(),
-                        )
-                        .await
-                    {
-                        warn!(key = %format!("policy_version.{version}"), "failed to index fact: {e}");
-                    }
+                    index_fact_key(
+                        fact_index_kv,
+                        &format!("policy_version.{version}"),
+                        normalized_policy_hash.as_bytes(),
+                    )
+                    .await?;
                 }
             }
         }
@@ -652,15 +894,12 @@ async fn maybe_index_fact(
             if !is_safe_index_key_token(run_id, 256) {
                 return Ok(());
             }
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("run_receipt.{run_id}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("run_receipt.{run_id}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("run_receipt.{run_id}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         "clawdstrike.spine.fact.receipt_verification.v1" => {
             let Some(target) = fact.get("target_envelope_hash").and_then(|v| v.as_str()) else {
@@ -681,18 +920,14 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("receipt_verification.{target}.{verifier_pk}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("receipt_verification.{target}.{verifier_pk}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("receipt_verification.{target}.{verifier_pk}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         spine::NODE_ATTESTATION_SCHEMA => {
-            // Index by issuer pubkey hex for node attestation lookup.
             let Some(node_id) = fact.get("node_id").and_then(|v| v.as_str()) else {
                 return Ok(());
             };
@@ -704,18 +939,14 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("node_attestation.{issuer_pk}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("node_attestation.{issuer_pk}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("node_attestation.{issuer_pk}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         spine::POLICY_ATTESTATION_SCHEMA => {
-            // Index by bundle_hash for attestation lookup.
             let Some(bundle_hash) = fact.get("bundle_hash").and_then(|v| v.as_str()) else {
                 return Ok(());
             };
@@ -723,18 +954,14 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("policy_attestation.{bundle_hash}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("policy_attestation.{bundle_hash}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("policy_attestation.{bundle_hash}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         spine::REVOCATION_SCHEMA => {
-            // Index by bundle_hash for revocation lookup.
             let Some(bundle_hash) = fact.get("bundle_hash").and_then(|v| v.as_str()) else {
                 return Ok(());
             };
@@ -742,18 +969,14 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("policy_revocation.{bundle_hash}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("policy_revocation.{bundle_hash}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("policy_revocation.{bundle_hash}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         spine::FEED_ENTRY_FACT_SCHEMA => {
-            // Index by issuer_hex.seq for marketplace sync endpoint.
             let issuer = envelope
                 .get("issuer")
                 .and_then(|v| v.as_str())
@@ -769,18 +992,14 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("marketplace_entry.{issuer_pk}.{feed_seq}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("marketplace_entry.{issuer_pk}.{feed_seq}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("marketplace_entry.{issuer_pk}.{feed_seq}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         spine::HEAD_ANNOUNCEMENT_SCHEMA => {
-            // Index latest head by issuer (overwritten on each update).
             let issuer = envelope
                 .get("issuer")
                 .and_then(|v| v.as_str())
@@ -793,18 +1012,14 @@ async fn maybe_index_fact(
                 return Ok(());
             }
 
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("marketplace_head.{issuer_pk}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("marketplace_head.{issuer_pk}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("marketplace_head.{issuer_pk}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         spine::RUNTIME_PROOF_SCHEMA => {
-            // Index by sha256(exec_id) for runtime proof lookup.
             let exec_id = fact
                 .get("execution")
                 .and_then(|e| e.get("exec_id"))
@@ -813,21 +1028,17 @@ async fn maybe_index_fact(
                 return Ok(());
             };
             let exec_id_hash = sha256_hex(exec_id.as_bytes());
-            // sha256_hex returns 0x-prefixed; strip prefix for safe token
             let hash_token = exec_id_hash.strip_prefix("0x").unwrap_or(&exec_id_hash);
             if !is_safe_index_key_token(hash_token, 128) {
                 return Ok(());
             }
 
-            if let Err(e) = fact_index_kv
-                .put(
-                    &format!("runtime_proof.{hash_token}"),
-                    envelope_hash.as_bytes().to_vec().into(),
-                )
-                .await
-            {
-                warn!(key = %format!("runtime_proof.{hash_token}"), "failed to index fact: {e}");
-            }
+            index_fact_key(
+                fact_index_kv,
+                &format!("runtime_proof.{hash_token}"),
+                envelope_hash.as_bytes(),
+            )
+            .await?;
         }
         _ => {}
     }
@@ -841,6 +1052,266 @@ fn normalized_policy_index_entry(policy_hash: &str) -> Option<(String, String)> 
     Some((policy_key, normalized))
 }
 
+#[derive(Debug, Clone)]
+struct IndexEntry {
+    seq: u64,
+    hash_hex: String,
+}
+
+async fn load_index_entries(
+    index_kv: &async_nats::jetstream::kv::Store,
+) -> Result<Vec<IndexEntry>> {
+    let keys = index_kv.keys().await?.try_collect::<Vec<String>>().await?;
+    let mut entries: Vec<IndexEntry> = Vec::with_capacity(keys.len());
+
+    for key in keys {
+        let hash =
+            Hash::from_hex(&key).with_context(|| format!("invalid index key hash: {key}"))?;
+        let Some(value) = index_kv.get(&key).await? else {
+            continue;
+        };
+        let seq_str = std::str::from_utf8(&value)
+            .context("index value is not valid UTF-8")?
+            .trim();
+        let seq: u64 = seq_str
+            .parse()
+            .with_context(|| format!("invalid index sequence for key={key}: {seq_str}"))?;
+        entries.push(IndexEntry {
+            seq,
+            hash_hex: hash.to_hex_prefixed(),
+        });
+    }
+
+    entries.sort_by_key(|e| e.seq);
+    for (idx, entry) in entries.iter().enumerate() {
+        let expected = (idx + 1) as u64;
+        if entry.seq != expected {
+            anyhow::bail!(
+                "log index has gap or duplicate: expected seq={expected}, got seq={} hash={}",
+                entry.seq,
+                entry.hash_hex
+            );
+        }
+    }
+
+    Ok(entries)
+}
+
+async fn load_log_hashes(
+    js: &async_nats::jetstream::Context,
+    log_stream: &str,
+    expected_messages: usize,
+) -> Result<Vec<String>> {
+    let mut stream = js
+        .get_stream(log_stream)
+        .await
+        .with_context(|| format!("failed to get stream {log_stream}"))?;
+    let stream_info = stream.info().await?;
+    let stream_messages = usize::try_from(stream_info.state.messages)
+        .context("stream message count exceeds usize")?;
+    if stream_messages != expected_messages {
+        anyhow::bail!(
+            "stream/index mismatch: stream has {stream_messages} messages, index has {expected_messages} entries"
+        );
+    }
+    if expected_messages == 0 {
+        return Ok(Vec::new());
+    }
+
+    let consumer = stream
+        .create_consumer(async_nats::jetstream::consumer::pull::Config {
+            deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
+                start_sequence: 1,
+            },
+            ack_policy: async_nats::jetstream::consumer::AckPolicy::None,
+            ..Default::default()
+        })
+        .await
+        .context("failed to create stream consumer for repair")?;
+
+    let mut hashes = Vec::with_capacity(expected_messages);
+    while hashes.len() < expected_messages {
+        let remaining = expected_messages - hashes.len();
+        let mut messages = consumer
+            .fetch()
+            .max_messages(next_leaf_batch_size(remaining))
+            .messages()
+            .await
+            .context("failed to fetch stream leaves for repair")?;
+
+        let mut pulled = 0usize;
+        while let Some(msg) = messages.next().await {
+            let msg = msg.map_err(|err| {
+                anyhow::anyhow!("failed to read stream leaf during repair: {err}")
+            })?;
+            if msg.payload.len() != 32 {
+                anyhow::bail!("invalid stream leaf payload length: {}", msg.payload.len());
+            }
+            let arr: [u8; 32] = msg
+                .payload
+                .as_ref()
+                .try_into()
+                .context("failed to convert stream leaf payload to hash bytes")?;
+            hashes.push(Hash::from_bytes(arr).to_hex_prefixed());
+            pulled += 1;
+        }
+
+        if pulled == 0 {
+            break;
+        }
+    }
+
+    if hashes.len() != expected_messages {
+        anyhow::bail!(
+            "incomplete stream read during repair: got {} expected {}",
+            hashes.len(),
+            expected_messages
+        );
+    }
+
+    Ok(hashes)
+}
+
+async fn load_envelopes_by_index(
+    envelope_kv: &async_nats::jetstream::kv::Store,
+    index_entries: &[IndexEntry],
+) -> Result<Vec<Value>> {
+    let mut envelopes = Vec::with_capacity(index_entries.len());
+    for entry in index_entries {
+        let Some(bytes) = envelope_kv.get(&entry.hash_hex).await? else {
+            anyhow::bail!(
+                "missing envelope payload for hash={} seq={}",
+                entry.hash_hex,
+                entry.seq
+            );
+        };
+        let envelope: Value = serde_json::from_slice(&bytes)
+            .with_context(|| format!("invalid envelope JSON for hash={}", entry.hash_hex))?;
+        let (verified_hash, _) = verify_signed_envelope(&envelope)
+            .with_context(|| format!("invalid signed envelope for hash={}", entry.hash_hex))?;
+        if verified_hash != entry.hash_hex {
+            anyhow::bail!(
+                "envelope hash mismatch during repair: index={} payload={}",
+                entry.hash_hex,
+                verified_hash
+            );
+        }
+        envelopes.push(envelope);
+    }
+    Ok(envelopes)
+}
+
+async fn purge_kv_bucket(
+    kv: &async_nats::jetstream::kv::Store,
+    bucket_name: &str,
+) -> Result<usize> {
+    let keys = kv.keys().await?.try_collect::<Vec<String>>().await?;
+    let mut deleted = 0usize;
+    for key in keys {
+        kv.delete(&key)
+            .await
+            .with_context(|| format!("failed to delete key={key} from bucket={bucket_name}"))?;
+        deleted += 1;
+    }
+    Ok(deleted)
+}
+
+async fn run_repair_mode(
+    args: &Args,
+    js: &async_nats::jetstream::Context,
+    index_kv: &async_nats::jetstream::kv::Store,
+    envelope_kv: &async_nats::jetstream::kv::Store,
+    fact_index_kv: &async_nats::jetstream::kv::Store,
+    issuer_heads_kv: &async_nats::jetstream::kv::Store,
+) -> Result<()> {
+    let index_entries = load_index_entries(index_kv).await?;
+    info!("repair: loaded {} log index entries", index_entries.len());
+
+    let log_hashes = load_log_hashes(js, &args.log_stream, index_entries.len()).await?;
+    for (idx, (entry, stream_hash)) in index_entries.iter().zip(log_hashes.iter()).enumerate() {
+        if entry.hash_hex != *stream_hash {
+            anyhow::bail!(
+                "stream/index mismatch at seq {}: index={} stream={}",
+                idx + 1,
+                entry.hash_hex,
+                stream_hash
+            );
+        }
+    }
+
+    let envelopes = load_envelopes_by_index(envelope_kv, &index_entries).await?;
+    info!(
+        "repair: loaded and validated {} envelopes from envelope KV",
+        envelopes.len()
+    );
+
+    let mut rebuilt_heads: HashMap<String, IssuerChainHead> = HashMap::new();
+    for envelope in &envelopes {
+        let issuer = envelope
+            .get("issuer")
+            .and_then(|v| v.as_str())
+            .map_or_else(String::new, normalize_issuer_id);
+        let known_head = rebuilt_heads.get(&issuer);
+        let verdict = verify_chain_link(envelope, known_head)
+            .with_context(|| format!("repair: chain verification failed for issuer={issuer}"))?;
+        let new_head = chain_head_from_envelope(envelope)
+            .with_context(|| format!("repair: failed to build chain head for issuer={issuer}"))?;
+        let dominated = rebuilt_heads
+            .get(&issuer)
+            .is_some_and(|cur| cur.seq >= new_head.seq);
+        if verdict.is_valid() || !dominated {
+            rebuilt_heads.insert(issuer, new_head);
+        }
+    }
+
+    let fact_candidates = envelopes
+        .iter()
+        .filter(|e| {
+            e.get("fact")
+                .and_then(|f| f.get("schema"))
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.is_empty())
+        })
+        .count();
+
+    if !args.repair_apply {
+        info!(
+            "repair dry-run complete: index_entries={} envelopes={} fact_candidates={} rebuilt_heads={} (no writes applied; pass --repair-apply to execute)",
+            index_entries.len(),
+            envelopes.len(),
+            fact_candidates,
+            rebuilt_heads.len()
+        );
+        return Ok(());
+    }
+
+    let deleted_fact_keys = purge_kv_bucket(fact_index_kv, &args.fact_index_bucket).await?;
+    let deleted_head_keys = purge_kv_bucket(issuer_heads_kv, &args.issuer_heads_bucket).await?;
+    info!(
+        "repair apply: purged fact_index_keys={} issuer_head_keys={}",
+        deleted_fact_keys, deleted_head_keys
+    );
+
+    for (entry, envelope) in index_entries.iter().zip(envelopes.iter()) {
+        maybe_index_fact(fact_index_kv, envelope, &entry.hash_hex)
+            .await
+            .with_context(|| {
+                format!("repair: failed indexing facts for hash={}", entry.hash_hex)
+            })?;
+    }
+
+    for (issuer, head) in &rebuilt_heads {
+        persist_issuer_head(issuer_heads_kv, issuer, head).await?;
+    }
+
+    info!(
+        "repair apply complete: rebuilt_fact_candidates={} rebuilt_heads={}",
+        fact_candidates,
+        rebuilt_heads.len()
+    );
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     fmt()
@@ -849,23 +1320,33 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let log_keypair = Keypair::from_hex(&spine::normalize_seed_hex(&args.log_seed_hex))
-        .context("invalid SPINE_LOG_SEED_HEX")?;
-    let log_id = spine::issuer_from_keypair(&log_keypair);
+    let (run_log_keypair, run_log_id, trust_bundle) = match args.mode {
+        Mode::Run => {
+            let seed = args
+                .log_seed_hex
+                .as_deref()
+                .context("SPINE_LOG_SEED_HEX is required in run mode")?;
+            let log_keypair = Keypair::from_hex(&spine::normalize_seed_hex(seed))
+                .context("invalid SPINE_LOG_SEED_HEX")?;
+            let log_id = spine::issuer_from_keypair(&log_keypair);
 
-    let trust_bundle = match &args.trust_bundle {
-        Some(path) => Some(TrustBundle::load(path)?),
-        None => None,
-    };
-    if let Some(tb) = trust_bundle.as_ref() {
-        if !tb.log_id_allowed(&log_id) {
-            anyhow::bail!("log_id not allowed by trust bundle: {log_id}");
+            let trust_bundle = match &args.trust_bundle {
+                Some(path) => Some(TrustBundle::load(path)?),
+                None => None,
+            };
+            if let Some(tb) = trust_bundle.as_ref() {
+                if !tb.log_id_allowed(&log_id) {
+                    anyhow::bail!("log_id not allowed by trust bundle: {log_id}");
+                }
+            }
+            (Some(log_keypair), Some(log_id), trust_bundle)
         }
-    }
+        Mode::Repair => (None, None, None),
+    };
 
     info!(
-        "starting checkpointer log_id={} nats={}",
-        log_id, args.nats_url
+        "starting checkpointer mode={:?} nats={}",
+        args.mode, args.nats_url
     );
 
     let client = nats::connect(&args.nats_url).await?;
@@ -878,11 +1359,65 @@ async fn main() -> Result<()> {
         args.replicas,
     )
     .await?;
+    let _chain_violation_stream = nats::ensure_stream(
+        &js,
+        &args.chain_violation_stream,
+        vec![args.chain_violation_subject.clone()],
+        args.replicas,
+    )
+    .await?;
 
     let index_kv = nats::ensure_kv(&js, &args.index_bucket, args.replicas).await?;
     let checkpoint_kv = nats::ensure_kv(&js, &args.checkpoint_bucket, args.replicas).await?;
     let envelope_kv = nats::ensure_kv(&js, &args.envelope_bucket, args.replicas).await?;
     let fact_index_kv = nats::ensure_kv(&js, &args.fact_index_bucket, args.replicas).await?;
+    let issuer_heads_kv = nats::ensure_kv(&js, &args.issuer_heads_bucket, args.replicas).await?;
+
+    if args.mode == Mode::Repair {
+        return run_repair_mode(
+            &args,
+            &js,
+            &index_kv,
+            &envelope_kv,
+            &fact_index_kv,
+            &issuer_heads_kv,
+        )
+        .await;
+    }
+
+    let log_keypair = run_log_keypair.context("missing run-mode log keypair")?;
+    let log_id = run_log_id.context("missing run-mode log_id")?;
+
+    info!(
+        "starting checkpointer ingest log_id={} nats={}",
+        log_id, args.nats_url
+    );
+
+    let chain_strict = args.chain_enforcement == "strict";
+    let retry_policy = RetryPolicy::default();
+    let mut issuer_heads: HashMap<String, IssuerChainHead> = match run_with_retries(
+        &retry_policy,
+        "load_issuer_heads",
+        "startup",
+        || async { load_issuer_heads(&issuer_heads_kv).await },
+    )
+    .await
+    {
+        Ok(heads) => {
+            info!("loaded {} issuer chain heads from KV", heads.len());
+            heads
+        }
+        Err(err) => {
+            if chain_strict {
+                return Err(err).context(
+                        "failed to load issuer heads in strict mode; refusing to start with empty chain state",
+                    );
+            }
+            warn!("failed to load issuer heads: {err:#}, starting fresh");
+            HashMap::new()
+        }
+    };
+
     match backfill_checkpoint_hash_index(&checkpoint_kv).await {
         Ok((scanned, added)) => {
             info!(
@@ -978,40 +1513,182 @@ async fn main() -> Result<()> {
                     }
                 };
 
-                match envelope_kv.get(&envelope_hash_hex).await {
-                    Ok(None) => {
-                        let _ = envelope_kv.put(&envelope_hash_hex, msg.payload.clone()).await;
-                    }
-                    Ok(Some(_)) => {}
-                    Err(err) => {
-                        warn!("transient NATS error checking envelope KV: {err:#}");
+                let envelope_issuer = envelope
+                    .get("issuer")
+                    .and_then(|v| v.as_str())
+                    .map_or_else(String::new, normalize_issuer_id);
+
+                if let Some(tb) = trust_bundle.as_ref() {
+                    if !tb.envelope_issuer_allowed(&envelope_issuer) {
+                        warn!(
+                            issuer = %envelope_issuer,
+                            envelope_hash = %envelope_hash_hex,
+                            "rejected envelope from disallowed issuer"
+                        );
                         continue;
                     }
                 }
 
-                let _ = maybe_index_fact(&fact_index_kv, &envelope, &envelope_hash_hex).await;
+                let known_head = issuer_heads.get(&envelope_issuer);
+                let chain_verdict = match verify_chain_link(&envelope, known_head) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        warn!(
+                            issuer = %envelope_issuer,
+                            envelope_hash = %envelope_hash_hex,
+                            "chain verification error: {err:#}"
+                        );
+                        continue;
+                    }
+                };
+
+                if !chain_verdict.is_valid() {
+                    warn!(
+                        issuer = %envelope_issuer,
+                        envelope_hash = %envelope_hash_hex,
+                        verdict = ?chain_verdict,
+                        enforcement = %args.chain_enforcement,
+                        "chain integrity violation detected"
+                    );
+                    let publish_result = run_with_retries(
+                        &retry_policy,
+                        "publish_chain_violation",
+                        &envelope_hash_hex,
+                        || async {
+                            publish_chain_violation_event(
+                                &js,
+                                &args.chain_violation_subject,
+                                &envelope,
+                                &envelope_hash_hex,
+                                &envelope_issuer,
+                                &chain_verdict,
+                                &args.chain_enforcement,
+                            )
+                            .await
+                        },
+                    )
+                    .await;
+                    if let Err(err) = publish_result {
+                        warn!(
+                            issuer = %envelope_issuer,
+                            envelope_hash = %envelope_hash_hex,
+                            "failed to publish chain violation event: {err:#}"
+                        );
+                    }
+                    if chain_strict {
+                        continue;
+                    }
+                    // warn mode: update head anyway (self-heal on first deploy)
+                }
+
+                let persist_result = run_with_retries(
+                    &retry_policy,
+                    "persist_envelope",
+                    &envelope_hash_hex,
+                    || {
+                        let payload = msg.payload.to_vec();
+                        async {
+                            persist_envelope_if_missing(&envelope_kv, &envelope_hash_hex, payload).await
+                        }
+                    },
+                )
+                .await;
+                if let Err(err) = persist_result {
+                    warn!(
+                        issuer = %envelope_issuer,
+                        envelope_hash = %envelope_hash_hex,
+                        "dropping envelope after persistent envelope write failure: {err:#}"
+                    );
+                    continue;
+                }
 
                 let h = match Hash::from_hex(&envelope_hash_hex) {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
 
-                let seq = match ensure_log_append(
-                    &js,
-                    &index_kv,
-                    &args.log_subject,
+                let seq = match run_with_retries(
+                    &retry_policy,
+                    "append_log",
                     &envelope_hash_hex,
-                    h.as_bytes(),
-                ).await {
+                    || async {
+                        ensure_log_append(
+                            &js,
+                            &index_kv,
+                            &args.log_subject,
+                            &envelope_hash_hex,
+                            h.as_bytes(),
+                        )
+                        .await
+                    },
+                )
+                .await {
                     Ok(s) => s,
                     Err(err) => {
-                        warn!("transient NATS error appending to log: {err:#}");
+                        warn!(
+                            issuer = %envelope_issuer,
+                            envelope_hash = %envelope_hash_hex,
+                            "dropping envelope after log append failure: {err:#}"
+                        );
                         continue;
                     }
                 };
 
                 if seq > 0 {
                     info!("appended leaf seq={} envelope_hash={}", seq, envelope_hash_hex);
+                }
+
+                if let Err(err) = run_with_retries(
+                    &retry_policy,
+                    "index_fact",
+                    &envelope_hash_hex,
+                    || async { maybe_index_fact(&fact_index_kv, &envelope, &envelope_hash_hex).await },
+                )
+                .await
+                {
+                    warn!(
+                        issuer = %envelope_issuer,
+                        envelope_hash = %envelope_hash_hex,
+                        "fact indexing failed after retries (continuing ingest): {err:#}"
+                    );
+                }
+
+                if let Ok(new_head) = chain_head_from_envelope(&envelope) {
+                    let dominated = issuer_heads
+                        .get(&envelope_issuer)
+                        .is_some_and(|cur| cur.seq >= new_head.seq);
+                    if chain_verdict.is_valid() || !dominated {
+                        issuer_heads.insert(envelope_issuer.clone(), new_head);
+                        let head_to_persist = issuer_heads.get(&envelope_issuer).cloned();
+                        if let Some(head_to_persist) = head_to_persist {
+                            if let Err(err) = run_with_retries(
+                                &retry_policy,
+                                "persist_issuer_head",
+                                &envelope_hash_hex,
+                                || {
+                                    let issuer_heads_kv = issuer_heads_kv.clone();
+                                    let envelope_issuer = envelope_issuer.clone();
+                                    let head_to_persist = head_to_persist.clone();
+                                    async move {
+                                        persist_issuer_head(
+                                            &issuer_heads_kv,
+                                            &envelope_issuer,
+                                            &head_to_persist,
+                                        )
+                                        .await
+                                    }
+                                },
+                            )
+                            .await
+                            {
+                                warn!(
+                                    issuer = %envelope_issuer,
+                                    envelope_hash = %envelope_hash_hex,
+                                    "failed to persist issuer head after retries: {err:#}"
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1023,6 +1700,8 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     #[test]
     fn normalized_policy_index_entry_normalizes_hash_and_key() {
@@ -1045,5 +1724,215 @@ mod tests {
     fn normalized_policy_index_entry_rejects_invalid_hash() {
         assert!(normalized_policy_index_entry("abc").is_none());
         assert!(normalized_policy_index_entry("0xzz").is_none());
+    }
+
+    #[test]
+    fn normalize_issuer_id_lowercases() {
+        let issuer =
+            "aegis:ed25519:AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899";
+        assert_eq!(
+            normalize_issuer_id(issuer),
+            "aegis:ed25519:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+        );
+    }
+
+    #[test]
+    fn should_replace_loaded_head_prefers_higher_seq() {
+        let existing = IssuerChainHead {
+            issuer: "aegis:ed25519:aa".into(),
+            seq: 10,
+            envelope_hash: "0x10".into(),
+        };
+        let candidate = IssuerChainHead {
+            issuer: "aegis:ed25519:aa".into(),
+            seq: 11,
+            envelope_hash: "0x01".into(),
+        };
+        assert!(should_replace_loaded_head(&existing, &candidate));
+    }
+
+    #[test]
+    fn should_replace_loaded_head_tie_breaks_by_hash() {
+        let existing = IssuerChainHead {
+            issuer: "aegis:ed25519:aa".into(),
+            seq: 10,
+            envelope_hash: "0xaaaaaaaa".into(),
+        };
+        let candidate = IssuerChainHead {
+            issuer: "aegis:ed25519:aa".into(),
+            seq: 10,
+            envelope_hash: "0xbbbbbbbb".into(),
+        };
+        assert!(should_replace_loaded_head(&existing, &candidate));
+    }
+
+    #[tokio::test]
+    async fn retry_helper_retries_then_succeeds() {
+        let attempts = Rc::new(RefCell::new(0usize));
+        let policy = RetryPolicy {
+            max_attempts: 4,
+            base_backoff: Duration::from_millis(0),
+        };
+        let result = run_with_retries(&policy, "test_stage", "0xabc", || {
+            let attempts = attempts.clone();
+            async move {
+                let mut n = attempts.borrow_mut();
+                *n += 1;
+                if *n < 3 {
+                    anyhow::bail!("transient");
+                }
+                Ok(*n)
+            }
+        })
+        .await;
+        let result = match result {
+            Ok(value) => value,
+            Err(err) => panic!("retry should eventually succeed: {err:#}"),
+        };
+        assert_eq!(result, 3);
+    }
+
+    #[derive(Default, Debug)]
+    struct MockIngestState {
+        envelope_persisted: bool,
+        log_appended: bool,
+        fact_indexed: bool,
+        head_persisted: bool,
+    }
+
+    #[derive(Default, Debug)]
+    struct MockFailures {
+        persist: usize,
+        append: usize,
+        index: usize,
+        head: usize,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum MockIngestResult {
+        DroppedPersist,
+        DroppedAppend,
+        Completed,
+    }
+
+    async fn run_mock_ingest_with_failures(
+        failures: MockFailures,
+    ) -> (MockIngestResult, MockIngestState) {
+        let policy = RetryPolicy {
+            max_attempts: 2,
+            base_backoff: Duration::from_millis(0),
+        };
+        let state = Rc::new(RefCell::new(MockIngestState::default()));
+        let failures = Rc::new(RefCell::new(failures));
+
+        let persist = run_with_retries(&policy, "persist_envelope", "0xdead", || {
+            let state = state.clone();
+            let failures = failures.clone();
+            async move {
+                let mut f = failures.borrow_mut();
+                if f.persist > 0 {
+                    f.persist -= 1;
+                    anyhow::bail!("persist failed");
+                }
+                state.borrow_mut().envelope_persisted = true;
+                Ok(())
+            }
+        })
+        .await;
+        if persist.is_err() {
+            return (MockIngestResult::DroppedPersist, state.take());
+        }
+
+        let append = run_with_retries(&policy, "append_log", "0xdead", || {
+            let state = state.clone();
+            let failures = failures.clone();
+            async move {
+                let mut f = failures.borrow_mut();
+                if f.append > 0 {
+                    f.append -= 1;
+                    anyhow::bail!("append failed");
+                }
+                state.borrow_mut().log_appended = true;
+                Ok(7u64)
+            }
+        })
+        .await;
+        if append.is_err() {
+            return (MockIngestResult::DroppedAppend, state.take());
+        }
+
+        let _ = run_with_retries(&policy, "index_fact", "0xdead", || {
+            let state = state.clone();
+            let failures = failures.clone();
+            async move {
+                let mut f = failures.borrow_mut();
+                if f.index > 0 {
+                    f.index -= 1;
+                    anyhow::bail!("index failed");
+                }
+                state.borrow_mut().fact_indexed = true;
+                Ok(())
+            }
+        })
+        .await;
+
+        let _ = run_with_retries(&policy, "persist_issuer_head", "0xdead", || {
+            let state = state.clone();
+            let failures = failures.clone();
+            async move {
+                let mut f = failures.borrow_mut();
+                if f.head > 0 {
+                    f.head -= 1;
+                    anyhow::bail!("head failed");
+                }
+                state.borrow_mut().head_persisted = true;
+                Ok(())
+            }
+        })
+        .await;
+
+        (MockIngestResult::Completed, state.take())
+    }
+
+    #[tokio::test]
+    async fn ingest_contract_drop_on_persist_failure_prevents_partial_writes() {
+        let (result, state) = run_mock_ingest_with_failures(MockFailures {
+            persist: 2,
+            ..MockFailures::default()
+        })
+        .await;
+        assert_eq!(result, MockIngestResult::DroppedPersist);
+        assert!(!state.envelope_persisted);
+        assert!(!state.log_appended);
+        assert!(!state.fact_indexed);
+        assert!(!state.head_persisted);
+    }
+
+    #[tokio::test]
+    async fn ingest_contract_drop_on_append_failure_prevents_fact_and_head_writes() {
+        let (result, state) = run_mock_ingest_with_failures(MockFailures {
+            append: 2,
+            ..MockFailures::default()
+        })
+        .await;
+        assert_eq!(result, MockIngestResult::DroppedAppend);
+        assert!(state.envelope_persisted);
+        assert!(!state.log_appended);
+        assert!(!state.fact_indexed);
+        assert!(!state.head_persisted);
+    }
+
+    #[tokio::test]
+    async fn ingest_contract_continues_to_head_when_fact_index_fails() {
+        let (result, state) = run_mock_ingest_with_failures(MockFailures {
+            index: 2,
+            ..MockFailures::default()
+        })
+        .await;
+        assert_eq!(result, MockIngestResult::Completed);
+        assert!(state.envelope_persisted);
+        assert!(state.log_appended);
+        assert!(!state.fact_indexed);
+        assert!(state.head_persisted);
     }
 }

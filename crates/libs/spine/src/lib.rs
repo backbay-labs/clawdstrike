@@ -14,6 +14,7 @@
 //! All cryptographic operations delegate to [`hush_core`].
 
 pub mod attestation;
+pub mod chain;
 pub mod checkpoint;
 pub mod envelope;
 pub mod error;
@@ -29,6 +30,7 @@ pub use attestation::{
     ObservedConnection, ReticulumBinding, RuntimeProof, SystemAttestation, TransportBindings,
     WorkloadIdentity, NODE_ATTESTATION_SCHEMA, RUNTIME_PROOF_SCHEMA,
 };
+pub use chain::{chain_head_from_envelope, verify_chain_link, ChainLinkVerdict, IssuerChainHead};
 pub use checkpoint::{
     checkpoint_hash, checkpoint_statement, checkpoint_witness_message, sign_checkpoint_statement,
     verify_witness_signature, CHECKPOINT_STATEMENT_SCHEMA_V1,
@@ -58,4 +60,12 @@ pub fn normalize_seed_hex(seed: &str) -> String {
         .or_else(|| trimmed.strip_prefix("0X"))
         .unwrap_or(trimmed)
         .to_string()
+}
+
+/// Shared max batch size for JetStream leaf fetch loops.
+pub const LEAF_FETCH_BATCH_SIZE: usize = 512;
+
+/// Compute the next fetch size bounded by [`LEAF_FETCH_BATCH_SIZE`].
+pub fn next_leaf_batch_size(remaining: usize) -> usize {
+    remaining.min(LEAF_FETCH_BATCH_SIZE)
 }

@@ -1,46 +1,46 @@
-import { Guard, GuardAction, GuardContext, GuardResult, Severity } from "./types";
+import { JailbreakDetector, type JailbreakDetectorConfig } from "../jailbreak.js";
+import { type Guard, GuardAction, type GuardContext, GuardResult, Severity } from "./types";
 
-export interface JailbreakGuardConfig {
+export interface JailbreakGuardConfig extends JailbreakDetectorConfig {
   enabled?: boolean;
+  /** Alias kept for backward compatibility with snake_case policy YAML. */
   warn_threshold?: number;
+  /** Alias kept for backward compatibility with snake_case policy YAML. */
   block_threshold?: number;
+  /** Alias kept for backward compatibility with snake_case policy YAML. */
   max_scan_bytes?: number;
 }
-
-const JB_PATTERNS: Array<{ id: string; re: RegExp; score: number }> = [
-  {
-    id: "ignore_safety",
-    re: /\b(ignore|bypass|disable)\b.{0,48}\b(safety|policy|guardrails?)\b/ims,
-    score: 40,
-  },
-  { id: "dan", re: /\b(dan|jailbreak|unfiltered|unrestricted)\b/ims, score: 35 },
-  {
-    id: "prompt_extraction",
-    re: /\b(reveal|show|print)\b.{0,48}\b(system prompt|hidden instructions)\b/ims,
-    score: 35,
-  },
-  { id: "role_play", re: /\b(you are now|act as|pretend to be)\b/ims, score: 20 },
-];
 
 export class JailbreakGuard implements Guard {
   readonly name = "jailbreak_detection";
   private readonly enabled: boolean;
-  private readonly warnThreshold: number;
+  private readonly detector: JailbreakDetector;
   private readonly blockThreshold: number;
-  private readonly maxScanBytes: number;
+  private readonly warnThreshold: number;
 
   constructor(config: JailbreakGuardConfig = {}) {
     this.enabled = config.enabled !== false;
-    this.warnThreshold = Number.isFinite(config.warn_threshold)
-      ? Number(config.warn_threshold)
-      : 30;
-    this.blockThreshold = Number.isFinite(config.block_threshold)
-      ? Number(config.block_threshold)
-      : 70;
-    this.maxScanBytes =
-      Number.isInteger(config.max_scan_bytes) && (config.max_scan_bytes ?? 0) > 0
-        ? Number(config.max_scan_bytes)
-        : 100_000;
+
+    // Merge snake_case aliases into the canonical camelCase fields expected
+    // by JailbreakDetectorConfig before forwarding to the WASM detector.
+    const mergedConfig: JailbreakDetectorConfig = {
+      ...config,
+      blockThreshold:
+        config.blockThreshold ??
+        (Number.isFinite(config.block_threshold) ? Number(config.block_threshold) : undefined),
+      warnThreshold:
+        config.warnThreshold ??
+        (Number.isFinite(config.warn_threshold) ? Number(config.warn_threshold) : undefined),
+      maxInputBytes:
+        config.maxInputBytes ??
+        (Number.isInteger(config.max_scan_bytes) && (config.max_scan_bytes ?? 0) > 0
+          ? Number(config.max_scan_bytes)
+          : undefined),
+    };
+
+    this.detector = new JailbreakDetector(mergedConfig);
+    this.blockThreshold = mergedConfig.blockThreshold ?? 70;
+    this.warnThreshold = mergedConfig.warnThreshold ?? 30;
   }
 
   handles(action: GuardAction): boolean {
@@ -62,36 +62,24 @@ export class JailbreakGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const bytes = new TextEncoder().encode(text);
-    const truncated = bytes.length > this.maxScanBytes;
-    const content = truncated
-      ? new TextDecoder().decode(bytes.subarray(0, this.maxScanBytes))
-      : text;
-
-    let riskScore = 0;
-    const signals: string[] = [];
-    for (const p of JB_PATTERNS) {
-      if (p.re.test(content)) {
-        riskScore += p.score;
-        signals.push(p.id);
-      }
-    }
-    if (riskScore > 100) riskScore = 100;
+    const result = this.detector.detect(text, _context.sessionId);
 
     const details = {
-      risk_score: riskScore,
-      signals,
-      truncated,
-      scanned_bytes: bytes.length,
+      risk_score: result.riskScore,
+      severity: result.severity,
+      signals: result.signals.map((s) => s.id),
+      fingerprint: result.fingerprint,
+      truncated: result.canonicalization.truncated,
+      scanned_bytes: result.canonicalization.scannedBytes,
     };
 
-    if (riskScore >= this.blockThreshold) {
-      const severity = riskScore >= 100 ? Severity.CRITICAL : Severity.ERROR;
+    if (result.riskScore >= this.blockThreshold) {
+      const severity = result.riskScore >= 100 ? Severity.CRITICAL : Severity.ERROR;
       return GuardResult.block(this.name, severity, "Jailbreak attempt detected").withDetails(
         details,
       );
     }
-    if (riskScore >= this.warnThreshold) {
+    if (result.riskScore >= this.warnThreshold) {
       return GuardResult.warn(this.name, "Potential jailbreak attempt detected").withDetails(
         details,
       );

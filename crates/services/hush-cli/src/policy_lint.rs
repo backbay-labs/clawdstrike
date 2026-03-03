@@ -267,11 +267,64 @@ fn lint_policy(policy: &Policy) -> Vec<LintFinding> {
         }
     }
 
+    // Check for missing common security guards
+    lint_missing_common_guards(&mut warnings, policy);
+
+    // Check for empty guard configurations
+    lint_empty_guard_configs(&mut warnings, policy);
+
+    // Check for mcp_tool guard with wildcard allow
+    if let Some(ref mcp) = policy.guards.mcp_tool {
+        let allow_set: BTreeSet<&str> = mcp.allow.iter().map(|s| s.as_str()).collect();
+        if allow_set.contains("*") {
+            warnings.push(LintFinding {
+                code: "SEC031",
+                message: "mcp_tool.allow contains \"*\" (allows all MCP tools)".to_string(),
+            });
+        }
+    }
+
     if let Some(ref posture) = policy.posture {
         lint_posture(&mut warnings, posture);
     }
 
     warnings
+}
+
+/// Warn if common security guards are not enabled.
+fn lint_missing_common_guards(warnings: &mut Vec<LintFinding>, policy: &Policy) {
+    // These guards are considered essential for most security policies
+    if policy.guards.secret_leak.is_none() {
+        warnings.push(LintFinding {
+            code: "SEC040",
+            message:
+                "guards.secret_leak is not configured (recommended for detecting leaked secrets)"
+                    .to_string(),
+        });
+    }
+
+    if policy.guards.shell_command.is_none() {
+        warnings.push(LintFinding {
+            code: "SEC041",
+            message: "guards.shell_command is not configured (recommended for blocking dangerous commands)".to_string(),
+        });
+    }
+}
+
+/// Warn if a guard has an empty or effectively no-op configuration.
+fn lint_empty_guard_configs(warnings: &mut Vec<LintFinding>, policy: &Policy) {
+    if let Some(ref path_allowlist) = policy.guards.path_allowlist {
+        if path_allowlist.file_access_allow.is_empty()
+            && path_allowlist.file_write_allow.is_empty()
+            && path_allowlist.patch_allow.is_empty()
+        {
+            warnings.push(LintFinding {
+                code: "SEC050",
+                message: "guards.path_allowlist has empty allow lists (blocks all path access)"
+                    .to_string(),
+            });
+        }
+    }
 }
 
 fn lint_posture(warnings: &mut Vec<LintFinding>, posture: &clawdstrike::PostureConfig) {

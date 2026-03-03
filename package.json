@@ -5,6 +5,7 @@
     "format:check": "biome check"
   },
   "workspaces": [
+    "crates/libs/hush-wasm",
     "packages/adapters/clawdstrike-adapter-core",
     "packages/sdk/hush-ts",
     "packages/sdk/clawdstrike",
@@ -17,9 +18,13 @@
     "packages/adapters/clawdstrike-opencode",
     "packages/adapters/clawdstrike-hush-cli-engine",
     "packages/adapters/clawdstrike-hushd-engine",
-    "apps/cloud-dashboard"
+    "apps/control-console",
+    "packages/sdk/clawdstrike-hunt"
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.4.4"
+  },
+  "engines": {
+    "node": "24.11.0"
   }
 }

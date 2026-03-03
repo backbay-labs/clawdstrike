@@ -1,13 +1,14 @@
 """Integration tests for hush SDK."""
 
+import pytest
 from clawdstrike import (
+    __version__,
     Policy,
     PolicyEngine,
     PublicKeySet,
     Receipt,
     SignedReceipt,
-    FileAccessAction,
-    NetworkEgressAction,
+    GuardAction,
     GuardContext,
     Verdict,
     generate_keypair,
@@ -25,22 +26,22 @@ class TestFullWorkflow:
 
         # Test various actions
         assert engine.is_allowed(
-            FileAccessAction(path="/app/src/main.py"),
+            GuardAction.file_access("/app/src/main.py"),
             context,
         )
 
         assert not engine.is_allowed(
-            FileAccessAction(path="/home/user/.ssh/id_rsa"),
+            GuardAction.file_access("/home/user/.ssh/id_rsa"),
             context,
         )
 
         assert engine.is_allowed(
-            NetworkEgressAction(host="api.example.com", port=443),
+            GuardAction.network_egress("api.example.com", 443),
             context,
         )
 
         assert not engine.is_allowed(
-            NetworkEgressAction(host="unknown.com", port=443),
+            GuardAction.network_egress("unknown.com", 443),
             context,
         )
 
@@ -104,11 +105,33 @@ class TestFullWorkflow:
 
 class TestVersionInfo:
     def test_version_available(self) -> None:
+        import os
+        from importlib.metadata import PackageNotFoundError, version
         import re
-        from importlib.metadata import version
 
-        from clawdstrike import __version__
+        mode = os.getenv("CLAWDSTRIKE_PY_PACKAGE_MODE", "auto").strip().lower()
+        if mode not in {"auto", "source", "installed"}:
+            raise AssertionError(
+                "CLAWDSTRIKE_PY_PACKAGE_MODE must be one of: auto, source, installed"
+            )
+
+        assert re.fullmatch(r"\d+\.\d+\.\d+", __version__) is not None
+
+        if mode == "source":
+            return
+
+        try:
+            installed_version = version("clawdstrike")
+        except PackageNotFoundError:
+            if mode == "installed":
+                raise AssertionError(
+                    "Installed package metadata not found for clawdstrike in installed mode"
+                )
+            return
+
+        # In source mode the checkout may not match an installed wheel version.
+        if mode == "auto" and __version__ != installed_version:
+            pytest.skip("Source checkout version differs from installed package metadata")
 
         # Keep the public module version aligned with installed package metadata.
-        assert __version__ == version("clawdstrike")
-        assert re.fullmatch(r"\d+\.\d+\.\d+", __version__) is not None
+        assert __version__ == installed_version

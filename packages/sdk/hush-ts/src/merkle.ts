@@ -1,4 +1,19 @@
-import { sha256 } from "./crypto/hash";
+import { getWasmModule } from "./crypto/backend";
+import { sha256, toHex, fromHex } from "./crypto/hash";
+
+function requireWasm() {
+  const wasm = getWasmModule();
+  if (!wasm) throw new Error("WASM not initialized. Call initWasm() before using Merkle operations.");
+  return wasm;
+}
+
+function bytesToHexPrefixed(bytes: Uint8Array): string {
+  return "0x" + toHex(bytes);
+}
+
+function hexPrefixedToBytes(hex: string): Uint8Array {
+  return fromHex(hex.startsWith("0x") ? hex.slice(2) : hex);
+}
 
 /**
  * Compute leaf hash per RFC 6962: SHA256(0x00 || data)
@@ -14,41 +29,25 @@ export function hashLeaf(data: Uint8Array): Uint8Array {
  * Compute node hash per RFC 6962: SHA256(0x01 || left || right)
  */
 export function hashNode(left: Uint8Array, right: Uint8Array): Uint8Array {
-  const combined = new Uint8Array(1 + 32 + 32);
-  combined[0] = 0x01;
-  combined.set(left, 1);
-  combined.set(right, 33);
-  return sha256(combined);
+  const prefixed = new Uint8Array(1 + left.length + right.length);
+  prefixed[0] = 0x01;
+  prefixed.set(left, 1);
+  prefixed.set(right, 1 + left.length);
+  return sha256(prefixed);
 }
 
 /**
  * Compute Merkle root from leaf hashes.
- * Uses left-balanced semantics: odd node carried upward (not duplicated).
+ * Delegates to WASM `compute_merkle_root`.
  */
 export function computeRoot(leaves: Uint8Array[]): Uint8Array {
   if (leaves.length === 0) {
     throw new Error("Cannot compute root of empty tree");
   }
-
-  if (leaves.length === 1) {
-    return leaves[0];
-  }
-
-  let current = [...leaves];
-  while (current.length > 1) {
-    const next: Uint8Array[] = [];
-    for (let i = 0; i < current.length; i += 2) {
-      if (i + 1 < current.length) {
-        next.push(hashNode(current[i], current[i + 1]));
-      } else {
-        // Odd node: carry upward unchanged
-        next.push(current[i]);
-      }
-    }
-    current = next;
-  }
-
-  return current[0];
+  const wasm = requireWasm();
+  const hexLeaves = leaves.map(bytesToHexPrefixed);
+  const rootHex = wasm.compute_merkle_root(JSON.stringify(hexLeaves));
+  return hexPrefixedToBytes(rootHex);
 }
 
 /**
@@ -63,6 +62,8 @@ export class MerkleProof {
 
   /**
    * Compute root from leaf hash and proof.
+   * Uses local traversal with hashNode since the WASM module does not
+   * expose a dedicated "compute root from proof" function.
    */
   computeRoot(leafHash: Uint8Array): Uint8Array {
     if (this.treeSize === 0 || this.leafIndex >= this.treeSize) {
@@ -76,17 +77,13 @@ export class MerkleProof {
 
     while (size > 1) {
       if (idx % 2 === 0) {
-        // Current is left child
         if (idx + 1 < size) {
-          // Has sibling on right
           if (pathIdx >= this.auditPath.length) {
             throw new Error("Invalid proof: missing sibling");
           }
           h = hashNode(h, this.auditPath[pathIdx++]);
         }
-        // else: no sibling, carry upward
       } else {
-        // Current is right child
         if (pathIdx >= this.auditPath.length) {
           throw new Error("Invalid proof: missing sibling");
         }
@@ -108,12 +105,15 @@ export class MerkleProof {
    * Verify proof against expected root.
    */
   verify(leafHash: Uint8Array, expectedRoot: Uint8Array): boolean {
-    try {
-      const computed = this.computeRoot(leafHash);
-      return arrayEquals(computed, expectedRoot);
-    } catch {
-      return false;
-    }
+    const wasm = requireWasm();
+    const leafHex = bytesToHexPrefixed(leafHash);
+    const rootHex = bytesToHexPrefixed(expectedRoot);
+    const proofJson = JSON.stringify({
+      tree_size: this.treeSize,
+      leaf_index: this.leafIndex,
+      audit_path: this.auditPath.map(bytesToHexPrefixed),
+    });
+    return wasm.verify_merkle_proof(leafHex, proofJson, rootHex);
   }
 
   /**
@@ -123,11 +123,7 @@ export class MerkleProof {
     return {
       treeSize: this.treeSize,
       leafIndex: this.leafIndex,
-      auditPath: this.auditPath.map((h) =>
-        Array.from(h)
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join(""),
-      ),
+      auditPath: this.auditPath.map((h) => toHex(h)),
     };
   }
 
@@ -135,19 +131,14 @@ export class MerkleProof {
    * Deserialize from JSON.
    */
   static fromJSON(json: { treeSize: number; leafIndex: number; auditPath: string[] }): MerkleProof {
-    const auditPath = json.auditPath.map((hex) => {
-      const bytes = new Uint8Array(hex.length / 2);
-      for (let i = 0; i < bytes.length; i++) {
-        bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-      }
-      return bytes;
-    });
+    const auditPath = json.auditPath.map((hex) => fromHex(hex));
     return new MerkleProof(json.treeSize, json.leafIndex, auditPath);
   }
 }
 
 /**
  * Generate inclusion proof for a leaf at given index.
+ * Delegates to WASM `generate_merkle_proof`.
  */
 export function generateProof(leaves: Uint8Array[], index: number): MerkleProof {
   if (leaves.length === 0) {
@@ -157,55 +148,29 @@ export function generateProof(leaves: Uint8Array[], index: number): MerkleProof 
     throw new Error(`Index ${index} out of range for ${leaves.length} leaves`);
   }
 
-  // Build tree levels
-  const levels: Uint8Array[][] = [[...leaves]];
-  let current = [...leaves];
+  const wasm = requireWasm();
+  const hexLeaves = leaves.map(bytesToHexPrefixed);
+  const resultJson = wasm.generate_merkle_proof(JSON.stringify(hexLeaves), index);
+  const result = JSON.parse(resultJson);
 
-  while (current.length > 1) {
-    const next: Uint8Array[] = [];
-    for (let i = 0; i < current.length; i += 2) {
-      if (i + 1 < current.length) {
-        next.push(hashNode(current[i], current[i + 1]));
-      } else {
-        next.push(current[i]);
-      }
-    }
-    levels.push(next);
-    current = next;
-  }
+  const auditPath = (result.auditPath ?? result.audit_path ?? []).map(
+    (hex: string) => hexPrefixedToBytes(hex),
+  );
+  const treeSize = result.treeSize ?? result.tree_size ?? leaves.length;
+  const leafIndex = result.leafIndex ?? result.leaf_index ?? index;
 
-  // Collect audit path
-  const auditPath: Uint8Array[] = [];
-  let idx = index;
-
-  for (const level of levels.slice(0, -1)) {
-    if (level.length <= 1) break;
-
-    if (idx % 2 === 0) {
-      // Current is left, sibling is right
-      const siblingIdx = idx + 1;
-      if (siblingIdx < level.length) {
-        auditPath.push(level[siblingIdx]);
-      }
-    } else {
-      // Current is right, sibling is left
-      auditPath.push(level[idx - 1]);
-    }
-
-    idx = Math.floor(idx / 2);
-  }
-
-  return new MerkleProof(leaves.length, index, auditPath);
+  return new MerkleProof(treeSize, leafIndex, auditPath);
 }
 
 /**
  * RFC 6962-compatible Merkle tree.
  */
 export class MerkleTree {
-  private levels: Uint8Array[][];
+  private leafHashes: Uint8Array[];
+  private cachedRoot: Uint8Array | null = null;
 
-  private constructor(levels: Uint8Array[][]) {
-    this.levels = levels;
+  private constructor(leafHashes: Uint8Array[]) {
+    this.leafHashes = leafHashes;
   }
 
   /**
@@ -226,33 +191,18 @@ export class MerkleTree {
     if (leafHashes.length === 0) {
       throw new Error("Cannot build tree from empty leaves");
     }
-
-    const levels: Uint8Array[][] = [[...leafHashes]];
-    let current = [...leafHashes];
-
-    while (current.length > 1) {
-      const next: Uint8Array[] = [];
-      for (let i = 0; i < current.length; i += 2) {
-        if (i + 1 < current.length) {
-          next.push(hashNode(current[i], current[i + 1]));
-        } else {
-          next.push(current[i]);
-        }
-      }
-      levels.push(next);
-      current = next;
-    }
-
-    return new MerkleTree(levels);
+    return new MerkleTree([...leafHashes]);
   }
 
   get leafCount(): number {
-    return this.levels[0]?.length ?? 0;
+    return this.leafHashes.length;
   }
 
   get root(): Uint8Array {
-    const lastLevel = this.levels[this.levels.length - 1];
-    return lastLevel?.[0] ?? new Uint8Array(32);
+    if (!this.cachedRoot) {
+      this.cachedRoot = computeRoot(this.leafHashes);
+    }
+    return this.cachedRoot;
   }
 
   /**
@@ -262,33 +212,6 @@ export class MerkleTree {
     if (leafIndex < 0 || leafIndex >= this.leafCount) {
       throw new Error(`Index ${leafIndex} out of range for ${this.leafCount} leaves`);
     }
-
-    const auditPath: Uint8Array[] = [];
-    let idx = leafIndex;
-
-    for (const level of this.levels.slice(0, -1)) {
-      if (level.length <= 1) break;
-
-      if (idx % 2 === 0) {
-        const siblingIdx = idx + 1;
-        if (siblingIdx < level.length) {
-          auditPath.push(level[siblingIdx]);
-        }
-      } else {
-        auditPath.push(level[idx - 1]);
-      }
-
-      idx = Math.floor(idx / 2);
-    }
-
-    return new MerkleProof(this.leafCount, leafIndex, auditPath);
+    return generateProof(this.leafHashes, leafIndex);
   }
-}
-
-function arrayEquals(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
 }

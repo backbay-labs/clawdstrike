@@ -1,0 +1,33 @@
+{{- if .Values.easAnchor.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-eas-anchor
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "eas-anchor") | nindent 4 }}
+data:
+  config.toml: |
+    [chain]
+    rpc_url = {{ .Values.easAnchor.chain.rpcUrl | quote }}
+    chain_id = {{ .Values.easAnchor.chain.chainId }}
+    eas_contract = {{ .Values.easAnchor.chain.easContract | quote }}
+    schema_registry = {{ .Values.easAnchor.chain.schemaRegistry | quote }}
+
+    [signer]
+    private_key_env = "EAS_SIGNER_PRIVATE_KEY"
+
+    [batching]
+    max_batch_size = {{ .Values.easAnchor.batching.maxBatchSize }}
+    batch_interval_secs = {{ .Values.easAnchor.batching.batchIntervalSecs }}
+    min_batch_size = {{ .Values.easAnchor.batching.minBatchSize }}
+
+    [schemas]
+    policy_attestation_uid = {{ .Values.easAnchor.schemas.policyAttestationUid | quote }}
+    checkpoint_anchor_uid = {{ .Values.easAnchor.schemas.checkpointAnchorUid | quote }}
+    key_rotation_uid = {{ .Values.easAnchor.schemas.keyRotationUid | quote }}
+
+    [nats]
+    url = {{ include "clawdstrike.natsUrl" . | quote }}
+    subject = {{ .Values.easAnchor.nats.subject | quote }}
+{{- end }}

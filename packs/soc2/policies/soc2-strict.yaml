@@ -1,0 +1,147 @@
+# SOC2 Type II Strict Ruleset
+# Maximum security with continuous evidence collection
+# Ref: SOC2 Trust Service Criteria (CC6, CC7, CC8)
+version: "1.2.0"
+name: SOC2 Strict
+description: Strict SOC2 Type II compliance rules with audit-logging focus
+extends: clawdstrike:strict
+
+guards:
+  forbidden_path:
+    patterns:
+      # Inherited strict patterns
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.git-credentials"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/etc/sudoers"
+      # SOC2: Audit and evidence directories
+      - "**/audit-logs/**"
+      - "**/audit_logs/**"
+      - "**/evidence/**"
+      - "**/compliance-reports/**"
+      - "**/soc2-evidence/**"
+      - "**/security-logs/**"
+      # SOC2: Infrastructure configuration
+      - "**/terraform.tfstate"
+      - "**/terraform.tfstate.backup"
+      - "**/.terraform/**"
+      - "**/vault-data/**"
+    exceptions: []
+
+  egress_allowlist:
+    allow: []
+    block: []
+    default_action: block
+
+  secret_leak:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: critical
+      - name: anthropic_key
+        pattern: "sk-ant-[A-Za-z0-9\\-]{95}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+      - name: npm_token
+        pattern: "npm_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: slack_token
+        pattern: "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*"
+        severity: critical
+      - name: generic_api_key
+        pattern: "(?i)(api[_\\-]?key|apikey)\\s*[:=]\\s*[A-Za-z0-9]{32,}"
+        severity: error
+      # SOC2: Database and infrastructure credentials
+      - name: database_url
+        pattern: "(?i)(postgres|mysql|mongodb|redis)://[^\\s]+"
+        severity: critical
+      - name: jwt_secret
+        pattern: "(?i)jwt[_\\-]?secret\\s*[:=]\\s*[A-Za-z0-9+/]{16,}"
+        severity: critical
+    skip_paths: []
+
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
+    forbidden_patterns:
+      # Log tampering
+      - "(?i)\\btruncate\\b"
+      - "(?i)\\bshred\\b"
+      - "(?i)\\bwipe\\b"
+      # Data exfiltration
+      - "(?i)\\bcurl\\b"
+      - "(?i)\\bwget\\b"
+      - "(?i)\\bscp\\b"
+      - "(?i)\\brsync\\b"
+      - "(?i)\\bnc\\b"
+      - "(?i)\\bnetcat\\b"
+      # Infrastructure mutation
+      - "(?i)\\bterraform\\b"
+      - "(?i)\\bkubectl\\b"
+      - "(?i)\\bdocker\\b"
+      # Destructive operations
+      - "(?i)\\brm\\s+(-rf?|--recursive)\\s+/"
+      - "(?i)\\bchmod\\s+777\\b"
+
+  mcp_tool:
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep
+    block: []
+    require_confirmation: []
+    default_action: block
+    max_args_size: 524288
+
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: suspicious
+    max_scan_bytes: 200000
+
+  patch_integrity:
+    max_additions: 500
+    max_deletions: 200
+    require_balance: true
+    max_imbalance_ratio: 5.0
+    forbidden_patterns:
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls|logging|audit|monitoring)"
+      - "(?i)skip[\\s_\\-]?(verify|validation|check)"
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+      - "(?i)eval\\s*\\("
+      - "(?i)exec\\s*\\("
+      - "(?i)delete[_\\-]?logs"
+      - "(?i)truncate[_\\-]?(log|audit)"
+
+  jailbreak:
+    enabled: true
+    detector:
+      block_threshold: 40
+      warn_threshold: 15
+      max_input_bytes: 200000
+      session_aggregation: true
+
+settings:
+  fail_fast: true
+  verbose_logging: false
+  session_timeout_secs: 1800

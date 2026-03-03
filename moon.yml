@@ -1,0 +1,272 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+type: "library"
+language: "rust"
+tags: ["root", "workspace"]
+
+tasks:
+  # ── Rust ───────────────────────────────────────────────
+
+  rust-build:
+    command: "cargo build --workspace"
+    inputs:
+      - "@group(rust-sources)"
+
+  rust-build-cli:
+    command: "cargo build -p hush-cli"
+    inputs:
+      - "@group(rust-sources)"
+
+  rust-test:
+    command: "cargo test --workspace"
+    inputs:
+      - "@group(rust-sources)"
+      - "@group(rulesets)"
+
+  rust-lint:
+    command: "cargo clippy --workspace -- -D warnings"
+    inputs:
+      - "@group(rust-sources)"
+
+  rust-fmt:
+    command: "cargo fmt --all"
+    inputs:
+      - "@group(rust-sources)"
+    local: true
+
+  rust-fmt-check:
+    command: "cargo fmt --all -- --check"
+    inputs:
+      - "@group(rust-sources)"
+
+  rust-deny:
+    command: "cargo deny check"
+    inputs:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+
+  rust-doc:
+    command: "cargo doc --no-deps --all-features"
+    inputs:
+      - "@group(rust-sources)"
+
+  rust-check-tauri-desktop:
+    command: "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml"
+    inputs:
+      - "apps/desktop/src-tauri/**/*.rs"
+      - "apps/desktop/src-tauri/Cargo.toml"
+      - "@group(rust-sources)"
+
+  rust-check-tauri-agent:
+    command: "cargo check --manifest-path apps/agent/src-tauri/Cargo.toml"
+    inputs:
+      - "apps/agent/src-tauri/**/*.rs"
+      - "apps/agent/src-tauri/Cargo.toml"
+      - "@group(rust-sources)"
+
+  rust-check-tauri:
+    command: "noop"
+    deps:
+      - "~:rust-check-tauri-desktop"
+      - "~:rust-check-tauri-agent"
+
+  # ── TypeScript ─────────────────────────────────────────
+
+  ts-build-adapter-core:
+    command: "npm run build -w packages/adapters/clawdstrike-adapter-core"
+    platform: "node"
+    inputs:
+      - "packages/adapters/clawdstrike-adapter-core/src/**/*"
+      - "packages/adapters/clawdstrike-adapter-core/package.json"
+      - "packages/adapters/clawdstrike-adapter-core/tsconfig*.json"
+
+  ts-build-sdk:
+    command: "npm run build -w packages/sdk/hush-ts"
+    platform: "node"
+    deps:
+      - "~:ts-build-adapter-core"
+    inputs:
+      - "packages/sdk/hush-ts/src/**/*"
+      - "packages/sdk/hush-ts/package.json"
+      - "packages/sdk/hush-ts/tsconfig*.json"
+
+  ts-build-policy:
+    command: "npm run build -w packages/policy/clawdstrike-policy"
+    platform: "node"
+    deps:
+      - "~:ts-build-adapter-core"
+    inputs:
+      - "packages/policy/clawdstrike-policy/src/**/*"
+      - "packages/policy/clawdstrike-policy/package.json"
+      - "packages/policy/clawdstrike-policy/tsconfig*.json"
+
+  ts-build-adapters:
+    command: >-
+      npm run build
+      -w packages/adapters/clawdstrike-claude
+      -w packages/adapters/clawdstrike-openai
+      -w packages/adapters/clawdstrike-vercel-ai
+      -w packages/adapters/clawdstrike-langchain
+      -w packages/adapters/clawdstrike-openclaw
+      -w packages/adapters/clawdstrike-opencode
+      -w packages/adapters/clawdstrike-hush-cli-engine
+      -w packages/adapters/clawdstrike-hushd-engine
+      -w packages/sdk/clawdstrike
+    platform: "node"
+    deps:
+      - "~:ts-build-adapter-core"
+      - "~:ts-build-sdk"
+      - "~:ts-build-policy"
+    inputs:
+      - "packages/adapters/*/src/**/*"
+      - "packages/adapters/*/package.json"
+      - "packages/adapters/*/tsconfig*.json"
+      - "packages/sdk/clawdstrike/src/**/*"
+      - "packages/sdk/clawdstrike/package.json"
+
+  ts-build:
+    command: "noop"
+    deps:
+      - "~:ts-build-adapters"
+
+  ts-test-sdk:
+    command: "npm test -w packages/sdk/hush-ts"
+    platform: "node"
+    deps:
+      - "~:ts-build-sdk"
+    inputs:
+      - "packages/sdk/hush-ts/src/**/*"
+      - "packages/sdk/hush-ts/tests/**/*"
+      - "packages/sdk/hush-ts/package.json"
+
+  ts-test-policy:
+    command: "npm test -w packages/policy/clawdstrike-policy"
+    platform: "node"
+    deps:
+      - "~:ts-build-policy"
+    inputs:
+      - "packages/policy/clawdstrike-policy/src/**/*"
+      - "packages/policy/clawdstrike-policy/tests/**/*"
+      - "packages/policy/clawdstrike-policy/package.json"
+
+  ts-test:
+    command: "noop"
+    deps:
+      - "~:ts-test-sdk"
+      - "~:ts-test-policy"
+
+  ts-typecheck:
+    command: "npm run typecheck --if-present -w packages/sdk/hush-ts -w packages/policy/clawdstrike-policy -w packages/adapters/clawdstrike-adapter-core"
+    platform: "node"
+    deps:
+      - "~:ts-build-adapter-core"
+    inputs:
+      - "packages/sdk/hush-ts/src/**/*"
+      - "packages/sdk/hush-ts/tsconfig*.json"
+      - "packages/policy/clawdstrike-policy/src/**/*"
+      - "packages/policy/clawdstrike-policy/tsconfig*.json"
+      - "packages/adapters/clawdstrike-adapter-core/src/**/*"
+      - "packages/adapters/clawdstrike-adapter-core/tsconfig*.json"
+
+  ts-fmt-check:
+    command: "npx biome check"
+    platform: "node"
+    inputs:
+      - "apps/desktop/src/**/*.ts"
+      - "apps/desktop/src/**/*.tsx"
+      - "apps/desktop/*.ts"
+      - "apps/desktop/*.js"
+      - "apps/desktop/*.json"
+      - "apps/control-console/src/**/*.ts"
+      - "apps/control-console/src/**/*.tsx"
+      - "packages/sdk/hush-ts/src/**/*.ts"
+      - "packages/sdk/clawdstrike/**/*.ts"
+      - "packages/policy/clawdstrike-policy/src/**/*.ts"
+      - "packages/adapters/*/src/**/*.ts"
+      - "biome.json"
+
+  ts-fmt:
+    command: "npx biome check --write"
+    platform: "node"
+    inputs:
+      - "apps/desktop/src/**/*.ts"
+      - "apps/desktop/src/**/*.tsx"
+      - "apps/desktop/*.ts"
+      - "apps/desktop/*.js"
+      - "apps/desktop/*.json"
+      - "apps/control-console/src/**/*.ts"
+      - "apps/control-console/src/**/*.tsx"
+      - "packages/sdk/hush-ts/src/**/*.ts"
+      - "packages/sdk/clawdstrike/**/*.ts"
+      - "packages/policy/clawdstrike-policy/src/**/*.ts"
+      - "packages/adapters/*/src/**/*.ts"
+      - "biome.json"
+    local: true
+
+  # ── Cross-language ─────────────────────────────────────
+
+  parity:
+    command: "bash scripts/run-parity.sh"
+    platform: "system"
+    deps:
+      - "~:rust-build-cli"
+      - "~:ts-build-adapter-core"
+    inputs:
+      - "scripts/run-parity.sh"
+      - "@group(rust-sources)"
+      - "packages/adapters/clawdstrike-hush-cli-engine/src/**/*"
+      - "packages/adapters/clawdstrike-hush-cli-engine/package.json"
+      - "packages/adapters/clawdstrike-hush-cli-engine/package-lock.json"
+      - "packages/adapters/clawdstrike-hush-cli-engine/tsconfig*.json"
+      - "packages/adapters/clawdstrike-hush-cli-engine/vitest.config.*"
+
+  # ── Aggregates ─────────────────────────────────────────
+
+  build:
+    command: "noop"
+    deps:
+      - "~:rust-build"
+      - "wasm:size-check"
+      - "~:ts-build"
+      - "control-console:build"
+
+  test:
+    command: "noop"
+    deps:
+      - "~:rust-test"
+      - "~:ts-test"
+      - "control-console:test"
+      - "python-sdk:test"
+
+  lint:
+    command: "noop"
+    deps:
+      - "~:rust-lint"
+      - "~:rust-fmt-check"
+      - "~:ts-fmt-check"
+      - "guardrails:all"
+
+  fmt:
+    command: "noop"
+    deps:
+      - "~:rust-fmt"
+      - "~:ts-fmt"
+    local: true
+
+  check:
+    command: "noop"
+    deps:
+      - "~:rust-lint"
+      - "~:rust-check-tauri"
+      - "~:ts-typecheck"
+      - "control-console:typecheck"
+
+  ci:
+    command: "noop"
+    deps:
+      - "~:lint"
+      - "~:test"
+      - "~:check"
+      - "~:build"
+      - "~:parity"
+      - "docs:build"

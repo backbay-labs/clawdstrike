@@ -5,9 +5,13 @@ import type {
   SecurityContext,
   ToolInterceptor,
 } from "@clawdstrike/adapter-core";
-import { createSecurityContext } from "@clawdstrike/adapter-core";
+import {
+  createSecurityContext,
+  resolveInterceptor,
+  type SecuritySource,
+  wrapExecuteWithInterceptor,
+} from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeViolationError } from "./errors.js";
 import { createLangChainInterceptor } from "./interceptor.js";
 
 type LangChainInvokeLike<TInput = unknown, TOutput = unknown> = {
@@ -29,11 +33,11 @@ export interface WrapToolOptions {
 }
 
 /**
- * Clawdstrike-like interface for simple API.
+ * @deprecated Use SecuritySource from @clawdstrike/adapter-core.
  */
-export interface ClawdstrikeLike {
-  createInterceptor?: () => ToolInterceptor;
-}
+export type ClawdstrikeLike = {
+  createInterceptor?: (config?: AdapterConfig) => Partial<ToolInterceptor> | ToolInterceptor;
+};
 
 /**
  * Secure a single LangChain tool using a Clawdstrike instance or PolicyEngineLike.
@@ -44,15 +48,15 @@ export interface ClawdstrikeLike {
  * import { secureTool } from '@clawdstrike/langchain';
  *
  * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
- * const secureTool = secureTool(myTool, cs);
+ * const secured = secureTool(myTool, cs);
  * ```
  */
 export function secureTool<TTool extends LangChainToolLike>(
   tool: TTool,
-  csOrEngine: ClawdstrikeLike | PolicyEngineLike,
+  source: SecuritySource,
   options?: WrapToolOptions,
 ): TTool {
-  const interceptor = resolveInterceptor(csOrEngine);
+  const interceptor = resolveInterceptor(source);
   return wrapTool(tool, interceptor, options);
 }
 
@@ -67,31 +71,15 @@ export function secureTool<TTool extends LangChainToolLike>(
  */
 export function secureTools<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
-  csOrEngine: ClawdstrikeLike | PolicyEngineLike,
+  source: SecuritySource,
   options?: WrapToolOptions,
 ): TTool[] {
-  const interceptor = resolveInterceptor(csOrEngine);
+  const interceptor = resolveInterceptor(source);
   return wrapTools(tools, interceptor, options);
 }
 
-function resolveInterceptor(csOrEngine: ClawdstrikeLike | PolicyEngineLike): ToolInterceptor {
-  if (isClawdstrikeLike(csOrEngine)) {
-    return csOrEngine.createInterceptor!();
-  }
-  // PolicyEngineLike
-  return createLangChainInterceptor(csOrEngine);
-}
-
-function isClawdstrikeLike(value: unknown): value is ClawdstrikeLike {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as ClawdstrikeLike).createInterceptor === "function"
-  );
-}
-
 /**
- * @deprecated Use secureTool(tool, clawdstrike) instead.
+ * @deprecated Use secureTool(tool, source) instead.
  */
 export function wrapTool<TTool extends LangChainToolLike>(
   tool: TTool,
@@ -107,7 +95,7 @@ export function wrapTool<TTool extends LangChainToolLike>(
 }
 
 /**
- * @deprecated Use secureTools(tools, clawdstrike) instead.
+ * @deprecated Use secureTools(tools, source) instead.
  */
 export function wrapTools<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
@@ -122,6 +110,9 @@ export function wrapTools<TTool extends LangChainToolLike>(
   return tools.map((tool) => wrapToolWithContext(tool, interceptor, context, options?.getContext));
 }
 
+/**
+ * @deprecated Use secureTool(tool, source) with a source that supports createInterceptor(config).
+ */
 export function wrapToolWithConfig<TTool extends LangChainToolLike>(
   tool: TTool,
   engine: PolicyEngineLike,
@@ -142,6 +133,9 @@ export function wrapToolWithConfig<TTool extends LangChainToolLike>(
   });
 }
 
+/**
+ * @deprecated Use secureTools(tools, source) with a source that supports createInterceptor(config).
+ */
 export function wrapToolsWithConfig<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
   engine: PolicyEngineLike,
@@ -187,37 +181,36 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
   const originalCall = hasCall ? tool._call!.bind(tool) : undefined;
 
   let lastDecision: Decision | null = null;
+  const trackingInterceptor: ToolInterceptor = {
+    beforeExecute: async (name, input, resolvedContext) => {
+      const result = await interceptor.beforeExecute(name, input, resolvedContext);
+      lastDecision = result.decision;
+      return result;
+    },
+    afterExecute: async (name, input, output, resolvedContext) =>
+      interceptor.afterExecute(name, input, output, resolvedContext),
+    onError: async (name, input, error, resolvedContext) =>
+      interceptor.onError(name, input, error, resolvedContext),
+  };
 
   const wrappedInvoke = hasInvoke
-    ? async (input: unknown, config?: unknown) => {
-        const resolvedContext = getContext ? getContext(toolName, input) : context;
-        return runIntercepted(
-          toolName,
-          interceptor,
-          resolvedContext,
-          input,
-          (decision) => {
-            lastDecision = decision;
-          },
-          (nextInput: unknown) => originalInvoke!(nextInput, config),
-        );
-      }
+    ? wrapExecuteWithInterceptor(
+        toolName,
+        (input: unknown, config?: unknown) => originalInvoke!(input, config),
+        trackingInterceptor,
+        context,
+        getContext,
+      )
     : undefined;
 
   const wrappedCall = hasCall
-    ? async (input: unknown, ...rest: unknown[]) => {
-        const resolvedContext = getContext ? getContext(toolName, input) : context;
-        return runIntercepted(
-          toolName,
-          interceptor,
-          resolvedContext,
-          input,
-          (decision) => {
-            lastDecision = decision;
-          },
-          (nextInput: unknown) => originalCall!(nextInput, ...rest),
-        );
-      }
+    ? wrapExecuteWithInterceptor(
+        toolName,
+        (input: unknown, ...rest: unknown[]) => originalCall!(input, ...rest),
+        trackingInterceptor,
+        context,
+        getContext,
+      )
     : undefined;
 
   return new Proxy(tool, {
@@ -248,51 +241,4 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
       return value;
     },
   });
-}
-
-async function runIntercepted<TOutput>(
-  toolName: string,
-  interceptor: ToolInterceptor,
-  context: SecurityContext,
-  input: unknown,
-  onDecision: (decision: Decision) => void,
-  invoke: (nextInput: unknown) => Promise<TOutput> | TOutput,
-): Promise<TOutput> {
-  let interceptResult;
-  try {
-    interceptResult = await interceptor.beforeExecute(toolName, input, context);
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    await interceptor.onError(toolName, input, err, context);
-    throw err;
-  }
-
-  onDecision(interceptResult.decision);
-
-  if (!interceptResult.proceed) {
-    const { decision } = interceptResult;
-    throw new ClawdstrikeViolationError(toolName, decision);
-  }
-
-  const nextInput = interceptResult.modifiedParameters ?? input;
-
-  if (interceptResult.replacementResult !== undefined) {
-    const processed = await interceptor.afterExecute(
-      toolName,
-      nextInput,
-      interceptResult.replacementResult as TOutput,
-      context,
-    );
-    return processed.output as TOutput;
-  }
-
-  try {
-    const output = await invoke(nextInput);
-    const processed = await interceptor.afterExecute(toolName, nextInput, output, context);
-    return processed.output as TOutput;
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    await interceptor.onError(toolName, nextInput, err, context);
-    throw err;
-  }
 }

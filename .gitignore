@@ -60,3 +60,6 @@ packages/sdk/hush-csharp/.vs/
 
 # Agent bundled daemon staging artifact
 apps/agent/src-tauri/resources/bin/
+
+# Moon
+.moon/cache/

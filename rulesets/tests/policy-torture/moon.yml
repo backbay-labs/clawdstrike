@@ -1,0 +1,18 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+type: "tool"
+language: "bash"
+tags: ["test", "policy"]
+
+tasks:
+  run:
+    command: "bash run.sh"
+    platform: "system"
+    inputs:
+      - "run.sh"
+      - "suites/**/*"
+      - "policies/**/*"
+      - "/crates/**/*.rs"
+      - "/crates/**/Cargo.toml"
+      - "/crates/**/build.rs"
+      - "/Cargo.toml"
+      - "/Cargo.lock"

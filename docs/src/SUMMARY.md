@@ -19,10 +19,10 @@
 - [Enforcement Tiers & Integration Contract](concepts/enforcement-tiers.md)
 - [Guards](concepts/guards.md)
 - [Policies](concepts/policies.md)
-- [Postures](concepts/postures.md)
-- [Terminology](concepts/terminology.md)
 - [Schema Governance](concepts/schema-governance.md)
 - [Decisions](concepts/decisions.md)
+- [Postures](concepts/postures.md)
+- [Terminology](concepts/terminology.md)
 - [Adaptive Architecture](concepts/adaptive-architecture.md)
 
 # Guides
@@ -44,6 +44,25 @@
 - [Audit Logging](guides/audit-logging.md)
 - [Marketplace Feed](guides/marketplace-feed.md)
 - [Computer Use Gateway](guides/computer-use-gateway.md)
+
+# Package Manager
+
+- [Overview](package-manager/index.md)
+- [Package Types](package-manager/package-types.md)
+- [Publishing Packages](package-manager/publishing.md)
+- [Installing & Managing](package-manager/installing.md)
+- [Registry Architecture](package-manager/registry-architecture.md)
+- [Trust & Verification](package-manager/trust-verification.md)
+
+# CLI
+
+- [pkg](cli/pkg.md)
+  - [init](cli/pkg-init.md)
+  - [install](cli/pkg-install.md)
+  - [publish](cli/pkg-publish.md)
+  - [search](cli/pkg-search.md)
+  - [verify](cli/pkg-verify.md)
+  - [audit](cli/pkg-audit.md)
 
 # Reference
 
@@ -100,3 +119,11 @@
 - [Claude Integration](recipes/claude.md)
 - [GitHub Actions](recipes/github-actions.md)
 - [Self-Hosted Runners](recipes/self-hosted.md)
+
+# RFCs
+
+- [RFC-0001: Package Manager](rfcs/0001-package-manager.md)
+
+# Roadmap
+
+- [Implementation Roadmap](roadmap.md)

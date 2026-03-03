@@ -21,7 +21,7 @@ spec:
             - port: "2112"
               protocol: TCP
   egress:
-    # Hubble Relay gRPC
+    # Hubble Relay gRPC (Service port 80 → container port 4245)
     - toEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: kube-system
@@ -29,6 +29,8 @@ spec:
       toPorts:
         - ports:
             - port: "4245"
+              protocol: TCP
+            - port: "80"
               protocol: TCP
     # NATS JetStream
     - toEndpoints:

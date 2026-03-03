@@ -1,0 +1,63 @@
+[
+  {
+    "name": "multi_parent_dag_inheritance",
+    "entry": "root.yaml",
+    "files": {
+      "common.yaml": "version: \"1.2.0\"\nname: \"common\"\nguards:\n  forbidden_path:\n    patterns:\n      - \"/etc/**\"\n",
+      "left.yaml": "version: \"1.2.0\"\nname: \"left\"\nextends:\n  - \"common.yaml\"\nguards:\n  egress_allowlist:\n    allow:\n      - \"api.example.com\"\n    block: []\n    default_action: block\n",
+      "right.yaml": "version: \"1.2.0\"\nname: \"right\"\nextends:\n  - \"common.yaml\"\nguards:\n  mcp_tool:\n    allow: []\n    block:\n      - \"danger_tool\"\n    default_action: allow\n",
+      "root.yaml": "version: \"1.2.0\"\nname: \"root\"\nextends:\n  - \"left.yaml\"\n  - \"right.yaml\"\n"
+    },
+    "checks": [
+      {
+        "kind": "file_access",
+        "path": "/etc/passwd",
+        "expected_status": "deny",
+        "expected_guard": "forbidden_path"
+      },
+      {
+        "kind": "network_egress",
+        "host": "api.example.com",
+        "port": 443,
+        "expected_status": "allow"
+      },
+      {
+        "kind": "network_egress",
+        "host": "bad.example.com",
+        "port": 443,
+        "expected_status": "deny",
+        "expected_guard": "egress_allowlist"
+      },
+      {
+        "kind": "mcp_tool",
+        "tool": "danger_tool",
+        "args": {},
+        "expected_status": "deny",
+        "expected_guard": "mcp_tool"
+      }
+    ]
+  },
+  {
+    "name": "deep_merge_field_override",
+    "entry": "child.yaml",
+    "files": {
+      "base.yaml": "version: \"1.2.0\"\nname: \"base\"\nguards:\n  patch_integrity:\n    max_additions: 5\n    max_deletions: 50\n    require_balance: true\n    max_imbalance_ratio: 1\n",
+      "child.yaml": "version: \"1.2.0\"\nname: \"child\"\nextends:\n  - \"base.yaml\"\nmerge_strategy: deep_merge\nguards:\n  patch_integrity:\n    require_balance: false\n"
+    },
+    "checks": [
+      {
+        "kind": "patch",
+        "path": "a.diff",
+        "diff": "+1\n+2\n+3\n+4\n+5\n+6",
+        "expected_status": "deny",
+        "expected_guard": "patch_integrity"
+      },
+      {
+        "kind": "patch",
+        "path": "b.diff",
+        "diff": "+1\n+2\n-3",
+        "expected_status": "allow"
+      }
+    ]
+  }
+]

@@ -22,6 +22,7 @@ COPY Cargo.lock ./
 
 COPY crates/libs/hush-core crates/libs/hush-core
 COPY crates/libs/spine crates/libs/spine
+COPY crates/libs/bridge-runtime crates/libs/bridge-runtime
 COPY crates/bridges/hubble-bridge crates/bridges/hubble-bridge
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

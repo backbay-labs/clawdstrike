@@ -130,6 +130,35 @@ jobs:
       - name: Test
         run: cargo test --all --exclude sdr-integration-tests
 
+  sdk-conformance:
+    name: SDK Conformance Vectors
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/sdk/hush-go/go.mod
+          cache: true
+          cache-dependency-path: packages/sdk/hush-go/go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: packages/sdk/hush-ts/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run SDK conformance runner
+        run: bash scripts/run-sdk-conformance.sh
+
   tauri-rust-check:
     name: Tauri Rust Crates
     runs-on: ubuntu-latest
@@ -182,8 +211,8 @@ jobs:
         working-directory: apps/desktop
         run: bun run typecheck
 
-  cloud-dashboard:
-    name: Cloud Dashboard
+  control-console:
+    name: Control Console
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -193,22 +222,22 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: apps/cloud-dashboard/package-lock.json
+          cache-dependency-path: apps/control-console/package-lock.json
 
       - name: Install dependencies
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm ci
 
       - name: Type check
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm run typecheck
 
       - name: Unit tests
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm test
 
       - name: Build
-        working-directory: apps/cloud-dashboard
+        working-directory: apps/control-console
         run: npm run build
 
   sdr-integration-tests:
@@ -243,11 +272,14 @@ jobs:
       - name: Bridge roundtrip tests
         run: cargo test -p sdr-integration-tests --test bridge_roundtrip_test
 
+      - name: K8s audit bridge reliability tests
+        run: cargo test -p sdr-integration-tests --test k8s_audit_bridge_reliability -- --nocapture
+
       - name: E2E pipeline tests
         run: cargo test -p sdr-integration-tests --test e2e_pipeline
 
-  adaptive-cloud-integration:
-    name: Adaptive Cloud Integration (NATS + Postgres)
+  adaptive-control-integration:
+    name: Adaptive Control Integration (NATS + Postgres)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: check
@@ -260,8 +292,8 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Run cloud-api adaptive integration tests
-        run: 'cargo test -p clawdstrike-cloud-api integration_tests:: -- --nocapture'
+      - name: Run control-api adaptive integration tests
+        run: 'cargo test -p clawdstrike-control-api integration_tests:: -- --nocapture'
 
   msrv:
     name: Minimum Supported Rust Version
@@ -404,10 +436,11 @@ jobs:
           # Rust sources that do not emit stable LCOV entries in this job.
           grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
             | grep -v '^apps/desktop/src-tauri/' \
+            | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
             | grep -Ev '^crates/libs/hunt-(correlate|query|scan)/src/(lib|error)\.rs$' \
-            | grep -Ev '^crates/libs/hush-core/src/lib\.rs$' \
+            | grep -Ev '^crates/libs/(hush-core|clawdstrike)/src/lib\.rs$' \
             | grep -Ev '^crates/services/hush-cli/src/tests\.rs$' \
             > changed_rust_files.coverage.txt || true
 
@@ -458,15 +491,31 @@ jobs:
           cd crates/libs/hush-wasm
           wasm-pack build --target web --release
 
+      - name: Verify committed Node.js WASM artifacts are in sync
+        run: |
+          cd crates/libs/hush-wasm
+          wasm-pack build --target nodejs --release --out-dir pkg-node
+
+          for f in hush_wasm.js hush_wasm.d.ts hush_wasm_bg.wasm.d.ts; do
+            if ! cmp -s "$f" "pkg-node/$f"; then
+              echo "ERROR: $f is out of sync with wasm-pack --target nodejs output"
+              echo "Run: cd crates/libs/hush-wasm && ./build.sh"
+              exit 1
+            fi
+          done
+
       - name: Check bundle size
         run: |
           SIZE=$(wc -c < crates/libs/hush-wasm/pkg/hush_wasm_bg.wasm)
-          echo "Bundle size: $SIZE bytes"
-          if [ $SIZE -gt 512000 ]; then
-            echo "ERROR: Bundle exceeds 500KB limit"
+          echo "Bundle size: $SIZE bytes ($(( SIZE / 1024 ))KB)"
+          # Limit raised from 512KB after adding clawdstrike detection modules
+          # (regex patterns for jailbreak/injection detection) to WASM.
+          # Current baseline ~1.6MB; 1.75MiB cap leaves ~10% headroom.
+          if [ $SIZE -gt 1835008 ]; then
+            echo "ERROR: Bundle exceeds 1.75MiB limit"
             exit 1
           fi
-          echo "Bundle size is within 500KB limit"
+          echo "Bundle size is within 1.75MiB limit"
 
   proptest:
     name: Property Tests

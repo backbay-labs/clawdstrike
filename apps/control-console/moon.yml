@@ -1,0 +1,38 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+type: "application"
+language: "typescript"
+tags: ["app", "dashboard"]
+
+tasks:
+  dev:
+    command: "npm run dev"
+    local: true
+    options:
+      persistent: true
+      runInCI: false
+
+  build:
+    command: "npm run build"
+    inputs:
+      - "src/**/*"
+      - "public/**/*"
+      - "index.html"
+      - "package.json"
+      - "tsconfig*.json"
+      - "vite.config.*"
+      - "tailwind.config.*"
+    outputs:
+      - "dist"
+
+  typecheck:
+    command: "npm run typecheck"
+    inputs:
+      - "src/**/*"
+      - "tsconfig*.json"
+
+  test:
+    command: "npm run test"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "vitest.config.*"

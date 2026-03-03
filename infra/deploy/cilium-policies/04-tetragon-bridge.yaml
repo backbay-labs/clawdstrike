@@ -2,7 +2,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: tetragon-bridge
-  namespace: kube-system
+  namespace: clawdstrike
   labels:
     app.kubernetes.io/part-of: clawdstrike
 spec:

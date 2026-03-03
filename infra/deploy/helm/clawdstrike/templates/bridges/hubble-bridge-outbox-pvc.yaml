@@ -1,0 +1,20 @@
+{{- if and .Values.bridges.hubble.enabled .Values.bridges.hubble.outboxPersistence.enabled (eq .Values.bridges.hubble.outboxPersistence.type "pvc") .Values.bridges.hubble.outboxPersistence.pvc.create (not .Values.bridges.hubble.outboxPersistence.pvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hubble-bridge-outbox
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 4 }}
+spec:
+  accessModes:
+    {{- range .Values.bridges.hubble.outboxPersistence.pvc.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- if .Values.bridges.hubble.outboxPersistence.pvc.storageClassName }}
+  storageClassName: {{ .Values.bridges.hubble.outboxPersistence.pvc.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.bridges.hubble.outboxPersistence.pvc.size }}
+{{- end }}

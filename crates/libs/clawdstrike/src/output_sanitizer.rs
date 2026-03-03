@@ -647,7 +647,7 @@ impl OutputSanitizer {
     }
 
     pub fn sanitize_sync(&self, output: &str) -> SanitizationResult {
-        let start = std::time::Instant::now();
+        let start = crate::text_utils::now();
 
         let mut stats = ProcessingStats {
             input_length: output.len(),
@@ -883,7 +883,7 @@ impl OutputSanitizer {
         stats.output_length = sanitized.len();
         stats.findings_count = findings.len();
         stats.redactions_count = redactions.len();
-        stats.processing_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+        stats.processing_time_ms = crate::text_utils::elapsed_ms(&start);
 
         SanitizationResult {
             was_redacted: applied_any,
@@ -906,7 +906,7 @@ pub struct SanitizationStream {
     output_bytes: usize,
     raw_offset: usize,
     was_redacted: bool,
-    started_at: std::time::Instant,
+    started_at: crate::text_utils::Timestamp,
 }
 
 impl std::fmt::Debug for SanitizationStream {
@@ -934,7 +934,7 @@ impl SanitizationStream {
             output_bytes: 0,
             raw_offset: 0,
             was_redacted: false,
-            started_at: std::time::Instant::now(),
+            started_at: crate::text_utils::now(),
         }
     }
 
@@ -1009,7 +1009,7 @@ impl SanitizationStream {
                 output_length: self.output_bytes,
                 findings_count,
                 redactions_count,
-                processing_time_ms: self.started_at.elapsed().as_secs_f64() * 1000.0,
+                processing_time_ms: crate::text_utils::elapsed_ms(&self.started_at),
             },
         }
     }

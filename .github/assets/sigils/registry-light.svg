@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- outer hexagonal vault -->
+  <path d="M12 2.5 L19.5 7.25 V16.75 L12 21.5 L4.5 16.75 V7.25 Z"
+        stroke="#111827" stroke-width="2" stroke-linejoin="miter"/>
+
+  <!-- inner shelves (stacked registry rows) -->
+  <line x1="8" y1="9" x2="16" y2="9"
+        stroke="#111827" stroke-width="2" stroke-linecap="square"/>
+  <line x1="8" y1="12.5" x2="16" y2="12.5"
+        stroke="#111827" stroke-width="2" stroke-linecap="square"/>
+  <line x1="8" y1="16" x2="16" y2="16"
+        stroke="#111827" stroke-width="2" stroke-linecap="square"/>
+
+  <!-- trust diamond (verification mark) -->
+  <path d="M12 5.5 L13.2 7 L12 8.5 L10.8 7 Z"
+        stroke="#111827" stroke-width="1.5" stroke-linejoin="miter" fill="none"/>
+</svg>

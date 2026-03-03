@@ -1,0 +1,128 @@
+{{- if .Values.bridges.k8sAudit.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-k8s-audit-bridge
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "k8s-audit-bridge") | nindent 4 }}
+spec:
+  replicas: {{ .Values.bridges.k8sAudit.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "k8s-audit-bridge") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "k8s-audit-bridge") | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: k8s-audit-bridge
+          image: "{{ .Values.bridges.k8sAudit.image.repository }}:{{ .Values.bridges.k8sAudit.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- $k8sOutboxPath := .Values.bridges.k8sAudit.env.OUTBOX_PATH }}
+          {{- if .Values.bridges.k8sAudit.outboxPersistence.enabled }}
+          {{- $k8sOutboxPath = printf "%s/%s" .Values.bridges.k8sAudit.outboxPersistence.mountPath .Values.bridges.k8sAudit.outboxPersistence.fileName }}
+          {{- end }}
+          ports:
+            - name: webhook
+              containerPort: {{ .Values.bridges.k8sAudit.port }}
+              protocol: TCP
+          env:
+            - name: NATS_URL
+              value: {{ include "clawdstrike.natsUrl" . | quote }}
+            - name: LISTEN_ADDR
+              value: "0.0.0.0:{{ .Values.bridges.k8sAudit.port }}"
+            - name: RUST_LOG
+              value: {{ .Values.bridges.k8sAudit.env.RUST_LOG | quote }}
+            - name: STREAM_MAX_BYTES
+              value: {{ .Values.bridges.k8sAudit.env.STREAM_MAX_BYTES | int64 | quote }}
+            - name: STREAM_MAX_AGE_SECONDS
+              value: {{ .Values.bridges.k8sAudit.env.STREAM_MAX_AGE_SECONDS | int64 | quote }}
+            - name: NATS_STARTUP_TIMEOUT_SECS
+              value: {{ .Values.bridges.k8sAudit.env.NATS_STARTUP_TIMEOUT_SECS | int64 | quote }}
+            - name: OUTBOX_ENABLED
+              value: {{ .Values.bridges.k8sAudit.env.OUTBOX_ENABLED | quote }}
+            - name: OUTBOX_PATH
+              value: {{ $k8sOutboxPath | quote }}
+            - name: OUTBOX_FLUSH_INTERVAL_MS
+              value: {{ .Values.bridges.k8sAudit.env.OUTBOX_FLUSH_INTERVAL_MS | int64 | quote }}
+            - name: OUTBOX_MAX_PENDING
+              value: {{ .Values.bridges.k8sAudit.env.OUTBOX_MAX_PENDING | int64 | quote }}
+            - name: OUTBOX_RETRY_BASE_MS
+              value: {{ .Values.bridges.k8sAudit.env.OUTBOX_RETRY_BASE_MS | int64 | quote }}
+            - name: OUTBOX_RETRY_MAX_MS
+              value: {{ .Values.bridges.k8sAudit.env.OUTBOX_RETRY_MAX_MS | int64 | quote }}
+            - name: READINESS_OUTBOX_DEGRADED_THRESHOLD
+              value: {{ .Values.bridges.k8sAudit.env.READINESS_OUTBOX_DEGRADED_THRESHOLD | int64 | quote }}
+            {{- if .Values.spiffe.enabled }}
+            - name: SVID_PATH
+              value: {{ .Values.spiffe.svidPath | quote }}
+            {{- end }}
+          {{- if or .Values.bridges.k8sAudit.outboxPersistence.enabled .Values.spiffe.enabled }}
+          volumeMounts:
+            {{- if .Values.bridges.k8sAudit.outboxPersistence.enabled }}
+            - name: outbox
+              mountPath: {{ .Values.bridges.k8sAudit.outboxPersistence.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.spiffe.enabled }}
+            - name: spiffe-workload
+              mountPath: /var/run/spire/agent
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: webhook
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: webhook
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.bridges.k8sAudit.resources | nindent 12 }}
+      {{- if or .Values.bridges.k8sAudit.outboxPersistence.enabled .Values.spiffe.enabled }}
+      volumes:
+        {{- if .Values.bridges.k8sAudit.outboxPersistence.enabled }}
+        - name: outbox
+          {{- if eq .Values.bridges.k8sAudit.outboxPersistence.type "hostPath" }}
+          hostPath:
+            path: {{ .Values.bridges.k8sAudit.outboxPersistence.hostPath.path | quote }}
+            type: {{ .Values.bridges.k8sAudit.outboxPersistence.hostPath.type | quote }}
+          {{- else if eq .Values.bridges.k8sAudit.outboxPersistence.type "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.bridges.k8sAudit.outboxPersistence.pvc.existingClaim | default (printf "%s-k8s-audit-bridge-outbox" (include "clawdstrike.fullname" .)) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.spiffe.enabled }}
+        - name: spiffe-workload
+          csi:
+            driver: "csi.spiffe.io"
+            readOnly: true
+        {{- end }}
+      {{- end }}
+      {{- with .Values.bridges.k8sAudit.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bridges.k8sAudit.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

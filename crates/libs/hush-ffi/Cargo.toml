@@ -16,7 +16,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 hush-core.workspace = true
-clawdstrike.workspace = true
+clawdstrike = { workspace = true, features = ["full"] }
 serde_json.workspace = true
 hex.workspace = true
 base64.workspace = true

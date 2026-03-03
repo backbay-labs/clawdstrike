@@ -1,0 +1,61 @@
+{{- if .Values.easAnchor.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-eas-anchor
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "eas-anchor") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "eas-anchor") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "eas-anchor") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/eas-anchor/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: eas-anchor
+          image: "{{ .Values.easAnchor.image.repository }}:{{ .Values.easAnchor.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - "--config"
+            - "/etc/eas-anchor/config.toml"
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.easAnchor.env.RUST_LOG | quote }}
+            - name: EAS_SIGNER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.easAnchor.secrets.existingSecret | default (printf "%s-eas-anchor" (include "clawdstrike.fullname" .)) }}
+                  key: EAS_SIGNER_PRIVATE_KEY
+          volumeMounts:
+            - name: config
+              mountPath: /etc/eas-anchor
+              readOnly: true
+          livenessProbe:
+            exec:
+              command: ["test", "-f", "/proc/1/status"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.easAnchor.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "clawdstrike.fullname" . }}-eas-anchor
+{{- end }}

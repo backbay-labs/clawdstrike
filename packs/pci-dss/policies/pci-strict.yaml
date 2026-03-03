@@ -1,0 +1,165 @@
+# PCI-DSS v4.0 Strict Ruleset
+# Maximum protection for Cardholder Data Environment (CDE)
+# Ref: PCI-DSS v4.0 Requirements 3, 4, 6, 7, 10
+version: "1.2.0"
+name: PCI-DSS Strict
+description: Strict PCI-DSS v4.0 compliance rules for payment processing environments
+extends: clawdstrike:strict
+
+guards:
+  forbidden_path:
+    patterns:
+      # Inherited strict patterns
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.git-credentials"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/etc/sudoers"
+      # PCI: Cardholder data directories
+      - "**/cardholder/**"
+      - "**/cardholder-data/**"
+      - "**/card-data/**"
+      - "**/pan-data/**"
+      - "**/payment-keys/**"
+      - "**/payment_keys/**"
+      - "**/hsm/**"
+      - "**/keystore/**"
+      - "**/tokenization/**"
+      # PCI: Transaction logs
+      - "**/transaction-logs/**"
+      - "**/payment-logs/**"
+      # PCI: Key management
+      - "**/encryption-keys/**"
+      - "**/dek/**"
+      - "**/kek/**"
+    exceptions: []
+
+  egress_allowlist:
+    allow:
+      # PCI-compliant payment processors
+      - "api.stripe.com"
+      - "*.braintreegateway.com"
+      - "*.adyen.com"
+      - "*.square.com"
+      - "*.paypal.com"
+      # Card network verification
+      - "*.visa.com"
+      - "*.mastercard.com"
+      # PCI compliance scanning
+      - "*.qualys.com"
+      - "*.securitymetrics.com"
+    block: []
+    default_action: block
+
+  secret_leak:
+    patterns:
+      # Standard credential patterns
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+      # PCI: Payment card patterns (Luhn-valid prefixes)
+      - name: visa_pan
+        pattern: "\\b4\\d{3}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
+        severity: critical
+      - name: mastercard_pan
+        pattern: "\\b5[1-5]\\d{2}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
+        severity: critical
+      - name: amex_pan
+        pattern: "\\b3[47]\\d{2}[\\s-]?\\d{6}[\\s-]?\\d{5}\\b"
+        severity: critical
+      - name: cvv
+        pattern: "(?i)\\b(cvv|cvc|cvv2|cvc2|cid)[:\\s]*\\d{3,4}\\b"
+        severity: critical
+      - name: track_data
+        pattern: "\\%B\\d{13,19}\\^"
+        severity: critical
+      - name: stripe_key
+        pattern: "(?:sk|pk)_(test|live)_[A-Za-z0-9]{24,}"
+        severity: critical
+      - name: encryption_key_hex
+        pattern: "(?i)(dek|kek|aes[_\\-]?key)\\s*[:=]\\s*[0-9a-fA-F]{32,}"
+        severity: critical
+    skip_paths: []
+
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
+    forbidden_patterns:
+      # Database dump tools
+      - "(?i)\\bmysqldump\\b"
+      - "(?i)\\bpg_dump\\b"
+      - "(?i)\\bmongodump\\b"
+      - "(?i)\\bredis-cli\\b"
+      # Network sniffing
+      - "(?i)\\btcpdump\\b"
+      - "(?i)\\bwireshark\\b"
+      - "(?i)\\btshark\\b"
+      - "(?i)\\bngrep\\b"
+      # Data exfiltration
+      - "(?i)\\bcurl\\b"
+      - "(?i)\\bwget\\b"
+      - "(?i)\\bscp\\b"
+      - "(?i)\\brsync\\b"
+      - "(?i)\\bnc\\b"
+      - "(?i)\\bnetcat\\b"
+      # Destructive operations
+      - "(?i)\\brm\\s+(-rf?|--recursive)\\s+/"
+      - "(?i)\\bchmod\\s+777\\b"
+
+  mcp_tool:
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep
+    block: []
+    require_confirmation: []
+    default_action: block
+    max_args_size: 524288
+
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: suspicious
+    max_scan_bytes: 200000
+
+  patch_integrity:
+    max_additions: 500
+    max_deletions: 200
+    require_balance: true
+    max_imbalance_ratio: 5.0
+    forbidden_patterns:
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls|encryption|pci)"
+      - "(?i)skip[\\s_\\-]?(verify|validation|check)"
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+      - "(?i)eval\\s*\\("
+      - "(?i)plaintext[_\\-]?password"
+
+  jailbreak:
+    enabled: true
+    detector:
+      block_threshold: 40
+      warn_threshold: 15
+      max_input_bytes: 200000
+      session_aggregation: true
+
+settings:
+  fail_fast: true
+  verbose_logging: false
+  session_timeout_secs: 1800

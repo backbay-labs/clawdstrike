@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};

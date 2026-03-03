@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile for auditd-bridge
+#
+# Build:
+#   docker build -f infra/docker/Dockerfile.auditd-bridge -t auditd-bridge .
+
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
+FROM rust:1.93-bookworm AS builder
+
+WORKDIR /build
+
+# Copy minimal workspace manifest (only auditd-bridge crates) and lockfile.
+COPY infra/docker/workspace-auditd.toml Cargo.toml
+COPY Cargo.lock ./
+
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/spine crates/libs/spine
+COPY crates/libs/bridge-runtime crates/libs/bridge-runtime
+COPY crates/bridges/auditd-bridge crates/bridges/auditd-bridge
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin auditd-bridge && \
+    cp /build/target/release/auditd-bridge /usr/local/bin/
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 bridge && \
+    useradd -u 1000 -g bridge -d /var/lib/bridge -m bridge
+
+COPY --from=builder /usr/local/bin/auditd-bridge /usr/local/bin/
+
+USER bridge
+WORKDIR /var/lib/bridge
+
+ENTRYPOINT ["/usr/bin/tini", "--", "auditd-bridge"]

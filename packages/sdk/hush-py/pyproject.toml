@@ -28,6 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 attestation = ["httpx>=0.25"]
+hunt = ["nats-py>=2.0", "httpx>=0.25"]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
@@ -35,6 +36,7 @@ dev = [
     "mypy>=1.0",
     "ruff>=0.1",
     "types-PyYAML>=6.0",
+    "httpx>=0.25",
 ]
 
 [build-system]

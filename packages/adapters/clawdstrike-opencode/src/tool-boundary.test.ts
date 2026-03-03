@@ -1,7 +1,6 @@
 import type { PolicyEngineLike } from "@clawdstrike/adapter-core";
+import { ClawdstrikeBlockedError } from "@clawdstrike/adapter-core";
 import { describe, expect, it, vi } from "vitest";
-
-import { ClawdstrikeBlockedError } from "./errors.js";
 import { OpenCodeToolBoundary, wrapOpenCodeToolDispatcher } from "./tool-boundary.js";
 
 describe("OpenCodeToolBoundary", () => {

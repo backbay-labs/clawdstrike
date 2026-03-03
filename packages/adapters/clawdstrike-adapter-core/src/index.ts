@@ -90,3 +90,14 @@ export {
   sanitizeDecision,
   warnDecision,
 } from "./types.js";
+
+export type { CuaTranslatorConfig } from "./cua/cua-translator-base.js";
+export { createCuaTranslator } from "./cua/cua-translator-base.js";
+export type { ClawdstrikeLike, SecuritySource } from "./resolve-interceptor.js";
+export {
+  isClawdstrikeLike,
+  isToolInterceptor,
+  resolveInterceptor,
+} from "./resolve-interceptor.js";
+export type { ExecuteOrCallToolLike, SecureToolSetOptions } from "./secure-tool-wrapper.js";
+export { secureToolSet, wrapExecuteWithInterceptor } from "./secure-tool-wrapper.js";

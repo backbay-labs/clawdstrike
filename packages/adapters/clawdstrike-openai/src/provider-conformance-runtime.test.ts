@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { claudeCuaTranslator } from "../../clawdstrike-claude/src/claude-cua-translator.js";
+import { claudeCuaTranslator } from "@clawdstrike/claude";
 import { openAICuaTranslator } from "./openai-cua-translator.js";
 
 type Provider = "openai" | "claude";

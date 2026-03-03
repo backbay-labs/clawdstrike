@@ -23,6 +23,7 @@
 //! - `hush policy migrate <input> --to 1.2.0 [--output <path>|--in-place] [--from <ver>|--legacy-openclaw]` - Migrate a policy to a supported schema version
 //! - `hush policy version <policyRef>` - Show policy schema version compatibility
 //! - `hush run --policy <ref|file> -- <cmd> <args…>` - Best-effort process wrapper (proxy + audit log + receipt)
+//! - `hush pkg init|pack|install|list|verify|info` - Package management
 //! - `hush daemon start|stop|status|reload` - Daemon management
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
@@ -41,6 +42,8 @@ mod guard_cli;
 mod guard_report_json;
 mod hunt;
 mod hush_run;
+mod mirror;
+mod pkg_cli;
 mod policy_bundle;
 mod policy_diff;
 mod policy_event;
@@ -53,6 +56,7 @@ mod policy_rego;
 mod policy_synth;
 mod policy_test;
 mod policy_version;
+mod registry_config;
 mod remote_extends;
 
 const CLI_JSON_VERSION: u8 = 1;
@@ -237,6 +241,12 @@ enum Commands {
     Guard {
         #[command(subcommand)]
         command: GuardCommands,
+    },
+
+    /// Package management commands
+    Pkg {
+        #[command(subcommand)]
+        command: pkg_cli::PkgCommands,
     },
 
     /// Daemon management commands
@@ -1405,6 +1415,8 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         }
 
         Commands::Guard { command } => guard_cli::cmd_guard(command, stdout, stderr).as_i32(),
+
+        Commands::Pkg { command } => pkg_cli::cmd_pkg(command, stdout, stderr).as_i32(),
 
         Commands::Daemon { command } => cmd_daemon(command, stdout, stderr).as_i32(),
 

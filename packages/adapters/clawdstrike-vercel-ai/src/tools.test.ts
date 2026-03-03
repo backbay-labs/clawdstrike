@@ -82,6 +82,25 @@ describe("secureTools", () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves method this-binding for class-backed tools", async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ allowed: true, denied: false, warn: false }),
+    };
+    const interceptor = new BaseToolInterceptor(engine, {});
+
+    class CounterTool {
+      constructor(private readonly multiplier: number) {}
+
+      async execute(input: { value: number }) {
+        return input.value * this.multiplier;
+      }
+    }
+
+    const counter = new CounterTool(3);
+    const tools = secureTools({ triple: counter }, interceptor);
+    await expect(tools.triple.execute({ value: 7 })).resolves.toBe(21);
+  });
+
   it("can create a context per execution", async () => {
     const engine: PolicyEngineLike = {
       evaluate: () => ({ allowed: true, denied: false, warn: false }),

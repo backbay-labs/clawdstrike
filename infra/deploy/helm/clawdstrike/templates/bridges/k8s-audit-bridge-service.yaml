@@ -1,0 +1,18 @@
+{{- if .Values.bridges.k8sAudit.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-k8s-audit-bridge
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "k8s-audit-bridge") | nindent 4 }}
+spec:
+  type: {{ .Values.bridges.k8sAudit.service.type }}
+  ports:
+    - port: {{ .Values.bridges.k8sAudit.service.port }}
+      targetPort: webhook
+      protocol: TCP
+      name: webhook
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "k8s-audit-bridge") | nindent 4 }}
+{{- end }}

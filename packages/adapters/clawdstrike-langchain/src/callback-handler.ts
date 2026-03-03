@@ -6,8 +6,8 @@ import type {
 } from "@clawdstrike/adapter-core";
 import { createSecurityContext } from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeViolationError } from "./errors.js";
 import { createLangChainInterceptor } from "./interceptor.js";
+import { ClawdstrikeViolationError } from "./errors.js";
 import type { LangChainClawdstrikeConfig } from "./types.js";
 
 export interface ClawdstrikeCallbackHandlerOptions {

@@ -1,0 +1,142 @@
+# HIPAA Strict Ruleset
+# Maximum protection for Protected Health Information (PHI)
+# Ref: 45 CFR 164.312 — Technical Safeguards
+version: "1.2.0"
+name: HIPAA Strict
+description: Strict HIPAA compliance rules for AI agents handling PHI
+extends: clawdstrike:strict
+
+guards:
+  forbidden_path:
+    patterns:
+      # Inherited strict patterns plus HIPAA-specific
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.git-credentials"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "/etc/shadow"
+      - "/etc/passwd"
+      - "/etc/sudoers"
+      # HIPAA: PHI data directories
+      - "**/phi/**"
+      - "**/patient-data/**"
+      - "**/patient_data/**"
+      - "**/medical-records/**"
+      - "**/medical_records/**"
+      - "**/health-records/**"
+      - "/var/log/**"
+      - "/tmp/phi-*"
+      - "**/ehr-exports/**"
+      - "**/claims/**"
+      - "**/billing/patient/**"
+    exceptions: []
+
+  egress_allowlist:
+    allow:
+      # HIPAA-compliant healthcare interoperability standards
+      - "*.hl7.org"
+      - "*.fhir.org"
+      - "*.smarthealth.cards"
+      # Approved EHR FHIR endpoints (organization should customize)
+      - "fhir.epic.com"
+      - "fhir.cerner.com"
+    block: []
+    default_action: block
+
+  secret_leak:
+    patterns:
+      # Standard credential patterns
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+      # HIPAA: PHI identifier patterns
+      - name: ssn
+        pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+        severity: critical
+      - name: medical_record_number
+        pattern: "(?i)\\bMRN[:\\s#-]*\\d{6,12}\\b"
+        severity: critical
+      - name: dea_number
+        pattern: "\\b[A-Z][A-Z9]\\d{7}\\b"
+        severity: critical
+      - name: npi_number
+        pattern: "(?i)\\bNPI[:\\s#-]*\\d{10}\\b"
+        severity: error
+      - name: health_plan_id
+        pattern: "(?i)\\b(member|subscriber|policy)[_\\s-]?(id|number)[:\\s]*[A-Z0-9]{8,20}\\b"
+        severity: error
+    skip_paths: []
+
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
+    forbidden_patterns:
+      # Block data exfiltration tools
+      - "(?i)\\bcurl\\b"
+      - "(?i)\\bwget\\b"
+      - "(?i)\\bscp\\b"
+      - "(?i)\\brsync\\b"
+      - "(?i)\\bftp\\b"
+      - "(?i)\\bsftp\\b"
+      - "(?i)\\bnc\\b"
+      - "(?i)\\bnetcat\\b"
+      - "(?i)\\bncat\\b"
+      - "(?i)\\bsocat\\b"
+      # Block destructive operations
+      - "(?i)\\brm\\s+(-rf?|--recursive)\\s+/"
+      - "(?i)\\bchmod\\s+777\\b"
+
+  mcp_tool:
+    allow:
+      - read_file
+      - list_directory
+      - search
+      - grep
+    block: []
+    require_confirmation: []
+    default_action: block
+    max_args_size: 524288
+
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: suspicious
+    max_scan_bytes: 200000
+
+  patch_integrity:
+    max_additions: 500
+    max_deletions: 200
+    require_balance: true
+    max_imbalance_ratio: 5.0
+    forbidden_patterns:
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls|hipaa|audit)"
+      - "(?i)skip[\\s_\\-]?(verify|validation|check|consent)"
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+      - "(?i)eval\\s*\\("
+
+  jailbreak:
+    enabled: true
+    detector:
+      block_threshold: 40
+      warn_threshold: 15
+      max_input_bytes: 200000
+      session_aggregation: true
+
+settings:
+  fail_fast: true
+  verbose_logging: false
+  session_timeout_secs: 1800

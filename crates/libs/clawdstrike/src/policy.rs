@@ -89,6 +89,8 @@ pub enum PolicyLocation {
     },
     /// A built-in ruleset identifier.
     Ruleset { id: String },
+    /// An installed package reference.
+    Package { name: String, version: String },
 }
 
 /// A resolved policy source returned by a `PolicyResolver`.

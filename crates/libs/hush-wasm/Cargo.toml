@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 hush-core = { workspace = true }
+clawdstrike = { workspace = true, default-features = false }
 
 # WASM bindings
 wasm-bindgen = "0.2"

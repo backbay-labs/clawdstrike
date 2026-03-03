@@ -4,7 +4,7 @@ import path from "node:path";
 import type { PolicyEngineLike } from "@clawdstrike/adapter-core";
 import { describe, expect, it, vi } from "vitest";
 
-import { ClawdstrikeBlockedError } from "./errors.js";
+import { ClawdstrikeBlockedError } from "@clawdstrike/adapter-core";
 import { ClaudeToolBoundary, wrapClaudeToolDispatcher } from "./tool-boundary.js";
 
 describe("ClaudeToolBoundary", () => {

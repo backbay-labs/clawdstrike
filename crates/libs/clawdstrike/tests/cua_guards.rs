@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 //! Tests for the three CUA guards: computer_use, remote_desktop_side_channel,

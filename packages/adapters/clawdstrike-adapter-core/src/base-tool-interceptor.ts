@@ -29,6 +29,19 @@ export class BaseToolInterceptor implements ToolInterceptor {
     this.eventFactory = new PolicyEventFactory();
   }
 
+  /**
+   * Return a new interceptor instance with merged adapter config.
+   *
+   * This preserves engine and sanitizer instances while applying overrides.
+   */
+  withConfig(config: AdapterConfig): BaseToolInterceptor {
+    return new BaseToolInterceptor(
+      this.engine,
+      { ...this.config, ...config },
+      this.sanitizer,
+    );
+  }
+
   async beforeExecute(
     toolName: string,
     input: unknown,

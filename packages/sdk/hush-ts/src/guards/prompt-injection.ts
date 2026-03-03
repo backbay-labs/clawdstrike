@@ -1,3 +1,4 @@
+import { getWasmModule } from "../crypto/backend.js";
 import { Guard, GuardAction, GuardContext, GuardResult, Severity } from "./types";
 
 export type PromptInjectionLevel = "safe" | "suspicious" | "high" | "critical";
@@ -9,29 +10,21 @@ export interface PromptInjectionConfig {
   max_scan_bytes?: number;
 }
 
-const PROMPT_PATTERNS: Array<{ id: string; re: RegExp; score: number }> = [
-  {
-    id: "ignore_previous",
-    re: /\b(ignore|disregard|override)\b.{0,48}\b(previous|system|developer)\b/ims,
-    score: 2,
-  },
-  {
-    id: "reveal_prompt",
-    re: /\b(reveal|show|print|dump)\b.{0,48}\b(system prompt|developer prompt|hidden instructions)\b/ims,
-    score: 2,
-  },
-  {
-    id: "policy_bypass",
-    re: /\b(ignore|bypass|disable|turn off)\b.{0,48}\b(safety|guardrails?|policies|policy|filters)\b/ims,
-    score: 3,
-  },
-  {
-    id: "credential_exfiltration",
-    re: /(?:\b(api key|secret|secrets|token|password|private key)\b.{0,96}\b(send|post|upload|exfiltrat(?:e|ion|ing|ed)?|leak|reveal|print|dump)\b|\b(send|post|upload|exfiltrat(?:e|ion|ing|ed)?|leak|reveal|print|dump)\b.{0,96}\b(api key|secret|secrets|token|password|private key)\b)/ims,
-    score: 5,
-  },
-  { id: "role_override", re: /\b(you are now|act as|pretend to be)\b/ims, score: 1 },
-];
+interface WasmPromptInjectionResult {
+  level: PromptInjectionLevel;
+  score: number;
+  fingerprint: string;
+  signals: string[];
+  canonicalization?: {
+    scannedBytes: number;
+    truncated: boolean;
+    nfkcChanged: boolean;
+    casefoldChanged: boolean;
+    zeroWidthStripped: number;
+    whitespaceCollapsed: boolean;
+    canonicalBytes: number;
+  };
+}
 
 function levelOrd(level: PromptInjectionLevel): number {
   switch (level) {
@@ -44,13 +37,6 @@ function levelOrd(level: PromptInjectionLevel): number {
     case "critical":
       return 3;
   }
-}
-
-function classifyLevel(score: number): PromptInjectionLevel {
-  if (score >= 5) return "critical";
-  if (score >= 3) return "high";
-  if (score >= 1) return "suspicious";
-  return "safe";
 }
 
 function severityForBlock(level: PromptInjectionLevel): Severity {
@@ -73,6 +59,13 @@ export class PromptInjectionGuard implements Guard {
       Number.isInteger(config.max_scan_bytes) && (config.max_scan_bytes ?? 0) > 0
         ? Number(config.max_scan_bytes)
         : 200_000;
+
+    const wasm = getWasmModule();
+    if (!wasm?.detect_prompt_injection) {
+      throw new Error(
+        "WASM not initialized. Call initWasm() before using PromptInjectionGuard.",
+      );
+    }
   }
 
   handles(action: GuardAction): boolean {
@@ -94,38 +87,27 @@ export class PromptInjectionGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const scanned = new TextEncoder().encode(text);
-    const truncated = scanned.length > this.maxScanBytes;
-    const content = truncated
-      ? new TextDecoder().decode(scanned.subarray(0, this.maxScanBytes))
-      : text;
+    const wasm = getWasmModule();
+    const resultJson: string = wasm.detect_prompt_injection(text, this.maxScanBytes);
+    const result: WasmPromptInjectionResult = JSON.parse(resultJson);
 
-    let score = 0;
-    const signals: string[] = [];
-    for (const p of PROMPT_PATTERNS) {
-      if (p.re.test(content)) {
-        score += p.score;
-        signals.push(p.id);
-      }
-    }
-
-    const level = classifyLevel(score);
     const details = {
-      level,
-      score,
-      signals,
-      truncated,
-      scanned_bytes: scanned.length,
+      level: result.level,
+      score: result.score,
+      signals: result.signals,
+      fingerprint: result.fingerprint,
+      truncated: result.canonicalization?.truncated ?? false,
+      scanned_bytes: result.canonicalization?.scannedBytes ?? 0,
     };
 
-    if (levelOrd(level) >= levelOrd(this.blockAt)) {
+    if (levelOrd(result.level) >= levelOrd(this.blockAt)) {
       return GuardResult.block(
         this.name,
-        severityForBlock(level),
+        severityForBlock(result.level),
         "Untrusted text contains prompt-injection signals",
       ).withDetails(details);
     }
-    if (levelOrd(level) >= levelOrd(this.warnAt)) {
+    if (levelOrd(result.level) >= levelOrd(this.warnAt)) {
       return GuardResult.warn(
         this.name,
         "Untrusted text contains prompt-injection signals",

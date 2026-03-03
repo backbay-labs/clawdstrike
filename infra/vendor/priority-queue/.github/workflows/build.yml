@@ -1,0 +1,70 @@
+name: Build
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: thumbv6m-none-eabi
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rust: stable
+            features:
+          - rust: stable
+            features: std
+          - rust: stable
+            features: serde
+          - rust: stable
+            features: std,serde
+          - rust: beta
+            features:
+          - rust: beta
+            features: std
+          - rust: beta
+            features: serde
+          - rust: beta
+            features: std,serde
+          - rust: nightly
+            features:
+          - rust: nightly
+            features: std
+          - rust: nightly
+            features: serde
+          - rust: nightly
+            features: std,serde
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+    - name: Build
+      run: cargo build --verbose --no-default-features --features "${{ matrix.features }}"
+
+  nostd_build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        target: $TARGET
+    - name: Build
+      run: cargo build -v -p test-nostd --target=$TARGET
+
+  docs_rs_build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly
+    - name: Docs.rs
+      run: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly rustdoc --all-features

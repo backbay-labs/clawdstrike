@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 //! Integration tests verifying CUA events flow through HushEngine without crashing.

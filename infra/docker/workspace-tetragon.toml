@@ -5,6 +5,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/libs/bridge-runtime",
     "crates/libs/hush-core",
     "crates/libs/spine",
     "crates/bridges/tetragon-bridge",
@@ -105,6 +106,7 @@ hush-proxy = { path = "crates/libs/hush-proxy", version = "0.1.0" }
 clawdstrike = { path = "crates/libs/clawdstrike", version = "0.1.0" }
 hush-certification = { path = "crates/libs/hush-certification", version = "0.1.0" }
 spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.1.0" }
+bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.1.0" }
 
 [profile.release]
 lto = true

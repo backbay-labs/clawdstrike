@@ -9,6 +9,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(feature = "full")]
 use async_trait::async_trait;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -19,14 +20,16 @@ use hush_core::{sha256, Hash};
 
 use crate::text_utils;
 
-/// LLM-as-judge interface (optional).
+/// LLM-as-judge interface (optional). Requires the `full` feature.
+#[cfg(feature = "full")]
 #[async_trait]
 pub trait LlmJudge: Send + Sync {
     /// Return a jailbreak likelihood score in `[0.0, 1.0]`.
     async fn score(&self, input: &str) -> Result<f32, String>;
 }
 
-/// Optional persistence for session aggregation state.
+/// Optional persistence for session aggregation state. Requires the `full` feature.
+#[cfg(feature = "full")]
 #[async_trait]
 pub trait SessionStore: Send + Sync {
     async fn load(&self, session_id: &str) -> Result<Option<SessionAggPersisted>, String>;
@@ -488,6 +491,7 @@ impl From<&SessionAgg> for SessionAggPersisted {
 }
 
 impl SessionAgg {
+    #[cfg(feature = "full")]
     fn from_persisted(value: SessionAggPersisted) -> Self {
         Self {
             messages_seen: value.messages_seen,
@@ -527,7 +531,9 @@ fn severity_for_risk_score(risk_score: u8) -> JailbreakSeverity {
 pub struct JailbreakDetector {
     config: JailbreakGuardConfig,
     model: LinearModel,
+    #[cfg(feature = "full")]
     llm_judge: Option<std::sync::Arc<dyn LlmJudge>>,
+    #[cfg(feature = "full")]
     session_store: Option<std::sync::Arc<dyn SessionStore>>,
     sessions: Mutex<HashMap<String, SessionAgg>>,
     // Simple cache for identical payloads (fingerprint -> session-less baseline detection result).
@@ -544,13 +550,16 @@ impl JailbreakDetector {
         Self {
             config,
             model,
+            #[cfg(feature = "full")]
             llm_judge: None,
+            #[cfg(feature = "full")]
             session_store: None,
             sessions: Mutex::new(HashMap::new()),
             cache: Mutex::new(LruCache::new(512)),
         }
     }
 
+    #[cfg(feature = "full")]
     pub fn with_llm_judge<J>(mut self, judge: J) -> Self
     where
         J: LlmJudge + 'static,
@@ -559,6 +568,7 @@ impl JailbreakDetector {
         self
     }
 
+    #[cfg(feature = "full")]
     pub fn with_session_store<S>(mut self, store: S) -> Self
     where
         S: SessionStore + 'static,
@@ -571,6 +581,7 @@ impl JailbreakDetector {
         &self.config
     }
 
+    #[cfg(feature = "full")]
     async fn maybe_load_session_from_store(&self, session_id: &str) {
         let Some(store) = self.session_store.clone() else {
             return;
@@ -597,6 +608,7 @@ impl JailbreakDetector {
         }
     }
 
+    #[cfg(feature = "full")]
     async fn maybe_persist_session_to_store(&self, session_id: &str) {
         let Some(store) = self.session_store.clone() else {
             return;
@@ -617,10 +629,7 @@ impl JailbreakDetector {
     }
 
     fn now_ms() -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64
+        crate::text_utils::now_epoch_ms()
     }
 
     fn decay_factor(elapsed_ms: u64, half_life_seconds: u64) -> f64 {
@@ -712,7 +721,7 @@ impl JailbreakDetector {
         canonicalization.truncated = truncated;
 
         // Heuristic layer.
-        let t0 = std::time::Instant::now();
+        let t0 = crate::text_utils::now();
         let mut heuristic_signals = Vec::new();
         let mut heuristic_score = 0.0f32;
         for p in heuristic_patterns() {
@@ -727,11 +736,11 @@ impl JailbreakDetector {
             layer: "heuristic".to_string(),
             score: heuristic_score,
             signals: heuristic_signals.clone(),
-            latency_ms: t0.elapsed().as_secs_f64() * 1000.0,
+            latency_ms: crate::text_utils::elapsed_ms(&t0),
         };
 
         // Statistical layer.
-        let t1 = std::time::Instant::now();
+        let t1 = crate::text_utils::now();
         let mut stat_signals = Vec::new();
         let pr = punctuation_ratio(&canonical);
         if pr >= 0.35 {
@@ -752,12 +761,12 @@ impl JailbreakDetector {
             layer: "statistical".to_string(),
             score: stat_score,
             signals: stat_signals.clone(),
-            latency_ms: t1.elapsed().as_secs_f64() * 1000.0,
+            latency_ms: crate::text_utils::elapsed_ms(&t1),
         };
 
         // ML layer (linear model).
         let ml = if self.config.layers.ml {
-            let t2 = std::time::Instant::now();
+            let t2 = crate::text_utils::now();
 
             let has = |id: &str| heuristic_signals.iter().any(|s| s == id);
             let x_ignore = if has("jb_ignore_policy") { 1.0 } else { 0.0 };
@@ -791,7 +800,7 @@ impl JailbreakDetector {
                 layer: "ml".to_string(),
                 score,
                 signals: ml_signals,
-                latency_ms: t2.elapsed().as_secs_f64() * 1000.0,
+                latency_ms: crate::text_utils::elapsed_ms(&t2),
             })
         } else {
             None
@@ -860,8 +869,9 @@ impl JailbreakDetector {
         base
     }
 
+    #[cfg(feature = "full")]
     pub async fn detect(&self, input: &str, session_id: Option<&str>) -> JailbreakDetectionResult {
-        let start = std::time::Instant::now();
+        let start = crate::text_utils::now();
 
         let base = self.detect_base_sync(input);
 
@@ -887,7 +897,7 @@ impl JailbreakDetector {
             if let Some(sid) = session_id {
                 self.maybe_persist_session_to_store(sid).await;
             }
-            r.latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+            r.latency_ms = crate::text_utils::elapsed_ms(&start);
             return r;
         }
 
@@ -896,11 +906,11 @@ impl JailbreakDetector {
             if let Some(sid) = session_id {
                 self.maybe_persist_session_to_store(sid).await;
             }
-            r.latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+            r.latency_ms = crate::text_utils::elapsed_ms(&start);
             return r;
         };
 
-        let t = std::time::Instant::now();
+        let t = crate::text_utils::now();
         match judge.score(input).await {
             Ok(score) => {
                 let score = score.clamp(0.0, 1.0);
@@ -908,7 +918,7 @@ impl JailbreakDetector {
                     layer: "llm_judge".to_string(),
                     score,
                     signals: vec!["llm_judge_score".to_string()],
-                    latency_ms: t.elapsed().as_secs_f64() * 1000.0,
+                    latency_ms: crate::text_utils::elapsed_ms(&t),
                 });
 
                 // Re-weight: 90% baseline + 10% judge.
@@ -928,12 +938,12 @@ impl JailbreakDetector {
         if let Some(sid) = session_id {
             self.maybe_persist_session_to_store(sid).await;
         }
-        r.latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+        r.latency_ms = crate::text_utils::elapsed_ms(&start);
         r
     }
 
     pub fn detect_sync(&self, input: &str, session_id: Option<&str>) -> JailbreakDetectionResult {
-        let start = std::time::Instant::now();
+        let start = crate::text_utils::now();
 
         let base = self.detect_base_sync(input);
         let session = self.apply_session_aggregation(base.risk_score, session_id);
@@ -948,7 +958,7 @@ impl JailbreakDetector {
             fingerprint: base.fingerprint,
             canonicalization: base.canonicalization,
             session,
-            latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+            latency_ms: crate::text_utils::elapsed_ms(&start),
         }
     }
 }
@@ -1020,7 +1030,9 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+    #[cfg(feature = "full")]
     use std::collections::HashMap as StdHashMap;
+    #[cfg(feature = "full")]
     use std::sync::{Arc, Mutex as StdMutex};
 
     #[test]
@@ -1063,6 +1075,7 @@ mod tests {
         assert_eq!(r1b.session.as_ref().unwrap().messages_seen, 2);
     }
 
+    #[cfg(feature = "full")]
     #[tokio::test]
     async fn llm_judge_adjustment_is_reflected_in_session_aggregation() {
         #[derive(Clone, Debug)]
@@ -1089,6 +1102,7 @@ mod tests {
         assert_eq!(snap.suspicious_count, 1);
     }
 
+    #[cfg(feature = "full")]
     #[tokio::test]
     async fn session_store_loads_and_persists_updates() {
         #[derive(Clone, Default)]

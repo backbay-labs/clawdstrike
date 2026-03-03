@@ -7,10 +7,11 @@ categories = ["compression", "api-bindings"]
 license = "MIT"
 name = "zstd"
 repository = "https://github.com/gyscos/zstd-rs"
-version = "0.11.2+zstd.1.5.2"
-exclude = ["assets/*.zst"]
+version = "0.13.3"
+exclude = ["assets/*.zst", "/.github"]
 readme = "Readme.md"
 edition = "2018"
+rust-version = "1.64"
 
 [package.metadata.docs.rs]
 features = ["experimental", "zstdmt", "zdict_builder", "doc-cfg"]
@@ -19,11 +20,11 @@ features = ["experimental", "zstdmt", "zdict_builder", "doc-cfg"]
 travis-ci = { repository = "gyscos/zstd-rs" }
 
 [dependencies]
-zstd-safe = { path = "zstd-safe", version = "5.0.1", default-features = false, features = ["std"] }
+zstd-safe = { path = "zstd-safe", version = "7.1.0", default-features = false, features = ["std"] }
 
 [dev-dependencies]
-clap = "3.0"
-humansize = "1.0"
+clap = {version = "4.0", features=["derive"]}
+humansize = "2.0"
 partial-io = "0.5"
 walkdir = "2.2"
 
@@ -42,6 +43,11 @@ arrays = ["zstd-safe/arrays"]
 no_asm = ["zstd-safe/no_asm"]
 doc-cfg = []
 zdict_builder = ["zstd-safe/zdict_builder"]
+
+# These two are for cross-language LTO.
+# Will only work if `clang` is used to build the C library.
+fat-lto = ["zstd-safe/fat-lto"]
+thin-lto = ["zstd-safe/thin-lto"]
 
 [[example]]
 name = "train"

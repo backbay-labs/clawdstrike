@@ -1,4 +1,4 @@
-{{- if and .Values.spine.enabled .Values.spine.checkpointer.enabled }}
+{{- if and .Values.spine.enabled .Values.spine.checkpointer.enabled (eq .Values.spine.checkpointer.mode "run") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,16 +31,31 @@ spec:
           image: "{{ .Values.spine.image.repository }}:{{ .Values.spine.image.tag | default (printf "spine-checkpointer-%s" .Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args:
+            - "--mode"
+            - {{ .Values.spine.checkpointer.mode | quote }}
+            {{- if .Values.spine.checkpointer.repairApply }}
+            - "--repair-apply"
+            {{- end }}
             - "--replicas"
             - {{ .Values.spine.checkpointer.streamReplicas | quote }}
+            - "--chain-enforcement"
+            - {{ .Values.spine.checkpointer.chainEnforcement | quote }}
+            - "--issuer-heads-bucket"
+            - {{ .Values.spine.checkpointer.issuerHeadsBucket | quote }}
+            - "--chain-violation-stream"
+            - {{ .Values.spine.checkpointer.chainViolationStream | quote }}
+            - "--chain-violation-subject"
+            - {{ .Values.spine.checkpointer.chainViolationSubject | quote }}
           env:
             - name: SPINE_BIN
               value: spine-checkpointer
+            {{- if eq .Values.spine.checkpointer.mode "run" }}
             - name: SPINE_LOG_SEED_HEX
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.spine.secrets.existingSecret | default (printf "%s-spine" (include "clawdstrike.fullname" .)) }}
                   key: SPINE_LOG_SEED_HEX
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "clawdstrike.fullname" . }}-spine

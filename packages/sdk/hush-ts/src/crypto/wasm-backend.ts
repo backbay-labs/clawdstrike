@@ -34,9 +34,12 @@ export function createWasmBackend(wasm: WasmModule): CryptoBackend {
       publicKey: Uint8Array;
     }> {
       const kp = wasm.generate_keypair();
+      // wasm_bindgen serializes Rust structs as JS Maps, not plain objects
+      const privHex = kp instanceof Map ? kp.get("privateKey") : kp.privateKey;
+      const pubHex = kp instanceof Map ? kp.get("publicKey") : kp.publicKey;
       return {
-        privateKey: fromHex(kp.privateKey),
-        publicKey: fromHex(kp.publicKey),
+        privateKey: fromHex(privHex),
+        publicKey: fromHex(pubHex),
       };
     },
 

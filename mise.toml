@@ -44,11 +44,11 @@ cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
 [tasks."test:apps"]
-description = "App checks for cloud dashboard and Tauri backends"
+description = "App checks for control console and Tauri backends"
 run = """
-npm --prefix apps/cloud-dashboard ci
-npm --prefix apps/cloud-dashboard run typecheck
-npm --prefix apps/cloud-dashboard run build
+npm --prefix apps/control-console ci
+npm --prefix apps/control-console run typecheck
+npm --prefix apps/control-console run build
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
@@ -80,6 +80,18 @@ bash scripts/path-lint.sh
 bash scripts/move-validation.sh
 bash scripts/architecture-guardrails.sh
 """
+
+[tasks."test:packages:go"]
+description = "Go SDK tests"
+run = "cd packages/sdk/hush-go && CGO_ENABLED=0 go test ./..."
+
+[tasks."test:packages:go:build"]
+description = "Go SDK build check"
+run = "cd packages/sdk/hush-go && CGO_ENABLED=0 go build ./..."
+
+[tasks."test:conformance"]
+description = "Run cross-SDK canonical/policy conformance vectors"
+run = "bash scripts/run-sdk-conformance.sh"
 
 [tasks.ci]
 description = "Run full CI checks locally"

@@ -1,0 +1,54 @@
+# Clawdstrike Guard CI
+#
+# Build, test, and package custom WASM guard plugins.
+# Copy this file to your repo's .github/workflows/ directory to enable.
+#
+# Features:
+#   - Builds the guard for WASM (wasm32-unknown-unknown)
+#   - Runs guard test fixtures
+#   - Packs the guard as a .cpkg archive
+#   - Uploads the artifact for downstream use
+
+name: Clawdstrike Guard CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Build & Test Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install Clawdstrike CLI
+        run: cargo install hush-cli --locked
+
+      - name: Build guard (native, for tests)
+        run: cargo build --release
+
+      - name: Build guard (WASM)
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Run guard test fixtures
+        run: clawdstrike pkg test
+
+      - name: Validate guard manifest
+        run: clawdstrike guard validate .
+
+      - name: Pack guard
+        run: clawdstrike pkg pack
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-package
+          path: "*.cpkg"
+          retention-days: 30

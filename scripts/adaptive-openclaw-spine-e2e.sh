@@ -11,12 +11,12 @@ Usage:
 Options:
   --artifact-dir PATH        Output directory (default: dist/adaptive-openclaw-spine-e2e/<timestamp>)
   --skip-openclaw            Skip OpenClaw blocked-call E2E script
-  --skip-cloud               Skip cloud-api signed envelope integration test
+  --skip-control             Skip control-api signed envelope integration test
   -h, --help                 Show this message
 
 The script currently validates:
   1) OpenClaw tool-call interception blocks a destructive call.
-  2) Cloud approval resolve emits a signed Spine envelope.
+  2) Control API approval resolve emits a signed Spine envelope.
 USAGE
 }
 
@@ -26,7 +26,7 @@ log() {
 
 ARTIFACT_DIR="dist/adaptive-openclaw-spine-e2e/$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_OPENCLAW=1
-RUN_CLOUD=1
+RUN_CONTROL=1
 
 while (($# > 0)); do
   case "$1" in
@@ -38,8 +38,8 @@ while (($# > 0)); do
       RUN_OPENCLAW=0
       shift
       ;;
-    --skip-cloud)
-      RUN_CLOUD=0
+    --skip-control)
+      RUN_CONTROL=0
       shift
       ;;
     -h|--help)
@@ -60,7 +60,7 @@ RESULT=0
 FAILURES=()
 
 OPENCLAW_STATUS="skipped"
-CLOUD_STATUS="skipped"
+CONTROL_STATUS="skipped"
 
 if [[ "$RUN_OPENCLAW" -eq 1 ]]; then
   log "Running OpenClaw blocked-call E2E"
@@ -93,18 +93,18 @@ if [[ "$RUN_OPENCLAW" -eq 1 ]]; then
   fi
 fi
 
-if [[ "$RUN_CLOUD" -eq 1 ]]; then
-  log "Running cloud-api signed envelope integration test"
-  CLOUD_STATUS="running"
-  if cargo test -p clawdstrike-cloud-api \
+if [[ "$RUN_CONTROL" -eq 1 ]]; then
+  log "Running control-api signed envelope integration test"
+  CONTROL_STATUS="running"
+  if cargo test -p clawdstrike-control-api \
     integration_tests::approvals_list_and_resolve_publish_signed_payload_and_mark_outbox_sent \
     -- --nocapture \
-    >"${ARTIFACT_DIR}/cloud-approval-envelope.log" 2>&1; then
-    CLOUD_STATUS="passed"
+    >"${ARTIFACT_DIR}/control-approval-envelope.log" 2>&1; then
+    CONTROL_STATUS="passed"
   else
-    CLOUD_STATUS="failed"
+    CONTROL_STATUS="failed"
     RESULT=1
-    FAILURES+=("cloud approval signed-envelope integration test failed")
+    FAILURES+=("control API approval signed-envelope integration test failed")
   fi
 fi
 
@@ -119,7 +119,7 @@ jq -n \
   --arg artifact_dir "$ARTIFACT_DIR" \
   --arg git_sha "$(git rev-parse --short HEAD)" \
   --arg openclaw_status "$OPENCLAW_STATUS" \
-  --arg cloud_status "$CLOUD_STATUS" \
+  --arg control_status "$CONTROL_STATUS" \
   --argjson failures "$failures_json" \
   --arg result "$(if [[ "$RESULT" -eq 0 ]]; then echo pass; else echo fail; fi)" \
   '{
@@ -128,7 +128,7 @@ jq -n \
     artifact_dir: $artifact_dir,
     checks: {
       openclaw_blocked_call_e2e: $openclaw_status,
-      cloud_signed_envelope_integration: $cloud_status
+      control_signed_envelope_integration: $control_status
     },
     failures: $failures,
     result: $result
@@ -139,7 +139,7 @@ jq -n \
   printf -- '- generated_at: `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf -- '- git_sha: `%s`\n' "$(git rev-parse --short HEAD)"
   printf -- '- openclaw_blocked_call_e2e: `%s`\n' "$OPENCLAW_STATUS"
-  printf -- '- cloud_signed_envelope_integration: `%s`\n' "$CLOUD_STATUS"
+  printf -- '- control_signed_envelope_integration: `%s`\n' "$CONTROL_STATUS"
   printf -- '- artifact_dir: `%s`\n' "$ARTIFACT_DIR"
   if ((${#FAILURES[@]})); then
     printf '\n## Failures\n'

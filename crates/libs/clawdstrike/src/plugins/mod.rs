@@ -1,14 +1,17 @@
 //! Custom guard plugin scaffolding.
 //!
-//! This module provides manifest parsing/validation and loader planning for
-//! `clawdstrike.plugin.toml` plugins. Dynamic loading/execution backends are
-//! intentionally staged after this scaffold.
+//! This module provides manifest parsing/validation, loader planning, and
+//! WASM-backed guard execution for `clawdstrike.plugin.toml` plugins.
 
+#[cfg(feature = "wasm-plugin-runtime")]
+mod guard;
 mod loader;
 mod manifest;
 #[cfg(feature = "wasm-plugin-runtime")]
 mod runtime;
 
+#[cfg(feature = "wasm-plugin-runtime")]
+pub use guard::{WasmGuard, WasmGuardFactory};
 pub use loader::{
     resolve_plugin_root, PluginExecutionMode, PluginInspectResult, PluginLoadPlan, PluginLoader,
     PluginLoaderOptions,

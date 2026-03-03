@@ -1,0 +1,38 @@
+[package]
+name = "priority-queue"
+version = "2.7.0"
+authors = ["Gianmarco Garrisi <gianmarcogarrisi@tutanota.com>"]
+description = "A Priority Queue implemented as a heap with a function to efficiently change the priority of an item."
+repository = "https://github.com/garro95/priority-queue"
+documentation = "https://docs.rs/priority-queue"
+readme = "README.md"
+keywords = ["priority", "queue", "heap"]
+categories = ["data-structures", "algorithms"]
+license = "LGPL-3.0-or-later OR MPL-2.0"
+edition = "2021"
+rust-version = "1.65.0"
+
+[dependencies]
+equivalent = "1.0.1"
+indexmap = {version = "2.2", features = [], default-features = false}
+serde = { version = "1", optional = true, features = ["alloc"], default-features = false }
+
+[dev-dependencies]
+serde_test = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = {version= "1", features = ["v4", "serde"] }
+hashbrown = "0.14"
+twox-hash = { version = "1.5", default-features = false }
+
+[features]
+default = ["std"]
+std = ["indexmap/std", "serde?/std"]
+benchmarks = []
+
+[workspace]
+members = ["test-nostd"]
+
+[package.metadata.docs.rs]
+features = ["serde"]
+rustdoc-args = ["--cfg", "docsrs"]

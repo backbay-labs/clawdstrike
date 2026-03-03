@@ -1,0 +1,34 @@
+[package]
+name = "k8s-audit-bridge"
+description = "Bridges Kubernetes API server audit webhooks to signed Spine envelopes on NATS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["kubernetes", "audit", "webhook", "nats", "clawdstrike"]
+categories = ["network-programming", "authentication"]
+readme = "../../README.md"
+
+[[bin]]
+name = "k8s-audit-bridge"
+path = "src/main.rs"
+
+[dependencies]
+spine.workspace = true
+bridge-runtime.workspace = true
+hush-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { workspace = true, features = ["env"] }
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+async-nats = "0.39"
+axum.workspace = true
+
+[lints]
+workspace = true

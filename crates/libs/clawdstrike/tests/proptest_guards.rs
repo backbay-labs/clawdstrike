@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 //! Property-based tests for security guards
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]

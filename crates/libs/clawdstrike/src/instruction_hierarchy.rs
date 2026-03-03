@@ -675,12 +675,27 @@ impl InstructionHierarchyEnforcer {
         }
     }
 
+    /// Process and enforce hierarchy (synchronous).
+    pub fn enforce_sync(
+        &mut self,
+        messages: Vec<HierarchyMessage>,
+    ) -> Result<HierarchyEnforcementResult, HierarchyError> {
+        self.enforce_inner(messages)
+    }
+
     /// Process and enforce hierarchy.
     pub async fn enforce(
         &mut self,
+        messages: Vec<HierarchyMessage>,
+    ) -> Result<HierarchyEnforcementResult, HierarchyError> {
+        self.enforce_inner(messages)
+    }
+
+    fn enforce_inner(
+        &mut self,
         mut messages: Vec<HierarchyMessage>,
     ) -> Result<HierarchyEnforcementResult, HierarchyError> {
-        let start = std::time::Instant::now();
+        let start = crate::text_utils::now();
 
         let mut conflicts: Vec<HierarchyConflict> = Vec::new();
         let mut actions: Vec<EnforcementAction> = Vec::new();
@@ -794,7 +809,7 @@ impl InstructionHierarchyEnforcer {
             valid = false;
         }
 
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let elapsed_ms = crate::text_utils::elapsed_ms(&start);
         self.stats.total_processed = self.stats.total_processed.saturating_add(1);
         self.stats.conflicts_detected = self
             .stats

@@ -1,0 +1,14 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+type: "tool"
+language: "other"
+tags: ["docs"]
+
+tasks:
+  build:
+    command: "mdbook build"
+    platform: "system"
+    inputs:
+      - "src/**/*"
+      - "book.toml"
+    outputs:
+      - "book"

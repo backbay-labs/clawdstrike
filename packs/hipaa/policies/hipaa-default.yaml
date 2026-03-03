@@ -1,0 +1,124 @@
+# HIPAA Default Ruleset
+# Balanced HIPAA compliance for development and staging environments
+# Ref: 45 CFR 164.312 — Technical Safeguards
+version: "1.2.0"
+name: HIPAA Default
+description: Default HIPAA compliance rules with balanced security for development
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      # Standard sensitive paths
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.git-credentials"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "/etc/shadow"
+      - "/etc/passwd"
+      # HIPAA: PHI data directories
+      - "**/phi/**"
+      - "**/patient-data/**"
+      - "**/patient_data/**"
+      - "**/medical-records/**"
+      - "/tmp/phi-*"
+    exceptions:
+      # Allow read-only access to de-identified test data
+      - "**/test/fixtures/phi/**"
+      - "**/tests/fixtures/phi/**"
+
+  egress_allowlist:
+    allow:
+      # Healthcare interoperability
+      - "*.hl7.org"
+      - "*.fhir.org"
+      - "*.smarthealth.cards"
+      - "fhir.epic.com"
+      - "fhir.cerner.com"
+      # Development tools
+      - "api.github.com"
+      - "github.com"
+      - "*.npmjs.org"
+      - "registry.npmjs.org"
+      - "pypi.org"
+    block: []
+    default_action: block
+
+  secret_leak:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+      # HIPAA: PHI identifiers
+      - name: ssn
+        pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+        severity: critical
+      - name: medical_record_number
+        pattern: "(?i)\\bMRN[:\\s#-]*\\d{6,12}\\b"
+        severity: critical
+      - name: dea_number
+        pattern: "\\b[A-Z][A-Z9]\\d{7}\\b"
+        severity: error
+    skip_paths:
+      - "**/test/**"
+      - "**/tests/**"
+
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
+    forbidden_patterns:
+      - "(?i)\\bcurl\\b"
+      - "(?i)\\bwget\\b"
+      - "(?i)\\bscp\\b"
+      - "(?i)\\bnc\\b"
+      - "(?i)\\bnetcat\\b"
+      - "(?i)\\brm\\s+(-rf?|--recursive)\\s+/"
+      - "(?i)\\bchmod\\s+777\\b"
+
+  mcp_tool:
+    allow: []
+    block:
+      - shell_exec
+      - run_command
+      - raw_file_write
+      - raw_file_delete
+    require_confirmation:
+      - file_write
+      - file_delete
+    default_action: allow
+    max_args_size: 1048576
+
+  prompt_injection:
+    enabled: true
+    warn_at_or_above: suspicious
+    block_at_or_above: high
+    max_scan_bytes: 200000
+
+  patch_integrity:
+    max_additions: 1000
+    max_deletions: 500
+    require_balance: false
+    max_imbalance_ratio: 10.0
+    forbidden_patterns:
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls|hipaa)"
+      - "(?i)skip[\\s_\\-]?(verify|validation|check)"
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600

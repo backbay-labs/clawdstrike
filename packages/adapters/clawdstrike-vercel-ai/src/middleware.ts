@@ -278,6 +278,7 @@ function createWrappedModel(
         contexts.add(context);
 
         if (promptSecurity) {
+          emitWasmDegradedEvents(promptSecurity, context);
           const next = await applyPromptSecurityToParams(promptSecurity, params, context);
           Object.assign(params, next);
         }
@@ -322,6 +323,7 @@ function createWrappedModel(
         contexts.add(context);
 
         if (promptSecurity) {
+          emitWasmDegradedEvents(promptSecurity, context);
           const next = await applyPromptSecurityToParams(promptSecurity, params, context);
           Object.assign(params, next);
         }
@@ -429,6 +431,7 @@ type PromptSecurityRuntime = {
   jailbreak?: JailbreakDetector;
   outputSanitizer?: OutputSanitizer;
   getWatermarker?: () => Promise<PromptWatermarker>;
+  degraded: string[];
 };
 
 function createPromptSecurityRuntime(
@@ -457,20 +460,55 @@ function createPromptSecurityRuntime(
   const jailbreakWarnThreshold = cfg.jailbreakDetection?.config?.warnThreshold ?? 30;
   const jailbreakBlockThreshold = cfg.jailbreakDetection?.config?.blockThreshold ?? 70;
 
-  const hierarchy = instructionHierarchyEnabled
-    ? new InstructionHierarchyEnforcer({
+  const degraded: string[] = [];
+
+  let hierarchy: InstructionHierarchyEnforcer | undefined;
+  if (instructionHierarchyEnabled) {
+    try {
+      hierarchy = new InstructionHierarchyEnforcer({
         reminders: { enabled: false },
         ...(cfg.instructionHierarchy?.config ?? {}),
-      })
-    : undefined;
+      });
+    } catch (err) {
+      if (err instanceof Error && /wasm/i.test(err.message)) {
+        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
+        console.warn("[clawdstrike/vercel-ai] InstructionHierarchyEnforcer skipped — WASM unavailable");
+        degraded.push("InstructionHierarchyEnforcer");
+      } else {
+        throw err;
+      }
+    }
+  }
 
-  const jailbreak = jailbreakEnabled
-    ? new JailbreakDetector(cfg.jailbreakDetection?.config ?? {})
-    : undefined;
+  let jailbreak: JailbreakDetector | undefined;
+  if (jailbreakEnabled) {
+    try {
+      jailbreak = new JailbreakDetector(cfg.jailbreakDetection?.config ?? {});
+    } catch (err) {
+      if (err instanceof Error && /wasm/i.test(err.message)) {
+        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
+        console.warn("[clawdstrike/vercel-ai] JailbreakDetector skipped — WASM unavailable");
+        degraded.push("JailbreakDetector");
+      } else {
+        throw err;
+      }
+    }
+  }
 
-  const outputSanitizer = outputSanitizationEnabled
-    ? new OutputSanitizer(cfg.outputSanitization?.config ?? {})
-    : undefined;
+  let outputSanitizer: OutputSanitizer | undefined;
+  if (outputSanitizationEnabled) {
+    try {
+      outputSanitizer = new OutputSanitizer(cfg.outputSanitization?.config ?? {});
+    } catch (err) {
+      if (err instanceof Error && /wasm/i.test(err.message)) {
+        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
+        console.warn("[clawdstrike/vercel-ai] OutputSanitizer skipped — WASM unavailable");
+        degraded.push("OutputSanitizer");
+      } else {
+        throw err;
+      }
+    }
+  }
 
   let watermarkerPromise: Promise<PromptWatermarker> | null = null;
   const getWatermarker = watermarkingEnabled
@@ -498,7 +536,24 @@ function createPromptSecurityRuntime(
     jailbreak,
     outputSanitizer,
     getWatermarker,
+    degraded,
   };
+}
+
+function emitWasmDegradedEvents(
+  runtime: PromptSecurityRuntime,
+  context: SecurityContext,
+): void {
+  for (const detector of runtime.degraded) {
+    context.addAuditEvent({
+      id: createEventId("wdeg"),
+      type: "wasm_degraded",
+      timestamp: new Date(),
+      contextId: context.id,
+      sessionId: context.sessionId,
+      details: { detector, reason: "WASM backend unavailable" },
+    });
+  }
 }
 
 async function applyPromptSecurityToParams(
@@ -724,21 +779,20 @@ function sanitizeStreamChunkIfNeeded(
       return chunk;
     }
 
-    const sanitized = streamRef.stream.write(delta);
-    if (!sanitized) {
+    const result = streamRef.stream.write(delta);
+    if (!result) {
       return null;
     }
-    if (sanitized === delta) {
-      return chunk;
-    }
-    return { ...chunk, textDelta: sanitized };
+    // Use the stream-processed chunk. This may differ from the incoming delta
+    // due to buffering and cross-boundary redaction.
+    return { ...chunk, textDelta: result.sanitized };
   }
 
   if (type === "finish" || type === "error") {
-    const final = streamRef.stream.end();
+    const final = streamRef.stream.flush();
     streamRef.stream = null;
 
-    if (final.redacted) {
+    if (final.wasRedacted) {
       context.addAuditEvent({
         id: createEventId("psos"),
         type: "prompt_security_output_sanitized",
@@ -756,7 +810,10 @@ function sanitizeStreamChunkIfNeeded(
       });
     }
 
-    if (type === "finish" && final.sanitized) {
+    // Always emit remaining buffered text before the finish/error event.
+    // Without this, clean (non-redacted) text accumulated in the buffer
+    // since the last flush would be silently dropped.
+    if (type === "finish" && final.sanitized.length > 0) {
       return [{ type: "text-delta", textDelta: final.sanitized }, chunk];
     }
     return chunk;
@@ -765,8 +822,8 @@ function sanitizeStreamChunkIfNeeded(
   if (type === "tool-result") {
     const toolResult = (chunk as any).result;
     if (typeof toolResult === "string") {
-      const r = runtime.outputSanitizer.sanitizeSync(toolResult);
-      if (r.redacted) {
+      const r = runtime.outputSanitizer.sanitize(toolResult);
+      if (r.wasRedacted) {
         context.addAuditEvent({
           id: createEventId("psos"),
           type: "prompt_security_output_sanitized",
@@ -883,8 +940,8 @@ function maybeSanitizeGeneratedText(
   const text = result?.text;
   if (typeof text !== "string" || !text) return;
 
-  const r = runtime.outputSanitizer.sanitizeSync(text);
-  if (!r.redacted) return;
+  const r = runtime.outputSanitizer.sanitize(text);
+  if (!r.wasRedacted) return;
 
   result.text = r.sanitized;
   result.__clawdstrike_redacted = true;

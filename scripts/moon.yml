@@ -1,0 +1,84 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+type: "tool"
+language: "bash"
+tags: ["guardrails", "ci"]
+
+tasks:
+  path-lint:
+    command: "bash path-lint.sh"
+    platform: "system"
+    inputs:
+      - "path-lint.sh"
+      - "/.github/**/*"
+      - "/scripts/**/*"
+      - "/tools/scripts/**/*"
+      - "/Cargo.toml"
+      - "/package.json"
+      - "/package-lock.json"
+      - "/AGENTS.md"
+      - "/CLAUDE.md"
+      - "/CONTRIBUTING.md"
+      - "/README.md"
+      - "/SECURITY.md"
+      - "/docs/DOCS_MAP.md"
+      - "/docs/src/**/*"
+
+  move-validation:
+    command: "bash move-validation.sh"
+    platform: "system"
+    inputs:
+      - "move-validation.sh"
+      - "/apps/control-console/**/*"
+      - "/integrations/transports/reticulum/**/*"
+      - "/infra/packaging/HomebrewFormula/**/*"
+      - "/crates/**/*"
+      - "/packages/**/*"
+      - "/infra/deploy/**/*"
+      - "/infra/docker/**/*"
+      - "/infra/vendor/**/*"
+      - "/spine/**/*"
+      - "/HomebrewFormula/**/*"
+      - "/deploy/**/*"
+      - "/docker/**/*"
+      - "/vendor/**/*"
+
+  architecture-guardrails:
+    command: "bash architecture-guardrails.sh"
+    platform: "system"
+    inputs:
+      - "architecture-guardrails.sh"
+      - "/.github/CODEOWNERS"
+      - "/docs/REPO_MAP.md"
+      - "/apps/README.md"
+      - "/crates/README.md"
+      - "/packages/README.md"
+      - "/integrations/README.md"
+      - "/infra/README.md"
+      - "/docs/README.md"
+      - "/examples/README.md"
+      - "/fixtures/README.md"
+      - "/rulesets/README.md"
+      - "/scripts/README.md"
+      - "/tools/README.md"
+      - "/fuzz/README.md"
+
+  slop-audit:
+    command: "bash slop-audit.sh"
+    platform: "system"
+    inputs:
+      - "slop-audit.sh"
+      - "/crates/services/hushd/src/api/eval.rs"
+      - "/crates/services/hushd/src/api/check.rs"
+      - "/crates/services/hushd/src/api/webhooks.rs"
+      - "/packages/policy/clawdstrike-policy/src/async/retry.ts"
+      - "/packages/policy/clawdstrike-policy/src/async/runtime.ts"
+      - "/packages/policy/clawdstrike-policy/src/async/http.ts"
+      - "/packages/policy/clawdstrike-policy/src/policy/loader.legacy.test.ts"
+
+  all:
+    command: "noop"
+    deps:
+      - "~:path-lint"
+      - "~:move-validation"
+      - "~:architecture-guardrails"
+      - "~:slop-audit"

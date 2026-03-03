@@ -1,0 +1,13 @@
+$schema: "https://moonrepo.dev/schemas/toolchain.json"
+
+node:
+  version: "24.11.0"
+  packageManager: "npm"
+  inferTasksFromScripts: false
+
+rust:
+  version: "1.93"
+  components:
+    - "clippy"
+    - "rustfmt"
+  syncToolchainConfig: false

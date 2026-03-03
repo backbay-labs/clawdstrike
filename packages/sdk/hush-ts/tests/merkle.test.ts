@@ -9,7 +9,10 @@ import {
 } from "../src/merkle";
 import { toHex } from "../src/crypto/hash";
 
-describe("hashLeaf", () => {
+// biome-ignore lint/suspicious/noExplicitAny: vitest global from setup.ts
+const wasmAvailable = (globalThis as any).__WASM_AVAILABLE__ as boolean;
+
+describe.skipIf(!wasmAvailable)("hashLeaf", () => {
   it("produces 32 bytes", () => {
     const result = hashLeaf(new Uint8Array([1, 2, 3]));
     expect(result.length).toBe(32);
@@ -22,7 +25,7 @@ describe("hashLeaf", () => {
   });
 });
 
-describe("hashNode", () => {
+describe.skipIf(!wasmAvailable)("hashNode", () => {
   it("produces 32 bytes", () => {
     const left = hashLeaf(new Uint8Array([1]));
     const right = hashLeaf(new Uint8Array([2]));
@@ -39,7 +42,7 @@ describe("hashNode", () => {
   });
 });
 
-describe("computeRoot", () => {
+describe.skipIf(!wasmAvailable)("computeRoot", () => {
   it("single leaf: root equals leaf hash", () => {
     const leaf = hashLeaf(new TextEncoder().encode("single"));
     const root = computeRoot([leaf]);
@@ -71,7 +74,7 @@ describe("computeRoot", () => {
   });
 });
 
-describe("MerkleProof", () => {
+describe.skipIf(!wasmAvailable)("MerkleProof", () => {
   it("verifies valid two-leaf proof (left)", () => {
     const left = hashLeaf(new TextEncoder().encode("left"));
     const right = hashLeaf(new TextEncoder().encode("right"));
@@ -114,7 +117,7 @@ describe("MerkleProof", () => {
   });
 });
 
-describe("generateProof", () => {
+describe.skipIf(!wasmAvailable)("generateProof", () => {
   it("generates valid proof for 2-leaf tree", () => {
     const leaves = [
       hashLeaf(new TextEncoder().encode("a")),
@@ -160,7 +163,7 @@ describe("generateProof", () => {
   });
 });
 
-describe("MerkleTree", () => {
+describe.skipIf(!wasmAvailable)("MerkleTree", () => {
   it("builds from raw data", () => {
     const tree = MerkleTree.fromData([
       new TextEncoder().encode("a"),

@@ -1,3 +1,5 @@
+#![cfg(feature = "full")]
+
 use std::path::PathBuf;
 
 use clawdstrike::Policy;

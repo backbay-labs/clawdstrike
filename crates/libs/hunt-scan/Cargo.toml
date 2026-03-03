@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 hush-core.workspace = true
-clawdstrike.workspace = true
+clawdstrike = { workspace = true, features = ["full"] }
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

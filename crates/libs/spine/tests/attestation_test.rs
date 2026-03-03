@@ -179,6 +179,7 @@ async fn test_trust_bundle_require_attested_issuers() {
         required_receipt_enforcement_tiers: vec![],
         require_kernel_loader_signatures: false,
         witness_quorum: 1,
+        allowed_envelope_issuers: vec![],
         require_attested_issuers: true,
     };
     assert!(
@@ -196,6 +197,7 @@ async fn test_trust_bundle_require_attested_issuers() {
         required_receipt_enforcement_tiers: vec![],
         require_kernel_loader_signatures: false,
         witness_quorum: 1,
+        allowed_envelope_issuers: vec![],
         require_attested_issuers: true,
     };
     assert!(
@@ -213,6 +215,7 @@ async fn test_trust_bundle_require_attested_issuers() {
         required_receipt_enforcement_tiers: vec![],
         require_kernel_loader_signatures: false,
         witness_quorum: 1,
+        allowed_envelope_issuers: vec![],
         require_attested_issuers: false,
     };
     assert!(
@@ -243,6 +246,7 @@ async fn test_enforcement_tier_ordering() {
         ],
         require_kernel_loader_signatures: false,
         witness_quorum: 1,
+        allowed_envelope_issuers: vec![],
         require_attested_issuers: false,
     };
     bundle.validate().unwrap();

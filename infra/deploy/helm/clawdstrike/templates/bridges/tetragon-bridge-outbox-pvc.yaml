@@ -1,0 +1,20 @@
+{{- if and .Values.bridges.tetragon.enabled .Values.bridges.tetragon.outboxPersistence.enabled (eq .Values.bridges.tetragon.outboxPersistence.type "pvc") .Values.bridges.tetragon.outboxPersistence.pvc.create (not .Values.bridges.tetragon.outboxPersistence.pvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-tetragon-bridge-outbox
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "tetragon-bridge") | nindent 4 }}
+spec:
+  accessModes:
+    {{- range .Values.bridges.tetragon.outboxPersistence.pvc.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- if .Values.bridges.tetragon.outboxPersistence.pvc.storageClassName }}
+  storageClassName: {{ .Values.bridges.tetragon.outboxPersistence.pvc.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.bridges.tetragon.outboxPersistence.pvc.size }}
+{{- end }}

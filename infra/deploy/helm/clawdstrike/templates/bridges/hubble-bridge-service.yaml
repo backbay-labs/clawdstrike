@@ -1,0 +1,18 @@
+{{- if .Values.bridges.hubble.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-hubble-bridge
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: admin
+      port: {{ .Values.bridges.hubble.adminPort }}
+      targetPort: admin
+      protocol: TCP
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "hubble-bridge") | nindent 4 }}
+{{- end }}

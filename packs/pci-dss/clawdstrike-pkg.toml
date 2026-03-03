@@ -1,0 +1,11 @@
+[package]
+name = "@clawdstrike/pci-dss"
+version = "0.1.0"
+pkg_type = "policy-pack"
+description = "PCI-DSS v4.0 compliance policy pack for payment processing environments"
+authors = ["Clawdstrike Security <security@clawdstrike.com>"]
+license = "Apache-2.0"
+keywords = ["pci", "payment", "compliance", "cardholder"]
+
+[clawdstrike]
+min_version = "0.1.3"

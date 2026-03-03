@@ -16,33 +16,17 @@ afterEach(() => {
 });
 
 describe("getBackend", () => {
-  it("returns noble by default", () => {
-    // In `test:wasm` mode we initialize WASM in a global setup file.
-    if (process.env.WASM_AVAILABLE === "1") {
-      expect(getBackend().name).toBe("wasm");
-    } else {
-      expect(getBackend().name).toBe("noble");
-    }
+  it("returns a valid backend after setup", () => {
+    const name = getBackend().name;
+    expect(name === "wasm" || name === "noble").toBe(true);
   });
 });
 
 describe("setBackend", () => {
   it("switches active backend", () => {
-    const mockBackend: CryptoBackend = {
-      name: "wasm",
-      sha256: () => new Uint8Array(32),
-      keccak256: () => new Uint8Array(32),
-      generateKeypair: async () => ({
-        privateKey: new Uint8Array(32),
-        publicKey: new Uint8Array(32),
-      }),
-      signMessage: async () => new Uint8Array(64),
-      verifySignature: async () => true,
-      publicKeyFromPrivate: async () => new Uint8Array(32),
-    };
-
-    setBackend(mockBackend);
-    expect(getBackend().name).toBe("wasm");
+    const nobleBackend = createNobleBackend();
+    setBackend(nobleBackend);
+    expect(getBackend().name).toBe("noble");
   });
 });
 

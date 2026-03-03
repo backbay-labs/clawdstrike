@@ -1,0 +1,97 @@
+# Clawdstrike Policy Check
+#
+# Validates security policies on pull requests that modify policy files.
+# Copy this file to your repo's .github/workflows/ directory to enable.
+#
+# Features:
+#   - Lints all policy YAML files for errors, warnings, and best practices
+#   - Outputs SARIF for GitHub Security tab annotations
+#   - Verifies package archive integrity when a package manifest exists
+#   - Runs policy test suites with coverage checks
+
+name: Clawdstrike Policy Check
+
+on:
+  pull_request:
+    paths:
+      - "policies/**"
+      - "rulesets/**"
+      - "clawdstrike-pkg.toml"
+
+jobs:
+  lint:
+    name: Lint Policies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Clawdstrike CLI
+        run: cargo install hush-cli --locked
+
+      - name: Lint policies
+        run: |
+          exit_code=0
+          while IFS= read -r -d '' f; do
+            echo "::group::Linting $f"
+            if ! clawdstrike policy lint "$f" --strict; then
+              exit_code=1
+            fi
+            echo "::endgroup::"
+          done < <(find policies rulesets -type f -name '*.yaml' -print0 2>/dev/null)
+          exit $exit_code
+
+      - name: Lint policies (SARIF)
+        if: always()
+        run: |
+          mkdir -p sarif-results
+          while IFS= read -r -d '' f; do
+            safe_name=${f//\//_}
+            safe_name=${safe_name%.yaml}
+            clawdstrike policy lint "$f" --sarif > "sarif-results/${safe_name}.sarif" || true
+          done < <(find policies rulesets -type f -name '*.yaml' -print0 2>/dev/null)
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: sarif-results/
+        continue-on-error: true
+
+      - name: Verify package archive integrity
+        if: hashFiles('clawdstrike-pkg.toml') != ''
+        run: |
+          clawdstrike pkg pack
+          for f in *.cpkg; do
+            clawdstrike pkg install "$f" --allow-unverified
+          done
+
+  test:
+    name: Policy Tests
+    runs-on: ubuntu-latest
+    if: hashFiles('tests/policy-tests.yaml') != '' || hashFiles('policy-tests.yaml') != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Clawdstrike CLI
+        run: cargo install hush-cli --locked
+
+      - name: Find and run policy tests
+        run: |
+          test_file=""
+          if [ -f "tests/policy-tests.yaml" ]; then
+            test_file="tests/policy-tests.yaml"
+          elif [ -f "policy-tests.yaml" ]; then
+            test_file="policy-tests.yaml"
+          fi
+
+          if [ -n "$test_file" ]; then
+            clawdstrike policy test "$test_file" --coverage --min-coverage 80
+          else
+            echo "No policy test file found, skipping."
+          fi

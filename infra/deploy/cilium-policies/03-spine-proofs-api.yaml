@@ -28,6 +28,10 @@ spec:
               - method: GET
                 path: "/v1/proofs/.*"
               - method: GET
+                path: "/v1/issuer_chain_head/.*"
+              - method: GET
+                path: "/v1/chain_violation_stats.*"
+              - method: GET
                 path: "/healthz"
     # External clients via ingress gateway
     - fromEndpoints:
@@ -43,6 +47,10 @@ spec:
                 path: "/v1/checkpoints/.*"
               - method: GET
                 path: "/v1/proofs/.*"
+              - method: GET
+                path: "/v1/issuer_chain_head/.*"
+              - method: GET
+                path: "/v1/chain_violation_stats.*"
               - method: GET
                 path: "/healthz"
     # Prometheus metrics

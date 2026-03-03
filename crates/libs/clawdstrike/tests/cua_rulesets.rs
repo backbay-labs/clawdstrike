@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 //! Tests for the CUA-specific built-in policy rulesets:

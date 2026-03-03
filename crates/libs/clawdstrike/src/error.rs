@@ -95,6 +95,15 @@ pub enum Error {
 
     #[error("Spine error: {0}")]
     SpineError(String),
+
+    #[error("TOML deserialization error: {0}")]
+    TomlDeError(#[from] toml::de::Error),
+
+    #[error("TOML serialization error: {0}")]
+    TomlSerError(#[from] toml::ser::Error),
+
+    #[error("Package error: {0}")]
+    PkgError(String),
 }
 
 impl From<spine::Error> for Error {

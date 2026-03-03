@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile for eas-anchor — Spine checkpoint → EAS on-chain anchoring.
+#
+# Build:
+#   docker build -f infra/docker/Dockerfile.eas-anchor -t eas-anchor .
+
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
+FROM rust:1.93-bookworm AS builder
+
+WORKDIR /build
+
+COPY infra/docker/workspace-eas-anchor.toml Cargo.toml
+COPY Cargo.lock ./
+
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/spine crates/libs/spine
+COPY crates/services/eas-anchor crates/services/eas-anchor
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin eas-anchor && \
+    cp /build/target/release/eas-anchor /usr/local/bin/
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 eas && \
+    useradd -u 1000 -g eas -d /var/lib/eas -m eas
+
+COPY --from=builder /usr/local/bin/eas-anchor /usr/local/bin/
+
+USER eas
+WORKDIR /var/lib/eas
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/eas-anchor"]
+CMD ["--config", "/etc/eas-anchor/config.toml"]

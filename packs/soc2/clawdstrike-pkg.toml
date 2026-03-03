@@ -1,0 +1,11 @@
+[package]
+name = "@clawdstrike/soc2"
+version = "0.1.0"
+pkg_type = "policy-pack"
+description = "SOC2 Type II compliance policy pack with continuous evidence collection"
+authors = ["Clawdstrike Security <security@clawdstrike.com>"]
+license = "Apache-2.0"
+keywords = ["soc2", "audit", "compliance", "evidence"]
+
+[clawdstrike]
+min_version = "0.1.3"

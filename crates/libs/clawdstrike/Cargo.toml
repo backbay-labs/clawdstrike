@@ -11,30 +11,41 @@ categories = ["authentication", "command-line-utilities"]
 readme = "../../README.md"
 
 [dependencies]
+# Always available (WASM-compatible detection modules)
 hush-core.workspace = true
-hush-proxy.workspace = true
-spine.workspace = true
-async-trait.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
-toml.workspace = true
-dirs.workspace = true
-tokio.workspace = true
 tracing.workspace = true
 regex.workspace = true
-glob.workspace = true
-chrono.workspace = true
-globset.workspace = true
-dashmap.workspace = true
-futures.workspace = true
-uuid = { workspace = true, features = ["v4"] }
 unicode-normalization = "0.1"
 base64.workspace = true
-reqwest.workspace = true
 hex.workspace = true
+
+# Optional — only with "full" feature (needs tokio, async, system deps)
+async-trait = { workspace = true, optional = true }
+hush-proxy = { workspace = true, optional = true }
+spine = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+dirs = { workspace = true, optional = true }
+serde_yaml = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+glob = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+globset = { workspace = true, optional = true }
+dashmap = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+uuid = { workspace = true, features = ["v4"], optional = true }
+reqwest = { workspace = true, features = ["blocking"], optional = true }
+sha2 = { workspace = true, optional = true }
+semver = { workspace = true, optional = true }
+pubgrub = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
+zstd = { workspace = true, optional = true }
 wasmtime = { version = "41.0.3", optional = true, default-features = false, features = ["runtime", "cranelift", "std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
@@ -45,16 +56,34 @@ axum.workspace = true
 criterion = { version = "0.5", features = ["html_reports"] }
 wat = "1.245.1"
 
+[[bin]]
+name = "prompt_watermark"
+required-features = ["full"]
+
+[[bin]]
+name = "prompt_security_scan"
+required-features = ["full"]
+
+[[bin]]
+name = "marketplace_feed_gen"
+required-features = ["full"]
+
 [[bench]]
 name = "engine"
 harness = false
 
 [features]
-default = []
-ipfs = []
-llm-judge-openai = []
-clawdstrike-spider-sense = []
-wasm-plugin-runtime = ["dep:wasmtime"]
+default = ["full"]
+full = [
+  "dep:async-trait", "dep:hush-proxy", "dep:spine", "dep:tokio",
+  "dep:dirs", "dep:serde_yaml", "dep:toml", "dep:glob",
+  "dep:chrono", "dep:globset", "dep:dashmap", "dep:futures", "dep:uuid",
+  "dep:reqwest", "dep:sha2", "dep:semver", "dep:pubgrub", "dep:tar", "dep:zstd",
+]
+ipfs = ["full"]
+llm-judge-openai = ["full"]
+clawdstrike-spider-sense = ["full"]
+wasm-plugin-runtime = ["full", "dep:wasmtime"]
 
 [lints]
 workspace = true

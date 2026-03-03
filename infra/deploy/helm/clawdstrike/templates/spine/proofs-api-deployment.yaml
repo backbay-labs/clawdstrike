@@ -30,6 +30,13 @@ spec:
         - name: proofs-api
           image: "{{ .Values.spine.image.repository }}:{{ .Values.spine.image.tag | default (printf "spine-proofs-api-%s" .Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - "--issuer-heads-bucket"
+            - {{ .Values.spine.proofsApi.issuerHeadsBucket | quote }}
+            - "--chain-violation-stream"
+            - {{ .Values.spine.proofsApi.chainViolationStream | quote }}
+            - "--chain-violation-stats-scan-cap"
+            - {{ .Values.spine.proofsApi.chainViolationStatsScanCap | quote }}
           env:
             - name: SPINE_BIN
               value: spine-proofs-api

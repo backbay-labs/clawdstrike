@@ -1,0 +1,28 @@
+$schema: "https://moonrepo.dev/schemas/tasks.json"
+
+fileGroups:
+  sources:
+    - "src/**/*"
+    - "lib/**/*"
+  tests:
+    - "tests/**/*"
+    - "**/*.test.ts"
+    - "**/*.test.tsx"
+    - "**/*.spec.ts"
+  configs:
+    - "*.config.*"
+    - "tsconfig*.json"
+    - "package.json"
+    - "pyproject.toml"
+  rust-sources:
+    - "crates/**/*.rs"
+    - "crates/**/Cargo.toml"
+    - "crates/**/build.rs"
+    - "packages/sdk/hush-py/hush-native/**/*.rs"
+    - "packages/sdk/hush-py/hush-native/**/Cargo.toml"
+    - "packages/sdk/hush-py/hush-native/**/build.rs"
+    - "Cargo.toml"
+    - "Cargo.lock"
+  rulesets:
+    - "rulesets/**/*.yaml"
+    - "rulesets/**/*.yml"

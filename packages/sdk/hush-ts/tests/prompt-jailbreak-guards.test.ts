@@ -4,7 +4,10 @@ import { JailbreakGuard } from "../src/guards/jailbreak";
 import { PromptInjectionGuard } from "../src/guards/prompt-injection";
 import { GuardAction, GuardContext, Severity } from "../src/guards/types";
 
-describe("PromptInjectionGuard", () => {
+// biome-ignore lint/suspicious/noExplicitAny: vitest global from setup.ts
+const wasmAvailable = (globalThis as any).__WASM_AVAILABLE__ as boolean;
+
+describe.skipIf(!wasmAvailable)("PromptInjectionGuard", () => {
   test("blocks high-risk untrusted text payloads", () => {
     const guard = new PromptInjectionGuard();
     const action = GuardAction.custom("untrusted_text", {
@@ -17,7 +20,7 @@ describe("PromptInjectionGuard", () => {
   });
 });
 
-describe("JailbreakGuard", () => {
+describe.skipIf(!wasmAvailable)("JailbreakGuard", () => {
   test("warns or blocks risky user-input payloads", () => {
     const guard = new JailbreakGuard({ warn_threshold: 10, block_threshold: 80 });
     const action = GuardAction.custom("user_input", {

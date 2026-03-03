@@ -14,8 +14,6 @@ export type {
 export { createClawdstrikeMiddleware } from "./middleware.js";
 export type { StreamChunk, StreamingToolGuardOptions } from "./streaming-tool-guard.js";
 export { StreamingToolGuard } from "./streaming-tool-guard.js";
-export type { ClawdstrikeLike, VercelAiToolLike, VercelAiToolSet } from "./tools.js";
-export { secureTools, secureToolsLegacy } from "./tools.js";
-export { VercelAIAdapter } from "./vercel-ai-adapter.js";
-export type { VercelAiInterceptorConfig } from "./vercel-ai-interceptor.js";
-export { createVercelAiInterceptor } from "./vercel-ai-interceptor.js";
+export type { VercelAiToolLike, VercelAiToolSet } from "./tools.js";
+export { secureTools } from "./tools.js";
+export { type ClawdstrikeLike, type SecuritySource } from "@clawdstrike/adapter-core";

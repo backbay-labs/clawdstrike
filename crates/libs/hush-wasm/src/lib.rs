@@ -1,8 +1,12 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
-//! WebAssembly bindings for hush-core cryptographic primitives
+//! WebAssembly bindings for hush-core cryptographic primitives and clawdstrike detection.
 //!
-//! This crate provides browser-side verification of clawdstrike attestations.
+//! This crate provides browser-side verification of clawdstrike attestations
+//! and access to detection modules (jailbreak, output sanitization, prompt injection,
+//! instruction hierarchy, canonical JSON).
+
+pub mod detect;
 
 use hush_core::{
     keccak256, receipt::PublicKeySet, sha256, Hash, Keypair, MerkleProof, MerkleTree, PublicKey,

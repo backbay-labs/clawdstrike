@@ -23,7 +23,7 @@ class TestJailbreakGuard:
 
         result = guard.check(action, context)
         assert result.allowed is False
-        assert result.guard == "jailbreak_detection"
+        assert result.guard == "jailbreak"
         assert result.details is not None
         assert "signals" in result.details
 
@@ -74,7 +74,7 @@ class TestJailbreakGuard:
 
     def test_guard_name(self) -> None:
         guard = JailbreakGuard()
-        assert guard.name == "jailbreak_detection"
+        assert guard.name == "jailbreak"
 
     def test_missing_text_field_blocks(self) -> None:
         guard = JailbreakGuard()

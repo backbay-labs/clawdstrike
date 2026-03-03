@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 spine.workspace = true
+bridge-runtime.workspace = true
 hush-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 //! Integration tests for policy extends feature
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]

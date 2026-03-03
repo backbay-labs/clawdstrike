@@ -8,9 +8,6 @@ import {
   type PolicyEvent,
   type SessionSummary,
 } from '../../src/index.js';
-import { VercelAIAdapter } from '@clawdstrike/vercel-ai';
-import { ClaudeAdapter } from '@clawdstrike/claude';
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -56,8 +53,6 @@ function buildAdapters(engine: PolicyEngineLike): AdapterEntry[] {
     { label: 'createFrameworkAdapter("claude")', adapter: createFrameworkAdapter('claude', engine) },
     { label: 'createFrameworkAdapter("vercel-ai")', adapter: createFrameworkAdapter('vercel-ai', engine) },
     { label: 'createFrameworkAdapter("openclaw")', adapter: createFrameworkAdapter('openclaw', engine) },
-    { label: 'VercelAIAdapter', adapter: new VercelAIAdapter(engine) },
-    { label: 'ClaudeAdapter', adapter: new ClaudeAdapter(engine) as unknown as FrameworkAdapter },
   ];
 }
 

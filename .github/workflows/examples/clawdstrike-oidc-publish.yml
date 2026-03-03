@@ -1,0 +1,45 @@
+# Clawdstrike Publish with OIDC
+#
+# Publishes a package to your registry on release using GitHub OIDC.
+# Copy this file to your repo's .github/workflows/ directory to enable.
+#
+# Required secrets:
+#   CLAWDSTRIKE_REGISTRY_URL - Your hosted registry base URL
+#                              (placeholder example: https://registry.example.com)
+
+name: Publish Clawdstrike Package (OIDC)
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install clawdstrike CLI
+        run: cargo install hush-cli --locked
+
+      - name: Validate registry URL secret
+        env:
+          CLAWDSTRIKE_REGISTRY_URL: ${{ secrets.CLAWDSTRIKE_REGISTRY_URL }}
+        run: |
+          if [ -z "${CLAWDSTRIKE_REGISTRY_URL}" ]; then
+            echo "::error::Missing repository secret CLAWDSTRIKE_REGISTRY_URL"
+            echo "Set it to your hosted registry URL (for example: https://registry.example.com)"
+            exit 1
+          fi
+
+      - name: Publish with OIDC
+        env:
+          CLAWDSTRIKE_REGISTRY_URL: ${{ secrets.CLAWDSTRIKE_REGISTRY_URL }}
+        run: clawdstrike pkg publish --oidc --registry "${CLAWDSTRIKE_REGISTRY_URL}"

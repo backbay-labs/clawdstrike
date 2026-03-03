@@ -1,0 +1,52 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+type: "library"
+language: "python"
+tags: ["sdk", "python"]
+
+tasks:
+  install:
+    command: "bash"
+    args:
+      - "-c"
+      - "python -m venv .venv && .venv/bin/pip install -e '.[dev]'"
+    platform: "system"
+    inputs:
+      - "pyproject.toml"
+    outputs:
+      - ".venv"
+
+  test:
+    command: "bash"
+    args:
+      - "-c"
+      - "test -d .venv || python -m venv .venv; .venv/bin/pip install -e '.[dev]' && .venv/bin/pytest tests/"
+    platform: "system"
+    inputs:
+      - "src/**/*"
+      - "tests/**/*"
+      - "pyproject.toml"
+
+  typecheck:
+    command: "bash"
+    args:
+      - "-c"
+      - ".venv/bin/mypy src/"
+    platform: "system"
+    deps:
+      - "~:install"
+    inputs:
+      - "src/**/*"
+      - "pyproject.toml"
+
+  lint:
+    command: "bash"
+    args:
+      - "-c"
+      - ".venv/bin/ruff check src/ tests/"
+    platform: "system"
+    deps:
+      - "~:install"
+    inputs:
+      - "src/**/*"
+      - "tests/**/*"
+      - "pyproject.toml"

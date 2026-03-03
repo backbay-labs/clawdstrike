@@ -1,0 +1,62 @@
+# Clawdstrike Publish to Registry
+#
+# Publishes a guard/policy-pack package to the Clawdstrike registry on release.
+# Copy this file to your repo's .github/workflows/ directory to enable.
+#
+# Required secrets:
+#   CLAWDSTRIKE_TOKEN - Registry authentication token (from `clawdstrike pkg login`)
+#   CLAWDSTRIKE_REGISTRY_URL - Your hosted registry base URL
+#                              (placeholder example: https://registry.example.com)
+
+name: Publish to Registry
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Pack & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install Clawdstrike CLI
+        run: cargo install hush-cli --locked
+
+      - name: Build (WASM)
+        run: cargo build --target wasm32-unknown-unknown --release
+        if: hashFiles('Cargo.toml') != ''
+
+      - name: Pack
+        run: clawdstrike pkg pack
+
+      - name: Verify package before publish
+        run: |
+          for f in *.cpkg; do
+            echo "Verifying $f ..."
+            clawdstrike pkg install "$f" --allow-unverified
+          done
+
+      - name: Validate registry URL secret
+        env:
+          CLAWDSTRIKE_REGISTRY_URL: ${{ secrets.CLAWDSTRIKE_REGISTRY_URL }}
+        run: |
+          if [ -z "${CLAWDSTRIKE_REGISTRY_URL}" ]; then
+            echo "::error::Missing repository secret CLAWDSTRIKE_REGISTRY_URL"
+            echo "Set it to your hosted registry URL (for example: https://registry.example.com)"
+            exit 1
+          fi
+
+      - name: Publish
+        env:
+          CLAWDSTRIKE_AUTH_TOKEN: ${{ secrets.CLAWDSTRIKE_TOKEN }}
+          CLAWDSTRIKE_REGISTRY_URL: ${{ secrets.CLAWDSTRIKE_REGISTRY_URL }}
+        run: clawdstrike pkg publish --registry "${CLAWDSTRIKE_REGISTRY_URL}"

@@ -1,0 +1,23 @@
+[package]
+name = "bridge-runtime"
+description = "Shared reliability and observability runtime for ClawdStrike bridge services"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hush-core.workspace = true
+spine.workspace = true
+tokio = { workspace = true, features = ["full"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-nats = "0.39"
+rusqlite.workspace = true
+axum.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

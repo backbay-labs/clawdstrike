@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::semver_utils::{is_strict_semver, parse_strict_semver};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -248,25 +249,10 @@ pub fn parse_plugin_manifest_toml(content: &str) -> Result<PluginManifest> {
     Ok(manifest)
 }
 
-fn is_strict_semver(value: &str) -> bool {
-    parse_semver(value).is_some()
-}
-
 fn is_semver_range(value: &str) -> bool {
-    parse_semver(value).is_some()
+    parse_strict_semver(value).is_some()
         || parse_major_wildcard(value).is_some()
         || parse_minor_wildcard(value).is_some()
-}
-
-fn parse_semver(value: &str) -> Option<[u32; 3]> {
-    let mut parts = value.split('.');
-    let major = parts.next()?.parse::<u32>().ok()?;
-    let minor = parts.next()?.parse::<u32>().ok()?;
-    let patch = parts.next()?.parse::<u32>().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some([major, minor, patch])
 }
 
 fn parse_major_wildcard(value: &str) -> Option<u32> {

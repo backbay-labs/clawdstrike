@@ -80,6 +80,7 @@ export {
 export {
   type CryptoBackend,
   getBackend,
+  getWasmModule,
   initWasm,
   isWasmBackend,
   setBackend,
