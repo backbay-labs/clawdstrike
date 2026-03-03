@@ -721,21 +721,40 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    AGENT[Desktop Agent / hushd]
-    BRIDGES[Bridge Fleet<br/>auditd, k8s-audit, hubble, tetragon, darwin]
-    REL[Outbox + Retry]
-    NATS[(NATS JetStream)]
-    CONS[Cloud Consumers<br/>approval, heartbeat, audit]
+    subgraph sources ["Edge Sources"]
+        AG[Desktop Agent / hushd]
+        BR[Bridge Fleet<br/>auditd, k8s-audit, hubble, tetragon, darwin]
+    end
+
+    subgraph reliability ["Publisher Reliability"]
+        ABUF[Agent receipt buffering / replay]
+        BOUT[Bridge durable outbox / retry]
+    end
+
+    subgraph nats_data ["NATS JetStream Data Plane"]
+        ING[(Adaptive Ingress Stream)]
+        AUD[(Bridge Envelope Streams)]
+    end
+
+    subgraph cloud_ingest ["Cloud Ingestion Workers"]
+        APPR[Approval Request Consumer]
+        HEART[Heartbeat Consumer]
+        AUDC[Audit Consumer]
+    end
+
     DB[(PostgreSQL)]
 
-    AGENT --> REL
-    BRIDGES --> REL
-    REL --> NATS --> CONS --> DB
-```
+    AG --> ABUF --> ING
+    BR --> BOUT --> AUD
 
-- Telemetry enters from both desktop agents (`hushd`) and the bridge fleet.
-- Publisher reliability layer handles receipt buffering/replay plus durable outbox/retry before NATS.
-- Cloud consumers process approval/heartbeat/audit streams and persist to PostgreSQL.
+    ING --> APPR
+    ING --> HEART
+    AUD --> AUDC
+
+    APPR --> DB
+    HEART --> DB
+    AUDC --> DB
+```
 
 ### Enrollment
 
