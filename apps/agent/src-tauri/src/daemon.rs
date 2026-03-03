@@ -1005,7 +1005,15 @@ async fn write_runtime_config_file(
         std::fs::create_dir_all(&parent)
             .with_context(|| format!("Failed to create runtime config dir {:?}", parent))?;
 
-        let runtime_keypair_path = materialize_runtime_enrollment_keypair(&parent, daemon_port)?;
+        let runtime_keypair_path = if settings
+            .as_ref()
+            .and_then(|s| build_runtime_spine_config(s, None))
+            .is_some()
+        {
+            materialize_runtime_enrollment_keypair(&parent, daemon_port)?
+        } else {
+            None
+        };
         let policy_path = resolve_supported_policy_path(&policy_path);
         let runtime = HushdRuntimeConfig {
             listen,
