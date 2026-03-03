@@ -694,14 +694,18 @@ fn load_trusted_keys(settings: &Settings) -> Result<Vec<PublicKey>> {
         .collect();
     raw_keys.extend(settings.ota_pinned_public_keys.clone());
 
-    if let Ok(env_keys) = std::env::var(OTA_TRUST_ENV_VAR) {
-        raw_keys.extend(
-            env_keys
-                .split(',')
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-                .map(|v| v.to_string()),
-        );
+    if cfg!(debug_assertions) {
+        if let Ok(env_keys) = std::env::var(OTA_TRUST_ENV_VAR) {
+            raw_keys.extend(
+                env_keys
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .map(|v| v.to_string()),
+            );
+        }
+    } else if std::env::var_os(OTA_TRUST_ENV_VAR).is_some() {
+        tracing::warn!("{} is ignored in release builds", OTA_TRUST_ENV_VAR);
     }
 
     let mut seen = HashSet::new();

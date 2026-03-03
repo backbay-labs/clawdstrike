@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::settings::{enforce_private_mode, get_config_dir, hostname_best_effort, EnrollmentState, Settings};
+use crate::settings::{get_config_dir, hostname_best_effort, EnrollmentState, Settings};
 
 /// Result of a successful enrollment.
 #[derive(Debug, Clone, Serialize)]
@@ -73,9 +73,7 @@ impl EnrollmentManager {
             }
         }
 
-        let result = self
-            .do_enroll(cloud_api_url, enrollment_token)
-            .await;
+        let result = self.do_enroll(cloud_api_url, enrollment_token).await;
 
         // `do_enroll` persists `enrollment_in_progress = false` on success.
         // On failure we clear and persist it here so crash-recovery state is accurate.
@@ -101,7 +99,10 @@ impl EnrollmentManager {
 
         let hostname = hostname_best_effort();
 
-        let enroll_url = format!("{}/api/v1/agents/enroll", cloud_api_url.trim_end_matches('/'));
+        let enroll_url = format!(
+            "{}/api/v1/agents/enroll",
+            cloud_api_url.trim_end_matches('/')
+        );
 
         let body = EnrollRequest {
             enrollment_token: enrollment_token.to_string(),
@@ -131,11 +132,16 @@ impl EnrollmentManager {
             .await
             .with_context(|| "Failed to parse enrollment response")?;
 
-        // Store the private key.
-        let key_path = get_config_dir().join("agent.key");
-        write_private_file(&key_path, keypair.to_hex().as_bytes())
-            .with_context(|| format!("Failed to write agent key to {:?}", key_path))?;
-        tracing::info!(path = ?key_path, "Agent private key stored");
+        // Store the private key in keyring-backed storage.
+        let key_hex = keypair.to_hex();
+        crate::security::key_store::store_enrollment_key_hex(&key_hex)
+            .with_context(|| "Failed to store enrollment key in keyring-backed store")?;
+
+        let legacy_key_path = legacy_agent_key_path();
+        if legacy_key_path.exists() {
+            let _ = std::fs::remove_file(&legacy_key_path);
+        }
+        tracing::info!("Agent private key stored in keyring-backed store");
 
         // Update settings with enrollment state and all NATS configuration.
         {
@@ -177,10 +183,61 @@ impl EnrollmentManager {
     }
 }
 
+fn legacy_agent_key_path() -> PathBuf {
+    get_config_dir().join("agent.key")
+}
+
+/// Load the enrollment private key hex from secure storage.
+///
+/// If a legacy on-disk `agent.key` exists, migrate it into keyring-backed storage.
+pub fn load_enrollment_key_hex() -> Result<Option<String>> {
+    if let Some(stored) = crate::security::key_store::load_enrollment_key_hex()
+        .with_context(|| "Failed to load enrollment key from keyring-backed store")?
+    {
+        let trimmed = stored.trim();
+        if !trimmed.is_empty() {
+            return Ok(Some(trimmed.to_string()));
+        }
+    }
+
+    let legacy_path = legacy_agent_key_path();
+    if !legacy_path.exists() {
+        return Ok(None);
+    }
+
+    let legacy = std::fs::read_to_string(&legacy_path).with_context(|| {
+        format!(
+            "Failed to read legacy enrollment key from {:?}",
+            legacy_path
+        )
+    })?;
+    let legacy_trimmed = legacy.trim().to_string();
+    if legacy_trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    crate::security::key_store::store_enrollment_key_hex(&legacy_trimmed)
+        .with_context(|| "Failed to migrate legacy enrollment key into keyring-backed store")?;
+    std::fs::remove_file(&legacy_path).with_context(|| {
+        format!(
+            "Failed to remove migrated legacy enrollment key file {:?}",
+            legacy_path
+        )
+    })?;
+
+    Ok(Some(legacy_trimmed))
+}
+
+pub fn migrate_legacy_enrollment_key_file() -> Result<()> {
+    let _ = load_enrollment_key_hex()?;
+    Ok(())
+}
+
 /// Write a file with restricted permissions (owner-only read/write).
 ///
 /// On Unix, the file is created with mode 0o600 from the start to avoid
 /// a TOCTOU window where the private key would be world-readable.
+#[cfg(test)]
 fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -189,6 +246,7 @@ fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
 
     #[cfg(unix)]
     {
+        use crate::settings::enforce_private_mode;
         use std::fs::OpenOptions;
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
@@ -207,8 +265,7 @@ fn write_private_file(path: &PathBuf, data: &[u8]) -> Result<()> {
 
     #[cfg(not(unix))]
     {
-        std::fs::write(path, data)
-            .with_context(|| format!("Failed to write file {:?}", path))?;
+        std::fs::write(path, data).with_context(|| format!("Failed to write file {:?}", path))?;
     }
 
     Ok(())

@@ -84,7 +84,9 @@ impl NatsClient {
 }
 
 /// Helper to poll the next message from an async-nats subscriber.
-pub async fn subscriber_next(subscriber: &mut async_nats::Subscriber) -> Option<async_nats::Message> {
+pub async fn subscriber_next(
+    subscriber: &mut async_nats::Subscriber,
+) -> Option<async_nats::Message> {
     use futures::StreamExt;
     subscriber.next().await
 }

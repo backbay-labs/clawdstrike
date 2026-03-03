@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -342,6 +342,9 @@ impl DaemonManager {
         } else if self.monitor_started.load(Ordering::SeqCst) {
             tracing::warn!("Health monitor flag set but no join handle present; resetting flag");
             self.monitor_started.store(false, Ordering::SeqCst);
+        }
+        if let Err(err) = cleanup_runtime_enrollment_keypair(self.config.port) {
+            tracing::warn!(error = %err, "Failed to clean up runtime enrollment keypair");
         }
         Ok(())
     }
@@ -768,13 +771,11 @@ impl PolicyCache {
         let path_for_log = path.clone();
         let body_clone = body.clone();
         tokio::task::spawn_blocking(move || {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).with_context(|| {
-                    format!("Failed to create policy cache directory {:?}", parent)
-                })?;
-            }
-            std::fs::write(&path, &body_clone)
-                .with_context(|| format!("Failed to write policy cache to {:?}", path))?;
+            crate::security::fs::write_private_atomic(
+                &path,
+                body_clone.as_bytes(),
+                "policy cache file",
+            )?;
             Ok::<_, anyhow::Error>(())
         })
         .await
@@ -998,27 +999,30 @@ async fn write_runtime_config_file(
     let runtime_config_path = parent.join(&runtime_config_filename);
     let listen = format!("127.0.0.1:{}", config.port);
     let policy_path = config.policy_path.clone();
+    let daemon_port = config.port;
 
     let path = tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&parent)
             .with_context(|| format!("Failed to create runtime config dir {:?}", parent))?;
 
+        let runtime_keypair_path = materialize_runtime_enrollment_keypair(&parent, daemon_port)?;
         let policy_path = resolve_supported_policy_path(&policy_path);
         let runtime = HushdRuntimeConfig {
             listen,
             policy_path,
             ruleset: "default".to_string(),
             siem: settings.as_ref().and_then(build_runtime_siem_config),
-            spine: settings.as_ref().and_then(build_runtime_spine_config),
+            spine: settings
+                .as_ref()
+                .and_then(|s| build_runtime_spine_config(s, runtime_keypair_path.clone())),
         };
         let serialized = serde_yaml::to_string(&runtime)
             .with_context(|| "Failed to serialize hushd runtime config")?;
-        std::fs::write(&runtime_config_path, serialized).with_context(|| {
-            format!(
-                "Failed to write hushd runtime config to {:?}",
-                runtime_config_path
-            )
-        })?;
+        crate::security::fs::write_private_atomic(
+            &runtime_config_path,
+            serialized.as_bytes(),
+            "hushd runtime config",
+        )?;
 
         Ok::<_, anyhow::Error>(runtime_config_path)
     })
@@ -1047,6 +1051,41 @@ async fn load_runtime_settings_for_config(
     };
 
     Some(settings)
+}
+
+fn runtime_enrollment_keypair_path(runtime_parent: &Path, daemon_port: u16) -> PathBuf {
+    runtime_parent.join(format!("agent.runtime.{}.key", daemon_port))
+}
+
+fn materialize_runtime_enrollment_keypair(
+    runtime_parent: &Path,
+    daemon_port: u16,
+) -> Result<Option<PathBuf>> {
+    let key_hex = match crate::enrollment::load_enrollment_key_hex()
+        .with_context(|| "Failed to load enrollment key for runtime config")?
+    {
+        Some(value) => value,
+        None => return Ok(None),
+    };
+
+    let key_path = runtime_enrollment_keypair_path(runtime_parent, daemon_port);
+    let normalized = format!("{}\n", key_hex.trim());
+    crate::security::fs::write_private_atomic(
+        &key_path,
+        normalized.as_bytes(),
+        "runtime enrollment keypair",
+    )?;
+    Ok(Some(key_path))
+}
+
+fn cleanup_runtime_enrollment_keypair(daemon_port: u16) -> Result<()> {
+    let runtime_parent = crate::settings::get_config_dir().join("runtime");
+    let key_path = runtime_enrollment_keypair_path(&runtime_parent, daemon_port);
+    if key_path.exists() {
+        std::fs::remove_file(&key_path)
+            .with_context(|| format!("Failed to remove runtime enrollment key {:?}", key_path))?;
+    }
+    Ok(())
 }
 
 fn build_runtime_siem_config(
@@ -1181,6 +1220,7 @@ fn build_runtime_siem_config(
 
 fn build_runtime_spine_config(
     settings: &crate::settings::Settings,
+    keypair_path: Option<PathBuf>,
 ) -> Option<HushdRuntimeSpineConfig> {
     if !settings.nats.enabled {
         return None;
@@ -1191,19 +1231,13 @@ fn build_runtime_spine_config(
         return None;
     }
 
-    // Reuse the enrollment keypair for signed receipt continuity if available.
-    let agent_keypair_path = {
-        let path = crate::settings::get_config_dir().join("agent.key");
-        if path.exists() { Some(path) } else { None }
-    };
-
     Some(HushdRuntimeSpineConfig {
         enabled: true,
         nats_url: settings.nats.nats_url.clone(),
         creds_file: settings.nats.creds_file.clone(),
         token: settings.nats.token.clone(),
         nkey_seed: settings.nats.nkey_seed.clone(),
-        keypair_path: agent_keypair_path,
+        keypair_path,
         subject_prefix: subject_prefix.to_string(),
     })
 }
@@ -1679,7 +1713,7 @@ mod tests {
         settings.nats.token = Some("nats-token".to_string());
         settings.nats.subject_prefix = Some("tenant-acme.clawdstrike".to_string());
 
-        let config = build_runtime_spine_config(&settings)
+        let config = build_runtime_spine_config(&settings, None)
             .unwrap_or_else(|| panic!("expected runtime spine config"));
 
         assert!(config.enabled);
@@ -1691,12 +1725,12 @@ mod tests {
     #[test]
     fn runtime_spine_config_is_none_when_nats_disabled_or_prefix_missing() {
         let settings = crate::settings::Settings::default();
-        assert!(build_runtime_spine_config(&settings).is_none());
+        assert!(build_runtime_spine_config(&settings, None).is_none());
 
         let mut enabled = crate::settings::Settings::default();
         enabled.nats.enabled = true;
         enabled.nats.nats_url = Some("nats://example:4222".to_string());
-        assert!(build_runtime_spine_config(&enabled).is_none());
+        assert!(build_runtime_spine_config(&enabled, None).is_none());
     }
 
     #[test]
@@ -1714,10 +1748,7 @@ mod tests {
     #[test]
     fn parse_cached_policy_version_returns_none_for_missing_or_complex_values() {
         assert_eq!(parse_cached_policy_version("rules: []\n"), None);
-        assert_eq!(
-            parse_cached_policy_version("version:\n  major: 1\n"),
-            None
-        );
+        assert_eq!(parse_cached_policy_version("version:\n  major: 1\n"), None);
         assert_eq!(parse_cached_policy_version("not: [valid"), None);
     }
 

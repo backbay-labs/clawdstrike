@@ -51,6 +51,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Directories
 dirs = "5"
 keyring = "3"
+hostname = "0.4"
 
 # Process utilities
 which = "6"

@@ -3,10 +3,14 @@
 //! Exposes a `policy_check` tool via JSON-RPC that AI tools can call.
 
 use crate::policy::{evaluate_policy_check, PolicyCheckInput};
+use crate::security::auth::constant_time_eq_token;
 use crate::session::SessionManager;
 use crate::settings::Settings;
 use anyhow::{Context, Result};
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::header::AUTHORIZATION;
+use axum::http::{HeaderMap, StatusCode};
+use axum::{response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -18,6 +22,7 @@ pub struct McpServer {
     port: u16,
     settings: Arc<RwLock<Settings>>,
     session_manager: Arc<SessionManager>,
+    auth_token: String,
 }
 
 impl McpServer {
@@ -26,11 +31,13 @@ impl McpServer {
         port: u16,
         settings: Arc<RwLock<Settings>>,
         session_manager: Arc<SessionManager>,
+        auth_token: String,
     ) -> Self {
         Self {
             port,
             settings,
             session_manager,
+            auth_token,
         }
     }
 
@@ -40,12 +47,14 @@ impl McpServer {
             settings: self.settings,
             session_manager: self.session_manager,
             http_client: reqwest::Client::new(),
+            auth_token: self.auth_token,
         };
 
         let app = Router::new()
             .route("/", post(handle_rpc))
             .route("/rpc", post(handle_rpc))
             .route("/mcp", post(handle_rpc))
+            .layer(DefaultBodyLimit::max(128 * 1024))
             .with_state(Arc::new(state));
 
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
@@ -72,6 +81,7 @@ struct McpState {
     settings: Arc<RwLock<Settings>>,
     session_manager: Arc<SessionManager>,
     http_client: reqwest::Client,
+    auth_token: String,
 }
 
 /// JSON-RPC 2.0 request.
@@ -114,8 +124,25 @@ struct McpTool {
 /// Handle JSON-RPC requests.
 async fn handle_rpc(
     State(state): State<Arc<McpState>>,
+    headers: HeaderMap,
     Json(request): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
+    if !mcp_authorized(&headers, &state.auth_token) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(JsonRpcResponse {
+                jsonrpc: "2.0",
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32001,
+                    message: "Unauthorized".to_string(),
+                    data: None,
+                }),
+                id: request.id,
+            }),
+        );
+    }
+
     if request.jsonrpc != "2.0" {
         return (
             StatusCode::BAD_REQUEST,
@@ -153,6 +180,20 @@ async fn handle_rpc(
     response.id = request.id;
 
     (StatusCode::OK, Json(response))
+}
+
+fn mcp_authorized(headers: &HeaderMap, auth_token: &str) -> bool {
+    let token = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim);
+
+    match token {
+        Some(candidate) => constant_time_eq_token(candidate, auth_token),
+        None => false,
+    }
 }
 
 fn handle_initialize() -> JsonRpcResponse {
@@ -380,5 +421,18 @@ mod tests {
             args: Some(args),
         };
         assert!(input.args.as_ref().is_some_and(|m| m.contains_key("flag")));
+    }
+
+    #[test]
+    fn mcp_requires_bearer_token() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            "Bearer secret-token"
+                .parse()
+                .unwrap_or_else(|err| panic!("failed to parse authorization header: {err}")),
+        );
+        assert!(mcp_authorized(&headers, "secret-token"));
+        assert!(!mcp_authorized(&HeaderMap::new(), "secret-token"));
     }
 }

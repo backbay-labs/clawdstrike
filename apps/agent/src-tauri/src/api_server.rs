@@ -9,11 +9,13 @@ use crate::openclaw::{
     OpenClawManager,
 };
 use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
+use crate::security::auth::constant_time_eq_token;
 use crate::session::SessionManager;
 use crate::settings::{IntegrationSettings, Settings};
 use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
 use axum::body::Body;
+use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, Request, State};
 use axum::http::header::{
     ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, SET_COOKIE,
@@ -28,12 +30,13 @@ use axum::{Json, Router};
 use futures::{Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -42,6 +45,11 @@ const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
 const POLICY_VERSION_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
 const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
+const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
+const APPROVAL_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+const APPROVAL_RATE_LIMIT_BURST_WINDOW: Duration = Duration::from_secs(1);
+const APPROVAL_RATE_LIMIT_PER_MINUTE: usize = 30;
+const APPROVAL_RATE_LIMIT_BURST: usize = 10;
 
 #[derive(Clone)]
 pub struct AgentApiServer {
@@ -71,6 +79,7 @@ struct AgentApiState {
     auth_token: String,
     http_client: reqwest::Client,
     policy_version_cache: Arc<RwLock<PolicyVersionCache>>,
+    approval_rate_limiter: Arc<Mutex<ApprovalSubmissionLimiter>>,
 }
 
 #[derive(Debug, Default)]
@@ -123,6 +132,57 @@ impl PolicyVersionCache {
     }
 }
 
+#[derive(Debug, Default)]
+struct ApprovalSubmissionLimiter {
+    minute_events: VecDeque<Instant>,
+    burst_events: VecDeque<Instant>,
+}
+
+impl ApprovalSubmissionLimiter {
+    fn allow_now(&mut self, now: Instant) -> std::result::Result<(), u64> {
+        while self
+            .minute_events
+            .front()
+            .is_some_and(|ts| now.duration_since(*ts) >= APPROVAL_RATE_LIMIT_WINDOW)
+        {
+            let _ = self.minute_events.pop_front();
+        }
+        while self
+            .burst_events
+            .front()
+            .is_some_and(|ts| now.duration_since(*ts) >= APPROVAL_RATE_LIMIT_BURST_WINDOW)
+        {
+            let _ = self.burst_events.pop_front();
+        }
+
+        if self.minute_events.len() >= APPROVAL_RATE_LIMIT_PER_MINUTE {
+            if let Some(oldest) = self.minute_events.front().copied() {
+                let retry_after = APPROVAL_RATE_LIMIT_WINDOW
+                    .saturating_sub(now.duration_since(oldest))
+                    .as_secs()
+                    .max(1);
+                return Err(retry_after);
+            }
+            return Err(1);
+        }
+
+        if self.burst_events.len() >= APPROVAL_RATE_LIMIT_BURST {
+            if let Some(oldest) = self.burst_events.front().copied() {
+                let retry_after = APPROVAL_RATE_LIMIT_BURST_WINDOW
+                    .saturating_sub(now.duration_since(oldest))
+                    .as_secs()
+                    .max(1);
+                return Err(retry_after);
+            }
+            return Err(1);
+        }
+
+        self.minute_events.push_back(now);
+        self.burst_events.push_back(now);
+        Ok(())
+    }
+}
+
 impl AgentApiServer {
     pub fn new(port: u16, deps: AgentApiServerDeps) -> Self {
         Self {
@@ -137,6 +197,7 @@ impl AgentApiServer {
                 auth_token: deps.auth_token,
                 http_client: reqwest::Client::new(),
                 policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
+                approval_rate_limiter: Arc::new(Mutex::new(ApprovalSubmissionLimiter::default())),
             }),
         }
     }
@@ -193,6 +254,7 @@ impl AgentApiServer {
             .route("/api/v1/approval/pending", get(list_pending_approvals))
             .route("/api/v1/enroll", post(enroll_agent))
             .route("/api/v1/enrollment-status", get(enrollment_status))
+            .layer(DefaultBodyLimit::max(AGENT_API_MAX_BODY_BYTES))
             .with_state(self.state.clone());
 
         if let Some(dashboard_dist) = resolve_cloud_dashboard_dist() {
@@ -471,11 +533,45 @@ fn merged_authorization_header(
         .map(|key| format!("Bearer {}", key))
 }
 
-fn auth_cookie_header_value(auth_token: &str) -> String {
+fn auth_cookie_header_value(auth_token: &str, secure: bool) -> String {
+    let secure_flag = if secure { "; Secure" } else { "" };
     format!(
-        "{}={}; Path=/; HttpOnly; SameSite=Strict",
-        AGENT_AUTH_COOKIE_NAME, auth_token
+        "{}={}; Path=/; HttpOnly; SameSite=Strict{}",
+        AGENT_AUTH_COOKIE_NAME, auth_token, secure_flag
     )
+}
+
+fn request_is_secure(headers: &HeaderMap, request: &Request) -> bool {
+    if request.uri().scheme_str() == Some("https") {
+        return true;
+    }
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
+}
+
+fn is_local_host_header(headers: &HeaderMap) -> bool {
+    let Some(host) = headers
+        .get("host")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    else {
+        return true;
+    };
+
+    let host_only = host
+        .trim_start_matches('[')
+        .split(']')
+        .next()
+        .unwrap_or(host)
+        .split(':')
+        .next()
+        .unwrap_or(host)
+        .to_ascii_lowercase();
+
+    host_only == "localhost" || host_only == "127.0.0.1" || host_only == "::1"
 }
 
 async fn attach_ui_auth_cookie(
@@ -483,8 +579,17 @@ async fn attach_ui_auth_cookie(
     request: Request,
     next: Next,
 ) -> Response {
+    if !request_is_secure(request.headers(), &request) && !is_local_host_header(request.headers()) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Non-localhost dashboard access requires HTTPS",
+        )
+            .into_response();
+    }
+
+    let secure_cookie = request_is_secure(request.headers(), &request);
     let mut response = next.run(request).await;
-    match HeaderValue::from_str(&auth_cookie_header_value(&state.auth_token)) {
+    match HeaderValue::from_str(&auth_cookie_header_value(&state.auth_token, secure_cookie)) {
         Ok(value) => {
             response.headers_mut().append(SET_COOKIE, value);
         }
@@ -835,7 +940,9 @@ fn default_apply_integrations_changes() -> bool {
 
 async fn agent_health(
     State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
 ) -> Result<Json<AgentHealthResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
     let daemon = state.daemon_manager.status().await;
     let session = state.session_manager.state().await;
     let openclaw = state.openclaw.list_gateways().await;
@@ -1131,7 +1238,7 @@ async fn create_gateway(
         .openclaw
         .upsert_gateway(input)
         .await
-        .map_err(internal_error)?;
+        .map_err(map_openclaw_error)?;
     Ok(Json(created))
 }
 
@@ -1162,7 +1269,7 @@ async fn patch_gateway(
             device_token: patch.device_token,
         })
         .await
-        .map_err(internal_error)?;
+        .map_err(map_openclaw_error)?;
 
     Ok(Json(updated))
 }
@@ -1270,7 +1377,10 @@ async fn gateway_request(
             content: None,
             args: Some({
                 let mut args = std::collections::HashMap::new();
-                args.insert("gateway_id".to_string(), serde_json::Value::String(input.gateway_id.clone()));
+                args.insert(
+                    "gateway_id".to_string(),
+                    serde_json::Value::String(input.gateway_id.clone()),
+                );
                 args.insert(
                     "method".to_string(),
                     serde_json::Value::String(input.method.clone()),
@@ -1312,7 +1422,7 @@ async fn import_desktop_gateways(
         .openclaw
         .import_desktop_gateways(payload)
         .await
-        .map_err(internal_error)?;
+        .map_err(map_openclaw_error)?;
     Ok(Json(result))
 }
 
@@ -1353,6 +1463,20 @@ async fn create_approval_request(
     Json(input): Json<ApprovalRequestInput>,
 ) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
+
+    let retry_after_secs = {
+        let mut limiter = state.approval_rate_limiter.lock().await;
+        limiter.allow_now(Instant::now()).err()
+    };
+    if let Some(retry_after) = retry_after_secs {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            format!(
+                "Approval request rate limit exceeded; retry in {}s",
+                retry_after
+            ),
+        ));
+    }
 
     // Reject critical severity actions -- they are not approvable.
     if input.severity.eq_ignore_ascii_case("critical") {
@@ -1450,7 +1574,10 @@ async fn enroll_agent(
     require_auth(&headers, &state)?;
 
     let manager = crate::enrollment::EnrollmentManager::new(state.settings.clone());
-    match manager.enroll(&input.cloud_api_url, &input.enrollment_token).await {
+    match manager
+        .enroll(&input.cloud_api_url, &input.enrollment_token)
+        .await
+    {
         Ok(result) => {
             tracing::info!(
                 agent_uuid = %result.agent_uuid,
@@ -1464,7 +1591,10 @@ async fn enroll_agent(
                 "message": "Restart the agent to activate enterprise features (policy sync, telemetry, posture commands)",
             })))
         }
-        Err(err) => Err((StatusCode::BAD_REQUEST, format!("Enrollment failed: {}", err))),
+        Err(err) => Err((
+            StatusCode::BAD_REQUEST,
+            format!("Enrollment failed: {}", err),
+        )),
     }
 }
 
@@ -1508,14 +1638,16 @@ fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (Statu
 
     if let Some(auth) = auth_header {
         if let Some(token) = auth.strip_prefix("Bearer ") {
-            if token.trim() == state.auth_token {
+            if constant_time_eq_token(token.trim(), &state.auth_token) {
                 return Ok(());
             }
         }
     }
 
-    if auth_token_from_cookie(headers).as_deref() == Some(state.auth_token.as_str()) {
-        return Ok(());
+    if let Some(cookie_token) = auth_token_from_cookie(headers) {
+        if constant_time_eq_token(cookie_token.trim(), &state.auth_token) {
+            return Ok(());
+        }
     }
 
     let err = match auth_header {
@@ -1529,6 +1661,17 @@ fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (Statu
 fn internal_error(err: anyhow::Error) -> (StatusCode, String) {
     tracing::error!(error = %err, "Agent API error");
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
+fn map_openclaw_error(err: anyhow::Error) -> (StatusCode, String) {
+    let message = err.to_string();
+    if message.contains("gateway_url")
+        || message.contains("wss://")
+        || message.contains("private/link-local")
+    {
+        return (StatusCode::BAD_REQUEST, message);
+    }
+    internal_error(err)
 }
 
 fn deserialize_optional_string_field<'de, D>(
@@ -1581,6 +1724,7 @@ mod tests {
             auth_token: "test-token".to_string(),
             http_client: reqwest::Client::new(),
             policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
+            approval_rate_limiter: Arc::new(Mutex::new(ApprovalSubmissionLimiter::default())),
         }
     }
 
@@ -1611,11 +1755,10 @@ mod tests {
         let mut cache = PolicyVersionCache::default();
         let started = std::time::Instant::now();
         assert!(cache.mark_refresh_started_if_due(started));
-        assert!(!cache.mark_refresh_started_if_due(
-            started + POLICY_VERSION_CACHE_REFRESH_INTERVAL
-        ));
+        assert!(!cache.mark_refresh_started_if_due(started + POLICY_VERSION_CACHE_REFRESH_INTERVAL));
 
-        let after_timeout = started + POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT + Duration::from_millis(1);
+        let after_timeout =
+            started + POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT + Duration::from_millis(1);
         assert!(cache.mark_refresh_started_if_due(after_timeout));
         assert!(cache.refresh_in_flight);
     }
@@ -1692,6 +1835,35 @@ mod tests {
 
         let result = require_auth(&headers, &state);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn approval_submission_limiter_enforces_burst_limit() {
+        let mut limiter = ApprovalSubmissionLimiter::default();
+        let now = Instant::now();
+        for _ in 0..APPROVAL_RATE_LIMIT_BURST {
+            assert!(limiter.allow_now(now).is_ok());
+        }
+        assert!(limiter.allow_now(now).is_err());
+    }
+
+    #[tokio::test]
+    async fn agent_health_route_requires_auth() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route("/api/v1/agent/health", get(agent_health))
+            .with_state(state);
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/v1/agent/health")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+        let resp = app
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]

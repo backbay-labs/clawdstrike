@@ -464,19 +464,13 @@ pub fn get_agent_token_path() -> PathBuf {
     get_config_dir().join("agent-local-token")
 }
 
-/// Best-effort hostname retrieval via `libc::gethostname`.
+/// Best-effort hostname retrieval via a safe wrapper.
 pub fn hostname_best_effort() -> String {
-    #[cfg(unix)]
-    {
-        let mut buf = vec![0u8; 256];
-        let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) };
-        if ret == 0 {
-            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-            buf.truncate(end);
-            return String::from_utf8_lossy(&buf).into_owned();
-        }
-    }
-    "unknown".to_string()
+    hostname::get()
+        .ok()
+        .and_then(|value| value.into_string().ok())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Ensure the default policy file exists, copying from bundled if needed.
@@ -522,9 +516,11 @@ mod tests {
 
     #[test]
     fn backfills_dashboard_url_from_loaded_agent_port_when_missing() {
-        let mut settings = Settings::default();
-        settings.agent_api_port = 21111;
-        settings.dashboard_url = String::new();
+        let mut settings = Settings {
+            agent_api_port: 21111,
+            dashboard_url: String::new(),
+            ..Settings::default()
+        };
 
         backfill_dashboard_url_if_missing(&mut settings, false);
 
@@ -533,9 +529,11 @@ mod tests {
 
     #[test]
     fn preserves_dashboard_url_when_explicitly_present() {
-        let mut settings = Settings::default();
-        settings.agent_api_port = 21111;
-        settings.dashboard_url = "http://localhost:3100".to_string();
+        let mut settings = Settings {
+            agent_api_port: 21111,
+            dashboard_url: "http://localhost:3100".to_string(),
+            ..Settings::default()
+        };
 
         backfill_dashboard_url_if_missing(&mut settings, true);
 
@@ -588,7 +586,8 @@ mod tests {
             Ok(duration) => duration.as_nanos(),
             Err(_) => 0,
         };
-        let dir = std::env::temp_dir().join(format!("clawdstrike-settings-perms-existing-{unique}"));
+        let dir =
+            std::env::temp_dir().join(format!("clawdstrike-settings-perms-existing-{unique}"));
         if let Err(err) = std::fs::create_dir_all(&dir) {
             panic!("failed to create temp dir for settings permissions test: {err}");
         }

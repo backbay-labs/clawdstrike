@@ -153,9 +153,7 @@ impl PolicySync {
 }
 
 /// Helper to poll the next entry from a KV watcher.
-async fn watcher_next(
-    watcher: &mut kv::Watch,
-) -> Option<Result<kv::Entry, kv::WatcherError>> {
+async fn watcher_next(watcher: &mut kv::Watch) -> Option<Result<kv::Entry, kv::WatcherError>> {
     use futures::StreamExt;
     watcher.next().await
 }
@@ -208,10 +206,8 @@ mod tests {
 
     #[test]
     fn atomic_write_policy_creates_and_overwrites_file() {
-        let base = std::env::temp_dir().join(format!(
-            "policy-sync-write-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("policy-sync-write-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&base).unwrap();
         let path = base.join("policy.yaml");
 

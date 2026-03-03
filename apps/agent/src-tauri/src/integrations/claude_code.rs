@@ -17,15 +17,10 @@ set -euo pipefail
 # Configuration
 CLAWDSTRIKE_ENDPOINT="${CLAWDSTRIKE_ENDPOINT:-http://127.0.0.1:9878}"
 CLAWDSTRIKE_TOKEN_FILE="${CLAWDSTRIKE_TOKEN_FILE:-$HOME/.config/clawdstrike/agent-local-token}"
-CLAWDSTRIKE_HOOK_FAIL_OPEN="${CLAWDSTRIKE_HOOK_FAIL_OPEN:-0}"
 
 fail() {
   local reason="$1"
   echo "🚫 Clawdstrike hook error: ${reason}" >&2
-  if [ "$CLAWDSTRIKE_HOOK_FAIL_OPEN" = "1" ]; then
-    echo "⚠️  CLAWDSTRIKE_HOOK_FAIL_OPEN=1 is set; allowing action despite hook failure." >&2
-    exit 0
-  fi
   exit 1
 }
 
@@ -146,8 +141,7 @@ fi
 if [ "$ALLOWED" = "false" ]; then
   GUARD=$(echo "$RESPONSE" | jq -er '.guard // "unknown"' 2>/dev/null || echo "unknown")
 
-  # When the agent returns a well-formed deny due to daemon infrastructure errors,
-  # treat it as a hook failure so CLAWDSTRIKE_HOOK_FAIL_OPEN can apply.
+  # Treat daemon infrastructure denies as hook failures to preserve fail-closed behavior.
   if [[ "$GUARD" == hushd_* ]]; then
     fail "policy daemon error (${GUARD})"
   fi
@@ -291,7 +285,7 @@ mod tests {
     fn test_hook_script_contains_essentials() {
         assert!(HOOK_SCRIPT.contains("jq -cn"));
         assert!(HOOK_SCRIPT.contains("/api/v1/agent/policy-check"));
-        assert!(HOOK_SCRIPT.contains("CLAWDSTRIKE_HOOK_FAIL_OPEN"));
+        assert!(!HOOK_SCRIPT.contains("CLAWDSTRIKE_HOOK_FAIL_OPEN"));
         assert!(HOOK_SCRIPT.contains("ACTION_TYPE=\"mcp_tool\""));
     }
 

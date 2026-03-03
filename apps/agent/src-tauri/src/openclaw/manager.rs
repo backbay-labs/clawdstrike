@@ -17,6 +17,7 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -224,6 +225,7 @@ impl OpenClawManager {
     }
 
     pub async fn upsert_gateway(&self, input: GatewayUpsertRequest) -> Result<GatewayView> {
+        let validated_gateway_url = validate_gateway_url(&input.gateway_url)?;
         let gateway_id = input
             .id
             .clone()
@@ -235,7 +237,7 @@ impl OpenClawManager {
             for gw in &mut settings.openclaw.gateways {
                 if gw.id == gateway_id {
                     gw.label = input.label.clone();
-                    gw.gateway_url = input.gateway_url.clone();
+                    gw.gateway_url = validated_gateway_url.clone();
                     found = true;
                     break;
                 }
@@ -245,7 +247,7 @@ impl OpenClawManager {
                 settings.openclaw.gateways.push(OpenClawGatewayMetadata {
                     id: gateway_id.clone(),
                     label: input.label.clone(),
-                    gateway_url: input.gateway_url.clone(),
+                    gateway_url: validated_gateway_url.clone(),
                 });
             }
 
@@ -504,7 +506,8 @@ impl OpenClawManager {
                 }
             }
 
-            let base_backoff_ms = (400.0_f64 * 1.6_f64.powi(reconnect_attempt as i32)).round() as u64;
+            let base_backoff_ms =
+                (400.0_f64 * 1.6_f64.powi(reconnect_attempt as i32)).round() as u64;
             let base_backoff_ms = base_backoff_ms.clamp(250, 12_000);
             // Add ±20% jitter to prevent thundering herd
             let jitter_range = (base_backoff_ms as f64 * 0.2) as u64;
@@ -605,23 +608,22 @@ impl OpenClawManager {
             mode: Some("cli".to_string()),
             instance_id: Some(format!("agent:{}", gateway_id)),
         };
-        let device =
-            match build_gateway_device_proof(
-                &client,
-                &role,
-                &scopes,
-                auth_token.as_deref(),
-                connect_challenge_nonce.as_deref(),
-            ) {
-                Ok(value) => value,
-                Err(err) => {
-                    tracing::warn!(
-                        gateway_id = %gateway_id,
-                        "OpenClaw device proof unavailable: {err}"
-                    );
-                    None
-                }
-            };
+        let device = match build_gateway_device_proof(
+            &client,
+            &role,
+            &scopes,
+            auth_token.as_deref(),
+            connect_challenge_nonce.as_deref(),
+        ) {
+            Ok(value) => value,
+            Err(err) => {
+                tracing::warn!(
+                    gateway_id = %gateway_id,
+                    "OpenClaw device proof unavailable: {err}"
+                );
+                None
+            }
+        };
         let params = GatewayConnectParams {
             min_protocol: 3,
             max_protocol: 3,
@@ -974,31 +976,31 @@ impl OpenClawManager {
                             .or_else(|| payload.get("id"))
                             .and_then(|v| v.as_str());
                         if let Some(id) = approval_id {
-                            rt.exec_approval_queue.retain(|a| {
-                                a.get("id").and_then(|v| v.as_str()) != Some(id)
-                            });
+                            rt.exec_approval_queue
+                                .retain(|a| a.get("id").and_then(|v| v.as_str()) != Some(id));
                         }
                     }
                 }
                 "node.connected" | "node.updated" => {
                     if let Some(payload) = &frame.payload {
-                        let node_id = payload.get("nodeId").and_then(|v| v.as_str())
+                        let node_id = payload
+                            .get("nodeId")
+                            .and_then(|v| v.as_str())
                             .or_else(|| payload.get("id").and_then(|v| v.as_str()));
                         if let Some(node_id) = node_id {
                             // Normalize: ensure nodeId is always present on the
                             // stored entry, matching the TS client behaviour.
                             let mut normalized = payload.clone();
                             if let serde_json::Value::Object(ref mut m) = normalized {
-                                m.insert("nodeId".into(), serde_json::Value::String(node_id.to_owned()));
+                                m.insert(
+                                    "nodeId".into(),
+                                    serde_json::Value::String(node_id.to_owned()),
+                                );
                             }
-                            if let Some(existing) = rt
-                                .nodes
-                                .iter_mut()
-                                .find(|n| {
-                                    n.get("nodeId").and_then(|v| v.as_str()) == Some(node_id)
-                                        || n.get("id").and_then(|v| v.as_str()) == Some(node_id)
-                                })
-                            {
+                            if let Some(existing) = rt.nodes.iter_mut().find(|n| {
+                                n.get("nodeId").and_then(|v| v.as_str()) == Some(node_id)
+                                    || n.get("id").and_then(|v| v.as_str()) == Some(node_id)
+                            }) {
                                 *existing = normalized;
                             } else {
                                 rt.nodes.push(normalized);
@@ -1008,14 +1010,15 @@ impl OpenClawManager {
                 }
                 "node.disconnected" => {
                     if let Some(payload) = &frame.payload {
-                        let node_id = payload.get("nodeId").and_then(|v| v.as_str())
+                        let node_id = payload
+                            .get("nodeId")
+                            .and_then(|v| v.as_str())
                             .or_else(|| payload.get("id").and_then(|v| v.as_str()));
                         if let Some(node_id) = node_id {
-                            rt.nodes
-                                .retain(|n| {
-                                    n.get("nodeId").and_then(|v| v.as_str()) != Some(node_id)
-                                        && n.get("id").and_then(|v| v.as_str()) != Some(node_id)
-                                });
+                            rt.nodes.retain(|n| {
+                                n.get("nodeId").and_then(|v| v.as_str()) != Some(node_id)
+                                    && n.get("id").and_then(|v| v.as_str()) != Some(node_id)
+                            });
                         }
                     }
                 }
@@ -1052,8 +1055,8 @@ struct OpenClawDeviceIdentityFile {
     device_id: String,
     #[serde(alias = "public_key_pem")]
     public_key_pem: String,
-    #[serde(alias = "private_key_pem")]
-    private_key_pem: String,
+    #[serde(default, alias = "private_key_pem")]
+    private_key_pem: Option<String>,
 }
 
 struct OpenClawDeviceIdentity {
@@ -1124,13 +1127,6 @@ fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDevice
         ));
     }
 
-    if parsed.private_key_pem.trim().is_empty() {
-        return Err(anyhow::anyhow!(
-            "OpenClaw identity private key is empty in {:?}",
-            path
-        ));
-    }
-
     let verifying_key = VerifyingKey::from_public_key_pem(parsed.public_key_pem.trim())
         .map_err(|err| anyhow::anyhow!("invalid OpenClaw identity public key PEM: {err}"))?;
     let derived_device_id = hush_core::sha256(verifying_key.as_bytes()).to_hex();
@@ -1142,11 +1138,63 @@ fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDevice
         );
     }
 
+    let private_key_pem = if let Some(raw_private_key) = parsed.private_key_pem.as_deref() {
+        let trimmed = raw_private_key.trim();
+        if trimmed.is_empty() {
+            anyhow::bail!("OpenClaw identity private key is empty in {:?}", path);
+        }
+        crate::security::key_store::store_openclaw_private_key(&derived_device_id, trimmed)
+            .with_context(|| {
+                format!(
+                    "failed to persist OpenClaw private key in keyring-backed storage for {}",
+                    derived_device_id
+                )
+            })?;
+        persist_openclaw_identity_metadata(path, &derived_device_id, parsed.public_key_pem.trim())?;
+        trimmed.to_string()
+    } else {
+        crate::security::key_store::load_openclaw_private_key(&derived_device_id)
+            .with_context(|| {
+                format!(
+                    "failed to load OpenClaw private key from keyring-backed storage for {}",
+                    derived_device_id
+                )
+            })?
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "OpenClaw identity private key is missing from keyring-backed storage for {}",
+                    derived_device_id
+                )
+            })?
+    };
+
     Ok(OpenClawDeviceIdentity {
         device_id: derived_device_id,
         public_key_raw_base64url: URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
-        private_key_pem: Zeroizing::new(parsed.private_key_pem),
+        private_key_pem: Zeroizing::new(private_key_pem),
     })
+}
+
+fn persist_openclaw_identity_metadata(
+    path: &Path,
+    device_id: &str,
+    public_key_pem: &str,
+) -> Result<()> {
+    let metadata = serde_json::json!({
+        "version": 1,
+        "deviceId": device_id,
+        "publicKeyPem": public_key_pem,
+        "privateKeyStorage": "keyring"
+    });
+    let serialized = serde_json::to_string_pretty(&metadata)
+        .with_context(|| "failed to serialize OpenClaw identity metadata")?;
+    crate::security::fs::write_private_atomic(
+        path,
+        serialized.as_bytes(),
+        "OpenClaw identity metadata",
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1190,9 +1238,7 @@ fn build_gateway_device_proof_from_identity(
 
 fn validate_gateway_scopes(scopes: &[String]) -> Result<()> {
     if scopes.is_empty() {
-        return Err(anyhow::anyhow!(
-            "OpenClaw connect scopes cannot be empty"
-        ));
+        return Err(anyhow::anyhow!("OpenClaw connect scopes cannot be empty"));
     }
 
     let scope_set: HashSet<String> = scopes
@@ -1202,9 +1248,7 @@ fn validate_gateway_scopes(scopes: &[String]) -> Result<()> {
         .collect();
 
     if scope_set.is_empty() {
-        return Err(anyhow::anyhow!(
-            "OpenClaw connect scopes cannot be blank"
-        ));
+        return Err(anyhow::anyhow!("OpenClaw connect scopes cannot be blank"));
     }
 
     for required in REQUIRED_GATEWAY_SCOPES {
@@ -1318,7 +1362,11 @@ fn openclaw_identity_candidate_paths_for(
     if let Some(override_dir) = override_state_dir {
         candidates.push(override_dir.join(OPENCLAW_IDENTITY_PATH));
     } else {
-        candidates.push(home_dir.join(OPENCLAW_STATE_DIR).join(OPENCLAW_IDENTITY_PATH));
+        candidates.push(
+            home_dir
+                .join(OPENCLAW_STATE_DIR)
+                .join(OPENCLAW_IDENTITY_PATH),
+        );
         for legacy in OPENCLAW_LEGACY_STATE_DIRS {
             candidates.push(home_dir.join(legacy).join(OPENCLAW_IDENTITY_PATH));
         }
@@ -1437,6 +1485,51 @@ fn normalize_secret_field(value: String) -> Option<String> {
         None
     } else {
         Some(value)
+    }
+}
+
+fn validate_gateway_url(raw: &str) -> Result<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("gateway_url cannot be empty");
+    }
+
+    let parsed =
+        reqwest::Url::parse(trimmed).with_context(|| format!("invalid gateway_url '{trimmed}'"))?;
+    let scheme = parsed.scheme().to_ascii_lowercase();
+    if scheme != "ws" && scheme != "wss" {
+        anyhow::bail!("gateway_url must use ws:// or wss://");
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("gateway_url must include a host"))?;
+    let host_lower = host.to_ascii_lowercase();
+    let parsed_ip = host_lower.parse::<IpAddr>().ok();
+    let is_loopback = host_lower == "localhost" || parsed_ip.is_some_and(|ip| ip.is_loopback());
+
+    if scheme == "ws" && !is_loopback {
+        anyhow::bail!("non-loopback gateway_url values must use wss://");
+    }
+
+    if !is_loopback && parsed_ip.is_some_and(is_private_or_link_local_ip) {
+        anyhow::bail!("private/link-local gateway_url addresses are not allowed");
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn is_private_or_link_local_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_private() || v4.is_link_local() || v4.is_broadcast() || v4.is_unspecified()
+        }
+        IpAddr::V6(v6) => {
+            let segment0 = v6.segments()[0];
+            let unique_local = (segment0 & 0xfe00) == 0xfc00; // fc00::/7
+            let link_local = (segment0 & 0xffc0) == 0xfe80; // fe80::/10
+            unique_local || link_local || v6.is_unspecified()
+        }
     }
 }
 
@@ -1935,8 +2028,11 @@ mod tests {
             .to_public_key_pem(Default::default())
             .unwrap_or_else(|err| panic!("failed to encode public key pem: {err}"));
 
-        let temp_home = std::env::temp_dir().join(format!("openclaw-fallback-test-{}", Uuid::new_v4()));
-        let primary_identity = temp_home.join(OPENCLAW_STATE_DIR).join(OPENCLAW_IDENTITY_PATH);
+        let temp_home =
+            std::env::temp_dir().join(format!("openclaw-fallback-test-{}", Uuid::new_v4()));
+        let primary_identity = temp_home
+            .join(OPENCLAW_STATE_DIR)
+            .join(OPENCLAW_IDENTITY_PATH);
         let legacy_identity = temp_home
             .join(OPENCLAW_LEGACY_STATE_DIRS[0])
             .join(OPENCLAW_IDENTITY_PATH);
@@ -2410,7 +2506,10 @@ mod tests {
             }
             sleep(Duration::from_millis(50)).await;
         }
-        assert!(connected, "gateway did not reach connected state on first token");
+        assert!(
+            connected,
+            "gateway did not reach connected state on first token"
+        );
 
         manager
             .disconnect_gateway("gw-rotate")
@@ -2448,7 +2547,10 @@ mod tests {
             }
             sleep(Duration::from_millis(50)).await;
         }
-        assert!(connected, "gateway did not reach connected state after token rotation");
+        assert!(
+            connected,
+            "gateway did not reach connected state after token rotation"
+        );
 
         manager
             .disconnect_gateway("gw-rotate")

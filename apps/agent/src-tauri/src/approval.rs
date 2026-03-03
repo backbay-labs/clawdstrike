@@ -29,6 +29,16 @@ fn compute_expires_at(now: DateTime<Utc>, ttl_secs: u64) -> DateTime<Utc> {
         .unwrap_or(DateTime::<Utc>::MAX_UTC)
 }
 
+fn is_duplicate_pending(existing: &ApprovalRequest, incoming: &ApprovalRequest) -> bool {
+    existing.status == ApprovalStatus::Pending
+        && existing.tool == incoming.tool
+        && existing.resource == incoming.resource
+        && existing.guard == incoming.guard
+        && existing.reason == incoming.reason
+        && existing.severity == incoming.severity
+        && existing.session_id == incoming.session_id
+}
+
 /// How the user resolved the approval request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -201,6 +211,14 @@ impl ApprovalQueue {
                     });
                 }
             }
+
+            if let Some(existing) = requests
+                .values()
+                .find(|existing| is_duplicate_pending(existing, &request))
+            {
+                return Ok(existing.clone());
+            }
+
             // Evict resolved/expired entries first when at capacity.
             if requests.len() >= MAX_QUEUE_SIZE {
                 let to_evict: Vec<String> = requests
@@ -584,6 +602,38 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("submit failed: {e}"));
 
+        assert_eq!(queue.pending_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn submit_coalesces_duplicate_pending_requests() {
+        let queue = ApprovalQueue::new();
+        let first = queue
+            .submit(ApprovalRequestInput {
+                tool: "shell.exec".to_string(),
+                resource: "cat /etc/passwd".to_string(),
+                guard: "shell_guard".to_string(),
+                reason: "command denied".to_string(),
+                severity: "high".to_string(),
+                session_id: Some("sess-1".to_string()),
+                ttl_secs: Some(60),
+            })
+            .await
+            .unwrap_or_else(|e| panic!("first submit failed: {e}"));
+        let second = queue
+            .submit(ApprovalRequestInput {
+                tool: "shell.exec".to_string(),
+                resource: "cat /etc/passwd".to_string(),
+                guard: "shell_guard".to_string(),
+                reason: "command denied".to_string(),
+                severity: "high".to_string(),
+                session_id: Some("sess-1".to_string()),
+                ttl_secs: Some(60),
+            })
+            .await
+            .unwrap_or_else(|e| panic!("second submit failed: {e}"));
+
+        assert_eq!(first.id, second.id);
         assert_eq!(queue.pending_count().await, 1);
     }
 

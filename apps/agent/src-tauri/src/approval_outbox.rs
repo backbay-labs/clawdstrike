@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -174,22 +175,17 @@ impl ApprovalRequestOutbox {
     }
 }
 
-fn persist_entries(path: &PathBuf, entries: &VecDeque<PendingApprovalRequest>) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create approval outbox dir {:?}", parent))?;
-    }
-
+fn persist_entries(path: &Path, entries: &VecDeque<PendingApprovalRequest>) -> Result<()> {
     let serialized = serde_json::to_string_pretty(&PersistedOutbox {
         entries: entries.clone(),
     })
     .with_context(|| "Failed to serialize approval outbox")?;
 
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serialized)
-        .with_context(|| format!("Failed to write temporary approval outbox file {:?}", tmp))?;
-    std::fs::rename(&tmp, path)
-        .with_context(|| format!("Failed to atomically replace approval outbox at {:?}", path))?;
+    crate::security::fs::write_private_atomic(
+        path,
+        serialized.as_bytes(),
+        "approval request outbox",
+    )?;
 
     Ok(())
 }

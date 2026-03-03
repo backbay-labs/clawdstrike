@@ -3,7 +3,9 @@
 //! Subscribes to a tenant/agent-scoped command subject and processes
 //! remote management commands (set_posture, kill_switch, request_policy_reload).
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
@@ -22,9 +24,7 @@ const VALID_POSTURES: &[&str] = &["standard", "restricted", "audit", "locked"];
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum PostureCommand {
     /// Change the agent's security posture.
-    SetPosture {
-        posture: String,
-    },
+    SetPosture { posture: String },
     /// Emergency kill switch: immediately deny-all and terminate session.
     KillSwitch {
         #[serde(default)]
@@ -96,8 +96,15 @@ impl PostureCommandHandler {
                     };
 
                     let reply = msg.reply.clone();
+                    let trusted_issuer = {
+                        let settings = self.settings.read().await;
+                        settings.nats.approval_response_trusted_issuer.clone()
+                    };
 
-                    match serde_json::from_slice::<PostureCommand>(&msg.payload) {
+                    match parse_signed_posture_command_payload(
+                        &msg.payload,
+                        trusted_issuer.as_deref(),
+                    ) {
                         Ok(cmd) => {
                             let response = self.handle_command(cmd).await;
                             if let Some(reply_subject) = reply {
@@ -112,11 +119,11 @@ impl PostureCommandHandler {
                             }
                         }
                         Err(err) => {
-                            tracing::warn!(error = %err, "Failed to parse posture command");
+                            tracing::warn!(error = %err, "Failed to verify signed posture command");
                             if let Some(reply_subject) = reply {
                                 let error_response = CommandResponse {
                                     status: "error".to_string(),
-                                    message: Some(format!("Invalid command: {}", err)),
+                                    message: Some(format!("Invalid signed command: {}", err)),
                                 };
                                 let response_json = serde_json::to_vec(&error_response)
                                     .unwrap_or_else(|_| b"{}".to_vec());
@@ -257,6 +264,47 @@ impl PostureCommandHandler {
     }
 }
 
+fn parse_signed_posture_command_payload(
+    payload: &[u8],
+    trusted_issuer: Option<&str>,
+) -> Result<PostureCommand> {
+    let raw: Value = serde_json::from_slice(payload)?;
+    let envelope = if raw.get("replayed").and_then(|v| v.as_bool()) == Some(true) {
+        raw.get("envelope")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("replayed command missing envelope"))?
+    } else {
+        raw
+    };
+
+    if envelope.get("fact").is_none() {
+        anyhow::bail!("posture command payload must be a signed envelope");
+    }
+
+    if !spine::verify_envelope(&envelope)? {
+        anyhow::bail!("posture command signature verification failed");
+    }
+
+    let issuer = envelope
+        .get("issuer")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| anyhow::anyhow!("signed posture command missing issuer"))?;
+    let expected = trusted_issuer
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing trusted posture command issuer"))?;
+    if issuer != expected {
+        anyhow::bail!("posture command issuer mismatch: expected {expected}, got {issuer}");
+    }
+
+    let fact = envelope
+        .get("fact")
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("signed posture command missing fact"))?;
+    let cmd: PostureCommand = serde_json::from_value(fact)?;
+    Ok(cmd)
+}
+
 async fn transition_posture_command(
     session_manager: &SessionManager,
     settings: &RwLock<Settings>,
@@ -294,12 +342,9 @@ async fn transition_posture_command(
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use axum::{
-        extract::Path,
-        http::StatusCode,
-        routing::post,
-        Json, Router,
-    };
+    use axum::{extract::Path, http::StatusCode, routing::post, Json, Router};
+    use hush_core::Keypair;
+    use spine::envelope::{build_signed_envelope, now_rfc3339};
     use std::sync::Mutex as StdMutex;
     use tokio::net::TcpListener;
 
@@ -355,6 +400,53 @@ mod tests {
     }
 
     #[test]
+    fn signed_posture_command_requires_trusted_issuer() {
+        let kp = Keypair::generate();
+        let envelope = build_signed_envelope(
+            &kp,
+            1,
+            None,
+            serde_json::json!({
+                "command": "request_policy_reload"
+            }),
+            now_rfc3339(),
+        )
+        .unwrap();
+        let err =
+            parse_signed_posture_command_payload(&serde_json::to_vec(&envelope).unwrap(), None)
+                .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("missing trusted posture command issuer"));
+    }
+
+    #[test]
+    fn signed_posture_command_accepts_matching_issuer() {
+        let kp = Keypair::generate();
+        let envelope = build_signed_envelope(
+            &kp,
+            1,
+            None,
+            serde_json::json!({
+                "command": "request_policy_reload"
+            }),
+            now_rfc3339(),
+        )
+        .unwrap();
+        let issuer = envelope
+            .get("issuer")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
+        let parsed = parse_signed_posture_command_payload(
+            &serde_json::to_vec(&envelope).unwrap(),
+            Some(&issuer),
+        )
+        .unwrap();
+        assert!(matches!(parsed, PostureCommand::RequestPolicyReload));
+    }
+
+    #[test]
     fn valid_postures_are_accepted() {
         for posture in VALID_POSTURES {
             assert!(
@@ -396,24 +488,26 @@ mod tests {
             )
             .route(
                 "/api/v1/session/{id}/transition",
-                post(move |Path(id): Path<String>, Json(body): Json<serde_json::Value>| {
-                    let events_for_transition = events_for_transition.clone();
-                    async move {
-                        let to_state = body
-                            .get("to_state")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        let trigger = body
-                            .get("trigger")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        events_for_transition
-                            .lock()
-                            .unwrap()
-                            .push(format!("transition:{id}:{to_state}:{trigger}"));
-                        StatusCode::OK
-                    }
-                }),
+                post(
+                    move |Path(id): Path<String>, Json(body): Json<serde_json::Value>| {
+                        let events_for_transition = events_for_transition.clone();
+                        async move {
+                            let to_state = body
+                                .get("to_state")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let trigger = body
+                                .get("trigger")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            events_for_transition
+                                .lock()
+                                .unwrap()
+                                .push(format!("transition:{id}:{to_state}:{trigger}"));
+                            StatusCode::OK
+                        }
+                    },
+                ),
             );
 
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -441,13 +535,15 @@ mod tests {
             .await
             .unwrap_or_else(|err| panic!("create_session failed: {err}"));
 
-        let mut settings = Settings::default();
-        settings.daemon_port = daemon_url
+        let daemon_port = daemon_url
             .rsplit(':')
             .next()
             .and_then(|p| p.parse::<u16>().ok())
             .unwrap_or_else(|| panic!("failed to parse daemon test port from {daemon_url}"));
-        let settings = RwLock::new(settings);
+        let settings = RwLock::new(Settings {
+            daemon_port,
+            ..Settings::default()
+        });
 
         let response = transition_posture_command(
             &session_manager,
@@ -477,13 +573,15 @@ mod tests {
             .await
             .unwrap_or_else(|err| panic!("create_session failed: {err}"));
 
-        let mut settings = Settings::default();
-        settings.daemon_port = daemon_url
+        let daemon_port = daemon_url
             .rsplit(':')
             .next()
             .and_then(|p| p.parse::<u16>().ok())
             .unwrap_or_else(|| panic!("failed to parse daemon test port from {daemon_url}"));
-        let settings = RwLock::new(settings);
+        let settings = RwLock::new(Settings {
+            daemon_port,
+            ..Settings::default()
+        });
 
         let response = transition_posture_command(
             &session_manager,

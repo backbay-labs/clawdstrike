@@ -37,7 +37,10 @@ impl std::fmt::Debug for GatewaySecrets {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GatewaySecrets")
             .field("token", &self.token.as_ref().map(|_| "[REDACTED]"))
-            .field("device_token", &self.device_token.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "device_token",
+                &self.device_token.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
