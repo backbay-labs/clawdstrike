@@ -717,14 +717,22 @@ flowchart TB
     API <--> DB
     API <--> PROV
 
-    A1 & A2 & AN -->|HTTPS enrollment| API
-    API -->|NATS creds + subject prefix| A1 & A2 & AN
+    A1 -->|HTTPS enrollment| API
+    A2 -->|HTTPS enrollment| API
+    AN -->|HTTPS enrollment| API
+    API -->|NATS creds + subject prefix| A1
+    API -->|NATS creds + subject prefix| A2
+    API -->|NATS creds + subject prefix| AN
 
     API -->|policy publish/update| KV
-    KV -->|policy sync (KV watch)| A1 & A2 & AN
+    KV -->|policy sync (KV watch)| A1
+    KV -->|policy sync (KV watch)| A2
+    KV -->|policy sync (KV watch)| AN
 
     API -->|set_posture / reload / kill| CMD
-    CMD -->|request/reply ack| A1 & A2 & AN
+    CMD -->|request/reply ack| A1
+    CMD -->|request/reply ack| A2
+    CMD -->|request/reply ack| AN
 ```
 
 ### 2. Telemetry Plane
