@@ -695,22 +695,35 @@ For organizations managing agent fleets across teams and environments, Clawdstri
 
 ```mermaid
 flowchart TB
-    AF[Agent Fleet]
-    API[Control API]
-    DASH[Control Console]
-    DB[(PostgreSQL)]
-    PROV[External NATS Provisioner]
-    KV[(Policy KV)]
-    CMD[(Command Subjects)]
+    subgraph ops ["Operator Surface"]
+        DASH[Control Console]
+    end
 
-    DASH <--> API
-    API <--> DB
-    API <--> PROV
-    AF <--> API
-    API --> KV
-    KV --> AF
-    API --> CMD
-    CMD --> AF
+    subgraph control ["Control Services"]
+        API[Control API]
+        DB[(PostgreSQL)]
+        PROV[External NATS Provisioner]
+    end
+
+    subgraph nats ["NATS Control Plane"]
+        KV[(Policy KV)]
+        CMD[(Command Subjects)]
+    end
+
+    subgraph fleet ["Managed Endpoints"]
+        AF[Agent Fleet]
+    end
+
+    DASH <-->|admin operations| API
+    API <-->|state and enrollment records| DB
+    API <-->|subject and credential provisioning| PROV
+
+    AF -.->|HTTPS enrollment request| API
+    API -.->|NATS credentials and subject prefix| AF
+    API -->|policy publish| KV
+    KV -->|KV watch sync| AF
+    API -->|command publish| CMD
+    CMD -->|request and reply acks| AF
 ```
 
 - Enrollment runs over HTTPS (`Agent Fleet <-> Control API`), and the API returns NATS credentials + subject prefix.
