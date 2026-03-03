@@ -63,7 +63,7 @@ server.tool(
   },
   async ({ targets, policy }) => {
     const args = ["hunt", "scan"];
-    if (targets?.length) args.push(...targets);
+    if (targets?.length) for (const t of targets) args.push("--target", t);
     if (policy) args.push("--policy", policy);
     return toToolResult(await runCli(args));
   },
@@ -77,19 +77,19 @@ server.tool(
     query: z.string().optional().describe("Free-text search query"),
     source: z.string().optional().describe("Event source filter (tetragon, hubble, receipt, spine)"),
     verdict: z.string().optional().describe("Verdict filter (allow, deny, audit)"),
-    kind: z.string().optional().describe("Event kind filter (process_exec, file_write, network_connect, etc.)"),
-    since: z.string().optional().describe("Start time (ISO 8601 or relative like '1h', '30m')"),
-    until: z.string().optional().describe("End time (ISO 8601 or relative)"),
+    action_type: z.string().optional().describe("Action type filter (file, network, shell, mcp, etc.)"),
+    start: z.string().optional().describe("Start time (RFC 3339 or relative like '1h', '30m')"),
+    end: z.string().optional().describe("End time (RFC 3339 or relative)"),
     limit: z.number().optional().describe("Maximum number of results"),
   },
-  async ({ query, source, verdict, kind, since, until, limit }) => {
+  async ({ query, source, verdict, action_type, start, end, limit }) => {
     const args = ["hunt", "query"];
     if (query) args.push(query);
     if (source) args.push("--source", source);
     if (verdict) args.push("--verdict", verdict);
-    if (kind) args.push("--kind", kind);
-    if (since) args.push("--since", since);
-    if (until) args.push("--until", until);
+    if (action_type) args.push("--action-type", action_type);
+    if (start) args.push("--start", start);
+    if (end) args.push("--end", end);
     if (limit !== undefined) args.push("--limit", String(Math.floor(limit)));
     return toToolResult(await runCli(args));
   },
@@ -102,16 +102,16 @@ server.tool(
   {
     source: z.string().optional().describe("Event source filter"),
     verdict: z.string().optional().describe("Verdict filter (allow, deny, audit)"),
-    since: z.string().optional().describe("Start time (ISO 8601 or relative)"),
-    until: z.string().optional().describe("End time (ISO 8601 or relative)"),
+    start: z.string().optional().describe("Start time (RFC 3339 or relative)"),
+    end: z.string().optional().describe("End time (RFC 3339 or relative)"),
     limit: z.number().optional().describe("Maximum number of events"),
   },
-  async ({ source, verdict, since, until, limit }) => {
+  async ({ source, verdict, start, end, limit }) => {
     const args = ["hunt", "timeline"];
     if (source) args.push("--source", source);
     if (verdict) args.push("--verdict", verdict);
-    if (since) args.push("--since", since);
-    if (until) args.push("--until", until);
+    if (start) args.push("--start", start);
+    if (end) args.push("--end", end);
     if (limit !== undefined) args.push("--limit", String(Math.floor(limit)));
     return toToolResult(await runCli(args));
   },
@@ -123,14 +123,14 @@ server.tool(
   "Run correlation rules against security events to detect attack patterns and suspicious behavior sequences.",
   {
     rules: z.array(z.string()).describe("Correlation rule names or paths to apply"),
-    since: z.string().optional().describe("Start time (ISO 8601 or relative)"),
-    until: z.string().optional().describe("End time (ISO 8601 or relative)"),
+    start: z.string().optional().describe("Start time (RFC 3339 or relative)"),
+    end: z.string().optional().describe("End time (RFC 3339 or relative)"),
   },
-  async ({ rules, since, until }) => {
+  async ({ rules, start, end }) => {
     const args = ["hunt", "correlate"];
     for (const r of rules) args.push("--rules", r);
-    if (since) args.push("--since", since);
-    if (until) args.push("--until", until);
+    if (start) args.push("--start", start);
+    if (end) args.push("--end", end);
     return toToolResult(await runCli(args));
   },
 );
@@ -141,14 +141,14 @@ server.tool(
   "Match events against Indicator of Compromise (IOC) feeds. Detects known-malicious IPs, domains, hashes, and commands.",
   {
     feeds: z.array(z.string()).describe("IOC feed names or paths"),
-    since: z.string().optional().describe("Start time (ISO 8601 or relative)"),
-    until: z.string().optional().describe("End time (ISO 8601 or relative)"),
+    start: z.string().optional().describe("Start time (RFC 3339 or relative)"),
+    end: z.string().optional().describe("End time (RFC 3339 or relative)"),
   },
-  async ({ feeds, since, until }) => {
+  async ({ feeds, start, end }) => {
     const args = ["hunt", "ioc"];
     for (const f of feeds) args.push("--feed", f);
-    if (since) args.push("--since", since);
-    if (until) args.push("--until", until);
+    if (start) args.push("--start", start);
+    if (end) args.push("--end", end);
     return toToolResult(await runCli(args));
   },
 );
@@ -195,15 +195,14 @@ server.tool(
 // 9. clawdstrike_hunt_diff ------------------------------------------------
 server.tool(
   "clawdstrike_hunt_diff",
-  "Compare MCP scan results against a baseline to detect configuration drift: new servers, removed servers, or changed tool sets.",
+  "Compare two policy rulesets to identify enforcement differences: added/removed guards, changed thresholds, and divergent path rules.",
   {
-    baseline: z.string().describe("Path to baseline scan results"),
-    current: z.string().optional().describe("Path to current scan results (runs a fresh scan if omitted)"),
+    left: z.string().describe("First policy reference (ruleset name, file path, or URL)"),
+    right: z.string().describe("Second policy reference to compare against"),
   },
-  async ({ baseline, current }) => {
-    const args = ["hunt", "scan", "diff", "--baseline", baseline];
-    if (current) args.push("--current", current);
-    return toToolResult(await runCli(args));
+  async ({ left, right }) => {
+    const args = ["policy", "diff", left, right];
+    return toToolResult(await runCliRaw(args));
   },
 );
 
@@ -213,14 +212,14 @@ server.tool(
   "Generate a composite security report by running timeline analysis and correlation rules, then combining the results.",
   {
     rules: z.array(z.string()).describe("Correlation rule names or paths"),
-    since: z.string().optional().describe("Start time (ISO 8601 or relative)"),
-    until: z.string().optional().describe("End time (ISO 8601 or relative)"),
+    start: z.string().optional().describe("Start time (RFC 3339 or relative)"),
+    end: z.string().optional().describe("End time (RFC 3339 or relative)"),
   },
-  async ({ rules, since, until }) => {
+  async ({ rules, start, end }) => {
     // Build shared time-range args
     const timeArgs: string[] = [];
-    if (since) timeArgs.push("--since", since);
-    if (until) timeArgs.push("--until", until);
+    if (start) timeArgs.push("--start", start);
+    if (end) timeArgs.push("--end", end);
 
     // Run timeline and correlate in parallel, with 60s timeout for reports
     const [timelineResult, correlateResult] = await Promise.all([
@@ -412,12 +411,12 @@ server.prompt(
   "investigate-incident",
   "Structured 6-step threat hunt workflow for investigating security incidents within a time range.",
   {
-    since: z.string().describe("Start of investigation window (ISO 8601 or relative like '1h')"),
-    until: z.string().optional().describe("End of investigation window (ISO 8601 or relative)"),
+    start: z.string().describe("Start of investigation window (RFC 3339 or relative like '1h')"),
+    end: z.string().optional().describe("End of investigation window (RFC 3339 or relative)"),
     rules: z.string().optional().describe("Comma-separated correlation rule names to apply"),
   },
-  ({ since, until, rules }) => {
-    const timeRange = until ? `from ${since} to ${until}` : `since ${since}`;
+  ({ start, end, rules }) => {
+    const timeRange = end ? `from ${start} to ${end}` : `since ${start}`;
     const rulesNote = rules
       ? `Focus on these correlation rules: ${rules}`
       : "Use all available correlation rules.";
