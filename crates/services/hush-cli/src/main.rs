@@ -28,6 +28,7 @@
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::generate;
+use colored::Colorize;
 use rand::Rng;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -42,6 +43,7 @@ mod guard_cli;
 mod guard_report_json;
 mod hunt;
 mod hush_run;
+mod init;
 mod mirror;
 mod pkg_cli;
 mod policy_bundle;
@@ -58,6 +60,7 @@ mod policy_test;
 mod policy_version;
 mod registry_config;
 mod remote_extends;
+mod ui;
 
 const CLI_JSON_VERSION: u8 = 1;
 
@@ -95,8 +98,12 @@ struct CheckArgs {
 
 #[derive(Parser, Debug)]
 #[command(name = "hush")]
-#[command(version, about = "Clawdstrike security guard CLI", long_about = None)]
+#[command(version = env!("CARGO_PKG_VERSION"), about = "Clawdstrike security guard CLI", long_about = None)]
 struct Cli {
+    /// Disable colored output (also respects NO_COLOR env var)
+    #[arg(long)]
+    no_color: bool,
+
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
@@ -259,6 +266,22 @@ enum Commands {
     Hunt {
         #[command(subcommand)]
         command: HuntCommands,
+    },
+
+    /// Initialize a new Clawdstrike project
+    Init {
+        /// Run non-interactively using defaults or flags
+        #[arg(long)]
+        non_interactive: bool,
+        /// Ruleset to use (default, strict, ai-agent, ai-agent-posture, permissive, cicd)
+        #[arg(long)]
+        ruleset: Option<String>,
+        /// Generate an Ed25519 keypair
+        #[arg(long)]
+        keygen: bool,
+        /// Project directory (defaults to current directory)
+        #[arg(long)]
+        dir: Option<PathBuf>,
     },
 
     /// Generate shell completions
@@ -1206,16 +1229,25 @@ async fn main() {
         Ok(cli) => cli,
         Err(err) => {
             let code = match err.kind() {
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                clap::error::ErrorKind::DisplayVersion => {
+                    ui::version_banner(&mut io::stderr());
                     ExitCode::Ok
                 }
-                _ => ExitCode::InvalidArgs,
+                clap::error::ErrorKind::DisplayHelp => {
+                    let _ = err.print();
+                    ExitCode::Ok
+                }
+                _ => {
+                    let _ = err.print();
+                    ExitCode::InvalidArgs
+                }
             };
 
-            let _ = err.print();
             std::process::exit(code.as_i32());
         }
     };
+
+    ui::init_color(cli.no_color);
 
     // Initialize logging
     let log_level = match cli.verbose {
@@ -1305,6 +1337,7 @@ struct VerifyJsonOutput {
 
 async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let Cli {
+        no_color,
         remote_extends_allow_host,
         remote_extends_cache_dir,
         remote_extends_max_fetch_bytes,
@@ -1392,14 +1425,14 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
 
         Commands::Keygen { output, tpm_seal } => match cmd_keygen(&output, tpm_seal) {
             Ok(out) => {
-                let _ = writeln!(stdout, "Generated keypair:");
-                let _ = writeln!(stdout, "  {}: {}", out.private_label, out.private_path);
-                let _ = writeln!(stdout, "  Public key:  {}", out.public_path);
-                let _ = writeln!(stdout, "  Public key (hex): {}", out.public_hex);
+                ui::section("Generated Keypair", stdout);
+                ui::kv(out.private_label, &out.private_path, stdout);
+                ui::kv("Public key", &out.public_path, stdout);
+                ui::kv("Public key (hex)", &out.public_hex, stdout);
                 ExitCode::Ok.as_i32()
             }
             Err(e) => {
-                let _ = writeln!(stderr, "Error: {}", e);
+                let _ = writeln!(stderr, "{} {}", ui::Verdict::Error.icon(), e);
                 ExitCode::RuntimeError.as_i32()
             }
         },
@@ -1457,8 +1490,25 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         },
 
         Commands::Hunt { command } => {
-            hunt::cmd_hunt(command, &remote_extends, stdout, stderr).await
+            hunt::cmd_hunt(command, &remote_extends, no_color, stdout, stderr).await
         }
+
+        Commands::Init {
+            non_interactive,
+            ruleset,
+            keygen,
+            dir,
+        } => init::cmd_init(
+            init::InitArgs {
+                non_interactive,
+                ruleset,
+                keygen,
+                dir,
+            },
+            stdout,
+            stderr,
+        )
+        .as_i32(),
     }
 }
 
@@ -1712,24 +1762,30 @@ async fn cmd_check(
         return code;
     }
 
-    match code {
-        ExitCode::Ok => {
-            let _ = writeln!(stdout, "ALLOWED: {}", result.message);
-        }
-        ExitCode::Warn => {
-            let _ = writeln!(stdout, "WARN: {}", result.message);
-        }
-        ExitCode::Fail => {
-            let _ = writeln!(
-                stderr,
-                "BLOCKED [{:?}]: {}",
-                result.severity, result.message
-            );
-        }
-        _ => {
-            let _ = writeln!(stderr, "Error: {}", result.message);
-        }
-    }
+    let verdict = match code {
+        ExitCode::Ok => ui::Verdict::Allowed,
+        ExitCode::Warn => ui::Verdict::Warn,
+        ExitCode::Fail => ui::Verdict::Blocked,
+        _ => ui::Verdict::Error,
+    };
+
+    let target_out = if code == ExitCode::Fail
+        || code == ExitCode::ConfigError
+        || code == ExitCode::RuntimeError
+    {
+        &mut *stderr as &mut dyn Write
+    } else {
+        &mut *stdout as &mut dyn Write
+    };
+
+    let lines = vec![
+        format!("{}", verdict.badge()),
+        format!("  Action:  {}", action_type),
+        format!("  Target:  {}", target),
+        format!("  Guard:   {}", result.guard),
+        format!("  Message: {}", result.message),
+    ];
+    ui::render_box("Check Result", &lines, target_out);
 
     code
 }
@@ -1960,15 +2016,29 @@ fn cmd_verify(
     }
 
     if result.valid {
-        let _ = writeln!(stdout, "VALID: Receipt signature verified");
-        let verdict = if signed.receipt.verdict.passed {
-            "PASS"
+        let sig_verdict = ui::Verdict::Valid;
+        let inner_verdict = if signed.receipt.verdict.passed {
+            ui::Verdict::Pass
         } else {
-            "FAIL"
+            ui::Verdict::Fail
         };
-        let _ = writeln!(stdout, "  Verdict: {}", verdict);
+        let mut lines = vec![
+            format!("{}", sig_verdict.badge()),
+            format!("  Receipt:   {}", receipt),
+            format!("  Timestamp: {}", summary.timestamp),
+        ];
+        if let Some(ref id) = summary.receipt_id {
+            lines.push(format!("  ID:        {}", id));
+        }
+        lines.push(format!("  Verdict:  {}", inner_verdict.badge()));
+        ui::render_box("Verify Result", &lines, stdout);
     } else {
-        let _ = writeln!(stderr, "INVALID: {}", result.errors.join(", "));
+        let verdict = ui::Verdict::Invalid;
+        let lines = vec![
+            format!("{}", verdict.badge()),
+            format!("  Errors: {}", result.errors.join(", ")),
+        ];
+        ui::render_box("Verify Result", &lines, stderr);
     }
 
     code
@@ -2304,7 +2374,8 @@ async fn cmd_policy(
                             .as_ref()
                             .map(|v| policy_diff::format_compact_value(v, 120))
                             .unwrap_or_else(|| "null".to_string());
-                        let _ = writeln!(stdout, "+ {}: null -> {}", path, new);
+                        let _ =
+                            writeln!(stdout, "{}", format!("+ {}: null -> {}", path, new).green());
                     }
                     policy_diff::DiffKind::Removed => {
                         let old = d
@@ -2312,7 +2383,8 @@ async fn cmd_policy(
                             .as_ref()
                             .map(|v| policy_diff::format_compact_value(v, 120))
                             .unwrap_or_else(|| "null".to_string());
-                        let _ = writeln!(stdout, "- {}: {} -> null", path, old);
+                        let _ =
+                            writeln!(stdout, "{}", format!("- {}: {} -> null", path, old).red());
                     }
                     policy_diff::DiffKind::Changed => {
                         let old = d
@@ -2325,7 +2397,11 @@ async fn cmd_policy(
                             .as_ref()
                             .map(|v| policy_diff::format_compact_value(v, 120))
                             .unwrap_or_else(|| "null".to_string());
-                        let _ = writeln!(stdout, "~ {}: {} -> {}", path, old, new);
+                        let _ = writeln!(
+                            stdout,
+                            "{}",
+                            format!("~ {}: {} -> {}", path, old, new).yellow()
+                        );
                     }
                 }
             }
@@ -2334,13 +2410,15 @@ async fn cmd_policy(
         }
 
         PolicyCommands::List => {
-            let _ = writeln!(stdout, "Available rulesets:");
+            ui::section("Available Rulesets", stdout);
+            let mut table = ui::new_table(&["Ruleset", "Description"]);
             for id in RuleSet::list() {
                 let Some(rs) = RuleSet::by_name(id)? else {
                     continue;
                 };
-                let _ = writeln!(stdout, "  {} - {}", rs.id, rs.description);
+                table.add_row(vec![rs.id, rs.description]);
             }
+            let _ = writeln!(stdout, "{}", table);
             Ok(ExitCode::Ok)
         }
 

@@ -271,9 +271,14 @@ impl RemotePolicyResolver {
             ));
         }
 
+        let pb = crate::ui::spinner(&format!("Fetching {}...", url));
+
         const MAX_REDIRECTS: usize = 5;
 
-        let mut current = parse_remote_url(url, self.cfg.https_only).map_err(Error::ConfigError)?;
+        let mut current = parse_remote_url(url, self.cfg.https_only).map_err(|e| {
+            pb.finish_and_clear();
+            Error::ConfigError(e)
+        })?;
         current.set_fragment(None);
 
         let initial_host = current
@@ -336,17 +341,23 @@ impl RemotePolicyResolver {
 
             let mut bytes = Vec::new();
             let mut limited = resp.take((self.cfg.max_fetch_bytes as u64) + 1);
-            limited.read_to_end(&mut bytes).map_err(Error::IoError)?;
+            limited.read_to_end(&mut bytes).map_err(|e| {
+                pb.finish_and_clear();
+                Error::IoError(e)
+            })?;
             if bytes.len() > self.cfg.max_fetch_bytes {
+                pb.finish_and_clear();
                 return Err(Error::ConfigError(format!(
                     "Remote policy exceeds max_fetch_bytes ({} > {})",
                     bytes.len(),
                     self.cfg.max_fetch_bytes
                 )));
             }
+            pb.finish_and_clear();
             return Ok(bytes);
         }
 
+        pb.finish_and_clear();
         Err(Error::ConfigError(format!(
             "Remote policy exceeded max redirects (>{})",
             MAX_REDIRECTS

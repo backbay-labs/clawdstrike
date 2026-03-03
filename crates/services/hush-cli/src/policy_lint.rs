@@ -6,6 +6,7 @@ use serde_json::json;
 
 use crate::policy_diff::{ResolvedPolicySource, ResolvedPolicySource as Rps};
 use crate::remote_extends::RemoteExtendsConfig;
+use crate::ui;
 use crate::{CliJsonError, ExitCode, PolicySource, CLI_JSON_VERSION};
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -133,14 +134,34 @@ pub fn cmd_policy_lint(
     }
 
     if warnings.is_empty() {
-        let _ = writeln!(stdout, "Policy lint: OK");
+        let _ = writeln!(
+            stdout,
+            "{} Policy lint: no issues found",
+            ui::Verdict::Pass.badge()
+        );
         return ExitCode::Ok;
     }
 
-    let _ = writeln!(stdout, "Policy lint: {} warning(s)", warnings.len());
+    let _ = writeln!(
+        stdout,
+        "{} Policy lint: {}",
+        ui::Verdict::Warn.badge(),
+        ui::count_warn(warnings.len() as u64)
+    );
+    let mut table = ui::new_table(&["Code", "Severity", "Message"]);
     for w in &warnings {
-        let _ = writeln!(stdout, "- {}: {}", w.code, w.message);
+        let severity = if w.code.starts_with("SEC") || w.code.starts_with("POS") {
+            "warning"
+        } else {
+            "note"
+        };
+        table.add_row(vec![
+            w.code.to_string(),
+            severity.to_string(),
+            w.message.clone(),
+        ]);
     }
+    let _ = writeln!(stdout, "{}", table);
     if strict {
         let _ = writeln!(stderr, "Strict mode: warnings treated as errors.");
     }

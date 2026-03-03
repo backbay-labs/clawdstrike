@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::policy_event::{map_policy_event, PolicyEvent};
 use crate::remote_extends::RemoteExtendsConfig;
+use crate::ui;
 use crate::{CliJsonError, ExitCode, PolicyTestOutputFormat, CLI_JSON_VERSION};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -790,7 +791,7 @@ fn render_policy_test_output(
     format: PolicyTestOutputFormat,
     output: &PolicyTestJsonOutput,
     coverage_enabled: bool,
-    code: ExitCode,
+    _code: ExitCode,
     min_coverage: Option<f64>,
 ) -> String {
     match format {
@@ -802,12 +803,19 @@ fn render_policy_test_output(
         PolicyTestOutputFormat::Text => {
             let mut text = String::new();
             use std::fmt::Write as _;
-            let _ = writeln!(text, "Policy test: {}", output.name);
-            let _ = writeln!(text, "Policy: {}", output.policy);
+            let verdict = if output.failed == 0 {
+                ui::Verdict::Pass
+            } else {
+                ui::Verdict::Fail
+            };
+            let _ = writeln!(text, "{} Policy test: {}", verdict.badge(), output.name);
+            let _ = writeln!(text, "  Policy: {}", output.policy);
             let _ = writeln!(
                 text,
-                "Total: {}, Passed: {}, Failed: {}",
-                output.total, output.passed, output.failed
+                "  {} total, {}, {}",
+                output.total,
+                ui::count_pass(output.passed),
+                ui::count_fail(output.failed)
             );
             if coverage_enabled {
                 if let (Some(covered), Some(total), Some(percent)) = (
@@ -817,26 +825,32 @@ fn render_policy_test_output(
                 ) {
                     let _ = writeln!(
                         text,
-                        "Guard coverage: {covered}/{total} ({percent:.2}%){}",
+                        "  Guard coverage: {covered}/{total} ({percent:.2}%){}",
                         min_coverage
                             .map(|m| format!(" (min {:.2}%)", m))
                             .unwrap_or_default()
                     );
                 }
                 if let Some(c) = output.coverage.as_ref() {
-                    let _ = writeln!(text, "Coverage (by guard):");
+                    let _ = writeln!(text, "  Coverage (by guard):");
                     for (guard, count) in c {
-                        let _ = writeln!(text, "  {}: {}", guard, count);
+                        let _ = writeln!(text, "    {}: {}", guard, count);
                     }
                 }
             }
             if !output.failures.is_empty() {
-                let _ = writeln!(text, "\nFailures:");
+                let _ = writeln!(text, "\n  Failures:");
                 for f in &output.failures {
-                    let _ = writeln!(text, "- {} / {}: {}", f.suite, f.test, f.message);
+                    let _ = writeln!(
+                        text,
+                        "  {} {} / {}: {}",
+                        ui::Verdict::Fail.icon(),
+                        f.suite,
+                        f.test,
+                        f.message
+                    );
                 }
             }
-            let _ = writeln!(text, "Exit: {}", code.as_i32());
             text
         }
     }

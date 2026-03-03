@@ -3817,6 +3817,7 @@ mod hunt_contract {
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -3890,6 +3891,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -3941,6 +3943,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -3982,6 +3985,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -4031,6 +4035,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -4076,6 +4081,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -4134,6 +4140,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -4164,6 +4171,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -4214,6 +4222,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )
@@ -4259,6 +4268,7 @@ output:
                 no_color: true,
             },
             &remote,
+            false,
             &mut out,
             &mut err,
         )

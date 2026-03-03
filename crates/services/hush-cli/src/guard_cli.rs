@@ -8,6 +8,7 @@ use clawdstrike::plugins::{
 use clawdstrike::{PluginLoader, PluginLoaderOptions, Severity};
 use serde::Serialize;
 
+use crate::ui;
 use crate::{CliJsonError, ExitCode, GuardCommands, CLI_JSON_VERSION};
 
 pub fn cmd_guard(
@@ -134,18 +135,26 @@ fn cmd_guard_inspect(
         return ExitCode::Ok;
     }
 
-    let _ = writeln!(stdout, "Plugin: {}", inspected.manifest.plugin.name);
-    let _ = writeln!(stdout, "Version: {}", inspected.manifest.plugin.version);
-    let _ = writeln!(stdout, "Root: {}", inspected.root.display());
-    let _ = writeln!(stdout, "Manifest: {}", inspected.manifest_path.display());
-    let _ = writeln!(
+    ui::section("Plugin Metadata", stdout);
+    ui::kv("Name", &inspected.manifest.plugin.name, stdout);
+    ui::kv("Version", &inspected.manifest.plugin.version, stdout);
+    ui::kv("Root", &inspected.root.display().to_string(), stdout);
+    ui::kv(
+        "Manifest",
+        &inspected.manifest_path.display().to_string(),
         stdout,
-        "Trust: {:?} / {:?}",
-        inspected.manifest.trust.level, inspected.manifest.trust.sandbox
     );
-    let _ = writeln!(stdout, "Guards:");
+    ui::kv(
+        "Trust",
+        &format!(
+            "{:?} / {:?}",
+            inspected.manifest.trust.level, inspected.manifest.trust.sandbox
+        ),
+        stdout,
+    );
+    ui::section("Guards", stdout);
     for guard in &inspected.manifest.guards {
-        let _ = writeln!(stdout, "- {}", guard.name);
+        ui::guard_row(true, &guard.name, "", stdout);
     }
     ExitCode::Ok
 }
@@ -259,11 +268,14 @@ fn cmd_guard_validate(
 
     let _ = writeln!(
         stdout,
-        "Plugin {} is valid (mode: {:?}, strict: {}).",
-        inspected.manifest.plugin.name, inspected.execution_mode, strict
+        "{} Plugin {} is valid (mode: {:?}, strict: {})",
+        ui::Verdict::Valid.badge(),
+        inspected.manifest.plugin.name,
+        inspected.execution_mode,
+        strict
     );
     for guard in &plan.guard_ids {
-        let _ = writeln!(stdout, "- {}", guard);
+        ui::guard_row(true, guard, "", stdout);
     }
     ExitCode::Ok
 }
