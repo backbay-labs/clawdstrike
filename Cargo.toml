@@ -19,7 +19,7 @@ members = [
     "crates/bridges/darwin-telemetry-bridge",
     "crates/services/eas-anchor",
     "crates/tests/sdr-integration-tests",
-    "crates/services/cloud-api",
+    "crates/services/control-api",
     "packages/sdk/hush-py/hush-native",
     "crates/libs/hush-ffi",
     "crates/libs/clawdstrike-guard-sdk",

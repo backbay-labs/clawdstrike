@@ -49,7 +49,7 @@ async fn main() -> ExitCode {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
-    tracing::info!(addr = %config.listen_addr, "Starting ClawdStrike Cloud API");
+    tracing::info!(addr = %config.listen_addr, "Starting ClawdStrike Control API");
 
     let signing_keypair = resolve_approval_signing_keypair(
         config.approval_signing_enabled,

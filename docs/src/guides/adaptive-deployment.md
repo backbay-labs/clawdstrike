@@ -65,9 +65,9 @@ Connected mode links the agent to enterprise infrastructure for centralized poli
 
 ### Prerequisites
 
-- Enterprise infrastructure deployed (NATS cluster, hushd, Cloud API)
+- Enterprise infrastructure deployed (NATS cluster, hushd, Control API)
 - An enrollment token from your enterprise administrator (see [Enterprise Enrollment](enterprise-enrollment.md))
-- Network access to the enterprise Cloud API endpoint (HTTPS)
+- Network access to the enterprise Control API endpoint (HTTPS)
 - Desktop Agent installed and running in standalone mode
 
 ### Enrollment
@@ -107,7 +107,7 @@ Key settings:
 | `nats.subject_prefix` | Tenant-scoped prefix used for all publish/subscribe subjects |
 | `nats.token` | Enrolled NATS auth token stored in local settings |
 | `enrollment.enrolled` | Enrollment completion flag |
-| `enrollment.agent_uuid` | Cloud-issued agent UUID |
+| `enrollment.agent_uuid` | Control API-issued agent UUID |
 
 ### Verifying Connectivity
 
@@ -145,16 +145,16 @@ Enterprise administrators can monitor agent health through:
 - **Heartbeat payload:** Heartbeats include session posture and budget state plus host/version metadata for fleet monitoring.
 - **Telemetry stream:** All security decisions flow to the enterprise audit stream for centralized review.
 
-### Cloud API Enterprise Runtime Defaults
+### Control API Enterprise Runtime Defaults
 
-The Cloud API enables the core adaptive workers by default. Make these settings explicit in production deployments:
+The Control API enables the core adaptive workers by default. Make these settings explicit in production deployments:
 
 | Environment variable | Default | Notes |
 |----------------------|---------|-------|
-| `NATS_PROVISIONING_MODE` | `external` | Cloud API starts without a provisioner URL, but tenant/agent provisioning calls fail until `NATS_PROVISIONER_BASE_URL` is set. |
+| `NATS_PROVISIONING_MODE` | `external` | Control API starts without a provisioner URL, but tenant/agent provisioning calls fail until `NATS_PROVISIONER_BASE_URL` is set. |
 | `APPROVAL_SIGNING_ENABLED` | `true` | Signed approval responses are enabled by default. |
-| `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Optional but recommended. If unset or unreadable while signing is enabled, cloud-api falls back to an ephemeral keypair and logs a warning. |
-| `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the cloud DB. |
+| `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Optional but recommended. If unset or unreadable while signing is enabled, Control API falls back to an ephemeral keypair and logs a warning. |
+| `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the Control API database. |
 | `APPROVAL_SUBJECT_FILTER` | `tenant-*.>` | Default is dotted-slug-safe while still tenant-scoped; keep strict subject parsing enabled in consumers. |
 | `APPROVAL_STREAM_NAME` | `clawdstrike_adaptive_ingress` | Shared ingress stream used by both approval and heartbeat consumers to avoid overlapping-stream conflicts with broad filters. |
 | `APPROVAL_RESOLUTION_OUTBOX_ENABLED` | `true` | Retries cloud -> agent resolution delivery until sent. |

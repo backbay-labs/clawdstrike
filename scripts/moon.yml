@@ -28,7 +28,7 @@ tasks:
     platform: "system"
     inputs:
       - "move-validation.sh"
-      - "/apps/cloud-dashboard/**/*"
+      - "/apps/control-console/**/*"
       - "/integrations/transports/reticulum/**/*"
       - "/infra/packaging/HomebrewFormula/**/*"
       - "/crates/**/*"

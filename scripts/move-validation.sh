@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 LEGACY_PATHS=(
+  "apps/cloud-dashboard"
   "packages/cloud-dashboard"
   "spine"
   "spine/reticulum"
@@ -20,6 +21,7 @@ LEGACY_PATHS=(
   "crates/hushd"
   "crates/spine-cli"
   "crates/cloud-api"
+  "crates/services/cloud-api"
   "crates/eas-anchor"
   "crates/tetragon-bridge"
   "crates/hubble-bridge"
@@ -42,7 +44,7 @@ LEGACY_PATHS=(
 )
 
 TARGET_PATHS=(
-  "apps/cloud-dashboard"
+  "apps/control-console"
   "integrations/transports/reticulum"
   "infra/packaging/HomebrewFormula"
   "crates/libs/hush-core"
@@ -55,7 +57,7 @@ TARGET_PATHS=(
   "crates/services/hush-cli"
   "crates/services/hushd"
   "crates/services/spine-cli"
-  "crates/services/cloud-api"
+  "crates/services/control-api"
   "crates/services/eas-anchor"
   "crates/bridges/tetragon-bridge"
   "crates/bridges/hubble-bridge"

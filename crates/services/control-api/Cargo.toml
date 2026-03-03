@@ -1,18 +1,18 @@
 [package]
-name = "clawdstrike-cloud-api"
-description = "ClawdStrike Cloud managed SaaS API service"
+name = "clawdstrike-control-api"
+description = "ClawdStrike Control API service for enterprise fleet management"
 publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["security", "cloud", "saas", "clawdstrike"]
+keywords = ["security", "control-plane", "saas", "clawdstrike"]
 categories = ["web-programming::http-server"]
 readme = "../../README.md"
 
 [[bin]]
-name = "clawdstrike-cloud-api"
+name = "clawdstrike-control-api"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,6 +1,6 @@
 //! Agent enrollment for cloud-managed enterprise deployment.
 //!
-//! Handles the enrollment handshake with the cloud API, generating a keypair,
+//! Handles the enrollment handshake with the Control API, generating a keypair,
 //! exchanging the public key for NATS credentials, and persisting the enrollment state.
 
 use anyhow::{Context, Result};
@@ -18,7 +18,7 @@ pub struct EnrollmentResult {
     pub tenant_id: String,
 }
 
-/// Request body sent to the cloud API enrollment endpoint.
+/// Request body sent to the Control API enrollment endpoint.
 #[derive(Debug, Serialize)]
 struct EnrollRequest {
     enrollment_token: String,
@@ -27,7 +27,7 @@ struct EnrollRequest {
     version: String,
 }
 
-/// Response from the cloud API enrollment endpoint.
+/// Response from the Control API enrollment endpoint.
 #[derive(Debug, Deserialize)]
 struct EnrollResponse {
     agent_uuid: String,
@@ -58,10 +58,10 @@ impl EnrollmentManager {
         }
     }
 
-    /// Perform the enrollment handshake with the cloud API.
+    /// Perform the enrollment handshake with the Control API.
     pub async fn enroll(
         &self,
-        cloud_api_url: &str,
+        control_api_url: &str,
         enrollment_token: &str,
     ) -> Result<EnrollmentResult> {
         // Mark enrollment as in-progress for crash recovery.
@@ -74,7 +74,7 @@ impl EnrollmentManager {
         }
 
         let result = self
-            .do_enroll(cloud_api_url, enrollment_token)
+            .do_enroll(control_api_url, enrollment_token)
             .await;
 
         // `do_enroll` persists `enrollment_in_progress = false` on success.
@@ -92,7 +92,7 @@ impl EnrollmentManager {
 
     async fn do_enroll(
         &self,
-        cloud_api_url: &str,
+        control_api_url: &str,
         enrollment_token: &str,
     ) -> Result<EnrollmentResult> {
         // Generate a new Ed25519 keypair.
@@ -101,7 +101,7 @@ impl EnrollmentManager {
 
         let hostname = hostname_best_effort();
 
-        let enroll_url = format!("{}/api/v1/agents/enroll", cloud_api_url.trim_end_matches('/'));
+        let enroll_url = format!("{}/api/v1/agents/enroll", control_api_url.trim_end_matches('/'));
 
         let body = EnrollRequest {
             enrollment_token: enrollment_token.to_string(),
@@ -110,7 +110,7 @@ impl EnrollmentManager {
             version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
-        tracing::info!(url = %enroll_url, "Sending enrollment request to cloud API");
+        tracing::info!(url = %enroll_url, "Sending enrollment request to Control API");
 
         let response = self
             .http_client
@@ -118,7 +118,7 @@ impl EnrollmentManager {
             .json(&body)
             .send()
             .await
-            .with_context(|| format!("Failed to reach cloud API at {}", enroll_url))?;
+            .with_context(|| format!("Failed to reach Control API at {}", enroll_url))?;
 
         if !response.status().is_success() {
             let status = response.status();

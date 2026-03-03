@@ -93,7 +93,7 @@ flowchart LR
     D -->|deny| F[Fail-Closed Block]
     D --> G[Ed25519 Signed Receipt]
     G -.->|enterprise| H[Spine Audit Trail]
-    H -.-> I[Cloud API + Dashboard]
+    H -.-> I[Control API + Control Console]
 ```
 
 ---
@@ -656,7 +656,7 @@ Clawdstrike scales from a single developer's laptop to a fleet of thousands of m
 | -------------------- | ----------------------------------------------------------- | --------------------------------------------- |
 | **SDK**              | `npm install @clawdstrike/sdk` or `pip install clawdstrike` | Individual devs, CI/CD pipelines              |
 | **Desktop Agent**    | Tauri app with system tray, hushd daemon, local dashboard   | Teams, workstation security                   |
-| **Enterprise Fleet** | Cloud API + NATS + enrollment + cloud dashboard             | Security teams managing org-wide agent fleets |
+| **Enterprise Fleet** | Control API + NATS + enrollment + Control Console             | Security teams managing org-wide agent fleets |
 
 ### Adaptive Engine
 
@@ -696,8 +696,8 @@ For organizations managing agent fleets across teams and environments, Clawdstri
 ```mermaid
 flowchart TB
     AF[Agent Fleet]
-    API[Cloud API]
-    DASH[Cloud Dashboard]
+    API[Control API]
+    DASH[Control Console]
     DB[(PostgreSQL)]
     PROV[External NATS Provisioner]
     KV[(Policy KV)]
@@ -713,9 +713,9 @@ flowchart TB
     CMD --> AF
 ```
 
-- Enrollment runs over HTTPS (`Agent Fleet <-> Cloud API`), and the API returns NATS credentials + subject prefix.
-- Policy sync is `Cloud API -> Policy KV -> Agent Fleet` (KV watch model).
-- Commands are `Cloud API -> Command Subjects -> Agent Fleet` with request/reply acknowledgements.
+- Enrollment runs over HTTPS (`Agent Fleet <-> Control API`), and the API returns NATS credentials + subject prefix.
+- Policy sync is `Control API -> Policy KV -> Agent Fleet` (KV watch model).
+- Commands are `Control API -> Command Subjects -> Agent Fleet` with request/reply acknowledgements.
 
 ### 2. Telemetry Plane
 
@@ -761,18 +761,18 @@ flowchart TB
 Agents bootstrap into enterprise management with a single enrollment token. No pre-shared keys, no manual certificate provisioning.
 
 ```bash
-# From the cloud dashboard, generate an enrollment token for your tenant.
+# From the Control Console, generate an enrollment token for your tenant.
 # On the agent machine:
 curl -X POST http://localhost:9878/api/v1/enroll \
   -H "Content-Type: application/json" \
-  -d '{"cloud_api_url": "https://api.clawdstrike.io", "enrollment_token": "cs_enroll_..."}'
+  -d '{"control_api_url": "https://api.clawdstrike.io", "enrollment_token": "cs_enroll_..."}'
 ```
 
 The enrollment handshake:
 
 1. Agent generates an Ed25519 keypair
-2. Sends the public key + enrollment token to the cloud API
-3. Cloud API validates the token, provisions NATS credentials, and returns connection details
+2. Sends the public key + enrollment token to the Control API
+3. Control API validates the token, provisions NATS credentials, and returns connection details
 4. Agent stores credentials and activates enterprise features on next restart
 5. Enrollment token is invalidated after first use
 
@@ -790,7 +790,7 @@ Every policy evaluation produces a **Spine envelope**: an Ed25519-signed, hash-c
 }
 ```
 
-Hash chaining means tampering with any single record breaks the chain for every subsequent record. The cloud API's audit consumer verifies each envelope on ingestion, providing a cryptographically verifiable audit log across your entire fleet.
+Hash chaining means tampering with any single record breaks the chain for every subsequent record. The Control API's audit consumer verifies each envelope on ingestion, providing a cryptographically verifiable audit log across your entire fleet.
 
 ### Real-Time Fleet Management
 
@@ -798,15 +798,15 @@ All enterprise features run over NATS JetStream with scoped credentials per agen
 
 | Capability              | Direction             | Mechanism                                                        |
 | ----------------------- | --------------------- | ---------------------------------------------------------------- |
-| **Policy Sync**         | Cloud → Agent         | KV watch — policy updates propagate to agents in real time       |
-| **Telemetry**           | Agent → Cloud         | JetStream publish — heartbeats, eval receipts, agent metadata    |
-| **Posture Commands**    | Cloud → Agent         | NATS request/reply — `set_posture`, `request_policy_reload`      |
-| **Kill Switch**         | Cloud → Agent         | Immediate posture lock to deny-all + daemon restart              |
-| **Approval Escalation** | Agent → Cloud → Agent | High-risk actions escalated for human review via cloud dashboard |
+| **Policy Sync**         | Control Plane → Agent                 | KV watch — policy updates propagate to agents in real time       |
+| **Telemetry**           | Agent → Control Plane                 | JetStream publish — heartbeats, eval receipts, agent metadata    |
+| **Posture Commands**    | Control Plane → Agent                 | NATS request/reply — `set_posture`, `request_policy_reload`      |
+| **Kill Switch**         | Control Plane → Agent                 | Immediate posture lock to deny-all + daemon restart              |
+| **Approval Escalation** | Agent → Control Plane → Agent         | High-risk actions escalated for human review via Control Console |
 
 ### Kill Switch
 
-When a compromised agent is detected, a single command from the cloud dashboard:
+When a compromised agent is detected, a single command from the Control Console:
 
 1. Sets the agent's posture to `locked` (deny-all for every policy evaluation)
 2. Restarts the enforcement daemon with the locked posture
@@ -814,7 +814,7 @@ When a compromised agent is detected, a single command from the cloud dashboard:
 
 The agent is locked down before the next tool invocation fires, regardless of what code is running.
 
-### Cloud Dashboard
+### Control Console
 
 Web UI for security teams to manage their agent fleet:
 

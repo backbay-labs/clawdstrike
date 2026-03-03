@@ -25,7 +25,7 @@ function stubPkg(relPath, name, { dts = "export {};", esm = "export {};" } = {})
   writeFileSync(resolve(dir, "index.d.ts"), dts);
 }
 
-// @backbay/glia — not directly imported by cloud-dashboard
+// @backbay/glia — not directly imported by control-console
 stubPkg("../backbay-sdk/packages/glia", "@backbay/glia");
 
 // @backbay/glia-desktop — provides the desktop OS shell primitives

@@ -1,8 +1,8 @@
 {
-  "name": "@backbay/cloud-dashboard",
+  "name": "@backbay/control-console",
   "version": "0.2.0",
   "private": true,
-  "description": "ClawdStrike Cloud web dashboard \u2013 BackbayOS desktop experience",
+  "description": "ClawdStrike Control Console web app \u2013 BackbayOS desktop experience",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -42,6 +42,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/backbay-labs/clawdstrike.git",
-    "directory": "apps/cloud-dashboard"
+    "directory": "apps/control-console"
   }
 }
