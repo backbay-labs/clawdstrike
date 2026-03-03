@@ -41,6 +41,18 @@ struct EnrollResponse {
     agent_id: String,
 }
 
+fn extract_trusted_issuer(issuer: Option<&str>) -> Result<String> {
+    issuer
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Enrollment response missing approval_response_trusted_issuer; refusing to enable NATS"
+            )
+        })
+}
+
 /// Manages the enrollment lifecycle.
 pub struct EnrollmentManager {
     settings: Arc<RwLock<Settings>>,
@@ -135,6 +147,8 @@ impl EnrollmentManager {
             .json()
             .await
             .with_context(|| "Failed to parse enrollment response")?;
+        let trusted_issuer =
+            extract_trusted_issuer(resp.approval_response_trusted_issuer.as_deref())?;
 
         // Update settings with enrollment state and all NATS configuration.
         {
@@ -155,7 +169,7 @@ impl EnrollmentManager {
             settings.nats.token = Some(resp.nats_token);
             settings.nats.nats_account = Some(resp.nats_account);
             settings.nats.subject_prefix = Some(resp.nats_subject_prefix);
-            settings.nats.approval_response_trusted_issuer = resp.approval_response_trusted_issuer;
+            settings.nats.approval_response_trusted_issuer = Some(trusted_issuer);
             settings
                 .save()
                 .with_context(|| "Failed to persist enrollment settings")?;
@@ -353,6 +367,19 @@ mod tests {
     fn get_hostname_returns_something() {
         let hostname = hostname_best_effort();
         assert!(!hostname.is_empty());
+    }
+
+    #[test]
+    fn extract_trusted_issuer_requires_non_empty_value() {
+        let issuer = extract_trusted_issuer(Some("  issuer-1  "))
+            .unwrap_or_else(|err| panic!("expected issuer parse to succeed: {err}"));
+        assert_eq!(issuer, "issuer-1");
+
+        let missing = extract_trusted_issuer(None);
+        assert!(missing.is_err());
+
+        let blank = extract_trusted_issuer(Some("   "));
+        assert!(blank.is_err());
     }
 
     #[cfg(unix)]

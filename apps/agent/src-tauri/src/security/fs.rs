@@ -47,12 +47,13 @@ pub fn write_private_atomic(path: &Path, bytes: &[u8], target: &str) -> Result<(
 }
 
 fn temp_path(path: &Path) -> PathBuf {
-    let mut ext = path
-        .extension()
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let base = path
+        .file_name()
         .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_else(|| "tmp".to_string());
-    ext.push_str(".tmp");
-    path.with_extension(ext)
+        .unwrap_or_else(|| "clawdstrike".to_string());
+    let unique = uuid::Uuid::new_v4().simple().to_string();
+    parent.join(format!(".{base}.{unique}.tmp"))
 }
 
 #[cfg(unix)]
@@ -71,4 +72,17 @@ fn ensure_mode_0600(path: &Path, target: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temp_path_is_unique_per_call() {
+        let path = PathBuf::from("/tmp/clawdstrike-test.yaml");
+        let a = temp_path(&path);
+        let b = temp_path(&path);
+        assert_ne!(a, b);
+    }
 }

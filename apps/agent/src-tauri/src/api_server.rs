@@ -590,8 +590,8 @@ fn set_ui_auth_cookie(response: &mut Response, auth_token: &str, secure: bool) {
     }
 }
 
-fn request_is_secure(headers: &HeaderMap, request: &Request) -> bool {
-    if request.uri().scheme_str() == Some("https") {
+fn request_is_secure_uri(headers: &HeaderMap, uri: &Uri) -> bool {
+    if uri.scheme_str() == Some("https") {
         return true;
     }
     headers
@@ -599,6 +599,10 @@ fn request_is_secure(headers: &HeaderMap, request: &Request) -> bool {
         .and_then(|value| value.to_str().ok())
         .map(|value| value.eq_ignore_ascii_case("https"))
         .unwrap_or(false)
+}
+
+fn request_is_secure(headers: &HeaderMap, request: &Request) -> bool {
+    request_is_secure_uri(headers, request.uri())
 }
 
 fn is_local_host_header(headers: &HeaderMap) -> bool {
@@ -704,7 +708,7 @@ fn sanitize_ui_next_path(candidate: Option<&str>) -> String {
     if raw.starts_with("http://") || raw.starts_with("https://") {
         return "/ui".to_string();
     }
-    if !raw.starts_with('/') || !raw.starts_with("/ui") {
+    if !raw.starts_with("/ui") {
         return "/ui".to_string();
     }
     raw.to_string()
@@ -904,13 +908,10 @@ async fn ui_bootstrap_page(uri: Uri) -> impl IntoResponse {
 async fn ui_bootstrap_verify(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
+    uri: Uri,
     Form(input): Form<UiBootstrapVerifyInput>,
 ) -> Response {
-    let secure_cookie = headers
-        .get("x-forwarded-proto")
-        .and_then(|value| value.to_str().ok())
-        .map(|value| value.eq_ignore_ascii_case("https"))
-        .unwrap_or(false);
+    let secure_cookie = request_is_secure_uri(&headers, &uri);
     if !secure_cookie && !is_local_host_header(&headers) {
         return (
             StatusCode::FORBIDDEN,
@@ -2254,6 +2255,15 @@ mod tests {
         let (status, message) = map_openclaw_error(err);
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(message.contains("failed to resolve gateway host"));
+    }
+
+    #[test]
+    fn request_is_secure_uri_accepts_https_scheme_without_proxy_header() {
+        let headers = HeaderMap::new();
+        let uri = "https://localhost/ui/bootstrap"
+            .parse::<Uri>()
+            .unwrap_or_else(|_| panic!("failed to parse https uri for secure check"));
+        assert!(request_is_secure_uri(&headers, &uri));
     }
 
     #[tokio::test]
