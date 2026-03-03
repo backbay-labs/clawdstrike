@@ -11,5 +11,7 @@ resources:
   - 07-nats-jetstream.yaml
   - 08-allow-dns.yaml
   - 09-allow-prometheus.yaml
+  - 10-auditd-bridge.yaml
+  - 11-k8s-audit-bridge.yaml
 commonLabels:
   app.kubernetes.io/managed-by: clawdstrike

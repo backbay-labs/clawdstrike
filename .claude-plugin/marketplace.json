@@ -1,0 +1,29 @@
+{
+  "name": "clawdstrike",
+  "owner": {
+    "name": "Backbay Labs",
+    "email": "hello@backbay.io"
+  },
+  "metadata": {
+    "description": "ClawdStrike security plugins for Claude Code — runtime policy enforcement, threat hunting, and audit tools.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "clawdstrike",
+      "source": "./clawdstrike-plugin",
+      "description": "Runtime security enforcement for AI coding agents — policy hooks, audit receipts, threat hunting, and 15 MCP security tools.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Backbay Labs",
+        "email": "hello@backbay.io"
+      },
+      "homepage": "https://github.com/backbay-labs/clawdstrike",
+      "repository": "https://github.com/backbay-labs/clawdstrike",
+      "license": "Apache-2.0",
+      "keywords": ["security", "policy", "audit", "edr", "agent-security", "mcp", "threat-hunting"],
+      "category": "security",
+      "tags": ["security", "policy-enforcement", "audit-trail", "threat-hunting", "mcp-tools"]
+    }
+  ]
+}

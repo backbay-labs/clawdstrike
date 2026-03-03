@@ -19,7 +19,7 @@ Clawdstrike is a fail-closed policy engine and cryptographic attestation runtime
 | CLI binary (`clawdstrike`, `hush` commands) | `hush-cli` | Stable |
 | Spine protocol CLI tools | `spine-cli` | Stable |
 | HTTP enforcement daemon (RBAC, multi-tenant auth, rate limiting, SIEM, TLS) | `hushd` | Beta |
-| Cloud API service (auth, models, routes, services) | `cloud-api` | Alpha |
+| Control API service (auth, models, routes, services) | `control-api` | Alpha |
 | EAS on-chain anchoring (Base L2) | `eas-anchor` | Experimental |
 | Tetragon eBPF bridge | `tetragon-bridge` | Experimental |
 | Cilium Hubble bridge | `hubble-bridge` | Experimental |
@@ -80,7 +80,7 @@ Clawdstrike is a fail-closed policy engine and cryptographic attestation runtime
 ### Enterprise & Deployment
 
 - **Desktop Agent:** Tauri app with system tray, local hushd daemon, local dashboard
-- **Cloud Control Plane:** Cloud API + NATS JetStream + enrollment + dashboard
+- **Control Plane:** Control API + NATS JetStream + enrollment + control console
 - **Enrollment:** Single-token bootstrap, Ed25519 keypair generation, NATS credential provisioning
 - **Spine Audit Trail:** Hash-chained, Ed25519-signed envelopes over NATS JetStream
 - **Fleet Management:** Real-time policy sync, telemetry, posture commands, kill switch, approval escalation
@@ -428,7 +428,7 @@ Author signs package
 
 | Milestone | Description | Target |
 |-----------|-------------|--------|
-| Multi-tenant cloud API | Isolated tenant environments with per-tenant NATS credentials and data residency controls | Q2 2026 |
+| Multi-tenant control API | Isolated tenant environments with per-tenant NATS credentials and data residency controls | Q2 2026 |
 | Canary deployments | Roll policy changes to 5% of fleet, monitor for regressions, auto-promote or rollback | Q3 2026 |
 | Incident response automation | Auto-quarantine agents exceeding violation thresholds, generate incident timeline from Spine log | Q3 2026 |
 | Agent inventory & SBOM | Track installed guard packages, WASM module versions, and policy hashes per agent | Q4 2026 |
@@ -574,7 +574,7 @@ SDK & INTEGRATIONS               |                                 |
                                  |                                 | Swift bindings ================>
                                  |                                 |
 ENTERPRISE                       |                                 |
- Multi-tenant cloud API =========|                                 |
+ Multi-tenant control API =========|                                 |
  hushd hot-reload + routing =====|                                 |
                                  | Canary deployments =============|
                                  | Incident response automation ===|
@@ -609,7 +609,7 @@ When resources are constrained, work is prioritized top-to-bottom:
 | Priority | Initiative | Rationale |
 |----------|-----------|-----------|
 | P0 | Package Manager Phase 0-1 (local + WASM) | Unblocks the entire ecosystem play |
-| P0 | hushd multi-policy routing + hot-reload | Required for enterprise cloud API |
+| P0 | hushd multi-policy routing + hot-reload | Required for enterprise control API |
 | P1 | Package Manager Phase 2 (registry MVP) | Enables community contribution |
 | P1 | Python v0.3.0 async + CrewAI/AutoGen adapters | Captures the fastest-growing agent framework markets |
 | P1 | HIPAA/PCI/SOC2 compliance packs | Direct enterprise revenue driver |

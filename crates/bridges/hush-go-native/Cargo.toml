@@ -1,0 +1,24 @@
+[package]
+name = "hush-go-native"
+version = "0.1.0"
+edition = "2021"
+description = "C FFI bridge for the Go SDK"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+hush-core = { workspace = true }
+clawdstrike = { workspace = true }
+libc = "0.2"
+serde_json = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true }
+base64 = { workspace = true }
+
+[build-dependencies]
+cbindgen = "0.28"
+
+[lints]
+workspace = true

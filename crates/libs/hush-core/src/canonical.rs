@@ -5,6 +5,7 @@
 //! string escaping semantics.
 
 use serde_json::Value;
+use std::cmp::Ordering;
 
 use crate::error::{Error, Result};
 
@@ -13,7 +14,8 @@ pub fn canonicalize(value: &Value) -> Result<String> {
     match value {
         Value::Object(map) => {
             let mut pairs: Vec<_> = map.iter().collect();
-            pairs.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
+            // RFC 8785 sorts object keys lexicographically by UTF-16 code units.
+            pairs.sort_by(|(a, _), (b, _)| cmp_utf16_code_units(a.as_str(), b.as_str()));
 
             let mut out = String::from("{");
             for (idx, (k, v)) in pairs.into_iter().enumerate() {
@@ -43,6 +45,23 @@ pub fn canonicalize(value: &Value) -> Result<String> {
         Value::Number(n) => canonicalize_number(n),
         Value::Bool(b) => Ok(b.to_string()),
         Value::Null => Ok("null".to_string()),
+    }
+}
+
+fn cmp_utf16_code_units(a: &str, b: &str) -> Ordering {
+    let mut a_units = a.encode_utf16();
+    let mut b_units = b.encode_utf16();
+
+    loop {
+        match (a_units.next(), b_units.next()) {
+            (Some(x), Some(y)) => match x.cmp(&y) {
+                Ordering::Equal => {}
+                non_eq => return non_eq,
+            },
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (None, None) => return Ordering::Equal,
+        }
     }
 }
 
@@ -305,6 +324,17 @@ mod tests {
 
         let canonical = canonicalize(&value).unwrap();
         assert_eq!(canonical, r#"{"a":2,"m":3,"z":1}"#);
+    }
+
+    #[test]
+    fn sorted_keys_use_utf16_code_units() {
+        let value = serde_json::json!({
+            "\u{e000}": 1,
+            "𐐷": 2,
+        });
+
+        let canonical = canonicalize(&value).unwrap();
+        assert_eq!(canonical, "{\"𐐷\":2,\"\u{e000}\":1}");
     }
 
     #[test]

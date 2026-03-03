@@ -195,10 +195,10 @@ impl AgentApiServer {
             .route("/api/v1/enrollment-status", get(enrollment_status))
             .with_state(self.state.clone());
 
-        if let Some(dashboard_dist) = resolve_cloud_dashboard_dist() {
+        if let Some(dashboard_dist) = resolve_control_console_dist() {
             tracing::info!(
                 path = %dashboard_dist.display(),
-                "Serving cloud dashboard from bundled assets"
+                "Serving control console from bundled assets"
             );
             let index_file = dashboard_dist.join("index.html");
             let ui_router = Router::new()
@@ -212,7 +212,7 @@ impl AgentApiServer {
             app = app.nest("/ui", ui_router);
         } else {
             tracing::warn!(
-                "Cloud dashboard assets were not found; serving fallback diagnostics page at /ui"
+                "Control console assets were not found; serving fallback diagnostics page at /ui"
             );
             let ui_router = Router::new()
                 .route("/", get(agent_web_ui_fallback))
@@ -323,7 +323,7 @@ async fn agent_web_ui_fallback() -> Html<&'static str> {
 <body>
   <main>
     <h1>Clawdstrike Agent Web UI</h1>
-    <p>This is the local fallback UI. If you expected the cloud dashboard on <code>localhost:3100</code>, start it manually during development.</p>
+    <p>This is the local fallback UI. If you expected the control console on <code>localhost:3100</code>, start it manually during development.</p>
 
     <nav class="tabs" aria-label="Agent web UI sections">
       <a href="#/" class="tab" data-route="/">Overview</a>
@@ -341,7 +341,7 @@ async fn agent_web_ui_fallback() -> Html<&'static str> {
 
     <section class="panel hidden" data-view="/settings/siem">
       <h2>SIEM Export</h2>
-      <p>Configure SIEM providers from the cloud dashboard when available. This fallback page confirms the requested route and keeps agent diagnostics available.</p>
+      <p>Configure SIEM providers from the control console when available. This fallback page confirms the requested route and keeps agent diagnostics available.</p>
       <ul>
         <li>Requested route: <code>#/settings/siem</code></li>
         <li>Preferred full dashboard URL: <code>http://127.0.0.1:3100/settings/siem</code></li>
@@ -350,7 +350,7 @@ async fn agent_web_ui_fallback() -> Html<&'static str> {
 
     <section class="panel hidden" data-view="/settings/webhooks">
       <h2>Webhooks</h2>
-      <p>Configure webhook forwarding from the cloud dashboard when available. This fallback page confirms the requested route and keeps agent diagnostics available.</p>
+      <p>Configure webhook forwarding from the control console when available. This fallback page confirms the requested route and keeps agent diagnostics available.</p>
       <ul>
         <li>Requested route: <code>#/settings/webhooks</code></li>
         <li>Preferred full dashboard URL: <code>http://127.0.0.1:3100/settings/webhooks</code></li>
@@ -387,25 +387,25 @@ async fn agent_web_ui_fallback() -> Html<&'static str> {
     )
 }
 
-fn cloud_dashboard_dist_candidates() -> Vec<PathBuf> {
+fn control_console_dist_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
-    if let Ok(override_path) = std::env::var("CLAWDSTRIKE_DASHBOARD_DIST") {
+    if let Ok(override_path) = std::env::var("CLAWDSTRIKE_CONTROL_CONSOLE_DIST") {
         candidates.push(PathBuf::from(override_path));
     }
 
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            candidates.push(exe_dir.join("cloud-dashboard"));
-            candidates.push(exe_dir.join("resources").join("cloud-dashboard"));
+            candidates.push(exe_dir.join("control-console"));
+            candidates.push(exe_dir.join("resources").join("control-console"));
 
             if let Some(contents_dir) = exe_dir.parent() {
-                candidates.push(contents_dir.join("Resources").join("cloud-dashboard"));
+                candidates.push(contents_dir.join("Resources").join("control-console"));
                 candidates.push(
                     contents_dir
                         .join("Resources")
                         .join("resources")
-                        .join("cloud-dashboard"),
+                        .join("control-console"),
                 );
             }
         }
@@ -413,15 +413,15 @@ fn cloud_dashboard_dist_candidates() -> Vec<PathBuf> {
 
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
         let root = PathBuf::from(manifest_dir);
-        candidates.push(root.join("resources").join("cloud-dashboard"));
-        candidates.push(root.join("../../cloud-dashboard/dist"));
+        candidates.push(root.join("resources").join("control-console"));
+        candidates.push(root.join("../../control-console/dist"));
     }
 
     candidates
 }
 
-fn resolve_cloud_dashboard_dist() -> Option<PathBuf> {
-    cloud_dashboard_dist_candidates()
+fn resolve_control_console_dist() -> Option<PathBuf> {
+    control_console_dist_candidates()
         .into_iter()
         .find(|candidate| candidate.join("index.html").is_file())
 }
@@ -1438,7 +1438,7 @@ async fn list_pending_approvals(
 
 #[derive(Deserialize)]
 struct EnrollAgentInput {
-    cloud_api_url: String,
+    control_api_url: String,
     enrollment_token: String,
 }
 
@@ -1450,7 +1450,7 @@ async fn enroll_agent(
     require_auth(&headers, &state)?;
 
     let manager = crate::enrollment::EnrollmentManager::new(state.settings.clone());
-    match manager.enroll(&input.cloud_api_url, &input.enrollment_token).await {
+    match manager.enroll(&input.control_api_url, &input.enrollment_token).await {
         Ok(result) => {
             tracing::info!(
                 agent_uuid = %result.agent_uuid,

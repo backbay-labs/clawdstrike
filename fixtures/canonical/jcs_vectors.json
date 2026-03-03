@@ -56,5 +56,10 @@
     "name": "numbers_large_exponents",
     "input": [1e100, 1e-100],
     "expected": "[1e+100,1e-100]"
+  },
+  {
+    "name": "non_ascii_utf16_key_order",
+    "input": { "": 1, "𐐷": 2 },
+    "expected": "{\"𐐷\":2,\"\":1}"
   }
 ]

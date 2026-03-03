@@ -5,7 +5,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 LEGACY_PATHS=(
+  "apps/cloud-dashboard"
   "packages/cloud-dashboard"
+  "crates/services/cloud-api"
   "spine/reticulum"
   "spine"
   "HomebrewFormula"

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "clawdstrike": {
+      "command": "bun",
+      "args": ["run", "${CURSOR_PLUGIN_ROOT}/scripts/mcp-server.ts"]
+    }
+  }
+}

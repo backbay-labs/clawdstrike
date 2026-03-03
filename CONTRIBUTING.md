@@ -108,7 +108,7 @@ clawdstrike/
 ├── apps/
 │   ├── desktop/            # Tauri desktop SOC app
 │   ├── agent/              # Tauri agent app
-│   └── cloud-dashboard/    # Web dashboard app
+│   └── control-console/    # Web dashboard app
 ├── infra/
 │   ├── deploy/             # Helm/Kustomize/systemd/launchd assets
 │   ├── docker/             # Dockerfiles and compose

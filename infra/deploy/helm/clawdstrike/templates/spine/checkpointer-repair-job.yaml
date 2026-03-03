@@ -1,0 +1,58 @@
+{{- if and .Values.spine.enabled .Values.spine.checkpointer.enabled (eq .Values.spine.checkpointer.mode "repair") }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-checkpointer-repair-{{ .Release.Revision }}
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "checkpointer-repair") | nindent 4 }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "checkpointer-repair") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/spine/spine-configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      restartPolicy: Never
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: checkpointer-repair
+          image: "{{ .Values.spine.image.repository }}:{{ .Values.spine.image.tag | default (printf "spine-checkpointer-%s" .Chart.AppVersion) }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - "--mode"
+            - "repair"
+            {{- if .Values.spine.checkpointer.repairApply }}
+            - "--repair-apply"
+            {{- end }}
+            - "--replicas"
+            - {{ .Values.spine.checkpointer.streamReplicas | quote }}
+            - "--chain-enforcement"
+            - {{ .Values.spine.checkpointer.chainEnforcement | quote }}
+            - "--issuer-heads-bucket"
+            - {{ .Values.spine.checkpointer.issuerHeadsBucket | quote }}
+            - "--chain-violation-stream"
+            - {{ .Values.spine.checkpointer.chainViolationStream | quote }}
+            - "--chain-violation-subject"
+            - {{ .Values.spine.checkpointer.chainViolationSubject | quote }}
+          env:
+            - name: SPINE_BIN
+              value: spine-checkpointer
+          envFrom:
+            - configMapRef:
+                name: {{ include "clawdstrike.fullname" . }}-spine
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.spine.checkpointer.resources | nindent 12 }}
+{{- end }}

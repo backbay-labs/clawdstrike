@@ -1,11 +1,4 @@
 //! CLI entry point for the tetragon-bridge.
-//!
-//! ```text
-//! tetragon-bridge \
-//!   --tetragon-endpoint http://localhost:54321 \
-//!   --nats-url nats://localhost:4222 \
-//!   --signing-key 0xdeadbeef...
-//! ```
 
 use std::time::Duration;
 
@@ -71,6 +64,46 @@ struct Cli {
     /// SPIFFE ID and includes it in every published fact.
     #[arg(long, env = "SVID_PATH")]
     svid_path: Option<String>,
+
+    /// Admin HTTP listen address for /healthz, /readyz, /metrics.
+    #[arg(long, default_value = "0.0.0.0:2112", env = "ADMIN_LISTEN_ADDR")]
+    admin_listen_addr: String,
+
+    /// Enable durable SQLite outbox retry queue.
+    #[arg(long, default_value = "false", env = "OUTBOX_ENABLED")]
+    outbox_enabled: bool,
+
+    /// SQLite path for durable outbox state.
+    #[arg(long, env = "OUTBOX_PATH")]
+    outbox_path: Option<String>,
+
+    /// Outbox worker flush interval in milliseconds.
+    #[arg(long, default_value = "1000", env = "OUTBOX_FLUSH_INTERVAL_MS")]
+    outbox_flush_interval_ms: u64,
+
+    /// Maximum pending outbox rows before enqueue rejects.
+    #[arg(long, default_value = "10000", env = "OUTBOX_MAX_PENDING")]
+    outbox_max_pending: u64,
+
+    /// Initial retry backoff in milliseconds.
+    #[arg(long, default_value = "500", env = "OUTBOX_RETRY_BASE_MS")]
+    outbox_retry_base_ms: u64,
+
+    /// Maximum retry backoff in milliseconds.
+    #[arg(long, default_value = "30000", env = "OUTBOX_RETRY_MAX_MS")]
+    outbox_retry_max_ms: u64,
+
+    /// Readiness degrades when outbox pending exceeds this threshold.
+    #[arg(
+        long,
+        default_value = "100",
+        env = "READINESS_OUTBOX_DEGRADED_THRESHOLD"
+    )]
+    readiness_outbox_degraded_threshold: u64,
+
+    /// Test-only failpoint to force publish failures.
+    #[arg(long, default_value = "false", env = "FORCE_PUBLISH_FAILURES")]
+    force_publish_failures: bool,
 }
 
 fn parse_event_types(types: &[String]) -> Vec<TetragonEventKind> {
@@ -86,52 +119,6 @@ fn parse_event_types(types: &[String]) -> Vec<TetragonEventKind> {
             }
         })
         .collect()
-}
-
-fn is_transient_nats_bootstrap_error(message: &str) -> bool {
-    let lower = message.to_ascii_lowercase();
-    lower.contains("failed to lookup address information")
-        || lower.contains("temporary failure in name resolution")
-        || lower.contains("name or service not known")
-        || lower.contains("connection refused")
-        || lower.contains("connection reset")
-        || lower.contains("no route to host")
-        || lower.contains("timed out")
-}
-
-async fn wait_for_nats_startup(nats_url: &str, timeout: Duration) -> anyhow::Result<()> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    let mut attempt: u32 = 0;
-    let mut backoff = Duration::from_millis(250);
-
-    loop {
-        attempt = attempt.saturating_add(1);
-        match spine::nats_transport::connect(nats_url).await {
-            Ok(client) => {
-                drop(client);
-                if attempt > 1 {
-                    warn!(attempt, "NATS became reachable during startup");
-                }
-                return Ok(());
-            }
-            Err(err) => {
-                let transient = is_transient_nats_bootstrap_error(&err.to_string());
-                if !transient || tokio::time::Instant::now() >= deadline {
-                    return Err(anyhow::anyhow!(
-                        "NATS startup readiness failed after {attempt} attempts: {err}"
-                    ));
-                }
-                warn!(
-                    attempt,
-                    backoff_ms = backoff.as_millis() as u64,
-                    error = %err,
-                    "waiting for NATS startup readiness"
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(Duration::from_secs(5));
-            }
-        }
-    }
 }
 
 #[tokio::main]
@@ -155,13 +142,24 @@ async fn main() -> anyhow::Result<()> {
         stream_max_bytes: cli.stream_max_bytes,
         stream_max_age_seconds: cli.stream_max_age_seconds,
         svid_path: cli.svid_path,
+        admin_listen_addr: cli.admin_listen_addr,
+        outbox_enabled: cli.outbox_enabled,
+        outbox_path: cli.outbox_path,
+        outbox_flush_interval_ms: cli.outbox_flush_interval_ms,
+        outbox_max_pending: cli.outbox_max_pending,
+        outbox_retry_base_ms: cli.outbox_retry_base_ms,
+        outbox_retry_max_ms: cli.outbox_retry_max_ms,
+        readiness_outbox_degraded_threshold: cli.readiness_outbox_degraded_threshold,
+        force_publish_failures: cli.force_publish_failures,
         ..BridgeConfig::default()
     };
 
     let mut backoff = Duration::from_secs(1);
     loop {
         let startup_timeout = Duration::from_secs(cli.nats_startup_timeout_secs);
-        if let Err(e) = wait_for_nats_startup(&config.nats_url, startup_timeout).await {
+        if let Err(e) =
+            bridge_runtime::wait_for_nats_startup(&config.nats_url, startup_timeout).await
+        {
             warn!(error = %e, "NATS startup readiness check failed, retrying");
             warn!(
                 backoff_secs = backoff.as_secs(),

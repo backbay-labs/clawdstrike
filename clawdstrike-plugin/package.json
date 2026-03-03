@@ -1,0 +1,18 @@
+{
+  "name": "@clawdstrike/claude-plugin",
+  "version": "0.1.0",
+  "description": "ClawdStrike Claude Code plugin — policy enforcement, audit receipts, and security tools",
+  "type": "module",
+  "scripts": {
+    "mcp": "bun run scripts/mcp-server.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}

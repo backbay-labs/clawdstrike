@@ -8,7 +8,11 @@ Components:
 {{- end }}
 {{- if .Values.spine.enabled }}
   {{- if .Values.spine.checkpointer.enabled }}
-  Spine Checkpointer: running
+    {{- if eq .Values.spine.checkpointer.mode "run" }}
+  Spine Checkpointer: running (Deployment)
+    {{- else if eq .Values.spine.checkpointer.mode "repair" }}
+  Spine Checkpointer: one-shot repair Job
+    {{- end }}
   {{- end }}
   {{- if .Values.spine.witness.enabled }}
   Spine Witness: running

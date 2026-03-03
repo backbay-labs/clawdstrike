@@ -29,6 +29,30 @@ spec:
         - port: {{ .Values.nats.monitoring.port }}
           protocol: TCP
     {{- end }}
+    {{- if and .Values.serviceMonitor.enabled (or (and .Values.serviceMonitor.endpoints.bridgeAdmin (or .Values.bridges.tetragon.enabled .Values.bridges.hubble.enabled .Values.bridges.auditd.enabled)) (and .Values.serviceMonitor.endpoints.k8sAuditBridge .Values.bridges.k8sAudit.enabled)) }}
+    # Allow Prometheus in monitoring namespace to scrape bridge health/metrics endpoints
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        {{- if and .Values.serviceMonitor.endpoints.bridgeAdmin .Values.bridges.tetragon.enabled }}
+        - port: {{ .Values.bridges.tetragon.adminPort }}
+          protocol: TCP
+        {{- end }}
+        {{- if and .Values.serviceMonitor.endpoints.bridgeAdmin .Values.bridges.hubble.enabled }}
+        - port: {{ .Values.bridges.hubble.adminPort }}
+          protocol: TCP
+        {{- end }}
+        {{- if and .Values.serviceMonitor.endpoints.bridgeAdmin .Values.bridges.auditd.enabled }}
+        - port: {{ .Values.bridges.auditd.adminPort }}
+          protocol: TCP
+        {{- end }}
+        {{- if and .Values.serviceMonitor.endpoints.k8sAuditBridge .Values.bridges.k8sAudit.enabled }}
+        - port: {{ .Values.bridges.k8sAudit.service.port }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
     # Allow external access to proofs-api and hushd
     - ports:
         {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
@@ -37,6 +61,10 @@ spec:
         {{- end }}
         {{- if .Values.hushd.enabled }}
         - port: {{ .Values.hushd.port }}
+          protocol: TCP
+        {{- end }}
+        {{- if .Values.bridges.k8sAudit.enabled }}
+        - port: {{ .Values.bridges.k8sAudit.service.port }}
           protocol: TCP
         {{- end }}
   egress:

@@ -1,0 +1,115 @@
+# AI Agent Ruleset
+# Optimized for AI coding assistants (Claude, GPT, etc.)
+version: "1.1.0"
+name: AI Agent
+description: Security rules optimized for AI coding assistants
+
+guards:
+  forbidden_path:
+    patterns:
+      # Core sensitive paths
+      - "**/.ssh/**"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.local"
+      - "**/.env.production"
+      - "**/.git-credentials"
+      - "**/.gnupg/**"
+      - "**/.kube/**"
+      - "**/.docker/**"
+      - "**/.npmrc"
+      - "/etc/shadow"
+      - "/etc/passwd"
+    exceptions:
+      # Allow reading .env.example for documentation
+      - "**/.env.example"
+      - "**/.env.template"
+
+  egress_allowlist:
+    allow:
+      # AI APIs
+      - "*.openai.com"
+      - "*.anthropic.com"
+      - "api.together.xyz"
+      - "*.fireworks.ai"
+      # Code hosting
+      - "api.github.com"
+      - "github.com"
+      - "*.githubusercontent.com"
+      - "gitlab.com"
+      - "api.gitlab.com"
+      - "bitbucket.org"
+      - "api.bitbucket.org"
+      # Package registries
+      - "*.npmjs.org"
+      - "registry.npmjs.org"
+      - "registry.yarnpkg.com"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "crates.io"
+      - "static.crates.io"
+      - "rubygems.org"
+      - "packagist.org"
+      # Documentation
+      - "docs.rs"
+      - "*.readthedocs.io"
+      - "*.readthedocs.org"
+      - "developer.mozilla.org"
+    block: []
+    default_action: block
+
+  secret_leak:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+      - name: openai_key
+        pattern: "sk-[A-Za-z0-9]{48}"
+        severity: critical
+      - name: anthropic_key
+        pattern: "sk-ant-[A-Za-z0-9\\-]{95}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+    skip_paths:
+      - "**/test/**"
+      - "**/tests/**"
+      - "**/__tests__/**"
+      - "**/*.test.*"
+      - "**/*.spec.*"
+      - "**/fixtures/**"
+      - "**/mocks/**"
+
+  patch_integrity:
+    max_additions: 2000
+    max_deletions: 1000
+    require_balance: false
+    max_imbalance_ratio: 20.0
+    forbidden_patterns:
+      - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)"
+      - "(?i)rm\\s+-rf\\s+/"
+      - "(?i)chmod\\s+777"
+      - "(?i)reverse[_\\-]?shell"
+
+  mcp_tool:
+    allow: []
+    block:
+      - shell_exec
+      - run_command
+    require_confirmation:
+      - git_push
+      - deploy
+      - publish
+    default_action: allow
+    max_args_size: 2097152  # 2MB
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 7200  # 2 hours

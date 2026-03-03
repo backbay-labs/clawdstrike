@@ -24,6 +24,9 @@ pub enum Error {
     #[error("invalid timestamp: {0}")]
     InvalidTimestamp(String),
 
+    #[error("chain integrity violation for issuer {issuer}: {reason}")]
+    ChainIntegrityViolation { issuer: String, reason: String },
+
     #[error("NATS error: {0}")]
     Nats(String),
 

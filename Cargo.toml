@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/libs/bridge-runtime",
     "crates/libs/hush-core",
     "crates/libs/hush-proxy",
     "crates/libs/clawdstrike",
@@ -13,9 +14,12 @@ members = [
     "crates/services/spine-cli",
     "crates/bridges/tetragon-bridge",
     "crates/bridges/hubble-bridge",
+    "crates/bridges/auditd-bridge",
+    "crates/bridges/k8s-audit-bridge",
+    "crates/bridges/darwin-telemetry-bridge",
     "crates/services/eas-anchor",
     "crates/tests/sdr-integration-tests",
-    "crates/services/cloud-api",
+    "crates/services/control-api",
     "packages/sdk/hush-py/hush-native",
     "crates/libs/hush-ffi",
     "crates/libs/clawdstrike-guard-sdk",
@@ -145,6 +149,7 @@ hush-proxy = { path = "crates/libs/hush-proxy", version = "0.1.0" }
 clawdstrike = { path = "crates/libs/clawdstrike", version = "0.1.1", default-features = false }
 hush-certification = { path = "crates/libs/hush-certification", version = "0.1.0" }
 spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.1.0" }
+bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.1.0" }
 hunt-scan = { path = "crates/libs/hunt-scan", version = "0.1.3" }
 hunt-query = { path = "crates/libs/hunt-query", version = "0.1.3" }
 hunt-correlate = { path = "crates/libs/hunt-correlate", version = "0.1.3" }

@@ -50,6 +50,19 @@ bridges:
     grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
     nodeSelector:
       kubernetes.io/arch: amd64
+  auditd:
+    enabled: true
+    image:
+      tag: "cb901cd22c52ae9465131df19dcac1553cf793af"
+    nodeSelector:
+      kubernetes.io/arch: amd64
+  k8sAudit:
+    enabled: true
+    replicas: 1
+    image:
+      tag: "cb901cd22c52ae9465131df19dcac1553cf793af"
+    nodeSelector:
+      kubernetes.io/arch: amd64
 
 spiffe:
   enabled: true

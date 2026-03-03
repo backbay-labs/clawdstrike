@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile for k8s-audit-bridge
+#
+# Build:
+#   docker build -f infra/docker/Dockerfile.k8s-audit-bridge -t k8s-audit-bridge .
+
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
+FROM rust:1.93-bookworm AS builder
+
+WORKDIR /build
+
+# Copy minimal workspace manifest (only k8s-audit-bridge crates) and lockfile.
+COPY infra/docker/workspace-k8s-audit.toml Cargo.toml
+COPY Cargo.lock ./
+
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/spine crates/libs/spine
+COPY crates/libs/bridge-runtime crates/libs/bridge-runtime
+COPY crates/bridges/k8s-audit-bridge crates/bridges/k8s-audit-bridge
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin k8s-audit-bridge && \
+    cp /build/target/release/k8s-audit-bridge /usr/local/bin/
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 bridge && \
+    useradd -u 1000 -g bridge -d /var/lib/bridge -m bridge
+
+COPY --from=builder /usr/local/bin/k8s-audit-bridge /usr/local/bin/
+
+USER bridge
+WORKDIR /var/lib/bridge
+
+ENTRYPOINT ["/usr/bin/tini", "--", "k8s-audit-bridge"]

@@ -1,7 +1,9 @@
 {{- $enableNats := and .Values.serviceMonitor.endpoints.nats .Values.nats.enabled .Values.nats.monitoring.enabled (not .Values.nats.external.enabled) }}
 {{- $enableProofsApi := and .Values.serviceMonitor.endpoints.proofsApi .Values.spine.enabled .Values.spine.proofsApi.enabled }}
 {{- $enableHushd := and .Values.serviceMonitor.endpoints.hushd .Values.hushd.enabled }}
-{{- if and .Values.serviceMonitor.enabled (or $enableNats $enableProofsApi $enableHushd) }}
+{{- $enableBridgeAdmin := and .Values.serviceMonitor.endpoints.bridgeAdmin (or .Values.bridges.tetragon.enabled .Values.bridges.hubble.enabled .Values.bridges.auditd.enabled) }}
+{{- $enableK8sAuditBridge := and .Values.serviceMonitor.endpoints.k8sAuditBridge .Values.bridges.k8sAudit.enabled }}
+{{- if and .Values.serviceMonitor.enabled (or $enableNats $enableProofsApi $enableHushd $enableBridgeAdmin $enableK8sAuditBridge) }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -29,6 +31,16 @@ spec:
     {{- end }}
     {{- if $enableHushd }}
     - port: http
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: /metrics
+    {{- end }}
+    {{- if $enableBridgeAdmin }}
+    - port: admin
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: /metrics
+    {{- end }}
+    {{- if $enableK8sAuditBridge }}
+    - port: webhook
       interval: {{ .Values.serviceMonitor.interval }}
       path: /metrics
     {{- end }}

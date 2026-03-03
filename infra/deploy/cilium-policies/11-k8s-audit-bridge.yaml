@@ -1,0 +1,48 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: k8s-audit-bridge
+  namespace: clawdstrike
+  labels:
+    app.kubernetes.io/part-of: clawdstrike
+spec:
+  description: "K8s audit bridge: accept webhook events, publish to NATS, expose health/metrics"
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: k8s-audit-bridge
+  ingress:
+    # Kubernetes API server webhooks
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "9877"
+              protocol: TCP
+    # Prometheus scrape and readiness probes routed via Service
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9877"
+              protocol: TCP
+  egress:
+    # NATS JetStream
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: clawdstrike
+            app.kubernetes.io/component: nats
+      toPorts:
+        - ports:
+            - port: "4222"
+              protocol: TCP
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY

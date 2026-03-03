@@ -1120,6 +1120,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "auditd-bridge"
+version = "0.1.3"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "bridge-runtime",
+ "chrono",
+ "clap",
+ "hush-core",
+ "hush-spine",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "auto_impl"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1383,6 +1402,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "bridge-runtime"
+version = "0.1.3"
+dependencies = [
+ "async-nats",
+ "axum",
+ "hush-core",
+ "hush-spine",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1668,7 +1703,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "clawdstrike-cloud-api"
+name = "clawdstrike-control-api"
 version = "0.1.3"
 dependencies = [
  "async-nats",
@@ -2257,6 +2292,27 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "darwin-telemetry-bridge"
+version = "0.1.3"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "bridge-runtime",
+ "chrono",
+ "clap",
+ "fsevent-sys",
+ "hush-core",
+ "hush-spine",
+ "libc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2862,6 +2918,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
+name = "fsevent-sys"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3328,6 +3393,7 @@ version = "0.1.3"
 dependencies = [
  "anyhow",
  "async-nats",
+ "bridge-runtime",
  "chrono",
  "clap",
  "hush-core",
@@ -4110,6 +4176,26 @@ dependencies = [
  "once_cell",
  "serdect",
  "sha2",
+]
+
+[[package]]
+name = "k8s-audit-bridge"
+version = "0.1.3"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "axum",
+ "bridge-runtime",
+ "chrono",
+ "clap",
+ "hush-core",
+ "hush-spine",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -6131,9 +6217,13 @@ dependencies = [
 name = "sdr-integration-tests"
 version = "0.1.3"
 dependencies = [
+ "async-nats",
+ "futures",
  "hubble-bridge",
  "hush-core",
  "hush-spine",
+ "k8s-audit-bridge",
+ "reqwest 0.13.2",
  "serde_json",
  "tetragon-bridge",
  "tokio",
@@ -6895,6 +6985,7 @@ version = "0.1.3"
 dependencies = [
  "anyhow",
  "async-nats",
+ "bridge-runtime",
  "chrono",
  "clap",
  "hush-core",

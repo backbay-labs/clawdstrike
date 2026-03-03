@@ -1,0 +1,18 @@
+{
+  "name": "clawdstrike",
+  "displayName": "ClawdStrike",
+  "version": "0.1.0",
+  "description": "Runtime security enforcement for AI coding agents — policy hooks, audit receipts, threat hunting, and security tools for Cursor.",
+  "publisher": "backbay-labs",
+  "category": "security",
+  "author": {
+    "name": "Backbay Labs",
+    "email": "hello@backbay.io"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "repository": "https://github.com/backbay-labs/clawdstrike",
+  "license": "Apache-2.0",
+  "logo": "assets/logo.png",
+  "tags": ["security", "policy", "audit", "edr", "agent-security", "mcp"],
+  "keywords": ["security", "policy", "audit", "edr", "agent-security", "mcp"]
+}

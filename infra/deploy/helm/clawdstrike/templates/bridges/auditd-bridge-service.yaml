@@ -1,0 +1,18 @@
+{{- if .Values.bridges.auditd.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-auditd-bridge
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "auditd-bridge") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: admin
+      port: {{ .Values.bridges.auditd.adminPort }}
+      targetPort: admin
+      protocol: TCP
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "auditd-bridge") | nindent 4 }}
+{{- end }}

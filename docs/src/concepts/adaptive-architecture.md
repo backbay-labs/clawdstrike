@@ -86,9 +86,9 @@ When an agent operates in degraded mode (enterprise temporarily unreachable), de
 The architecture defines two trust zones separated by authenticated transport:
 
 - **Agent Trust Zone:** The agent process, local policy cache, local evaluation engine, offline receipt queue, and the agent's Ed25519 keypair. This zone is controlled by the machine owner.
-- **Enterprise Trust Zone:** The enterprise hushd service, Cloud API, Spine services, NATS infrastructure, and the enterprise's Ed25519 keypair. This zone is controlled by the organization's security team.
+- **Enterprise Trust Zone:** The enterprise hushd service, Control API, Spine services, NATS infrastructure, and the enterprise's Ed25519 keypair. This zone is controlled by the organization's security team.
 
-Communication between zones is authenticated via NATS credentials (issued during enrollment) and hushd API keys. Tenant isolation is enforced at the NATS account level -- each tenant's agents operate in a dedicated NATS account with strict subject-level access controls. Cloud API delegates account/user/ACL lifecycle to an external NATS provisioner service (`NATS_PROVISIONING_MODE=external`); when the provisioner endpoint is missing, Cloud API can still start, but tenant/agent provisioning operations fail until it is configured. Agents cannot publish posture commands or forge approval responses; only enterprise services have those permissions.
+Communication between zones is authenticated via NATS credentials (issued during enrollment) and hushd API keys. Tenant isolation is enforced at the NATS account level -- each tenant's agents operate in a dedicated NATS account with strict subject-level access controls. Control API delegates account/user/ACL lifecycle to an external NATS provisioner service (`NATS_PROVISIONING_MODE=external`); when the provisioner endpoint is missing, Control API can still start, but tenant/agent provisioning operations fail until it is configured. Agents cannot publish posture commands or forge approval responses; only enterprise services have those permissions.
 
 ## Relationship to Existing Components
 
@@ -101,7 +101,7 @@ The Adaptive Architecture builds on existing Clawdstrike components rather than 
 | `engine-adaptive` (new) | Wraps local and remote engines; manages mode transitions |
 | Desktop Agent | Local API server; hosts NATS client for policy sync, telemetry, heartbeat |
 | Spine | Signed envelope format for tamper-evident audit records |
-| Cloud API | Enterprise-side fleet management, enrollment, and dashboard |
+| Control API | Enterprise-side fleet management, enrollment, and control console |
 | Framework adapters | Unchanged; work with any engine via the `PolicyEngineLike` interface |
 
 All existing framework adapters (OpenClaw, Vercel AI, LangChain, Claude, OpenAI, OpenCode) continue to work without modification. The adaptive engine implements the same `PolicyEngineLike` interface, so switching from a local-only to an adaptive deployment requires only a configuration change, not a code change.

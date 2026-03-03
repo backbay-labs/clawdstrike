@@ -71,10 +71,22 @@ spine:
   checkpointer:
     enabled: true
     replicas: 1
+    # -- Checkpointer mode (`run` starts a Deployment; `repair` runs a one-shot Job)
+    mode: run
+    # -- Apply destructive writes in repair mode (`--repair-apply`)
+    repairApply: false
     # -- Hex-encoded 32-byte Ed25519 seed for spine-checkpointer (SPINE_LOG_SEED_HEX)
     logSeedHex: ""
     # -- JetStream replication factor to request when creating Spine streams
     streamReplicas: 1
+    # -- Chain enforcement mode (`warn` logs violations, `strict` quarantines and drops)
+    chainEnforcement: warn
+    # -- KV bucket storing per-issuer chain heads
+    issuerHeadsBucket: CLAWDSTRIKE_ISSUER_HEADS
+    # -- JetStream stream for strict-mode chain violations
+    chainViolationStream: CLAWDSTRIKE_CHAIN_VIOLATIONS
+    # -- Subject for strict-mode chain violation events
+    chainViolationSubject: clawdstrike.spine.chain_violation.v1
     resources:
       requests:
         cpu: 50m
@@ -100,6 +112,12 @@ spine:
     enabled: true
     replicas: 1
     port: 8080
+    # -- KV bucket storing per-issuer chain heads
+    issuerHeadsBucket: CLAWDSTRIKE_ISSUER_HEADS
+    # -- JetStream stream containing strict-mode chain violation events
+    chainViolationStream: CLAWDSTRIKE_CHAIN_VIOLATIONS
+    # -- Maximum events scanned by /v1/chain_violation_stats
+    chainViolationStatsScanCap: 10000
     resources:
       requests:
         cpu: 50m
@@ -176,6 +194,7 @@ bridges:
       repository: ghcr.io/backbay-labs/clawdstrike/tetragon-bridge
       tag: ""
     grpcEndpoint: "http://localhost:54321"
+    adminPort: 2112
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
     env:
@@ -183,6 +202,29 @@ bridges:
       STREAM_MAX_BYTES: 1073741824
       STREAM_MAX_AGE_SECONDS: 86400
       NATS_STARTUP_TIMEOUT_SECS: 90
+      OUTBOX_ENABLED: false
+      OUTBOX_PATH: "/tmp/tetragon-bridge-outbox.db"
+      OUTBOX_FLUSH_INTERVAL_MS: 1000
+      OUTBOX_MAX_PENDING: 10000
+      OUTBOX_RETRY_BASE_MS: 500
+      OUTBOX_RETRY_MAX_MS: 30000
+      READINESS_OUTBOX_DEGRADED_THRESHOLD: 100
+    outboxPersistence:
+      enabled: false
+      # DaemonSet default: hostPath per node. Alternative: pvc (requires RWX-capable class).
+      type: hostPath
+      mountPath: /var/lib/clawdstrike/tetragon-bridge/outbox
+      fileName: outbox.db
+      hostPath:
+        path: /var/lib/clawdstrike/tetragon-bridge/outbox
+        type: DirectoryOrCreate
+      pvc:
+        create: true
+        existingClaim: ""
+        storageClassName: ""
+        accessModes:
+          - ReadWriteMany
+        size: 2Gi
     resources:
       requests:
         cpu: 50m
@@ -201,12 +243,37 @@ bridges:
       repository: ghcr.io/backbay-labs/clawdstrike/hubble-bridge
       tag: ""
     grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
+    adminPort: 2112
     hostNetwork: false
     dnsPolicy: ClusterFirst
     env:
       RUST_LOG: "info,hubble_bridge=debug"
       STREAM_MAX_BYTES: 1073741824
       STREAM_MAX_AGE_SECONDS: 86400
+      NATS_STARTUP_TIMEOUT_SECS: 90
+      OUTBOX_ENABLED: false
+      OUTBOX_PATH: "/tmp/hubble-bridge-outbox.db"
+      OUTBOX_FLUSH_INTERVAL_MS: 1000
+      OUTBOX_MAX_PENDING: 10000
+      OUTBOX_RETRY_BASE_MS: 500
+      OUTBOX_RETRY_MAX_MS: 30000
+      READINESS_OUTBOX_DEGRADED_THRESHOLD: 100
+    outboxPersistence:
+      enabled: false
+      # Deployment supports either hostPath or pvc.
+      type: pvc
+      mountPath: /var/lib/clawdstrike/hubble-bridge/outbox
+      fileName: outbox.db
+      hostPath:
+        path: /var/lib/clawdstrike/hubble-bridge/outbox
+        type: DirectoryOrCreate
+      pvc:
+        create: true
+        existingClaim: ""
+        storageClassName: ""
+        accessModes:
+          - ReadWriteOnce
+        size: 2Gi
     resources:
       requests:
         cpu: 50m
@@ -214,6 +281,101 @@ bridges:
       limits:
         cpu: 250m
         memory: 256Mi
+    nodeSelector: {}
+    tolerations: []
+
+  auditd:
+    enabled: false
+    image:
+      repository: ghcr.io/backbay-labs/clawdstrike/auditd-bridge
+      tag: ""
+    auditLogPath: "/var/log/audit/audit.log"
+    adminPort: 2112
+    env:
+      RUST_LOG: "info,auditd_bridge=debug"
+      STREAM_MAX_BYTES: 1073741824
+      STREAM_MAX_AGE_SECONDS: 86400
+      NATS_STARTUP_TIMEOUT_SECS: 90
+      GROUP_TIMEOUT_MS: 500
+      OUTBOX_ENABLED: false
+      OUTBOX_PATH: "/tmp/auditd-bridge-outbox.db"
+      OUTBOX_FLUSH_INTERVAL_MS: 1000
+      OUTBOX_MAX_PENDING: 10000
+      OUTBOX_RETRY_BASE_MS: 500
+      OUTBOX_RETRY_MAX_MS: 30000
+      READINESS_OUTBOX_DEGRADED_THRESHOLD: 100
+    outboxPersistence:
+      enabled: false
+      # DaemonSet default: hostPath per node. Alternative: pvc (requires RWX-capable class).
+      type: hostPath
+      mountPath: /var/lib/clawdstrike/auditd-bridge/outbox
+      fileName: outbox.db
+      hostPath:
+        path: /var/lib/clawdstrike/auditd-bridge/outbox
+        type: DirectoryOrCreate
+      pvc:
+        create: true
+        existingClaim: ""
+        storageClassName: ""
+        accessModes:
+          - ReadWriteMany
+        size: 2Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    # -- Node selector for bridge DaemonSet
+    nodeSelector: {}
+    tolerations: []
+
+  k8sAudit:
+    enabled: false
+    replicas: 1
+    image:
+      repository: ghcr.io/backbay-labs/clawdstrike/k8s-audit-bridge
+      tag: ""
+    port: 9877
+    env:
+      RUST_LOG: "info,k8s_audit_bridge=debug"
+      STREAM_MAX_BYTES: 1073741824
+      STREAM_MAX_AGE_SECONDS: 86400
+      NATS_STARTUP_TIMEOUT_SECS: 90
+      OUTBOX_ENABLED: false
+      OUTBOX_PATH: "/tmp/k8s-audit-bridge-outbox.db"
+      OUTBOX_FLUSH_INTERVAL_MS: 1000
+      OUTBOX_MAX_PENDING: 10000
+      OUTBOX_RETRY_BASE_MS: 500
+      OUTBOX_RETRY_MAX_MS: 30000
+      READINESS_OUTBOX_DEGRADED_THRESHOLD: 100
+    outboxPersistence:
+      enabled: false
+      # Deployment supports either hostPath or pvc.
+      type: pvc
+      mountPath: /var/lib/clawdstrike/k8s-audit-bridge/outbox
+      fileName: outbox.db
+      hostPath:
+        path: /var/lib/clawdstrike/k8s-audit-bridge/outbox
+        type: DirectoryOrCreate
+      pvc:
+        create: true
+        existingClaim: ""
+        storageClassName: ""
+        accessModes:
+          - ReadWriteOnce
+        size: 2Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    service:
+      type: ClusterIP
+      port: 9877
     nodeSelector: {}
     tolerations: []
 
@@ -250,6 +412,8 @@ serviceMonitor:
     nats: true
     hushd: true
     proofsApi: false
+    bridgeAdmin: false
+    k8sAuditBridge: false
 
 # ---------------------------------------------------------------------------
 # EAS Anchor (on-chain checkpoint anchoring to Base L2)

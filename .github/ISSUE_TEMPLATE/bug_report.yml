@@ -21,7 +21,7 @@ body:
         - "Tetragon Bridge (crates/bridges/tetragon-bridge)"
         - "Hubble Bridge (crates/bridges/hubble-bridge)"
         - "Agent App (apps/agent)"
-        - "Cloud Dashboard (apps/cloud-dashboard)"
+        - "Control Console (apps/control-console)"
         - "TypeScript SDK (packages/sdk/hush-ts)"
         - "Python SDK (packages/sdk/hush-py)"
         - "Rulesets"

@@ -18,7 +18,7 @@
     "packages/adapters/clawdstrike-opencode",
     "packages/adapters/clawdstrike-hush-cli-engine",
     "packages/adapters/clawdstrike-hushd-engine",
-    "apps/cloud-dashboard",
+    "apps/control-console",
     "packages/sdk/clawdstrike-hunt"
   ],
   "devDependencies": {

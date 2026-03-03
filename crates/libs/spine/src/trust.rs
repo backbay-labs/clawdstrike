@@ -60,6 +60,11 @@ pub struct TrustBundle {
     #[serde(default = "default_witness_quorum")]
     pub witness_quorum: usize,
 
+    /// Allowed envelope issuer node IDs. When non-empty, only envelopes from
+    /// these issuers are accepted by the chain verifier.
+    #[serde(default)]
+    pub allowed_envelope_issuers: Vec<String>,
+
     /// When true, receipt signers must have a valid `node_attestation.v1` fact
     /// in the log with a SPIFFE ID. Verification requires querying the log.
     #[serde(default)]
@@ -156,6 +161,15 @@ impl TrustBundle {
                 .any(|v| v == signer_node_id)
     }
 
+    /// Check if an envelope issuer is allowed.
+    pub fn envelope_issuer_allowed(&self, issuer: &str) -> bool {
+        self.allowed_envelope_issuers.is_empty()
+            || self
+                .allowed_envelope_issuers
+                .iter()
+                .any(|v| v.eq_ignore_ascii_case(issuer))
+    }
+
     /// Check if a receipt enforcement tier is acceptable.
     pub fn receipt_enforcement_tier_allowed(&self, tier: &str) -> bool {
         self.required_receipt_enforcement_tiers.is_empty()
@@ -180,6 +194,7 @@ mod tests {
             required_receipt_enforcement_tiers: vec![],
             require_kernel_loader_signatures: false,
             witness_quorum: 1,
+            allowed_envelope_issuers: vec![],
             require_attested_issuers: false,
         }
     }
@@ -192,6 +207,7 @@ mod tests {
         assert!(b.witness_allowed("any-witness"));
         assert!(b.receipt_signer_allowed("any-signer"));
         assert!(b.receipt_enforcement_tier_allowed("any-tier"));
+        assert!(b.envelope_issuer_allowed("any-issuer"));
     }
 
     #[test]
@@ -202,6 +218,25 @@ mod tests {
         };
         assert!(b.log_id_allowed("log-a"));
         assert!(!b.log_id_allowed("log-b"));
+    }
+
+    #[test]
+    fn envelope_issuer_allowlist_restricts() {
+        let b = TrustBundle {
+            allowed_envelope_issuers: vec!["aegis:ed25519:aabb".into()],
+            ..dev_bundle()
+        };
+        assert!(b.envelope_issuer_allowed("aegis:ed25519:aabb"));
+        assert!(!b.envelope_issuer_allowed("aegis:ed25519:ccdd"));
+    }
+
+    #[test]
+    fn envelope_issuer_allowlist_is_case_insensitive() {
+        let b = TrustBundle {
+            allowed_envelope_issuers: vec!["aegis:ed25519:AABB".into()],
+            ..dev_bundle()
+        };
+        assert!(b.envelope_issuer_allowed("aegis:ed25519:aabb"));
     }
 
     #[test]

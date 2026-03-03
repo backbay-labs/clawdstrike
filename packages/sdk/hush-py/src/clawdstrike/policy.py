@@ -83,6 +83,23 @@ def _reject_unknown_keys(data: dict[str, Any], allowed: set[str], *, path: str) 
         raise PolicyError(f"Unknown {path} field(s): {unknown_str}")
 
 
+def _parse_extends(value: Any, *, path: str) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        if not value.strip():
+            raise PolicyError(f"{path} must be a non-empty string")
+        return [value]
+    if isinstance(value, list):
+        refs: list[str] = []
+        for i, ref in enumerate(value):
+            if not isinstance(ref, str) or not ref.strip():
+                raise PolicyError(f"{path}[{i}] must be a non-empty string")
+            refs.append(ref)
+        return refs
+    raise PolicyError(f"Expected string or list for {path}, got {type(value).__name__}")
+
+
 class _MergeMode(_Enum):
     OVERRIDE = "override"
     MERGE_LIST = "merge_list"
@@ -446,7 +463,7 @@ class Policy:
     version: str = POLICY_SCHEMA_VERSION
     name: str = ""
     description: str = ""
-    extends: str | None = None
+    extends: str | list[str] | None = None
     merge_strategy: str = "deep_merge"
     guards: GuardConfigs = field(default_factory=GuardConfigs)
     settings: PolicySettings = field(default_factory=PolicySettings)
@@ -472,6 +489,7 @@ class Policy:
         if not isinstance(version, str):
             raise PolicyError("policy.version must be a string")
         _validate_policy_version(version)
+        _parse_extends(data.get("extends"), path="policy.extends")
 
         guards_data = _require_mapping(data.get("guards"), path="policy.guards")
         settings_data = _require_mapping(data.get("settings"), path="policy.settings")
@@ -502,7 +520,7 @@ class Policy:
         """Load from YAML file."""
         p = Path(path)
         with open(p) as f:
-            return cls.from_yaml(f.read())
+            return cls.from_yaml_with_extends(f.read(), base_path=str(p))
 
     @classmethod
     def from_yaml_with_extends(
@@ -519,7 +537,7 @@ class Policy:
         if resolver is None:
             resolver = _DEFAULT_RESOLVER
         from_path = Path(base_path) if base_path else None
-        return cls._resolve_extends(yaml_str, from_path, resolver, set(), 0)
+        return cls._resolve_extends(yaml_str, from_path, resolver, set(), {}, 0)
 
     @classmethod
     def from_yaml_file_with_extends(
@@ -539,27 +557,47 @@ class Policy:
         yaml_str: str,
         from_path: Path | None,
         resolver: PolicyResolver,
-        visited: set[str],
+        resolving: set[str],
+        memo: dict[str, Policy],
         depth: int,
     ) -> Policy:
         if depth > MAX_EXTENDS_DEPTH:
             raise PolicyError(f"Policy extends depth exceeded (limit: {MAX_EXTENDS_DEPTH})")
 
         child = cls.from_yaml(yaml_str)
+        refs = _parse_extends(child.extends, path="policy.extends")
+        if not refs:
+            return child
 
-        if child.extends:
-            resolved_yaml, canonical_key, location = resolver.resolve(
-                child.extends, from_path
-            )
+        merged_base: Policy | None = None
+        for ref in refs:
+            resolved_yaml, canonical_key, location = resolver.resolve(ref, from_path)
 
-            if canonical_key in visited:
-                raise PolicyError(f"Circular policy extension detected: {child.extends}")
-            visited.add(canonical_key)
+            if canonical_key in resolving:
+                raise PolicyError(f"Circular policy extension detected: {ref}")
 
-            base = cls._resolve_extends(resolved_yaml, location, resolver, visited, depth + 1)
-            return base.merge(child)
+            if canonical_key in memo:
+                parent = memo[canonical_key]
+            else:
+                resolving.add(canonical_key)
+                try:
+                    parent = cls._resolve_extends(
+                        resolved_yaml,
+                        location,
+                        resolver,
+                        resolving,
+                        memo,
+                        depth + 1,
+                    )
+                finally:
+                    resolving.discard(canonical_key)
+                memo[canonical_key] = parent
 
-        return child
+            merged_base = parent if merged_base is None else merged_base.merge(parent)
+
+        if merged_base is None:
+            return child
+        return merged_base.merge(child)
 
     def merge(self, child: Policy) -> Policy:
         """Merge this (base) policy with a child policy.

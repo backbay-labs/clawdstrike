@@ -1,0 +1,20 @@
+{{- if and .Values.bridges.k8sAudit.enabled .Values.bridges.k8sAudit.outboxPersistence.enabled (eq .Values.bridges.k8sAudit.outboxPersistence.type "pvc") .Values.bridges.k8sAudit.outboxPersistence.pvc.create (not .Values.bridges.k8sAudit.outboxPersistence.pvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-k8s-audit-bridge-outbox
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "k8s-audit-bridge") | nindent 4 }}
+spec:
+  accessModes:
+    {{- range .Values.bridges.k8sAudit.outboxPersistence.pvc.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- if .Values.bridges.k8sAudit.outboxPersistence.pvc.storageClassName }}
+  storageClassName: {{ .Values.bridges.k8sAudit.outboxPersistence.pvc.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.bridges.k8sAudit.outboxPersistence.pvc.size }}
+{{- end }}

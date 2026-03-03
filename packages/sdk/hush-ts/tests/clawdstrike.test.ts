@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { Clawdstrike } from "../src/clawdstrike";
 import { GuardResult, type Guard, Severity } from "../src/guards/types";
@@ -159,6 +162,126 @@ guards:
     expect(decision.guard).toBe("secret_leak");
     expect(decision.severity).toBe(Severity.INFO);
     expect(decision.message).toContain("Secret pattern matched");
+  });
+
+  it("fromPolicy resolves multi-parent extends without false cycle errors", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-ts-policy-"));
+    const commonPath = path.join(dir, "common.yaml");
+    const leftPath = path.join(dir, "left.yaml");
+    const rightPath = path.join(dir, "right.yaml");
+    const rootPath = path.join(dir, "root.yaml");
+
+    await fs.writeFile(
+      commonPath,
+      `version: "1.2.0"
+name: "common"
+guards:
+  forbidden_path:
+    patterns:
+      - "/etc/**"
+`
+    );
+    await fs.writeFile(
+      leftPath,
+      `version: "1.2.0"
+name: "left"
+extends:
+  - "${commonPath}"
+guards:
+  egress_allowlist:
+    allow:
+      - "api.example.com"
+    block: []
+    default_action: block
+`
+    );
+    await fs.writeFile(
+      rightPath,
+      `version: "1.2.0"
+name: "right"
+extends:
+  - "${commonPath}"
+guards:
+  mcp_tool:
+    allow: []
+    block:
+      - "danger_tool"
+    default_action: allow
+`
+    );
+    await fs.writeFile(
+      rootPath,
+      `version: "1.2.0"
+name: "root"
+extends:
+  - "${leftPath}"
+  - "${rightPath}"
+`
+    );
+
+    const cs = await Clawdstrike.fromPolicy(rootPath);
+
+    const fileDecision = await cs.check("file_access", { path: "/etc/passwd" });
+    expect(fileDecision.status).toBe("deny");
+    expect(fileDecision.guard).toBe("forbidden_path");
+
+    const goodEgress = await cs.check("network_egress", { host: "api.example.com", port: 443 });
+    expect(goodEgress.status).toBe("allow");
+
+    const badEgress = await cs.check("network_egress", { host: "bad.example.com", port: 443 });
+    expect(badEgress.status).toBe("deny");
+    expect(badEgress.guard).toBe("egress_allowlist");
+
+    const toolDecision = await cs.check("mcp_tool", { tool: "danger_tool", args: {} });
+    expect(toolDecision.status).toBe("deny");
+    expect(toolDecision.guard).toBe("mcp_tool");
+  });
+
+  it("fromPolicy deep_merge preserves inherited fields and honors explicit false overrides", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-ts-policy-"));
+    const basePath = path.join(dir, "base.yaml");
+    const childPath = path.join(dir, "child.yaml");
+
+    await fs.writeFile(
+      basePath,
+      `version: "1.2.0"
+name: "base"
+guards:
+  patch_integrity:
+    max_additions: 5
+    max_deletions: 50
+    require_balance: true
+    max_imbalance_ratio: 1
+`
+    );
+    await fs.writeFile(
+      childPath,
+      `version: "1.2.0"
+name: "child"
+extends:
+  - "${basePath}"
+merge_strategy: deep_merge
+guards:
+  patch_integrity:
+    require_balance: false
+`
+    );
+
+    const cs = await Clawdstrike.fromPolicy(childPath);
+
+    const tooManyAdds = await cs.check("patch", {
+      path: "a.diff",
+      diff: "+1\n+2\n+3\n+4\n+5\n+6",
+    });
+    expect(tooManyAdds.status).toBe("deny");
+    expect(tooManyAdds.guard).toBe("patch_integrity");
+    expect(String(tooManyAdds.message)).toContain("Too many additions");
+
+    const imbalancedButAllowed = await cs.check("patch", {
+      path: "b.diff",
+      diff: "+1\n+2\n-3",
+    });
+    expect(imbalancedButAllowed.status).toBe("allow");
   });
 
   it("fromDaemon evaluates remotely and fails closed on transport errors", async () => {

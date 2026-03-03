@@ -5,7 +5,8 @@ User-facing product applications.
 Current apps:
 
 1. `apps/agent/` - Tauri agent app.
-2. `apps/cloud-dashboard/` - web dashboard app.
+2. `apps/control-console/` - web dashboard app.
+3. `apps/terminal/` - ClawdStrike TUI (security-aware AI agent orchestration)
 
 Ownership and maturity:
 

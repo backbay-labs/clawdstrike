@@ -4,7 +4,7 @@ This repository uses a deliberate split policy for JavaScript package managers.
 
 ## Default Policy
 
-1. `npm` is the default package manager for all packages under `packages/**` and for `apps/cloud-dashboard`.
+1. `npm` is the default package manager for all packages under `packages/**` and for `apps/control-console`.
 2. `bun` is allowed for `apps/desktop` frontend workflows where Bun is already part of the toolchain.
 3. Rust and Python workflows remain managed by Cargo and pip/venv, not by npm or Bun wrappers.
 
@@ -27,5 +27,5 @@ This repository uses a deliberate split policy for JavaScript package managers.
 | `packages/sdk/**` | npm |
 | `packages/adapters/**` | npm |
 | `packages/policy/**` | npm |
-| `apps/cloud-dashboard` | npm |
+| `apps/control-console` | npm |
 | `apps/desktop` | Bun for frontend scripts; Cargo for Tauri Rust crates |

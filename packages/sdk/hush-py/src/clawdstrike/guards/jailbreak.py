@@ -82,7 +82,7 @@ class JailbreakGuard(Guard):
 
     @property
     def name(self) -> str:
-        return "jailbreak_detection"
+        return "jailbreak"
 
     def handles(self, action: Action) -> bool:
         if not self._config.enabled:

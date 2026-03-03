@@ -34,23 +34,23 @@
  * @packageDocumentation
  */
 
-import { parseNetworkTarget } from "@clawdstrike/adapter-core";
-import type { EgressAllowlistConfig } from "./guards/egress-allowlist.js";
-import { EgressAllowlistGuard } from "./guards/egress-allowlist.js";
-import type { ForbiddenPathConfig } from "./guards/forbidden-path.js";
-import { ForbiddenPathGuard } from "./guards/forbidden-path.js";
-import type { JailbreakGuardConfig } from "./guards/jailbreak.js";
-import { JailbreakGuard } from "./guards/jailbreak.js";
-import type { McpToolConfig } from "./guards/mcp-tool.js";
-import { McpToolGuard } from "./guards/mcp-tool.js";
-import type { PatchIntegrityConfig } from "./guards/patch-integrity.js";
-import { PatchIntegrityGuard } from "./guards/patch-integrity.js";
-import type { PromptInjectionConfig } from "./guards/prompt-injection.js";
-import { PromptInjectionGuard } from "./guards/prompt-injection.js";
-import type { SecretLeakConfig } from "./guards/secret-leak.js";
-import { SecretLeakGuard } from "./guards/secret-leak.js";
-import type { Guard } from "./guards/types.js";
-import { GuardAction, GuardContext, GuardResult, Severity } from "./guards/types.js";
+import { EgressAllowlistGuard } from './guards/egress-allowlist.js';
+import { ForbiddenPathGuard } from './guards/forbidden-path.js';
+import { JailbreakGuard } from './guards/jailbreak.js';
+import { McpToolGuard } from './guards/mcp-tool.js';
+import { PatchIntegrityGuard } from './guards/patch-integrity.js';
+import { PromptInjectionGuard } from './guards/prompt-injection.js';
+import { SecretLeakGuard } from './guards/secret-leak.js';
+import { GuardAction, GuardContext, Severity } from './guards/types.js';
+import type { Guard, GuardResult } from './guards/types.js';
+import type { EgressAllowlistConfig } from './guards/egress-allowlist.js';
+import type { ForbiddenPathConfig } from './guards/forbidden-path.js';
+import type { JailbreakGuardConfig } from './guards/jailbreak.js';
+import type { McpToolConfig } from './guards/mcp-tool.js';
+import type { PatchIntegrityConfig } from './guards/patch-integrity.js';
+import type { PromptInjectionConfig } from './guards/prompt-injection.js';
+import type { SecretLeakConfig } from './guards/secret-leak.js';
+import { getWasmModule } from './crypto/backend.js';
 
 // ============================================================
 // Types
@@ -59,7 +59,7 @@ import { GuardAction, GuardContext, GuardResult, Severity } from "./guards/types
 /**
  * Decision status for security checks.
  */
-export type DecisionStatus = "allow" | "warn" | "deny" | "sanitize";
+export type DecisionStatus = 'allow' | 'warn' | 'deny';
 
 /**
  * Severity level for security violations.
@@ -116,15 +116,7 @@ export interface SessionSummary {
 /**
  * Preset ruleset levels for common use cases.
  */
-export type Ruleset =
-  | "loose"
-  | "moderate"
-  | "strict"
-  | "enterprise"
-  | "permissive"
-  | "default"
-  | "ai-agent"
-  | "cicd";
+export type Ruleset = 'loose' | 'moderate' | 'strict' | 'enterprise' | 'permissive' | 'default' | 'ai-agent' | 'cicd';
 
 /**
  * Configuration for Clawdstrike.
@@ -154,10 +146,10 @@ interface PolicySettings {
 }
 
 interface PolicyDoc {
-  extends?: string;
+  extends?: string | string[];
   guards?: Record<string, unknown>;
   settings?: PolicySettings;
-  merge_strategy?: "replace" | "merge" | "deep_merge";
+  merge_strategy?: 'replace' | 'merge' | 'deep_merge';
 }
 
 interface DaemonConfig {
@@ -182,7 +174,7 @@ interface DaemonCheckResponse {
   details?: unknown;
 }
 
-type BuiltinPolicyId = "default" | "strict" | "ai-agent" | "cicd" | "permissive";
+type BuiltinPolicyId = 'default' | 'strict' | 'ai-agent' | 'cicd' | 'permissive';
 
 const DEFAULT_POLICY_SECRET_LEAK_PATTERNS: Array<{
   name: string;
@@ -197,18 +189,10 @@ const DEFAULT_POLICY_SECRET_LEAK_PATTERNS: Array<{
     severity: "critical",
   },
   { name: "github_token", pattern: "gh[ps]_[A-Za-z0-9]{36}", severity: "critical" },
-  {
-    name: "github_pat",
-    pattern: "github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}",
-    severity: "critical",
-  },
+  { name: "github_pat", pattern: "github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}", severity: "critical" },
   { name: "openai_key", pattern: "sk-[A-Za-z0-9]{48}", severity: "critical" },
   { name: "anthropic_key", pattern: "sk-ant-[A-Za-z0-9\\-]{95}", severity: "critical" },
-  {
-    name: "private_key",
-    pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----",
-    severity: "critical",
-  },
+  { name: "private_key", pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----", severity: "critical" },
   { name: "npm_token", pattern: "npm_[A-Za-z0-9]{36}", severity: "critical" },
   {
     name: "slack_token",
@@ -262,11 +246,11 @@ function createId(prefix: string): string {
 function guardResultToDecision(result: GuardResult): Decision {
   let status: DecisionStatus;
   if (!result.allowed) {
-    status = "deny";
+    status = 'deny';
   } else if (result.severity === Severity.WARNING) {
-    status = "warn";
+    status = 'warn';
   } else {
-    status = "allow";
+    status = 'allow';
   }
 
   return {
@@ -280,21 +264,21 @@ function guardResultToDecision(result: GuardResult): Decision {
 
 function allowDecision(guard?: string): Decision {
   return {
-    status: "allow",
+    status: 'allow',
     guard,
-    message: "Allowed",
+    message: 'Allowed',
   };
 }
 
 const RULESET_TO_POLICY: Record<Ruleset, BuiltinPolicyId> = {
-  loose: "permissive",
-  moderate: "default",
-  strict: "strict",
-  enterprise: "strict",
-  permissive: "permissive",
-  default: "default",
-  "ai-agent": "ai-agent",
-  cicd: "cicd",
+  loose: 'permissive',
+  moderate: 'default',
+  strict: 'strict',
+  enterprise: 'strict',
+  permissive: 'permissive',
+  default: 'default',
+  'ai-agent': 'ai-agent',
+  cicd: 'cicd',
 };
 
 const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
@@ -302,44 +286,44 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
     guards: {
       forbidden_path: {
         patterns: [
-          "**/.ssh/**",
-          "**/id_rsa*",
-          "**/id_ed25519*",
-          "**/id_ecdsa*",
-          "**/.aws/**",
-          "**/.env",
-          "**/.env.*",
-          "**/.git-credentials",
-          "**/.gitconfig",
-          "**/.gnupg/**",
-          "**/.kube/**",
-          "**/.docker/**",
-          "**/.npmrc",
-          "**/.password-store/**",
-          "**/pass/**",
-          "**/.1password/**",
-          "/etc/shadow",
-          "/etc/passwd",
-          "/etc/sudoers",
+          '**/.ssh/**',
+          '**/id_rsa*',
+          '**/id_ed25519*',
+          '**/id_ecdsa*',
+          '**/.aws/**',
+          '**/.env',
+          '**/.env.*',
+          '**/.git-credentials',
+          '**/.gitconfig',
+          '**/.gnupg/**',
+          '**/.kube/**',
+          '**/.docker/**',
+          '**/.npmrc',
+          '**/.password-store/**',
+          '**/pass/**',
+          '**/.1password/**',
+          '/etc/shadow',
+          '/etc/passwd',
+          '/etc/sudoers',
         ],
         exceptions: [],
       },
       egress_allowlist: {
         allow: [
-          "*.openai.com",
-          "*.anthropic.com",
-          "api.github.com",
-          "github.com",
-          "*.githubusercontent.com",
-          "*.npmjs.org",
-          "registry.npmjs.org",
-          "pypi.org",
-          "files.pythonhosted.org",
-          "crates.io",
-          "static.crates.io",
+          '*.openai.com',
+          '*.anthropic.com',
+          'api.github.com',
+          'github.com',
+          '*.githubusercontent.com',
+          '*.npmjs.org',
+          'registry.npmjs.org',
+          'pypi.org',
+          'files.pythonhosted.org',
+          'crates.io',
+          'static.crates.io',
         ],
         block: [],
-        default_action: "block",
+        default_action: 'block',
       },
       patch_integrity: {
         max_additions: 1000,
@@ -347,17 +331,17 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 10,
         forbidden_patterns: [
-          "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)",
-          "(?i)skip[\\s_\\-]?(verify|validation|check)",
-          "(?i)rm\\s+-rf\\s+/",
-          "(?i)chmod\\s+777",
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[\\s_\\-]?(verify|validation|check)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
         ],
       },
       mcp_tool: {
         allow: [],
-        block: ["shell_exec", "run_command", "raw_file_write", "raw_file_delete"],
-        require_confirmation: ["file_write", "file_delete", "git_push"],
-        default_action: "allow",
+        block: ['shell_exec', 'run_command', 'raw_file_write', 'raw_file_delete'],
+        require_confirmation: ['file_write', 'file_delete', 'git_push'],
+        default_action: 'allow',
         max_args_size: 1024 * 1024,
       },
     },
@@ -369,36 +353,36 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
     guards: {
       forbidden_path: {
         patterns: [
-          "**/.ssh/**",
-          "**/id_rsa*",
-          "**/id_ed25519*",
-          "**/id_ecdsa*",
-          "**/.aws/**",
-          "**/.env",
-          "**/.env.*",
-          "**/.git-credentials",
-          "**/.gitconfig",
-          "**/.gnupg/**",
-          "**/.kube/**",
-          "**/.docker/**",
-          "**/.npmrc",
-          "**/.password-store/**",
-          "**/pass/**",
-          "**/.1password/**",
-          "/etc/shadow",
-          "/etc/passwd",
-          "/etc/sudoers",
-          "**/.vault/**",
-          "**/.secrets/**",
-          "**/credentials/**",
-          "**/private/**",
+          '**/.ssh/**',
+          '**/id_rsa*',
+          '**/id_ed25519*',
+          '**/id_ecdsa*',
+          '**/.aws/**',
+          '**/.env',
+          '**/.env.*',
+          '**/.git-credentials',
+          '**/.gitconfig',
+          '**/.gnupg/**',
+          '**/.kube/**',
+          '**/.docker/**',
+          '**/.npmrc',
+          '**/.password-store/**',
+          '**/pass/**',
+          '**/.1password/**',
+          '/etc/shadow',
+          '/etc/passwd',
+          '/etc/sudoers',
+          '**/.vault/**',
+          '**/.secrets/**',
+          '**/credentials/**',
+          '**/private/**',
         ],
         exceptions: [],
       },
       egress_allowlist: {
         allow: [],
         block: [],
-        default_action: "block",
+        default_action: 'block',
       },
       patch_integrity: {
         max_additions: 500,
@@ -406,21 +390,21 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: true,
         max_imbalance_ratio: 5,
         forbidden_patterns: [
-          "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)",
-          "(?i)skip[\\s_\\-]?(verify|validation|check)",
-          "(?i)rm\\s+-rf\\s+/",
-          "(?i)chmod\\s+777",
-          "(?i)eval\\s*\\(",
-          "(?i)exec\\s*\\(",
-          "(?i)reverse[_\\-]?shell",
-          "(?i)bind[_\\-]?shell",
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)skip[\\s_\\-]?(verify|validation|check)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
+          '(?i)eval\\s*\\(',
+          '(?i)exec\\s*\\(',
+          '(?i)reverse[_\\-]?shell',
+          '(?i)bind[_\\-]?shell',
         ],
       },
       mcp_tool: {
-        allow: ["read_file", "list_directory", "search", "grep"],
+        allow: ['read_file', 'list_directory', 'search', 'grep'],
         block: [],
         require_confirmation: [],
-        default_action: "block",
+        default_action: 'block',
         max_args_size: 512 * 1024,
       },
     },
@@ -428,41 +412,41 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
       fail_fast: true,
     },
   },
-  "ai-agent": {
-    extends: "clawdstrike:default",
+  'ai-agent': {
+    extends: 'clawdstrike:default',
     guards: {
       forbidden_path: {
-        exceptions: ["**/.env.example", "**/.env.template"],
+        exceptions: ['**/.env.example', '**/.env.template'],
       },
       egress_allowlist: {
         allow: [
-          "*.openai.com",
-          "*.anthropic.com",
-          "api.together.xyz",
-          "*.fireworks.ai",
-          "api.github.com",
-          "github.com",
-          "*.githubusercontent.com",
-          "gitlab.com",
-          "api.gitlab.com",
-          "bitbucket.org",
-          "api.bitbucket.org",
-          "*.npmjs.org",
-          "registry.npmjs.org",
-          "registry.yarnpkg.com",
-          "pypi.org",
-          "files.pythonhosted.org",
-          "crates.io",
-          "static.crates.io",
-          "rubygems.org",
-          "packagist.org",
-          "docs.rs",
-          "*.readthedocs.io",
-          "*.readthedocs.org",
-          "developer.mozilla.org",
+          '*.openai.com',
+          '*.anthropic.com',
+          'api.together.xyz',
+          '*.fireworks.ai',
+          'api.github.com',
+          'github.com',
+          '*.githubusercontent.com',
+          'gitlab.com',
+          'api.gitlab.com',
+          'bitbucket.org',
+          'api.bitbucket.org',
+          '*.npmjs.org',
+          'registry.npmjs.org',
+          'registry.yarnpkg.com',
+          'pypi.org',
+          'files.pythonhosted.org',
+          'crates.io',
+          'static.crates.io',
+          'rubygems.org',
+          'packagist.org',
+          'docs.rs',
+          '*.readthedocs.io',
+          '*.readthedocs.org',
+          'developer.mozilla.org',
         ],
         block: [],
-        default_action: "block",
+        default_action: 'block',
       },
       patch_integrity: {
         max_additions: 2000,
@@ -470,17 +454,17 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 20,
         forbidden_patterns: [
-          "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)",
-          "(?i)rm\\s+-rf\\s+/",
-          "(?i)chmod\\s+777",
-          "(?i)reverse[_\\-]?shell",
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
+          '(?i)reverse[_\\-]?shell',
         ],
       },
       mcp_tool: {
         allow: [],
-        block: ["shell_exec", "run_command"],
-        require_confirmation: ["git_push", "deploy", "publish"],
-        default_action: "allow",
+        block: ['shell_exec', 'run_command'],
+        require_confirmation: ['git_push', 'deploy', 'publish'],
+        default_action: 'allow',
         max_args_size: 2 * 1024 * 1024,
       },
     },
@@ -489,52 +473,52 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
     },
   },
   cicd: {
-    extends: "clawdstrike:default",
+    extends: 'clawdstrike:default',
     guards: {
       forbidden_path: {
         patterns: [
-          "**/.github/secrets/**",
-          "**/.gitlab-ci-secrets/**",
-          "**/.circleci/secrets/**",
-          "**/.ssh/**",
-          "**/id_rsa*",
-          "**/id_ed25519*",
-          "**/.aws/**",
-          "**/.gnupg/**",
-          "/etc/shadow",
-          "/etc/passwd",
+          '**/.github/secrets/**',
+          '**/.gitlab-ci-secrets/**',
+          '**/.circleci/secrets/**',
+          '**/.ssh/**',
+          '**/id_rsa*',
+          '**/id_ed25519*',
+          '**/.aws/**',
+          '**/.gnupg/**',
+          '/etc/shadow',
+          '/etc/passwd',
         ],
-        exceptions: ["**/.github/workflows/**", "**/.gitlab-ci.yml", "**/.circleci/config.yml"],
+        exceptions: ['**/.github/workflows/**', '**/.gitlab-ci.yml', '**/.circleci/config.yml'],
       },
       egress_allowlist: {
         allow: [
-          "*.npmjs.org",
-          "registry.npmjs.org",
-          "registry.yarnpkg.com",
-          "pypi.org",
-          "files.pythonhosted.org",
-          "crates.io",
-          "static.crates.io",
-          "rubygems.org",
-          "packagist.org",
-          "proxy.golang.org",
-          "storage.googleapis.com",
-          "*.docker.io",
-          "*.docker.com",
-          "*.gcr.io",
-          "ghcr.io",
-          "*.ecr.aws",
-          "github.com",
-          "api.github.com",
-          "*.githubusercontent.com",
-          "gitlab.com",
-          "api.gitlab.com",
-          "gradle.org",
-          "plugins.gradle.org",
-          "repo.maven.apache.org",
+          '*.npmjs.org',
+          'registry.npmjs.org',
+          'registry.yarnpkg.com',
+          'pypi.org',
+          'files.pythonhosted.org',
+          'crates.io',
+          'static.crates.io',
+          'rubygems.org',
+          'packagist.org',
+          'proxy.golang.org',
+          'storage.googleapis.com',
+          '*.docker.io',
+          '*.docker.com',
+          '*.gcr.io',
+          'ghcr.io',
+          '*.ecr.aws',
+          'github.com',
+          'api.github.com',
+          '*.githubusercontent.com',
+          'gitlab.com',
+          'api.gitlab.com',
+          'gradle.org',
+          'plugins.gradle.org',
+          'repo.maven.apache.org',
         ],
         block: [],
-        default_action: "block",
+        default_action: 'block',
       },
       patch_integrity: {
         max_additions: 5000,
@@ -542,16 +526,16 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
         require_balance: false,
         max_imbalance_ratio: 50,
         forbidden_patterns: [
-          "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)",
-          "(?i)rm\\s+-rf\\s+/",
-          "(?i)chmod\\s+777",
+          '(?i)disable[\\s_\\-]?(security|auth|ssl|tls)',
+          '(?i)rm\\s+-rf\\s+/',
+          '(?i)chmod\\s+777',
         ],
       },
       mcp_tool: {
-        allow: ["read_file", "write_file", "list_directory", "run_tests", "build"],
-        block: ["shell_exec", "deploy_production"],
+        allow: ['read_file', 'write_file', 'list_directory', 'run_tests', 'build'],
+        block: ['shell_exec', 'deploy_production'],
         require_confirmation: [],
-        default_action: "block",
+        default_action: 'block',
         max_args_size: 5 * 1024 * 1024,
       },
     },
@@ -562,9 +546,9 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
   permissive: {
     guards: {
       egress_allowlist: {
-        allow: ["*"],
+        allow: ['*'],
         block: [],
-        default_action: "allow",
+        default_action: 'allow',
       },
       patch_integrity: {
         max_additions: 10000,
@@ -581,33 +565,33 @@ const BUILTIN_POLICIES: Record<BuiltinPolicyId, PolicyDoc> = {
 
 function daemonFailureDecision(message: string): Decision {
   return {
-    status: "deny",
-    guard: "daemon",
+    status: 'deny',
+    guard: 'daemon',
     severity: Severity.ERROR,
     message,
   };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  return value.filter((item): item is string => typeof item === "string");
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
 function toBoolean(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") {
+  if (typeof value === 'boolean') {
     return value;
   }
   return undefined;
 }
 
 function toNumber(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
   return undefined;
@@ -615,14 +599,14 @@ function toNumber(value: unknown): number | undefined {
 
 function compilePolicyRegex(pattern: string): RegExp {
   let source = pattern;
-  let flags = "";
+  let flags = '';
 
   const inlineFlags = source.match(/^\(\?([a-z]+)\)/i);
   if (inlineFlags) {
     const rawFlags = inlineFlags[1].toLowerCase();
-    if (rawFlags.includes("i")) flags += "i";
-    if (rawFlags.includes("m")) flags += "m";
-    if (rawFlags.includes("s")) flags += "s";
+    if (rawFlags.includes('i')) flags += 'i';
+    if (rawFlags.includes('m')) flags += 'm';
+    if (rawFlags.includes('s')) flags += 's';
     source = source.slice(inlineFlags[0].length);
   }
 
@@ -644,12 +628,7 @@ function toEgressAllowlistConfig(value: unknown): EgressAllowlistConfig | undefi
   if (!isPlainObject(value)) {
     return undefined;
   }
-  const defaultAction =
-    value.default_action === "allow"
-      ? "allow"
-      : value.default_action === "block"
-        ? "block"
-        : undefined;
+  const defaultAction = value.default_action === 'allow' ? 'allow' : value.default_action === 'block' ? 'block' : undefined;
   return {
     enabled: toBoolean(value.enabled),
     allow: toStringArray(value.allow),
@@ -664,8 +643,8 @@ function toPatchIntegrityConfig(value: unknown): PatchIntegrityConfig | undefine
   }
   const forbiddenPatterns = Array.isArray(value.forbidden_patterns)
     ? value.forbidden_patterns
-        .filter((pattern): pattern is string => typeof pattern === "string")
-        .map((pattern) => compilePolicyRegex(pattern))
+      .filter((pattern): pattern is string => typeof pattern === 'string')
+      .map((pattern) => compilePolicyRegex(pattern))
     : undefined;
   return {
     enabled: toBoolean(value.enabled),
@@ -681,12 +660,7 @@ function toMcpToolConfig(value: unknown): McpToolConfig | undefined {
   if (!isPlainObject(value)) {
     return undefined;
   }
-  const defaultAction =
-    value.default_action === "allow"
-      ? "allow"
-      : value.default_action === "block"
-        ? "block"
-        : undefined;
+  const defaultAction = value.default_action === 'allow' ? 'allow' : value.default_action === 'block' ? 'block' : undefined;
   return {
     enabled: toBoolean(value.enabled),
     allow: toStringArray(value.allow),
@@ -704,27 +678,19 @@ function toSecretLeakConfig(value: unknown): SecretLeakConfig | undefined {
   const toSecretLeakSeverity = (
     severity: unknown,
   ): "info" | "warning" | "error" | "critical" | undefined => {
-    if (
-      severity === "info" ||
-      severity === "warning" ||
-      severity === "error" ||
-      severity === "critical"
-    ) {
+    if (severity === 'info' || severity === 'warning' || severity === 'error' || severity === 'critical') {
       return severity;
     }
     return undefined;
   };
   let patterns = Array.isArray(value.patterns)
     ? value.patterns
-        .filter(
-          (entry): entry is Record<string, unknown> =>
-            isPlainObject(entry) && typeof entry.pattern === "string",
-        )
-        .map((entry) => ({
-          name: typeof entry.name === "string" ? entry.name : undefined,
-          pattern: entry.pattern as string,
-          severity: toSecretLeakSeverity(entry.severity),
-        }))
+      .filter((entry): entry is Record<string, unknown> => isPlainObject(entry) && typeof entry.pattern === 'string')
+      .map((entry) => ({
+        name: typeof entry.name === 'string' ? entry.name : undefined,
+        pattern: entry.pattern as string,
+        severity: toSecretLeakSeverity(entry.severity),
+      }))
     : undefined;
 
   const secrets = toStringArray(value.secrets);
@@ -745,8 +711,8 @@ function toPromptInjectionConfig(value: unknown): PromptInjectionConfig | undefi
   }
   const warnLevel = value.warn_at_or_above;
   const blockLevel = value.block_at_or_above;
-  const toLevel = (raw: unknown): "suspicious" | "high" | "critical" | undefined => {
-    if (raw === "suspicious" || raw === "high" || raw === "critical") return raw;
+  const toLevel = (raw: unknown): 'suspicious' | 'high' | 'critical' | undefined => {
+    if (raw === 'suspicious' || raw === 'high' || raw === 'critical') return raw;
     return undefined;
   };
   return {
@@ -779,9 +745,74 @@ function isGuardDisabled(value: unknown): boolean {
   return value.enabled === false;
 }
 
+function hasPromptSecurityWasm(): boolean {
+  const wasm = getWasmModule();
+  return typeof wasm?.detect_prompt_injection === 'function' &&
+    typeof wasm?.WasmJailbreakDetector === 'function';
+}
+
+function parseNetworkTarget(raw: string): { host: string; port: number } {
+  const fallbackPort = 443;
+  const input = raw.trim();
+
+  const normalizePort = (value: string | undefined, protocol?: string): number => {
+    if (value) {
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isInteger(parsed) && parsed > 0 && parsed <= 65535) {
+        return parsed;
+      }
+      return fallbackPort;
+    }
+    if (protocol === 'http:') return 80;
+    if (protocol === 'https:') return 443;
+    return fallbackPort;
+  };
+
+  try {
+    const parsed = new URL(input);
+    if (parsed.hostname) {
+      return { host: parsed.hostname, port: normalizePort(parsed.port, parsed.protocol) };
+    }
+    const hostPortLike = /^[^/\s:]+:\d+(?:[/?#].*)?$/.test(input);
+    if (!hostPortLike) {
+      return { host: '', port: fallbackPort };
+    }
+  } catch {
+    // Fall through to host[:port][/path] parsing.
+  }
+
+  const authority = input.split(/[/?#]/, 1)[0] ?? '';
+  if (!authority) {
+    return { host: '', port: fallbackPort };
+  }
+
+  if (authority.startsWith('[')) {
+    const closing = authority.indexOf(']');
+    if (closing > 0) {
+      const host = authority.slice(0, closing + 1);
+      const rest = authority.slice(closing + 1);
+      if (rest.startsWith(':')) {
+        const port = normalizePort(rest.slice(1));
+        return { host, port };
+      }
+      return { host, port: fallbackPort };
+    }
+  }
+
+  const lastColon = authority.lastIndexOf(':');
+  if (lastColon > 0 && authority.indexOf(':') === lastColon) {
+    const host = authority.slice(0, lastColon);
+    const port = normalizePort(authority.slice(lastColon + 1));
+    return { host, port };
+  }
+
+  return { host: authority, port: fallbackPort };
+}
+
 function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
   const guards: Guard[] = [];
   const guardConfigs = policy.guards ?? {};
+  const promptSecurityAvailable = hasPromptSecurityWasm();
 
   if (!isGuardDisabled(guardConfigs.forbidden_path)) {
     guards.push(
@@ -816,7 +847,9 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
   if (!isGuardDisabled(guardConfigs.mcp_tool)) {
     guards.push(
       new McpToolGuard(
-        toMcpToolConfig(isPlainObject(guardConfigs.mcp_tool) ? guardConfigs.mcp_tool : {}) ?? {},
+        toMcpToolConfig(
+          isPlainObject(guardConfigs.mcp_tool) ? guardConfigs.mcp_tool : {},
+        ) ?? {},
       ),
     );
   }
@@ -831,31 +864,18 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
     );
   }
 
-  // Prompt-injection and jailbreak guards require WASM.  If the WASM backend
-  // is unavailable (e.g. @clawdstrike/wasm not installed), skip them with a
-  // warning rather than crashing — the remaining guards still provide value.
-  if (!isGuardDisabled(guardConfigs.prompt_injection)) {
-    try {
-      const promptInjectionConfig = toPromptInjectionConfig(
-        isPlainObject(guardConfigs.prompt_injection) ? guardConfigs.prompt_injection : {},
-      );
-      guards.push(new PromptInjectionGuard(promptInjectionConfig ?? {}));
-    } catch {
-      // biome-ignore lint/suspicious/noConsole: guard init diagnostic
-      console.warn("[clawdstrike] PromptInjectionGuard skipped — WASM backend unavailable");
-    }
+  if (!isGuardDisabled(guardConfigs.prompt_injection) && promptSecurityAvailable) {
+    const promptInjectionConfig = toPromptInjectionConfig(
+      isPlainObject(guardConfigs.prompt_injection) ? guardConfigs.prompt_injection : {},
+    );
+    guards.push(new PromptInjectionGuard(promptInjectionConfig ?? {}));
   }
 
-  if (!isGuardDisabled(guardConfigs.jailbreak)) {
-    try {
-      const jailbreakConfig = toJailbreakConfig(
-        isPlainObject(guardConfigs.jailbreak) ? guardConfigs.jailbreak : {},
-      );
-      guards.push(new JailbreakGuard(jailbreakConfig ?? {}));
-    } catch {
-      // biome-ignore lint/suspicious/noConsole: guard init diagnostic
-      console.warn("[clawdstrike] JailbreakGuard skipped — WASM backend unavailable");
-    }
+  if (!isGuardDisabled(guardConfigs.jailbreak) && promptSecurityAvailable) {
+    const jailbreakConfig = toJailbreakConfig(
+      isPlainObject(guardConfigs.jailbreak) ? guardConfigs.jailbreak : {},
+    );
+    guards.push(new JailbreakGuard(jailbreakConfig ?? {}));
   }
 
   return guards;
@@ -863,11 +883,11 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
 
 function parseSeverity(value: string): Severity {
   switch (value.toLowerCase()) {
-    case "warning":
+    case 'warning':
       return Severity.WARNING;
-    case "error":
+    case 'error':
       return Severity.ERROR;
-    case "critical":
+    case 'critical':
       return Severity.CRITICAL;
     default:
       return Severity.INFO;
@@ -877,17 +897,17 @@ function parseSeverity(value: string): Severity {
 function isDaemonCheckResponse(value: unknown): value is DaemonCheckResponse {
   return (
     isPlainObject(value) &&
-    typeof value.allowed === "boolean" &&
-    typeof value.guard === "string" &&
-    typeof value.severity === "string" &&
-    typeof value.message === "string"
+    typeof value.allowed === 'boolean' &&
+    typeof value.guard === 'string' &&
+    typeof value.severity === 'string' &&
+    typeof value.message === 'string'
   );
 }
 
 function daemonResponseToDecision(response: DaemonCheckResponse): Decision {
   const severity = parseSeverity(response.severity);
   return {
-    status: !response.allowed ? "deny" : severity === Severity.WARNING ? "warn" : "allow",
+    status: !response.allowed ? 'deny' : severity === Severity.WARNING ? 'warn' : 'allow',
     guard: response.guard,
     severity,
     message: response.message,
@@ -899,11 +919,29 @@ function clonePolicy(policy: PolicyDoc): PolicyDoc {
   return JSON.parse(JSON.stringify(policy)) as PolicyDoc;
 }
 
-function mergePolicies(base: PolicyDoc, child: PolicyDoc): PolicyDoc {
-  if (child.merge_strategy === "replace") {
-    return clonePolicy(child);
+const MAX_POLICY_EXTENDS_DEPTH = 32;
+
+function deepMergeGuardConfigs(
+  base: Record<string, unknown> | undefined,
+  child: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!base && !child) {
+    return undefined;
   }
 
+  const merged: Record<string, unknown> = { ...(base ?? {}) };
+  for (const [guardName, childConfig] of Object.entries(child ?? {})) {
+    const baseConfig = merged[guardName];
+    if (isPlainObject(baseConfig) && isPlainObject(childConfig)) {
+      merged[guardName] = { ...baseConfig, ...childConfig };
+      continue;
+    }
+    merged[guardName] = childConfig;
+  }
+  return merged;
+}
+
+function mergePolicies(base: PolicyDoc, child: PolicyDoc): PolicyDoc {
   const merged: PolicyDoc = {
     ...base,
     ...child,
@@ -913,19 +951,18 @@ function mergePolicies(base: PolicyDoc, child: PolicyDoc): PolicyDoc {
     },
   };
 
-  if (child.merge_strategy === "merge") {
-    if (!child.guards && base.guards) {
-      merged.guards = base.guards;
-    }
-    return merged;
+  const strategy = child.merge_strategy ?? 'merge';
+  if (strategy === 'replace') {
+    merged.guards = child.guards;
+  } else if (strategy === 'deep_merge') {
+    merged.guards = deepMergeGuardConfigs(base.guards, child.guards);
+  } else {
+    merged.guards = {
+      ...(base.guards ?? {}),
+      ...(child.guards ?? {}),
+    };
   }
 
-  const mergedGuards: Record<string, unknown> = {
-    ...(base.guards ?? {}),
-    ...(child.guards ?? {}),
-  };
-
-  merged.guards = mergedGuards;
   delete merged.extends;
   delete merged.merge_strategy;
   return merged;
@@ -933,22 +970,19 @@ function mergePolicies(base: PolicyDoc, child: PolicyDoc): PolicyDoc {
 
 function resolveBuiltinPolicyId(ref: string): BuiltinPolicyId | undefined {
   const trimmed = ref.trim().toLowerCase();
-  const normalized = trimmed.startsWith("clawdstrike:")
-    ? trimmed.slice("clawdstrike:".length)
-    : trimmed;
-  const withoutExt = normalized.endsWith(".yaml")
-    ? normalized.slice(0, -".yaml".length)
-    : normalized;
-  if (withoutExt === "default") return "default";
-  if (withoutExt === "strict") return "strict";
-  if (withoutExt === "ai-agent") return "ai-agent";
-  if (withoutExt === "cicd") return "cicd";
-  if (withoutExt === "permissive") return "permissive";
+  const normalized = trimmed.startsWith('clawdstrike:') ? trimmed.slice('clawdstrike:'.length) : trimmed;
+  const withoutExt = normalized.endsWith('.yaml') ? normalized.slice(0, -'.yaml'.length) : normalized;
+  if (withoutExt === 'default') return 'default';
+  if (withoutExt === 'strict') return 'strict';
+  if (withoutExt === 'ai-agent') return 'ai-agent';
+  if (withoutExt === 'cicd') return 'cicd';
+  if (withoutExt === 'permissive') return 'permissive';
   return undefined;
 }
 
 async function loadPolicyFromSource(policyRefOrYaml: string): Promise<PolicyDoc> {
-  const filePolicy = await tryLoadPolicyFromFile(policyRefOrYaml);
+  const memo = new Map<string, PolicyDoc>();
+  const filePolicy = await tryLoadPolicyFromFile(policyRefOrYaml, memo);
   if (filePolicy) {
     return filePolicy;
   }
@@ -958,16 +992,26 @@ async function loadPolicyFromSource(policyRefOrYaml: string): Promise<PolicyDoc>
     return resolvePolicyExtends(
       clonePolicy(BUILTIN_POLICIES[builtinPolicyId]),
       process.cwd(),
+      `builtin:${builtinPolicyId}`,
+      0,
       new Set<string>(),
+      memo,
     );
   }
 
-  const policy = await parsePolicyYaml(policyRefOrYaml, "inline policy");
-  return resolvePolicyExtends(policy, process.cwd(), new Set<string>());
+  const policy = await parsePolicyYaml(policyRefOrYaml, 'inline policy');
+  return resolvePolicyExtends(
+    policy,
+    process.cwd(),
+    'inline:root',
+    0,
+    new Set<string>(),
+    memo,
+  );
 }
 
 async function parsePolicyYaml(yaml: string, source: string): Promise<PolicyDoc> {
-  const { load } = await import("js-yaml");
+  const { load } = await import('js-yaml');
   const parsed = load(yaml);
   if (!isPlainObject(parsed)) {
     throw new Error(`Invalid policy document in ${source}: expected an object`);
@@ -975,22 +1019,28 @@ async function parsePolicyYaml(yaml: string, source: string): Promise<PolicyDoc>
   return parsed as PolicyDoc;
 }
 
-async function tryLoadPolicyFromFile(policyRef: string): Promise<PolicyDoc | null> {
-  if (policyRef.includes("\n")) {
+async function tryLoadPolicyFromFile(policyRef: string, memo: Map<string, PolicyDoc>): Promise<PolicyDoc | null> {
+  if (policyRef.includes('\n')) {
     return null;
   }
 
-  const path = await import("node:path");
-  const fs = await import("node:fs/promises");
+  const path = await import('node:path');
+  const fs = await import('node:fs/promises');
   const absolutePath = path.resolve(policyRef);
 
   try {
-    const yaml = await fs.readFile(absolutePath, "utf8");
+    const yaml = await fs.readFile(absolutePath, 'utf8');
     const parsed = await parsePolicyYaml(yaml, absolutePath);
-    const visited = new Set<string>([absolutePath]);
-    return resolvePolicyExtends(parsed, path.dirname(absolutePath), visited);
+    return resolvePolicyExtends(
+      parsed,
+      path.dirname(absolutePath),
+      absolutePath,
+      0,
+      new Set<string>(),
+      memo,
+    );
   } catch (error) {
-    if (isNodeErrorWithCode(error, "ENOENT") || isNodeErrorWithCode(error, "ENOTDIR")) {
+    if (isNodeErrorWithCode(error, 'ENOENT') || isNodeErrorWithCode(error, 'ENOTDIR')) {
       return null;
     }
     throw error;
@@ -998,44 +1048,94 @@ async function tryLoadPolicyFromFile(policyRef: string): Promise<PolicyDoc | nul
 }
 
 function isNodeErrorWithCode(error: unknown, code: string): boolean {
-  return isPlainObject(error) && typeof error.code === "string" && error.code === code;
+  return isPlainObject(error) && typeof error.code === 'string' && error.code === code;
+}
+
+function normalizeExtendsRefs(
+  extendsValue: PolicyDoc['extends'],
+  policyKey: string,
+): string[] {
+  if (extendsValue === undefined) {
+    return [];
+  }
+  if (typeof extendsValue === 'string') {
+    return [extendsValue];
+  }
+  if (Array.isArray(extendsValue)) {
+    return extendsValue.map((entry, index) => {
+      if (typeof entry !== 'string' || entry.trim().length === 0) {
+        throw new Error(`Invalid extends entry at index ${index} in ${policyKey}`);
+      }
+      return entry;
+    });
+  }
+  throw new Error(`Invalid extends value in ${policyKey}: expected string or array of strings`);
 }
 
 async function resolvePolicyExtends(
   policy: PolicyDoc,
   basePath: string,
-  visited: Set<string>,
+  policyKey: string,
+  depth: number,
+  resolving: Set<string>,
+  memo: Map<string, PolicyDoc>,
 ): Promise<PolicyDoc> {
-  if (!policy.extends) {
-    return policy;
+  if (depth > MAX_POLICY_EXTENDS_DEPTH) {
+    throw new Error(`Policy extends depth exceeds ${MAX_POLICY_EXTENDS_DEPTH}`);
   }
 
-  const baseRef = policy.extends;
-  const builtinPolicyId = resolveBuiltinPolicyId(baseRef);
-  let basePolicy: PolicyDoc;
+  const memoized = memo.get(policyKey);
+  if (memoized) {
+    return clonePolicy(memoized);
+  }
+  if (resolving.has(policyKey)) {
+    throw new Error(`Circular policy extension detected: ${policyKey}`);
+  }
 
+  resolving.add(policyKey);
+  try {
+    const baseRefs = normalizeExtendsRefs(policy.extends, policyKey);
+    if (baseRefs.length === 0) {
+      const out = clonePolicy(policy);
+      delete out.extends;
+      memo.set(policyKey, out);
+      return clonePolicy(out);
+    }
+
+    let mergedBase: PolicyDoc | undefined;
+    for (const baseRef of baseRefs) {
+      const basePolicy = await loadExtendedPolicy(baseRef, basePath, depth + 1, resolving, memo);
+      mergedBase = mergedBase ? mergePolicies(mergedBase, basePolicy) : basePolicy;
+    }
+
+    const merged = mergedBase ? mergePolicies(mergedBase, policy) : clonePolicy(policy);
+    memo.set(policyKey, merged);
+    return clonePolicy(merged);
+  } finally {
+    resolving.delete(policyKey);
+  }
+}
+
+async function loadExtendedPolicy(
+  baseRef: string,
+  basePath: string,
+  depth: number,
+  resolving: Set<string>,
+  memo: Map<string, PolicyDoc>,
+): Promise<PolicyDoc> {
+  const builtinPolicyId = resolveBuiltinPolicyId(baseRef);
   if (builtinPolicyId) {
     const key = `builtin:${builtinPolicyId}`;
-    if (visited.has(key)) {
-      throw new Error(`Circular policy extension detected: ${baseRef}`);
-    }
-    visited.add(key);
-    basePolicy = clonePolicy(BUILTIN_POLICIES[builtinPolicyId]);
-  } else {
-    const path = await import("node:path");
-    const fs = await import("node:fs/promises");
-    const resolvedPath = path.isAbsolute(baseRef) ? baseRef : path.resolve(basePath, baseRef);
-    if (visited.has(resolvedPath)) {
-      throw new Error(`Circular policy extension detected: ${baseRef}`);
-    }
-    visited.add(resolvedPath);
-    const yaml = await fs.readFile(resolvedPath, "utf8");
-    const parsed = await parsePolicyYaml(yaml, resolvedPath);
-    basePolicy = await resolvePolicyExtends(parsed, path.dirname(resolvedPath), visited);
+    const builtin = clonePolicy(BUILTIN_POLICIES[builtinPolicyId]);
+    return resolvePolicyExtends(builtin, process.cwd(), key, depth, resolving, memo);
   }
 
-  const merged = mergePolicies(basePolicy, policy);
-  return merged;
+  const path = await import('node:path');
+  const fs = await import('node:fs/promises');
+  const resolvedPath = path.isAbsolute(baseRef) ? baseRef : path.resolve(basePath, baseRef);
+  const yaml = await fs.readFile(resolvedPath, 'utf8');
+  const parsed = await parsePolicyYaml(yaml, resolvedPath);
+  return resolvePolicyExtends(parsed, path.dirname(resolvedPath), resolvedPath, depth, resolving, memo);
 }
 
 function getPolicyForRuleset(ruleset: Ruleset): PolicyDoc {
@@ -1044,37 +1144,37 @@ function getPolicyForRuleset(ruleset: Ruleset): PolicyDoc {
 }
 
 function toDaemonTarget(action: string, params: Record<string, unknown>): string {
-  if (action === "shell_command") {
+  if (action === 'shell_command') {
     const command = params.command;
-    if (typeof command === "string" && command.length > 0) {
+    if (typeof command === 'string' && command.length > 0) {
       return command;
     }
-    throw new Error("shell_command requires params.command");
+    throw new Error('shell_command requires params.command');
   }
 
-  if (action === "network_egress") {
+  if (action === 'network_egress') {
     const host = params.host;
     const port = params.port;
-    if (typeof host === "string" && host.length > 0) {
-      if (typeof port === "number" && Number.isFinite(port)) {
+    if (typeof host === 'string' && host.length > 0) {
+      if (typeof port === 'number' && Number.isFinite(port)) {
         return `${host}:${Math.trunc(port)}`;
       }
       return host;
     }
     const url = params.url;
-    if (typeof url === "string" && url.length > 0) {
+    if (typeof url === 'string' && url.length > 0) {
       return url;
     }
-    throw new Error("network_egress requires params.host or params.url");
+    throw new Error('network_egress requires params.host or params.url');
   }
 
   const path = params.path;
-  if (typeof path === "string" && path.length > 0) {
+  if (typeof path === 'string' && path.length > 0) {
     return path;
   }
 
   const target = params.target;
-  if (typeof target === "string" && target.length > 0) {
+  if (typeof target === 'string' && target.length > 0) {
     return target;
   }
 
@@ -1087,33 +1187,30 @@ function toDaemonRequest(
   context: { sessionId?: string; agentId?: string } = {},
 ): DaemonCheckRequest {
   let actionType = action;
-  if (action === "file_read") actionType = "file_access";
-  if (action === "network_egress") actionType = "egress";
-  if (action === "shell_command") actionType = "shell";
+  if (action === 'file_read') actionType = 'file_access';
+  if (action === 'network_egress') actionType = 'egress';
+  if (action === 'shell_command') actionType = 'shell';
 
-  if (!["file_access", "file_write", "egress", "shell", "mcp_tool", "patch"].includes(actionType)) {
+  if (!['file_access', 'file_write', 'egress', 'shell', 'mcp_tool', 'patch'].includes(actionType)) {
     throw new Error(`Unsupported action type for daemon mode: ${action}`);
   }
 
   const request: DaemonCheckRequest = {
     action_type: actionType,
-    target:
-      actionType === "mcp_tool"
-        ? typeof params.tool === "string"
-          ? params.tool
-          : toDaemonTarget(actionType, params)
-        : toDaemonTarget(action, params),
+    target: actionType === 'mcp_tool'
+      ? (typeof params.tool === 'string' ? params.tool : toDaemonTarget(actionType, params))
+      : toDaemonTarget(action, params),
   };
 
-  if (actionType === "file_write" || actionType === "patch") {
-    if (typeof params.content === "string") {
+  if (actionType === 'file_write' || actionType === 'patch') {
+    if (typeof params.content === 'string') {
       request.content = params.content;
-    } else if (typeof params.diff === "string") {
+    } else if (typeof params.diff === 'string') {
       request.content = params.diff;
     }
   }
 
-  if (actionType === "mcp_tool") {
+  if (actionType === 'mcp_tool') {
     if (isPlainObject(params.args)) {
       request.args = params.args;
     } else if (isPlainObject(params)) {
@@ -1142,12 +1239,12 @@ async function evaluateViaDaemon(
   try {
     request = toDaemonRequest(action, params, context);
   } catch (error) {
-    return daemonFailureDecision(error instanceof Error ? error.message : "Invalid daemon request");
+    return daemonFailureDecision(error instanceof Error ? error.message : 'Invalid daemon request');
   }
 
   const headers: Record<string, string> = {
-    "content-type": "application/json",
-    accept: "application/json",
+    'content-type': 'application/json',
+    accept: 'application/json',
   };
 
   if (daemon.apiKey) {
@@ -1157,18 +1254,18 @@ async function evaluateViaDaemon(
   let response: Response;
   try {
     response = await fetch(`${daemon.url}/api/v1/check`, {
-      method: "POST",
+      method: 'POST',
       headers,
       body: JSON.stringify(request),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "network error";
+    const message = error instanceof Error ? error.message : 'network error';
     return daemonFailureDecision(`Daemon check failed: ${message}`);
   }
 
   const responseBody = await response.text();
   if (!response.ok) {
-    const detail = responseBody ? `: ${responseBody}` : "";
+    const detail = responseBody ? `: ${responseBody}` : '';
     return daemonFailureDecision(`Daemon check failed with HTTP ${response.status}${detail}`);
   }
 
@@ -1176,11 +1273,11 @@ async function evaluateViaDaemon(
   try {
     parsed = responseBody ? JSON.parse(responseBody) : {};
   } catch {
-    return daemonFailureDecision("Daemon returned invalid JSON");
+    return daemonFailureDecision('Daemon returned invalid JSON');
   }
 
   if (!isDaemonCheckResponse(parsed)) {
-    return daemonFailureDecision("Daemon returned malformed decision payload");
+    return daemonFailureDecision('Daemon returned malformed decision payload');
   }
 
   return daemonResponseToDecision(parsed);
@@ -1210,16 +1307,11 @@ export class ClawdstrikeSession {
   private denyCount = 0;
   private blockedActions: string[] = [];
 
-  constructor(
-    guards: Guard[],
-    options: SessionOptions = {},
-    failFast = false,
-    daemon?: DaemonConfig,
-  ) {
+  constructor(guards: Guard[], options: SessionOptions = {}, failFast = false, daemon?: DaemonConfig) {
     this.guards = guards;
     this.failFast = failFast;
     this.daemon = daemon;
-    this.sessionId = options.sessionId ?? createId("sess");
+    this.sessionId = options.sessionId ?? createId('sess');
     this.userId = options.userId;
     this.agentId = options.agentId;
     this.cwd = options.cwd;
@@ -1252,25 +1344,16 @@ export class ClawdstrikeSession {
         continue;
       }
 
-      let result: GuardResult;
-      try {
-        result = guard.check(guardAction, guardContext);
-      } catch (error) {
-        result = GuardResult.block(
-          guard.name,
-          Severity.CRITICAL,
-          `Guard evaluation error (fail-closed): ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      const result = guard.check(guardAction, guardContext);
       const decision = guardResultToDecision(result);
 
-      if (decision.status === "deny") {
+      if (decision.status === 'deny') {
         this.denyCount++;
         this.blockedActions.push(action);
         return decision;
       }
 
-      if (decision.status === "warn") {
+      if (decision.status === 'warn') {
         this.warnCount++;
         warningDecision ??= decision;
         if (this.failFast) {
@@ -1279,7 +1362,7 @@ export class ClawdstrikeSession {
         continue;
       }
 
-      if (decision.status === "allow" && decision.message && decision.message !== "Allowed") {
+      if (decision.status === 'allow' && decision.message && decision.message !== 'Allowed') {
         informationalDecision ??= decision;
       }
     }
@@ -1294,47 +1377,43 @@ export class ClawdstrikeSession {
     }
 
     this.allowCount++;
-    return allowDecision("session");
+    return allowDecision('session');
   }
 
   /**
    * Check file access.
    */
-  async checkFile(path: string, operation: "read" | "write" = "read"): Promise<Decision> {
-    return this.check(operation === "write" ? "file_write" : "file_access", { path });
+  async checkFile(path: string, operation: 'read' | 'write' = 'read'): Promise<Decision> {
+    return this.check(operation === 'write' ? 'file_write' : 'file_access', { path });
   }
 
   /**
    * Check command execution.
    */
   async checkCommand(command: string, args: string[] = []): Promise<Decision> {
-    return this.check("shell_command", { command, args });
+    return this.check('shell_command', { command, args });
   }
 
   /**
    * Check network egress.
    */
   async checkNetwork(url: string): Promise<Decision> {
-    const target = parseNetworkTarget(url);
-    return this.check("network_egress", {
-      host: target.host,
-      port: target.port,
-      url: target.url,
-    });
+    const { host, port } = parseNetworkTarget(url);
+    return this.check('network_egress', { host, port, url });
   }
 
   /**
    * Check a patch/diff operation.
    */
   async checkPatch(path: string, patch: string): Promise<Decision> {
-    return this.check("patch", { path, diff: patch });
+    return this.check('patch', { path, diff: patch });
   }
 
   /**
    * Check an MCP tool invocation.
    */
   async checkMcpTool(toolName: string, args?: Record<string, unknown>): Promise<Decision> {
-    return this.check("mcp_tool", { tool: toolName, args });
+    return this.check('mcp_tool', { tool: toolName, args });
   }
 
   /**
@@ -1378,13 +1457,13 @@ export class ClawdstrikeSession {
   }
 
   private recordDecision(action: string, decision: Decision): void {
-    if (decision.status === "deny") {
+    if (decision.status === 'deny') {
       this.denyCount++;
       this.blockedActions.push(action);
       return;
     }
 
-    if (decision.status === "warn") {
+    if (decision.status === 'warn') {
       this.warnCount++;
       return;
     }
@@ -1455,7 +1534,7 @@ export class Clawdstrike {
     const policy = await loadPolicyFromSource(yamlOrPath);
     const guards = buildGuardsFromPolicy(policy);
     if (guards.length === 0) {
-      throw new Error("Policy resolved to zero supported guards; refusing fail-open defaults.");
+      throw new Error('Policy resolved to zero supported guards; refusing fail-open defaults.');
     }
     return new Clawdstrike(
       {
@@ -1479,7 +1558,7 @@ export class Clawdstrike {
    * ```
    */
   static async fromDaemon(url: string, apiKey?: string): Promise<Clawdstrike> {
-    const daemonUrl = url.replace(/\/+$/, "");
+    const daemonUrl = url.replace(/\/+$/, '');
     return new Clawdstrike(
       {
         policy: daemonUrl,
@@ -1501,7 +1580,7 @@ export class Clawdstrike {
    * const cs = Clawdstrike.withDefaults('strict');
    * ```
    */
-  static withDefaults(ruleset: Ruleset = "moderate"): Clawdstrike {
+  static withDefaults(ruleset: Ruleset = 'moderate'): Clawdstrike {
     const policy = getPolicyForRuleset(ruleset);
     const guards = buildGuardsFromPolicy(policy);
     return new Clawdstrike(
@@ -1520,7 +1599,7 @@ export class Clawdstrike {
    * @returns Configured Clawdstrike instance
    */
   static configure(config: ClawdstrikeConfig): Clawdstrike {
-    const guards = config.guards ?? Clawdstrike.getDefaultGuards(config.ruleset ?? "moderate");
+    const guards = config.guards ?? Clawdstrike.getDefaultGuards(config.ruleset ?? 'moderate');
     return new Clawdstrike(config, guards);
   }
 
@@ -1559,23 +1638,14 @@ export class Clawdstrike {
         continue;
       }
 
-      let result: GuardResult;
-      try {
-        result = guard.check(guardAction, this.defaultContext);
-      } catch (error) {
-        result = GuardResult.block(
-          guard.name,
-          Severity.CRITICAL,
-          `Guard evaluation error (fail-closed): ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      const result = guard.check(guardAction, this.defaultContext);
       const decision = guardResultToDecision(result);
 
-      if (decision.status === "deny") {
+      if (decision.status === 'deny') {
         return decision;
       }
 
-      if (decision.status === "warn") {
+      if (decision.status === 'warn') {
         warningDecision ??= decision;
         if (this.config.failFast) {
           return decision;
@@ -1583,7 +1653,7 @@ export class Clawdstrike {
         continue;
       }
 
-      if (decision.status === "allow" && decision.message && decision.message !== "Allowed") {
+      if (decision.status === 'allow' && decision.message && decision.message !== 'Allowed') {
         informationalDecision ??= decision;
       }
     }
@@ -1603,8 +1673,8 @@ export class Clawdstrike {
    * const decision = await cs.checkFile('/etc/passwd', 'read');
    * ```
    */
-  async checkFile(path: string, operation: "read" | "write" = "read"): Promise<Decision> {
-    return this.check(operation === "write" ? "file_write" : "file_access", { path });
+  async checkFile(path: string, operation: 'read' | 'write' = 'read'): Promise<Decision> {
+    return this.check(operation === 'write' ? 'file_write' : 'file_access', { path });
   }
 
   /**
@@ -1620,7 +1690,7 @@ export class Clawdstrike {
    * ```
    */
   async checkCommand(command: string, args: string[] = []): Promise<Decision> {
-    return this.check("shell_command", { command, args });
+    return this.check('shell_command', { command, args });
   }
 
   /**
@@ -1635,12 +1705,8 @@ export class Clawdstrike {
    * ```
    */
   async checkNetwork(url: string): Promise<Decision> {
-    const target = parseNetworkTarget(url);
-    return this.check("network_egress", {
-      host: target.host,
-      port: target.port,
-      url: target.url,
-    });
+    const { host, port } = parseNetworkTarget(url);
+    return this.check('network_egress', { host, port, url });
   }
 
   /**
@@ -1656,7 +1722,7 @@ export class Clawdstrike {
    * ```
    */
   async checkPatch(path: string, patch: string): Promise<Decision> {
-    return this.check("patch", { path, diff: patch });
+    return this.check('patch', { path, diff: patch });
   }
 
   /**
@@ -1672,7 +1738,7 @@ export class Clawdstrike {
    * ```
    */
   async checkMcpTool(toolName: string, args?: Record<string, unknown>): Promise<Decision> {
-    return this.check("mcp_tool", { tool: toolName, args });
+    return this.check('mcp_tool', { tool: toolName, args });
   }
 
   // ============================================================
@@ -1734,16 +1800,13 @@ export class Clawdstrike {
     const wrapped: Record<string, unknown> = {};
 
     for (const [name, tool] of Object.entries(tools)) {
-      if (typeof tool === "function") {
+      if (typeof tool === 'function') {
         wrapped[name] = this.wrapTool(name, tool as (...args: unknown[]) => unknown);
-      } else if (typeof tool === "object" && tool !== null && "execute" in tool) {
+      } else if (typeof tool === 'object' && tool !== null && 'execute' in tool) {
         // Handle tool objects with execute method (common pattern)
         wrapped[name] = {
           ...tool,
-          execute: this.wrapTool(
-            name,
-            (tool as { execute: (...args: unknown[]) => unknown }).execute,
-          ),
+          execute: this.wrapTool(name, (tool as { execute: (...args: unknown[]) => unknown }).execute),
         };
       } else {
         wrapped[name] = tool;
@@ -1778,14 +1841,13 @@ export class Clawdstrike {
         input: unknown,
         context: ClawdstrikeSession,
       ): Promise<{ proceed: boolean; decision: Decision }> => {
-        const params =
-          typeof input === "object" && input !== null
-            ? (input as Record<string, unknown>)
-            : { value: input };
+        const params = typeof input === 'object' && input !== null
+          ? input as Record<string, unknown>
+          : { value: input };
 
         const decision = await context.check(toolName, params);
         return {
-          proceed: decision.status !== "deny",
+          proceed: decision.status !== 'deny',
           decision,
         };
       },
@@ -1811,11 +1873,12 @@ export class Clawdstrike {
   ): (...args: unknown[]) => Promise<unknown> {
     const self = this;
     return async function wrappedTool(...args: unknown[]): Promise<unknown> {
-      const params =
-        args[0] && typeof args[0] === "object" ? (args[0] as Record<string, unknown>) : { args };
+      const params = args[0] && typeof args[0] === 'object'
+        ? args[0] as Record<string, unknown>
+        : { args };
 
       const decision = await self.check(name, params);
-      if (decision.status === "deny") {
+      if (decision.status === 'deny') {
         throw new Error(`Clawdstrike blocked ${name}: ${decision.message}`);
       }
 
@@ -1838,6 +1901,7 @@ export class Clawdstrike {
       params.customData as Record<string, unknown> | undefined,
     );
   }
+
 }
 
 export default Clawdstrike;
