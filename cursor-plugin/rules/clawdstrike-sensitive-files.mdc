@@ -1,0 +1,45 @@
+---
+description: "ClawdStrike sensitive file protection — extra caution required for secrets, keys, and credentials"
+alwaysApply: false
+globs:
+  - "**/.env*"
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/*.p12"
+  - "**/*.pfx"
+  - "**/credentials*"
+  - "**/*secret*"
+  - "**/auth*"
+  - "**/.ssh/**"
+  - "**/.aws/**"
+  - "**/.gcp/**"
+  - "**/.azure/**"
+  - "**/token*"
+  - "**/*.cert"
+  - "**/*.crt"
+---
+
+# Sensitive File Detected
+
+You are interacting with a file that may contain secrets, credentials, or cryptographic material. ClawdStrike's security policy applies additional scrutiny to these files.
+
+## Before Modifying This File
+
+1. **Check policy first**: The `ForbiddenPathGuard` and `SecretLeakGuard` will evaluate any reads or writes to this path. If the action will be denied, plan an alternative approach before attempting it.
+2. **Never hardcode secrets**: Do not write API keys, passwords, tokens, or private keys directly into source files. Use environment variables or a secrets manager.
+3. **Avoid committing secrets**: If this file contains secrets, ensure it is listed in `.gitignore` before any git operations.
+
+## Common Patterns to Avoid
+
+- Writing `API_KEY = "sk-..."` or similar hardcoded credentials
+- Copying private keys (`.pem`, `.key`) into the repository
+- Adding connection strings with embedded passwords
+- Storing OAuth tokens or refresh tokens in source code
+
+## What ClawdStrike Checks
+
+- **SecretLeakGuard**: Scans file content for patterns matching secrets (API keys, tokens, passwords, private keys)
+- **ForbiddenPathGuard**: Blocks access to well-known sensitive paths (`~/.ssh`, `~/.aws`, `/etc/shadow`, etc.)
+- **PathAllowlistGuard**: If enabled, restricts file access to explicitly allowed directories only
+
+If your modification is legitimate and gets blocked, verify with the user that the policy should permit this access, and consider using `/clawdstrike:policy` to review guard settings.

@@ -1,0 +1,17 @@
+{
+  "name": "clawdstrike",
+  "owner": {
+    "name": "Backbay Labs",
+    "email": "hello@backbay.io"
+  },
+  "metadata": {
+    "description": "ClawdStrike security plugins for Cursor"
+  },
+  "plugins": [
+    {
+      "name": "clawdstrike",
+      "source": ".",
+      "description": "Runtime security enforcement for AI coding agents"
+    }
+  ]
+}

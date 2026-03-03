@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh" }
+    ],
+    "sessionEnd": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/session-end.sh" }
+    ],
+    "preToolUse": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/pre-tool-check.sh" }
+    ],
+    "postToolUse": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/post-tool-receipt.sh" }
+    ],
+    "beforeSubmitPrompt": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/prompt-check.sh" }
+    ],
+    "stop": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/stop-handler.sh" }
+    ],
+    "beforeShellExecution": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/before-shell.sh" }
+    ],
+    "afterShellExecution": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/after-shell.sh" }
+    ],
+    "beforeMCPExecution": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/before-mcp.sh" }
+    ],
+    "afterMCPExecution": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/after-mcp.sh" }
+    ],
+    "beforeReadFile": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/before-read-file.sh" }
+    ],
+    "afterFileEdit": [
+      { "command": "bash ${CURSOR_PLUGIN_ROOT}/scripts/after-file-edit.sh" }
+    ]
+  }
+}

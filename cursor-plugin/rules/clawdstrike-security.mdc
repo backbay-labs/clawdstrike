@@ -1,0 +1,36 @@
+---
+description: "ClawdStrike security enforcement is active — all actions are policy-checked"
+alwaysApply: true
+---
+
+# ClawdStrike Security Active
+
+ClawdStrike runtime security is active in this workspace. All tool calls, shell commands, file reads, file writes, and MCP tool invocations are evaluated against the active security policy before execution.
+
+## What This Means
+
+- **Pre-execution checks**: Every action is checked against the security policy. If denied, the action is blocked and a receipt is written.
+- **Post-execution audit**: Every completed action is logged to the session receipt file for forensics and compliance.
+- **Fail-closed**: If the policy engine is unreachable, actions are blocked by default (unless `CLAWDSTRIKE_HOOK_FAIL_OPEN=true`).
+
+## Available Commands
+
+Use these slash commands for security operations:
+
+- `/clawdstrike:scan` — Scan MCP server configurations for security issues
+- `/clawdstrike:audit` — View the session security audit trail
+- `/clawdstrike:posture` — Assess security posture with a letter grade (A-F)
+- `/clawdstrike:policy` — Display the active policy and guard configuration
+- `/clawdstrike:selftest` — Run diagnostic checks on all ClawdStrike components
+- `/clawdstrike:tui` — Launch the interactive TUI dashboard
+
+## When an Action Is Blocked
+
+If you see "BLOCKED by ClawdStrike", this means the security policy denied the action. To understand why:
+
+1. Check which guard blocked the action (shown in the error message)
+2. Use `/clawdstrike:policy` to see the active policy and guard settings
+3. If the block is expected, find an alternative approach that complies with the policy
+4. If the block seems incorrect, check if the policy needs adjustment
+
+Do not attempt to bypass security checks. If an action is blocked, work within the policy constraints or ask the user to adjust the security policy.
