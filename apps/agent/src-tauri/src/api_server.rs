@@ -20,7 +20,7 @@ use axum::extract::{Path, Request, State};
 use axum::http::header::{
     ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, SET_COOKIE,
 };
-use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
+use axum::http::{uri::Authority, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::Html;
@@ -562,14 +562,13 @@ fn is_local_host_header(headers: &HeaderMap) -> bool {
     };
 
     let host_only = host
+        .parse::<Authority>()
+        .map(|authority| authority.host().to_ascii_lowercase())
+        .unwrap_or_else(|_| host.to_ascii_lowercase());
+    let host_only = host_only
         .trim_start_matches('[')
-        .split(']')
-        .next()
-        .unwrap_or(host)
-        .split(':')
-        .next()
-        .unwrap_or(host)
-        .to_ascii_lowercase();
+        .trim_end_matches(']')
+        .to_string();
 
     host_only == "localhost" || host_only == "127.0.0.1" || host_only == "::1"
 }
@@ -1574,7 +1573,10 @@ async fn enroll_agent(
     require_auth(&headers, &state)?;
 
     let manager = crate::enrollment::EnrollmentManager::new(state.settings.clone());
-    match manager.enroll(&input.control_api_url, &input.enrollment_token).await {
+    match manager
+        .enroll(&input.control_api_url, &input.enrollment_token)
+        .await
+    {
         Ok(result) => {
             tracing::info!(
                 agent_uuid = %result.agent_uuid,
@@ -1832,6 +1834,30 @@ mod tests {
 
         let result = require_auth(&headers, &state);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn local_host_header_accepts_ipv6_loopback_with_port() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "host",
+            "[::1]:9878"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build host header")),
+        );
+        assert!(is_local_host_header(&headers));
+    }
+
+    #[test]
+    fn local_host_header_rejects_public_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "host",
+            "example.com:9878"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build host header")),
+        );
+        assert!(!is_local_host_header(&headers));
     }
 
     #[test]

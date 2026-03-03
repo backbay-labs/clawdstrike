@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -50,15 +50,33 @@ fn set_secret(user: &str, value: &str) -> Result<()> {
     match keyring::Entry::new(KEYRING_SERVICE, user) {
         Ok(entry) => {
             if let Err(err) = entry.set_password(value) {
-                tracing::warn!(error = %err, user, "Keyring write failed; using memory fallback");
+                tracing::warn!(
+                    error = %err,
+                    user,
+                    "Keyring write failed; persisting to memory fallback only"
+                );
                 fallback_insert(user, value);
+                return Err(anyhow!(
+                    "failed to persist secret in keyring for user {}: {}",
+                    user,
+                    err
+                ));
             } else {
                 fallback_remove(user);
             }
         }
         Err(err) => {
-            tracing::warn!(error = %err, user, "Keyring unavailable; using memory fallback");
+            tracing::warn!(
+                error = %err,
+                user,
+                "Keyring unavailable; persisting to memory fallback only"
+            );
             fallback_insert(user, value);
+            return Err(anyhow!(
+                "failed to initialize keyring entry for user {}: {}",
+                user,
+                err
+            ));
         }
     }
 
