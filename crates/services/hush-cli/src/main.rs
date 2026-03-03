@@ -2118,7 +2118,7 @@ struct KeygenOutput {
 
 /// Write a file with mode 0o600 on Unix (owner-only read/write).
 /// Falls back to `std::fs::write` on non-Unix platforms.
-fn write_secret_file(path: &str, contents: &str) -> std::io::Result<()> {
+pub(crate) fn write_secret_file(path: &str, contents: &str) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};

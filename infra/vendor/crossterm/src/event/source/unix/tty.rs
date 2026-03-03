@@ -71,7 +71,7 @@ impl UnixInternalEventSource {
                 #[cfg(feature = "libc")]
                 pipe::register(libc::SIGWINCH, sender)?;
                 #[cfg(not(feature = "libc"))]
-                pipe::register(rustix::process::Signal::Winch as i32, sender)?;
+                pipe::register(rustix::process::Signal::WINCH.as_raw(), sender)?;
                 receiver
             },
             #[cfg(feature = "event-stream")]
@@ -185,7 +185,10 @@ impl EventSource for UnixInternalEventSource {
 
             #[cfg(feature = "event-stream")]
             if fds[2].revents & POLLIN != 0 {
+                #[cfg(feature = "libc")]
                 let fd = FileDesc::new(self.wake_pipe.receiver.as_raw_fd(), false);
+                #[cfg(not(feature = "libc"))]
+                let fd = FileDesc::Borrowed(self.wake_pipe.receiver.as_fd());
                 // drain the pipe
                 while read_complete(&fd, &mut [0; 1024])? != 0 {}
 

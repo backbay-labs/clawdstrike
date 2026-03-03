@@ -791,7 +791,7 @@ fn render_policy_test_output(
     format: PolicyTestOutputFormat,
     output: &PolicyTestJsonOutput,
     coverage_enabled: bool,
-    _code: ExitCode,
+    code: ExitCode,
     min_coverage: Option<f64>,
 ) -> String {
     match format {
@@ -803,7 +803,9 @@ fn render_policy_test_output(
         PolicyTestOutputFormat::Text => {
             let mut text = String::new();
             use std::fmt::Write as _;
-            let verdict = if output.failed == 0 {
+            // Use the actual exit code (not just output.failed) because snapshot
+            // mismatches and coverage failures also set code to Fail.
+            let verdict = if code == ExitCode::Ok {
                 ui::Verdict::Pass
             } else {
                 ui::Verdict::Fail

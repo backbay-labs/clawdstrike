@@ -273,12 +273,17 @@ impl RemotePolicyResolver {
 
         let pb = crate::ui::spinner(&format!("Fetching {}...", url));
 
+        // Ensure the spinner is always cleared, even on early `?` returns.
+        let result = self.fetch_http_bytes_inner(url);
+        pb.finish_and_clear();
+        result
+    }
+
+    /// Inner fetch logic, separated so the caller can wrap with a spinner guard.
+    fn fetch_http_bytes_inner(&self, url: &str) -> Result<Vec<u8>> {
         const MAX_REDIRECTS: usize = 5;
 
-        let mut current = parse_remote_url(url, self.cfg.https_only).map_err(|e| {
-            pb.finish_and_clear();
-            Error::ConfigError(e)
-        })?;
+        let mut current = parse_remote_url(url, self.cfg.https_only).map_err(Error::ConfigError)?;
         current.set_fragment(None);
 
         let initial_host = current
@@ -313,7 +318,6 @@ impl RemotePolicyResolver {
                     .join(location)
                     .map_err(|e| Error::ConfigError(format!("Invalid redirect URL: {}", e)))?;
 
-                // Fragments are never sent to servers; drop to keep keys consistent.
                 next.set_fragment(None);
 
                 let next = parse_remote_url(next.as_str(), self.cfg.https_only)
@@ -341,23 +345,17 @@ impl RemotePolicyResolver {
 
             let mut bytes = Vec::new();
             let mut limited = resp.take((self.cfg.max_fetch_bytes as u64) + 1);
-            limited.read_to_end(&mut bytes).map_err(|e| {
-                pb.finish_and_clear();
-                Error::IoError(e)
-            })?;
+            limited.read_to_end(&mut bytes).map_err(Error::IoError)?;
             if bytes.len() > self.cfg.max_fetch_bytes {
-                pb.finish_and_clear();
                 return Err(Error::ConfigError(format!(
                     "Remote policy exceeds max_fetch_bytes ({} > {})",
                     bytes.len(),
                     self.cfg.max_fetch_bytes
                 )));
             }
-            pb.finish_and_clear();
             return Ok(bytes);
         }
 
-        pb.finish_and_clear();
         Err(Error::ConfigError(format!(
             "Remote policy exceeded max redirects (>{})",
             MAX_REDIRECTS

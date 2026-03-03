@@ -13,12 +13,18 @@
 edition = "2021"
 rust-version = "1.63.0"
 name = "crossterm"
-version = "0.28.1"
+version = "0.29.0"
 authors = ["T. Post"]
+build = false
 exclude = [
     "target",
     "Cargo.lock",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "A crossplatform terminal library for manipulating terminals."
 documentation = "https://docs.rs/crossterm/"
 readme = "README.md"
@@ -39,19 +45,50 @@ repository = "https://github.com/crossterm-rs/crossterm"
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+bracketed-paste = []
+default = [
+    "bracketed-paste",
+    "events",
+    "windows",
+    "derive-more",
+]
+derive-more = ["dep:derive_more"]
+event-stream = [
+    "dep:futures-core",
+    "events",
+]
+events = [
+    "dep:mio",
+    "dep:signal-hook",
+    "dep:signal-hook-mio",
+]
+osc52 = ["dep:base64"]
+serde = [
+    "dep:serde",
+    "bitflags/serde",
+]
+use-dev-tty = [
+    "filedescriptor",
+    "rustix/process",
+]
+windows = [
+    "dep:winapi",
+    "dep:crossterm_winapi",
+]
+
 [lib]
 name = "crossterm"
 path = "src/lib.rs"
 
 [[example]]
-name = "event-read"
-required-features = [
-    "bracketed-paste",
-    "events",
-]
+name = "copy-to-clipboard"
+path = "examples/copy-to-clipboard.rs"
+required-features = ["osc52"]
 
 [[example]]
 name = "event-match-modifiers"
+path = "examples/event-match-modifiers.rs"
 required-features = [
     "bracketed-paste",
     "events",
@@ -59,13 +96,28 @@ required-features = [
 
 [[example]]
 name = "event-poll-read"
+path = "examples/event-poll-read.rs"
 required-features = [
     "bracketed-paste",
     "events",
 ]
 
 [[example]]
+name = "event-read"
+path = "examples/event-read.rs"
+required-features = [
+    "bracketed-paste",
+    "events",
+]
+
+[[example]]
+name = "event-read-char-line"
+path = "examples/event-read-char-line.rs"
+required-features = ["events"]
+
+[[example]]
 name = "event-stream-async-std"
+path = "examples/event-stream-async-std.rs"
 required-features = [
     "event-stream",
     "events",
@@ -73,25 +125,40 @@ required-features = [
 
 [[example]]
 name = "event-stream-tokio"
+path = "examples/event-stream-tokio.rs"
 required-features = [
     "event-stream",
     "events",
 ]
 
 [[example]]
-name = "event-read-char-line"
+name = "is_tty"
+path = "examples/is_tty.rs"
+
+[[example]]
+name = "key-display"
+path = "examples/key-display.rs"
 required-features = ["events"]
 
 [[example]]
 name = "stderr"
+path = "examples/stderr.rs"
 required-features = ["events"]
 
-[[example]]
-name = "key-display"
-required-features = ["events"]
+[dependencies.base64]
+version = "0.22"
+optional = true
 
 [dependencies.bitflags]
-version = "2.3"
+version = "2.9"
+
+[dependencies.derive_more]
+version = "2.0.0"
+features = ["is_variant"]
+optional = true
+
+[dependencies.document-features]
+version = "0.2.11"
 
 [dependencies.futures-core]
 version = "0.3"
@@ -107,7 +174,7 @@ features = ["derive"]
 optional = true
 
 [dev-dependencies.async-std]
-version = "1.12"
+version = "1.13"
 
 [dev-dependencies.futures]
 version = "0.3"
@@ -119,43 +186,14 @@ version = "3.0"
 version = "1.0"
 
 [dev-dependencies.serial_test]
-version = "2.0.0"
+version = "3.0.0"
 
 [dev-dependencies.temp-env]
 version = "0.3.6"
 
 [dev-dependencies.tokio]
-version = "1.25"
+version = "1.44"
 features = ["full"]
-
-[features]
-bracketed-paste = []
-default = [
-    "bracketed-paste",
-    "windows",
-    "events",
-]
-event-stream = [
-    "dep:futures-core",
-    "events",
-]
-events = [
-    "dep:mio",
-    "dep:signal-hook",
-    "dep:signal-hook-mio",
-]
-serde = [
-    "dep:serde",
-    "bitflags/serde",
-]
-use-dev-tty = [
-    "filedescriptor",
-    "rustix/process",
-]
-windows = [
-    "dep:winapi",
-    "dep:crossterm_winapi",
-]
 
 [target."cfg(unix)".dependencies.filedescriptor]
 version = "0.8"
@@ -172,7 +210,7 @@ features = ["os-poll"]
 optional = true
 
 [target."cfg(unix)".dependencies.rustix]
-version = "0.38.34"
+version = "1"
 features = [
     "std",
     "stdio",

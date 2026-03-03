@@ -225,23 +225,8 @@ fn generate_keypair(keys_dir: &Path) -> anyhow::Result<()> {
     let key_path = keys_dir.join("hush.key");
     let pub_path = keys_dir.join("hush.pub");
 
-    // Write private key with restricted permissions
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&key_path)?;
-        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-        f.write_all(private_hex.as_bytes())?;
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(&key_path, &private_hex)?;
-    }
+    // Reuse the shared write_secret_file helper for restricted-permission writes.
+    crate::write_secret_file(&key_path.to_string_lossy(), &private_hex)?;
 
     std::fs::write(&pub_path, &public_hex)?;
 

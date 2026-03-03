@@ -1,8 +1,16 @@
-/// Append a the first few characters of an ANSI escape code to the given string.
+/// Concatenate string literals while prepending a ANSI control sequence introducer (`"\x1b["`)
 #[macro_export]
 #[doc(hidden)]
 macro_rules! csi {
     ($( $l:expr ),*) => { concat!("\x1B[", $( $l ),*) };
+}
+
+/// Concatenate string literals while prepending a xterm Operating System Commands (OSC)
+/// introducer (`"\x1b]"`) and appending a BEL (`"\x07"`).
+#[macro_export]
+#[doc(hidden)]
+macro_rules! osc {
+    ($( $l:expr ),*) => { concat!("\x1B]", $( $l ),*, "\x1B\\") };
 }
 
 /// Queues one or more command(s) for further execution.
@@ -72,11 +80,11 @@ macro_rules! queue {
 ///
 /// - [std::io::Writer](std::io::Write)
 ///
-///     ANSI escape codes are written on the given 'writer', after which they are flushed.
+///   ANSI escape codes are written on the given 'writer', after which they are flushed.
 ///
 /// - [Command](./trait.Command.html)
 ///
-///     One or more commands
+///   One or more commands
 ///
 /// # Examples
 ///
@@ -101,10 +109,10 @@ macro_rules! queue {
 ///
 /// * In the case of UNIX and Windows 10, ANSI codes are written to the given 'writer'.
 /// * In case of Windows versions lower than 10, a direct WinAPI call will be made.
-///     The reason for this is that Windows versions lower than 10 do not support ANSI codes,
-///     and can therefore not be written to the given `writer`.
-///     Therefore, there is no difference between [execute](macro.execute.html)
-///     and [queue](macro.queue.html) for those old Windows versions.
+///   The reason for this is that Windows versions lower than 10 do not support ANSI codes,
+///   and can therefore not be written to the given `writer`.
+///   Therefore, there is no difference between [execute](macro.execute.html)
+///   and [queue](macro.queue.html) for those old Windows versions.
 #[macro_export]
 macro_rules! execute {
     ($writer:expr $(, $command:expr)* $(,)? ) => {{

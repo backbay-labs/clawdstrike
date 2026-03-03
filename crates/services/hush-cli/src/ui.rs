@@ -69,12 +69,11 @@ pub fn render_box(title: &str, lines: &[String], out: &mut dyn Write) {
     let top_bar = "─".repeat(inner_width + 2);
     let _ = writeln!(out, "┌{}┐", top_bar);
 
-    // Truncate title if it exceeds inner_width (accounting for padding spaces)
-    let truncated_title = truncate_to_width(title, inner_width.saturating_sub(2));
-    let title_display = format!(" {} ", truncated_title.bold());
-    let title_plain_len = console::measure_text_width(&truncated_title) + 2;
+    // Truncate title if it exceeds inner_width
+    let truncated_title = truncate_to_width(title, inner_width);
+    let title_plain_len = console::measure_text_width(&truncated_title);
     let padding = inner_width.saturating_sub(title_plain_len);
-    let _ = writeln!(out, "│{}{}│", title_display, " ".repeat(padding));
+    let _ = writeln!(out, "│ {}{} │", truncated_title.bold(), " ".repeat(padding));
 
     let separator = "─".repeat(inner_width + 2);
     let _ = writeln!(out, "├{}┤", separator);
