@@ -1,15 +1,8 @@
+use subtle::ConstantTimeEq;
+
 /// Constant-time equality for byte slices.
 pub fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    let max_len = left.len().max(right.len());
-    let mut diff = left.len() ^ right.len();
-
-    for i in 0..max_len {
-        let l = *left.get(i).unwrap_or(&0u8);
-        let r = *right.get(i).unwrap_or(&0u8);
-        diff |= usize::from(l ^ r);
-    }
-
-    diff == 0
+    left.ct_eq(right).into()
 }
 
 /// Constant-time equality for authentication tokens.

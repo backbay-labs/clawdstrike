@@ -65,6 +65,7 @@ spine = { package = "hush-spine", path = "../../../crates/libs/spine" }
 async-nats = "0.39"
 ed25519-dalek = { version = "2.2", features = ["pem", "pkcs8"] }
 zeroize = "1"
+subtle = "2"
 
 # Logging
 tracing = "0.1"

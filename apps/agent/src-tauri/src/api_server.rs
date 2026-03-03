@@ -594,6 +594,9 @@ fn request_is_secure_uri(headers: &HeaderMap, uri: &Uri) -> bool {
     if uri.scheme_str() == Some("https") {
         return true;
     }
+    if !is_local_host_header(headers) {
+        return false;
+    }
     headers
         .get("x-forwarded-proto")
         .and_then(|value| value.to_str().ok())
@@ -2263,6 +2266,48 @@ mod tests {
         let uri = "https://localhost/ui/bootstrap"
             .parse::<Uri>()
             .unwrap_or_else(|_| panic!("failed to parse https uri for secure check"));
+        assert!(request_is_secure_uri(&headers, &uri));
+    }
+
+    #[test]
+    fn request_is_secure_uri_rejects_forwarded_proto_for_non_local_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "host",
+            "example.com:9878"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build host header")),
+        );
+        headers.insert(
+            "x-forwarded-proto",
+            "https"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build x-forwarded-proto header")),
+        );
+        let uri = "/ui/bootstrap"
+            .parse::<Uri>()
+            .unwrap_or_else(|_| panic!("failed to parse relative uri for secure check"));
+        assert!(!request_is_secure_uri(&headers, &uri));
+    }
+
+    #[test]
+    fn request_is_secure_uri_accepts_forwarded_proto_for_local_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "host",
+            "127.0.0.1:9878"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build host header")),
+        );
+        headers.insert(
+            "x-forwarded-proto",
+            "https"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build x-forwarded-proto header")),
+        );
+        let uri = "/ui/bootstrap"
+            .parse::<Uri>()
+            .unwrap_or_else(|_| panic!("failed to parse relative uri for secure check"));
         assert!(request_is_secure_uri(&headers, &uri));
     }
 
