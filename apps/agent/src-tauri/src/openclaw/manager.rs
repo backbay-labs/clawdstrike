@@ -225,7 +225,7 @@ impl OpenClawManager {
     }
 
     pub async fn upsert_gateway(&self, input: GatewayUpsertRequest) -> Result<GatewayView> {
-        let validated_gateway_url = validate_gateway_url(&input.gateway_url).await?;
+        let validation = validate_gateway_url(&input.gateway_url).await?;
         let gateway_id = input
             .id
             .clone()
@@ -237,7 +237,12 @@ impl OpenClawManager {
             for gw in &mut settings.openclaw.gateways {
                 if gw.id == gateway_id {
                     gw.label = input.label.clone();
-                    gw.gateway_url = validated_gateway_url.clone();
+                    gw.gateway_url = validation.normalized_url.clone();
+                    gw.pinned_ips = validation
+                        .pinned_ips
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect();
                     found = true;
                     break;
                 }
@@ -247,7 +252,12 @@ impl OpenClawManager {
                 settings.openclaw.gateways.push(OpenClawGatewayMetadata {
                     id: gateway_id.clone(),
                     label: input.label.clone(),
-                    gateway_url: validated_gateway_url.clone(),
+                    gateway_url: validation.normalized_url.clone(),
+                    pinned_ips: validation
+                        .pinned_ips
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
                 });
             }
 
@@ -544,6 +554,10 @@ impl OpenClawManager {
         secrets: &GatewaySecrets,
         rx: &mut mpsc::Receiver<SessionCommand>,
     ) -> Result<ConnectionExit> {
+        validate_gateway_runtime_target(&metadata.gateway_url, &metadata.pinned_ips)
+            .await
+            .with_context(|| "runtime gateway target validation failed")?;
+
         let (ws_stream, _) = connect_async(&metadata.gateway_url)
             .await
             .with_context(|| format!("failed to connect websocket to {}", metadata.gateway_url))?;
@@ -1488,7 +1502,39 @@ fn normalize_secret_field(value: String) -> Option<String> {
     }
 }
 
-async fn validate_gateway_url(raw: &str) -> Result<String> {
+#[derive(Debug, Clone)]
+struct GatewayUrlValidation {
+    normalized_url: String,
+    pinned_ips: Vec<IpAddr>,
+}
+
+async fn resolve_gateway_target_ips(parsed: &reqwest::Url) -> Result<Vec<IpAddr>> {
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("gateway_url must include a host"))?;
+    let host_lower = host.to_ascii_lowercase();
+
+    if host_lower == "localhost" {
+        return Ok(vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]);
+    }
+    if let Ok(parsed_ip) = host_lower.parse::<IpAddr>() {
+        return Ok(vec![parsed_ip]);
+    }
+
+    let port = parsed
+        .port_or_known_default()
+        .ok_or_else(|| anyhow::anyhow!("gateway_url must include a valid port"))?;
+    let mut resolved_ips = Vec::new();
+    let resolved = tokio::net::lookup_host((host, port))
+        .await
+        .with_context(|| format!("failed to resolve gateway host {host}:{port}"))?;
+    for addr in resolved {
+        resolved_ips.push(addr.ip());
+    }
+    Ok(resolved_ips)
+}
+
+async fn validate_gateway_url(raw: &str) -> Result<GatewayUrlValidation> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         anyhow::bail!("gateway_url cannot be empty");
@@ -1501,31 +1547,55 @@ async fn validate_gateway_url(raw: &str) -> Result<String> {
         anyhow::bail!("gateway_url must use ws:// or wss://");
     }
 
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| anyhow::anyhow!("gateway_url must include a host"))?;
-    let host_lower = host.to_ascii_lowercase();
-    let target_ips = if host_lower == "localhost" {
-        vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
-    } else if let Ok(parsed_ip) = host_lower.parse::<IpAddr>() {
-        vec![parsed_ip]
-    } else {
-        let port = parsed
-            .port_or_known_default()
-            .ok_or_else(|| anyhow::anyhow!("gateway_url must include a valid port"))?;
-        let mut resolved_ips = Vec::new();
-        let resolved = tokio::net::lookup_host((host, port))
-            .await
-            .with_context(|| format!("failed to resolve gateway host {host}:{port}"))?;
-        for addr in resolved {
-            resolved_ips.push(addr.ip());
-        }
-        resolved_ips
-    };
+    let target_ips = resolve_gateway_target_ips(&parsed).await?;
 
     validate_gateway_target_ips(&scheme, &target_ips)?;
 
-    Ok(trimmed.to_string())
+    Ok(GatewayUrlValidation {
+        normalized_url: trimmed.to_string(),
+        pinned_ips: target_ips,
+    })
+}
+
+fn parse_pinned_ip_set(pinned_ips: &[String]) -> Result<HashSet<IpAddr>> {
+    let mut parsed = HashSet::new();
+    for raw in pinned_ips {
+        let candidate = raw.trim();
+        if candidate.is_empty() {
+            continue;
+        }
+        let ip = candidate
+            .parse::<IpAddr>()
+            .with_context(|| format!("invalid pinned gateway IP '{candidate}'"))?;
+        parsed.insert(ip);
+    }
+    Ok(parsed)
+}
+
+async fn validate_gateway_runtime_target(raw: &str, pinned_ips: &[String]) -> Result<()> {
+    let parsed =
+        reqwest::Url::parse(raw).with_context(|| format!("invalid runtime gateway_url '{raw}'"))?;
+    let scheme = parsed.scheme().to_ascii_lowercase();
+    if scheme != "ws" && scheme != "wss" {
+        anyhow::bail!("gateway_url must use ws:// or wss://");
+    }
+
+    let resolved_ips = resolve_gateway_target_ips(&parsed).await?;
+    validate_gateway_target_ips(&scheme, &resolved_ips)?;
+
+    let pinned = parse_pinned_ip_set(pinned_ips)?;
+    if !pinned.is_empty() && resolved_ips.iter().any(|ip| !pinned.contains(ip)) {
+        anyhow::bail!(
+            "gateway_url resolved addresses changed outside the pinned allowlist; re-save gateway configuration"
+        );
+    }
+    if !pinned.is_empty() && !resolved_ips.iter().any(|ip| pinned.contains(ip)) {
+        anyhow::bail!(
+            "gateway_url resolved addresses no longer match the pinned allowlist; re-save gateway configuration"
+        );
+    }
+
+    Ok(())
 }
 
 fn validate_gateway_target_ips(scheme: &str, target_ips: &[IpAddr]) -> Result<()> {
@@ -1746,6 +1816,20 @@ mod tests {
         assert!(err
             .to_string()
             .contains("private/link-local gateway_url addresses are not allowed"));
+    }
+
+    #[tokio::test]
+    async fn runtime_gateway_validation_rejects_dns_drift_outside_pinned_set() {
+        let err = match validate_gateway_runtime_target(
+            "ws://localhost:9876",
+            &["127.0.0.2".to_string()],
+        )
+        .await
+        {
+            Ok(_) => panic!("expected runtime pinned-IP validation to fail"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("pinned allowlist"));
     }
 
     #[test]
@@ -2287,6 +2371,7 @@ mod tests {
             id: "gw-test".to_string(),
             label: "Gateway Test".to_string(),
             gateway_url: format!("ws://{}", addr),
+            pinned_ips: vec!["127.0.0.1".to_string()],
         });
         settings.openclaw.active_gateway_id = Some("gw-test".to_string());
 
@@ -2424,6 +2509,7 @@ mod tests {
             id: "gw-device".to_string(),
             label: "Device Gateway".to_string(),
             gateway_url: format!("ws://{}", addr),
+            pinned_ips: vec!["127.0.0.1".to_string()],
         });
         settings.openclaw.active_gateway_id = Some("gw-device".to_string());
 
@@ -2542,6 +2628,7 @@ mod tests {
             id: "gw-rotate".to_string(),
             label: "Rotate Gateway".to_string(),
             gateway_url: format!("ws://{}", addr),
+            pinned_ips: vec!["127.0.0.1".to_string()],
         });
         settings.openclaw.active_gateway_id = Some("gw-rotate".to_string());
 
@@ -2669,6 +2756,7 @@ mod tests {
             id: "gw-timeout".to_string(),
             label: "Timeout Gateway".to_string(),
             gateway_url: format!("ws://{}", addr),
+            pinned_ips: vec!["127.0.0.1".to_string()],
         };
         let secrets = GatewaySecrets::default();
         let (_tx, mut rx) = mpsc::channel(4);

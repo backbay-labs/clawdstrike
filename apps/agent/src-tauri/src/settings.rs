@@ -12,6 +12,8 @@ pub struct OpenClawGatewayMetadata {
     pub id: String,
     pub label: String,
     pub gateway_url: String,
+    #[serde(default)]
+    pub pinned_ips: Vec<String>,
 }
 
 /// OpenClaw settings stored in agent config.

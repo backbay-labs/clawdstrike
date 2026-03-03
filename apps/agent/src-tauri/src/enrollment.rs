@@ -99,11 +99,7 @@ impl EnrollmentManager {
         let public_key_hex = keypair.public_key().to_hex();
         let previous_key_hex = crate::security::key_store::load_enrollment_key_hex()
             .with_context(|| "Failed to read existing enrollment key before enrollment")?;
-
-        // Persist the new key before contacting the server to avoid post-response
-        // persistence failures leaving enrollment in a half-complete state.
-        crate::security::key_store::store_enrollment_key_hex(&key_hex)
-            .with_context(|| "Failed to persist enrollment key before enrollment request")?;
+        let previous_settings_snapshot = self.settings.read().await.clone();
 
         let hostname = hostname_best_effort();
 
@@ -121,30 +117,17 @@ impl EnrollmentManager {
 
         tracing::info!(url = %enroll_url, "Sending enrollment request to Control API");
 
-        let response = match self.http_client.post(&enroll_url).json(&body).send().await {
-            Ok(response) => response,
-            Err(err) => {
-                if let Err(restore_err) = restore_previous_enrollment_key(previous_key_hex.clone())
-                {
-                    tracing::warn!(
-                        error = %restore_err,
-                        "Failed to restore previous enrollment key after request failure"
-                    );
-                }
-                return Err(err)
-                    .with_context(|| format!("Failed to reach Control API at {}", enroll_url));
-            }
-        };
+        let response = self
+            .http_client
+            .post(&enroll_url)
+            .json(&body)
+            .send()
+            .await
+            .with_context(|| format!("Failed to reach Control API at {}", enroll_url))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            if let Err(restore_err) = restore_previous_enrollment_key(previous_key_hex.clone()) {
-                tracing::warn!(
-                    error = %restore_err,
-                    "Failed to restore previous enrollment key after enrollment rejection"
-                );
-            }
             anyhow::bail!("Enrollment failed with status {}: {}", status, body);
         }
 
@@ -152,12 +135,6 @@ impl EnrollmentManager {
             .json()
             .await
             .with_context(|| "Failed to parse enrollment response")?;
-
-        let legacy_key_path = legacy_agent_key_path();
-        if legacy_key_path.exists() {
-            let _ = std::fs::remove_file(&legacy_key_path);
-        }
-        tracing::info!("Agent private key stored in keyring-backed store");
 
         // Update settings with enrollment state and all NATS configuration.
         {
@@ -183,6 +160,33 @@ impl EnrollmentManager {
                 .save()
                 .with_context(|| "Failed to persist enrollment settings")?;
         }
+
+        if let Err(store_err) = crate::security::key_store::store_enrollment_key_hex(&key_hex)
+            .with_context(|| "Failed to persist enrollment key after enrollment response")
+        {
+            if let Err(rollback_err) = restore_previous_enrollment_key(previous_key_hex.clone()) {
+                tracing::warn!(
+                    error = %rollback_err,
+                    "Failed to restore previous enrollment key after key-store write error"
+                );
+            }
+            if let Err(rollback_err) =
+                restore_previous_settings_snapshot(&self.settings, &previous_settings_snapshot)
+                    .await
+            {
+                tracing::warn!(
+                    error = %rollback_err,
+                    "Failed to restore previous enrollment settings after key-store write error"
+                );
+            }
+            return Err(store_err);
+        }
+
+        let legacy_key_path = legacy_agent_key_path();
+        if legacy_key_path.exists() {
+            let _ = std::fs::remove_file(&legacy_key_path);
+        }
+        tracing::info!("Agent private key stored in keyring-backed store");
 
         let result = EnrollmentResult {
             agent_uuid: resp.agent_uuid,
@@ -211,6 +215,18 @@ fn restore_previous_enrollment_key(previous_key_hex: Option<String>) -> Result<(
         crate::security::key_store::delete_enrollment_key_hex()
             .with_context(|| "Failed to clear newly stored enrollment key")?;
     }
+    Ok(())
+}
+
+async fn restore_previous_settings_snapshot(
+    settings_handle: &Arc<RwLock<Settings>>,
+    snapshot: &Settings,
+) -> Result<()> {
+    let mut settings = settings_handle.write().await;
+    *settings = snapshot.clone();
+    settings
+        .save()
+        .with_context(|| "Failed to restore previous enrollment settings")?;
     Ok(())
 }
 
