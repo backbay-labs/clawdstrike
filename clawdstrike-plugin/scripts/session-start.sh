@@ -4,7 +4,7 @@
 
 set -uo pipefail
 
-CLAWDSTRIKE_ENDPOINT="${CLAWDSTRIKE_ENDPOINT:-http://127.0.0.1:9878}"
+CLAWDSTRIKE_ENDPOINT="${CLAWDSTRIKE_ENDPOINT:-http://127.0.0.1:9876}"
 CLI="${CLAWDSTRIKE_CLI:-clawdstrike}"
 RECEIPT_DIR="$HOME/.clawdstrike/receipts"
 
@@ -63,7 +63,13 @@ jq -cn \
   >> "$RECEIPT_FILE" 2>/dev/null || true
 
 # Check token file
-CLAWDSTRIKE_TOKEN_FILE="${CLAWDSTRIKE_TOKEN_FILE:-$HOME/.config/clawdstrike/agent-local-token}"
+if [ -z "${CLAWDSTRIKE_TOKEN_FILE:-}" ]; then
+  if [ -f "$HOME/Library/Application Support/clawdstrike/agent-local-token" ]; then
+    CLAWDSTRIKE_TOKEN_FILE="$HOME/Library/Application Support/clawdstrike/agent-local-token"
+  else
+    CLAWDSTRIKE_TOKEN_FILE="$HOME/.config/clawdstrike/agent-local-token"
+  fi
+fi
 TOKEN_STATUS="missing"
 if [ -f "$CLAWDSTRIKE_TOKEN_FILE" ]; then
   if [ -r "$CLAWDSTRIKE_TOKEN_FILE" ] && [ -s "$CLAWDSTRIKE_TOKEN_FILE" ]; then

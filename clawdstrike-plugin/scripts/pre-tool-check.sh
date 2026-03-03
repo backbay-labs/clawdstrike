@@ -6,8 +6,14 @@
 set -euo pipefail
 
 # Configuration
-CLAWDSTRIKE_ENDPOINT="${CLAWDSTRIKE_ENDPOINT:-http://127.0.0.1:9878}"
-CLAWDSTRIKE_TOKEN_FILE="${CLAWDSTRIKE_TOKEN_FILE:-$HOME/.config/clawdstrike/agent-local-token}"
+CLAWDSTRIKE_ENDPOINT="${CLAWDSTRIKE_ENDPOINT:-http://127.0.0.1:9876}"
+if [ -z "${CLAWDSTRIKE_TOKEN_FILE:-}" ]; then
+  if [ -f "$HOME/Library/Application Support/clawdstrike/agent-local-token" ]; then
+    CLAWDSTRIKE_TOKEN_FILE="$HOME/Library/Application Support/clawdstrike/agent-local-token"
+  else
+    CLAWDSTRIKE_TOKEN_FILE="$HOME/.config/clawdstrike/agent-local-token"
+  fi
+fi
 CLAWDSTRIKE_HOOK_FAIL_OPEN="${CLAWDSTRIKE_HOOK_FAIL_OPEN:-0}"
 
 fail() {
