@@ -17,11 +17,10 @@ if [ ! -f "$RECEIPT_FILE" ]; then
   exit 0
 fi
 
-# Count total action events (any line with hook_event or tool_name, excluding session lifecycle)
-TOTAL_CALLS=$(grep -c '"hook_event"\|"tool_name"' "$RECEIPT_FILE" 2>/dev/null) || TOTAL_CALLS=0
-# Subtract session lifecycle events (session_start, session_end) which aren't actions
-SESSION_EVENTS=$(grep -c '"session_start"\|"session_end"' "$RECEIPT_FILE" 2>/dev/null) || SESSION_EVENTS=0
-TOTAL_CALLS=$((TOTAL_CALLS - SESSION_EVENTS))
+# Count total action events (lines with hook_event or tool_name — session lifecycle
+# uses "event" key so is naturally excluded without subtraction).
+# Use -e flags instead of \| alternation for BSD grep (macOS) compatibility.
+TOTAL_CALLS=$(grep -c -e '"hook_event"' -e '"tool_name"' "$RECEIPT_FILE" 2>/dev/null) || TOTAL_CALLS=0
 
 # Count denied actions (lines with "deny" outcome)
 DENIED_CALLS=$(grep -c '"outcome":"deny"' "$RECEIPT_FILE" 2>/dev/null) || DENIED_CALLS=0

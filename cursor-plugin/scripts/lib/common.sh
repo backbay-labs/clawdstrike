@@ -67,8 +67,14 @@ post_policy_check() {
   local jq_template='action_type:$action_type,target:$target'
 
   if [ -n "$content" ]; then
-    jq_args+=(--arg content "$content")
-    jq_template="${jq_template},content:\$content"
+    if [ "$action_type" = "mcp_tool" ]; then
+      # MCP tool arguments must be sent as a JSON object, not a string
+      jq_args+=(--argjson args "$content")
+      jq_template="${jq_template},args:\$args"
+    else
+      jq_args+=(--arg content "$content")
+      jq_template="${jq_template},content:\$content"
+    fi
   fi
 
   if [ -n "${SESSION_ID:-}" ] && [ "$SESSION_ID" != "unknown" ]; then
