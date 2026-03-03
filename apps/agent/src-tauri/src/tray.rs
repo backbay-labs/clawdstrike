@@ -4,6 +4,7 @@ use crate::daemon::DaemonState;
 use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
 use crate::settings::Settings;
+use crate::AgentApiAuthToken;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
@@ -304,8 +305,47 @@ fn is_local_dashboard_url(candidate: &str) -> bool {
         Ok(url) => url,
         Err(_) => return false,
     };
-    let host = parsed.host_str().unwrap_or_default();
-    matches!(host, "localhost" | "127.0.0.1")
+    let host = parsed
+        .host_str()
+        .unwrap_or_default()
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+fn attach_local_ui_auth_token(url: &str, auth_token: Option<&str>) -> String {
+    let token = auth_token
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    if token.is_empty() {
+        return url.to_string();
+    }
+
+    let mut parsed = match reqwest::Url::parse(url) {
+        Ok(value) => value,
+        Err(_) => return url.to_string(),
+    };
+
+    let host = parsed
+        .host_str()
+        .unwrap_or_default()
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+        return url.to_string();
+    }
+
+    if !parsed.path().starts_with("/ui") {
+        return url.to_string();
+    }
+
+    if parsed.query_pairs().any(|(name, _)| name == "agent_token") {
+        return parsed.to_string();
+    }
+
+    parsed.query_pairs_mut().append_pair("agent_token", token);
+    parsed.to_string()
 }
 
 fn is_legacy_local_dev_dashboard_url(candidate: &str) -> bool {
@@ -454,16 +494,20 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             tracing::info!("Configure SIEM export clicked");
             let settings: Arc<RwLock<Settings>> =
                 app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            let auth_token = app
+                .try_state::<AgentApiAuthToken>()
+                .map(|state| state.inner().0.clone());
             tauri::async_runtime::spawn(async move {
                 let settings_snapshot = settings.read().await.clone();
                 let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
                     tracing::warn!("Dashboard URL is invalid; refusing to open SIEM config");
                     return;
                 };
-                let Some(target) = build_dashboard_settings_url(&url, "siem") else {
+                let Some(raw_target) = build_dashboard_settings_url(&url, "siem") else {
                     tracing::warn!("Failed to build SIEM settings URL; refusing to open");
                     return;
                 };
+                let target = attach_local_ui_auth_token(&raw_target, auth_token.as_deref());
                 tracing::debug!(url = %target, "Opening SIEM config");
                 open_dashboard_url(&target);
             });
@@ -472,16 +516,20 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             tracing::info!("Configure webhooks clicked");
             let settings: Arc<RwLock<Settings>> =
                 app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            let auth_token = app
+                .try_state::<AgentApiAuthToken>()
+                .map(|state| state.inner().0.clone());
             tauri::async_runtime::spawn(async move {
                 let settings_snapshot = settings.read().await.clone();
                 let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
                     tracing::warn!("Dashboard URL is invalid; refusing to open webhook config");
                     return;
                 };
-                let Some(target) = build_dashboard_settings_url(&url, "webhooks") else {
+                let Some(raw_target) = build_dashboard_settings_url(&url, "webhooks") else {
                     tracing::warn!("Failed to build webhook settings URL; refusing to open");
                     return;
                 };
+                let target = attach_local_ui_auth_token(&raw_target, auth_token.as_deref());
                 tracing::debug!(url = %target, "Opening webhook config");
                 open_dashboard_url(&target);
             });
@@ -508,12 +556,16 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             tracing::info!("Open Web UI clicked");
             let settings: Arc<RwLock<Settings>> =
                 app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            let auth_token = app
+                .try_state::<AgentApiAuthToken>()
+                .map(|state| state.inner().0.clone());
             tauri::async_runtime::spawn(async move {
                 let settings_snapshot = settings.read().await.clone();
-                let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
+                let Some(raw_url) = resolve_dashboard_url(&settings_snapshot).await else {
                     tracing::warn!("Dashboard URL is invalid; refusing to open Web UI");
                     return;
                 };
+                let url = attach_local_ui_auth_token(&raw_url, auth_token.as_deref());
                 tracing::debug!(url, "Opening Web UI");
                 open_dashboard_url(&url);
             });
@@ -630,7 +682,7 @@ impl<R: Runtime> TrayManager<R> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_dashboard_settings_url, default_local_dashboard_url,
+        attach_local_ui_auth_token, build_dashboard_settings_url, default_local_dashboard_url,
         is_legacy_local_dev_dashboard_url, is_local_dashboard_url, validate_dashboard_url,
     };
 
@@ -666,7 +718,24 @@ mod tests {
     fn local_dashboard_url_detection_is_precise() {
         assert!(is_local_dashboard_url("http://127.0.0.1:4200"));
         assert!(is_local_dashboard_url("https://localhost:3100/path"));
+        assert!(is_local_dashboard_url("https://[::1]:3100/path"));
         assert!(!is_local_dashboard_url("https://example.com/settings"));
+    }
+
+    #[test]
+    fn local_ui_urls_receive_bootstrap_auth_token() {
+        assert_eq!(
+            attach_local_ui_auth_token("http://127.0.0.1:9878/ui", Some("abc123")),
+            "http://127.0.0.1:9878/ui?agent_token=abc123"
+        );
+        assert_eq!(
+            attach_local_ui_auth_token("http://127.0.0.1:9878/ui/settings/siem", Some("abc123")),
+            "http://127.0.0.1:9878/ui/settings/siem?agent_token=abc123"
+        );
+        assert_eq!(
+            attach_local_ui_auth_token("https://dashboard.example.com/ui", Some("abc123")),
+            "https://dashboard.example.com/ui"
+        );
     }
 
     #[test]

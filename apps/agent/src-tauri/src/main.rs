@@ -75,6 +75,9 @@ struct AppState {
     shutdown_complete: Arc<ShutdownComplete>,
 }
 
+#[derive(Clone)]
+pub struct AgentApiAuthToken(pub String);
+
 struct ShutdownComplete {
     done: AtomicBool,
     notify: Notify,
@@ -217,6 +220,7 @@ fn main() {
         .manage(app_state.updater.clone())
         .manage(app_state.shutdown_tx.clone())
         .manage(app_state.shutdown_complete.clone())
+        .manage(AgentApiAuthToken(app_state.agent_api_token.clone()))
         .setup(move |app| {
             let app_handle = app.handle().clone();
 

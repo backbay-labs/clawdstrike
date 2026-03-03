@@ -18,7 +18,7 @@ use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, Request, State};
 use axum::http::header::{
-    ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, SET_COOKIE,
+    ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
 };
 use axum::http::{uri::Authority, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::middleware::Next;
@@ -541,6 +541,17 @@ fn auth_cookie_header_value(auth_token: &str, secure: bool) -> String {
     )
 }
 
+fn set_ui_auth_cookie(response: &mut Response, auth_token: &str, secure: bool) {
+    match HeaderValue::from_str(&auth_cookie_header_value(auth_token, secure)) {
+        Ok(value) => {
+            response.headers_mut().append(SET_COOKIE, value);
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "Failed to build UI auth cookie header");
+        }
+    }
+}
+
 fn request_is_secure(headers: &HeaderMap, request: &Request) -> bool {
     if request.uri().scheme_str() == Some("https") {
         return true;
@@ -573,12 +584,58 @@ fn is_local_host_header(headers: &HeaderMap) -> bool {
     host_only == "localhost" || host_only == "127.0.0.1" || host_only == "::1"
 }
 
+fn ui_auth_token_from_query(uri: &Uri) -> Option<String> {
+    let query = uri.query()?;
+    for pair in query.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if name == "agent_token" {
+            let token = value.trim();
+            if !token.is_empty() {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn strip_query_param(uri: &Uri, param_name: &str) -> String {
+    let path = if uri.path().is_empty() {
+        "/"
+    } else {
+        uri.path()
+    };
+    let Some(query) = uri.query() else {
+        return path.to_string();
+    };
+
+    let filtered: Vec<&str> = query
+        .split('&')
+        .filter(|pair| {
+            if pair.is_empty() {
+                return false;
+            }
+            let (name, _) = pair.split_once('=').unwrap_or((pair, ""));
+            name != param_name
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        path.to_string()
+    } else {
+        format!("{path}?{}", filtered.join("&"))
+    }
+}
+
 async fn attach_ui_auth_cookie(
     State(state): State<Arc<AgentApiState>>,
     request: Request,
     next: Next,
 ) -> Response {
-    if !request_is_secure(request.headers(), &request) && !is_local_host_header(request.headers()) {
+    let secure_cookie = request_is_secure(request.headers(), &request);
+    if !secure_cookie && !is_local_host_header(request.headers()) {
         return (
             StatusCode::FORBIDDEN,
             "Non-localhost dashboard access requires HTTPS",
@@ -586,16 +643,41 @@ async fn attach_ui_auth_cookie(
             .into_response();
     }
 
-    let secure_cookie = request_is_secure(request.headers(), &request);
-    let mut response = next.run(request).await;
-    match HeaderValue::from_str(&auth_cookie_header_value(&state.auth_token, secure_cookie)) {
-        Ok(value) => {
-            response.headers_mut().append(SET_COOKIE, value);
+    let authorized = require_auth(request.headers(), &state).is_ok();
+    if !authorized {
+        let token_from_query = ui_auth_token_from_query(request.uri());
+        let query_authorized = token_from_query
+            .as_deref()
+            .map(|token| constant_time_eq_token(token, &state.auth_token))
+            .unwrap_or(false);
+        if !query_authorized {
+            return (
+                StatusCode::UNAUTHORIZED,
+                "Missing authorization token for /ui",
+            )
+                .into_response();
         }
-        Err(err) => {
-            tracing::warn!(error = %err, "Failed to build UI auth cookie header");
+
+        let mut response = StatusCode::SEE_OTHER.into_response();
+        let redirect_location = strip_query_param(request.uri(), "agent_token");
+        match HeaderValue::from_str(&redirect_location) {
+            Ok(value) => {
+                response.headers_mut().insert(LOCATION, value);
+            }
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    location = %redirect_location,
+                    "Failed to build UI redirect location header"
+                );
+            }
         }
+        set_ui_auth_cookie(&mut response, &state.auth_token, secure_cookie);
+        return response;
     }
+
+    let mut response = next.run(request).await;
+    set_ui_auth_cookie(&mut response, &state.auth_token, secure_cookie);
     response
 }
 
@@ -1858,6 +1940,63 @@ mod tests {
                 .unwrap_or_else(|_| panic!("failed to build host header")),
         );
         assert!(!is_local_host_header(&headers));
+    }
+
+    #[tokio::test]
+    async fn ui_routes_require_auth_or_valid_bootstrap_token() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route("/ui", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                attach_ui_auth_cookie,
+            ))
+            .with_state(state);
+
+        let unauth_req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/ui")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build unauth request: {e}"));
+        let unauth_resp = app
+            .clone()
+            .oneshot(unauth_req)
+            .await
+            .unwrap_or_else(|e| panic!("unauth request failed: {e}"));
+        assert_eq!(unauth_resp.status(), StatusCode::UNAUTHORIZED);
+        assert!(unauth_resp.headers().get(SET_COOKIE).is_none());
+
+        let bootstrap_req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/ui?agent_token=test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build bootstrap request: {e}"));
+        let bootstrap_resp = app
+            .clone()
+            .oneshot(bootstrap_req)
+            .await
+            .unwrap_or_else(|e| panic!("bootstrap request failed: {e}"));
+        assert_eq!(bootstrap_resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            bootstrap_resp
+                .headers()
+                .get(LOCATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("/ui")
+        );
+        assert!(bootstrap_resp.headers().get(SET_COOKIE).is_some());
+
+        let cookie_req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/ui")
+            .header(COOKIE, format!("{AGENT_AUTH_COOKIE_NAME}=test-token"))
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build cookie request: {e}"));
+        let cookie_resp = app
+            .oneshot(cookie_req)
+            .await
+            .unwrap_or_else(|e| panic!("cookie request failed: {e}"));
+        assert_eq!(cookie_resp.status(), StatusCode::OK);
     }
 
     #[test]

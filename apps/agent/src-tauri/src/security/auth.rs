@@ -1,12 +1,12 @@
 /// Constant-time equality for byte slices.
 pub fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     let max_len = left.len().max(right.len());
-    let mut diff = (left.len() ^ right.len()) as u8;
+    let mut diff = left.len() ^ right.len();
 
     for i in 0..max_len {
         let l = *left.get(i).unwrap_or(&0u8);
         let r = *right.get(i).unwrap_or(&0u8);
-        diff |= l ^ r;
+        diff |= usize::from(l ^ r);
     }
 
     diff == 0
@@ -32,5 +32,10 @@ mod tests {
         assert!(!constant_time_eq(b"abc", b"abd"));
         assert!(!constant_time_eq(b"abc", b"ab"));
         assert!(!constant_time_eq_token("token-a", "token-b"));
+    }
+
+    #[test]
+    fn constant_time_eq_rejects_large_length_mismatches() {
+        assert!(!constant_time_eq(&vec![0u8; 256], &vec![0u8; 512]));
     }
 }

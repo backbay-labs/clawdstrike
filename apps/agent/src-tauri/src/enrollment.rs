@@ -73,9 +73,7 @@ impl EnrollmentManager {
             }
         }
 
-        let result = self
-            .do_enroll(control_api_url, enrollment_token)
-            .await;
+        let result = self.do_enroll(control_api_url, enrollment_token).await;
 
         // `do_enroll` persists `enrollment_in_progress = false` on success.
         // On failure we clear and persist it here so crash-recovery state is accurate.
@@ -97,11 +95,22 @@ impl EnrollmentManager {
     ) -> Result<EnrollmentResult> {
         // Generate a new Ed25519 keypair.
         let keypair = hush_core::Keypair::generate();
+        let key_hex = keypair.to_hex();
         let public_key_hex = keypair.public_key().to_hex();
+        let previous_key_hex = crate::security::key_store::load_enrollment_key_hex()
+            .with_context(|| "Failed to read existing enrollment key before enrollment")?;
+
+        // Persist the new key before contacting the server to avoid post-response
+        // persistence failures leaving enrollment in a half-complete state.
+        crate::security::key_store::store_enrollment_key_hex(&key_hex)
+            .with_context(|| "Failed to persist enrollment key before enrollment request")?;
 
         let hostname = hostname_best_effort();
 
-        let enroll_url = format!("{}/api/v1/agents/enroll", control_api_url.trim_end_matches('/'));
+        let enroll_url = format!(
+            "{}/api/v1/agents/enroll",
+            control_api_url.trim_end_matches('/')
+        );
 
         let body = EnrollRequest {
             enrollment_token: enrollment_token.to_string(),
@@ -112,17 +121,30 @@ impl EnrollmentManager {
 
         tracing::info!(url = %enroll_url, "Sending enrollment request to Control API");
 
-        let response = self
-            .http_client
-            .post(&enroll_url)
-            .json(&body)
-            .send()
-            .await
-            .with_context(|| format!("Failed to reach Control API at {}", enroll_url))?;
+        let response = match self.http_client.post(&enroll_url).json(&body).send().await {
+            Ok(response) => response,
+            Err(err) => {
+                if let Err(restore_err) = restore_previous_enrollment_key(previous_key_hex.clone())
+                {
+                    tracing::warn!(
+                        error = %restore_err,
+                        "Failed to restore previous enrollment key after request failure"
+                    );
+                }
+                return Err(err)
+                    .with_context(|| format!("Failed to reach Control API at {}", enroll_url));
+            }
+        };
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            if let Err(restore_err) = restore_previous_enrollment_key(previous_key_hex.clone()) {
+                tracing::warn!(
+                    error = %restore_err,
+                    "Failed to restore previous enrollment key after enrollment rejection"
+                );
+            }
             anyhow::bail!("Enrollment failed with status {}: {}", status, body);
         }
 
@@ -130,11 +152,6 @@ impl EnrollmentManager {
             .json()
             .await
             .with_context(|| "Failed to parse enrollment response")?;
-
-        // Store the private key in keyring-backed storage.
-        let key_hex = keypair.to_hex();
-        crate::security::key_store::store_enrollment_key_hex(&key_hex)
-            .with_context(|| "Failed to store enrollment key in keyring-backed store")?;
 
         let legacy_key_path = legacy_agent_key_path();
         if legacy_key_path.exists() {
@@ -184,6 +201,17 @@ impl EnrollmentManager {
 
 fn legacy_agent_key_path() -> PathBuf {
     get_config_dir().join("agent.key")
+}
+
+fn restore_previous_enrollment_key(previous_key_hex: Option<String>) -> Result<()> {
+    if let Some(previous_key_hex) = previous_key_hex {
+        crate::security::key_store::store_enrollment_key_hex(previous_key_hex.trim())
+            .with_context(|| "Failed to restore previous enrollment key")?;
+    } else {
+        crate::security::key_store::delete_enrollment_key_hex()
+            .with_context(|| "Failed to clear newly stored enrollment key")?;
+    }
+    Ok(())
 }
 
 /// Load the enrollment private key hex from secure storage.

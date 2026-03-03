@@ -97,12 +97,36 @@ fn get_secret(user: &str) -> Result<Option<String>> {
     Ok(fallback_get(user))
 }
 
+fn delete_secret(user: &str) -> Result<()> {
+    fallback_remove(user);
+    let entry = keyring::Entry::new(KEYRING_SERVICE, user).map_err(|err| {
+        anyhow!(
+            "failed to initialize keyring entry for deletion for user {}: {}",
+            user,
+            err
+        )
+    })?;
+
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(anyhow!(
+            "failed to delete keyring secret for user {}: {}",
+            user,
+            err
+        )),
+    }
+}
+
 pub fn store_enrollment_key_hex(key_hex: &str) -> Result<()> {
     set_secret(ENROLLMENT_USER, key_hex)
 }
 
 pub fn load_enrollment_key_hex() -> Result<Option<String>> {
     get_secret(ENROLLMENT_USER)
+}
+
+pub fn delete_enrollment_key_hex() -> Result<()> {
+    delete_secret(ENROLLMENT_USER)
 }
 
 pub fn store_openclaw_private_key(device_id: &str, private_key_pem: &str) -> Result<()> {

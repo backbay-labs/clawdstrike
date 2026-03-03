@@ -17,7 +17,7 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -225,7 +225,7 @@ impl OpenClawManager {
     }
 
     pub async fn upsert_gateway(&self, input: GatewayUpsertRequest) -> Result<GatewayView> {
-        let validated_gateway_url = validate_gateway_url(&input.gateway_url)?;
+        let validated_gateway_url = validate_gateway_url(&input.gateway_url).await?;
         let gateway_id = input
             .id
             .clone()
@@ -1488,7 +1488,7 @@ fn normalize_secret_field(value: String) -> Option<String> {
     }
 }
 
-fn validate_gateway_url(raw: &str) -> Result<String> {
+async fn validate_gateway_url(raw: &str) -> Result<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         anyhow::bail!("gateway_url cannot be empty");
@@ -1505,18 +1505,46 @@ fn validate_gateway_url(raw: &str) -> Result<String> {
         .host_str()
         .ok_or_else(|| anyhow::anyhow!("gateway_url must include a host"))?;
     let host_lower = host.to_ascii_lowercase();
-    let parsed_ip = host_lower.parse::<IpAddr>().ok();
-    let is_loopback = host_lower == "localhost" || parsed_ip.is_some_and(|ip| ip.is_loopback());
+    let target_ips = if host_lower == "localhost" {
+        vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
+    } else if let Ok(parsed_ip) = host_lower.parse::<IpAddr>() {
+        vec![parsed_ip]
+    } else {
+        let port = parsed
+            .port_or_known_default()
+            .ok_or_else(|| anyhow::anyhow!("gateway_url must include a valid port"))?;
+        let mut resolved_ips = Vec::new();
+        let resolved = tokio::net::lookup_host((host, port))
+            .await
+            .with_context(|| format!("failed to resolve gateway host {host}:{port}"))?;
+        for addr in resolved {
+            resolved_ips.push(addr.ip());
+        }
+        resolved_ips
+    };
 
-    if scheme == "ws" && !is_loopback {
+    validate_gateway_target_ips(&scheme, &target_ips)?;
+
+    Ok(trimmed.to_string())
+}
+
+fn validate_gateway_target_ips(scheme: &str, target_ips: &[IpAddr]) -> Result<()> {
+    if target_ips.is_empty() {
+        anyhow::bail!("gateway_url host did not resolve to any addresses");
+    }
+
+    if scheme == "ws" && target_ips.iter().any(|ip| !ip.is_loopback()) {
         anyhow::bail!("non-loopback gateway_url values must use wss://");
     }
 
-    if !is_loopback && parsed_ip.is_some_and(is_private_or_link_local_ip) {
+    if target_ips
+        .iter()
+        .any(|ip| !ip.is_loopback() && is_private_or_link_local_ip(*ip))
+    {
         anyhow::bail!("private/link-local gateway_url addresses are not allowed");
     }
 
-    Ok(trimmed.to_string())
+    Ok(())
 }
 
 fn is_private_or_link_local_ip(ip: IpAddr) -> bool {
@@ -1674,6 +1702,50 @@ mod tests {
             normalize_secret_field("token-value".to_string()),
             Some("token-value".to_string())
         );
+    }
+
+    #[test]
+    fn gateway_target_ip_validation_requires_wss_for_public_targets() {
+        let err =
+            match validate_gateway_target_ips("ws", &[IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))])
+            {
+                Ok(_) => panic!("expected ws public target validation to fail"),
+                Err(err) => err,
+            };
+        assert!(err
+            .to_string()
+            .contains("non-loopback gateway_url values must use wss://"));
+    }
+
+    #[test]
+    fn gateway_target_ip_validation_rejects_private_targets() {
+        let err =
+            match validate_gateway_target_ips("wss", &[IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7))]) {
+                Ok(_) => panic!("expected private target validation to fail"),
+                Err(err) => err,
+            };
+        assert!(err
+            .to_string()
+            .contains("private/link-local gateway_url addresses are not allowed"));
+    }
+
+    #[test]
+    fn gateway_target_ip_validation_allows_loopback_targets() {
+        assert!(validate_gateway_target_ips("ws", &[IpAddr::V4(Ipv4Addr::LOCALHOST)]).is_ok());
+        assert!(
+            validate_gateway_target_ips("ws", &[IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)]).is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_gateway_url_rejects_private_ip_literal() {
+        let err = match validate_gateway_url("wss://10.0.0.5:443").await {
+            Ok(_) => panic!("expected private ip literal validation to fail"),
+            Err(err) => err,
+        };
+        assert!(err
+            .to_string()
+            .contains("private/link-local gateway_url addresses are not allowed"));
     }
 
     #[test]
