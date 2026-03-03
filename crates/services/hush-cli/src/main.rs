@@ -1236,7 +1236,7 @@ async fn main() {
         Err(err) => {
             let code = match err.kind() {
                 clap::error::ErrorKind::DisplayVersion => {
-                    ui::version_banner(&mut io::stderr());
+                    ui::version_banner(&mut io::stdout());
                     ExitCode::Ok
                 }
                 clap::error::ErrorKind::DisplayHelp => {
@@ -1496,7 +1496,14 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         },
 
         Commands::Hunt { command } => {
-            hunt::cmd_hunt(command, &remote_extends, no_color, stdout, stderr).await
+            hunt::cmd_hunt(
+                command,
+                &remote_extends,
+                no_color || std::env::var_os("NO_COLOR").is_some(),
+                stdout,
+                stderr,
+            )
+            .await
         }
 
         Commands::Init {
