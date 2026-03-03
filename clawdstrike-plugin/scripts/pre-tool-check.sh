@@ -12,7 +12,13 @@ CLAWDSTRIKE_HOOK_FAIL_OPEN="${CLAWDSTRIKE_HOOK_FAIL_OPEN:-0}"
 
 fail() {
   local reason="$1"
+  local remediation="${2:-}"
   echo "Clawdstrike hook error: ${reason}" >&2
+  if [ -n "$remediation" ]; then
+    echo "  Fix: ${remediation}" >&2
+  fi
+  echo "  Bypass: set CLAWDSTRIKE_HOOK_FAIL_OPEN=true to allow actions while debugging" >&2
+  echo "  Diagnose: run /clawdstrike:selftest for full status" >&2
   case "$CLAWDSTRIKE_HOOK_FAIL_OPEN" in
     1|true|True|TRUE|yes|Yes|YES)
       echo "CLAWDSTRIKE_HOOK_FAIL_OPEN is set; allowing action despite hook failure." >&2
@@ -146,19 +152,23 @@ build_payload() {
 }
 
 if ! PAYLOAD=$(build_payload 2>/dev/null); then
-  fail "failed to encode policy request payload"
+  fail "failed to encode policy request payload" \
+    "This is likely a bug; check the hook input JSON"
 fi
 
 if [ ! -f "$CLAWDSTRIKE_TOKEN_FILE" ]; then
-  fail "agent auth token file not found at $CLAWDSTRIKE_TOKEN_FILE"
+  fail "agent auth token file not found at $CLAWDSTRIKE_TOKEN_FILE" \
+    "Start the ClawdStrike Agent app, or set CLAWDSTRIKE_TOKEN_FILE to your token path"
 fi
 
 if ! CLAWDSTRIKE_TOKEN=$(cat "$CLAWDSTRIKE_TOKEN_FILE"); then
-  fail "failed to read agent auth token"
+  fail "failed to read agent auth token from $CLAWDSTRIKE_TOKEN_FILE" \
+    "Check file permissions on $CLAWDSTRIKE_TOKEN_FILE"
 fi
 
 if [ -z "$CLAWDSTRIKE_TOKEN" ]; then
-  fail "agent auth token is empty"
+  fail "agent auth token is empty" \
+    "Restart the ClawdStrike Agent app to regenerate the token"
 fi
 
 CHECK_URL="${CLAWDSTRIKE_ENDPOINT}/api/v1/agent/policy-check"
@@ -167,11 +177,13 @@ if ! RESPONSE=$(curl -sS --max-time 8 -X POST "$CHECK_URL" \
   -H "Authorization: Bearer ${CLAWDSTRIKE_TOKEN}" \
   -H "Content-Type: application/json" \
   --data "$PAYLOAD" 2>/dev/null); then
-  fail "policy-check request failed"
+  fail "policy-check request failed (hushd unreachable at ${CLAWDSTRIKE_ENDPOINT})" \
+    "Start hushd: clawdstrike serve, or start the ClawdStrike Agent app"
 fi
 
 if ! ALLOWED=$(echo "$RESPONSE" | jq -er '.allowed' 2>/dev/null); then
-  fail "policy-check returned malformed response"
+  fail "policy-check returned malformed response" \
+    "Check hushd health: curl -s ${CLAWDSTRIKE_ENDPOINT}/health"
 fi
 
 if [ "$ALLOWED" = "false" ]; then
@@ -180,7 +192,8 @@ if [ "$ALLOWED" = "false" ]; then
   # When the agent returns a well-formed deny due to daemon infrastructure errors,
   # treat it as a hook failure so CLAWDSTRIKE_HOOK_FAIL_OPEN can apply.
   if [[ "$GUARD" == hushd_* ]]; then
-    fail "policy daemon error (${GUARD})"
+    fail "policy daemon error (${GUARD})" \
+      "Start hushd: clawdstrike serve, or start the ClawdStrike Agent app"
   fi
 
   MESSAGE=$(echo "$RESPONSE" | jq -er '.message // "Action blocked by security policy"' 2>/dev/null || echo "Action blocked by security policy")

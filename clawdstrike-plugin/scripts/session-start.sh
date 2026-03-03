@@ -62,15 +62,50 @@ jq -cn \
   '{timestamp:$timestamp,session_id:$session_id,event:$event,hushd_status:$hushd_status,policy:$policy,guard_count:$guard_count}' \
   >> "$RECEIPT_FILE" 2>/dev/null || true
 
-# Build enforcement status line
-if [ "$HUSHD_STATUS" = "connected" ]; then
-  ENFORCEMENT_LINE="Enforcement: ACTIVE (hushd ${CLAWDSTRIKE_ENDPOINT})"
-else
-  ENFORCEMENT_LINE="Enforcement: DISCONNECTED (hushd unreachable at ${CLAWDSTRIKE_ENDPOINT})"
+# Check token file
+CLAWDSTRIKE_TOKEN_FILE="${CLAWDSTRIKE_TOKEN_FILE:-$HOME/.config/clawdstrike/agent-local-token}"
+TOKEN_STATUS="missing"
+if [ -f "$CLAWDSTRIKE_TOKEN_FILE" ]; then
+  if [ -r "$CLAWDSTRIKE_TOKEN_FILE" ] && [ -s "$CLAWDSTRIKE_TOKEN_FILE" ]; then
+    TOKEN_STATUS="ok"
+  else
+    TOKEN_STATUS="unreadable"
+  fi
+fi
+
+# Build doctor check — detect issues upfront
+ISSUES=""
+if [ "$HUSHD_STATUS" != "connected" ]; then
+  ISSUES="${ISSUES}WARNING: hushd is not running at ${CLAWDSTRIKE_ENDPOINT}
+  -> Start the ClawdStrike Agent app, or run: clawdstrike serve
+  -> Tool calls will be BLOCKED until hushd is available
+"
+fi
+if [ "$TOKEN_STATUS" = "missing" ]; then
+  ISSUES="${ISSUES}WARNING: Agent auth token missing at ${CLAWDSTRIKE_TOKEN_FILE}
+  -> Start the ClawdStrike Agent app (creates this file automatically)
+  -> Tool calls will be BLOCKED until the token is available
+"
+elif [ "$TOKEN_STATUS" = "unreadable" ]; then
+  ISSUES="${ISSUES}WARNING: Agent auth token unreadable at ${CLAWDSTRIKE_TOKEN_FILE}
+  -> Check file permissions: ls -la ${CLAWDSTRIKE_TOKEN_FILE}
+  -> Tool calls will be BLOCKED until the token is readable
+"
 fi
 
 # Build the additional context message
-CONTEXT="ClawdStrike Security Active
+if [ -n "$ISSUES" ]; then
+  CONTEXT="ClawdStrike Security - SETUP REQUIRED
+Session: ${SESSION_ID}
+
+${ISSUES}
+Bypass: export CLAWDSTRIKE_HOOK_FAIL_OPEN=true
+Diagnose: /clawdstrike:selftest"
+else
+  # Build enforcement status line
+  ENFORCEMENT_LINE="Enforcement: ACTIVE (hushd ${CLAWDSTRIKE_ENDPOINT})"
+
+  CONTEXT="ClawdStrike Security Active
 Session: ${SESSION_ID}
 Policy: ${POLICY_NAME} (${GUARD_COUNT} guards)
 ${ENFORCEMENT_LINE}
@@ -81,6 +116,7 @@ Available commands:
   /clawdstrike:posture - Assess security posture (A-F grade)
   /clawdstrike:policy  - Display active policy details
   /clawdstrike:tui     - Launch interactive TUI dashboard"
+fi
 
 # Output hookSpecificOutput JSON to stdout
 # Set CLAWDSTRIKE_SESSION_ID env var so subsequent hooks share the same session
