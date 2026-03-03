@@ -59,15 +59,20 @@ impl Verdict {
 }
 
 /// Render a Unicode box with a title and body lines.
+///
+/// Lines and titles that exceed the inner width are truncated with `…`.
+/// Terminal widths below 20 are clamped to 20 to avoid degenerate output.
 pub fn render_box(title: &str, lines: &[String], out: &mut dyn Write) {
-    let width = term_width().min(100);
+    let width = term_width().clamp(20, 100);
     let inner_width = width.saturating_sub(4); // account for "│ " and " │"
 
     let top_bar = "─".repeat(inner_width + 2);
     let _ = writeln!(out, "┌{}┐", top_bar);
 
-    let title_display = format!(" {} ", title.bold());
-    let title_plain_len = title.len() + 2;
+    // Truncate title if it exceeds inner_width (accounting for padding spaces)
+    let truncated_title = truncate_to_width(title, inner_width.saturating_sub(2));
+    let title_display = format!(" {} ", truncated_title.bold());
+    let title_plain_len = console::measure_text_width(&truncated_title) + 2;
     let padding = inner_width.saturating_sub(title_plain_len);
     let _ = writeln!(out, "│{}{}│", title_display, " ".repeat(padding));
 
@@ -76,12 +81,36 @@ pub fn render_box(title: &str, lines: &[String], out: &mut dyn Write) {
 
     for line in lines {
         let stripped_len = console::measure_text_width(line);
-        let pad = inner_width.saturating_sub(stripped_len);
-        let _ = writeln!(out, "│ {}{} │", line, " ".repeat(pad));
+        if stripped_len <= inner_width {
+            let pad = inner_width - stripped_len;
+            let _ = writeln!(out, "│ {}{} │", line, " ".repeat(pad));
+        } else {
+            // Truncate overlong lines to keep the box intact
+            let truncated = truncate_to_width(line, inner_width);
+            let tlen = console::measure_text_width(&truncated);
+            let pad = inner_width.saturating_sub(tlen);
+            let _ = writeln!(out, "│ {}{} │", truncated, " ".repeat(pad));
+        }
     }
 
     let bottom_bar = "─".repeat(inner_width + 2);
     let _ = writeln!(out, "└{}┘", bottom_bar);
+}
+
+/// Truncate a string (by visible characters) to fit within `max_width`,
+/// appending `…` if truncation occurs.
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    let visible_width = console::measure_text_width(s);
+    if visible_width <= max_width {
+        return s.to_string();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+    // For strings with ANSI codes, strip and re-truncate on plain text
+    let stripped = console::strip_ansi_codes(s);
+    let truncated: String = stripped.chars().take(max_width.saturating_sub(1)).collect();
+    format!("{}…", truncated)
 }
 
 /// Print a bold underlined section header.
@@ -217,7 +246,7 @@ pub fn new_table(headers: &[&str]) -> Table {
     table
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(term_width() as u16);
+        .set_width(term_width().min(u16::MAX as usize) as u16);
     table.set_header(headers);
     table
 }
@@ -254,10 +283,11 @@ pub fn count_fail(n: u64) -> String {
 
 /// Render a colored count string like "2 warnings".
 pub fn count_warn(n: u64) -> String {
+    let label = if n == 1 { "warning" } else { "warnings" };
     if n > 0 {
-        format!("{} warning(s)", n).yellow().to_string()
+        format!("{} {}", n, label).yellow().to_string()
     } else {
-        format!("{} warning(s)", n).to_string()
+        format!("{} {}", n, label).to_string()
     }
 }
 
@@ -286,7 +316,12 @@ mod tests {
     fn verdict_icon_no_color() {
         setup();
         assert_eq!(Verdict::Allowed.icon(), "✓");
+        assert_eq!(Verdict::Valid.icon(), "✓");
+        assert_eq!(Verdict::Pass.icon(), "✓");
         assert_eq!(Verdict::Blocked.icon(), "✗");
+        assert_eq!(Verdict::Invalid.icon(), "✗");
+        assert_eq!(Verdict::Fail.icon(), "✗");
+        assert_eq!(Verdict::Error.icon(), "✗");
         assert_eq!(Verdict::Warn.icon(), "⚠");
     }
 
@@ -378,10 +413,77 @@ mod tests {
     }
 
     #[test]
+    fn render_box_empty_lines() {
+        setup();
+        let mut out = Vec::new();
+        render_box("Empty", &[], &mut out);
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("Empty"));
+        assert!(text.contains('┌'));
+        assert!(text.contains('└'));
+    }
+
+    #[test]
+    fn render_box_long_line_truncated() {
+        setup();
+        let long = "x".repeat(200);
+        let mut out = Vec::new();
+        render_box("Title", &[long], &mut out);
+        let text = String::from_utf8(out).unwrap();
+        // The box should still be well-formed (closing border on every line)
+        for line in text.lines() {
+            if line.starts_with('│') {
+                assert!(
+                    line.ends_with('│'),
+                    "Box line missing closing border: {}",
+                    line
+                );
+            }
+        }
+        // Long content should be truncated with ellipsis
+        assert!(text.contains('…'));
+    }
+
+    #[test]
+    fn truncate_to_width_short_string() {
+        assert_eq!(truncate_to_width("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_to_width_exact() {
+        assert_eq!(truncate_to_width("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_to_width_long_string() {
+        let result = truncate_to_width("hello world", 5);
+        assert_eq!(result, "hell…");
+        assert_eq!(console::measure_text_width(&result), 5);
+    }
+
+    #[test]
+    fn truncate_to_width_zero() {
+        assert_eq!(truncate_to_width("hello", 0), "");
+    }
+
+    #[test]
+    fn banner_renders() {
+        setup();
+        let mut out = Vec::new();
+        banner(&mut out);
+        let text = String::from_utf8(out).unwrap();
+        // The ASCII art splits "Clawdstrike" across lines as figlet characters,
+        // so we check for a substring that appears in the bottom row.
+        assert!(text.contains("___|"));
+    }
+
+    #[test]
     fn count_helpers_no_color() {
         setup();
         assert!(count_pass(3u64).contains("3 passed"));
         assert!(count_fail(1u64).contains("1 failed"));
-        assert!(count_warn(0u64).contains("0 warning(s)"));
+        assert!(count_warn(0u64).contains("0 warnings"));
+        assert!(count_warn(1u64).contains("1 warning"));
+        assert!(!count_warn(1u64).contains("warnings"));
     }
 }

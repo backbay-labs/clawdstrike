@@ -20,6 +20,18 @@ const RULESETS: &[(&str, &str)] = &[
     ),
     ("permissive", "Minimal restrictions — audit-only mode"),
     ("cicd", "Designed for CI/CD pipeline environments"),
+    (
+        "remote-desktop",
+        "Controls for remote desktop / CUA sessions",
+    ),
+    (
+        "remote-desktop-permissive",
+        "Permissive remote desktop — audit-only mode",
+    ),
+    (
+        "remote-desktop-strict",
+        "Strict remote desktop — maximum restrictions",
+    ),
 ];
 
 pub struct InitArgs {

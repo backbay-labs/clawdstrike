@@ -45,10 +45,10 @@ hunt-scan.workspace = true
 hunt-query.workspace = true
 hunt-correlate.workspace = true
 colored.workspace = true
-comfy-table = "7"
-indicatif = "0.17"
-dialoguer = "0.11"
-console = "0.15"
+comfy-table.workspace = true
+indicatif.workspace = true
+dialoguer.workspace = true
+console.workspace = true
 
 [features]
 default = ["rego-runtime", "wasm-plugin-runtime"]

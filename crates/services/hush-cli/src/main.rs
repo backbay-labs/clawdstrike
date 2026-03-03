@@ -1225,6 +1225,12 @@ enum HuntCommands {
 
 #[tokio::main]
 async fn main() {
+    // Initialize color early so --version banner respects NO_COLOR env.
+    // The --no-color flag is handled after full parse succeeds below.
+    if std::env::var_os("NO_COLOR").is_some() {
+        colored::control::set_override(false);
+    }
+
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {
