@@ -14,20 +14,16 @@ Runtime security enforcement for AI coding agents. This plugin integrates ClawdS
 
 ## Installation
 
-### From the marketplace (recommended)
+### From the Cursor Marketplace
 
-```shell
-# Add the ClawdStrike marketplace
-/plugin marketplace add backbay-labs/clawdstrike
-
-# Install the plugin
-/plugin install clawdstrike@clawdstrike
-```
+> **Coming soon.** The plugin has been submitted to the [Cursor Marketplace](https://cursor.com/marketplace) and is pending review. Once approved, it will be installable directly from Cursor Settings → Plugins.
 
 ### From a local clone
 
 ```bash
-cursor --plugin-dir ./cursor-plugin
+git clone https://github.com/backbay-labs/clawdstrike.git
+cd clawdstrike
+# Open Cursor Settings → Plugins → Install from folder → select cursor-plugin/
 ```
 
 ## Quick Reference
