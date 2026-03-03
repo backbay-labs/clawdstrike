@@ -4,9 +4,8 @@ User-facing product applications.
 
 Current apps:
 
-1. `apps/desktop/` - Tauri desktop app.
-2. `apps/agent/` - Tauri agent app.
-3. `apps/cloud-dashboard/` - web dashboard app.
+1. `apps/agent/` - Tauri agent app.
+2. `apps/cloud-dashboard/` - web dashboard app.
 
 Ownership and maturity:
 
