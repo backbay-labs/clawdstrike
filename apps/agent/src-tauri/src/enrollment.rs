@@ -183,6 +183,7 @@ impl EnrollmentManager {
             settings.nats.token = Some(resp.nats_token);
             settings.nats.nats_account = Some(resp.nats_account);
             settings.nats.subject_prefix = Some(resp.nats_subject_prefix);
+            settings.nats.require_signed_approval_responses = true;
             settings.nats.approval_response_trusted_issuer = Some(trusted_issuer);
             settings
                 .save()

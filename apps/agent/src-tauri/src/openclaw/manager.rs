@@ -1159,11 +1159,17 @@ fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDevice
         }
         match crate::security::key_store::store_openclaw_private_key(&derived_device_id, trimmed) {
             Ok(()) => {
-                persist_openclaw_identity_metadata(
+                if let Err(err) = persist_openclaw_identity_metadata(
                     path,
                     &derived_device_id,
                     parsed.public_key_pem.trim(),
-                )?;
+                ) {
+                    tracing::warn!(
+                        error = %err,
+                        device_id = %derived_device_id,
+                        "Failed to persist OpenClaw identity metadata after key migration; keeping current identity file"
+                    );
+                }
             }
             Err(err) => {
                 tracing::warn!(
