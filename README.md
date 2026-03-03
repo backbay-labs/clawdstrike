@@ -713,26 +713,26 @@ flowchart TB
         PROV[External NATS Provisioner]
     end
 
-    DASH <--> API
-    API <--> DB
-    API <--> PROV
+    DASH <--> API;
+    API <--> DB;
+    API <--> PROV;
 
-    A1 -->|HTTPS enrollment| API
-    A2 -->|HTTPS enrollment| API
-    AN -->|HTTPS enrollment| API
-    API -->|NATS creds + subject prefix| A1
-    API -->|NATS creds + subject prefix| A2
-    API -->|NATS creds + subject prefix| AN
+    A1 -->|https enrollment| API;
+    A2 -->|https enrollment| API;
+    AN -->|https enrollment| API;
+    API -->|nats creds + subject prefix| A1;
+    API -->|nats creds + subject prefix| A2;
+    API -->|nats creds + subject prefix| AN;
 
-    API -->|policy publish/update| KV
-    KV -->|policy sync (KV watch)| A1
-    KV -->|policy sync (KV watch)| A2
-    KV -->|policy sync (KV watch)| AN
+    API -->|policy publish update| KV;
+    KV -->|policy sync kv watch| A1;
+    KV -->|policy sync kv watch| A2;
+    KV -->|policy sync kv watch| AN;
 
-    API -->|set_posture / reload / kill| CMD
-    CMD -->|request/reply ack| A1
-    CMD -->|request/reply ack| A2
-    CMD -->|request/reply ack| AN
+    API -->|set posture reload kill| CMD;
+    CMD -->|request reply ack| A1;
+    CMD -->|request reply ack| A2;
+    CMD -->|request reply ack| AN;
 ```
 
 ### 2. Telemetry Plane
