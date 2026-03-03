@@ -33,11 +33,15 @@ if [ -z "${MCP_SERVER_NAME:-}" ] && [ -z "${TOOL_NAME:-}" ]; then
   exit 0
 fi
 
-# Build target as server/tool
-TARGET="${MCP_SERVER_NAME:-unknown}/${TOOL_NAME:-unknown}"
+# Policy check uses raw tool name (McpToolGuard matches against tool names,
+# not the prefixed server/tool format)
+POLICY_TARGET="${TOOL_NAME:-unknown}"
 
-# POST to hushd with action_type=mcp_tool
-post_policy_check "mcp_tool" "$TARGET"
+# Display target includes server for receipt context
+DISPLAY_TARGET="${MCP_SERVER_NAME:-unknown}/${TOOL_NAME:-unknown}"
+
+# POST to hushd with action_type=mcp_tool, forwarding tool_arguments
+post_policy_check "mcp_tool" "$POLICY_TARGET" "$TOOL_ARGUMENTS"
 
 if [ "$ALLOWED" = "false" ]; then
   GUARD=$(echo "$RESPONSE" | jq -er '.guard // "unknown"' 2>/dev/null || echo "unknown")
@@ -50,7 +54,7 @@ if [ "$ALLOWED" = "false" ]; then
     --arg session_id "$SESSION_ID" \
     --arg hook_event "beforeMCPExecution" \
     --arg action_type "mcp_tool" \
-    --arg target "$TARGET" \
+    --arg target "$DISPLAY_TARGET" \
     --arg mcp_server "$MCP_SERVER_NAME" \
     --arg tool_name "${TOOL_NAME:-}" \
     --arg outcome "deny" \
@@ -60,7 +64,7 @@ if [ "$ALLOWED" = "false" ]; then
 
   DENY_MSG="BLOCKED by ClawdStrike (${GUARD}): ${MESSAGE}"
   echo "$DENY_MSG" >&2
-  deny_response "$DENY_MSG" "MCP tool '${TARGET}' was blocked by ClawdStrike guard '${GUARD}': ${MESSAGE}"
+  deny_response "$DENY_MSG" "MCP tool '${DISPLAY_TARGET}' was blocked by ClawdStrike guard '${GUARD}': ${MESSAGE}"
 fi
 
 exit 0
