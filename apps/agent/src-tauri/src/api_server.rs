@@ -2052,6 +2052,8 @@ fn map_openclaw_error(err: anyhow::Error) -> (StatusCode, String) {
     if message.contains("gateway_url")
         || message.contains("wss://")
         || message.contains("private/link-local")
+        || message.contains("failed to resolve gateway host")
+        || message.contains("pinned allowlist")
     {
         return (StatusCode::BAD_REQUEST, message);
     }
@@ -2244,6 +2246,14 @@ mod tests {
                 .unwrap_or_else(|_| panic!("failed to build host header")),
         );
         assert!(!is_local_host_header(&headers));
+    }
+
+    #[test]
+    fn map_openclaw_error_classifies_dns_resolution_failure_as_bad_request() {
+        let err = anyhow::anyhow!("failed to resolve gateway host bad.example:443");
+        let (status, message) = map_openclaw_error(err);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(message.contains("failed to resolve gateway host"));
     }
 
     #[tokio::test]

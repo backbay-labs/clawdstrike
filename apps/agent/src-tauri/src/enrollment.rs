@@ -234,17 +234,31 @@ async fn restore_previous_settings_snapshot(
 ///
 /// If a legacy on-disk `agent.key` exists, migrate it into keyring-backed storage.
 pub fn load_enrollment_key_hex() -> Result<Option<String>> {
-    if let Some(stored) = crate::security::key_store::load_enrollment_key_hex()
-        .with_context(|| "Failed to load enrollment key from keyring-backed store")?
-    {
-        let trimmed = stored.trim();
-        if !trimmed.is_empty() {
-            return Ok(Some(trimmed.to_string()));
+    let keyring_result = crate::security::key_store::load_enrollment_key_hex();
+    let mut keyring_error: Option<anyhow::Error> = None;
+    match keyring_result {
+        Ok(Some(stored)) => {
+            let trimmed = stored.trim();
+            if !trimmed.is_empty() {
+                return Ok(Some(trimmed.to_string()));
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "Failed to load enrollment key from keyring-backed store; trying legacy key file"
+            );
+            keyring_error = Some(err);
         }
     }
 
     let legacy_path = legacy_agent_key_path();
     if !legacy_path.exists() {
+        if let Some(err) = keyring_error {
+            return Err(err)
+                .with_context(|| "Failed to load enrollment key from keyring-backed store");
+        }
         return Ok(None);
     }
 
@@ -259,8 +273,15 @@ pub fn load_enrollment_key_hex() -> Result<Option<String>> {
         return Ok(None);
     }
 
-    crate::security::key_store::store_enrollment_key_hex(&legacy_trimmed)
-        .with_context(|| "Failed to migrate legacy enrollment key into keyring-backed store")?;
+    if let Err(err) = crate::security::key_store::store_enrollment_key_hex(&legacy_trimmed) {
+        tracing::warn!(
+            error = %err,
+            path = ?legacy_path,
+            "Failed to migrate legacy enrollment key into keyring-backed store; using legacy file"
+        );
+        return Ok(Some(legacy_trimmed));
+    }
+
     std::fs::remove_file(&legacy_path).with_context(|| {
         format!(
             "Failed to remove migrated legacy enrollment key file {:?}",

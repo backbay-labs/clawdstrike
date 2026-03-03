@@ -1157,14 +1157,22 @@ fn load_openclaw_device_identity_from_path(path: &Path) -> Result<OpenClawDevice
         if trimmed.is_empty() {
             anyhow::bail!("OpenClaw identity private key is empty in {:?}", path);
         }
-        crate::security::key_store::store_openclaw_private_key(&derived_device_id, trimmed)
-            .with_context(|| {
-                format!(
-                    "failed to persist OpenClaw private key in keyring-backed storage for {}",
-                    derived_device_id
-                )
-            })?;
-        persist_openclaw_identity_metadata(path, &derived_device_id, parsed.public_key_pem.trim())?;
+        match crate::security::key_store::store_openclaw_private_key(&derived_device_id, trimmed) {
+            Ok(()) => {
+                persist_openclaw_identity_metadata(
+                    path,
+                    &derived_device_id,
+                    parsed.public_key_pem.trim(),
+                )?;
+            }
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    device_id = %derived_device_id,
+                    "Failed to migrate OpenClaw private key to keyring-backed storage; keeping in-file key material"
+                );
+            }
+        }
         trimmed.to_string()
     } else {
         crate::security::key_store::load_openclaw_private_key(&derived_device_id)
@@ -1603,18 +1611,30 @@ fn validate_gateway_target_ips(scheme: &str, target_ips: &[IpAddr]) -> Result<()
         anyhow::bail!("gateway_url host did not resolve to any addresses");
     }
 
-    if scheme == "ws" && target_ips.iter().any(|ip| !ip.is_loopback()) {
+    if scheme == "ws" && target_ips.iter().any(|ip| !is_loopback_equivalent_ip(*ip)) {
         anyhow::bail!("non-loopback gateway_url values must use wss://");
     }
 
     if target_ips
         .iter()
-        .any(|ip| !ip.is_loopback() && is_private_or_link_local_ip(*ip))
+        .any(|ip| !is_loopback_equivalent_ip(*ip) && is_private_or_link_local_ip(*ip))
     {
         anyhow::bail!("private/link-local gateway_url addresses are not allowed");
     }
 
     Ok(())
+}
+
+fn is_loopback_equivalent_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_loopback(),
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|mapped| mapped.is_loopback())
+        }
+    }
 }
 
 fn is_private_or_link_local_ip(ip: IpAddr) -> bool {
@@ -1623,6 +1643,12 @@ fn is_private_or_link_local_ip(ip: IpAddr) -> bool {
             v4.is_private() || v4.is_link_local() || v4.is_broadcast() || v4.is_unspecified()
         }
         IpAddr::V6(v6) => {
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return mapped.is_private()
+                    || mapped.is_link_local()
+                    || mapped.is_broadcast()
+                    || mapped.is_unspecified();
+            }
             let segment0 = v6.segments()[0];
             let unique_local = (segment0 & 0xfe00) == 0xfc00; // fc00::/7
             let link_local = (segment0 & 0xffc0) == 0xfe80; // fe80::/10
@@ -1794,6 +1820,22 @@ mod tests {
                 Ok(_) => panic!("expected private target validation to fail"),
                 Err(err) => err,
             };
+        assert!(err
+            .to_string()
+            .contains("private/link-local gateway_url addresses are not allowed"));
+    }
+
+    #[test]
+    fn gateway_target_ip_validation_rejects_ipv4_mapped_private_targets() {
+        let mapped_private = IpAddr::V6(
+            "::ffff:10.0.0.7"
+                .parse::<std::net::Ipv6Addr>()
+                .unwrap_or_else(|_| panic!("failed to parse mapped private ipv6 literal")),
+        );
+        let err = match validate_gateway_target_ips("wss", &[mapped_private]) {
+            Ok(_) => panic!("expected mapped private target validation to fail"),
+            Err(err) => err,
+        };
         assert!(err
             .to_string()
             .contains("private/link-local gateway_url addresses are not allowed"));
