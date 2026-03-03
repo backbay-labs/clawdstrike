@@ -129,7 +129,7 @@ flowchart LR
 
 ---
 
-> **Alpha software.** APIs and import paths may change between releases.
+> **Beta software.** Public APIs and import paths are expected to be stable; behavior and defaults may still evolve before 1.0. Not yet production-hardened for large-scale deployments.
 
 ## Quick Start
 
