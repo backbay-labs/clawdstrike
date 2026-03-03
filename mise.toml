@@ -4,10 +4,9 @@ node = "24"
 python = "3.12"
 
 [tasks.check]
-description = "Run cargo check on workspace and Tauri app crates"
+description = "Run cargo check on workspace and the agent Tauri crate"
 run = """
 cargo check --workspace
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
@@ -36,20 +35,18 @@ description = "Build documentation"
 run = "cargo doc --no-deps --all-features"
 
 [tasks."test:rust"]
-description = "Rust workspace tests and app crate checks"
+description = "Rust workspace tests and agent Tauri crate checks"
 run = """
 cargo test --workspace
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
 [tasks."test:apps"]
-description = "App checks for control console and Tauri backends"
+description = "App checks for control console and agent Tauri backend"
 run = """
 npm --prefix apps/control-console ci
 npm --prefix apps/control-console run typecheck
 npm --prefix apps/control-console run build
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
@@ -99,7 +96,6 @@ run = """
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 bash scripts/path-lint.sh
 bash scripts/move-validation.sh

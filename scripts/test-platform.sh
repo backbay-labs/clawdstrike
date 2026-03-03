@@ -40,7 +40,6 @@ bold "Rust workspace"
 cargo test --workspace
 
 bold "Rust Tauri crates"
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 
 bold "Build hush CLI (for TS e2e)"

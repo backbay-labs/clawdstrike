@@ -190,26 +190,8 @@ jobs:
             ${{ runner.os }}-cargo-tauri-
             ${{ runner.os }}-cargo-
 
-      - name: Check desktop Tauri crate
-        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
-
       - name: Check agent Tauri crate
         run: cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
-
-  desktop-frontend:
-    name: Desktop Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.1.24"
-      - name: Install deps
-        working-directory: apps/desktop
-        run: bun install --frozen-lockfile
-      - name: TypeScript typecheck
-        working-directory: apps/desktop
-        run: bun run typecheck
 
   control-console:
     name: Control Console
@@ -435,7 +417,6 @@ jobs:
           # Exclude standalone Rust crates outside that workspace and test-only
           # Rust sources that do not emit stable LCOV entries in this job.
           grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
-            | grep -v '^apps/desktop/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
