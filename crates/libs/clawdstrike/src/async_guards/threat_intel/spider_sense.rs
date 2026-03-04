@@ -347,17 +347,23 @@ impl SpiderSensePolicyConfig {
             present_fields.insert("async".to_string());
         }
 
-        // Heuristic merge cannot generally distinguish serde-default
-        // enabled=true from explicit enabled=true. Preserve fail-safe behavior
-        // (no implicit re-enable), but allow a programmatic toggle-only child
-        // to explicitly enable a disabled base.
+        // Heuristic merge without source-presence metadata:
+        // - preserve explicit disables (`enabled=false`)
+        // - allow explicit programmatic enables (`enabled=true`) when the
+        //   child is either a toggle-only override or carries other
+        //   non-default overrides.
         let explicit_programmatic_enable_toggle = child.enabled && !self.enabled && {
             let mut toggle_only = Self::default();
             toggle_only.enabled = true;
             child == &toggle_only
         };
+        let explicit_programmatic_enable_with_overrides =
+            child.enabled && !self.enabled && !present_fields.is_empty();
 
-        if !child.enabled || explicit_programmatic_enable_toggle {
+        if !child.enabled
+            || explicit_programmatic_enable_toggle
+            || explicit_programmatic_enable_with_overrides
+        {
             present_fields.insert("enabled".to_string());
         }
 
@@ -1695,7 +1701,7 @@ fn resolve_pattern_db_path(cfg: &SpiderSensePolicyConfig) -> Result<String, Stri
 
     if has_integrity_fields {
         let trust_store_path = resolve_path_relative(
-            path,
+            "",
             cfg.pattern_db_trust_store_path
                 .as_deref()
                 .unwrap_or_default(),
@@ -2075,6 +2081,23 @@ mod tests {
     }
 
     #[test]
+    fn spider_sense_policy_merge_with_allows_programmatic_enable_with_other_overrides() {
+        let mut base = test_cfg();
+        base.enabled = false;
+        base.similarity_threshold = 0.84;
+        let mut child = SpiderSensePolicyConfig::default();
+        child.enabled = true;
+        child.similarity_threshold = 0.91;
+
+        let merged = base.merge_with(&child);
+        assert!(
+            merged.enabled,
+            "enabled=true plus other non-default overrides should enable in heuristic mode"
+        );
+        assert_eq!(merged.similarity_threshold, 0.91);
+    }
+
+    #[test]
     fn spider_sense_policy_merge_with_present_fields_preserves_base_when_enabled_absent() {
         let mut base = test_cfg();
         base.enabled = false;
@@ -2099,7 +2122,7 @@ mod tests {
     }
 
     #[test]
-    fn spider_sense_policy_merge_with_preserves_base_when_child_partial_serde_defaults() {
+    fn spider_sense_policy_merge_with_enables_when_child_sets_true_with_overrides() {
         let mut base = test_cfg();
         base.enabled = false;
         base.similarity_threshold = 0.84;
@@ -2110,8 +2133,8 @@ mod tests {
 
         let merged = base.merge_with(&child);
         assert!(
-            !merged.enabled,
-            "heuristic merge should not auto-enable from serde defaults"
+            merged.enabled,
+            "heuristic merge treats enabled=true plus non-default overrides as explicit enable"
         );
         assert_eq!(
             merged.similarity_threshold, 0.91,
@@ -2654,6 +2677,63 @@ mod tests {
 
         let resolved = resolve_pattern_db_path(&cfg).expect("resolve direct db path");
         assert_eq!(resolved, cfg.pattern_db_path);
+    }
+
+    #[test]
+    fn resolve_pattern_db_path_direct_relative_trust_store_is_not_anchored_to_db_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pattern_db_path = dir.path().join("db.json");
+        let pattern_db_json = r#"[
+  {
+    "id": "p1",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "ignore previous",
+    "embedding": [1.0, 0.0, 0.0]
+  }
+]"#;
+        std::fs::write(&pattern_db_path, pattern_db_json).expect("write pattern db");
+
+        let checksum = sha256(pattern_db_json.as_bytes()).to_hex();
+        let keypair = Keypair::generate();
+        let key_id = "rotation-key-1";
+        let signature = keypair
+            .sign(format!("spider_sense_db:v1:direct-v1:{checksum}").as_bytes())
+            .to_hex();
+
+        // Place a valid trust store next to the DB file, but configure a
+        // relative trust-store path. Direct DB integrity loading should no
+        // longer resolve that relative path against `pattern_db_path`.
+        let trust_store_path_next_to_db = dir.path().join("relative-db-trust-store.json");
+        std::fs::write(
+            &trust_store_path_next_to_db,
+            serde_json::json!({
+                "keys": [
+                    {
+                        "key_id": key_id,
+                        "public_key": keypair.public_key().to_hex(),
+                        "status": "active"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("write trust store");
+
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path = pattern_db_path.to_string_lossy().to_string();
+        cfg.pattern_db_version = Some("direct-v1".to_string());
+        cfg.pattern_db_checksum = Some(checksum);
+        cfg.pattern_db_signature = Some(signature);
+        cfg.pattern_db_signature_key_id = Some(key_id.to_string());
+        cfg.pattern_db_trust_store_path = Some("relative-db-trust-store.json".to_string());
+
+        let err = resolve_pattern_db_path(&cfg)
+            .expect_err("relative trust store should not resolve from DB directory");
+        assert!(
+            err.contains("load trust store") && err.contains("relative-db-trust-store.json"),
+            "expected relative trust-store read failure, got: {err}"
+        );
     }
 
     #[test]
