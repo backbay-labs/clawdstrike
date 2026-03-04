@@ -567,6 +567,59 @@ describe("spider-sense guard", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("allows custom trust-store key IDs", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "spider-sense-ts-trust-custom-"));
+    const dbPath = path.join(dir, "patterns.json");
+    const trustStorePath = path.join(dir, "trust-store.json");
+    const dbJson = JSON.stringify([
+      {
+        id: "p1",
+        category: "prompt_injection",
+        stage: "perception",
+        label: "ignore previous",
+        embedding: [1.0, 0.0, 0.0],
+      },
+    ]);
+    await writeFile(dbPath, dbJson, "utf8");
+    const checksum = createHash("sha256").update(dbJson).digest("hex");
+
+    const keypair = await generateKeypair();
+    const publicKeyHex = toHex(keypair.publicKey);
+    const keyId = "external-kid-01";
+    const message = new TextEncoder().encode(`spider_sense_db:v1:test-v1:${checksum}`);
+    const signature = await signMessage(message, keypair.privateKey);
+
+    await writeFile(
+      trustStorePath,
+      JSON.stringify({
+        keys: [
+          {
+            key_id: keyId,
+            public_key: publicKeyHex,
+            status: "active",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const guard = new SpiderSenseGuard({
+      patternDbPath: dbPath,
+      patternDbVersion: "test-v1",
+      patternDbChecksum: checksum,
+      patternDbSignature: toHex(signature),
+      patternDbSignatureKeyId: keyId,
+      patternDbTrustStorePath: trustStorePath,
+    });
+
+    const result = await guard.check(
+      GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] }),
+      ctx,
+    );
+    expect(result.allowed).toBe(false);
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("supports signed pattern DB manifests for trust-store metadata", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "spider-sense-ts-manifest-"));
     const dbPath = path.join(dir, "patterns.json");
@@ -758,15 +811,37 @@ describe("spider-sense guard", () => {
     expect(result.details?.fail_mode).toBe("allow");
   });
 
-  it("requires deep-path prompt template id/version", () => {
-    expect(
-      () =>
-        new SpiderSenseGuard({
-          patterns: testPatterns,
-          llmApiUrl: "https://api.openai.com/v1/chat/completions",
-          llmApiKey: "llm-key",
-        }),
-    ).toThrow(/llm_prompt_template_id and llm_prompt_template_version/i);
+  it("allows legacy deep-path config without prompt template id/version", async () => {
+    const guard = new SpiderSenseGuard({
+      patterns: testPatterns,
+      similarityThreshold: 0.5,
+      ambiguityBand: 0.1,
+      llmApiUrl: "https://api.openai.com/v1/chat/completions",
+      llmApiKey: "llm-key",
+      deepPathFetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    verdict: "deny",
+                    reason: "legacy template path",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    const result = await guard.check(
+      GuardAction.custom("embedding_check", { embedding: [0.577, 0.577, 0.577] }),
+      ctx,
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.details?.analysis).toBe("deep_path");
   });
 
   it("rejects unknown deep-path prompt templates", () => {

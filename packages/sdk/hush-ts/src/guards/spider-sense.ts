@@ -696,31 +696,30 @@ function parseDeepPathConfig(
   if (!hasUrl || !hasKey) {
     throw new Error("spider_sense: llm_api_url and llm_api_key must both be set when deep path is configured");
   }
-  if (!hasTemplateId || !hasTemplateVersion) {
-    throw new Error(
-      "spider_sense: llm_prompt_template_id and llm_prompt_template_version are required when deep path is configured",
-    );
-  }
 
   const parsed = new URL(url);
   if (!parsed.protocol || !parsed.host) {
     throw new Error("spider_sense: llm_api_url must be absolute and include host");
   }
 
-  const templateKey = deepPathPromptTemplateKey(templateId, templateVersion);
-  const renderer = DEEP_PATH_PROMPT_TEMPLATES.get(templateKey);
-  if (!renderer) {
-    throw new Error(
-      `spider_sense: unsupported llm prompt template "${templateId}" version "${templateVersion}"`,
-    );
+  let renderer = defaultPromptTemplate;
+  if (hasTemplateId && hasTemplateVersion) {
+    const templateKey = deepPathPromptTemplateKey(templateId, templateVersion);
+    const selected = DEEP_PATH_PROMPT_TEMPLATES.get(templateKey);
+    if (!selected) {
+      throw new Error(
+        `spider_sense: unsupported llm prompt template "${templateId}" version "${templateVersion}"`,
+      );
+    }
+    renderer = selected;
+    out.templateId = templateId;
+    out.templateVersion = templateVersion;
   }
 
   out.enabled = true;
   out.apiUrl = url;
   out.apiKey = key;
   out.provider = parseLlmProviderFromUrl(url);
-  out.templateId = templateId;
-  out.templateVersion = templateVersion;
   out.templateRenderer = renderer;
   out.model = hasModel
     ? model
@@ -783,9 +782,10 @@ function normalizeTrustedKey(entry: SpiderSenseTrustedKeyConfig): SpiderSenseTru
   }
 
   const derived = deriveKeyId(publicKey);
-  const keyId = normalizeHex(entry.key_id ?? derived);
-  if (keyId !== derived) {
-    throw new Error(`trusted key_id "${keyId}" does not match derived key_id "${derived}"`);
+  const keyIdRaw = (entry.key_id ?? "").trim();
+  const keyId = keyIdRaw ? normalizeHex(keyIdRaw) : derived;
+  if (!keyId) {
+    throw new Error("trust store entry is missing key_id");
   }
 
   const statusRaw = (entry.status ?? "").trim().toLowerCase();
