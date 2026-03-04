@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -175,6 +175,12 @@ describe.skipIf(!wasmAvailable)("spider-sense detection", () => {
 });
 
 describe("spider-sense guard", () => {
+  it("keeps sdk bundled s2bench pattern DB in sync with canonical ruleset source", async () => {
+    const canonicalPath = path.join(REPO_ROOT, "rulesets/patterns/s2bench-v1.json");
+    const bundledPath = path.join(REPO_ROOT, "packages/sdk/hush-ts/src/guards/patterns/s2bench-v1.json");
+    expect((await readFile(bundledPath, "utf8")).trim()).toBe((await readFile(canonicalPath, "utf8")).trim());
+  });
+
   const ctx = new GuardContext();
 
   function makeGuard(): SpiderSenseGuard {

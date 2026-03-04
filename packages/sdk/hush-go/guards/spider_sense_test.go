@@ -1,6 +1,7 @@
 package guards
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -42,6 +43,25 @@ func loadSpiderSenseManifestTamperVectors(t *testing.T) []spiderSenseManifestTam
 		t.Fatal("manifest tamper vectors must be non-empty")
 	}
 	return vectors
+}
+
+func TestSpiderSenseBuiltinPatternDBMatchesRulesetSource(t *testing.T) {
+	embedded, err := spiderSensePatternFS.ReadFile("patterns/s2bench-v1.json")
+	if err != nil {
+		t.Fatalf("read embedded s2bench pattern DB: %v", err)
+	}
+
+	canonicalPath := filepath.Clean(
+		filepath.Join("..", "..", "..", "..", "rulesets", "patterns", "s2bench-v1.json"),
+	)
+	canonical, err := os.ReadFile(canonicalPath)
+	if err != nil {
+		t.Fatalf("read canonical ruleset pattern DB: %v", err)
+	}
+
+	if !bytes.Equal(bytes.TrimSpace(embedded), bytes.TrimSpace(canonical)) {
+		t.Fatalf("embedded go spider-sense pattern DB diverged from rulesets/patterns/s2bench-v1.json")
+	}
 }
 
 // --- CosineSimilarityF32 ---
