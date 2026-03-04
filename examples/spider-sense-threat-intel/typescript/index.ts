@@ -206,14 +206,6 @@ function combinedRecommendation(decisionStatus: string, driftState: DriftState):
   return "allow";
 }
 
-function toNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function toString(value: unknown, fallback: string): string {
-  return typeof value === "string" ? value : fallback;
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>

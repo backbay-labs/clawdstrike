@@ -545,7 +545,6 @@ struct LlmVerdict {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct PatternDbManifest {
     #[serde(default)]
     pattern_db_path: Option<String>,
@@ -1192,6 +1191,36 @@ mod tests {
         assert!(
             result.is_ok(),
             "manifest + prompt template schema fields should parse/validate"
+        );
+    }
+
+    #[test]
+    fn resolve_pattern_db_path_accepts_manifest_with_extra_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let manifest_path = dir.path().join("pattern_db.manifest.json");
+        std::fs::write(
+            &manifest_path,
+            r#"{
+  "pattern_db_path": "patterns/db.json",
+  "pattern_db_version": "s2intel-v1",
+  "pattern_db_checksum": "abc123",
+  "pattern_db_signature": "deadbeef",
+  "manifest_signature": "feedface",
+  "not_before": "2025-01-01T00:00:00Z",
+  "not_after": "2030-01-01T00:00:00Z"
+}"#,
+        )
+        .expect("write manifest");
+
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path.clear();
+        cfg.pattern_db_manifest_path = Some(manifest_path.to_string_lossy().to_string());
+        cfg.pattern_db_manifest_trust_store_path = Some("manifest-roots.json".to_string());
+
+        let resolved = resolve_pattern_db_path(&cfg).expect("resolve manifest path");
+        assert!(
+            resolved.ends_with("patterns/db.json"),
+            "resolved path should preserve manifest-relative DB path"
         );
     }
 }
