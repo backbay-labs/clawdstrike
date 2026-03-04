@@ -2724,7 +2724,11 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
                 cmd.arg("--config").arg(&config);
             }
 
-            let _ = writeln!(stdout, "Starting hushd on {}:{}...", bind, port);
+            let _ = writeln!(
+                stdout,
+                "Starting clawdstrike daemon on {}:{}...",
+                bind, port
+            );
 
             match cmd.spawn() {
                 Ok(_) => {
