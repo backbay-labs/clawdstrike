@@ -11,8 +11,8 @@ func boolPtr(v bool) *bool { return &v }
 
 func TestLoadAllBuiltinRulesets(t *testing.T) {
 	names := BuiltinNames()
-	if len(names) != 5 {
-		t.Fatalf("expected 5 builtin rulesets, got %d", len(names))
+	if len(names) != 6 {
+		t.Fatalf("expected 6 builtin rulesets, got %d", len(names))
 	}
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
@@ -30,6 +30,83 @@ func TestLoadAllBuiltinRulesets(t *testing.T) {
 				t.Error("expected non-empty Version")
 			}
 		})
+	}
+}
+
+func TestSpiderSenseCanonicalConfigParses(t *testing.T) {
+	yamlData := []byte(`
+version: "1.3.0"
+name: SpiderSenseParse
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "${SPIDER_SENSE_EMBEDDING_URL}"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.85
+    ambiguity_band: 0.10
+    top_k: 5
+    pattern_db_path: "builtin:s2bench-v1"
+    pattern_db_version: "s2bench-v1"
+    pattern_db_checksum: "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
+    llm_api_url: "https://example.invalid/v1/messages"
+    llm_api_key: "llm-key"
+    llm_model: "gpt-4.1-mini"
+    llm_prompt_template_id: "spider_sense.deep_path.json_classifier"
+    llm_prompt_template_version: "1.0.0"
+    pattern_db_manifest_path: "/tmp/spider/manifest.json"
+    pattern_db_manifest_trust_store_path: "/tmp/spider/manifest-roots.json"
+    async:
+      timeout_ms: 5000
+      on_timeout: warn
+`)
+
+	p, err := FromYAML(yamlData)
+	if err != nil {
+		t.Fatalf("FromYAML: %v", err)
+	}
+	if p.Guards.SpiderSense == nil {
+		t.Fatal("expected guards.spider_sense to parse")
+	}
+	if p.Guards.SpiderSense.PatternDBPath != "builtin:s2bench-v1" {
+		t.Fatalf("unexpected pattern_db_path: %q", p.Guards.SpiderSense.PatternDBPath)
+	}
+	if p.Guards.SpiderSense.EmbeddingModel != "text-embedding-3-small" {
+		t.Fatalf("unexpected embedding_model: %q", p.Guards.SpiderSense.EmbeddingModel)
+	}
+	if p.Guards.SpiderSense.PatternDBVersion != "s2bench-v1" {
+		t.Fatalf("unexpected pattern_db_version: %q", p.Guards.SpiderSense.PatternDBVersion)
+	}
+	if p.Guards.SpiderSense.PatternDBChecksum == "" {
+		t.Fatal("expected non-empty pattern_db_checksum")
+	}
+	if p.Guards.SpiderSense.Async == nil {
+		t.Fatal("expected guards.spider_sense.async to parse")
+	}
+	if p.Guards.SpiderSense.LlmPromptTemplateID != "spider_sense.deep_path.json_classifier" {
+		t.Fatalf("unexpected llm_prompt_template_id: %q", p.Guards.SpiderSense.LlmPromptTemplateID)
+	}
+	if p.Guards.SpiderSense.PatternDBManifestPath != "/tmp/spider/manifest.json" {
+		t.Fatalf("unexpected pattern_db_manifest_path: %q", p.Guards.SpiderSense.PatternDBManifestPath)
+	}
+}
+
+func TestSpiderSenseBuiltinRulesetParses(t *testing.T) {
+	p, err := ByName("spider-sense")
+	if err != nil {
+		t.Fatalf("ByName(spider-sense): %v", err)
+	}
+	if p.Guards.SpiderSense == nil {
+		t.Fatal("expected spider_sense guard config in built-in ruleset")
+	}
+	if p.Guards.SpiderSense.PatternDBPath != "builtin:s2bench-v1" {
+		t.Fatalf("unexpected pattern_db_path: %q", p.Guards.SpiderSense.PatternDBPath)
+	}
+	if p.Guards.SpiderSense.PatternDBVersion != "s2bench-v1" {
+		t.Fatalf("unexpected pattern_db_version: %q", p.Guards.SpiderSense.PatternDBVersion)
+	}
+	if p.Guards.SpiderSense.PatternDBChecksum == "" {
+		t.Fatal("expected pattern_db_checksum in built-in ruleset")
 	}
 }
 

@@ -29,34 +29,20 @@ mod tests {
 
     #[test]
     fn decision_field_warn_string_is_treated_as_warn() {
-        let decision_obj = json!({
-            "decision": "warn"
-        })
-        .as_object()
-        .cloned()
-        .expect("object");
+        let decision_obj = serde_json::Map::from_iter([("decision".to_string(), json!("warn"))]);
 
         assert!(decision_object_is_warn(&decision_obj));
     }
 
     #[test]
     fn decision_allowed_aliases_are_supported() {
-        let passed = json!({ "passed": false })
-            .as_object()
-            .cloned()
-            .expect("object");
+        let passed = serde_json::Map::from_iter([("passed".to_string(), json!(false))]);
         assert_eq!(decision_allowed(&passed), Some(false));
 
-        let denied = json!({ "denied": true })
-            .as_object()
-            .cloned()
-            .expect("object");
+        let denied = serde_json::Map::from_iter([("denied".to_string(), json!(true))]);
         assert_eq!(decision_allowed(&denied), Some(false));
 
-        let blocked = json!({ "blocked": false })
-            .as_object()
-            .cloned()
-            .expect("object");
+        let blocked = serde_json::Map::from_iter([("blocked".to_string(), json!(false))]);
         assert_eq!(decision_allowed(&blocked), Some(true));
     }
 }

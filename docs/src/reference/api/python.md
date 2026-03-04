@@ -6,8 +6,8 @@ It provides:
 
 - `Clawdstrike` facade with built-in rulesets and typed check methods
 - `Decision` return type aggregating per-guard results
-- 9 pure-Python guards (ForbiddenPath, PathAllowlist, EgressAllowlist, SecretLeak, PatchIntegrity, ShellCommand, McpTool, PromptInjection, Jailbreak)
-- bundled native Rust engine on supported platforms (pure-Python fallback elsewhere) with all 12 guards
+- 10 pure-Python guards (ForbiddenPath, PathAllowlist, EgressAllowlist, SecretLeak, PatchIntegrity, ShellCommand, McpTool, PromptInjection, Jailbreak, SpiderSense)
+- bundled native Rust engine on supported platforms (pure-Python fallback elsewhere) with all 13 guards
 - crypto + receipt signing/verification compatible with `hush-core`
 - stateful sessions via `ClawdstrikeSession`
 
@@ -22,7 +22,7 @@ pip install clawdstrike
 ```python
 from clawdstrike import Clawdstrike, Decision, DecisionStatus
 
-# Built-in rulesets: "permissive", "default", "strict", "ai-agent", "cicd"
+# Built-in rulesets: "permissive", "default", "strict", "ai-agent", "cicd", "spider-sense"
 cs = Clawdstrike.with_defaults("strict")
 
 # All check methods return a Decision
@@ -56,6 +56,8 @@ guards:
   egress_allowlist:
     allow:
       - "api.myservice.com"
+  spider_sense:
+    enabled: true
 ''')
 ```
 

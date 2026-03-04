@@ -51,6 +51,7 @@ pub mod hygiene;
 pub mod instruction_hierarchy;
 pub mod jailbreak;
 pub mod output_sanitizer;
+pub mod spider_sense;
 pub mod text_utils;
 
 pub use hygiene::{
@@ -75,6 +76,10 @@ pub use output_sanitizer::{
     OutputSanitizer, OutputSanitizerConfig, ProcessingStats, Redaction, RedactionStrategy,
     SanitizationResult, SanitizationStream, SensitiveCategory, SensitiveDataFinding, Span,
     StreamingConfig,
+};
+pub use spider_sense::{
+    PatternDb, PatternEntry, PatternMatch, ScreeningResult, ScreeningVerdict, SpiderSenseDetector,
+    SpiderSenseDetectorConfig,
 };
 
 // ============================================================================

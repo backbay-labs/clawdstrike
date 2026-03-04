@@ -13,6 +13,7 @@ import (
 var supportedVersions = map[string]bool{
 	"1.1.0": true,
 	"1.2.0": true,
+	"1.3.0": true,
 }
 
 // MergeStrategy controls how policies are combined via extends.
@@ -33,6 +34,7 @@ type GuardConfigs struct {
 	McpTool         *McpToolConfig         `yaml:"mcp_tool,omitempty"`
 	PromptInjection *PromptInjectionConfig `yaml:"prompt_injection,omitempty"`
 	Jailbreak       *JailbreakConfig       `yaml:"jailbreak,omitempty"`
+	SpiderSense     *SpiderSenseConfig     `yaml:"spider_sense,omitempty"`
 }
 
 // PolicySettings holds global policy settings.

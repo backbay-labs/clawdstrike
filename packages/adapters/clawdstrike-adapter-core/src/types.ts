@@ -10,6 +10,7 @@ export interface GuardToggles {
   secret_leak?: boolean;
   patch_integrity?: boolean;
   mcp_tool?: boolean;
+  spider_sense?: boolean;
 }
 
 export interface ClawdstrikeConfig {
@@ -39,7 +40,9 @@ export type EventType =
   | "remote.audio"
   | "remote.drive_mapping"
   | "remote.printing"
-  | "remote.session_share";
+  | "remote.session_share"
+  | "spider_sense.screen"
+  | "spider_sense.deep_analysis";
 
 export interface PolicyEvent {
   eventId: string;

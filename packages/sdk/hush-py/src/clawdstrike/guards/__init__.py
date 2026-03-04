@@ -32,6 +32,17 @@ from clawdstrike.guards.prompt_injection import (
 )
 from clawdstrike.guards.secret_leak import SecretLeakConfig, SecretLeakGuard, SecretPattern
 from clawdstrike.guards.shell_command import ShellCommandConfig, ShellCommandGuard
+from clawdstrike.guards.spider_sense import (
+    PatternDb,
+    PatternEntry,
+    ScreeningResult,
+    SpiderSenseConfig,
+    SpiderSenseDetector,
+    SpiderSenseDetectorConfig,
+    SpiderSenseGuard,
+    SpiderSenseMetrics,
+    SpiderSenseMetricsHook,
+)
 
 __all__ = [
     # Base types
@@ -71,4 +82,14 @@ __all__ = [
     "ShellCommandConfig",
     "PathAllowlistGuard",
     "PathAllowlistConfig",
+    # Spider Sense
+    "SpiderSenseGuard",
+    "SpiderSenseConfig",
+    "SpiderSenseDetector",
+    "SpiderSenseDetectorConfig",
+    "SpiderSenseMetrics",
+    "SpiderSenseMetricsHook",
+    "PatternDb",
+    "PatternEntry",
+    "ScreeningResult",
 ]

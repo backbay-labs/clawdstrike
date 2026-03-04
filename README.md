@@ -591,6 +591,36 @@ if blocked > 0:
     raise SystemExit(f"tightening needed: blocked={blocked}")
 ```
 
+### Spider-Sense Quick Start
+
+```bash
+# 1) Create a Spider-Sense policy
+cat > spider-sense.quickstart.yaml <<'YAML'
+version: "1.3.0"
+name: "spider-sense-quickstart"
+extends: "clawdstrike:default"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "${SPIDER_SENSE_EMBEDDING_URL}"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.86
+    ambiguity_band: 0.06
+    top_k: 3
+    pattern_db_path: "builtin:s2bench-v1"
+    pattern_db_version: "s2bench-v1"
+    pattern_db_checksum: "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
+YAML
+
+# 2) Validate and run with policy enforcement
+clawdstrike policy validate spider-sense.quickstart.yaml
+clawdstrike run --policy ./spider-sense.quickstart.yaml -- your-agent-command --task "representative workload"
+```
+
+Full Spider-Sense example (threat-intel catalog, behavior profiles, signed manifest chain, and TS/Python/Go runners):
+[`examples/spider-sense-threat-intel/README.md`](examples/spider-sense-threat-intel/README.md)
+
 See the full workflow in [`docs/src/guides/observe-synth.md`](docs/src/guides/observe-synth.md).
 
 ### Additional SDKs & Bindings
@@ -631,7 +661,7 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 | **JailbreakGuard**                     | 4-layer detection engine with session aggregation (see below)                                                                                                                              |
 | **ComputerUseGuard**                   | Controls CUA actions: remote sessions, clipboard, input injection, file transfer                                                                                                           |
 | **ShellCommandGuard**                  | Blocks dangerous shell commands before execution                                                                                                                                           |
-| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Hierarchical threat screening adapted from [Yu et al. 2026](https://arxiv.org/abs/2602.05386): fast vector similarity resolves known patterns, optional LLM escalation for ambiguous cases |
+| **SpiderSenseGuard** | Hierarchical threat screening adapted from [Yu et al. 2026](https://arxiv.org/abs/2602.05386): fast vector similarity resolves known patterns, optional LLM escalation for ambiguous cases |
 
 ---
 
@@ -648,7 +678,7 @@ Clawdstrike policies are versioned, deterministic policy-as-code artifacts desig
 | **Posture state machine** | `1.2.0+` posture states, budgets, and transitions for runtime containment/escalation flows |
 | **Fail-closed runtime semantics** | Load or evaluation ambiguity resolves to deny rather than implicit allow |
 
-Built-in rulesets: `permissive` | `default` | `strict` | `ai-agent` | `ai-agent-posture` | `cicd` | `remote-desktop` | `remote-desktop-permissive` | `remote-desktop-strict`
+Built-in rulesets: `permissive` | `default` | `strict` | `ai-agent` | `ai-agent-posture` | `cicd` | `remote-desktop` | `remote-desktop-permissive` | `remote-desktop-strict` | `spider-sense`
 
 Operational policy loop:
 
@@ -776,6 +806,8 @@ Prompt watermarking embeds signed provenance markers for attribution and forensi
 **Threat feeds:** VirusTotal, Snyk, Google Safe Browsing — with circuit breakers, rate limiting, and caching. External failures never block the pipeline.
 
 **Spider-Sense** <sup>β</sup> adapts the hierarchical screening pattern from [Yu et al. (2026)](https://arxiv.org/abs/2602.05386) as a tool-boundary guard. Fast-path cosine similarity against an attack pattern database resolves known threats; ambiguous inputs optionally escalate to an external LLM for deeper analysis. Test coverage uses the paper's S2Bench taxonomy (4 lifecycle stages × 9 attack types). Note: the original paper proposes agent-intrinsic risk sensing — our adaptation applies the screening hierarchy as middleware, not as an intrinsic agent capability. Feature-gated: `--features clawdstrike-spider-sense`.
+
+Operator and policy details (provider support, retries/backoff, signed DB manifests, trust stores, deep-path templates, metrics, and conformance vectors): [`docs/src/reference/guards/spider-sense.md`](docs/src/reference/guards/spider-sense.md).
 
 **WASM runtime:** Custom guards in sandboxed WebAssembly with declared capability sets and resource limits.
 

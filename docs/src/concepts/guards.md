@@ -29,7 +29,7 @@ Guards operate on `GuardAction`:
 
 ## Built-in guards
 
-Clawdstrike ships with 12 built-in guards:
+Clawdstrike ships with 13 built-in guards:
 
 - `ForbiddenPathGuard`
 - `PathAllowlistGuard`
@@ -43,5 +43,6 @@ Clawdstrike ships with 12 built-in guards:
 - `ComputerUseGuard`
 - `RemoteDesktopSideChannelGuard`
 - `InputInjectionCapabilityGuard`
+- `SpiderSenseGuard`
 
 See the [Guards reference](../reference/guards/README.md) for configs and details.

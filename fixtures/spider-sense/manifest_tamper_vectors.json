@@ -1,0 +1,17 @@
+[
+  {
+    "name": "pattern_db_version_tamper",
+    "field": "pattern_db_version",
+    "value": "tampered"
+  },
+  {
+    "name": "not_before_tamper",
+    "field": "not_before",
+    "value": "1970-01-01T00:00:00Z"
+  },
+  {
+    "name": "not_after_tamper",
+    "field": "not_after",
+    "value": "2999-01-01T00:00:00Z"
+  }
+]

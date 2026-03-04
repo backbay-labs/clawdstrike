@@ -92,7 +92,7 @@ class Clawdstrike:
         """Create with a built-in ruleset.
 
         Args:
-            ruleset: One of "permissive", "default", "strict", "ai-agent", "cicd"
+            ruleset: One of "permissive", "default", "strict", "ai-agent", "cicd", "spider-sense"
             cwd: Working directory for context
         """
         # Try native backend first

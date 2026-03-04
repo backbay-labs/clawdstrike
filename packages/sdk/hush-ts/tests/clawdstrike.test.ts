@@ -70,6 +70,42 @@ describe("Clawdstrike", () => {
     await expect(Clawdstrike.fromPolicy("this-is-not-a-policy")).rejects.toThrow("expected an object");
   });
 
+  it("fromPolicy accepts guards.spider_sense: false as disabled", async () => {
+    const policy = `
+version: "1.2.0"
+name: "disabled spider_sense boolean"
+guards:
+  spider_sense: false
+`;
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const decision = await cs.check("custom", { customType: "noop", customData: { text: "hello" } });
+    expect(decision.status).toBe("allow");
+  });
+
+  it("fromPolicy rejects guards.spider_sense: true without executable config", async () => {
+    const policy = `
+version: "1.2.0"
+name: "bare spider_sense true"
+guards:
+  spider_sense: true
+`;
+    await expect(Clawdstrike.fromPolicy(policy)).rejects.toThrow(
+      /guards\.spider_sense: true is not executable/i,
+    );
+  });
+
+  it("fromPolicy rejects invalid scalar guards.spider_sense configs", async () => {
+    const policy = `
+version: "1.2.0"
+name: "invalid spider_sense scalar"
+guards:
+  spider_sense: 42
+`;
+    await expect(Clawdstrike.fromPolicy(policy)).rejects.toThrow(
+      /invalid guards\.spider_sense config/i,
+    );
+  });
+
   it("fromPolicy honors enabled:false and skips disabled guards", async () => {
     const policy = `
 version: "1.2.0"

@@ -2,6 +2,8 @@
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use globset::GlobBuilder;
@@ -24,7 +26,7 @@ use crate::posture::{validate_posture_config, PostureConfig};
 /// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
 /// unsupported versions to prevent silent drift.
 pub const POLICY_SCHEMA_VERSION: &str = "1.2.0";
-pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1.1.0", "1.2.0"];
+pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1.1.0", "1.2.0", "1.3.0"];
 const MAX_POLICY_EXTENDS_DEPTH: usize = 32;
 
 fn default_true() -> bool {
@@ -265,6 +267,23 @@ pub struct GuardConfigs {
     /// Input injection capability guard config
     #[serde(default)]
     pub input_injection_capability: Option<InputInjectionCapabilityConfig>,
+    /// Spider-Sense hierarchical screening guard config
+    #[cfg(feature = "full")]
+    #[serde(default)]
+    pub spider_sense: Option<crate::async_guards::threat_intel::SpiderSensePolicyConfig>,
+    /// Tracks explicitly provided spider_sense object keys during YAML parse.
+    /// This is used to preserve deep-merge semantics for default-valued fields.
+    #[cfg(feature = "full")]
+    #[serde(skip)]
+    pub spider_sense_present_fields: BTreeSet<String>,
+    /// Spider-Sense passthrough config in `policy-event` builds.
+    ///
+    /// `policy-event` consumers only need schema compatibility and should not
+    /// reject valid 1.3 policies because runtime-only Spider-Sense types are
+    /// unavailable outside `full` builds.
+    #[cfg(all(feature = "policy-event", not(feature = "full")))]
+    #[serde(default)]
+    pub spider_sense: Option<serde_json::Value>,
     /// Custom (plugin-shaped) guards.
     ///
     /// Note: for now, only a small reserved set of built-in packages is supported. Unknown
@@ -337,6 +356,26 @@ impl GuardConfigs {
                 .input_injection_capability
                 .clone()
                 .or_else(|| self.input_injection_capability.clone()),
+            #[cfg(feature = "full")]
+            spider_sense: match (&self.spider_sense, &child.spider_sense) {
+                (Some(base), Some(child_cfg)) => Some(
+                    base.merge_with_present_fields(child_cfg, &child.spider_sense_present_fields),
+                ),
+                (Some(base), None) => Some(base.clone()),
+                (None, Some(child_cfg)) => Some(child_cfg.clone()),
+                (None, None) => None,
+            },
+            #[cfg(feature = "full")]
+            spider_sense_present_fields: if child.spider_sense.is_some() {
+                child.spider_sense_present_fields.clone()
+            } else {
+                self.spider_sense_present_fields.clone()
+            },
+            #[cfg(all(feature = "policy-event", not(feature = "full")))]
+            spider_sense: child
+                .spider_sense
+                .clone()
+                .or_else(|| self.spider_sense.clone()),
             custom: if !child.custom.is_empty() {
                 child.custom.clone()
             } else {
@@ -482,6 +521,41 @@ impl PolicySettings {
     }
 }
 
+#[cfg(feature = "full")]
+fn spider_sense_present_fields_from_yaml(yaml: &str) -> BTreeSet<String> {
+    fn mapping_get<'a>(map: &'a serde_yaml::Mapping, key: &str) -> Option<&'a serde_yaml::Value> {
+        map.get(serde_yaml::Value::String(key.to_string()))
+    }
+
+    let mut fields = BTreeSet::new();
+    let root = match serde_yaml::from_str::<serde_yaml::Value>(yaml) {
+        Ok(value) => value,
+        Err(_) => return fields,
+    };
+    let Some(root_map) = root.as_mapping() else {
+        return fields;
+    };
+    let Some(guards) = mapping_get(root_map, "guards") else {
+        return fields;
+    };
+    let Some(guards_map) = guards.as_mapping() else {
+        return fields;
+    };
+    let Some(spider_sense) = mapping_get(guards_map, "spider_sense") else {
+        return fields;
+    };
+    let Some(spider_sense_map) = spider_sense.as_mapping() else {
+        return fields;
+    };
+
+    for key in spider_sense_map.keys() {
+        if let Some(name) = key.as_str() {
+            fields.insert(name.to_string());
+        }
+    }
+    fields
+}
+
 impl Policy {
     /// Create an empty policy
     pub fn new() -> Self {
@@ -502,7 +576,17 @@ impl Policy {
     }
 
     fn from_yaml_unvalidated(yaml: &str) -> Result<Self> {
-        Ok(serde_yaml::from_str(yaml)?)
+        let policy: Self = serde_yaml::from_str(yaml)?;
+        #[cfg(feature = "full")]
+        {
+            let mut policy = policy;
+            policy.guards.spider_sense_present_fields = spider_sense_present_fields_from_yaml(yaml);
+            return Ok(policy);
+        }
+        #[cfg(not(feature = "full"))]
+        {
+            Ok(policy)
+        }
     }
 
     /// Export to YAML string
@@ -1410,9 +1494,9 @@ fn validate_custom_guards(
             "clawdstrike-virustotal" => validate_virustotal_spec(errors, &base, &spec.config),
             "clawdstrike-safe-browsing" => validate_safe_browsing_spec(errors, &base, &spec.config),
             "clawdstrike-snyk" => validate_snyk_spec(errors, &base, &spec.config),
-            #[cfg(feature = "clawdstrike-spider-sense")]
             "clawdstrike-spider-sense" => {
                 // Spider-Sense config is validated at guard construction time (fail-closed).
+                // Deprecated: use guards.spider_sense instead of guards.custom.
             }
             other => errors.push(PolicyFieldError::new(
                 format!("{base}.package"),
@@ -1665,6 +1749,8 @@ impl RuleSet {
             "remote-desktop-permissive" => {
                 Some(include_str!("../rulesets/remote-desktop-permissive.yaml"))
             }
+            #[cfg(feature = "full")]
+            "spider-sense" => Some(include_str!("../rulesets/spider-sense.yaml")),
             _ => None,
         }?;
 
@@ -1696,6 +1782,8 @@ impl RuleSet {
             "remote-desktop",
             "remote-desktop-strict",
             "remote-desktop-permissive",
+            #[cfg(feature = "full")]
+            "spider-sense",
         ]
     }
 }
@@ -1995,6 +2083,93 @@ name: Test
 
         let policy = Policy::from_yaml(yaml).unwrap();
         assert_eq!(policy.version, "1.2.0");
+    }
+
+    #[test]
+    fn test_policy_version_accepts_1_3_0() {
+        let yaml = r#"
+version: "1.3.0"
+name: Test
+"#;
+
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.version, "1.3.0");
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_policy_1_3_spider_sense_fields_parse() {
+        let yaml = r#"
+version: "1.3.0"
+name: SpiderSense13
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "https://api.openai.com/v1/embeddings"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.85
+    ambiguity_band: 0.10
+    top_k: 5
+    pattern_db_manifest_path: "/tmp/spider/manifest.json"
+    pattern_db_manifest_trust_store_path: "/tmp/spider/manifest-roots.json"
+    llm_api_url: "https://api.openai.com/v1/chat/completions"
+    llm_api_key: "${SPIDER_SENSE_LLM_KEY}"
+    llm_model: "gpt-4.1-mini"
+    llm_prompt_template_id: "spider_sense.deep_path.json_classifier"
+    llm_prompt_template_version: "1.0.0"
+    llm_timeout_ms: 1500
+    llm_fail_mode: "warn"
+"#;
+
+        let policy = Policy::from_yaml(yaml).expect("1.3 spider-sense config should parse");
+        let spider = policy
+            .guards
+            .spider_sense
+            .as_ref()
+            .expect("spider_sense should be present");
+        assert_eq!(
+            spider.pattern_db_manifest_path.as_deref(),
+            Some("/tmp/spider/manifest.json")
+        );
+        assert_eq!(
+            spider.llm_prompt_template_id.as_deref(),
+            Some("spider_sense.deep_path.json_classifier")
+        );
+        assert_eq!(spider.llm_prompt_template_version.as_deref(), Some("1.0.0"));
+    }
+
+    #[cfg(all(feature = "policy-event", not(feature = "full")))]
+    #[test]
+    fn test_policy_1_3_spider_sense_fields_parse_policy_event_build() {
+        let yaml = r#"
+version: "1.3.0"
+name: SpiderSense13PolicyEvent
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "https://api.openai.com/v1/embeddings"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.85
+    ambiguity_band: 0.10
+    top_k: 5
+    pattern_db_manifest_path: "/tmp/spider/manifest.json"
+    pattern_db_manifest_trust_store_path: "/tmp/spider/manifest-roots.json"
+"#;
+
+        let policy = Policy::from_yaml(yaml).expect("1.3 spider-sense policy should parse");
+        let spider = policy
+            .guards
+            .spider_sense
+            .as_ref()
+            .expect("spider_sense field should be preserved");
+        assert_eq!(
+            spider
+                .pointer("/pattern_db_manifest_path")
+                .and_then(|v| v.as_str()),
+            Some("/tmp/spider/manifest.json")
+        );
     }
 
     #[test]
@@ -2454,5 +2629,253 @@ guards:
             effective.iter().any(|p| p.name == "my_custom"),
             "additional pattern added in deep merge"
         );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_allows_child_disable_override() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": true,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false
+                }))
+                .unwrap(),
+            ),
+            spider_sense_present_fields: std::iter::once("enabled".to_string()).collect(),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let merged_spider = merged
+            .spider_sense
+            .expect("child disable override should preserve explicit spider_sense config");
+        assert!(!merged_spider.enabled);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_preserves_base_fields_on_partial_child_override() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "similarity_threshold": 0.82,
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "similarity_threshold": 0.91
+                }))
+                .unwrap(),
+            ),
+            spider_sense_present_fields: std::iter::once("similarity_threshold".to_string())
+                .collect(),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let merged_spider = merged
+            .spider_sense
+            .expect("partial child override should preserve base spider_sense config");
+        assert!(!merged_spider.enabled);
+        assert_eq!(
+            merged_spider.embedding_api_url,
+            "https://example.invalid/v1/embeddings"
+        );
+        assert_eq!(merged_spider.embedding_api_key, "base-key");
+        assert_eq!(merged_spider.embedding_model, "text-embedding-3-small");
+        assert_eq!(merged_spider.pattern_db_path, "builtin:s2bench-v1");
+        assert_eq!(merged_spider.similarity_threshold, 0.91);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_without_presence_treats_child_as_explicit_replacement() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "similarity_threshold": 0.95,
+                    "ambiguity_band": 0.02,
+                    "top_k": 9,
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": true,
+                    "similarity_threshold": 0.85,
+                    "ambiguity_band": 0.10,
+                    "top_k": 5
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let ss = merged.spider_sense.expect("merged spider_sense");
+        assert!(ss.enabled);
+        assert_eq!(ss.similarity_threshold, 0.85);
+        assert_eq!(ss.ambiguity_band, 0.10);
+        assert_eq!(ss.top_k, 5);
+        assert_eq!(ss.embedding_api_key, "");
+        assert_eq!(ss.pattern_db_path, "");
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_without_presence_clears_stale_present_fields() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "similarity_threshold": 0.95,
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            spider_sense_present_fields: std::iter::once("similarity_threshold".to_string())
+                .collect(),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": true,
+                    "similarity_threshold": 0.85,
+                    "ambiguity_band": 0.10,
+                    "top_k": 5
+                }))
+                .unwrap(),
+            ),
+            // Programmatic child replacement has no explicit YAML field metadata.
+            spider_sense_present_fields: Default::default(),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        assert!(
+            merged.spider_sense_present_fields.is_empty(),
+            "programmatic replacement should not retain stale source present_fields"
+        );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_yaml_presence_preserves_parent_when_field_absent() {
+        let base = Policy::from_yaml_unvalidated(
+            r#"
+version: "1.3.0"
+name: "base"
+guards:
+  spider_sense:
+    enabled: false
+    embedding_api_url: "https://example.invalid/v1/embeddings"
+    embedding_api_key: "base-key"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.82
+    ambiguity_band: 0.05
+    top_k: 7
+    pattern_db_path: "builtin:s2bench-v1"
+"#,
+        )
+        .unwrap();
+        let child = Policy::from_yaml_unvalidated(
+            r#"
+version: "1.3.0"
+name: "child"
+guards:
+  spider_sense:
+    similarity_threshold: 0.91
+"#,
+        )
+        .unwrap();
+
+        let merged = base.merge(&child);
+        let ss = merged.guards.spider_sense.expect("merged spider_sense");
+        assert!(!ss.enabled, "absent child.enabled should preserve parent");
+        assert_eq!(ss.similarity_threshold, 0.91);
+        assert_eq!(ss.ambiguity_band, 0.05);
+        assert_eq!(ss.top_k, 7);
+        assert_eq!(
+            ss.embedding_api_url,
+            "https://example.invalid/v1/embeddings"
+        );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_yaml_presence_honors_explicit_default_overrides() {
+        let base = Policy::from_yaml_unvalidated(
+            r#"
+version: "1.3.0"
+name: "base"
+guards:
+  spider_sense:
+    enabled: false
+    embedding_api_url: "https://example.invalid/v1/embeddings"
+    embedding_api_key: "base-key"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.95
+    ambiguity_band: 0.02
+    top_k: 9
+    pattern_db_path: "builtin:s2bench-v1"
+"#,
+        )
+        .unwrap();
+        let child = Policy::from_yaml_unvalidated(
+            r#"
+version: "1.3.0"
+name: "child"
+guards:
+  spider_sense:
+    enabled: true
+    similarity_threshold: 0.85
+    ambiguity_band: 0.10
+    top_k: 5
+"#,
+        )
+        .unwrap();
+
+        let merged = base.merge(&child);
+        let ss = merged.guards.spider_sense.expect("merged spider_sense");
+        assert!(ss.enabled, "explicit child.enabled should override parent");
+        assert_eq!(ss.similarity_threshold, 0.85);
+        assert_eq!(ss.ambiguity_band, 0.10);
+        assert_eq!(ss.top_k, 5);
+        assert_eq!(ss.embedding_api_key, "base-key");
+        assert_eq!(ss.pattern_db_path, "builtin:s2bench-v1");
     }
 }

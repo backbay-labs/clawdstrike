@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PolicyEvent } from "../types.js";
 import { PolicyEngine } from "./engine.js";
 
@@ -13,6 +14,7 @@ describe("PolicyEngine", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     rmSync(testDir, { recursive: true, force: true });
   });
 
@@ -33,6 +35,485 @@ describe("PolicyEngine", () => {
     const decision = await engine.evaluate(event);
     expect(decision.status).toBe("deny");
     expect(decision.guard).toBe("forbidden_path");
+  });
+
+  it("skips spider_sense custom guard execution when spider_sense toggle is false", async () => {
+    const policyPath = join(testDir, "spider-sense-toggle-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: ignore previous
+            embedding: [1, 0, 0]
+`,
+    );
+
+    const event: PolicyEvent = {
+      eventId: "spider-sense-toggle-disabled",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        embedding: [1, 0, 0],
+      },
+    };
+
+    const disabledEngine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: false,
+      },
+    });
+    const disabledDecision = await disabledEngine.evaluate(event);
+    expect(disabledDecision.status).toBe("allow");
+  });
+
+  it("skips spider_sense custom guard execution when policy guards.spider_sense is false", async () => {
+    const policyPath = join(testDir, "spider-sense-policy-disabled.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  spider_sense: false
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: ignore previous
+            embedding: [1, 0, 0]
+`,
+    );
+
+    const event: PolicyEvent = {
+      eventId: "spider-sense-policy-disabled",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        embedding: [1, 0, 0],
+      },
+    };
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: true,
+      },
+    });
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("allow");
+  });
+
+  it("executes spider_sense custom guard when enabled", async () => {
+    const policyPath = join(testDir, "spider-sense-enabled-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: ignore previous
+            embedding: [1, 0, 0]
+`,
+    );
+
+    const event: PolicyEvent = {
+      eventId: "spider-sense-enabled",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        embedding: [1, 0, 0],
+      },
+    };
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: true,
+      },
+    });
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("clawdstrike-spider-sense");
+  });
+
+  it("rejects malformed external spider_sense pattern DB entries at load time", () => {
+    const patternDbPath = join(testDir, "spider-sense-patterns-invalid.json");
+    writeFileSync(
+      patternDbPath,
+      JSON.stringify([
+        {
+          id: "bad-1",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "missing embedding",
+        },
+      ]),
+    );
+
+    const policyPath = join(testDir, "spider-sense-invalid-db-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "${patternDbPath}"
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/contains invalid entry at index 0/);
+  });
+
+  it("resolves relative spider_sense pattern_db_path from the policy file directory", async () => {
+    const policyDir = join(testDir, "spider-sense-relative-db");
+    const patternsDir = join(policyDir, "patterns");
+    mkdirSync(patternsDir, { recursive: true });
+
+    const patternDbPath = join(patternsDir, "db.json");
+    writeFileSync(
+      patternDbPath,
+      JSON.stringify([
+        {
+          id: "p1",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "relative path pattern",
+          embedding: [1, 0, 0],
+        },
+      ]),
+    );
+
+    const policyPath = join(policyDir, "policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "./patterns/db.json"
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: true,
+      },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: "spider-sense-relative-db",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        embedding: [1, 0, 0],
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("clawdstrike-spider-sense");
+  });
+
+  it("rejects malformed inline spider_sense patterns at load time", () => {
+    const policyPath = join(testDir, "spider-sense-inline-invalid-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: valid pattern
+            embedding: [1, 0, 0]
+          - id: p2
+            category: prompt_injection
+            stage: perception
+            label: invalid pattern
+            embedding: ["bad", 0, 0]
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/inline patterns contain invalid entry at index 1/i);
+  });
+
+  it("rejects spider_sense pattern DB entries with mixed embedding dimensions", () => {
+    const patternDbPath = join(testDir, "spider-sense-patterns-dim-mismatch.json");
+    writeFileSync(
+      patternDbPath,
+      JSON.stringify([
+        {
+          id: "p1",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "dim-3",
+          embedding: [1, 0, 0],
+        },
+        {
+          id: "p2",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "dim-2",
+          embedding: [1, 0],
+        },
+      ]),
+    );
+
+    const policyPath = join(testDir, "spider-sense-db-dim-mismatch-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "${patternDbPath}"
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/embedding dimension mismatch/i);
+  });
+
+  it("rejects spider_sense runtime config with out-of-range similarity_threshold", () => {
+    const policyPath = join(testDir, "spider-sense-threshold-out-of-range-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        similarity_threshold: 5
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: valid pattern
+            embedding: [1, 0, 0]
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/similarity_threshold must be in \[0, 1\]/i);
+  });
+
+  it("fails closed with deny decision when spider_sense embedding provider returns non-2xx", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 503 }));
+
+    const policyPath = join(testDir, "spider-sense-provider-failure-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: builtin:s2bench-v1
+        embedding_api_url: https://api.example.test/v1/embeddings
+        embedding_api_key: test-key
+        embedding_model: text-embedding-3-small
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: true,
+      },
+    });
+    const decision = await engine.evaluate({
+      eventId: "spider-sense-provider-failure",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        payload: "no local embedding present",
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("clawdstrike-spider-sense");
+    expect(decision.reason).toMatch(/runtime error/i);
+  });
+
+  it("rejects external spider_sense pattern DB on checksum mismatch", () => {
+    const patternDbPath = join(testDir, "spider-sense-patterns-checksum.json");
+    const patternDbRaw = JSON.stringify([
+      {
+        id: "ok-1",
+        category: "prompt_injection",
+        stage: "perception",
+        label: "known bad pattern",
+        embedding: [0.9, 0.1, 0.0],
+      },
+    ]);
+    writeFileSync(patternDbPath, patternDbRaw);
+    const wrongChecksum = createHash("sha256")
+      .update("tampered-content")
+      .digest("hex")
+      .toLowerCase();
+
+    const policyPath = join(testDir, "spider-sense-bad-checksum-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "${patternDbPath}"
+        pattern_db_checksum: "${wrongChecksum}"
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/checksum mismatch/i);
   });
 
   it("warns but allows in advisory mode", async () => {

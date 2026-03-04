@@ -12,9 +12,17 @@ const RESERVED_PACKAGES = new Set([
   "clawdstrike-virustotal",
   "clawdstrike-safe-browsing",
   "clawdstrike-snyk",
+  "clawdstrike-spider-sense",
 ]);
-const SUPPORTED_POLICY_VERSIONS = new Set(["1.1.0", "1.2.0"]);
+const SUPPORTED_POLICY_VERSIONS = new Set(["1.1.0", "1.2.0", "1.3.0"]);
 const DEFAULT_POLICY_VERSION = "1.2.0";
+const SPIDER_SENSE_V13_FIELDS = [
+  "llm_prompt_template_id",
+  "llm_prompt_template_version",
+  "pattern_db_manifest_path",
+  "pattern_db_manifest_trust_store_path",
+  "pattern_db_manifest_trusted_keys",
+] as const;
 const KNOWN_POSTURE_CAPABILITIES = new Set([
   "file_access",
   "file_write",
@@ -46,7 +54,7 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
   if (typeof version !== "string" || !isStrictSemver(version)) {
     errors.push(`version must be a strict semver string (got: ${String(version)})`);
   } else if (!SUPPORTED_POLICY_VERSIONS.has(version)) {
-    errors.push(`unsupported policy version: ${version} (supported: 1.1.0, 1.2.0)`);
+    errors.push(`unsupported policy version: ${version} (supported: 1.1.0, 1.2.0, 1.3.0)`);
   }
 
   if (p.guards && isPlainObject(p.guards)) {
@@ -68,6 +76,8 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
         }
       }
     }
+
+    validateSpiderSense((p.guards as any).spider_sense, "guards.spider_sense", version, errors, warnings);
   }
 
   const posture = (p as any).posture;
@@ -136,6 +146,139 @@ function validatePathAllowlist(value: unknown, base: string, errors: string[]): 
   validateStringArray(value.file_access_allow, `${base}.file_access_allow`, errors);
   validateStringArray(value.file_write_allow, `${base}.file_write_allow`, errors);
   validateStringArray(value.patch_allow, `${base}.patch_allow`, errors);
+}
+
+function validateSpiderSense(
+  value: unknown,
+  base: string,
+  version: string,
+  errors: string[],
+  warnings: string[],
+): void {
+  if (value === undefined || typeof value === "boolean") {
+    return;
+  }
+  if (!isPlainObject(value)) {
+    errors.push(`${base} must be an object`);
+    return;
+  }
+
+  if (version === "1.2.0") {
+    const usedV13Field = SPIDER_SENSE_V13_FIELDS.some((key) => value[key] !== undefined);
+    if (usedV13Field) {
+      warnings.push(
+        `${base} uses 1.3.0 fields while policy version is 1.2.0; accepted for compatibility`,
+      );
+    }
+  }
+
+  const templateId = value.llm_prompt_template_id;
+  const templateVersion = value.llm_prompt_template_version;
+  if (templateId !== undefined && (typeof templateId !== "string" || templateId.trim() === "")) {
+    errors.push(`${base}.llm_prompt_template_id must be a non-empty string`);
+  }
+  if (
+    templateVersion !== undefined &&
+    (typeof templateVersion !== "string" || templateVersion.trim() === "")
+  ) {
+    errors.push(`${base}.llm_prompt_template_version must be a non-empty string`);
+  }
+  if ((templateId === undefined) !== (templateVersion === undefined)) {
+    errors.push(
+      `${base}.llm_prompt_template_id and ${base}.llm_prompt_template_version must be set together`,
+    );
+  }
+
+  const llmConfigured =
+    hasNonEmptyString(value.llm_api_url) ||
+    hasNonEmptyString(value.llm_api_key) ||
+    hasNonEmptyString(value.llm_model);
+  if (llmConfigured && (templateId === undefined || templateVersion === undefined)) {
+    errors.push(
+      `${base} deep-path configuration requires llm_prompt_template_id and llm_prompt_template_version`,
+    );
+  }
+
+  const manifestPath = value.pattern_db_manifest_path;
+  const manifestRootsPath = value.pattern_db_manifest_trust_store_path;
+  const manifestRootsInline = value.pattern_db_manifest_trusted_keys;
+  const hasManifestPath = hasNonEmptyString(manifestPath);
+  const hasManifestRootsPath = hasNonEmptyString(manifestRootsPath);
+  const hasManifestRootsInline = Array.isArray(manifestRootsInline) && manifestRootsInline.length > 0;
+
+  if (manifestPath !== undefined && !hasNonEmptyString(manifestPath)) {
+    errors.push(`${base}.pattern_db_manifest_path must be a non-empty string`);
+  }
+  if (manifestRootsPath !== undefined && !hasNonEmptyString(manifestRootsPath)) {
+    errors.push(`${base}.pattern_db_manifest_trust_store_path must be a non-empty string`);
+  }
+  if (manifestRootsInline !== undefined && !Array.isArray(manifestRootsInline)) {
+    errors.push(`${base}.pattern_db_manifest_trusted_keys must be an array`);
+  }
+
+  if (hasManifestPath) {
+    if (value.pattern_db_trust_store_path !== undefined || value.pattern_db_trusted_keys !== undefined) {
+      errors.push(
+        `${base}.pattern_db_manifest_path cannot be combined with pattern_db_trust_store_path or pattern_db_trusted_keys`,
+      );
+    }
+    if (!hasManifestRootsPath && !hasManifestRootsInline) {
+      errors.push(
+        `${base}.pattern_db_manifest_path requires pattern_db_manifest_trust_store_path or pattern_db_manifest_trusted_keys`,
+      );
+    }
+  } else if (manifestRootsPath !== undefined || manifestRootsInline !== undefined) {
+    errors.push(
+      `${base}.pattern_db_manifest_trust_store_path and ${base}.pattern_db_manifest_trusted_keys require pattern_db_manifest_path`,
+    );
+  }
+
+  const asyncValue = value.async;
+  if (asyncValue !== undefined) {
+    if (!isPlainObject(asyncValue)) {
+      errors.push(`${base}.async must be an object`);
+    } else {
+      validateAsyncConfig(asyncValue, `${base}.async`, errors);
+      validateSpiderSenseRetry(asyncValue.retry, `${base}.async.retry`, errors);
+    }
+  }
+}
+
+function validateSpiderSenseRetry(value: unknown, base: string, errors: string[]): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!isPlainObject(value)) {
+    errors.push(`${base} must be an object`);
+    return;
+  }
+
+  if (value.honor_retry_after !== undefined && typeof value.honor_retry_after !== "boolean") {
+    errors.push(`${base}.honor_retry_after must be a boolean`);
+  }
+  if (
+    value.retry_after_cap_ms !== undefined &&
+    (!Number.isInteger(value.retry_after_cap_ms) || (value.retry_after_cap_ms as number) < 1)
+  ) {
+    errors.push(`${base}.retry_after_cap_ms must be >= 1`);
+  }
+  if (
+    value.honor_rate_limit_reset !== undefined &&
+    typeof value.honor_rate_limit_reset !== "boolean"
+  ) {
+    errors.push(`${base}.honor_rate_limit_reset must be a boolean`);
+  }
+  if (
+    value.rate_limit_reset_grace_ms !== undefined &&
+    (!Number.isInteger(value.rate_limit_reset_grace_ms) ||
+      (value.rate_limit_reset_grace_ms as number) < 0)
+  ) {
+    errors.push(`${base}.rate_limit_reset_grace_ms must be >= 0`);
+  }
+}
+
+function hasNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
 }
 
 function validatePosture(value: unknown, base: string, errors: string[]): void {

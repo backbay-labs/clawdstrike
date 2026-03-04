@@ -25,3 +25,4 @@ Current fixture groups:
 19. `fixtures/policy-events/provider-conformance/` - cross-provider translator parity vectors (E2).
 20. `fixtures/policy-events/openclaw-bridge/` - OpenClaw CUA bridge event mapping vectors (E3).
 21. `fixtures/policy-events/trycua-connector/` - trycua/cua connector compatibility vectors (E4).
+22. `fixtures/spider-sense/` - cross-SDK Spider-Sense guard conformance vectors.

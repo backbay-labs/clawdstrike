@@ -1,0 +1,104 @@
+[
+  {
+    "name": "default-thresholds",
+    "config": {
+      "similarity_threshold": 0.85,
+      "ambiguity_band": 0.1,
+      "top_k": 3,
+      "patterns": [
+        {
+          "id": "p1",
+          "category": "prompt_injection",
+          "stage": "perception",
+          "label": "ignore previous",
+          "embedding": [1.0, 0.0, 0.0]
+        },
+        {
+          "id": "p2",
+          "category": "data_exfiltration",
+          "stage": "action",
+          "label": "exfil data",
+          "embedding": [0.0, 1.0, 0.0]
+        },
+        {
+          "id": "p3",
+          "category": "privilege_escalation",
+          "stage": "cognition",
+          "label": "escalate",
+          "embedding": [0.0, 0.0, 1.0]
+        }
+      ]
+    },
+    "checks": [
+      {
+        "name": "deny-identical",
+        "embedding": [1.0, 0.0, 0.0],
+        "expected_allowed": false,
+        "expected_severity": "error",
+        "expected_verdict": "deny",
+        "expected_embedding_from": "action",
+        "expected_analysis": "fast_path",
+        "expected_top_matches_len": 3,
+        "top_score_min": 0.99,
+        "top_score_max": 1.0
+      },
+      {
+        "name": "allow-low-similarity",
+        "embedding": [0.577, 0.577, 0.577],
+        "expected_allowed": true,
+        "expected_severity": "info",
+        "expected_verdict": "allow",
+        "expected_embedding_from": "action",
+        "expected_analysis": "fast_path",
+        "expected_top_matches_len": 3,
+        "top_score_min": 0.5,
+        "top_score_max": 0.7
+      }
+    ]
+  },
+  {
+    "name": "ambiguity-band",
+    "config": {
+      "similarity_threshold": 0.5,
+      "ambiguity_band": 0.1,
+      "top_k": 3,
+      "patterns": [
+        {
+          "id": "p1",
+          "category": "prompt_injection",
+          "stage": "perception",
+          "label": "ignore previous",
+          "embedding": [1.0, 0.0, 0.0]
+        },
+        {
+          "id": "p2",
+          "category": "data_exfiltration",
+          "stage": "action",
+          "label": "exfil data",
+          "embedding": [0.0, 1.0, 0.0]
+        },
+        {
+          "id": "p3",
+          "category": "privilege_escalation",
+          "stage": "cognition",
+          "label": "escalate",
+          "embedding": [0.0, 0.0, 1.0]
+        }
+      ]
+    },
+    "checks": [
+      {
+        "name": "warn-ambiguous",
+        "embedding": [0.577, 0.577, 0.577],
+        "expected_allowed": true,
+        "expected_severity": "warning",
+        "expected_verdict": "ambiguous",
+        "expected_embedding_from": "action",
+        "expected_analysis": "fast_path",
+        "expected_top_matches_len": 3,
+        "top_score_min": 0.5,
+        "top_score_max": 0.7
+      }
+    ]
+  }
+]

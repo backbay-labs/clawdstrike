@@ -179,6 +179,9 @@ func Merge(base, child *Policy) *Policy {
 		if child.Guards.Jailbreak != nil {
 			result.Guards.Jailbreak = child.Guards.Jailbreak
 		}
+		if child.Guards.SpiderSense != nil {
+			result.Guards.SpiderSense = child.Guards.SpiderSense
+		}
 	}
 
 	return result
@@ -330,6 +333,96 @@ func deepMergeGuards(base, child GuardConfigs) GuardConfigs {
 			result.Jailbreak = &merged
 		} else {
 			result.Jailbreak = child.Jailbreak
+		}
+	}
+
+	if child.SpiderSense != nil {
+		if base.SpiderSense != nil {
+			merged := *base.SpiderSense
+			if child.SpiderSense.Enabled != nil {
+				merged.Enabled = child.SpiderSense.Enabled
+			}
+			if child.SpiderSense.SimilarityThreshold != nil {
+				merged.SimilarityThreshold = child.SpiderSense.SimilarityThreshold
+			}
+			if child.SpiderSense.AmbiguityBand != nil {
+				merged.AmbiguityBand = child.SpiderSense.AmbiguityBand
+			}
+			if child.SpiderSense.TopK != nil {
+				merged.TopK = child.SpiderSense.TopK
+			}
+			if child.SpiderSense.Patterns != nil {
+				merged.Patterns = child.SpiderSense.Patterns
+			}
+			if child.SpiderSense.EmbeddingAPIURL != "" {
+				merged.EmbeddingAPIURL = child.SpiderSense.EmbeddingAPIURL
+			}
+			if child.SpiderSense.EmbeddingAPIKey != "" {
+				merged.EmbeddingAPIKey = child.SpiderSense.EmbeddingAPIKey
+			}
+			if child.SpiderSense.EmbeddingModel != "" {
+				merged.EmbeddingModel = child.SpiderSense.EmbeddingModel
+			}
+			if child.SpiderSense.PatternDBPath != "" {
+				merged.PatternDBPath = child.SpiderSense.PatternDBPath
+			}
+			if child.SpiderSense.PatternDBVersion != "" {
+				merged.PatternDBVersion = child.SpiderSense.PatternDBVersion
+			}
+			if child.SpiderSense.PatternDBChecksum != "" {
+				merged.PatternDBChecksum = child.SpiderSense.PatternDBChecksum
+			}
+			if child.SpiderSense.PatternDBSignature != "" {
+				merged.PatternDBSignature = child.SpiderSense.PatternDBSignature
+			}
+			if child.SpiderSense.PatternDBSignatureKeyID != "" {
+				merged.PatternDBSignatureKeyID = child.SpiderSense.PatternDBSignatureKeyID
+			}
+			if child.SpiderSense.PatternDBPublicKey != "" {
+				merged.PatternDBPublicKey = child.SpiderSense.PatternDBPublicKey
+			}
+			if child.SpiderSense.PatternDBTrustStorePath != "" {
+				merged.PatternDBTrustStorePath = child.SpiderSense.PatternDBTrustStorePath
+			}
+			if child.SpiderSense.PatternDBTrustedKeys != nil {
+				merged.PatternDBTrustedKeys = child.SpiderSense.PatternDBTrustedKeys
+			}
+			if child.SpiderSense.PatternDBManifestPath != "" {
+				merged.PatternDBManifestPath = child.SpiderSense.PatternDBManifestPath
+			}
+			if child.SpiderSense.PatternDBManifestTrustStorePath != "" {
+				merged.PatternDBManifestTrustStorePath = child.SpiderSense.PatternDBManifestTrustStorePath
+			}
+			if child.SpiderSense.PatternDBManifestTrustedKeys != nil {
+				merged.PatternDBManifestTrustedKeys = child.SpiderSense.PatternDBManifestTrustedKeys
+			}
+			if child.SpiderSense.LlmAPIURL != "" {
+				merged.LlmAPIURL = child.SpiderSense.LlmAPIURL
+			}
+			if child.SpiderSense.LlmAPIKey != "" {
+				merged.LlmAPIKey = child.SpiderSense.LlmAPIKey
+			}
+			if child.SpiderSense.LlmModel != "" {
+				merged.LlmModel = child.SpiderSense.LlmModel
+			}
+			if child.SpiderSense.LlmPromptTemplateID != "" {
+				merged.LlmPromptTemplateID = child.SpiderSense.LlmPromptTemplateID
+			}
+			if child.SpiderSense.LlmPromptTemplateVersion != "" {
+				merged.LlmPromptTemplateVersion = child.SpiderSense.LlmPromptTemplateVersion
+			}
+			if child.SpiderSense.LlmTimeoutMs != nil {
+				merged.LlmTimeoutMs = child.SpiderSense.LlmTimeoutMs
+			}
+			if child.SpiderSense.LlmFailMode != "" {
+				merged.LlmFailMode = child.SpiderSense.LlmFailMode
+			}
+			if child.SpiderSense.Async != nil {
+				merged.Async = child.SpiderSense.Async
+			}
+			result.SpiderSense = &merged
+		} else {
+			result.SpiderSense = child.SpiderSense
 		}
 	}
 

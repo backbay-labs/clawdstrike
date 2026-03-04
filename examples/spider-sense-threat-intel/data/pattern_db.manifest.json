@@ -1,0 +1,13 @@
+{
+  "pattern_db_path": "pattern_db.s2intel-v1.json",
+  "pattern_db_version": "s2intel-v1",
+  "pattern_db_checksum": "9a98e026b6d7923bf459443719d1c0d2a7ca4a6d580c3b5d3e54c89f0a880f90",
+  "pattern_db_signature": "dd16056440b32257571a62bdfe259b302958d368cb0fdf622d3d972f94b631149e837b2e2ec62ebd4f422cf1d14258a607524a8a6b58264af911c90a81669b07",
+  "pattern_db_signature_key_id": "7a6a815106d9a2fc",
+  "pattern_db_trust_store_path": "pattern_db.trust-store.json",
+  "pattern_db_trusted_keys": [],
+  "manifest_signature_key_id": "a56cfff6a996040c",
+  "not_before": "2025-01-01T00:00:00Z",
+  "not_after": "2030-01-01T00:00:00Z",
+  "manifest_signature": "da20bb01be3a6999c5b4a4624ce63dad72077508f942cad2422268f2aa3ede0690d164c174d65ab64c0ea8fdecdc5b216cb466554016d0e285005d7f6c4d3a00"
+}

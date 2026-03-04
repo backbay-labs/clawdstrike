@@ -22,3 +22,4 @@ Representative domains:
    - `examples/jailbreak-detection/` - 4-layer jailbreak detection with session aggregation, LLM-judge, and layer breakdown.
    - `examples/output-sanitization/` - Secrets/PII/internal data redaction with streaming, allowlist/denylist, and category toggling.
    - `examples/prompt-watermarking/` - Signed provenance markers with multi-agent attribution, trust verification, and fingerprint correlation.
+   - `examples/spider-sense-threat-intel/` - Spider-Sense threat-intel screening with behavior-profile embedding drift, signed manifest verification, and TS/Python/Go parity runners.

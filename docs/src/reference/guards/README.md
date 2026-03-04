@@ -1,6 +1,6 @@
 # Guards Reference
 
-Clawdstrike ships with 12 built-in guards. Guards evaluate a `GuardAction` plus `GuardContext` and return a `GuardResult`.
+Clawdstrike ships with 13 built-in guards. Guards evaluate a `GuardAction` plus `GuardContext` and return a `GuardResult`.
 
 ## Built-in Guards
 
@@ -18,6 +18,7 @@ Clawdstrike ships with 12 built-in guards. Guards evaluate a `GuardAction` plus 
 | [ComputerUseGuard](./computer-use.md) | CUA gateway with configurable enforcement modes | `guards.computer_use` |
 | [RemoteDesktopSideChannelGuard](./remote-desktop-side-channel.md) | Control remote desktop channels | `guards.remote_desktop_side_channel` |
 | [InputInjectionCapabilityGuard](./input-injection-capability.md) | Control input injection types and probes | `guards.input_injection_capability` |
+| [SpiderSenseGuard](./spider-sense.md) | Embedding-based threat screening with optional deep-path escalation | `guards.spider_sense` |
 
 ## Prompt-security utilities (not policy guards)
 
@@ -42,6 +43,7 @@ Some prompt-security features are implemented as standalone utilities and are wi
 | ComputerUse | | | | | | | ✓ (`remote.*`, `input.*`) |
 | RemoteDesktopSideChannel | | | | | | | ✓ (`remote.*` side channels) |
 | InputInjectionCapability | | | | | | | ✓ (`input.inject`) |
+| SpiderSense | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## Evaluation Order and Fail-Fast
 
@@ -60,6 +62,8 @@ Some prompt-security features are implemented as standalone utilities and are wi
 11. `remote_desktop_side_channel` (only for `Custom("remote.*", ...)` side channels)
 12. `input_injection_capability` (only for `Custom("input.inject", ...)`)
 13. Custom/extra guards (if registered)
+
+Async guards (including Spider-Sense when configured via `guards.spider_sense`) run in the deep stage after fast/std guards, and only when earlier stages did not deny.
 
 If `settings.fail_fast: true`, evaluation stops on the first blocked result. Otherwise, all applicable guards run and the final verdict is the highest severity across results (block > warn > allow).
 
@@ -133,6 +137,7 @@ Analyze content for security issues:
 - **PatchIntegrityGuard** — Validate patch safety
 - **PromptInjectionGuard** — Detect instruction hijacking
 - **JailbreakGuard** — Detect safety bypass attempts
+- **SpiderSenseGuard** — Embedding similarity screening with optional deep-path escalation
 
 ### Computer Use (CUA) Guards
 

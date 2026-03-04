@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -5,7 +7,7 @@ import type { PolicyEngineLike as CanonicalPolicyEngineLike } from "@clawdstrike
 import { parseNetworkTarget } from "@clawdstrike/adapter-core";
 import { type Policy as CanonicalPolicy, createPolicyEngineFromPolicy } from "@clawdstrike/policy";
 
-import { mergeConfig } from "../config.js";
+import { mergeConfig, resolveBuiltinPolicy } from "../config.js";
 import {
   EgressGuard,
   ForbiddenPathGuard,
@@ -266,7 +268,11 @@ export class PolicyEngine {
     this.egressGuard = new EgressGuard();
     this.secretLeakGuard = new SecretLeakGuard();
     this.patchIntegrityGuard = new PatchIntegrityGuard();
-    this.threatIntelEngine = buildThreatIntelEngine(this.policy);
+    this.threatIntelEngine = buildThreatIntelEngine(
+      this.policy,
+      this.config.guards,
+      policyBaseDirFromRef(this.config.policy),
+    );
   }
 
   enabledGuards(): string[] {
@@ -277,6 +283,7 @@ export class PolicyEngine {
     if (g.secret_leak) enabled.push("secret_leak");
     if (g.patch_integrity) enabled.push("patch_integrity");
     if (g.mcp_tool) enabled.push("mcp_tool");
+    if (g.spider_sense) enabled.push("spider_sense");
     return enabled;
   }
 
@@ -917,21 +924,709 @@ export class PolicyEngine {
   }
 }
 
-function buildThreatIntelEngine(policy: Policy): CanonicalPolicyEngineLike | null {
+function policyBaseDirFromRef(policyRef: string): string | undefined {
+  const trimmed = policyRef.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.startsWith("clawdstrike:")) return undefined;
+  if (resolveBuiltinPolicy(`clawdstrike:${trimmed}`)) return undefined;
+  return path.dirname(path.resolve(trimmed));
+}
+
+function isSpiderSenseCustomGuard(entry: unknown): boolean {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return false;
+  }
+  const pkg = (entry as Record<string, unknown>).package;
+  return typeof pkg === "string" && pkg.trim().toLowerCase() === "clawdstrike-spider-sense";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPolicySpiderSenseDisabled(policy: Policy): boolean {
+  const raw = (policy.guards as Record<string, unknown> | undefined)?.spider_sense;
+  if (raw === false) {
+    return true;
+  }
+  if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+    return (raw as Record<string, unknown>).enabled === false;
+  }
+  return false;
+}
+
+type SpiderSensePattern = {
+  id: string;
+  category: string;
+  stage: string;
+  label: string;
+  embedding: number[];
+};
+
+type SpiderSenseRuntimeConfig = {
+  enabled: boolean;
+  similarityThreshold: number;
+  ambiguityBand: number;
+  topK: number;
+  patterns: SpiderSensePattern[];
+  embeddingApiUrl?: string;
+  embeddingApiKey?: string;
+  embeddingModel?: string;
+};
+
+const SPIDER_SENSE_DEFAULT_THRESHOLD = 0.85;
+const SPIDER_SENSE_DEFAULT_AMBIGUITY_BAND = 0.1;
+const SPIDER_SENSE_DEFAULT_TOP_K = 5;
+const SPIDER_SENSE_BUILTIN_S2BENCH: SpiderSensePattern[] = [
+  {
+    id: "s2b-perception-prompt_injection",
+    category: "prompt_injection",
+    stage: "perception",
+    label: "Prompt injection via system override",
+    embedding: [0.95, 0.05, 0.0],
+  },
+  {
+    id: "s2b-perception-jailbreak",
+    category: "jailbreak",
+    stage: "perception",
+    label: "Jailbreak attempt via role-play",
+    embedding: [0.9, 0.1, 0.05],
+  },
+  {
+    id: "s2b-perception-social_engineering",
+    category: "social_engineering",
+    stage: "perception",
+    label: "Social engineering lure",
+    embedding: [0.8, 0.2, 0.1],
+  },
+  {
+    id: "s2b-perception-data_poisoning",
+    category: "data_poisoning",
+    stage: "perception",
+    label: "Training data poisoning probe",
+    embedding: [0.7, 0.25, 0.15],
+  },
+  {
+    id: "s2b-perception-evasion",
+    category: "evasion",
+    stage: "perception",
+    label: "Evasion via encoding obfuscation",
+    embedding: [0.85, 0.1, 0.1],
+  },
+  {
+    id: "s2b-perception-reconnaissance",
+    category: "reconnaissance",
+    stage: "perception",
+    label: "Capability reconnaissance probe",
+    embedding: [0.75, 0.15, 0.2],
+  },
+  {
+    id: "s2b-perception-supply_chain",
+    category: "supply_chain",
+    stage: "perception",
+    label: "Malicious dependency injection",
+    embedding: [0.65, 0.3, 0.1],
+  },
+  {
+    id: "s2b-perception-data_exfiltration",
+    category: "data_exfiltration",
+    stage: "perception",
+    label: "Data exfiltration via prompt leak",
+    embedding: [0.6, 0.35, 0.05],
+  },
+  {
+    id: "s2b-perception-privilege_escalation",
+    category: "privilege_escalation",
+    stage: "perception",
+    label: "Privilege escalation via context manipulation",
+    embedding: [0.55, 0.4, 0.05],
+  },
+  {
+    id: "s2b-cognition-prompt_injection",
+    category: "prompt_injection",
+    stage: "cognition",
+    label: "Instruction hijack in reasoning",
+    embedding: [0.05, 0.95, 0.0],
+  },
+  {
+    id: "s2b-cognition-jailbreak",
+    category: "jailbreak",
+    stage: "cognition",
+    label: "Logic bypass via hypothetical framing",
+    embedding: [0.1, 0.9, 0.05],
+  },
+  {
+    id: "s2b-cognition-social_engineering",
+    category: "social_engineering",
+    stage: "cognition",
+    label: "Authority impersonation in reasoning",
+    embedding: [0.2, 0.8, 0.1],
+  },
+  {
+    id: "s2b-cognition-data_poisoning",
+    category: "data_poisoning",
+    stage: "cognition",
+    label: "Bias injection in chain-of-thought",
+    embedding: [0.25, 0.7, 0.15],
+  },
+  {
+    id: "s2b-cognition-evasion",
+    category: "evasion",
+    stage: "cognition",
+    label: "Semantic evasion in reasoning",
+    embedding: [0.1, 0.85, 0.1],
+  },
+  {
+    id: "s2b-cognition-reconnaissance",
+    category: "reconnaissance",
+    stage: "cognition",
+    label: "Internal state probing",
+    embedding: [0.15, 0.75, 0.2],
+  },
+  {
+    id: "s2b-cognition-supply_chain",
+    category: "supply_chain",
+    stage: "cognition",
+    label: "Tool trust manipulation",
+    embedding: [0.3, 0.65, 0.1],
+  },
+  {
+    id: "s2b-cognition-data_exfiltration",
+    category: "data_exfiltration",
+    stage: "cognition",
+    label: "Memory extraction via reasoning",
+    embedding: [0.35, 0.6, 0.05],
+  },
+  {
+    id: "s2b-cognition-privilege_escalation",
+    category: "privilege_escalation",
+    stage: "cognition",
+    label: "Role escalation in reasoning",
+    embedding: [0.4, 0.55, 0.05],
+  },
+  {
+    id: "s2b-action-prompt_injection",
+    category: "prompt_injection",
+    stage: "action",
+    label: "Action hijack via injected tool call",
+    embedding: [0.0, 0.05, 0.95],
+  },
+  {
+    id: "s2b-action-jailbreak",
+    category: "jailbreak",
+    stage: "action",
+    label: "Unauthorized action execution",
+    embedding: [0.05, 0.1, 0.9],
+  },
+  {
+    id: "s2b-action-social_engineering",
+    category: "social_engineering",
+    stage: "action",
+    label: "Deceptive output generation",
+    embedding: [0.1, 0.2, 0.8],
+  },
+  {
+    id: "s2b-action-data_poisoning",
+    category: "data_poisoning",
+    stage: "action",
+    label: "Malicious file write",
+    embedding: [0.15, 0.25, 0.7],
+  },
+  {
+    id: "s2b-action-evasion",
+    category: "evasion",
+    stage: "action",
+    label: "Detection bypass in tool use",
+    embedding: [0.1, 0.1, 0.85],
+  },
+  {
+    id: "s2b-action-reconnaissance",
+    category: "reconnaissance",
+    stage: "action",
+    label: "Environment probing via tools",
+    embedding: [0.2, 0.15, 0.75],
+  },
+  {
+    id: "s2b-action-supply_chain",
+    category: "supply_chain",
+    stage: "action",
+    label: "Dependency download from untrusted source",
+    embedding: [0.1, 0.3, 0.65],
+  },
+  {
+    id: "s2b-action-data_exfiltration",
+    category: "data_exfiltration",
+    stage: "action",
+    label: "Data exfiltration via network egress",
+    embedding: [0.05, 0.35, 0.6],
+  },
+  {
+    id: "s2b-action-privilege_escalation",
+    category: "privilege_escalation",
+    stage: "action",
+    label: "Shell escape for privilege escalation",
+    embedding: [0.05, 0.4, 0.55],
+  },
+  {
+    id: "s2b-feedback-prompt_injection",
+    category: "prompt_injection",
+    stage: "feedback",
+    label: "Feedback loop injection",
+    embedding: [0.5, 0.05, 0.45],
+  },
+  {
+    id: "s2b-feedback-jailbreak",
+    category: "jailbreak",
+    stage: "feedback",
+    label: "Self-reinforcing jailbreak via feedback",
+    embedding: [0.45, 0.1, 0.5],
+  },
+  {
+    id: "s2b-feedback-social_engineering",
+    category: "social_engineering",
+    stage: "feedback",
+    label: "Trust amplification via repeated feedback",
+    embedding: [0.4, 0.2, 0.45],
+  },
+  {
+    id: "s2b-feedback-data_poisoning",
+    category: "data_poisoning",
+    stage: "feedback",
+    label: "Feedback-driven model drift",
+    embedding: [0.35, 0.25, 0.4],
+  },
+  {
+    id: "s2b-feedback-evasion",
+    category: "evasion",
+    stage: "feedback",
+    label: "Adaptive evasion from feedback",
+    embedding: [0.42, 0.12, 0.48],
+  },
+  {
+    id: "s2b-feedback-reconnaissance",
+    category: "reconnaissance",
+    stage: "feedback",
+    label: "Response analysis for reconnaissance",
+    embedding: [0.4, 0.15, 0.5],
+  },
+  {
+    id: "s2b-feedback-supply_chain",
+    category: "supply_chain",
+    stage: "feedback",
+    label: "Supply chain persistence via feedback",
+    embedding: [0.35, 0.3, 0.4],
+  },
+  {
+    id: "s2b-feedback-data_exfiltration",
+    category: "data_exfiltration",
+    stage: "feedback",
+    label: "Gradual data leak via feedback",
+    embedding: [0.3, 0.35, 0.4],
+  },
+  {
+    id: "s2b-feedback-privilege_escalation",
+    category: "privilege_escalation",
+    stage: "feedback",
+    label: "Incremental privilege gain via feedback",
+    embedding: [0.25, 0.4, 0.4],
+  },
+];
+
+function parseSpiderSensePatterns(
+  config: Record<string, unknown>,
+  policyBaseDir?: string,
+): SpiderSensePattern[] {
+  const normalizeHex = (value: string): string => {
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.startsWith("0x") ? trimmed.slice(2) : trimmed;
+  };
+  const hasNonEmptyString = (value: unknown): boolean =>
+    typeof value === "string" && value.trim().length > 0;
+  const hasNonEmptyArray = (value: unknown): boolean => Array.isArray(value) && value.length > 0;
+
+  const parsePattern = (entry: unknown): SpiderSensePattern | null => {
+    if (!isRecord(entry) || !Array.isArray(entry.embedding) || entry.embedding.length === 0) {
+      return null;
+    }
+    const embedding: number[] = [];
+    for (const value of entry.embedding) {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return null;
+      }
+      embedding.push(value);
+    }
+    return {
+      id: typeof entry.id === "string" ? entry.id : "",
+      category: typeof entry.category === "string" ? entry.category : "",
+      stage: typeof entry.stage === "string" ? entry.stage : "",
+      label: typeof entry.label === "string" ? entry.label : "",
+      embedding,
+    };
+  };
+  const assertConsistentEmbeddingDimensions = (
+    patterns: SpiderSensePattern[],
+    source: string,
+  ): void => {
+    if (patterns.length === 0) return;
+    const expectedDim = patterns[0]!.embedding.length;
+    for (let i = 0; i < patterns.length; i++) {
+      const dim = patterns[i]!.embedding.length;
+      if (dim !== expectedDim) {
+        throw new Error(
+          `${source} contains embedding dimension mismatch at index ${i}: expected ${expectedDim}, got ${dim}`,
+        );
+      }
+    }
+  };
+
+  const rawPatterns = config.patterns;
+  if (Array.isArray(rawPatterns)) {
+    if (rawPatterns.length > 0) {
+      const parsed = rawPatterns.map((entry, index) => {
+        const pattern = parsePattern(entry);
+        if (!pattern) {
+          throw new Error(`spider_sense inline patterns contain invalid entry at index ${index}`);
+        }
+        return pattern;
+      });
+      assertConsistentEmbeddingDimensions(parsed, "spider_sense inline patterns");
+      return parsed;
+    }
+  }
+
+  const rawPatternDbPath =
+    typeof config.pattern_db_path === "string" ? config.pattern_db_path.trim() : "";
+  if (rawPatternDbPath === "builtin:s2bench-v1") {
+    assertConsistentEmbeddingDimensions(SPIDER_SENSE_BUILTIN_S2BENCH, "builtin:s2bench-v1");
+    return SPIDER_SENSE_BUILTIN_S2BENCH;
+  }
+  const patternDbPath =
+    rawPatternDbPath.length > 0 && !path.isAbsolute(rawPatternDbPath)
+      ? path.resolve(policyBaseDir ?? process.cwd(), rawPatternDbPath)
+      : rawPatternDbPath;
+  if (patternDbPath.length > 0) {
+    const raw = readFileSync(patternDbPath, "utf8");
+    const expectedChecksum = hasNonEmptyString(config.pattern_db_checksum)
+      ? normalizeHex(String(config.pattern_db_checksum))
+      : "";
+    if (expectedChecksum.length > 0) {
+      const actualChecksum = createHash("sha256").update(raw).digest("hex").toLowerCase();
+      if (actualChecksum !== expectedChecksum) {
+        throw new Error(
+          `spider_sense pattern DB checksum mismatch for '${patternDbPath}': expected ${expectedChecksum}, got ${actualChecksum}`,
+        );
+      }
+    }
+
+    const hasSignatureMetadata =
+      hasNonEmptyString(config.pattern_db_signature) ||
+      hasNonEmptyString(config.pattern_db_signature_key_id) ||
+      hasNonEmptyString(config.pattern_db_public_key) ||
+      hasNonEmptyString(config.pattern_db_trust_store_path) ||
+      hasNonEmptyArray(config.pattern_db_trusted_keys);
+    const hasManifestMetadata =
+      hasNonEmptyString(config.pattern_db_manifest_path) ||
+      hasNonEmptyString(config.pattern_db_manifest_trust_store_path) ||
+      hasNonEmptyArray(config.pattern_db_manifest_trusted_keys);
+    if (hasSignatureMetadata || hasManifestMetadata) {
+      throw new Error(
+        "spider_sense signature/manifest integrity metadata is not executable in OpenClaw runtime",
+      );
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new Error(`spider_sense pattern DB at '${patternDbPath}' is empty or invalid`);
+    }
+    const patterns = parsed.map((entry, index) => {
+      const pattern = parsePattern(entry);
+      if (!pattern) {
+        throw new Error(
+          `spider_sense pattern DB at '${patternDbPath}' contains invalid entry at index ${index}`,
+        );
+      }
+      return pattern;
+    });
+    assertConsistentEmbeddingDimensions(
+      patterns,
+      `spider_sense pattern DB at '${patternDbPath}'`,
+    );
+    return patterns;
+  }
+  return [];
+}
+
+function buildSpiderSenseRuntimeConfig(
+  spec: unknown,
+  options: { policyBaseDir?: string } = {},
+): SpiderSenseRuntimeConfig {
+  const record = isRecord(spec) ? spec : {};
+  const config = isRecord(record.config) ? record.config : {};
+  const similarityThreshold =
+    typeof config.similarity_threshold === "number"
+      ? config.similarity_threshold
+      : SPIDER_SENSE_DEFAULT_THRESHOLD;
+  const ambiguityBand =
+    typeof config.ambiguity_band === "number"
+      ? config.ambiguity_band
+      : SPIDER_SENSE_DEFAULT_AMBIGUITY_BAND;
+  const topK =
+    typeof config.top_k === "number"
+      ? Math.max(1, Math.trunc(config.top_k))
+      : SPIDER_SENSE_DEFAULT_TOP_K;
+  if (!Number.isFinite(similarityThreshold) || similarityThreshold < 0 || similarityThreshold > 1) {
+    throw new Error(
+      `spider_sense similarity_threshold must be in [0, 1], got ${String(similarityThreshold)}`,
+    );
+  }
+  if (!Number.isFinite(ambiguityBand) || ambiguityBand < 0 || ambiguityBand > 1) {
+    throw new Error(`spider_sense ambiguity_band must be in [0, 1], got ${String(ambiguityBand)}`);
+  }
+  const upperBound = similarityThreshold + ambiguityBand;
+  const lowerBound = similarityThreshold - ambiguityBand;
+  if (upperBound > 1 || lowerBound < 0) {
+    throw new Error(
+      `spider_sense threshold/band produce invalid decision range: lower=${lowerBound.toFixed(3)}, upper=${upperBound.toFixed(3)}`,
+    );
+  }
+
+  const patterns = parseSpiderSensePatterns(config, options.policyBaseDir);
+  if (patterns.length === 0) {
+    throw new Error("spider_sense requires non-empty patterns or pattern_db_path");
+  }
+
+  const embeddingApiUrl =
+    typeof config.embedding_api_url === "string" ? config.embedding_api_url : undefined;
+  const embeddingApiKey =
+    typeof config.embedding_api_key === "string" ? config.embedding_api_key : undefined;
+  const embeddingModel =
+    typeof config.embedding_model === "string" ? config.embedding_model : undefined;
+
+  return {
+    enabled: record.enabled !== false,
+    similarityThreshold,
+    ambiguityBand,
+    topK,
+    patterns,
+    embeddingApiUrl,
+    embeddingApiKey,
+    embeddingModel,
+  };
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const av = a[i]!;
+    const bv = b[i]!;
+    dot += av * bv;
+    normA += av * av;
+    normB += bv * bv;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function extractEmbeddingFromEvent(event: PolicyEvent): number[] | null {
+  const data: Record<string, unknown> = isRecord(event.data) ? event.data : {};
+  const customData = isRecord(data.customData) ? data.customData : null;
+  const maybeEmbedding: unknown[] | undefined =
+    (Array.isArray(data.embedding) ? data.embedding : undefined) ??
+    (customData && Array.isArray(customData.embedding)
+      ? (customData.embedding as unknown[])
+      : undefined);
+  if (!maybeEmbedding) return null;
+  const embedding = maybeEmbedding.filter(
+    (value: unknown): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return embedding.length > 0 ? embedding : null;
+}
+
+function eventToSpiderSenseText(event: PolicyEvent): string {
+  return `[event:${event.eventType}] ${JSON.stringify(event.data ?? null)}`;
+}
+
+async function fetchSpiderSenseEmbedding(
+  runtime: SpiderSenseRuntimeConfig,
+  event: PolicyEvent,
+): Promise<number[] | null> {
+  if (!runtime.embeddingApiUrl || !runtime.embeddingApiKey || !runtime.embeddingModel) {
+    return null;
+  }
+  const response = await fetch(runtime.embeddingApiUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${runtime.embeddingApiKey}`,
+    },
+    body: JSON.stringify({
+      model: runtime.embeddingModel,
+      input: eventToSpiderSenseText(event),
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`spider_sense embedding request failed (${response.status})`);
+  }
+  const json = (await response.json()) as Record<string, unknown>;
+  const data = Array.isArray(json.data) ? json.data : [];
+  const first = isRecord(data[0]) ? data[0] : {};
+  const embedding = Array.isArray(first.embedding) ? first.embedding : [];
+  const out = embedding.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return out.length > 0 ? out : null;
+}
+
+function evaluateSpiderSenseEmbedding(
+  runtime: SpiderSenseRuntimeConfig,
+  embedding: number[],
+): Decision {
+  const expectedDim = runtime.patterns[0]?.embedding.length ?? 0;
+  if (expectedDim === 0) {
+    return denyDecision(
+      POLICY_REASON_CODES.GUARD_ERROR,
+      "Spider-Sense pattern DB is empty (fail-closed)",
+      "clawdstrike-spider-sense",
+      "high",
+    );
+  }
+  if (embedding.length !== expectedDim) {
+    return denyDecision(
+      POLICY_REASON_CODES.GUARD_ERROR,
+      `Spider-Sense embedding dimension mismatch (${embedding.length} vs ${expectedDim})`,
+      "clawdstrike-spider-sense",
+      "high",
+    );
+  }
+
+  const topMatches = runtime.patterns
+    .map((entry) => ({ entry, score: cosineSimilarity(embedding, entry.embedding) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, runtime.topK);
+  const top = topMatches[0];
+  const topScore = top?.score ?? 0;
+  const upper = runtime.similarityThreshold + runtime.ambiguityBand;
+  const lower = runtime.similarityThreshold - runtime.ambiguityBand;
+
+  if (top && topScore >= upper) {
+    return denyDecision(
+      POLICY_REASON_CODES.GUARD_ERROR,
+      `Spider-Sense high similarity (${topScore.toFixed(3)}) to pattern '${top.entry.label}'`,
+      "clawdstrike-spider-sense",
+      "high",
+    );
+  }
+  if (topScore <= lower) {
+    return { status: "allow" };
+  }
+  return warnDecision(
+    POLICY_REASON_CODES.POLICY_WARN,
+    `Spider-Sense ambiguous similarity (${topScore.toFixed(3)})`,
+    "clawdstrike-spider-sense",
+    "medium",
+  );
+}
+
+async function evaluateSpiderSenseRuntime(
+  runtime: SpiderSenseRuntimeConfig,
+  event: PolicyEvent,
+): Promise<Decision> {
+  if (!runtime.enabled) return { status: "allow" };
+  try {
+    const embedding =
+      extractEmbeddingFromEvent(event) ?? (await fetchSpiderSenseEmbedding(runtime, event));
+    if (!embedding) {
+      return { status: "allow" };
+    }
+    return evaluateSpiderSenseEmbedding(runtime, embedding);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return denyDecision(
+      POLICY_REASON_CODES.GUARD_ERROR,
+      `Spider-Sense runtime error: ${detail}`,
+      "clawdstrike-spider-sense",
+      "high",
+    );
+  }
+}
+
+function buildThreatIntelEngine(
+  policy: Policy,
+  guardToggles: Required<ClawdstrikeConfig>["guards"],
+  policyBaseDir?: string,
+): CanonicalPolicyEngineLike | null {
   const custom = policy.guards?.custom;
   if (!Array.isArray(custom) || custom.length === 0) {
     return null;
   }
 
-  // The openclaw Policy types `custom` as `unknown`; the canonical Policy
-  // expects `CustomGuardSpec[]`. We've validated it's an array above.
-  // GuardConfigs has an index signature so `unknown[]` is assignable.
-  const canonicalPolicy: CanonicalPolicy = {
-    version: "1.1.0",
-    guards: { custom },
-  };
+  const policySpiderSenseDisabled = isPolicySpiderSenseDisabled(policy);
+  const spiderSenseRuntimes = custom
+    .filter((entry) => {
+      if (!isSpiderSenseCustomGuard(entry)) return false;
+      if (!guardToggles.spider_sense || policySpiderSenseDisabled) return false;
+      if (isRecord(entry) && entry.enabled === false) return false;
+      return true;
+    })
+    .map((entry) => buildSpiderSenseRuntimeConfig(entry, { policyBaseDir }));
+  const filteredCustom = custom.filter((entry) => {
+    if (isSpiderSenseCustomGuard(entry)) {
+      return false;
+    }
+    return true;
+  });
 
-  return createPolicyEngineFromPolicy(canonicalPolicy);
+  let canonicalEngine: CanonicalPolicyEngineLike | null = null;
+  if (filteredCustom.length > 0) {
+    // The openclaw Policy types `custom` as `unknown`; the canonical Policy
+    // expects `CustomGuardSpec[]`. We've validated it's an array above.
+    // GuardConfigs has an index signature so `unknown[]` is assignable.
+    const canonicalPolicy: CanonicalPolicy = {
+      version: "1.1.0",
+      guards: { custom: filteredCustom },
+    };
+    canonicalEngine = createPolicyEngineFromPolicy(canonicalPolicy);
+  }
+
+  if (!canonicalEngine && spiderSenseRuntimes.length === 0) {
+    return null;
+  }
+
+  if (!canonicalEngine) {
+    return {
+      evaluate: async (event: PolicyEvent): Promise<Decision> => {
+        let out: Decision = { status: "allow" };
+        for (const runtime of spiderSenseRuntimes) {
+          const decision = await evaluateSpiderSenseRuntime(runtime, event);
+          out = combineDecisions(out, decision);
+          if (out.status === "deny") return out;
+        }
+        return out;
+      },
+    };
+  }
+
+  if (spiderSenseRuntimes.length === 0) {
+    return canonicalEngine;
+  }
+
+  return {
+    evaluate: async (event: PolicyEvent): Promise<Decision> => {
+      const canonicalDecision = (await canonicalEngine.evaluate(event)) as Decision;
+      if (canonicalDecision.status === "deny") return canonicalDecision;
+
+      let spiderDecision: Decision = { status: "allow" };
+      for (const runtime of spiderSenseRuntimes) {
+        const decision = await evaluateSpiderSenseRuntime(runtime, event);
+        spiderDecision = combineDecisions(spiderDecision, decision);
+        if (spiderDecision.status === "deny") break;
+      }
+      return combineDecisions(canonicalDecision, spiderDecision);
+    },
+  };
 }
 
 function combineDecisions(base: Decision, next: Decision): Decision {

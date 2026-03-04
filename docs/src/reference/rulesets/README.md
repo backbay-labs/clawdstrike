@@ -17,6 +17,7 @@ In this repository, rulesets are defined as YAML files in `rulesets/` and embedd
 | `remote-desktop` | Base CUA security for remote desktop AI agents |
 | `remote-desktop-permissive` | Dev-friendly CUA policy (all channels open, observe mode) |
 | `remote-desktop-strict` | Maximum CUA security for high-security environments |
+| `spider-sense` | Spider-Sense baseline with built-in S2Bench pattern DB + embedding-provider knobs |
 
 ## Use a ruleset
 
@@ -29,7 +30,7 @@ clawdstrike check --action-type egress --ruleset default api.github.com:443
 ### As a base policy
 
 ```yaml
-version: "1.2.0"
+version: "1.3.0"
 name: My Policy
 extends: clawdstrike:default
 ```
@@ -45,7 +46,7 @@ clawdstrike policy show strict
 Create a policy file that extends a ruleset and adds overrides:
 
 ```yaml
-version: "1.2.0"
+version: "1.3.0"
 name: My CI Policy
 extends: clawdstrike:cicd
 
@@ -75,3 +76,4 @@ Remote `extends` is hardened by default:
 - [Remote Desktop](./remote-desktop.md)
 - [Remote Desktop Permissive](./remote-desktop-permissive.md)
 - [Remote Desktop Strict](./remote-desktop-strict.md)
+- [Spider-Sense](./spider-sense.md)

@@ -30,6 +30,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isSpiderSenseCustomGuard(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  const pkg = value.package;
+  return typeof pkg === "string" && pkg.trim().toLowerCase() === "clawdstrike-spider-sense";
+}
+
 function isBuiltinRef(ref: string): string | null {
   if (!ref) return null;
   if (ref.startsWith("clawdstrike:")) return ref;
@@ -67,14 +73,23 @@ export function loadPolicyFromString(content: string): Policy {
       rulesetsDir: CANONICAL_RULESETS_DIR,
       onWarning: warnLegacyCompatibility,
     });
-    return translateCanonicalPolicy(canonical);
+    const translated = translateCanonicalPolicy(canonical);
+    const report = validatePolicy(translated);
+    if (!report.valid) {
+      throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join("\n- ")}`);
+    }
+    return translated;
   }
 
   const policy = parsed as Policy;
   if (policy.version === "clawdstrike-v1.0") {
     warnLegacyCompatibility(
-      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.",
+      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.3.0 is preferred.",
     );
+  }
+  const report = validatePolicy(policy);
+  if (!report.valid) {
+    throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join("\n- ")}`);
   }
   return policy;
 }
@@ -158,7 +173,7 @@ function loadPolicyRecursive(ref: string, stack: string[]): Policy {
   const policy = parsed as Policy;
   if (policy.version === "clawdstrike-v1.0") {
     warnLegacyCompatibility(
-      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.",
+      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.3.0 is preferred.",
     );
   }
 
@@ -224,7 +239,7 @@ function parseYamlObject(content: string): Record<string, unknown> {
 
 function isCanonicalPolicy(policy: Record<string, unknown>): boolean {
   const version = policy.version;
-  return typeof version === "string" && /^(1\.1\.0|1\.2\.0)$/.test(version);
+  return typeof version === "string" && /^(1\.1\.0|1\.2\.0|1\.3\.0)$/.test(version);
 }
 
 function warnLegacyCompatibility(message: string): void {
@@ -240,6 +255,10 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
   const guards = canonical.guards as Record<string, any> | undefined;
   const toggles: Record<string, boolean> = {};
   if (guards) {
+    const customGuards: unknown[] = Array.isArray((guards as any).custom)
+      ? [...((guards as any).custom as unknown[])]
+      : [];
+
     if (typeof guards.forbidden_path === "object") {
       const cfg = guards.forbidden_path as Record<string, unknown>;
       toggles.forbidden_path = cfg.enabled !== false;
@@ -317,6 +336,49 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
+    if (typeof guards.spider_sense === "boolean") {
+      toggles.spider_sense = guards.spider_sense;
+      if (guards.spider_sense) {
+        const hasExecutableSpiderSenseCustom = customGuards.some((entry) => {
+          if (!isSpiderSenseCustomGuard(entry)) return false;
+          const enabled = isPlainObject(entry) ? entry.enabled : undefined;
+          return enabled !== false;
+        });
+        if (!hasExecutableSpiderSenseCustom) {
+          throw new PolicyLoadError(
+            "canonical guards.spider_sense: true is not executable in OpenClaw translation; provide an object config or guards.custom entry",
+          );
+        }
+      }
+    } else if (typeof guards.spider_sense === "object") {
+      const cfg = guards.spider_sense as Record<string, unknown>;
+      toggles.spider_sense = cfg.enabled !== false;
+      if (toggles.spider_sense) {
+        const customConfig: Record<string, unknown> = { ...cfg };
+        delete customConfig.enabled;
+        const asyncCfg = customConfig.async;
+        delete customConfig.async;
+        if (Object.keys(customConfig).length === 0) {
+          throw new PolicyLoadError(
+            "canonical guards.spider_sense object must include executable guard configuration when enabled",
+          );
+        }
+        const customSpec: Record<string, unknown> = {
+          package: "clawdstrike-spider-sense",
+          enabled: true,
+          config: customConfig,
+        };
+        if (isPlainObject(asyncCfg)) {
+          customSpec.async = asyncCfg;
+        }
+        // Prefer first-class spider_sense guard config over deprecated custom entries.
+        const dedupedCustomGuards = customGuards.filter((entry) => !isSpiderSenseCustomGuard(entry));
+        customGuards.length = 0;
+        customGuards.push(...dedupedCustomGuards);
+        customGuards.push(customSpec);
+      }
+    }
+
     if (typeof guards.computer_use === "object") {
       const cfg = guards.computer_use as Record<string, unknown>;
       const translated: NonNullable<Policy["guards"]>["computer_use"] = {};
@@ -380,10 +442,10 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
-    if (Array.isArray((guards as any).custom)) {
+    if (customGuards.length > 0) {
       out.guards = {
         ...out.guards,
-        custom: (guards as any).custom,
+        custom: customGuards,
       };
     }
   }

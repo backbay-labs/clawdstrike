@@ -1,0 +1,32 @@
+{
+  "model": "text-embedding-3-small",
+  "profiles": [
+    {
+      "profile_id": "support_agent",
+      "role": "Customer support assistant",
+      "description": "Handles product docs, account triage, and known-safe KB workflows.",
+      "profile_text": "Support-focused interactions, bounded retrieval, no privileged execution, low outbound data movement.",
+      "embedding": [0.18, 0.20, 0.18, 0.20, 0.22, 0.18],
+      "drift_warn_threshold": 0.10,
+      "drift_deny_threshold": 0.30
+    },
+    {
+      "profile_id": "build_agent",
+      "role": "Build and release automation agent",
+      "description": "Performs package resolution, CI diagnostics, and signed artifact publication.",
+      "profile_text": "Build-time dependency resolution, moderate tooling access, controlled release workflows.",
+      "embedding": [0.16, 0.16, 0.22, 0.36, 0.20, 0.12],
+      "drift_warn_threshold": 0.12,
+      "drift_deny_threshold": 0.32
+    },
+    {
+      "profile_id": "incident_responder",
+      "role": "Security incident responder",
+      "description": "Investigates suspicious events and performs scoped containment actions.",
+      "profile_text": "Security triage, targeted investigation, moderate reconnaissance behavior under authorization.",
+      "embedding": [0.28, 0.30, 0.26, 0.14, 0.32, 0.18],
+      "drift_warn_threshold": 0.12,
+      "drift_deny_threshold": 0.30
+    }
+  ]
+}

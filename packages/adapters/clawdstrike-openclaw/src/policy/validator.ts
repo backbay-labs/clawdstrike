@@ -2,7 +2,7 @@ import { validatePolicy as validateCanonicalPolicy } from "@clawdstrike/policy";
 import type { Policy, PolicyLintResult } from "../types.js";
 
 export const POLICY_SCHEMA_VERSION = "clawdstrike-v1.0";
-const SUPPORTED_CANONICAL_VERSIONS = new Set(["1.1.0", "1.2.0"]);
+const SUPPORTED_CANONICAL_VERSIONS = new Set(["1.1.0", "1.2.0", "1.3.0"]);
 
 const VALID_EGRESS_MODES = new Set(["allowlist", "denylist", "open", "deny_all"]);
 const VALID_VIOLATION_ACTIONS = new Set(["cancel", "warn"]);
@@ -17,6 +17,7 @@ const RESERVED_PACKAGES = new Set([
   "clawdstrike-virustotal",
   "clawdstrike-safe-browsing",
   "clawdstrike-snyk",
+  "clawdstrike-spider-sense",
 ]);
 
 const POLICY_KEYS = new Set([
@@ -46,6 +47,7 @@ const GUARDS_KEYS = new Set([
   "computer_use",
   "remote_desktop_side_channel",
   "input_injection_capability",
+  "spider_sense",
 ]);
 const COMPUTER_USE_KEYS = new Set(["enabled", "mode", "allowed_actions"]);
 const REMOTE_DESKTOP_SIDE_CHANNEL_KEYS = new Set([
@@ -86,6 +88,20 @@ function ensureBoolean(value: unknown, field: string, errors: string[]): void {
   if (typeof value !== "boolean") {
     errors.push(`${field} must be a boolean`);
   }
+}
+
+function ensureBooleanOrObject(value: unknown, field: string, errors: string[]): void {
+  if (value === undefined) return;
+  if (typeof value !== "boolean" && (typeof value !== "object" || value === null || Array.isArray(value))) {
+    errors.push(`${field} must be a boolean or object`);
+  }
+}
+
+function isSpiderSenseCustomGuard(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  const pkg = value.package;
+  if (typeof pkg !== "string") return false;
+  return pkg.trim().toLowerCase() === "clawdstrike-spider-sense";
 }
 
 function ensureStringArray(
@@ -157,7 +173,7 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
     };
   } else if (p.version !== POLICY_SCHEMA_VERSION) {
     errors.push(
-      `unsupported policy version: ${p.version} (supported: ${POLICY_SCHEMA_VERSION}, 1.1.0, 1.2.0)`,
+      `unsupported policy version: ${p.version} (supported: ${POLICY_SCHEMA_VERSION}, 1.1.0, 1.2.0, 1.3.0)`,
     );
   }
 
@@ -283,6 +299,7 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
       ensureBoolean((p.guards as any).secret_leak, "guards.secret_leak", errors);
       ensureBoolean((p.guards as any).patch_integrity, "guards.patch_integrity", errors);
       ensureBoolean((p.guards as any).mcp_tool, "guards.mcp_tool", errors);
+      ensureBooleanOrObject((p.guards as any).spider_sense, "guards.spider_sense", errors);
 
       const computerUse = (p.guards as any).computer_use;
       if (computerUse !== undefined) {
@@ -415,6 +432,23 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
           for (let i = 0; i < custom.length; i++) {
             validateCustomGuardSpec(custom[i], `guards.custom[${i}]`, errors);
           }
+        }
+      }
+
+      // In the legacy OpenClaw policy schema, Spider-Sense is executable only via
+      // guards.custom package entries. Reject legacy-first-class wiring to avoid
+      // silent security no-ops.
+      if (p.version === POLICY_SCHEMA_VERSION) {
+        const spiderSense = (p.guards as any).spider_sense;
+        const hasSpiderSenseCustom = Array.isArray(custom) && custom.some(isSpiderSenseCustomGuard);
+        if (typeof spiderSense === "object" && spiderSense !== null && !Array.isArray(spiderSense)) {
+          errors.push(
+            "guards.spider_sense object is not executable in clawdstrike-v1.0; use guards.custom package \"clawdstrike-spider-sense\" or canonical 1.3.0",
+          );
+        } else if (spiderSense === true && !hasSpiderSenseCustom) {
+          errors.push(
+            "guards.spider_sense: true is not executable in clawdstrike-v1.0 without guards.custom package \"clawdstrike-spider-sense\"",
+          );
         }
       }
     }

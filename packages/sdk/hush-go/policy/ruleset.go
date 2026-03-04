@@ -10,11 +10,12 @@ var rulesetFS embed.FS
 
 // Known built-in ruleset names.
 var builtinNames = map[string]string{
-	"permissive": "rulesets/permissive.yaml",
-	"default":    "rulesets/default.yaml",
-	"strict":     "rulesets/strict.yaml",
-	"ai-agent":   "rulesets/ai-agent.yaml",
-	"cicd":       "rulesets/cicd.yaml",
+	"permissive":   "rulesets/permissive.yaml",
+	"default":      "rulesets/default.yaml",
+	"strict":       "rulesets/strict.yaml",
+	"ai-agent":     "rulesets/ai-agent.yaml",
+	"cicd":         "rulesets/cicd.yaml",
+	"spider-sense": "rulesets/spider-sense.yaml",
 }
 
 // BuiltinNames returns the list of available built-in ruleset names.

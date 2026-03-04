@@ -1,0 +1,20 @@
+version: "1.3.0"
+name: "spider-sense"
+description: >
+  Spider-Sense hierarchical screening guard using embedding-based cosine
+  similarity against the S2Bench taxonomy (4 stages x 9 attack types).
+  Requires an embedding API endpoint. Optionally enables the LLM deep
+  reasoning path for ambiguous cases.
+
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "${SPIDER_SENSE_EMBEDDING_URL}"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.85
+    ambiguity_band: 0.10
+    top_k: 5
+    pattern_db_path: "builtin:s2bench-v1"
+    pattern_db_version: "s2bench-v1"
+    pattern_db_checksum: "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"

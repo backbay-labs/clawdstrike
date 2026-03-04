@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG: Required<ClawdstrikeConfig> = {
     secret_leak: true,
     patch_integrity: true,
     mcp_tool: false,
+    spider_sense: false,
   },
 };
 
@@ -46,6 +47,7 @@ function mergeGuardToggles(userGuards: GuardToggles = {}): Required<GuardToggles
     secret_leak: u.secret_leak ?? d.secret_leak ?? true,
     patch_integrity: u.patch_integrity ?? d.patch_integrity ?? true,
     mcp_tool: u.mcp_tool ?? d.mcp_tool ?? false,
+    spider_sense: u.spider_sense ?? d.spider_sense ?? false,
   };
 }
 

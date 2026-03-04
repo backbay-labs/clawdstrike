@@ -17,7 +17,6 @@
 // Also re-export the concrete event-data interfaces so files that import
 // e.g. `FileEventData` from '../types.js' continue to resolve.
 export type {
-  ClawdstrikeConfig,
   CommandEventData,
   CuaEventData,
   Decision,
@@ -27,7 +26,6 @@ export type {
   EventData,
   EventType,
   FileEventData,
-  GuardToggles,
   LogLevel,
   NetworkEventData,
   PatchEventData,
@@ -76,11 +74,22 @@ export interface InputInjectionCapabilityGuardConfig {
   require_postcondition_probe?: boolean;
 }
 
-// NOTE: GuardToggles is re-exported from adapter-core above.
-// Import it as a type-only reference for the `extends` clause.
-import type { GuardToggles as _GuardToggles } from "@clawdstrike/adapter-core";
+import type {
+  ClawdstrikeConfig as AdapterCoreClawdstrikeConfig,
+  GuardToggles as AdapterCoreGuardToggles,
+} from "@clawdstrike/adapter-core";
 
-export interface PolicyGuards extends _GuardToggles {
+// Keep openclaw config tolerant to newer guard toggles even when adapter-core
+// package versions lag behind this package.
+export interface GuardToggles extends AdapterCoreGuardToggles {
+  spider_sense?: boolean;
+}
+
+export interface ClawdstrikeConfig extends Omit<AdapterCoreClawdstrikeConfig, "guards"> {
+  guards?: GuardToggles;
+}
+
+export interface PolicyGuards extends GuardToggles {
   custom?: unknown;
   computer_use?: ComputerUseGuardConfig;
   remote_desktop_side_channel?: RemoteDesktopSideChannelGuardConfig;

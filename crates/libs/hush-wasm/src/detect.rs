@@ -4,6 +4,7 @@ use wasm_bindgen::prelude::*;
 
 use clawdstrike::jailbreak::{JailbreakDetector, JailbreakGuardConfig};
 use clawdstrike::output_sanitizer::{OutputSanitizer, OutputSanitizerConfig};
+use clawdstrike::spider_sense::{PatternDb, SpiderSenseDetector, SpiderSenseDetectorConfig};
 
 fn snake_to_camel(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -147,6 +148,56 @@ impl WasmInstructionHierarchyEnforcer {
 }
 
 #[wasm_bindgen]
+pub struct WasmSpiderSenseDetector {
+    config: SpiderSenseDetectorConfig,
+    inner: Option<SpiderSenseDetector>,
+}
+
+#[wasm_bindgen]
+impl WasmSpiderSenseDetector {
+    #[wasm_bindgen(constructor)]
+    pub fn new(config_json: Option<String>) -> Result<WasmSpiderSenseDetector, JsError> {
+        let config = match config_json {
+            Some(json) => serde_json::from_str::<SpiderSenseDetectorConfig>(&json)
+                .map_err(|e| JsError::new(&format!("Invalid config JSON: {e}")))?,
+            None => SpiderSenseDetectorConfig::default(),
+        };
+        Ok(Self {
+            config,
+            inner: None,
+        })
+    }
+
+    pub fn load_patterns(&mut self, patterns_json: &str) -> Result<(), JsError> {
+        let pattern_db = PatternDb::parse_json(patterns_json)
+            .map_err(|e| JsError::new(&format!("Invalid patterns JSON: {e}")))?;
+        let detector = SpiderSenseDetector::new(pattern_db, &self.config)
+            .map_err(|e| JsError::new(&format!("Invalid detector config: {e}")))?;
+        self.inner = Some(detector);
+        Ok(())
+    }
+
+    pub fn screen(&self, embedding_json: &str) -> Result<String, JsError> {
+        let detector = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| JsError::new("No patterns loaded. Call load_patterns() first."))?;
+        let embedding: Vec<f32> = serde_json::from_str(embedding_json)
+            .map_err(|e| JsError::new(&format!("Invalid embedding JSON: {e}")))?;
+        let result = detector.screen(&embedding);
+        serialize_camel_case(&result)
+    }
+
+    pub fn expected_dim(&self) -> Option<usize> {
+        self.inner.as_ref().and_then(|d| d.expected_dim())
+    }
+
+    pub fn pattern_count(&self) -> usize {
+        self.inner.as_ref().map_or(0, |d| d.pattern_count())
+    }
+}
+
+#[wasm_bindgen]
 pub fn canonicalize_json(json_str: &str) -> Result<String, JsError> {
     let value: serde_json::Value =
         serde_json::from_str(json_str).map_err(|e| JsError::new(&format!("Invalid JSON: {e}")))?;
@@ -220,6 +271,66 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&result_json).unwrap();
         assert_ne!(v["level"], "safe");
         assert!(v["score"].as_u64().unwrap() >= 1);
+    }
+
+    #[test]
+    fn spider_sense_detector_deny() {
+        let mut detector = WasmSpiderSenseDetector::new(None).unwrap();
+        detector
+            .load_patterns(
+                r#"[
+                { "id": "p1", "category": "prompt_injection", "stage": "perception", "label": "ignore previous", "embedding": [1.0, 0.0, 0.0] },
+                { "id": "p2", "category": "data_exfiltration", "stage": "action", "label": "exfil data", "embedding": [0.0, 1.0, 0.0] }
+            ]"#,
+            )
+            .unwrap();
+        let result_json = detector.screen("[1.0, 0.0, 0.0]").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+        assert_eq!(v["verdict"], "deny");
+        assert!((v["topScore"].as_f64().unwrap() - 1.0).abs() < 1e-6);
+        assert!(v.get("topMatches").is_some());
+    }
+
+    #[test]
+    fn spider_sense_detector_allow() {
+        let mut detector = WasmSpiderSenseDetector::new(None).unwrap();
+        detector
+            .load_patterns(
+                r#"[
+                { "id": "p1", "category": "prompt_injection", "stage": "perception", "label": "ignore previous", "embedding": [1.0, 0.0, 0.0] }
+            ]"#,
+            )
+            .unwrap();
+        // Orthogonal vector
+        let result_json = detector.screen("[0.0, 1.0, 0.0]").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+        assert_eq!(v["verdict"], "allow");
+    }
+
+    #[test]
+    fn spider_sense_no_patterns_returns_none() {
+        // We cannot call screen() without patterns because it returns JsError,
+        // which panics on non-wasm targets. Instead, verify the state is correct:
+        // inner should be None before load_patterns.
+        let detector = WasmSpiderSenseDetector::new(None).unwrap();
+        assert_eq!(detector.pattern_count(), 0);
+        assert_eq!(detector.expected_dim(), None);
+    }
+
+    #[test]
+    fn spider_sense_expected_dim_and_count() {
+        let mut detector = WasmSpiderSenseDetector::new(None).unwrap();
+        assert_eq!(detector.expected_dim(), None);
+        assert_eq!(detector.pattern_count(), 0);
+        detector
+            .load_patterns(
+                r#"[
+                { "id": "p1", "category": "a", "stage": "b", "label": "c", "embedding": [1.0, 0.0, 0.0] }
+            ]"#,
+            )
+            .unwrap();
+        assert_eq!(detector.expected_dim(), Some(3));
+        assert_eq!(detector.pattern_count(), 1);
     }
 
     #[test]

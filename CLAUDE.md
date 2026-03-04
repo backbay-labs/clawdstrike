@@ -82,7 +82,7 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 - **Receipt** - Ed25519-signed attestation of decision, policy, and evidence
 - **HushEngine** - Facade orchestrating guards and signing
 
-### Built-in Guards (12)
+### Built-in Guards (13)
 
 1. `ForbiddenPathGuard` - Blocks sensitive filesystem paths
 2. `PathAllowlistGuard` - Allowlist-based path access control
@@ -96,11 +96,12 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 10. `ComputerUseGuard` - Controls CUA actions for remote desktop sessions
 11. `RemoteDesktopSideChannelGuard` - Side-channel controls for clipboard, audio, drive mapping, file transfer
 12. `InputInjectionCapabilityGuard` - Restricts input injection capabilities in CUA environments
+13. `SpiderSenseGuard` - Hierarchical threat screening (Yu et al. 2026): embedding-based cosine similarity + optional LLM deep path
 
 ### Policy System
 
 Policies are YAML files with schema version 1.2.0 (backward-compatible with 1.1.0). They support inheritance via `extends`:
-- Built-in rulesets: `permissive`, `default`, `strict`, `ai-agent`, `cicd`, `ai-agent-posture`, `remote-desktop`, `remote-desktop-permissive`, `remote-desktop-strict`
+- Built-in rulesets: `permissive`, `default`, `strict`, `ai-agent`, `cicd`, `ai-agent-posture`, `remote-desktop`, `remote-desktop-permissive`, `remote-desktop-strict`, `spider-sense`
 - Local file references
 - Remote URLs
 - Git refs

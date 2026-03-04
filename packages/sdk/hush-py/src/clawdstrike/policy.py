@@ -28,9 +28,10 @@ from clawdstrike.guards.prompt_injection import (
 )
 from clawdstrike.guards.secret_leak import SecretLeakConfig, SecretLeakGuard, SecretPattern
 from clawdstrike.guards.shell_command import ShellCommandConfig, ShellCommandGuard
+from clawdstrike.guards.spider_sense import SpiderSenseConfig, SpiderSenseGuard
 
 POLICY_SCHEMA_VERSION = "1.2.0"
-POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0"}
+POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0", "1.3.0"}
 
 # Built-in ruleset directory.
 # Try package-relative path first (works in both monorepo and installed layouts),
@@ -164,6 +165,36 @@ _GUARD_MERGE_SPECS: dict[str, dict[str, _MergeMode]] = {
         "allowed_paths": _MergeMode.MERGE_LIST,
         "enabled": _MergeMode.OVERRIDE,
     },
+    "spider_sense": {
+        "enabled": _MergeMode.OVERRIDE,
+        "similarity_threshold": _MergeMode.OVERRIDE,
+        "ambiguity_band": _MergeMode.OVERRIDE,
+        "top_k": _MergeMode.OVERRIDE,
+        "patterns": _MergeMode.OVERRIDE,
+        "embedding_api_url": _MergeMode.OVERRIDE,
+        "embedding_api_key": _MergeMode.OVERRIDE,
+        "embedding_model": _MergeMode.OVERRIDE,
+        "pattern_db_path": _MergeMode.OVERRIDE,
+        "pattern_db_version": _MergeMode.OVERRIDE,
+        "pattern_db_checksum": _MergeMode.OVERRIDE,
+        "pattern_db_signature": _MergeMode.OVERRIDE,
+        "pattern_db_signature_key_id": _MergeMode.OVERRIDE,
+        "pattern_db_public_key": _MergeMode.OVERRIDE,
+        "pattern_db_trust_store_path": _MergeMode.OVERRIDE,
+        "pattern_db_trusted_keys": _MergeMode.OVERRIDE,
+        "pattern_db_manifest_path": _MergeMode.OVERRIDE,
+        "pattern_db_manifest_trust_store_path": _MergeMode.OVERRIDE,
+        "pattern_db_manifest_trusted_keys": _MergeMode.OVERRIDE,
+        "llm_api_url": _MergeMode.OVERRIDE,
+        "llm_api_key": _MergeMode.OVERRIDE,
+        "llm_model": _MergeMode.OVERRIDE,
+        "llm_prompt_template_id": _MergeMode.OVERRIDE,
+        "llm_prompt_template_version": _MergeMode.OVERRIDE,
+        "llm_timeout_ms": _MergeMode.OVERRIDE,
+        "llm_fail_mode": _MergeMode.OVERRIDE,
+        "async_config": _MergeMode.OVERRIDE,
+        "embedding_timeout_secs": _MergeMode.OVERRIDE,
+    },
 }
 
 
@@ -209,7 +240,7 @@ class PolicyResolver:
         else:
             ruleset_id = reference
         builtin_names = {
-            "default", "strict", "ai-agent", "ai-agent-posture", "cicd", "permissive",
+            "default", "strict", "ai-agent", "ai-agent-posture", "cicd", "permissive", "spider-sense",
         }
 
         if ruleset_id in builtin_names:
@@ -332,6 +363,7 @@ class GuardConfigs:
     jailbreak: JailbreakConfig | None = None
     shell_command: ShellCommandConfig | None = None
     path_allowlist: PathAllowlistConfig | None = None
+    spider_sense: SpiderSenseConfig | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GuardConfigs:
@@ -346,6 +378,7 @@ class GuardConfigs:
             "jailbreak",
             "shell_command",
             "path_allowlist",
+            "spider_sense",
         }
         _reject_unknown_keys(data, allowed, path="guards")
 
@@ -419,6 +452,34 @@ class GuardConfigs:
                 session_aggregation=detector_data.get("session_aggregation", True),
             )
 
+        spider_data = data.get("spider_sense")
+        spider_config = None
+        if spider_data is not None:
+            if isinstance(spider_data, bool):
+                raise PolicyError(
+                    "Expected mapping for guards.spider_sense; "
+                    "use guards.spider_sense.enabled: false to disable"
+                )
+            elif isinstance(spider_data, dict):
+                spider_kwargs = dict(spider_data)
+                async_value = spider_kwargs.pop("async", None)
+                if async_value is not None and not isinstance(async_value, dict):
+                    got = type(async_value).__name__
+                    raise PolicyError(
+                        f"Expected mapping for guards.spider_sense.async, got {got}"
+                    )
+                if async_value is not None:
+                    spider_kwargs["async_config"] = async_value
+                try:
+                    spider_config = SpiderSenseConfig(**spider_kwargs)
+                except TypeError as e:
+                    raise PolicyError(f"Invalid guards.spider_sense config: {e}") from e
+            else:
+                got = type(spider_data).__name__
+                raise PolicyError(
+                    f"Expected mapping for guards.spider_sense, got {got}"
+                )
+
         return cls(
             forbidden_path=parse_guard_config(
                 ForbiddenPathConfig,
@@ -453,6 +514,7 @@ class GuardConfigs:
                 data.get("path_allowlist"),
                 path="guards.path_allowlist",
             ),
+            spider_sense=spider_config,
         )
 
 
@@ -654,8 +716,11 @@ class Policy:
                 base_val = getattr(base_cfg, field_name)
                 child_val = getattr(child_cfg, field_name)
                 mode = spec.get(field_name, _MergeMode.OVERRIDE)
+                raw_present = field_name in guard_raw
+                if guard_name == "spider_sense" and field_name == "async_config":
+                    raw_present = raw_present or "async" in guard_raw
 
-                if field_name not in guard_raw:
+                if not raw_present:
                     merged_fields[field_name] = base_val
                 elif mode == _MergeMode.MERGE_LIST:
                     merged_fields[field_name] = _merge_str_list(base_val, child_val)
@@ -740,6 +805,61 @@ class Policy:
                     "session_aggregation": self.guards.jailbreak.session_aggregation,
                 },
             }
+        if self.guards.spider_sense:
+            spider = self.guards.spider_sense
+            spider_data: dict[str, Any] = {
+                "enabled": spider.enabled,
+                "similarity_threshold": spider.similarity_threshold,
+                "ambiguity_band": spider.ambiguity_band,
+                "top_k": spider.top_k,
+            }
+            if spider.patterns is not None:
+                spider_data["patterns"] = spider.patterns
+            if spider.embedding_api_url is not None:
+                spider_data["embedding_api_url"] = spider.embedding_api_url
+            if spider.embedding_api_key is not None:
+                spider_data["embedding_api_key"] = spider.embedding_api_key
+            if spider.embedding_model is not None:
+                spider_data["embedding_model"] = spider.embedding_model
+            if spider.pattern_db_path is not None:
+                spider_data["pattern_db_path"] = spider.pattern_db_path
+            if spider.pattern_db_version is not None:
+                spider_data["pattern_db_version"] = spider.pattern_db_version
+            if spider.pattern_db_checksum is not None:
+                spider_data["pattern_db_checksum"] = spider.pattern_db_checksum
+            if spider.pattern_db_signature is not None:
+                spider_data["pattern_db_signature"] = spider.pattern_db_signature
+            if spider.pattern_db_signature_key_id is not None:
+                spider_data["pattern_db_signature_key_id"] = spider.pattern_db_signature_key_id
+            if spider.pattern_db_public_key is not None:
+                spider_data["pattern_db_public_key"] = spider.pattern_db_public_key
+            if spider.pattern_db_trust_store_path is not None:
+                spider_data["pattern_db_trust_store_path"] = spider.pattern_db_trust_store_path
+            if spider.pattern_db_trusted_keys is not None:
+                spider_data["pattern_db_trusted_keys"] = spider.pattern_db_trusted_keys
+            if spider.pattern_db_manifest_path is not None:
+                spider_data["pattern_db_manifest_path"] = spider.pattern_db_manifest_path
+            if spider.pattern_db_manifest_trust_store_path is not None:
+                spider_data["pattern_db_manifest_trust_store_path"] = spider.pattern_db_manifest_trust_store_path
+            if spider.pattern_db_manifest_trusted_keys is not None:
+                spider_data["pattern_db_manifest_trusted_keys"] = spider.pattern_db_manifest_trusted_keys
+            if spider.llm_api_url is not None:
+                spider_data["llm_api_url"] = spider.llm_api_url
+            if spider.llm_api_key is not None:
+                spider_data["llm_api_key"] = spider.llm_api_key
+            if spider.llm_model is not None:
+                spider_data["llm_model"] = spider.llm_model
+            if spider.llm_prompt_template_id is not None:
+                spider_data["llm_prompt_template_id"] = spider.llm_prompt_template_id
+            if spider.llm_prompt_template_version is not None:
+                spider_data["llm_prompt_template_version"] = spider.llm_prompt_template_version
+            if spider.llm_timeout_ms is not None:
+                spider_data["llm_timeout_ms"] = spider.llm_timeout_ms
+            if spider.llm_fail_mode is not None:
+                spider_data["llm_fail_mode"] = spider.llm_fail_mode
+            if spider.async_config is not None:
+                spider_data["async"] = spider.async_config
+            data["guards"]["spider_sense"] = spider_data
 
         result: str = yaml.dump(data, default_flow_style=False, sort_keys=False)
         return result
@@ -801,6 +921,8 @@ class PolicyEngine:
             if self.policy.guards.path_allowlist
             else PathAllowlistGuard()
         )
+        if self.policy.guards.spider_sense:
+            guards.append(SpiderSenseGuard(self.policy.guards.spider_sense))
 
         return guards
 

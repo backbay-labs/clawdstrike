@@ -1,0 +1,101 @@
+[
+  {
+    "id": "ti-perception-prompt-injection-system-override",
+    "source_name": "OWASP LLM Top 10",
+    "source_url": "https://owasp.org/www-project-top-10-for-large-language-model-applications/",
+    "published_at": "2025-11-18",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "OWASP LLM01 prompt injection system override",
+    "intel_text": "User-controlled content attempts to override system instructions, disable safeguards, and force privileged disclosure.",
+    "embedding": [0.95, 0.05, 0.02, 0.03, 0.12, 0.01]
+  },
+  {
+    "id": "ti-perception-jailbreak-roleplay",
+    "source_name": "MITRE ATT&CK",
+    "source_url": "https://attack.mitre.org/techniques/T1566/",
+    "published_at": "2025-10-24",
+    "category": "jailbreak",
+    "stage": "perception",
+    "label": "ATT&CK T1566 social engineering jailbreak role-play",
+    "intel_text": "Prompt framing uses authority or role-play to coerce policy bypass and unrestricted responses.",
+    "embedding": [0.92, 0.04, 0.10, 0.02, 0.08, 0.03]
+  },
+  {
+    "id": "ti-action-data-exfiltration-egress",
+    "source_name": "MITRE ATT&CK",
+    "source_url": "https://attack.mitre.org/techniques/T1041/",
+    "published_at": "2025-10-24",
+    "category": "data_exfiltration",
+    "stage": "action",
+    "label": "ATT&CK T1041 exfiltration over network egress",
+    "intel_text": "Actions route sensitive content to external destinations through HTTP APIs, paste sites, or covert channels.",
+    "embedding": [0.08, 0.96, 0.06, 0.05, 0.07, 0.02]
+  },
+  {
+    "id": "ti-action-privilege-escalation",
+    "source_name": "MITRE ATT&CK",
+    "source_url": "https://attack.mitre.org/tactics/TA0004/",
+    "published_at": "2025-10-24",
+    "category": "privilege_escalation",
+    "stage": "action",
+    "label": "ATT&CK TA0004 privilege escalation attempt",
+    "intel_text": "Requests attempt sudo abuse, role escalation, or execution context breakout beyond approved authorization.",
+    "embedding": [0.12, 0.18, 0.94, 0.10, 0.05, 0.03]
+  },
+  {
+    "id": "ti-action-supply-chain-compromise",
+    "source_name": "MITRE ATT&CK",
+    "source_url": "https://attack.mitre.org/techniques/T1195/",
+    "published_at": "2025-10-24",
+    "category": "supply_chain",
+    "stage": "action",
+    "label": "ATT&CK T1195 supply chain compromise behavior",
+    "intel_text": "Build/runtime behavior fetches or introduces tampered dependencies, untrusted registries, or malicious update paths.",
+    "embedding": [0.06, 0.14, 0.22, 0.95, 0.11, 0.08]
+  },
+  {
+    "id": "ti-cognition-evasion-obfuscation",
+    "source_name": "MITRE ATT&CK",
+    "source_url": "https://attack.mitre.org/techniques/T1027/",
+    "published_at": "2025-10-24",
+    "category": "evasion",
+    "stage": "cognition",
+    "label": "ATT&CK T1027 obfuscated command and payload chain",
+    "intel_text": "Reasoning traces and output proposals rely on encoded, split, or obfuscated payloads to evade controls.",
+    "embedding": [0.20, 0.07, 0.08, 0.12, 0.96, 0.07]
+  },
+  {
+    "id": "ti-feedback-persistence-loop",
+    "source_name": "OWASP LLM Top 10",
+    "source_url": "https://owasp.org/www-project-top-10-for-large-language-model-applications/",
+    "published_at": "2025-11-18",
+    "category": "evasion",
+    "stage": "feedback",
+    "label": "OWASP LLM09 self-reinforcing feedback abuse",
+    "intel_text": "Iterative prompt feedback nudges the assistant toward policy drift and progressively more dangerous actions.",
+    "embedding": [0.30, 0.22, 0.16, 0.12, 0.20, 0.92]
+  },
+  {
+    "id": "ti-cognition-reconnaissance-probe",
+    "source_name": "MITRE ATT&CK",
+    "source_url": "https://attack.mitre.org/techniques/T1595/",
+    "published_at": "2025-10-24",
+    "category": "reconnaissance",
+    "stage": "cognition",
+    "label": "ATT&CK T1595 active scanning and capability probing",
+    "intel_text": "Model-guided probing requests enumerate tool boundaries, policy constraints, and internal capability surfaces.",
+    "embedding": [0.18, 0.20, 0.14, 0.10, 0.88, 0.12]
+  },
+  {
+    "id": "ti-perception-social-engineering-authority",
+    "source_name": "MITRE ATT&CK",
+    "source_url": "https://attack.mitre.org/techniques/T1656/",
+    "published_at": "2025-10-24",
+    "category": "social_engineering",
+    "stage": "perception",
+    "label": "ATT&CK T1656 authority impersonation prompt",
+    "intel_text": "Input claims elevated authority and urgency to coerce data release or policy override without valid approvals.",
+    "embedding": [0.86, 0.14, 0.08, 0.05, 0.30, 0.06]
+  }
+]
