@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          crates=(hush-core hush-proxy hush-spine clawdstrike clawdstrike-ocsf clawdstrike-policy-event hunt-scan hunt-query hunt-correlate hush-cli)
+          crates=(hush-core hush-proxy hush-spine clawdstrike clawdstrike-ocsf hunt-scan hunt-query clawdstrike-policy-event hunt-correlate hush-cli)
           missing=()
           for crate in "${crates[@]}"; do
             code="$(curl -s -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/${crate}/${VERSION}")"
@@ -161,9 +161,9 @@ jobs:
           publish_with_retry hush-spine
           publish_with_retry clawdstrike
           publish_with_retry clawdstrike-ocsf
-          publish_with_retry clawdstrike-policy-event
           publish_with_retry hunt-scan
           publish_with_retry hunt-query
+          publish_with_retry clawdstrike-policy-event
           publish_with_retry hunt-correlate
           publish_with_retry hush-cli
 
