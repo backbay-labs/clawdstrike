@@ -581,7 +581,7 @@ impl Policy {
         {
             let mut policy = policy;
             policy.guards.spider_sense_present_fields = spider_sense_present_fields_from_yaml(yaml);
-            return Ok(policy);
+            Ok(policy)
         }
         #[cfg(not(feature = "full"))]
         {

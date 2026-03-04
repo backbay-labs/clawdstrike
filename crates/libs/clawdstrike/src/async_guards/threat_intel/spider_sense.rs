@@ -352,8 +352,10 @@ impl SpiderSensePolicyConfig {
         // - allow explicit programmatic toggle-only enable overrides
         //   (`enabled=true` with all other fields at programmatic defaults)
         let explicit_programmatic_enable_toggle = child.enabled && !self.enabled && {
-            let mut toggle_only = Self::default();
-            toggle_only.enabled = true;
+            let toggle_only = Self {
+                enabled: true,
+                ..Self::default()
+            };
             child == &toggle_only
         };
 
@@ -2017,9 +2019,11 @@ mod tests {
         base.similarity_threshold = 0.91;
         base.top_k = 7;
 
-        let mut child = SpiderSensePolicyConfig::default();
-        child.enabled = true;
-        child.top_k = 11;
+        let child = SpiderSensePolicyConfig {
+            enabled: true,
+            top_k: 11,
+            ..SpiderSensePolicyConfig::default()
+        };
 
         let merged = base.merge_with(&child);
         assert!(merged.enabled);
@@ -2038,8 +2042,10 @@ mod tests {
     fn spider_sense_policy_merge_with_present_fields_allows_explicit_enable_override() {
         let mut base = test_cfg();
         base.enabled = false;
-        let mut child = SpiderSensePolicyConfig::default();
-        child.enabled = true;
+        let child = SpiderSensePolicyConfig {
+            enabled: true,
+            ..SpiderSensePolicyConfig::default()
+        };
         let present_fields = std::iter::once("enabled".to_string()).collect();
 
         let merged = base.merge_with_present_fields(&child, &present_fields);
@@ -2053,8 +2059,7 @@ mod tests {
     fn spider_sense_policy_merge_with_allows_programmatic_disable_override() {
         let mut base = test_cfg();
         base.enabled = true;
-        let mut child = SpiderSensePolicyConfig::default();
-        child.enabled = false;
+        let child = SpiderSensePolicyConfig::default();
 
         let merged = base.merge_with(&child);
         assert!(!merged.enabled, "child enabled=false should override base");
@@ -2064,8 +2069,10 @@ mod tests {
     fn spider_sense_policy_merge_with_allows_programmatic_enable_toggle_override() {
         let mut base = test_cfg();
         base.enabled = false;
-        let mut child = SpiderSensePolicyConfig::default();
-        child.enabled = true;
+        let child = SpiderSensePolicyConfig {
+            enabled: true,
+            ..SpiderSensePolicyConfig::default()
+        };
 
         let merged = base.merge_with(&child);
         assert!(
@@ -2079,9 +2086,11 @@ mod tests {
         let mut base = test_cfg();
         base.enabled = false;
         base.similarity_threshold = 0.84;
-        let mut child = SpiderSensePolicyConfig::default();
-        child.enabled = true;
-        child.similarity_threshold = 0.91;
+        let child = SpiderSensePolicyConfig {
+            enabled: true,
+            similarity_threshold: 0.91,
+            ..SpiderSensePolicyConfig::default()
+        };
 
         let merged = base.merge_with(&child);
         assert!(
@@ -2141,9 +2150,11 @@ mod tests {
         let mut base = test_cfg();
         base.enabled = false;
         base.similarity_threshold = 0.84;
-        let mut child = SpiderSensePolicyConfig::default();
-        child.enabled = true;
-        child.similarity_threshold = 0.91;
+        let child = SpiderSensePolicyConfig {
+            enabled: true,
+            similarity_threshold: 0.91,
+            ..SpiderSensePolicyConfig::default()
+        };
         let present_fields = std::iter::once("enabled".to_string())
             .chain(std::iter::once("similarity_threshold".to_string()))
             .collect();
