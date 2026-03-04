@@ -926,6 +926,17 @@ function isSpiderSenseCustomGuard(entry: unknown): boolean {
   return typeof pkg === "string" && pkg.trim().toLowerCase() === "clawdstrike-spider-sense";
 }
 
+function isPolicySpiderSenseDisabled(policy: Policy): boolean {
+  const raw = (policy.guards as Record<string, unknown> | undefined)?.spider_sense;
+  if (raw === false) {
+    return true;
+  }
+  if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+    return (raw as Record<string, unknown>).enabled === false;
+  }
+  return false;
+}
+
 function buildThreatIntelEngine(
   policy: Policy,
   guardToggles: Required<ClawdstrikeConfig>["guards"],
@@ -935,8 +946,12 @@ function buildThreatIntelEngine(
     return null;
   }
 
+  const policySpiderSenseDisabled = isPolicySpiderSenseDisabled(policy);
   const filteredCustom = custom.filter((entry) => {
-    if (!guardToggles.spider_sense && isSpiderSenseCustomGuard(entry)) {
+    if (
+      isSpiderSenseCustomGuard(entry) &&
+      (!guardToggles.spider_sense || policySpiderSenseDisabled)
+    ) {
       return false;
     }
     return true;
