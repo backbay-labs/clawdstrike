@@ -122,6 +122,57 @@ describe("validatePolicy", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("rejects legacy guards.spider_sense object config because it is not executable", () => {
+    const policy = {
+      version: "clawdstrike-v1.0",
+      guards: {
+        spider_sense: {
+          enabled: true,
+          embedding_api_url: "https://api.openai.com/v1/embeddings",
+        },
+      },
+    };
+    const result = validatePolicy(policy as any);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("guards.spider_sense object is not executable"))).toBe(
+      true,
+    );
+  });
+
+  it("rejects legacy guards.spider_sense true without custom spider-sense guard", () => {
+    const policy = {
+      version: "clawdstrike-v1.0",
+      guards: {
+        spider_sense: true,
+      },
+    };
+    const result = validatePolicy(policy as any);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("guards.spider_sense: true is not executable"))).toBe(
+      true,
+    );
+  });
+
+  it("accepts legacy guards.spider_sense true when custom spider-sense guard is present", () => {
+    const policy = {
+      version: "clawdstrike-v1.0",
+      guards: {
+        spider_sense: true,
+        custom: [
+          {
+            package: "clawdstrike-spider-sense",
+            enabled: true,
+            config: {
+              pattern_db_path: "builtin:s2bench-v1",
+            },
+          },
+        ],
+      },
+    };
+    const result = validatePolicy(policy as any);
+    expect(result.valid).toBe(true);
+  });
+
   it("rejects invalid computer_use mode", () => {
     const policy = {
       version: "clawdstrike-v1.0",

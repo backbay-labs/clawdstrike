@@ -162,6 +162,18 @@ guards:
     );
     expect(custom.some((entry) => entry.package === "clawdstrike-virustotal")).toBe(true);
   });
+
+  it("rejects legacy spider_sense object config because it is not executable", () => {
+    const yaml = `
+version: clawdstrike-v1.0
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "https://api.openai.com/v1/embeddings"
+`;
+
+    expect(() => loadPolicyFromString(yaml)).toThrow(/guards\.spider_sense object is not executable/i);
+  });
 });
 
 describe("loadPolicy", () => {

@@ -73,7 +73,12 @@ export function loadPolicyFromString(content: string): Policy {
       rulesetsDir: CANONICAL_RULESETS_DIR,
       onWarning: warnLegacyCompatibility,
     });
-    return translateCanonicalPolicy(canonical);
+    const translated = translateCanonicalPolicy(canonical);
+    const report = validatePolicy(translated);
+    if (!report.valid) {
+      throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join("\n- ")}`);
+    }
+    return translated;
   }
 
   const policy = parsed as Policy;
@@ -81,6 +86,10 @@ export function loadPolicyFromString(content: string): Policy {
     warnLegacyCompatibility(
       "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.3.0 is preferred.",
     );
+  }
+  const report = validatePolicy(policy);
+  if (!report.valid) {
+    throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join("\n- ")}`);
   }
   return policy;
 }

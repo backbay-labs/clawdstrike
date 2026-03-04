@@ -97,6 +97,13 @@ function ensureBooleanOrObject(value: unknown, field: string, errors: string[]):
   }
 }
 
+function isSpiderSenseCustomGuard(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  const pkg = value.package;
+  if (typeof pkg !== "string") return false;
+  return pkg.trim().toLowerCase() === "clawdstrike-spider-sense";
+}
+
 function ensureStringArray(
   value: unknown,
   field: string,
@@ -425,6 +432,23 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
           for (let i = 0; i < custom.length; i++) {
             validateCustomGuardSpec(custom[i], `guards.custom[${i}]`, errors);
           }
+        }
+      }
+
+      // In the legacy OpenClaw policy schema, Spider-Sense is executable only via
+      // guards.custom package entries. Reject legacy-first-class wiring to avoid
+      // silent security no-ops.
+      if (p.version === POLICY_SCHEMA_VERSION) {
+        const spiderSense = (p.guards as any).spider_sense;
+        const hasSpiderSenseCustom = Array.isArray(custom) && custom.some(isSpiderSenseCustomGuard);
+        if (typeof spiderSense === "object" && spiderSense !== null && !Array.isArray(spiderSense)) {
+          errors.push(
+            "guards.spider_sense object is not executable in clawdstrike-v1.0; use guards.custom package \"clawdstrike-spider-sense\" or canonical 1.3.0",
+          );
+        } else if (spiderSense === true && !hasSpiderSenseCustom) {
+          errors.push(
+            "guards.spider_sense: true is not executable in clawdstrike-v1.0 without guards.custom package \"clawdstrike-spider-sense\"",
+          );
         }
       }
     }
