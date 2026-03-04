@@ -509,36 +509,6 @@ clawdstrike policy simulate candidate.yaml run.events.jsonl --fail-on-deny
 clawdstrike hunt query --source receipt --verdict warn --start 24h --offline --local-dir .
 ```
 
-### Spider-Sense Quick Start
-
-```bash
-# 1) Create a Spider-Sense policy
-cat > spider-sense.quickstart.yaml <<'YAML'
-version: "1.3.0"
-name: "spider-sense-quickstart"
-extends: "clawdstrike:default"
-guards:
-  spider_sense:
-    enabled: true
-    embedding_api_url: "${SPIDER_SENSE_EMBEDDING_URL}"
-    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
-    embedding_model: "text-embedding-3-small"
-    similarity_threshold: 0.86
-    ambiguity_band: 0.06
-    top_k: 3
-    pattern_db_path: "builtin:s2bench-v1"
-    pattern_db_version: "s2bench-v1"
-    pattern_db_checksum: "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
-YAML
-
-# 2) Validate and run with policy enforcement
-clawdstrike policy validate spider-sense.quickstart.yaml
-clawdstrike run --policy ./spider-sense.quickstart.yaml -- your-agent-command --task "representative workload"
-```
-
-Full Spider-Sense example (threat-intel catalog, behavior profiles, signed manifest chain, and TS/Python/Go runners):
-[`examples/spider-sense-threat-intel/README.md`](examples/spider-sense-threat-intel/README.md)
-
 `PolicyLab` examples below require package builds that include PolicyLab bindings (`@clawdstrike/sdk` + `@clawdstrike/wasm` with PolicyLab exports, and Python `clawdstrike` native wheel support). If those versions are not yet on your registry mirror, install from a local checkout of this repository.
 
 TypeScript SDK automation (real SDK calls, no subprocess wrapper):
@@ -591,6 +561,36 @@ blocked = simulation["summary"]["blocked"]
 if blocked > 0:
     raise SystemExit(f"tightening needed: blocked={blocked}")
 ```
+
+### Spider-Sense Quick Start
+
+```bash
+# 1) Create a Spider-Sense policy
+cat > spider-sense.quickstart.yaml <<'YAML'
+version: "1.3.0"
+name: "spider-sense-quickstart"
+extends: "clawdstrike:default"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "${SPIDER_SENSE_EMBEDDING_URL}"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.86
+    ambiguity_band: 0.06
+    top_k: 3
+    pattern_db_path: "builtin:s2bench-v1"
+    pattern_db_version: "s2bench-v1"
+    pattern_db_checksum: "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
+YAML
+
+# 2) Validate and run with policy enforcement
+clawdstrike policy validate spider-sense.quickstart.yaml
+clawdstrike run --policy ./spider-sense.quickstart.yaml -- your-agent-command --task "representative workload"
+```
+
+Full Spider-Sense example (threat-intel catalog, behavior profiles, signed manifest chain, and TS/Python/Go runners):
+[`examples/spider-sense-threat-intel/README.md`](examples/spider-sense-threat-intel/README.md)
 
 See the full workflow in [`docs/src/guides/observe-synth.md`](docs/src/guides/observe-synth.md).
 
