@@ -1248,13 +1248,33 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
       embedding,
     };
   };
+  const assertConsistentEmbeddingDimensions = (
+    patterns: SpiderSensePattern[],
+    source: string,
+  ): void => {
+    if (patterns.length === 0) return;
+    const expectedDim = patterns[0]!.embedding.length;
+    for (let i = 0; i < patterns.length; i++) {
+      const dim = patterns[i]!.embedding.length;
+      if (dim !== expectedDim) {
+        throw new Error(
+          `${source} contains embedding dimension mismatch at index ${i}: expected ${expectedDim}, got ${dim}`,
+        );
+      }
+    }
+  };
 
   const rawPatterns = config.patterns;
   if (Array.isArray(rawPatterns)) {
-    const parsed = rawPatterns
-      .map((entry) => parsePattern(entry))
-      .filter((value): value is SpiderSensePattern => value !== null);
-    if (parsed.length > 0) {
+    if (rawPatterns.length > 0) {
+      const parsed = rawPatterns.map((entry, index) => {
+        const pattern = parsePattern(entry);
+        if (!pattern) {
+          throw new Error(`spider_sense inline patterns contain invalid entry at index ${index}`);
+        }
+        return pattern;
+      });
+      assertConsistentEmbeddingDimensions(parsed, "spider_sense inline patterns");
       return parsed;
     }
   }
@@ -1262,6 +1282,7 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
   const patternDbPath =
     typeof config.pattern_db_path === "string" ? config.pattern_db_path.trim() : "";
   if (patternDbPath === "builtin:s2bench-v1") {
+    assertConsistentEmbeddingDimensions(SPIDER_SENSE_BUILTIN_S2BENCH, "builtin:s2bench-v1");
     return SPIDER_SENSE_BUILTIN_S2BENCH;
   }
   if (patternDbPath.length > 0) {
@@ -1298,7 +1319,7 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new Error(`spider_sense pattern DB at '${patternDbPath}' is empty or invalid`);
     }
-    return parsed.map((entry, index) => {
+    const patterns = parsed.map((entry, index) => {
       const pattern = parsePattern(entry);
       if (!pattern) {
         throw new Error(
@@ -1307,6 +1328,11 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
       }
       return pattern;
     });
+    assertConsistentEmbeddingDimensions(
+      patterns,
+      `spider_sense pattern DB at '${patternDbPath}'`,
+    );
+    return patterns;
   }
   return [];
 }

@@ -366,9 +366,7 @@ impl GuardConfigs {
                 (None, None) => None,
             },
             #[cfg(feature = "full")]
-            spider_sense_present_fields: if child.spider_sense.is_some()
-                && !child.spider_sense_present_fields.is_empty()
-            {
+            spider_sense_present_fields: if child.spider_sense.is_some() {
                 child.spider_sense_present_fields.clone()
             } else {
                 self.spider_sense_present_fields.clone()
@@ -2751,6 +2749,47 @@ guards:
         assert_eq!(ss.top_k, 5);
         assert_eq!(ss.embedding_api_key, "");
         assert_eq!(ss.pattern_db_path, "");
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_without_presence_clears_stale_present_fields() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "similarity_threshold": 0.95,
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            spider_sense_present_fields: std::iter::once("similarity_threshold".to_string())
+                .collect(),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": true,
+                    "similarity_threshold": 0.85,
+                    "ambiguity_band": 0.10,
+                    "top_k": 5
+                }))
+                .unwrap(),
+            ),
+            // Programmatic child replacement has no explicit YAML field metadata.
+            spider_sense_present_fields: Default::default(),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        assert!(
+            merged.spider_sense_present_fields.is_empty(),
+            "programmatic replacement should not retain stale source present_fields"
+        );
     }
 
     #[cfg(feature = "full")]

@@ -225,6 +225,101 @@ guards:
     ).toThrow(/contains invalid entry at index 0/);
   });
 
+  it("rejects malformed inline spider_sense patterns at load time", () => {
+    const policyPath = join(testDir, "spider-sense-inline-invalid-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: valid pattern
+            embedding: [1, 0, 0]
+          - id: p2
+            category: prompt_injection
+            stage: perception
+            label: invalid pattern
+            embedding: ["bad", 0, 0]
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/inline patterns contain invalid entry at index 1/i);
+  });
+
+  it("rejects spider_sense pattern DB entries with mixed embedding dimensions", () => {
+    const patternDbPath = join(testDir, "spider-sense-patterns-dim-mismatch.json");
+    writeFileSync(
+      patternDbPath,
+      JSON.stringify([
+        {
+          id: "p1",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "dim-3",
+          embedding: [1, 0, 0],
+        },
+        {
+          id: "p2",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "dim-2",
+          embedding: [1, 0],
+        },
+      ]),
+    );
+
+    const policyPath = join(testDir, "spider-sense-db-dim-mismatch-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "${patternDbPath}"
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/embedding dimension mismatch/i);
+  });
+
   it("fails closed with deny decision when spider_sense embedding provider returns non-2xx", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 503 }));
 
