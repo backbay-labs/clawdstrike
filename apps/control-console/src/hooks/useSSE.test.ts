@@ -156,4 +156,46 @@ describe("useSSE", () => {
     expect(MockEventSource.instances).toHaveLength(2);
     expect(MockEventSource.instances[0].readyState).toBe(2);
   });
+
+  it("applies max buffer cap and tracks dropped events", () => {
+    const { result } = renderHook(() => useSSE("/api/v1/events", { initialMaxEvents: 2 }));
+    const es = MockEventSource.instances[0];
+
+    act(() => {
+      es.simulateOpen();
+      es.simulateMessage(
+        JSON.stringify({ action_type: "shell", target: "1", timestamp: "2024-01-01T00:00:00Z" }),
+      );
+      es.simulateMessage(
+        JSON.stringify({ action_type: "shell", target: "2", timestamp: "2024-01-01T00:00:01Z" }),
+      );
+      es.simulateMessage(
+        JSON.stringify({ action_type: "shell", target: "3", timestamp: "2024-01-01T00:00:02Z" }),
+      );
+    });
+
+    expect(result.current.events).toHaveLength(2);
+    expect(result.current.events[0].target).toBe("3");
+    expect(result.current.droppedEvents).toBe(1);
+  });
+
+  it("drops incoming events while paused", () => {
+    const { result } = renderHook(() => useSSE("/api/v1/events"));
+    const es = MockEventSource.instances[0];
+
+    act(() => {
+      result.current.setPaused(true);
+      es.simulateOpen();
+      es.simulateMessage(
+        JSON.stringify({
+          action_type: "file_access",
+          target: "/tmp/secret",
+          timestamp: "2024-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    expect(result.current.events).toHaveLength(0);
+    expect(result.current.droppedEvents).toBe(1);
+  });
 });

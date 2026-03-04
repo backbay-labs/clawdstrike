@@ -141,7 +141,7 @@ mod cli_parsing {
 
         match cli.command {
             Commands::Keygen { output, tpm_seal } => {
-                assert_eq!(output, "hush.key"); // default
+                assert_eq!(output, "clawdstrike.key"); // default
                 assert!(!tpm_seal);
             }
             _ => panic!("Expected Keygen command"),

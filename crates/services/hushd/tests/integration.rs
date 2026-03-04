@@ -514,6 +514,84 @@ async fn test_sse_events() {
 }
 
 #[tokio::test]
+async fn test_check_sse_includes_runtime_agent_attribution() {
+    use std::time::Duration;
+
+    let (client, url) = test_setup();
+
+    // Establish SSE connection first.
+    let resp = client
+        .get(format!("{}/api/v1/events", url))
+        .send()
+        .await
+        .expect("Failed to connect to events");
+
+    assert!(resp.status().is_success());
+
+    let endpoint_agent_id = format!("endpoint-check-sse-{}", uuid::Uuid::new_v4());
+    let runtime_agent_id = format!("runtime-check-sse-{}", uuid::Uuid::new_v4());
+    let target = format!("/tmp/check-sse-{}.txt", uuid::Uuid::new_v4());
+
+    let check_resp = client
+        .post(format!("{}/api/v1/check", url))
+        .json(&serde_json::json!({
+            "action_type": "file_access",
+            "target": target,
+            "agent_id": endpoint_agent_id,
+            "runtime_agent_id": runtime_agent_id,
+            "runtime_agent_kind": "claude_code"
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(check_resp.status().is_success());
+
+    // Read SSE stream until we observe the matching event payload.
+    use futures::StreamExt as _;
+    let mut stream = resp.bytes_stream();
+    let mut buffer = String::new();
+
+    let got = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let chunk = stream
+                .next()
+                .await
+                .expect("SSE stream ended unexpectedly")
+                .expect("Failed reading SSE bytes");
+
+            buffer.push_str(std::str::from_utf8(&chunk).unwrap_or(""));
+            let mut lines: Vec<String> = buffer.split('\n').map(|s| s.to_string()).collect();
+            buffer = lines.pop().unwrap_or_default();
+
+            for line in lines {
+                if !line.starts_with("data:") {
+                    continue;
+                }
+                let raw = line.trim_start_matches("data:").trim();
+                let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) else {
+                    continue;
+                };
+                if json.get("target").and_then(|v| v.as_str()) != Some(target.as_str()) {
+                    continue;
+                }
+
+                return json;
+            }
+        }
+    })
+    .await
+    .expect("Timed out waiting for matching SSE event");
+
+    assert_eq!(
+        got["runtime_agent_id"].as_str(),
+        Some(runtime_agent_id.as_str())
+    );
+    assert_eq!(got["runtime_agent_kind"].as_str(), Some("claude_code"));
+    assert_eq!(got["agent_id"].as_str(), Some(endpoint_agent_id.as_str()));
+}
+
+#[tokio::test]
 async fn test_metrics_endpoint() {
     let (client, url) = test_setup();
     let resp = client
@@ -581,6 +659,7 @@ async fn test_eval_sse_includes_session_and_agent_attribution() {
 
     let session_id = format!("sess-eval-sse-{}", uuid::Uuid::new_v4());
     let agent_id = format!("agent-eval-sse-{}", uuid::Uuid::new_v4());
+    let runtime_agent_id = format!("runtime-eval-sse-{}", uuid::Uuid::new_v4());
     let event_id = format!("evt-eval-sse-{}", uuid::Uuid::new_v4());
 
     // Trigger a canonical eval with explicit session + agent attribution.
@@ -597,7 +676,11 @@ async fn test_eval_sse_includes_session_and_agent_attribution() {
                     "path": "/app/src/main.rs",
                     "operation": "read"
                 },
-                "metadata": { "agentId": agent_id }
+                "metadata": {
+                    "agentId": agent_id,
+                    "runtimeAgentId": runtime_agent_id,
+                    "runtimeAgentKind": "claude_code"
+                }
             }
         }))
         .send()
@@ -648,6 +731,12 @@ async fn test_eval_sse_includes_session_and_agent_attribution() {
 
     assert_eq!(got["session_id"].as_str(), Some(session_id.as_str()));
     assert_eq!(got["agent_id"].as_str(), Some(agent_id.as_str()));
+    assert_eq!(got["endpoint_agent_id"].as_str(), Some(agent_id.as_str()));
+    assert_eq!(
+        got["runtime_agent_id"].as_str(),
+        Some(runtime_agent_id.as_str())
+    );
+    assert_eq!(got["runtime_agent_kind"].as_str(), Some("claude_code"));
     assert!(got.get("action_type").is_some());
     assert!(got.get("target").is_some());
     assert!(got.get("timestamp").is_some());

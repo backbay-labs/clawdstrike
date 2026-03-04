@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/hunt",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Hunt query, timeline, and local file loading for Clawdstrike",
   "type": "module",
   "main": "dist/index.js",

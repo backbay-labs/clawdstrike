@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { fetchIntegrationSettings, saveIntegrationSettings } from "../../api/client";
+import {
+  fetchIntegrationSettings,
+  saveIntegrationSettings,
+  testIntegrationDelivery,
+  type IntegrationTestResult,
+} from "../../api/client";
 import { GlassButton, NoiseGrain } from "../ui";
 
 const INPUT_FOCUS_CSS =
@@ -8,6 +13,23 @@ const INPUT_FOCUS_CSS =
 const focusRingStyle = {
   "--tw-ring-color": "rgba(214,177,90,0.4)",
 } as React.CSSProperties;
+const SIEM_TEST_HISTORY_KEY = "cs.settings.siem.test-history.v1";
+const MAX_TEST_HISTORY = 12;
+
+function readTestHistory(): IntegrationTestResult[] {
+  try {
+    const raw = localStorage.getItem(SIEM_TEST_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as IntegrationTestResult[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTestHistory(history: IntegrationTestResult[]) {
+  localStorage.setItem(SIEM_TEST_HISTORY_KEY, JSON.stringify(history.slice(0, MAX_TEST_HISTORY)));
+}
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -38,6 +60,8 @@ export function SiemSettings({ onStatus }: SiemSettingsProps) {
   const [siemApiKey, setSiemApiKey] = useState(() => localStorage.getItem("siem_api_key") || "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testHistory, setTestHistory] = useState<IntegrationTestResult[]>(() => readTestHistory());
 
   useEffect(() => {
     let mounted = true;
@@ -99,6 +123,36 @@ export function SiemSettings({ onStatus }: SiemSettingsProps) {
     }
   }
 
+  async function handleTestDelivery() {
+    setTesting(true);
+    onStatus?.(null, null);
+    try {
+      const result = await testIntegrationDelivery("siem", 2);
+      setTestHistory((current) => {
+        const next = [result, ...current].slice(0, MAX_TEST_HISTORY);
+        writeTestHistory(next);
+        return next;
+      });
+
+      if (result.delivered) {
+        onStatus?.(
+          `SIEM test delivered (${result.status_code ?? 200}) in ${result.latency_ms}ms after ${result.retry_count} retries.`,
+          null,
+        );
+      } else {
+        const errorMessage = result.last_error ?? `HTTP ${result.status_code ?? "unknown"}`;
+        onStatus?.(
+          null,
+          `SIEM test failed after ${result.attempts} attempts: ${errorMessage}`,
+        );
+      }
+    } catch (err) {
+      onStatus?.(null, err instanceof Error ? err.message : "SIEM test delivery failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   return (
     <section className="glass-panel max-w-3xl space-y-5 p-6">
       <NoiseGrain />
@@ -150,11 +204,68 @@ export function SiemSettings({ onStatus }: SiemSettingsProps) {
         <GlassButton onClick={handleSave} disabled={saving}>
           {saving ? "Applying..." : "Save SIEM Config"}
         </GlassButton>
+        <GlassButton onClick={handleTestDelivery} disabled={saving || testing}>
+          {testing ? "Testing..." : "Test Delivery"}
+        </GlassButton>
         {saved && (
           <span className="text-sm" style={{ color: "#2daa6a" }}>
             Saved!
           </span>
         )}
+      </div>
+
+      <div className="relative z-10">
+        <FieldLabel>Recent Test Delivery Status</FieldLabel>
+        <div
+          style={{
+            marginTop: 8,
+            border: "1px solid rgba(27,34,48,0.75)",
+            borderRadius: 8,
+            overflow: "hidden",
+          }}
+        >
+          {testHistory.length === 0 ? (
+            <div className="font-mono" style={{ fontSize: 11, color: "rgba(154,167,181,0.45)", padding: 10 }}>
+              No SIEM delivery tests run yet.
+            </div>
+          ) : (
+            testHistory.map((entry) => (
+              <div
+                key={`${entry.tested_at}-${entry.endpoint}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "110px 80px 70px 70px 1fr",
+                  gap: 8,
+                  padding: "8px 10px",
+                  borderTop: "1px solid rgba(27,34,48,0.6)",
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontSize: 10,
+                  color: "rgba(229,231,235,0.8)",
+                }}
+              >
+                <span style={{ color: "rgba(154,167,181,0.75)" }}>
+                  {new Date(entry.tested_at).toLocaleTimeString()}
+                </span>
+                <span style={{ color: entry.delivered ? "#2daa6a" : "#c23b3b" }}>
+                  {entry.delivered ? "delivered" : "failed"}
+                </span>
+                <span>{entry.latency_ms} ms</span>
+                <span>r{entry.retry_count}</span>
+                <span
+                  style={{
+                    color: "rgba(154,167,181,0.7)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={entry.last_error ?? entry.endpoint}
+                >
+                  {entry.last_error ?? entry.endpoint}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </section>
   );

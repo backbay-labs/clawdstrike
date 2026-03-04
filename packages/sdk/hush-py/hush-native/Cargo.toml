@@ -1,6 +1,6 @@
 [package]
 name = "hush-native"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Bundled native Rust extension for clawdstrike Python SDK"
 license = "Apache-2.0"

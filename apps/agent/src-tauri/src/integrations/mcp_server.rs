@@ -6,6 +6,7 @@ use crate::policy::{evaluate_policy_check, PolicyCheckInput};
 use crate::security::auth::constant_time_eq_token;
 use crate::session::SessionManager;
 use crate::settings::Settings;
+use crate::agent_auth::read_local_api_token;
 use anyhow::{Context, Result};
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::header::AUTHORIZATION;
@@ -190,8 +191,19 @@ fn mcp_authorized(headers: &HeaderMap, auth_token: &str) -> bool {
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::trim);
 
+    let expected_token = match read_local_api_token() {
+        Ok(token) => token,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "Falling back to startup MCP auth token because current token could not be read"
+            );
+            auth_token.to_string()
+        }
+    };
+
     match token {
-        Some(candidate) => constant_time_eq_token(candidate, auth_token),
+        Some(candidate) => constant_time_eq_token(candidate, &expected_token),
         None => false,
     }
 }
@@ -238,6 +250,22 @@ fn handle_list_tools() -> JsonRpcResponse {
                     "type": "object",
                     "description": "Optional args (used for mcp_tool).",
                     "additionalProperties": true
+                },
+                "agent_id": {
+                    "type": "string",
+                    "description": "Optional legacy endpoint agent ID override."
+                },
+                "endpoint_agent_id": {
+                    "type": "string",
+                    "description": "Optional canonical endpoint agent ID override."
+                },
+                "runtime_agent_id": {
+                    "type": "string",
+                    "description": "Optional AI runtime agent identifier."
+                },
+                "runtime_agent_kind": {
+                    "type": "string",
+                    "description": "Optional runtime kind (openclaw, claude_code, mcp, unknown)."
                 }
             },
             "required": ["action_type", "target"]
@@ -278,7 +306,7 @@ async fn handle_call_tool(state: &McpState, params: Option<serde_json::Value>) -
 
     match tool_name {
         "policy_check" => {
-            let check_params: PolicyCheckInput = match serde_json::from_value(arguments) {
+            let mut check_params: PolicyCheckInput = match serde_json::from_value(arguments) {
                 Ok(p) => p,
                 Err(e) => {
                     return JsonRpcResponse {
@@ -293,6 +321,12 @@ async fn handle_call_tool(state: &McpState, params: Option<serde_json::Value>) -
                     };
                 }
             };
+            if check_params.runtime_agent_kind.is_none() {
+                check_params.runtime_agent_kind = Some("mcp".to_string());
+            }
+            if check_params.runtime_agent_id.is_none() {
+                check_params.runtime_agent_id = Some("mcp-local".to_string());
+            }
 
             let session_id = state.session_manager.session_id().await;
             let result = evaluate_policy_check(
@@ -300,6 +334,7 @@ async fn handle_call_tool(state: &McpState, params: Option<serde_json::Value>) -
                 &state.http_client,
                 check_params,
                 session_id,
+                None,
             )
             .await;
 
@@ -419,16 +454,21 @@ mod tests {
             target: "run_command".to_string(),
             content: None,
             args: Some(args),
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         assert!(input.args.as_ref().is_some_and(|m| m.contains_key("flag")));
     }
 
     #[test]
     fn mcp_requires_bearer_token() {
+        let expected_token = read_local_api_token().unwrap_or_else(|_| "secret-token".to_string());
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
-            "Bearer secret-token"
+            format!("Bearer {}", expected_token)
                 .parse()
                 .unwrap_or_else(|err| panic!("failed to parse authorization header: {err}")),
         );

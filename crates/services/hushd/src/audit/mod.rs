@@ -257,7 +257,7 @@ fn append_filter_clauses(
     }
 }
 
-fn csv_escape_field(field: &str) -> String {
+pub(crate) fn csv_escape_field(field: &str) -> String {
     // Prevent spreadsheet formula injection by prefixing a single quote.
     let mut field = field.to_string();
     if matches!(
@@ -275,6 +275,49 @@ fn csv_escape_field(field: &str) -> String {
 
     let escaped = field.replace('"', "\"\"");
     format!("\"{escaped}\"")
+}
+
+pub(crate) fn serialize_events(events: &[AuditEvent], format: &ExportFormat) -> Result<Vec<u8>> {
+    match format {
+        ExportFormat::Json => Ok(serde_json::to_vec_pretty(events)?),
+        ExportFormat::Jsonl => {
+            let mut output = Vec::new();
+            for event in events {
+                output.extend(serde_json::to_vec(event)?);
+                output.push(b'\n');
+            }
+            Ok(output)
+        }
+        ExportFormat::Csv => {
+            let mut output = String::from(
+                "id,timestamp,event_type,action_type,target,decision,guard,severity,message,session_id,agent_id\n",
+            );
+            for event in events {
+                let fields = [
+                    csv_escape_field(&event.id),
+                    csv_escape_field(&event.timestamp.to_rfc3339()),
+                    csv_escape_field(&event.event_type),
+                    csv_escape_field(&event.action_type),
+                    csv_escape_field(event.target.as_deref().unwrap_or("")),
+                    csv_escape_field(&event.decision),
+                    csv_escape_field(event.guard.as_deref().unwrap_or("")),
+                    csv_escape_field(event.severity.as_deref().unwrap_or("")),
+                    csv_escape_field(event.message.as_deref().unwrap_or("")),
+                    csv_escape_field(event.session_id.as_deref().unwrap_or("")),
+                    csv_escape_field(event.agent_id.as_deref().unwrap_or("")),
+                ];
+
+                for (idx, f) in fields.into_iter().enumerate() {
+                    if idx > 0 {
+                        output.push(',');
+                    }
+                    output.push_str(&f);
+                }
+                output.push('\n');
+            }
+            Ok(output.into_bytes())
+        }
+    }
 }
 
 /// SQLite-backed audit ledger
@@ -526,47 +569,7 @@ impl AuditLedger {
     /// Export audit data
     pub fn export(&self, filter: &AuditFilter, format: ExportFormat) -> Result<Vec<u8>> {
         let events = self.query(filter)?;
-
-        match format {
-            ExportFormat::Json => Ok(serde_json::to_vec_pretty(&events)?),
-            ExportFormat::Jsonl => {
-                let mut output = Vec::new();
-                for event in events {
-                    output.extend(serde_json::to_vec(&event)?);
-                    output.push(b'\n');
-                }
-                Ok(output)
-            }
-            ExportFormat::Csv => {
-                let mut output = String::from(
-                    "id,timestamp,event_type,action_type,target,decision,guard,severity,message,session_id,agent_id\n",
-                );
-                for event in events {
-                    let fields = [
-                        csv_escape_field(&event.id),
-                        csv_escape_field(&event.timestamp.to_rfc3339()),
-                        csv_escape_field(&event.event_type),
-                        csv_escape_field(&event.action_type),
-                        csv_escape_field(event.target.as_deref().unwrap_or("")),
-                        csv_escape_field(&event.decision),
-                        csv_escape_field(event.guard.as_deref().unwrap_or("")),
-                        csv_escape_field(event.severity.as_deref().unwrap_or("")),
-                        csv_escape_field(event.message.as_deref().unwrap_or("")),
-                        csv_escape_field(event.session_id.as_deref().unwrap_or("")),
-                        csv_escape_field(event.agent_id.as_deref().unwrap_or("")),
-                    ];
-
-                    for (idx, f) in fields.into_iter().enumerate() {
-                        if idx > 0 {
-                            output.push(',');
-                        }
-                        output.push_str(&f);
-                    }
-                    output.push('\n');
-                }
-                Ok(output.into_bytes())
-            }
-        }
+        serialize_events(&events, &format)
     }
 }
 

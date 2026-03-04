@@ -97,7 +97,7 @@ struct CheckArgs {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "hush")]
+#[command(name = "clawdstrike", bin_name = "clawdstrike")]
 #[command(version = env!("CARGO_PKG_VERSION"), about = "Clawdstrike security guard CLI", long_about = None)]
 struct Cli {
     /// Disable colored output (also respects NO_COLOR env var)
@@ -170,16 +170,16 @@ enum Commands {
         #[arg(long)]
         policy: String,
 
-        /// Output path for PolicyEvent JSONL (default: hush.events.jsonl)
-        #[arg(long, default_value = "hush.events.jsonl")]
+        /// Output path for PolicyEvent JSONL
+        #[arg(long, default_value = "clawdstrike.events.jsonl")]
         events_out: String,
 
-        /// Output path for the signed receipt (default: hush.run.receipt.json)
-        #[arg(long, default_value = "hush.run.receipt.json")]
+        /// Output path for the signed receipt
+        #[arg(long, default_value = "clawdstrike.run.receipt.json")]
         receipt_out: String,
 
         /// Signing key path (hex-encoded Ed25519 seed). If missing, a new keypair is generated.
-        #[arg(long, default_value = "hush.key")]
+        #[arg(long, default_value = "clawdstrike.key")]
         signing_key: String,
 
         /// Disable the local CONNECT proxy (egress enforcement becomes audit-only/best-effort).
@@ -228,7 +228,7 @@ enum Commands {
     /// Generate a signing keypair
     Keygen {
         /// Output path for private key
-        #[arg(short, long, alias = "out", default_value = "hush.key")]
+        #[arg(short, long, alias = "out", default_value = "clawdstrike.key")]
         output: String,
 
         /// Store the Ed25519 seed sealed in TPM2 (writes a `.keyblob` JSON file).
@@ -598,7 +598,7 @@ enum PolicyCommands {
         #[arg(long, default_value = "clawdstrike:permissive")]
         policy: String,
         /// Output JSONL path.
-        #[arg(long, default_value = "hush.events.jsonl")]
+        #[arg(long, default_value = "clawdstrike.events.jsonl")]
         out: String,
         /// Observe an existing hushd session instead of running a local command.
         #[arg(long)]
@@ -1477,7 +1477,7 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
 
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
-            generate(shell, &mut cmd, "hush", &mut std::io::stdout());
+            generate(shell, &mut cmd, "clawdstrike", &mut std::io::stdout());
             ExitCode::Ok.as_i32()
         }
 
@@ -2713,7 +2713,16 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
         DaemonCommands::Start { config, bind, port } => {
             use std::process::Command;
 
-            let mut cmd = Command::new("hushd");
+            // Look for hushd next to the current executable first, then fall back to PATH.
+            let hushd_bin = std::env::current_exe()
+                .ok()
+                .and_then(|mut exe| {
+                    exe.set_file_name(if cfg!(windows) { "hushd.exe" } else { "hushd" });
+                    exe.exists().then_some(exe)
+                })
+                .unwrap_or_else(|| "hushd".into());
+
+            let mut cmd = Command::new(&hushd_bin);
             cmd.arg("start")
                 .arg("--bind")
                 .arg(&bind)
@@ -2739,7 +2748,9 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
                     if e.kind() == std::io::ErrorKind::NotFound {
                         let _ = writeln!(
                             stderr,
-                            "Error: hushd not found in PATH. Run 'cargo install --path crates/services/hushd'"
+                            "Error: clawdstrike daemon (hushd) not found.\n\
+                             Install it with: brew install backbay-labs/tap/clawdstrike\n\
+                             Or from source:  cargo install --path crates/services/hushd"
                         );
                     } else {
                         let _ = writeln!(stderr, "Error starting daemon: {}", e);
@@ -2894,7 +2905,7 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             // Generate a secure random key
             let mut rng = rand::rng();
             let key_bytes: [u8; 32] = rng.random();
-            let raw_key = format!("hush_{}", hex::encode(key_bytes));
+            let raw_key = format!("cs_{}", hex::encode(key_bytes));
 
             // Parse scopes
             let scope_list: Vec<String> = scopes

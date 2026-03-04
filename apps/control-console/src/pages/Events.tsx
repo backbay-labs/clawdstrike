@@ -1,24 +1,101 @@
-import { useState } from "react";
+import { useDesktopOS } from "@backbay/glia-desktop";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EventBookmarks } from "../components/events/EventBookmarks";
 import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
 import { NoiseGrain, Stamp } from "../components/ui";
 import { useSharedSSE } from "../context/SSEContext";
 import type { SSEEvent } from "../hooks/useSSE";
 
-const DISPLAY_LIMIT = 100;
+const ROW_HEIGHT_PX = 42;
+const ROW_OVERSCAN = 12;
 
 /** Stable bookmark key that survives SSE reconnections (timestamp + type + target + guard). */
 function stableEventKey(e: SSEEvent): string {
   return `${e.timestamp}|${e.event_type}|${e.target ?? ""}|${e.guard ?? ""}`;
 }
 
-export function Events(_props: { windowId?: string }) {
-  const { events, connected } = useSharedSSE();
-  const [showAll, setShowAll] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<SSEEvent | null>(null);
+function includesFilterValue(actual: string | undefined, expected: unknown): boolean {
+  if (typeof expected !== "string" || !expected.trim()) return true;
+  if (!actual) return false;
+  return actual.toLowerCase().includes(expected.trim().toLowerCase());
+}
 
-  const displayed = showAll ? events : events.slice(0, DISPLAY_LIMIT);
-  const hasMore = !showAll && events.length > DISPLAY_LIMIT;
+export function Events(props: { windowId?: string }) {
+  const { processes } = useDesktopOS();
+  const {
+    events,
+    connected,
+    paused,
+    setPaused,
+    maxEvents,
+    setMaxEvents,
+    droppedEvents,
+    clearEvents,
+  } = useSharedSSE();
+  const [selectedEvent, setSelectedEvent] = useState<SSEEvent | null>(null);
+  const [viewportHeight, setViewportHeight] = useState(600);
+  const [scrollTop, setScrollTop] = useState(0);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const drilldownFilters = useMemo(() => {
+    if (!props.windowId) return null;
+    const instance = processes.getInstanceByWindow(props.windowId);
+    const filters = instance?.args?.filters;
+    if (!filters || typeof filters !== "object") return null;
+    return filters as Record<string, unknown>;
+  }, [processes, processes.instances, props.windowId]);
+
+  const filteredEvents = useMemo(() => {
+    if (!drilldownFilters) return events;
+    return events.filter((event) => {
+      const endpointAgentId = event.endpoint_agent_id ?? event.agent_id;
+      return (
+        includesFilterValue(event.session_id, drilldownFilters.session_id) &&
+        includesFilterValue(endpointAgentId, drilldownFilters.endpoint_agent_id) &&
+        includesFilterValue(endpointAgentId, drilldownFilters.agent_id) &&
+        includesFilterValue(event.runtime_agent_id, drilldownFilters.runtime_agent_id) &&
+        includesFilterValue(event.runtime_agent_kind, drilldownFilters.runtime_agent_kind)
+      );
+    });
+  }, [drilldownFilters, events]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      setScrollTop(viewport.scrollTop);
+    };
+    const handleResize = () => {
+      setViewportHeight(viewport.clientHeight);
+    };
+
+    handleResize();
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleResize);
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  const rowWindow = useMemo(() => {
+    if (filteredEvents.length === 0) {
+      return {
+        start: 0,
+        end: 0,
+        topPad: 0,
+        bottomPad: 0,
+      };
+    }
+
+    const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT_PX) - ROW_OVERSCAN);
+    const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT_PX) + ROW_OVERSCAN * 2;
+    const end = Math.min(filteredEvents.length, start + visibleCount);
+    const topPad = start * ROW_HEIGHT_PX;
+    const bottomPad = Math.max(0, (filteredEvents.length - end) * ROW_HEIGHT_PX);
+    return { start, end, topPad, bottomPad };
+  }, [filteredEvents.length, scrollTop, viewportHeight]);
+  const displayed = filteredEvents.slice(rowWindow.start, rowWindow.end);
 
   return (
     <div
@@ -51,18 +128,67 @@ export function Events(_props: { windowId?: string }) {
             color: "#d6b15a",
           }}
         >
-          {events.length}
+          {filteredEvents.length}
         </span>
         <span className="text-xs" style={{ color: "rgba(154,167,181,0.5)" }}>
           events
         </span>
+        <span className="text-xs" style={{ color: "rgba(154,167,181,0.5)" }}>
+          buffer {events.length}/{maxEvents}
+        </span>
+        <span className="text-xs" style={{ color: "rgba(194,59,59,0.65)" }}>
+          dropped {droppedEvents}
+        </span>
+        {drilldownFilters && (
+          <span className="font-mono text-xs" style={{ color: "rgba(47,167,160,0.8)" }}>
+            filtered
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="glass-panel hover-glass-button font-mono rounded-md px-3 py-1.5 text-[11px] uppercase"
+          onClick={() => setPaused(!paused)}
+          style={{ color: paused ? "#c23b3b" : "#2fa7a0", letterSpacing: "0.08em" }}
+        >
+          {paused ? "Resume Stream" : "Pause Stream"}
+        </button>
+        <button
+          type="button"
+          className="glass-panel hover-glass-button font-mono rounded-md px-3 py-1.5 text-[11px] uppercase"
+          onClick={clearEvents}
+          style={{ color: "rgba(154,167,181,0.8)", letterSpacing: "0.08em" }}
+        >
+          Clear Buffer
+        </button>
+        <label className="font-mono text-[11px]" style={{ color: "rgba(154,167,181,0.8)" }}>
+          Max buffer
+        </label>
+        <select
+          className="glass-input font-mono rounded-md px-2 py-1 text-[11px]"
+          value={maxEvents}
+          onChange={(event) => setMaxEvents(Number(event.target.value))}
+          style={{ color: "var(--text)" }}
+        >
+          {[200, 500, 1000, 2500, 5000].map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Glass table panel + drawer wrapper */}
       <div style={{ position: "relative" }}>
         <div className="glass-panel">
           <NoiseGrain />
-          <div className="overflow-x-auto" style={{ position: "relative", zIndex: 2 }}>
+          <div
+            ref={viewportRef}
+            className="overflow-auto"
+            style={{ position: "relative", zIndex: 2, maxHeight: "62vh" }}
+          >
             <table className="w-full text-left text-sm">
               <thead>
                 <tr>
@@ -105,7 +231,7 @@ export function Events(_props: { windowId?: string }) {
                 </tr>
               </thead>
               <tbody>
-                {events.length === 0 ? (
+                {filteredEvents.length === 0 ? (
                   <tr>
                     <td
                       colSpan={9}
@@ -119,13 +245,25 @@ export function Events(_props: { windowId?: string }) {
                     </td>
                   </tr>
                 ) : (
-                  displayed.map((event) => (
-                    <EventTableRow
-                      key={event._id}
-                      event={event}
-                      onClick={() => setSelectedEvent(event)}
-                    />
-                  ))
+                  <>
+                    {rowWindow.topPad > 0 && (
+                      <tr>
+                        <td colSpan={9} style={{ height: rowWindow.topPad, padding: 0 }} />
+                      </tr>
+                    )}
+                    {displayed.map((event) => (
+                      <EventTableRow
+                        key={event._id}
+                        event={event}
+                        onClick={() => setSelectedEvent(event)}
+                      />
+                    ))}
+                    {rowWindow.bottomPad > 0 && (
+                      <tr>
+                        <td colSpan={9} style={{ height: rowWindow.bottomPad, padding: 0 }} />
+                      </tr>
+                    )}
+                  </>
                 )}
               </tbody>
             </table>
@@ -135,23 +273,11 @@ export function Events(_props: { windowId?: string }) {
         <EventDetailDrawer event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       </div>
 
-      {/* Show more */}
-      {hasMore && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => setShowAll(true)}
-            className="glass-panel hover-glass-button font-mono rounded-md px-5 py-2 text-xs uppercase"
-            style={{
-              color: "#d6b15a",
-              letterSpacing: "0.08em",
-              cursor: "pointer",
-            }}
-          >
-            Show all {events.length} events
-          </button>
-        </div>
-      )}
+      <div className="flex justify-center">
+        <span className="font-mono text-xs" style={{ color: "rgba(214,177,90,0.75)" }}>
+          Rendering {displayed.length} / {filteredEvents.length} rows
+        </span>
+      </div>
     </div>
   );
 }
@@ -165,6 +291,7 @@ function EventTableRow({ event, onClick }: { event: SSEEvent; onClick: () => voi
       style={{
         borderLeft: isViolation ? "2px solid rgba(194,59,59,0.3)" : "2px solid transparent",
         cursor: "pointer",
+        height: ROW_HEIGHT_PX,
       }}
       onClick={onClick}
       tabIndex={0}

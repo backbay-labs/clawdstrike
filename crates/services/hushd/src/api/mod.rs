@@ -1,5 +1,6 @@
 //! HTTP API for hushd daemon
 
+pub mod agent_status;
 pub mod audit;
 pub mod certification;
 pub mod check;
@@ -33,6 +34,9 @@ use crate::rate_limit::rate_limit_middleware;
 use crate::state::AppState;
 use crate::v1_rate_limit::v1_rate_limit_middleware;
 
+pub use agent_status::{
+    AgentHeartbeatRequest, AgentHeartbeatResponse, AgentStatusQuery, AgentStatusResponse,
+};
 pub use audit::{AuditQuery, AuditResponse, AuditStatsResponse};
 pub use check::{CheckRequest, CheckResponse};
 pub use health::{HealthResponse, ReadinessResponse};
@@ -234,6 +238,10 @@ pub fn create_router(state: AppState) -> Router {
     let check_routes = Router::new()
         .route("/api/v1/check", post(check::check_action))
         .route("/api/v1/eval", post(eval::eval_policy_event))
+        .route(
+            "/api/v1/agent/heartbeat",
+            post(agent_status::ingest_agent_heartbeat),
+        )
         .route("/api/v1/me", get(me::me))
         .route("/api/v1/session", post(session::create_session))
         .route("/api/v1/auth/saml", post(saml::exchange_saml))
@@ -267,6 +275,10 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/api/v1/audit", get(audit::query_audit))
         .route("/api/v1/audit/stats", get(audit::audit_stats))
+        .route(
+            "/api/v1/agents/status",
+            get(agent_status::list_agent_status),
+        )
         .route("/api/v1/events", get(events::stream_events))
         .route("/api/v1/siem/exporters", get(siem::exporters))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
@@ -277,6 +289,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/policy/validate", post(policy::validate_policy))
         .route("/api/v1/policy/bundle", put(policy::update_policy_bundle))
         .route("/api/v1/policy/reload", post(policy::reload_policy))
+        .route("/api/v1/audit/batch", post(audit::ingest_audit_batch))
         .route("/api/v1/rbac/roles", post(rbac::create_role))
         .route(
             "/api/v1/rbac/roles/{id}",

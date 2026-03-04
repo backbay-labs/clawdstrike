@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useDesktopOS } from "@backbay/glia-desktop";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type AuditEvent, type AuditFilters, fetchAuditEvents } from "../api/client";
 import { EventBookmarks } from "../components/events/EventBookmarks";
 import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
@@ -6,13 +7,30 @@ import { GlassButton, NoiseGrain, Stamp } from "../components/ui";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 import { exportAsCSV, exportAsJSON } from "../utils/exportData";
 
-export function AuditLog(_props: { windowId?: string }) {
+function normalizedString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export function AuditLog(props: { windowId?: string }) {
+  const { processes } = useDesktopOS();
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<AuditFilters>({ limit: 50, offset: 0 });
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
+  const [sessionIdInput, setSessionIdInput] = useState("");
+  const [agentIdInput, setAgentIdInput] = useState("");
+  const [runtimeAgentIdFilter, setRuntimeAgentIdFilter] = useState("");
+  const [runtimeAgentKindFilter, setRuntimeAgentKindFilter] = useState("");
+  const drilldownInitialized = useRef(false);
+  const drilldownFilters = useMemo(() => {
+    if (!props.windowId) return null;
+    const instance = processes.getInstanceByWindow(props.windowId);
+    const raw = instance?.args?.filters;
+    if (!raw || typeof raw !== "object") return null;
+    return raw as Record<string, unknown>;
+  }, [processes, processes.instances, props.windowId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,6 +49,31 @@ export function AuditLog(_props: { windowId?: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!drilldownFilters || drilldownInitialized.current) return;
+    drilldownInitialized.current = true;
+
+    const sessionId = normalizedString(drilldownFilters.session_id);
+    const endpointAgentId =
+      normalizedString(drilldownFilters.endpoint_agent_id) ??
+      normalizedString(drilldownFilters.agent_id);
+    const runtimeAgentId = normalizedString(drilldownFilters.runtime_agent_id);
+    const runtimeAgentKind = normalizedString(drilldownFilters.runtime_agent_kind);
+
+    setFilters((current) => ({
+      ...current,
+      session_id: sessionId,
+      agent_id: endpointAgentId,
+      runtime_agent_id: runtimeAgentId,
+      runtime_agent_kind: runtimeAgentKind,
+      offset: 0,
+    }));
+    setSessionIdInput(sessionId ?? "");
+    setAgentIdInput(endpointAgentId ?? "");
+    setRuntimeAgentIdFilter(runtimeAgentId ?? "");
+    setRuntimeAgentKindFilter(runtimeAgentKind ?? "");
+  }, [drilldownFilters]);
 
   const page = Math.floor((filters.offset ?? 0) / (filters.limit ?? 50));
   const totalPages = Math.ceil(total / (filters.limit ?? 50));
@@ -58,8 +101,38 @@ export function AuditLog(_props: { windowId?: string }) {
           options={["", "file_access", "file_write", "egress", "shell", "mcp_tool", "patch"]}
           onChange={(v) => setFilters((f) => ({ ...f, action_type: v || undefined, offset: 0 }))}
         />
-        <FilterInput label="Session ID" onChange={(v) => debouncedSetFilter("session_id", v)} />
-        <FilterInput label="Agent ID" onChange={(v) => debouncedSetFilter("agent_id", v)} />
+        <FilterInput
+          label="Session ID"
+          value={sessionIdInput}
+          onChange={(value) => {
+            setSessionIdInput(value);
+            debouncedSetFilter("session_id", value);
+          }}
+        />
+        <FilterInput
+          label="Agent ID"
+          value={agentIdInput}
+          onChange={(value) => {
+            setAgentIdInput(value);
+            debouncedSetFilter("agent_id", value);
+          }}
+        />
+        <FilterInput
+          label="Runtime ID"
+          value={runtimeAgentIdFilter}
+          onChange={(value) => {
+            setRuntimeAgentIdFilter(value);
+            debouncedSetFilter("runtime_agent_id", value);
+          }}
+        />
+        <FilterInput
+          label="Runtime Kind"
+          value={runtimeAgentKindFilter}
+          onChange={(value) => {
+            setRuntimeAgentKindFilter(value);
+            debouncedSetFilter("runtime_agent_kind", value);
+          }}
+        />
         <GlassButton onClick={load}>Refresh</GlassButton>
         <GlassButton
           onClick={() =>
@@ -68,7 +141,9 @@ export function AuditLog(_props: { windowId?: string }) {
         >
           Export CSV
         </GlassButton>
-        <GlassButton onClick={() => exportAsJSON(events, "audit-events")}>Export JSON</GlassButton>
+        <GlassButton onClick={() => exportAsJSON(events, "audit-events")}>
+          Export JSON
+        </GlassButton>
       </div>
 
       {/* Error banner */}
@@ -233,7 +308,9 @@ export function AuditLog(_props: { windowId?: string }) {
             color: "rgba(226,232,240,0.4)",
           }}
         >
-          {total} total events
+          {runtimeAgentIdFilter || runtimeAgentKindFilter
+            ? `${total} total filtered events`
+            : `${total} total events`}
         </span>
         <div className="flex items-center gap-2">
           <PaginationButton
@@ -328,8 +405,15 @@ function FilterSelect({
   );
 }
 
-function FilterInput({ label, onChange }: { label: string; onChange: (v: string) => void }) {
-  const [value, setValue] = useState("");
+function FilterInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
     <label className="flex flex-col gap-1">
       <span
@@ -345,7 +429,6 @@ function FilterInput({ label, onChange }: { label: string; onChange: (v: string)
         type="text"
         value={value}
         onChange={(e) => {
-          setValue(e.target.value);
           onChange(e.target.value);
         }}
         placeholder={`Filter by ${label.toLowerCase()}`}

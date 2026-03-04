@@ -443,20 +443,59 @@ export const processes: ProcessDefinition[] = [
   },
 ];
 
-export const desktopIcons = [
-  { id: "monitor", processId: "monitor", label: "Monitor" },
-  { id: "event-stream", processId: "event-stream", label: "Event Stream" },
-  { id: "audit", processId: "audit", label: "Audit Log" },
-  { id: "policy", processId: "policy", label: "Policies" },
-  { id: "agent-explorer", processId: "agent-explorer", label: "Agents" },
-  { id: "policy-editor", processId: "policy-editor", label: "Policy Editor" },
-  { id: "settings", processId: "settings", label: "Settings" },
-  { id: "receipt-verifier", processId: "receipt-verifier", label: "Receipts" },
-  { id: "guard-playground", processId: "guard-playground", label: "Guard Lab" },
-  { id: "posture-map", processId: "posture-map", label: "Posture Map" },
-  { id: "compliance-report", processId: "compliance-report", label: "Compliance" },
-  { id: "replay-mode", processId: "replay-mode", label: "Replay" },
-  { id: "agent-chat", processId: "agent-chat", label: "Agent Chat" },
+export type DesktopIconGroupId = "core" | "policy-ops" | "advanced";
+
+export interface DesktopIconConfig {
+  id: string;
+  processId: string;
+  label: string;
+  group: DesktopIconGroupId;
+}
+
+export interface DesktopIconGroup {
+  id: DesktopIconGroupId;
+  label: string;
+  icons: DesktopIconConfig[];
+}
+
+export const desktopIcons: DesktopIconConfig[] = [
+  { id: "monitor", processId: "monitor", label: "Monitor", group: "core" },
+  { id: "agent-explorer", processId: "agent-explorer", label: "Agent Explorer", group: "core" },
+  { id: "event-stream", processId: "event-stream", label: "Event Stream", group: "core" },
+  { id: "audit", processId: "audit", label: "Audit Log", group: "core" },
+  { id: "policy", processId: "policy", label: "Policies", group: "policy-ops" },
+  { id: "policy-editor", processId: "policy-editor", label: "Policy Editor", group: "policy-ops" },
+  { id: "guard-playground", processId: "guard-playground", label: "Guard Lab", group: "policy-ops" },
+  { id: "posture-map", processId: "posture-map", label: "Posture Map", group: "policy-ops" },
+  { id: "agent-chat", processId: "agent-chat", label: "Agent Chat", group: "policy-ops" },
+  { id: "receipt-verifier", processId: "receipt-verifier", label: "Receipts", group: "advanced" },
+  { id: "settings", processId: "settings", label: "Settings", group: "advanced" },
+  { id: "compliance-report", processId: "compliance-report", label: "Compliance", group: "advanced" },
+  { id: "replay-mode", processId: "replay-mode", label: "Replay", group: "advanced" },
 ];
 
-export const pinnedAppIds = ["monitor", "event-stream", "audit", "agent-explorer", "settings"];
+const GROUP_LABELS: Record<DesktopIconGroupId, string> = {
+  core: "Operations",
+  "policy-ops": "Policy + Runtime",
+  advanced: "Tools",
+};
+
+export const desktopIconGroups: DesktopIconGroup[] = (
+  ["core", "policy-ops", "advanced"] as const
+).map((groupId) => ({
+  id: groupId,
+  label: GROUP_LABELS[groupId],
+  icons: desktopIcons.filter((icon) => icon.group === groupId),
+}));
+
+export const allApps = desktopIcons;
+
+export const startMenuDefaultPinnedIds = [
+  "monitor",
+  "agent-explorer",
+  "audit",
+  "event-stream",
+  "settings",
+];
+
+export const pinnedAppIds = ["monitor", "agent-explorer", "audit", "event-stream", "settings"];

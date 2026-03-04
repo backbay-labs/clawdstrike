@@ -84,6 +84,81 @@ fn canonical_guard_severity(severity: &Severity) -> &'static str {
     }
 }
 
+fn normalize_identity_component(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn extract_metadata_string_with_aliases(
+    value: Option<&serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    let serde_json::Value::Object(obj) = value? else {
+        return None;
+    };
+    for key in keys {
+        if let Some(serde_json::Value::String(text)) = obj.get(*key) {
+            return Some(text.clone());
+        }
+    }
+    None
+}
+
+fn extract_eval_identity(
+    metadata: Option<&serde_json::Value>,
+    context_agent_id: Option<&str>,
+) -> (Option<String>, Option<String>, Option<String>) {
+    let endpoint_agent_id = normalize_identity_component(
+        extract_metadata_string_with_aliases(
+            metadata,
+            &[
+                "endpointAgentId",
+                "endpoint_agent_id",
+                "agentId",
+                "agent_id",
+            ],
+        )
+        .as_deref()
+        .or(context_agent_id),
+    );
+
+    let runtime_agent_id = normalize_identity_component(
+        extract_metadata_string_with_aliases(metadata, &["runtimeAgentId", "runtime_agent_id"])
+            .as_deref(),
+    );
+    let runtime_agent_kind = normalize_identity_component(
+        extract_metadata_string_with_aliases(metadata, &["runtimeAgentKind", "runtime_agent_kind"])
+            .as_deref(),
+    )
+    .map(|value| value.to_ascii_lowercase());
+
+    (endpoint_agent_id, runtime_agent_id, runtime_agent_kind)
+}
+
+type AgentIdentity = (Option<String>, Option<String>, Option<String>);
+
+fn validate_eval_identity(
+    endpoint_agent_id: Option<String>,
+    runtime_agent_id: Option<String>,
+    runtime_agent_kind: Option<String>,
+) -> Result<AgentIdentity, V1Error> {
+    if runtime_agent_id.is_some() ^ runtime_agent_kind.is_some() {
+        return Err(V1Error::bad_request(
+            "INVALID_EVENT",
+            "runtime_agent_id and runtime_agent_kind must be provided together",
+        ));
+    }
+    if runtime_agent_id.is_some() && endpoint_agent_id.is_none() {
+        return Err(V1Error::bad_request(
+            "INVALID_EVENT",
+            "endpoint_agent_id is required when runtime attribution is present",
+        ));
+    }
+    Ok((endpoint_agent_id, runtime_agent_id, runtime_agent_kind))
+}
+
 fn decision_from_report(report: &GuardReport, reason_override: Option<String>) -> DecisionJson {
     let overall = &report.overall;
     let summary = summarize_decision(overall, reason_override.as_deref());
@@ -124,6 +199,15 @@ pub async fn eval_policy_event(
 
     let mapped = map_policy_event(&event)
         .map_err(|e| V1Error::bad_request("INVALID_EVENT", e.to_string()))?;
+    let (identity_endpoint, identity_runtime_id, identity_runtime_kind) = extract_eval_identity(
+        mapped.context.metadata.as_ref(),
+        mapped.context.agent_id.as_deref(),
+    );
+    let (endpoint_agent_id, runtime_agent_id, runtime_agent_kind) = validate_eval_identity(
+        identity_endpoint,
+        identity_runtime_id,
+        identity_runtime_kind,
+    )?;
 
     let engine = state.engine.read().await;
     let report = engine
@@ -144,7 +228,7 @@ pub async fn eval_policy_event(
         target.as_deref(),
         &report.overall,
         mapped.context.session_id.as_deref(),
-        mapped.context.agent_id.as_deref(),
+        endpoint_agent_id.as_deref(),
     );
     if let Err(e) = state.ledger.record(&audit_event) {
         state.metrics.inc_audit_write_failure();
@@ -204,13 +288,33 @@ pub async fn eval_policy_event(
             .target()
             .unwrap_or_else(|| "<none>".to_string());
 
+        let mut extensions = serde_json::Map::new();
+        if let Some(endpoint) = endpoint_agent_id.as_ref() {
+            extensions.insert(
+                "endpointAgentId".to_string(),
+                serde_json::Value::String(endpoint.clone()),
+            );
+        }
+        if let Some(runtime_id) = runtime_agent_id.as_ref() {
+            extensions.insert(
+                "runtimeAgentId".to_string(),
+                serde_json::Value::String(runtime_id.clone()),
+            );
+        }
+        if let Some(runtime_kind) = runtime_agent_kind.as_ref() {
+            extensions.insert(
+                "runtimeAgentKind".to_string(),
+                serde_json::Value::String(runtime_kind.clone()),
+            );
+        }
+
         if let Err(err) = state.audit_v2.record(NewAuditEventV2 {
             session_id: mapped
                 .context
                 .session_id
                 .clone()
                 .unwrap_or_else(|| state.session_id.clone()),
-            agent_id: mapped.context.agent_id.clone(),
+            agent_id: endpoint_agent_id.clone(),
             organization_id,
             correlation_id: None,
             action_type: mapped.action.action_type().to_string(),
@@ -223,7 +327,7 @@ pub async fn eval_policy_event(
             decision_reason: Some(report.overall.message.clone()),
             decision_policy_hash: policy_hash,
             provenance,
-            extensions: None,
+            extensions: (!extensions.is_empty()).then_some(serde_json::Value::Object(extensions)),
         }) {
             state.metrics.inc_audit_write_failure();
             tracing::warn!(error = %err, "Failed to record eval audit_v2 event");
@@ -282,7 +386,7 @@ pub async fn eval_policy_event(
         .target()
         .unwrap_or_else(|| "<none>".to_string());
     let session_id = mapped.context.session_id.clone();
-    let agent_id = mapped.context.agent_id.clone();
+    let agent_id = endpoint_agent_id.clone();
 
     state.broadcast(DaemonEvent {
         event_type: if decision.allowed {
@@ -302,7 +406,10 @@ pub async fn eval_policy_event(
             "severity": canonical_guard_severity(&report.overall.severity),
             "message": report.overall.message,
             "session_id": session_id,
+            "endpoint_agent_id": agent_id,
             "agent_id": agent_id,
+            "runtime_agent_id": runtime_agent_id,
+            "runtime_agent_kind": runtime_agent_kind,
         }),
     });
 

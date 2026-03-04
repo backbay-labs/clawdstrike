@@ -840,17 +840,96 @@ fn parse_cached_policy_version(policy_yaml: &str) -> Option<String> {
 /// Stores events that were generated while hushd was unreachable so they
 /// can be uploaded when connectivity is restored.
 pub struct AuditQueue {
+    path: PathBuf,
     queue: Mutex<VecDeque<serde_json::Value>>,
     flush_lock: Mutex<()>,
     http_client: reqwest::Client,
 }
 
-const MAX_AUDIT_QUEUE_LEN: usize = 1000;
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct PersistedAuditQueue {
+    entries: VecDeque<serde_json::Value>,
+}
+
+const MAX_AUDIT_QUEUE_LEN: usize = 10_000;
+
+fn audit_queue_path() -> PathBuf {
+    crate::settings::get_config_dir().join("audit-outbox.json")
+}
+
+fn load_persisted_audit_queue(path: &Path) -> VecDeque<serde_json::Value> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return VecDeque::new(),
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                path = %path.display(),
+                "Failed to read audit outbox file; starting with empty queue"
+            );
+            return VecDeque::new();
+        }
+    };
+
+    match serde_json::from_str::<PersistedAuditQueue>(&raw) {
+        Ok(parsed) => parsed.entries,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                path = %path.display(),
+                "Failed to parse audit outbox file; starting with empty queue"
+            );
+            VecDeque::new()
+        }
+    }
+}
+
+fn persist_audit_queue(path: &Path, queue: &VecDeque<serde_json::Value>) -> Result<()> {
+    let serialized = serde_json::to_string_pretty(&PersistedAuditQueue {
+        entries: queue.clone(),
+    })
+    .with_context(|| "Failed to serialize audit outbox")?;
+    crate::security::fs::write_private_atomic(path, serialized.as_bytes(), "audit outbox")?;
+    Ok(())
+}
+
+fn normalize_audit_event_id(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        serde_json::Value::Number(raw) => Some(raw.to_string()),
+        _ => None,
+    }
+}
+
+fn ensure_audit_event_has_id(event: &mut serde_json::Value) -> String {
+    let Some(obj) = event.as_object_mut() else {
+        let id = uuid::Uuid::new_v4().to_string();
+        *event = serde_json::json!({ "id": id });
+        return id;
+    };
+
+    if let Some(existing) = obj.get("id").and_then(normalize_audit_event_id) {
+        return existing;
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    obj.insert("id".to_string(), serde_json::Value::String(id.clone()));
+    id
+}
 
 impl AuditQueue {
-    pub fn new() -> Self {
+    fn with_path(path: PathBuf) -> Self {
+        let queue = load_persisted_audit_queue(&path);
         Self {
-            queue: Mutex::new(VecDeque::new()),
+            path,
+            queue: Mutex::new(queue),
             flush_lock: Mutex::new(()),
             http_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
@@ -859,14 +938,39 @@ impl AuditQueue {
         }
     }
 
+    pub fn new() -> Self {
+        Self::with_path(audit_queue_path())
+    }
+
+    #[cfg(test)]
+    pub fn new_test_isolated() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "clawdstrike-audit-outbox-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        Self::with_path(path)
+    }
+
     /// Enqueue an audit event to be uploaded later.
-    #[allow(dead_code)]
     pub async fn enqueue(&self, event: serde_json::Value) {
+        let mut event = event;
+        let event_id = ensure_audit_event_has_id(&mut event);
         let mut queue = self.queue.lock().await;
+        if queue.iter().any(|existing| {
+            existing
+                .get("id")
+                .and_then(normalize_audit_event_id)
+                .is_some_and(|id| id == event_id)
+        }) {
+            return;
+        }
         if queue.len() >= MAX_AUDIT_QUEUE_LEN {
             queue.pop_front();
         }
         queue.push_back(event);
+        if let Err(err) = persist_audit_queue(&self.path, &queue) {
+            tracing::warn!(error = %err, "Failed to persist audit outbox after enqueue");
+        }
     }
 
     async fn requeue_failed_flush(&self, events: VecDeque<serde_json::Value>) {
@@ -880,6 +984,9 @@ impl AuditQueue {
             restored.pop_front();
         }
         *queue = restored;
+        if let Err(err) = persist_audit_queue(&self.path, &queue) {
+            tracing::warn!(error = %err, "Failed to persist audit outbox after requeue");
+        }
     }
 
     /// Drain all queued events and upload them to hushd.
@@ -920,6 +1027,13 @@ impl AuditQueue {
             // Re-queue: preserve chronological ordering (oldest -> newest).
             self.requeue_failed_flush(events).await;
             anyhow::bail!("Audit batch upload returned {}", response.status());
+        }
+
+        {
+            let queue = self.queue.lock().await;
+            if let Err(err) = persist_audit_queue(&self.path, &queue) {
+                tracing::warn!(error = %err, "Failed to persist audit outbox after successful flush");
+            }
         }
 
         tracing::info!(count, "Flushed queued audit events to daemon");
@@ -1762,7 +1876,7 @@ mod tests {
 
     #[tokio::test]
     async fn audit_queue_enqueue_and_len() {
-        let queue = AuditQueue::new();
+        let queue = AuditQueue::new_test_isolated();
         assert_eq!(queue.len().await, 0);
         queue.enqueue(serde_json::json!({"id": "1"})).await;
         queue.enqueue(serde_json::json!({"id": "2"})).await;
@@ -1770,14 +1884,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn audit_queue_assigns_id_when_missing() {
+        let queue = AuditQueue::new_test_isolated();
+        queue
+            .enqueue(serde_json::json!({
+                "event_type": "violation",
+                "action_type": "shell",
+                "target": "echo test"
+            }))
+            .await;
+        let guard = queue.queue.lock().await;
+        assert_eq!(guard.len(), 1);
+        let id = guard[0].get("id").and_then(|value| value.as_str());
+        assert!(id.is_some());
+        assert!(!id.unwrap_or_default().is_empty());
+    }
+
+    #[tokio::test]
+    async fn audit_queue_dedupes_duplicate_ids() {
+        let queue = AuditQueue::new_test_isolated();
+        queue.enqueue(serde_json::json!({"id": "dup-1"})).await;
+        queue
+            .enqueue(serde_json::json!({
+                "id": "dup-1",
+                "event_type": "violation",
+                "target": "/tmp/file"
+            }))
+            .await;
+        assert_eq!(queue.len().await, 1);
+    }
+
+    #[tokio::test]
     async fn audit_queue_caps_at_limit() {
-        let queue = AuditQueue::new();
-        for i in 0..1001 {
-            queue
-                .enqueue(serde_json::json!({"id": i.to_string()}))
-                .await;
+        let queue = AuditQueue::new_test_isolated();
+        {
+            let mut guard = queue.queue.lock().await;
+            for i in 0..MAX_AUDIT_QUEUE_LEN {
+                guard.push_back(serde_json::json!({"id": i.to_string()}));
+            }
         }
+        queue
+            .enqueue(serde_json::json!({"id": "overflow"}))
+            .await;
         assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+        let guard = queue.queue.lock().await;
+        assert_eq!(guard.front().and_then(|v| v.get("id")).and_then(|v| v.as_str()), Some("1"));
+        assert_eq!(
+            guard.back().and_then(|v| v.get("id")).and_then(|v| v.as_str()),
+            Some("overflow")
+        );
     }
 
     #[tokio::test]
@@ -1797,18 +1952,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn audit_queue_flush_failure_preserves_order_and_drops_oldest() {
+    async fn audit_queue_flush_failure_preserves_order_and_requeues_new_events() {
         use axum::{http::StatusCode, routing::post, Json, Router};
         use std::sync::{Arc, Mutex as StdMutex};
         use tokio::net::TcpListener;
         use tokio::sync::{oneshot, Notify};
 
-        let queue = Arc::new(AuditQueue::new());
+        let queue = Arc::new(AuditQueue::new_test_isolated());
+        let initial_events = 512usize;
 
-        for i in 0..MAX_AUDIT_QUEUE_LEN {
+        for i in 0..initial_events {
             queue.enqueue(serde_json::json!({ "id": i as i64 })).await;
         }
-        assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+        assert_eq!(queue.len().await, initial_events);
 
         let notify = Arc::new(Notify::new());
         let notify_for_handler = notify.clone();
@@ -1851,8 +2007,8 @@ mod tests {
         // Wait until the server has received the batch request.
         let _ = started_rx.await;
 
-        // Enqueue new events while flush is in-flight. This will exceed capacity once requeued.
-        for i in MAX_AUDIT_QUEUE_LEN..(MAX_AUDIT_QUEUE_LEN + 5) {
+        // Enqueue new events while flush is in-flight.
+        for i in initial_events..(initial_events + 5) {
             queue.enqueue(serde_json::json!({ "id": i as i64 })).await;
         }
 
@@ -1863,17 +2019,16 @@ mod tests {
         assert!(res.is_err());
 
         let guard = queue.queue.lock().await;
-        assert_eq!(guard.len(), MAX_AUDIT_QUEUE_LEN);
+        assert_eq!(guard.len(), initial_events + 5);
 
         let ids: Vec<i64> = guard
             .iter()
             .map(|v| v.get("id").and_then(|x| x.as_i64()).unwrap())
             .collect();
 
-        // Oldest should be dropped first to enforce the cap (enqueue() pops front/oldest).
-        assert_eq!(ids.first().copied(), Some(5));
+        assert_eq!(ids.first().copied(), Some(0));
         // Newest should be preserved.
-        assert_eq!(ids.last().copied(), Some((MAX_AUDIT_QUEUE_LEN + 4) as i64));
+        assert_eq!(ids.last().copied(), Some((initial_events + 4) as i64));
 
         // Queue must preserve chronological order (strictly increasing IDs).
         for w in ids.windows(2) {

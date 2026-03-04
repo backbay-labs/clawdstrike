@@ -21,7 +21,7 @@ export function AgentChat(_props: { windowId?: string }) {
     return map;
   }, [events]);
 
-  const chronological = useMemo(() => [...events].reverse(), [events.length]);
+  const chronological = useMemo(() => [...events].reverse(), [events]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

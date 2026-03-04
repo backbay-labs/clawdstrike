@@ -110,5 +110,55 @@ CREATE TABLE IF NOT EXISTS identity_rate_limit_events (
 
 CREATE INDEX IF NOT EXISTS idx_identity_rate_limit_events_key_ts ON identity_rate_limit_events(identity_key, ts);
 
-INSERT OR REPLACE INTO control_metadata (key, value) VALUES ('schema_version', '5');
+-- Endpoint-level liveness snapshots from local agents.
+CREATE TABLE IF NOT EXISTS endpoint_liveness (
+    endpoint_agent_id TEXT PRIMARY KEY,
+    last_heartbeat_at TEXT NOT NULL,
+    last_seen_ip TEXT,
+    last_session_id TEXT,
+    posture TEXT,
+    policy_version TEXT,
+    daemon_version TEXT,
+    runtime_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_endpoint_liveness_last_heartbeat ON endpoint_liveness(last_heartbeat_at);
+
+-- Runtime-level liveness snapshots (Claude Code/OpenClaw/MCP/etc).
+CREATE TABLE IF NOT EXISTS runtime_liveness (
+    runtime_agent_id TEXT PRIMARY KEY,
+    endpoint_agent_id TEXT NOT NULL,
+    runtime_agent_kind TEXT NOT NULL,
+    last_heartbeat_at TEXT NOT NULL,
+    last_session_id TEXT,
+    posture TEXT,
+    policy_version TEXT,
+    daemon_version TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_liveness_endpoint ON runtime_liveness(endpoint_agent_id);
+CREATE INDEX IF NOT EXISTS idx_runtime_liveness_last_heartbeat ON runtime_liveness(last_heartbeat_at);
+
+-- Bounded heartbeat history for diagnostics and forensic replay.
+CREATE TABLE IF NOT EXISTS heartbeat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint_agent_id TEXT NOT NULL,
+    runtime_agent_id TEXT,
+    runtime_agent_kind TEXT,
+    session_id TEXT,
+    posture TEXT,
+    policy_version TEXT,
+    daemon_version TEXT,
+    heartbeat_at TEXT NOT NULL,
+    source_ip TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_heartbeat_history_endpoint ON heartbeat_history(endpoint_agent_id);
+CREATE INDEX IF NOT EXISTS idx_heartbeat_history_runtime ON heartbeat_history(runtime_agent_id);
+CREATE INDEX IF NOT EXISTS idx_heartbeat_history_at ON heartbeat_history(heartbeat_at);
+
+INSERT OR REPLACE INTO control_metadata (key, value) VALUES ('schema_version', '6');
 "#;

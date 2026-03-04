@@ -73,6 +73,71 @@ pub struct IntegrationSettings {
     pub webhooks: WebhookIntegrationSettings,
 }
 
+/// Runtime-agent identity registered by local integrations (Claude Code/OpenClaw/MCP/etc).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RuntimeAgentRegistration {
+    pub runtime_agent_id: String,
+    pub runtime_agent_kind: String,
+    pub endpoint_agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_runtime_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    pub first_seen_at: String,
+    pub last_seen_at: String,
+    #[serde(default)]
+    pub policy_event_count: u64,
+}
+
+/// Persisted runtime registration store.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RuntimeRegistrySettings {
+    #[serde(default)]
+    pub runtimes: Vec<RuntimeAgentRegistration>,
+}
+
+/// Local API security hardening settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalApiSecuritySettings {
+    /// Rotate the local bearer token this often.
+    #[serde(default = "default_local_api_token_rotation_interval_hours")]
+    pub token_rotation_interval_hours: u32,
+    /// Keep the previous token valid for this many minutes after rotation.
+    #[serde(default = "default_local_api_token_grace_minutes")]
+    pub token_grace_minutes: u32,
+    /// Enable optional mTLS listener for local API hardening.
+    #[serde(default)]
+    pub mtls_enabled: bool,
+    /// Port for optional mTLS listener.
+    #[serde(default = "default_local_api_mtls_port")]
+    pub mtls_port: u16,
+    /// Server certificate path for optional mTLS.
+    #[serde(default)]
+    pub mtls_server_cert_path: Option<PathBuf>,
+    /// Server private key path for optional mTLS.
+    #[serde(default)]
+    pub mtls_server_key_path: Option<PathBuf>,
+    /// Client CA bundle path for optional mTLS.
+    #[serde(default)]
+    pub mtls_client_ca_path: Option<PathBuf>,
+}
+
+impl Default for LocalApiSecuritySettings {
+    fn default() -> Self {
+        Self {
+            token_rotation_interval_hours: default_local_api_token_rotation_interval_hours(),
+            token_grace_minutes: default_local_api_token_grace_minutes(),
+            mtls_enabled: false,
+            mtls_port: default_local_api_mtls_port(),
+            mtls_server_cert_path: None,
+            mtls_server_key_path: None,
+            mtls_client_ca_path: None,
+        }
+    }
+}
+
 /// NATS connectivity settings for enterprise cloud management.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsSettings {
@@ -207,9 +272,21 @@ pub struct Settings {
     #[serde(default = "default_dashboard_url")]
     pub dashboard_url: String,
 
+    /// Stable local endpoint identifier used when cloud enrollment is not configured.
+    #[serde(default)]
+    pub local_agent_id: Option<String>,
+
     /// Integration settings synchronized from the local dashboard.
     #[serde(default)]
     pub integrations: IntegrationSettings,
+
+    /// Runtime registration catalog used to map AI-runtime identities to stable IDs.
+    #[serde(default)]
+    pub runtime_registry: RuntimeRegistrySettings,
+
+    /// Local API security hardening controls.
+    #[serde(default)]
+    pub local_api_security: LocalApiSecuritySettings,
 
     /// Enable automatic hushd OTA checks and updates.
     #[serde(default = "default_ota_enabled")]
@@ -280,6 +357,18 @@ fn default_agent_api_port() -> u16 {
     9878
 }
 
+fn default_local_api_token_rotation_interval_hours() -> u32 {
+    168
+}
+
+fn default_local_api_token_grace_minutes() -> u32 {
+    15
+}
+
+fn default_local_api_mtls_port() -> u16 {
+    9880
+}
+
 fn default_enabled() -> bool {
     true
 }
@@ -337,7 +426,10 @@ impl Default for Settings {
             api_key: None,
             openclaw: OpenClawSettings::default(),
             dashboard_url: default_dashboard_url(),
+            local_agent_id: None,
             integrations: IntegrationSettings::default(),
+            runtime_registry: RuntimeRegistrySettings::default(),
+            local_api_security: LocalApiSecuritySettings::default(),
             ota_enabled: default_ota_enabled(),
             ota_mode: default_ota_mode(),
             ota_channel: default_ota_channel(),

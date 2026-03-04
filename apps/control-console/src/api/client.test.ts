@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchAgentStatus,
   fetchAuditEvents,
   fetchAuditStats,
   fetchHealth,
   fetchIntegrationSettings,
   fetchPolicy,
   saveIntegrationSettings,
+  testIntegrationDelivery,
 } from "./client";
 
 const mockFetch = vi.fn();
@@ -47,12 +49,20 @@ describe("fetchHealth", () => {
 describe("fetchAuditEvents", () => {
   it("builds query string from filters", async () => {
     mockFetch.mockReturnValue(jsonResponse({ events: [], total: 0 }));
-    await fetchAuditEvents({ decision: "blocked", limit: 10, offset: 5 });
+    await fetchAuditEvents({
+      decision: "blocked",
+      limit: 10,
+      offset: 5,
+      runtime_agent_id: "runtime-1",
+      runtime_agent_kind: "claude_code",
+    });
 
     const url = mockFetch.mock.calls[0][0] as string;
     expect(url).toContain("decision=blocked");
     expect(url).toContain("limit=10");
     expect(url).toContain("offset=5");
+    expect(url).toContain("runtime_agent_id=runtime-1");
+    expect(url).toContain("runtime_agent_kind=claude_code");
   });
 
   it("omits empty filters", async () => {
@@ -66,6 +76,30 @@ describe("fetchAuditEvents", () => {
   it("throws on non-ok response", async () => {
     mockFetch.mockReturnValue(jsonResponse({}, 403));
     await expect(fetchAuditEvents()).rejects.toThrow("Audit query failed: 403");
+  });
+});
+
+describe("fetchAgentStatus", () => {
+  it("queries agent status endpoint with filters", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        generated_at: "2026-03-04T00:00:00Z",
+        stale_after_secs: 90,
+        endpoints: [],
+        runtimes: [],
+      }),
+    );
+    await fetchAgentStatus({
+      endpoint_agent_id: "endpoint-1",
+      include_stale: true,
+      limit: 25,
+    });
+
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain("/api/v1/agents/status");
+    expect(url).toContain("endpoint_agent_id=endpoint-1");
+    expect(url).toContain("include_stale=true");
+    expect(url).toContain("limit=25");
   });
 });
 
@@ -123,6 +157,42 @@ describe("saveIntegrationSettings", () => {
       }),
     );
     await expect(saveIntegrationSettings({})).rejects.toThrow("bad request");
+  });
+});
+
+describe("testIntegrationDelivery", () => {
+  it("sends POST payload with target and retry count", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        target: "siem",
+        endpoint: "https://collector.example",
+        delivered: true,
+        status_code: 200,
+        attempts: 1,
+        retry_count: 0,
+        latency_ms: 42,
+        tested_at: "2026-03-03T12:00:00Z",
+      }),
+    );
+
+    const result = await testIntegrationDelivery("siem", 3);
+    expect(result.target).toBe("siem");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/agent/integrations/test");
+    expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.target).toBe("siem");
+    expect(body.max_retries).toBe(3);
+  });
+
+  it("throws with response text on test failure", async () => {
+    mockFetch.mockReturnValue(
+      Promise.resolve({
+        ok: false,
+        status: 502,
+        text: () => Promise.resolve("upstream unavailable"),
+      }),
+    );
+    await expect(testIntegrationDelivery("webhook")).rejects.toThrow("upstream unavailable");
   });
 });
 

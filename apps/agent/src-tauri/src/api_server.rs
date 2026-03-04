@@ -1,17 +1,21 @@
 //! Authenticated local API server for agent control and OpenClaw transport.
 
+use crate::agent_auth::rotate_local_api_token;
 use crate::approval::{
     ApprovalQueue, ApprovalRequestInput, ApprovalResolveInput, ApprovalStatusResponse,
 };
-use crate::daemon::{DaemonManager, DaemonStatus};
+use crate::daemon::{AuditQueue, DaemonManager, DaemonStatus};
 use crate::openclaw::{
     GatewayDiscoverInput, GatewayRequestInput, GatewayUpsertRequest, ImportGatewayRequest,
     OpenClawManager,
 };
 use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
+use crate::runtime_registry::{
+    register_runtime_agent, resolve_effective_endpoint_agent_id, RuntimeRegistrationInput,
+};
 use crate::security::auth::constant_time_eq_token;
 use crate::session::SessionManager;
-use crate::settings::{IntegrationSettings, Settings};
+use crate::settings::{IntegrationSettings, RuntimeAgentRegistration, Settings};
 use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
 use axum::body::Body;
@@ -33,7 +37,7 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex, RwLock};
@@ -50,6 +54,12 @@ const APPROVAL_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 const APPROVAL_RATE_LIMIT_BURST_WINDOW: Duration = Duration::from_secs(1);
 const APPROVAL_RATE_LIMIT_PER_MINUTE: usize = 30;
 const APPROVAL_RATE_LIMIT_BURST: usize = 10;
+const ROUTE_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+const ROUTE_RATE_LIMIT_UI_BOOTSTRAP_START: usize = 20;
+const ROUTE_RATE_LIMIT_UI_BOOTSTRAP_VERIFY: usize = 60;
+const ROUTE_RATE_LIMIT_POLICY_CHECK: usize = 1200;
+const ROUTE_RATE_LIMIT_INTEGRATION_TEST: usize = 30;
+const ROUTE_RATE_LIMIT_OPENCLAW_REQUEST: usize = 120;
 const UI_BOOTSTRAP_TTL: Duration = Duration::from_secs(60);
 const UI_BOOTSTRAP_MAX_ATTEMPTS: u8 = 5;
 const UI_BOOTSTRAP_MAX_SESSIONS: usize = 32;
@@ -66,6 +76,7 @@ pub struct AgentApiServerDeps {
     pub daemon_manager: Arc<DaemonManager>,
     pub session_manager: Arc<SessionManager>,
     pub approval_queue: Arc<ApprovalQueue>,
+    pub audit_queue: Arc<AuditQueue>,
     pub openclaw: OpenClawManager,
     pub updater: Arc<HushdUpdater>,
     pub auth_token: String,
@@ -77,12 +88,20 @@ struct AgentApiState {
     daemon_manager: Arc<DaemonManager>,
     session_manager: Arc<SessionManager>,
     approval_queue: Arc<ApprovalQueue>,
+    audit_queue: Arc<AuditQueue>,
     openclaw: OpenClawManager,
     updater: Arc<HushdUpdater>,
-    auth_token: String,
+    auth_token: Arc<StdRwLock<String>>,
+    previous_auth_token: Arc<StdMutex<Option<PreviousAuthToken>>>,
+    token_grace_minutes: Arc<StdRwLock<u32>>,
     http_client: reqwest::Client,
     policy_version_cache: Arc<RwLock<PolicyVersionCache>>,
     approval_rate_limiter: Arc<Mutex<ApprovalSubmissionLimiter>>,
+    ui_bootstrap_start_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    ui_bootstrap_verify_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    policy_check_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    integration_test_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
+    openclaw_request_rate_limiter: Arc<Mutex<RouteRateLimiter>>,
     ui_bootstrap_sessions: Arc<Mutex<HashMap<String, UiBootstrapSession>>>,
 }
 
@@ -151,6 +170,17 @@ struct UiBootstrapSession {
     attempts: u8,
 }
 
+#[derive(Debug, Clone)]
+struct PreviousAuthToken {
+    token: String,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Default)]
+struct RouteRateLimiter {
+    events: VecDeque<Instant>,
+}
+
 #[derive(Debug, Deserialize)]
 struct UiBootstrapStartInput {
     #[serde(default)]
@@ -215,8 +245,39 @@ impl ApprovalSubmissionLimiter {
     }
 }
 
+impl RouteRateLimiter {
+    fn allow_now(&mut self, now: Instant, window: Duration, limit: usize) -> std::result::Result<(), u64> {
+        while self
+            .events
+            .front()
+            .is_some_and(|ts| now.duration_since(*ts) >= window)
+        {
+            let _ = self.events.pop_front();
+        }
+
+        if self.events.len() >= limit {
+            if let Some(oldest) = self.events.front().copied() {
+                let retry_after = window
+                    .saturating_sub(now.duration_since(oldest))
+                    .as_secs()
+                    .max(1);
+                return Err(retry_after);
+            }
+            return Err(1);
+        }
+
+        self.events.push_back(now);
+        Ok(())
+    }
+}
+
 impl AgentApiServer {
     pub fn new(port: u16, deps: AgentApiServerDeps) -> Self {
+        let token_grace_minutes = deps
+            .settings
+            .try_read()
+            .map(|settings| settings.local_api_security.token_grace_minutes.max(1))
+            .unwrap_or(15);
         Self {
             port,
             state: Arc::new(AgentApiState {
@@ -224,12 +285,20 @@ impl AgentApiServer {
                 daemon_manager: deps.daemon_manager,
                 session_manager: deps.session_manager,
                 approval_queue: deps.approval_queue,
+                audit_queue: deps.audit_queue,
                 openclaw: deps.openclaw,
                 updater: deps.updater,
-                auth_token: deps.auth_token,
+                auth_token: Arc::new(StdRwLock::new(deps.auth_token)),
+                previous_auth_token: Arc::new(StdMutex::new(None)),
+                token_grace_minutes: Arc::new(StdRwLock::new(token_grace_minutes)),
                 http_client: reqwest::Client::new(),
                 policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
                 approval_rate_limiter: Arc::new(Mutex::new(ApprovalSubmissionLimiter::default())),
+                ui_bootstrap_start_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+                ui_bootstrap_verify_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+                policy_check_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+                integration_test_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+                openclaw_request_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
                 ui_bootstrap_sessions: Arc::new(Mutex::new(HashMap::new())),
             }),
         }
@@ -241,6 +310,7 @@ impl AgentApiServer {
             .route("/api/v1/audit", get(proxy_daemon_get))
             .route("/api/v1/audit/stats", get(proxy_daemon_get))
             .route("/api/v1/policy", get(proxy_daemon_get))
+            .route("/api/v1/agents/status", get(proxy_daemon_get))
             .route("/api/v1/events", get(proxy_daemon_events))
             .route("/api/v1/siem/exporters", get(proxy_daemon_get))
             .route("/api/v1/agent/health", get(agent_health))
@@ -248,13 +318,30 @@ impl AgentApiServer {
                 "/api/v1/agent/settings",
                 get(get_settings).put(update_settings),
             )
+            .route("/api/v1/agent/runtimes", get(list_runtime_agents))
+            .route(
+                "/api/v1/agent/runtimes/register",
+                post(register_runtime_agent_route),
+            )
             .route(
                 "/api/v1/agent/integrations",
                 get(get_integrations_settings).put(update_integrations_settings),
             )
+            .route(
+                "/api/v1/agent/integrations/test",
+                post(test_integration_delivery),
+            )
             .route("/api/v1/agent/ota/status", get(get_ota_status))
             .route("/api/v1/agent/ota/check", post(trigger_ota_check))
             .route("/api/v1/agent/ota/apply", post(trigger_ota_apply))
+            .route(
+                "/api/v1/agent/diagnostics/bundle",
+                post(create_diagnostics_bundle),
+            )
+            .route(
+                "/api/v1/agent/security/token/rotate",
+                post(rotate_local_api_token_route),
+            )
             .route("/api/v1/agent/policy-check", post(agent_policy_check))
             .route(
                 "/api/v1/openclaw/gateways",
@@ -292,6 +379,10 @@ impl AgentApiServer {
                 "/ui/bootstrap",
                 get(ui_bootstrap_page).post(ui_bootstrap_verify),
             )
+            .layer(axum::middleware::from_fn_with_state(
+                self.state.clone(),
+                route_rate_limit,
+            ))
             .layer(DefaultBodyLimit::max(AGENT_API_MAX_BODY_BYTES))
             .with_state(self.state.clone());
 
@@ -329,7 +420,44 @@ impl AgentApiServer {
             .await
             .with_context(|| format!("Failed to bind agent API server to {}", addr))?;
 
+        {
+            let settings = self.state.settings.read().await;
+            if settings.local_api_security.mtls_enabled {
+                let cert = settings
+                    .local_api_security
+                    .mtls_server_cert_path
+                    .as_ref()
+                    .is_some_and(|path| path.is_file());
+                let key = settings
+                    .local_api_security
+                    .mtls_server_key_path
+                    .as_ref()
+                    .is_some_and(|path| path.is_file());
+                let ca = settings
+                    .local_api_security
+                    .mtls_client_ca_path
+                    .as_ref()
+                    .is_some_and(|path| path.is_file());
+                if cert && key && ca {
+                    tracing::info!(
+                        mtls_port = settings.local_api_security.mtls_port,
+                        "Local API mTLS settings are configured"
+                    );
+                } else {
+                    tracing::warn!(
+                        "Local API mTLS is enabled but cert/key/CA files are missing or unreadable"
+                    );
+                }
+            }
+        }
+
         tracing::info!(address = %addr, "Agent API server listening");
+
+        let rotation_state = self.state.clone();
+        let mut token_rotation_shutdown = shutdown_rx.resubscribe();
+        tokio::spawn(async move {
+            token_rotation_loop(rotation_state, &mut token_rotation_shutdown).await;
+        });
 
         axum::serve(listener, app)
             .with_graceful_shutdown(async move {
@@ -678,7 +806,8 @@ async fn attach_ui_auth_cookie(
     }
 
     let mut response = next.run(request).await;
-    set_ui_auth_cookie(&mut response, &state.auth_token, secure_cookie);
+    let token = current_auth_token(&state);
+    set_ui_auth_cookie(&mut response, &token, secure_cookie);
     response
 }
 
@@ -984,7 +1113,8 @@ async fn ui_bootstrap_verify(
                 .insert(LOCATION, HeaderValue::from_static("/ui"));
         }
     }
-    set_ui_auth_cookie(&mut response, &state.auth_token, secure_cookie);
+    let token = current_auth_token(&state);
+    set_ui_auth_cookie(&mut response, &token, secure_cookie);
     response
 }
 
@@ -1225,8 +1355,43 @@ struct AgentHealthResponse {
     daemon: DaemonStatus,
     session: crate::session::SessionState,
     openclaw: serde_json::Value,
+    runtime_agents: usize,
     last_policy_version: Option<String>,
+    endpoint_agent_id: String,
+    last_heartbeat_at: Option<String>,
+    heartbeat_age_secs: Option<i64>,
+    endpoint_online: Option<bool>,
+    policy_drift: Option<bool>,
+    daemon_drift: Option<bool>,
+    stale: Option<bool>,
     version: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonAgentStatusResponse {
+    endpoints: Vec<DaemonEndpointStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonEndpointStatus {
+    #[serde(default)]
+    last_heartbeat_at: Option<String>,
+    #[serde(default)]
+    seconds_since_heartbeat: Option<i64>,
+    #[serde(default)]
+    online: Option<bool>,
+    #[serde(default)]
+    drift: Option<DaemonEndpointDrift>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonEndpointDrift {
+    #[serde(default)]
+    policy_drift: Option<bool>,
+    #[serde(default)]
+    daemon_drift: Option<bool>,
+    #[serde(default)]
+    stale: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1251,6 +1416,41 @@ struct AgentSettingsResponse {
     ota_last_check_at: Option<String>,
     ota_last_result: Option<String>,
     ota_current_hushd_version: Option<String>,
+    local_api_security: LocalApiSecurityResponse,
+}
+
+#[derive(Debug, Serialize)]
+struct LocalApiSecurityResponse {
+    token_rotation_interval_hours: u32,
+    token_grace_minutes: u32,
+    mtls_enabled: bool,
+    mtls_port: u16,
+    mtls_server_cert_path: Option<String>,
+    mtls_server_key_path: Option<String>,
+    mtls_client_ca_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RuntimeRegisterInput {
+    runtime_agent_kind: String,
+    #[serde(default)]
+    runtime_agent_id: Option<String>,
+    #[serde(default)]
+    endpoint_agent_id: Option<String>,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    metadata: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct RuntimeRegisterResponse {
+    endpoint_agent_id: String,
+    runtime_agent_id: String,
+    runtime_agent_kind: String,
+    external_runtime_id: Option<String>,
+    first_seen_at: String,
+    last_seen_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1273,6 +1473,18 @@ struct AgentSettingsUpdate {
     ota_current_hushd_version: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_string_field")]
     openclaw_active_gateway_id: Option<Option<String>>,
+    local_api_security: Option<LocalApiSecurityUpdate>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LocalApiSecurityUpdate {
+    token_rotation_interval_hours: Option<u32>,
+    token_grace_minutes: Option<u32>,
+    mtls_enabled: Option<bool>,
+    mtls_port: Option<u16>,
+    mtls_server_cert_path: Option<Option<String>>,
+    mtls_server_key_path: Option<Option<String>>,
+    mtls_client_ca_path: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1322,8 +1534,328 @@ struct IntegrationsApplyResponse {
     warning: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct IntegrationTestInput {
+    target: String,
+    #[serde(default)]
+    max_retries: Option<u8>,
+}
+
+#[derive(Debug, Serialize)]
+struct IntegrationTestResponse {
+    target: String,
+    endpoint: String,
+    delivered: bool,
+    status_code: Option<u16>,
+    attempts: u8,
+    retry_count: u8,
+    latency_ms: u64,
+    last_error: Option<String>,
+    tested_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct RotateLocalApiTokenResponse {
+    rotated: bool,
+    previous_token_valid_for_seconds: u64,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct DiagnosticsBundleInput {
+    #[serde(default)]
+    include_logs: Option<bool>,
+    #[serde(default)]
+    log_lines: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct DiagnosticsBundleResponse {
+    bundle_path: String,
+    generated_at: String,
+}
+
 fn default_apply_integrations_changes() -> bool {
     true
+}
+
+fn resolve_endpoint_agent_id_for_health(settings: &Settings) -> String {
+    settings
+        .nats
+        .agent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            settings
+                .enrollment
+                .agent_uuid
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+        })
+        .or_else(|| {
+            settings
+                .local_agent_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+        })
+        .unwrap_or_else(|| format!("endpoint-{}", crate::settings::hostname_best_effort()))
+}
+
+async fn fetch_daemon_endpoint_status_for_health(
+    state: &Arc<AgentApiState>,
+    settings: &Settings,
+    endpoint_agent_id: &str,
+    expected_policy_version: Option<&str>,
+    expected_daemon_version: Option<&str>,
+) -> Option<DaemonEndpointStatus> {
+    let mut url = reqwest::Url::parse(&format!("{}/api/v1/agents/status", settings.daemon_url()))
+        .ok()?;
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("endpoint_agent_id", endpoint_agent_id);
+        query.append_pair("limit", "1");
+        query.append_pair("include_stale", "true");
+        if let Some(policy_version) = expected_policy_version {
+            query.append_pair("expected_policy_version", policy_version);
+        }
+        if let Some(daemon_version) = expected_daemon_version {
+            query.append_pair("expected_daemon_version", daemon_version);
+        }
+    }
+
+    let mut request = state.http_client.get(url);
+    if let Some(api_key) = settings
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        request = request.header(AUTHORIZATION.as_str(), format!("Bearer {}", api_key));
+    }
+
+    let response = request.send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let payload = response.json::<DaemonAgentStatusResponse>().await.ok()?;
+    payload.endpoints.into_iter().next()
+}
+
+fn redact_settings_json(raw: &mut Value) {
+    let Some(obj) = raw.as_object_mut() else {
+        return;
+    };
+
+    for key in ["api_key", "token", "nkey_seed", "enrollment_token", "secret"] {
+        if let Some(value) = obj.get_mut(key) {
+            *value = Value::String("[REDACTED]".to_string());
+        }
+    }
+
+    if let Some(integrations) = obj.get_mut("integrations").and_then(Value::as_object_mut) {
+        if let Some(siem) = integrations.get_mut("siem").and_then(Value::as_object_mut) {
+            if let Some(value) = siem.get_mut("api_key") {
+                *value = Value::String("[REDACTED]".to_string());
+            }
+        }
+        if let Some(webhooks) = integrations
+            .get_mut("webhooks")
+            .and_then(Value::as_object_mut)
+        {
+            if let Some(value) = webhooks.get_mut("secret") {
+                *value = Value::String("[REDACTED]".to_string());
+            }
+        }
+    }
+
+    if let Some(nats) = obj.get_mut("nats").and_then(Value::as_object_mut) {
+        for key in ["token", "nkey_seed", "creds_file"] {
+            if let Some(value) = nats.get_mut(key) {
+                *value = Value::String("[REDACTED]".to_string());
+            }
+        }
+    }
+}
+
+fn trim_tail_lines(content: &str, lines: usize) -> String {
+    if lines == 0 {
+        return String::new();
+    }
+    let mut collected = content
+        .lines()
+        .rev()
+        .take(lines)
+        .collect::<Vec<_>>();
+    collected.reverse();
+    collected.join("\n")
+}
+
+async fn write_diagnostics_bundle(
+    state: Arc<AgentApiState>,
+    input: DiagnosticsBundleInput,
+) -> Result<DiagnosticsBundleResponse, (StatusCode, String)> {
+    let include_logs = input.include_logs.unwrap_or(true);
+    let log_lines = input.log_lines.unwrap_or(500).clamp(10, 5000);
+    let settings_snapshot = state.settings.read().await.clone();
+    let daemon_status = state.daemon_manager.status().await;
+    let session_state = state.session_manager.state().await;
+    let audit_queue_depth = state.audit_queue.len().await;
+    let pending_approvals = state.approval_queue.pending_count().await;
+    let last_policy_version = cached_policy_version_for_health(&state).await;
+    let runtime_agents = settings_snapshot.runtime_registry.runtimes.clone();
+
+    let mut settings_json = serde_json::to_value(&settings_snapshot)
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    redact_settings_json(&mut settings_json);
+
+    let daemon_url = settings_snapshot.daemon_url();
+    let mut health_request = state.http_client.get(format!("{}/health", daemon_url));
+    if let Some(api_key) = settings_snapshot
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        health_request = health_request.header(AUTHORIZATION.as_str(), format!("Bearer {}", api_key));
+    }
+    let daemon_health = match health_request.send().await {
+        Ok(response) => {
+            let status = response.status().as_u16();
+            let body = response.text().await.unwrap_or_default();
+            serde_json::json!({
+                "reachable": status < 500,
+                "status_code": status,
+                "body_preview": trim_tail_lines(&body, 20),
+            })
+        }
+        Err(err) => serde_json::json!({
+            "reachable": false,
+            "error": err.to_string(),
+        }),
+    };
+
+    let diagnostics_root = crate::settings::get_config_dir().join("diagnostics");
+    let generated_at = chrono::Utc::now();
+    let bundle_dir = diagnostics_root.join(format!(
+        "bundle-{}",
+        generated_at.format("%Y%m%dT%H%M%SZ")
+    ));
+    let bundle_dir_for_write = bundle_dir.clone();
+    let manifest = serde_json::json!({
+        "generated_at": generated_at.to_rfc3339(),
+        "agent_version": env!("CARGO_PKG_VERSION"),
+        "bundle_dir": bundle_dir.display().to_string(),
+    });
+    let connectivity = serde_json::json!({
+        "daemon_health": daemon_health,
+        "session": {
+            "session_id": session_state.session_id,
+            "posture": session_state.posture,
+        },
+    });
+    let version_matrix = serde_json::json!({
+        "agent_version": env!("CARGO_PKG_VERSION"),
+        "daemon_version": daemon_status.version,
+        "last_policy_version": last_policy_version,
+        "runtime_registry_count": runtime_agents.len(),
+    });
+    let queue_state = serde_json::json!({
+        "audit_outbox_depth": audit_queue_depth,
+        "pending_approvals": pending_approvals,
+    });
+
+    let agent_log_path = crate::settings::get_config_dir().join("logs").join("agent.log");
+    let hushd_log_path = crate::settings::get_config_dir().join("logs").join("hushd.log");
+    let agent_log = if include_logs {
+        std::fs::read_to_string(&agent_log_path)
+            .map(|content| trim_tail_lines(&content, log_lines))
+            .unwrap_or_else(|_| "agent.log unavailable".to_string())
+    } else {
+        "logs omitted by request".to_string()
+    };
+    let hushd_log = if include_logs {
+        std::fs::read_to_string(&hushd_log_path)
+            .map(|content| trim_tail_lines(&content, log_lines))
+            .unwrap_or_else(|_| "hushd.log unavailable".to_string())
+    } else {
+        "logs omitted by request".to_string()
+    };
+
+    tokio::task::spawn_blocking(move || -> Result<(), (StatusCode, String)> {
+        std::fs::create_dir_all(bundle_dir_for_write.join("logs"))
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?,
+        )
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("settings.redacted.json"),
+            serde_json::to_vec_pretty(&settings_json)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?,
+        )
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("runtime_registry.json"),
+            serde_json::to_vec_pretty(&runtime_agents)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?,
+        )
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("connectivity_checks.json"),
+            serde_json::to_vec_pretty(&connectivity)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?,
+        )
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("version_matrix.json"),
+            serde_json::to_vec_pretty(&version_matrix)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?,
+        )
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("queue_state.json"),
+            serde_json::to_vec_pretty(&queue_state)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?,
+        )
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("logs").join("agent.tail.log"),
+            agent_log,
+        )
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        std::fs::write(
+            bundle_dir_for_write.join("logs").join("hushd.tail.log"),
+            hushd_log,
+        )
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))??;
+
+    Ok(DiagnosticsBundleResponse {
+        bundle_path: bundle_dir.display().to_string(),
+        generated_at: generated_at.to_rfc3339(),
+    })
+}
+
+async fn create_diagnostics_bundle(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    payload: Option<Json<DiagnosticsBundleInput>>,
+) -> Result<Json<DiagnosticsBundleResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    let input = payload.map(|value| value.0).unwrap_or_default();
+    let response = write_diagnostics_bundle(state, input).await?;
+    Ok(Json(response))
 }
 
 async fn agent_health(
@@ -1331,10 +1863,34 @@ async fn agent_health(
     headers: HeaderMap,
 ) -> Result<Json<AgentHealthResponse>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
+    let settings_snapshot = state.settings.read().await.clone();
+    let endpoint_agent_id = resolve_endpoint_agent_id_for_health(&settings_snapshot);
     let daemon = state.daemon_manager.status().await;
     let session = state.session_manager.state().await;
     let openclaw = state.openclaw.list_gateways().await;
+    let runtime_agents = settings_snapshot.runtime_registry.runtimes.len();
     let last_policy_version = cached_policy_version_for_health(&state).await;
+    let daemon_status = fetch_daemon_endpoint_status_for_health(
+        &state,
+        &settings_snapshot,
+        &endpoint_agent_id,
+        last_policy_version.as_deref(),
+        daemon.version.as_deref(),
+    )
+    .await;
+    let (last_heartbeat_at, heartbeat_age_secs, endpoint_online, policy_drift, daemon_drift, stale) =
+        if let Some(status) = daemon_status {
+            (
+                status.last_heartbeat_at,
+                status.seconds_since_heartbeat,
+                status.online,
+                status.drift.as_ref().and_then(|value| value.policy_drift),
+                status.drift.as_ref().and_then(|value| value.daemon_drift),
+                status.drift.as_ref().and_then(|value| value.stale),
+            )
+        } else {
+            (None, None, None, None, None, None)
+        };
 
     Ok(Json(AgentHealthResponse {
         status: "ok",
@@ -1342,7 +1898,15 @@ async fn agent_health(
         session,
         openclaw: serde_json::to_value(openclaw)
             .unwrap_or_else(|_| serde_json::json!({"error":"serialize_failed"})),
+        runtime_agents,
         last_policy_version,
+        endpoint_agent_id,
+        last_heartbeat_at,
+        heartbeat_age_secs,
+        endpoint_online,
+        policy_drift,
+        daemon_drift,
+        stale,
         version: env!("CARGO_PKG_VERSION"),
     }))
 }
@@ -1375,6 +1939,86 @@ async fn get_settings(
         ota_last_check_at: settings.ota_last_check_at.clone(),
         ota_last_result: settings.ota_last_result.clone(),
         ota_current_hushd_version: settings.ota_current_hushd_version.clone(),
+        local_api_security: LocalApiSecurityResponse {
+            token_rotation_interval_hours: settings
+                .local_api_security
+                .token_rotation_interval_hours,
+            token_grace_minutes: settings.local_api_security.token_grace_minutes,
+            mtls_enabled: settings.local_api_security.mtls_enabled,
+            mtls_port: settings.local_api_security.mtls_port,
+            mtls_server_cert_path: settings
+                .local_api_security
+                .mtls_server_cert_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            mtls_server_key_path: settings
+                .local_api_security
+                .mtls_server_key_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            mtls_client_ca_path: settings
+                .local_api_security
+                .mtls_client_ca_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+        },
+    }))
+}
+
+async fn list_runtime_agents(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<RuntimeAgentRegistration>>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    let mut runtimes = {
+        let settings = state.settings.read().await;
+        settings.runtime_registry.runtimes.clone()
+    };
+    runtimes.sort_by(|a, b| b.last_seen_at.cmp(&a.last_seen_at));
+    Ok(Json(runtimes))
+}
+
+async fn register_runtime_agent_route(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<RuntimeRegisterInput>,
+) -> Result<Json<RuntimeRegisterResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    if input.runtime_agent_kind.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "runtime_agent_kind must be a non-empty string".to_string(),
+        ));
+    }
+
+    let registration = {
+        let mut settings = state.settings.write().await;
+        let endpoint_agent_id =
+            resolve_effective_endpoint_agent_id(&mut settings, input.endpoint_agent_id.as_deref());
+        let registration = register_runtime_agent(
+            &mut settings,
+            RuntimeRegistrationInput {
+                endpoint_agent_id,
+                runtime_agent_kind: input.runtime_agent_kind.clone(),
+                external_runtime_id: input.runtime_agent_id.clone(),
+                display_name: input.display_name,
+                metadata: input.metadata,
+            },
+        );
+        settings
+            .save()
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        registration
+    };
+
+    Ok(Json(RuntimeRegisterResponse {
+        endpoint_agent_id: registration.endpoint_agent_id,
+        runtime_agent_id: registration.runtime_agent_id,
+        runtime_agent_kind: registration.runtime_agent_kind,
+        external_runtime_id: registration.external_runtime_id,
+        first_seen_at: registration.first_seen_at,
+        last_seen_at: registration.last_seen_at,
     }))
 }
 
@@ -1439,10 +2083,74 @@ async fn update_settings(
         if let Some(value) = input.openclaw_active_gateway_id {
             settings.openclaw.active_gateway_id = value;
         }
+        if let Some(local_api_security) = input.local_api_security {
+            if let Some(value) = local_api_security.token_rotation_interval_hours {
+                settings.local_api_security.token_rotation_interval_hours = value.clamp(1, 24 * 30);
+            }
+            if let Some(value) = local_api_security.token_grace_minutes {
+                settings.local_api_security.token_grace_minutes = value.clamp(1, 120);
+            }
+            if let Some(value) = local_api_security.mtls_enabled {
+                settings.local_api_security.mtls_enabled = value;
+            }
+            if let Some(value) = local_api_security.mtls_port {
+                settings.local_api_security.mtls_port = value.max(1024);
+            }
+            if let Some(value) = local_api_security.mtls_server_cert_path {
+                settings.local_api_security.mtls_server_cert_path = value
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|raw| !raw.is_empty())
+                    .map(PathBuf::from);
+            }
+            if let Some(value) = local_api_security.mtls_server_key_path {
+                settings.local_api_security.mtls_server_key_path = value
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|raw| !raw.is_empty())
+                    .map(PathBuf::from);
+            }
+            if let Some(value) = local_api_security.mtls_client_ca_path {
+                settings.local_api_security.mtls_client_ca_path = value
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|raw| !raw.is_empty())
+                    .map(PathBuf::from);
+            }
+
+            if settings.local_api_security.mtls_enabled {
+                let cert = settings
+                    .local_api_security
+                    .mtls_server_cert_path
+                    .as_ref()
+                    .is_some_and(|path| path.is_file());
+                let key = settings
+                    .local_api_security
+                    .mtls_server_key_path
+                    .as_ref()
+                    .is_some_and(|path| path.is_file());
+                let ca = settings
+                    .local_api_security
+                    .mtls_client_ca_path
+                    .as_ref()
+                    .is_some_and(|path| path.is_file());
+                if !(cert && key && ca) {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "mTLS enabled requires valid cert/key/CA file paths".to_string(),
+                    ));
+                }
+            }
+        }
 
         settings
             .save()
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        set_token_grace_minutes(
+            &state,
+            settings.local_api_security.token_grace_minutes.max(1),
+        );
     }
 
     get_settings(State(state), headers).await
@@ -1557,6 +2265,173 @@ async fn update_integrations_settings(
     }))
 }
 
+fn truncate_delivery_error(message: &str) -> String {
+    const MAX_LEN: usize = 240;
+    if message.chars().count() <= MAX_LEN {
+        return message.to_string();
+    }
+    let mut out = message.chars().take(MAX_LEN.saturating_sub(3)).collect::<String>();
+    out.push_str("...");
+    out
+}
+
+async fn test_integration_delivery(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<IntegrationTestInput>,
+) -> Result<Json<IntegrationTestResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let target = input.target.trim().to_ascii_lowercase();
+    let max_retries = input.max_retries.unwrap_or(2).min(5);
+
+    let (endpoint, enabled, provider, siem_api_key, webhook_secret, agent_id) = {
+        let settings = state.settings.read().await;
+        let integrations = &settings.integrations;
+        let endpoint_agent_id = settings
+            .local_agent_id
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "unknown-agent".to_string());
+
+        match target.as_str() {
+            "siem" => (
+                integrations.siem.endpoint.clone(),
+                integrations.siem.enabled,
+                integrations.siem.provider.clone(),
+                integrations.siem.api_key.clone(),
+                String::new(),
+                endpoint_agent_id,
+            ),
+            "webhook" | "webhooks" => (
+                integrations.webhooks.url.clone(),
+                integrations.webhooks.enabled,
+                "webhook".to_string(),
+                String::new(),
+                integrations.webhooks.secret.clone(),
+                endpoint_agent_id,
+            ),
+            other => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("unsupported test target '{}'", other),
+                ))
+            }
+        }
+    };
+
+    if !enabled {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("{} delivery is disabled", target),
+        ));
+    }
+
+    if endpoint.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("{} endpoint is empty", target),
+        ));
+    }
+
+    let normalized_endpoint = endpoint.trim().to_string();
+    let payload = serde_json::json!({
+        "event_type": "integration_test_delivery",
+        "target": target,
+        "provider": provider,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "endpoint_agent_id": agent_id,
+        "message": "ClawdStrike integration delivery test event"
+    });
+    let payload_bytes = serde_json::to_vec(&payload).map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to serialize test payload: {err}"),
+        )
+    })?;
+
+    let started_at = Instant::now();
+    let tested_at = chrono::Utc::now().to_rfc3339();
+    let mut attempts: u8 = 0;
+    let mut status_code: Option<u16> = None;
+    let mut last_error: Option<String> = None;
+    let mut delivered = false;
+
+    for attempt in 0..=max_retries {
+        attempts = attempt + 1;
+
+        let mut request = state
+            .http_client
+            .post(normalized_endpoint.clone())
+            .header(CONTENT_TYPE, "application/json")
+            .header("x-clawdstrike-test-delivery", "1")
+            .body(payload_bytes.clone());
+
+        if target == "siem" && !siem_api_key.is_empty() {
+            let auth_header = if provider.trim().eq_ignore_ascii_case("splunk") {
+                format!("Splunk {}", siem_api_key)
+            } else {
+                format!("Bearer {}", siem_api_key)
+            };
+            request = request
+                .header(AUTHORIZATION, auth_header)
+                .header("dd-api-key", siem_api_key.clone());
+        }
+
+        if target.starts_with("webhook") && !webhook_secret.is_empty() {
+            request = request
+                .header("x-clawdstrike-secret-configured", "true")
+                .header("x-clawdstrike-signature-scheme", "hmac-sha256");
+        }
+
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status();
+                status_code = Some(status.as_u16());
+                if status.is_success() {
+                    delivered = true;
+                    last_error = None;
+                    break;
+                }
+                let body = response.text().await.unwrap_or_default();
+                let reason = if body.trim().is_empty() {
+                    format!("HTTP {}", status.as_u16())
+                } else {
+                    format!("HTTP {}: {}", status.as_u16(), body.trim())
+                };
+                last_error = Some(truncate_delivery_error(&reason));
+            }
+            Err(err) => {
+                last_error = Some(truncate_delivery_error(&err.to_string()));
+            }
+        }
+
+        if attempt < max_retries {
+            let backoff_ms = 250u64.saturating_mul((attempt + 1) as u64);
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+        }
+    }
+
+    let elapsed_ms_u128 = started_at.elapsed().as_millis();
+    let latency_ms = elapsed_ms_u128.min(u128::from(u64::MAX)) as u64;
+
+    Ok(Json(IntegrationTestResponse {
+        target: if target == "webhooks" {
+            "webhook".to_string()
+        } else {
+            target
+        },
+        endpoint: normalized_endpoint,
+        delivered,
+        status_code,
+        attempts,
+        retry_count: attempts.saturating_sub(1),
+        latency_ms,
+        last_error,
+        tested_at,
+    }))
+}
+
 async fn get_ota_status(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
@@ -1603,6 +2478,7 @@ async fn agent_policy_check(
         &state.http_client,
         input,
         session_id,
+        Some(state.audit_queue.clone()),
     )
     .await;
     Ok(Json(output))
@@ -1778,8 +2654,13 @@ async fn gateway_request(
                 }
                 args
             }),
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: Some(format!("gateway:{}", input.gateway_id)),
+            runtime_agent_kind: Some("openclaw".to_string()),
         },
         session_id,
+        Some(state.audit_queue.clone()),
     )
     .await;
     if !policy.allowed {
@@ -2002,6 +2883,199 @@ async fn enrollment_status(
     })))
 }
 
+fn current_auth_token(state: &AgentApiState) -> String {
+    let guard = state
+        .auth_token
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    guard.clone()
+}
+
+fn current_token_grace_minutes(state: &AgentApiState) -> u32 {
+    let guard = state
+        .token_grace_minutes
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    (*guard).max(1)
+}
+
+fn set_token_grace_minutes(state: &AgentApiState, value: u32) {
+    let mut guard = state
+        .token_grace_minutes
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *guard = value.max(1);
+}
+
+fn rotate_local_api_token_with_grace(state: &AgentApiState) -> Result<u64, (StatusCode, String)> {
+    let old_token = current_auth_token(state);
+    let new_token = rotate_local_api_token().map_err(internal_error)?;
+    {
+        let mut guard = state
+            .auth_token
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *guard = new_token;
+    }
+
+    let grace_secs = u64::from(current_token_grace_minutes(state)) * 60;
+    {
+        let mut previous = state
+            .previous_auth_token
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *previous = Some(PreviousAuthToken {
+            token: old_token,
+            expires_at: Instant::now() + Duration::from_secs(grace_secs),
+        });
+    }
+
+    Ok(grace_secs)
+}
+
+fn auth_token_matches(candidate: &str, state: &AgentApiState) -> bool {
+    let current = state
+        .auth_token
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if constant_time_eq_token(candidate, current.as_str()) {
+        return true;
+    }
+    drop(current);
+
+    let mut previous = state
+        .previous_auth_token
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(prev) = previous.as_ref() {
+        if Instant::now() > prev.expires_at {
+            *previous = None;
+            return false;
+        }
+        return constant_time_eq_token(candidate, &prev.token);
+    }
+
+    false
+}
+
+async fn route_rate_limit(
+    State(state): State<Arc<AgentApiState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+    let method = request.method().clone();
+    let now = Instant::now();
+
+    let limited = if path == "/api/v1/ui/bootstrap/start" {
+        let mut limiter = state.ui_bootstrap_start_rate_limiter.lock().await;
+        limiter
+            .allow_now(
+                now,
+                ROUTE_RATE_LIMIT_WINDOW,
+                ROUTE_RATE_LIMIT_UI_BOOTSTRAP_START,
+            )
+            .err()
+    } else if path == "/ui/bootstrap" && method == axum::http::Method::POST {
+        let mut limiter = state.ui_bootstrap_verify_rate_limiter.lock().await;
+        limiter
+            .allow_now(
+                now,
+                ROUTE_RATE_LIMIT_WINDOW,
+                ROUTE_RATE_LIMIT_UI_BOOTSTRAP_VERIFY,
+            )
+            .err()
+    } else if path == "/api/v1/agent/policy-check" {
+        let mut limiter = state.policy_check_rate_limiter.lock().await;
+        limiter
+            .allow_now(now, ROUTE_RATE_LIMIT_WINDOW, ROUTE_RATE_LIMIT_POLICY_CHECK)
+            .err()
+    } else if path == "/api/v1/agent/integrations/test" {
+        let mut limiter = state.integration_test_rate_limiter.lock().await;
+        limiter
+            .allow_now(
+                now,
+                ROUTE_RATE_LIMIT_WINDOW,
+                ROUTE_RATE_LIMIT_INTEGRATION_TEST,
+            )
+            .err()
+    } else if path == "/api/v1/openclaw/request" {
+        let mut limiter = state.openclaw_request_rate_limiter.lock().await;
+        limiter
+            .allow_now(
+                now,
+                ROUTE_RATE_LIMIT_WINDOW,
+                ROUTE_RATE_LIMIT_OPENCLAW_REQUEST,
+            )
+            .err()
+    } else {
+        None
+    };
+
+    if let Some(retry_after) = limited {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("Rate limit exceeded; retry in {}s", retry_after),
+        )
+            .into_response();
+    }
+
+    next.run(request).await
+}
+
+async fn rotate_local_api_token_route(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<RotateLocalApiTokenResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let grace_secs = rotate_local_api_token_with_grace(&state)?;
+
+    Ok(Json(RotateLocalApiTokenResponse {
+        rotated: true,
+        previous_token_valid_for_seconds: grace_secs,
+    }))
+}
+
+async fn token_rotation_loop(
+    state: Arc<AgentApiState>,
+    shutdown_rx: &mut broadcast::Receiver<()>,
+) {
+    loop {
+        let interval_hours = {
+            let settings = state.settings.read().await;
+            settings
+                .local_api_security
+                .token_rotation_interval_hours
+                .max(1)
+        };
+        let sleep_for = Duration::from_secs(u64::from(interval_hours) * 60 * 60);
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                tracing::debug!("Local API token rotation loop shutting down");
+                break;
+            }
+            _ = tokio::time::sleep(sleep_for) => {}
+        }
+
+        match rotate_local_api_token_with_grace(&state) {
+            Ok(grace_secs) => {
+                tracing::info!(
+                    grace_secs,
+                    "Rotated local API auth token on schedule"
+                );
+            }
+            Err((status, err)) => {
+                tracing::warn!(
+                    status = %status,
+                    error = %err,
+                    "Scheduled local API token rotation failed"
+                );
+            }
+        }
+    }
+}
+
 fn auth_token_from_cookie(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(COOKIE)?.to_str().ok()?;
     for cookie in cookie_header.split(';') {
@@ -2026,14 +3100,14 @@ fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (Statu
 
     if let Some(auth) = auth_header {
         if let Some(token) = auth.strip_prefix("Bearer ") {
-            if constant_time_eq_token(token.trim(), &state.auth_token) {
+            if auth_token_matches(token.trim(), state) {
                 return Ok(());
             }
         }
     }
 
     if let Some(cookie_token) = auth_token_from_cookie(headers) {
-        if constant_time_eq_token(cookie_token.trim(), &state.auth_token) {
+        if auth_token_matches(cookie_token.trim(), state) {
             return Ok(());
         }
     }
@@ -2084,7 +3158,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::daemon::DaemonConfig;
+    use crate::daemon::{AuditQueue, DaemonConfig};
     use std::path::PathBuf;
     use tower::ServiceExt;
 
@@ -2098,6 +3172,7 @@ mod tests {
         }));
         let session_manager = Arc::new(crate::session::SessionManager::new());
         let approval_queue = Arc::new(crate::approval::ApprovalQueue::new());
+        let audit_queue = Arc::new(AuditQueue::new_test_isolated());
         let openclaw = OpenClawManager::new(settings.clone());
         let updater = Arc::new(crate::updater::HushdUpdater::new(
             settings.clone(),
@@ -2109,12 +3184,20 @@ mod tests {
             daemon_manager,
             session_manager,
             approval_queue,
+            audit_queue,
             openclaw,
             updater,
-            auth_token: "test-token".to_string(),
+            auth_token: Arc::new(StdRwLock::new("test-token".to_string())),
+            previous_auth_token: Arc::new(StdMutex::new(None)),
+            token_grace_minutes: Arc::new(StdRwLock::new(15)),
             http_client: reqwest::Client::new(),
             policy_version_cache: Arc::new(RwLock::new(PolicyVersionCache::default())),
             approval_rate_limiter: Arc::new(Mutex::new(ApprovalSubmissionLimiter::default())),
+            ui_bootstrap_start_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+            ui_bootstrap_verify_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+            policy_check_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+            integration_test_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
+            openclaw_request_rate_limiter: Arc::new(Mutex::new(RouteRateLimiter::default())),
             ui_bootstrap_sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -2198,7 +3281,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             COOKIE,
-            format!("{}={}", AGENT_AUTH_COOKIE_NAME, state.auth_token)
+            format!("{}={}", AGENT_AUTH_COOKIE_NAME, current_auth_token(&state))
                 .parse()
                 .unwrap_or_else(|_| panic!("failed to build cookie header")),
         );
@@ -2219,7 +3302,7 @@ mod tests {
         );
         headers.insert(
             COOKIE,
-            format!("{}={}", AGENT_AUTH_COOKIE_NAME, state.auth_token)
+            format!("{}={}", AGENT_AUTH_COOKIE_NAME, current_auth_token(&state))
                 .parse()
                 .unwrap_or_else(|_| panic!("failed to build cookie header")),
         );
@@ -2466,6 +3549,7 @@ mod tests {
                 "/api/v1/agent/integrations",
                 get(get_integrations_settings).put(update_integrations_settings),
             )
+            .route("/api/v1/agent/integrations/test", post(test_integration_delivery))
             .with_state(state);
 
         let put_req = axum::http::Request::builder()
@@ -2685,6 +3769,7 @@ mod tests {
                 "/api/v1/agent/integrations",
                 get(get_integrations_settings).put(update_integrations_settings),
             )
+            .route("/api/v1/agent/integrations/test", post(test_integration_delivery))
             .with_state(state);
 
         let get_req = axum::http::Request::builder()
@@ -2706,10 +3791,23 @@ mod tests {
             .body(axum::body::Body::from(r#"{"apply":false}"#))
             .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
         let put_response = app
+            .clone()
             .oneshot(put_req)
             .await
             .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
         assert_eq!(put_response.status(), StatusCode::UNAUTHORIZED);
+
+        let post_req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/agent/integrations/test")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(r#"{"target":"siem"}"#))
+            .unwrap_or_else(|e| panic!("failed to build POST request: {e}"));
+        let post_response = app
+            .oneshot(post_req)
+            .await
+            .unwrap_or_else(|e| panic!("POST request failed: {e}"));
+        assert_eq!(post_response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]

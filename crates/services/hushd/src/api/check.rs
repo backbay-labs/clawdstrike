@@ -80,9 +80,51 @@ pub struct CheckRequest {
     /// Optional session ID
     #[serde(default)]
     pub session_id: Option<String>,
-    /// Optional agent ID
+    /// Canonical endpoint agent ID.
+    #[serde(default, alias = "agent_id")]
+    pub endpoint_agent_id: Option<String>,
+    /// Optional runtime agent ID (nested AI/runtime process on endpoint agent)
     #[serde(default)]
-    pub agent_id: Option<String>,
+    pub runtime_agent_id: Option<String>,
+    /// Optional runtime agent kind (claude_code, openclaw, mcp, etc.)
+    #[serde(default)]
+    pub runtime_agent_kind: Option<String>,
+}
+
+type AgentIdentity = (Option<String>, Option<String>, Option<String>);
+
+fn normalize_identity_component(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn normalize_and_validate_agent_identity(
+    endpoint_agent_id: Option<&str>,
+    runtime_agent_id: Option<&str>,
+    runtime_agent_kind: Option<&str>,
+) -> Result<AgentIdentity, V1Error> {
+    let endpoint_agent_id = normalize_identity_component(endpoint_agent_id);
+    let runtime_agent_id = normalize_identity_component(runtime_agent_id);
+    let runtime_agent_kind =
+        normalize_identity_component(runtime_agent_kind).map(|value| value.to_ascii_lowercase());
+
+    if runtime_agent_id.is_some() ^ runtime_agent_kind.is_some() {
+        return Err(V1Error::bad_request(
+            "INVALID_AGENT_IDENTITY",
+            "runtime_agent_id and runtime_agent_kind must be provided together",
+        ));
+    }
+
+    if runtime_agent_id.is_some() && endpoint_agent_id.is_none() {
+        return Err(V1Error::bad_request(
+            "INVALID_AGENT_IDENTITY",
+            "endpoint_agent_id is required when runtime attribution is present",
+        ));
+    }
+
+    Ok((endpoint_agent_id, runtime_agent_id, runtime_agent_kind))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -336,7 +378,14 @@ pub async fn check_action(
         }
     }
 
-    if let Some(agent_id) = request.agent_id.clone() {
+    let (endpoint_agent_id, runtime_agent_id, runtime_agent_kind) =
+        normalize_and_validate_agent_identity(
+            request.endpoint_agent_id.as_deref(),
+            request.runtime_agent_id.as_deref(),
+            request.runtime_agent_kind.as_deref(),
+        )?;
+
+    if let Some(agent_id) = endpoint_agent_id.clone() {
         context = context.with_agent_id(agent_id);
     }
 
@@ -485,14 +534,13 @@ pub async fn check_action(
 
     let warn = result.allowed && result.severity == Severity::Warning;
     state.metrics.observe_check_outcome(result.allowed, warn);
-
     // Record to audit ledger
     let mut audit_event = AuditEvent::from_guard_result(
         &request.action_type,
         Some(&request.target),
         &result,
         request.session_id.as_deref(),
-        request.agent_id.as_deref(),
+        endpoint_agent_id.as_deref(),
     );
     let stable_event_id = audit_event.id.clone();
     let stable_timestamp = audit_event.timestamp.to_rfc3339();
@@ -518,6 +566,36 @@ pub async fn check_action(
             serde_json::to_value(&resolved.contributing_policies)
                 .unwrap_or(serde_json::Value::Null),
         );
+        if let Some(endpoint_id) = endpoint_agent_id.as_ref() {
+            obj.insert(
+                "endpoint_agent_id".to_string(),
+                serde_json::Value::String(endpoint_id.clone()),
+            );
+            obj.insert(
+                "endpointAgentId".to_string(),
+                serde_json::Value::String(endpoint_id.clone()),
+            );
+        }
+        if let Some(runtime_id) = runtime_agent_id.as_ref() {
+            obj.insert(
+                "runtime_agent_id".to_string(),
+                serde_json::Value::String(runtime_id.clone()),
+            );
+            obj.insert(
+                "runtimeAgentId".to_string(),
+                serde_json::Value::String(runtime_id.clone()),
+            );
+        }
+        if let Some(runtime_kind) = runtime_agent_kind.as_ref() {
+            obj.insert(
+                "runtime_agent_kind".to_string(),
+                serde_json::Value::String(runtime_kind.clone()),
+            );
+            obj.insert(
+                "runtimeAgentKind".to_string(),
+                serde_json::Value::String(runtime_kind.clone()),
+            );
+        }
 
         audit_event.metadata = Some(serde_json::Value::Object(obj));
     }
@@ -654,13 +732,31 @@ pub async fn check_action(
                 serde_json::Value::String(session.session_id.clone()),
             );
         }
+        if let Some(endpoint_id) = endpoint_agent_id.as_ref() {
+            extensions.insert(
+                "endpointAgentId".to_string(),
+                serde_json::Value::String(endpoint_id.clone()),
+            );
+        }
+        if let Some(runtime_id) = runtime_agent_id.as_ref() {
+            extensions.insert(
+                "runtimeAgentId".to_string(),
+                serde_json::Value::String(runtime_id.clone()),
+            );
+        }
+        if let Some(runtime_kind) = runtime_agent_kind.as_ref() {
+            extensions.insert(
+                "runtimeAgentKind".to_string(),
+                serde_json::Value::String(runtime_kind.clone()),
+            );
+        }
 
         if let Err(err) = state.audit_v2.record(NewAuditEventV2 {
             session_id: request
                 .session_id
                 .clone()
                 .unwrap_or_else(|| state.session_id.clone()),
-            agent_id: request.agent_id.clone(),
+            agent_id: endpoint_agent_id.clone(),
             organization_id,
             correlation_id: None,
             action_type: request.action_type.clone(),
@@ -683,7 +779,7 @@ pub async fn check_action(
     let action_type = request.action_type.clone();
     let target = request.target.clone();
     let session_id = request.session_id.clone();
-    let agent_id = request.agent_id.clone();
+    let agent_id = endpoint_agent_id.clone();
 
     // Broadcast event
     state.broadcast(DaemonEvent {
@@ -699,7 +795,10 @@ pub async fn check_action(
             "message": &result.message,
             "policy_hash": &policy_hash,
             "session_id": &session_id,
+            "endpoint_agent_id": &agent_id,
             "agent_id": &agent_id,
+            "runtime_agent_id": &runtime_agent_id,
+            "runtime_agent_kind": &runtime_agent_kind,
         }),
     });
 
@@ -714,7 +813,10 @@ pub async fn check_action(
                 "severity": canonical_guard_severity(&result.severity),
                 "policyHash": &policy_hash_sha256,
                 "sessionId": &session_id,
+                "endpointAgentId": &agent_id,
                 "agentId": &agent_id,
+                "runtimeAgentId": &runtime_agent_id,
+                "runtimeAgentKind": &runtime_agent_kind,
             }),
         );
     }

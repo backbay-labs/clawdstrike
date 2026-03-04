@@ -7,6 +7,12 @@ interface SharedSSEValue {
   status: SSEConnectionStatus;
   error: string | null;
   reconnect: () => void;
+  paused: boolean;
+  setPaused: (paused: boolean) => void;
+  maxEvents: number;
+  setMaxEvents: (max: number) => void;
+  droppedEvents: number;
+  clearEvents: () => void;
 }
 
 const SharedSSEContext = createContext<SharedSSEValue | null>(null);

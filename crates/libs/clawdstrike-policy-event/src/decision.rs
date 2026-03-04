@@ -22,6 +22,7 @@ pub(crate) fn severity_from_value(value: &serde_json::Value) -> Option<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use serde_json::json;

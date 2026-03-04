@@ -193,7 +193,15 @@ impl PolicyEvent {
     pub fn to_guard_context(&self) -> GuardContext {
         let mut ctx = GuardContext::new();
         ctx.session_id = self.session_id.clone();
-        ctx.agent_id = extract_metadata_string(self.metadata.as_ref(), &["agentId", "agent_id"]);
+        ctx.agent_id = extract_metadata_string(
+            self.metadata.as_ref(),
+            &[
+                "endpointAgentId",
+                "endpoint_agent_id",
+                "agentId",
+                "agent_id",
+            ],
+        );
         ctx.metadata = merge_context_into_metadata(self.metadata.as_ref(), self.context.as_ref());
 
         // Optional identity/session enrichment (best-effort; never fails closed here).
@@ -579,14 +587,68 @@ pub struct MappedPolicyEvent {
     pub decision_reason: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct EventAgentIdentity {
+    endpoint_agent_id: Option<String>,
+    runtime_agent_id: Option<String>,
+    runtime_agent_kind: Option<String>,
+}
+
+impl EventAgentIdentity {
+    fn from_metadata(metadata: Option<&serde_json::Value>) -> Self {
+        Self {
+            endpoint_agent_id: extract_metadata_string(
+                metadata,
+                &[
+                    "endpointAgentId",
+                    "endpoint_agent_id",
+                    "agentId",
+                    "agent_id",
+                ],
+            )
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+            runtime_agent_id: extract_metadata_string(
+                metadata,
+                &["runtimeAgentId", "runtime_agent_id"],
+            )
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+            runtime_agent_kind: extract_metadata_string(
+                metadata,
+                &["runtimeAgentKind", "runtime_agent_kind"],
+            )
+            .map(|value| value.trim().to_ascii_lowercase())
+            .filter(|value| !value.is_empty()),
+        }
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.runtime_agent_id.is_some() ^ self.runtime_agent_kind.is_some() {
+            anyhow::bail!("runtime_agent_id and runtime_agent_kind must be provided together");
+        }
+        if self.runtime_agent_id.is_some() && self.endpoint_agent_id.is_none() {
+            anyhow::bail!(
+                "endpoint_agent_id is required when runtime_agent_id/runtime_agent_kind are set"
+            );
+        }
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // map_policy_event (hush-cli version with richer context enrichment)
 // ---------------------------------------------------------------------------
 
 pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent> {
     event.validate()?;
+    let identity = EventAgentIdentity::from_metadata(event.metadata.as_ref());
+    identity.validate()?;
 
     let mut context = event.to_guard_context();
+    if let Some(endpoint) = identity.endpoint_agent_id.clone() {
+        context.agent_id = Some(endpoint);
+    }
 
     let data_json = serde_json::to_value(&event.data).context("serialize event data")?;
 
@@ -729,6 +791,22 @@ pub fn map_policy_event(event: &PolicyEvent) -> anyhow::Result<MappedPolicyEvent
                 serde_json::json!({ "policy_event": { "file": { "content_hash": h } } }),
             );
         }
+    }
+
+    if identity.endpoint_agent_id.is_some()
+        || identity.runtime_agent_id.is_some()
+        || identity.runtime_agent_kind.is_some()
+    {
+        context.metadata = merge_metadata(
+            context.metadata,
+            serde_json::json!({
+                "identity": {
+                    "endpoint_agent_id": identity.endpoint_agent_id,
+                    "runtime_agent_id": identity.runtime_agent_id,
+                    "runtime_agent_kind": identity.runtime_agent_kind,
+                }
+            }),
+        );
     }
 
     Ok(MappedPolicyEvent {
@@ -952,6 +1030,72 @@ mod tests {
             postcondition_probe_hash: None,
             extra: serde_json::Map::new(),
         }
+    }
+
+    #[test]
+    fn runtime_identity_requires_complete_pair() {
+        let event = PolicyEvent {
+            event_id: "evt-runtime-invalid".to_string(),
+            event_type: PolicyEventType::FileRead,
+            timestamp: Utc::now(),
+            session_id: Some("sess-runtime-invalid".to_string()),
+            data: PolicyEventData::File(FileEventData {
+                path: "/tmp/test.txt".to_string(),
+                operation: Some("read".to_string()),
+                content_base64: None,
+                content: None,
+                content_hash: None,
+            }),
+            metadata: Some(serde_json::json!({
+                "agentId": "endpoint-a",
+                "runtimeAgentId": "runtime-a"
+            })),
+            context: None,
+        };
+
+        let err = map_policy_event(&event).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("runtime_agent_id and runtime_agent_kind"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn runtime_identity_enrichment_sets_endpoint_agent_context() {
+        let event = PolicyEvent {
+            event_id: "evt-runtime-valid".to_string(),
+            event_type: PolicyEventType::FileRead,
+            timestamp: Utc::now(),
+            session_id: Some("sess-runtime-valid".to_string()),
+            data: PolicyEventData::File(FileEventData {
+                path: "/tmp/test.txt".to_string(),
+                operation: Some("read".to_string()),
+                content_base64: None,
+                content: None,
+                content_hash: None,
+            }),
+            metadata: Some(serde_json::json!({
+                "endpointAgentId": "endpoint-a",
+                "runtimeAgentId": "runtime-a",
+                "runtimeAgentKind": "claude_code"
+            })),
+            context: None,
+        };
+
+        let mapped = map_policy_event(&event).expect("map");
+        assert_eq!(mapped.context.agent_id.as_deref(), Some("endpoint-a"));
+        let identity = mapped
+            .context
+            .metadata
+            .as_ref()
+            .and_then(|value| value.get("identity"))
+            .cloned()
+            .unwrap_or_else(|| panic!("missing identity metadata"));
+        assert_eq!(identity["endpoint_agent_id"], "endpoint-a");
+        assert_eq!(identity["runtime_agent_id"], "runtime-a");
+        assert_eq!(identity["runtime_agent_kind"], "claude_code");
     }
 
     #[test]

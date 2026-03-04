@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Agent Identity + Liveness Operations
+
+- Added endpoint/runtime liveness telemetry in `hushd`:
+  - `POST /api/v1/agent/heartbeat`
+  - `GET /api/v1/agents/status`
+  - persistent `endpoint_liveness`, `runtime_liveness`, and `heartbeat_history` control DB tables.
+- Added runtime-aware audit ingestion and query controls:
+  - `POST /api/v1/audit/batch` for queued replay uploads from agents
+  - cursor pagination fields (`next_cursor`, `has_more`)
+  - runtime filters (`runtime_agent_id`, `runtime_agent_kind`) for audit queries.
+- Added agent-side runtime registration and identity propagation across policy checks for Claude Code, OpenClaw, and MCP integrations.
+- Added desktop-agent diagnostics bundle generation (redacted settings, connectivity checks, version matrix, queue state, log tails) with local API route and tray action.
+- Added scheduled local API token rotation with grace-window auth fallback and configurable local API security settings.
+- Added control-console stream backpressure controls (pause/resume, buffer caps, dropped-event counters, clear buffer) and event-table virtualization for long sessions.
+- Added control-console liveness surfacing in Agent Explorer (online/offline heartbeat age) and server-driven runtime filters in Audit Log.
+
 #### Desktop Policy Workbench Rollout (Forensics River)
 
 - Forensics River now supports an integrated Policy Workbench with in-place policy editing, validation, save/revert flow, and canonical `PolicyEvent` test execution.
@@ -96,6 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Agent identity validation is now strict across check/eval paths: runtime attribution must provide `runtime_agent_id` and `runtime_agent_kind` as a complete pair.
+- Agent audit outbox durability now enforces stable event IDs and dedupes by event ID before replay.
+- Local API settings now expose hardening controls (`token_rotation_interval_hours`, `token_grace_minutes`, mTLS configuration) through the authenticated settings API.
 - Canonical-first policy handling across SDKs: canonical `version: "1.1.0"/"1.2.0"` is primary, with legacy `clawdstrike-v1.0` accepted via translation and deprecation warning.
 - WASM plugin runtime now executes via Rust Wasmtime path with capability checks and resource ceilings; TS `executionMode: wasm` uses the CLI bridge path instead of a stub failure.
 - `hushd` auth pepper is now instance-bound (resolved at store creation) to eliminate global env race conditions in parallel test/runtime paths.

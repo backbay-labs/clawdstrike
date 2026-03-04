@@ -13,7 +13,7 @@ import { useContextMenu } from "../../hooks/useContextMenu";
 import { useLockScreen } from "../../hooks/useLockScreen";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useSoundEffects } from "../../hooks/useSoundEffects";
-import { desktopIcons, PROCESS_ICONS } from "../../state/processRegistry";
+import { desktopIconGroups, PROCESS_ICONS } from "../../state/processRegistry";
 import { CommandPalette } from "./CommandPalette";
 import { ContextMenu } from "./ContextMenu";
 import { DesktopWallpaper } from "./DesktopWallpaper";
@@ -174,66 +174,91 @@ function DesktopSurface() {
         position: "relative",
         zIndex: 1,
         display: "flex",
-        flexWrap: "wrap",
-        alignContent: "flex-start",
-        gap: 16,
+        flexDirection: "column",
+        alignItems: "flex-start",
+        gap: 14,
         padding: 24,
         userSelect: "none",
       }}
     >
-      {desktopIcons.map((icon) => {
-        const def = processes.getDefinition(icon.processId);
-        const sigil = PROCESS_ICONS[icon.processId];
-        return (
-          <button
-            key={icon.id}
-            type="button"
-            onDoubleClick={() => processes.launch(icon.processId)}
-            className="hover-desktop-icon"
+      {desktopIconGroups.map((group) => (
+        <section key={group.id} style={{ width: "100%" }}>
+          <div
+            className="font-mono"
             style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 6,
-              width: 72,
-              padding: "8px 4px",
-              border: "none",
-              borderRadius: 8,
-              background: "transparent",
-              cursor: "pointer",
-              color: "var(--text)",
+              marginBottom: 8,
+              fontSize: 10,
+              textTransform: "uppercase",
+              letterSpacing: "0.14em",
+              color: "rgba(154,167,181,0.5)",
             }}
           >
-            <span
-              style={{
-                width: 40,
-                height: 40,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "linear-gradient(180deg, var(--graphite), var(--obsidian))",
-                border: "1px solid var(--gold-edge)",
-                borderRadius: 12,
-              }}
-            >
-              {sigil ?? (typeof def?.icon === "string" ? def.icon : null)}
-            </span>
-            <span
-              className="font-mono"
-              style={{
-                fontSize: 10,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                textAlign: "center",
-                lineHeight: 1.3,
-                color: "var(--muted)",
-              }}
-            >
-              {icon.label}
-            </span>
-          </button>
-        );
-      })}
+            {group.label}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignContent: "flex-start",
+              gap: 16,
+            }}
+          >
+            {group.icons.map((icon) => {
+              const def = processes.getDefinition(icon.processId);
+              const sigil = PROCESS_ICONS[icon.processId];
+              return (
+                <button
+                  key={icon.id}
+                  type="button"
+                  onDoubleClick={() => processes.launch(icon.processId)}
+                  className="hover-desktop-icon"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 6,
+                    width: 84,
+                    padding: "8px 4px",
+                    border: "none",
+                    borderRadius: 8,
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: "var(--text)",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 40,
+                      height: 40,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "linear-gradient(180deg, var(--graphite), var(--obsidian))",
+                      border: "1px solid var(--gold-edge)",
+                      borderRadius: 12,
+                    }}
+                  >
+                    {sigil ?? (typeof def?.icon === "string" ? def.icon : null)}
+                  </span>
+                  <span
+                    className="font-mono"
+                    style={{
+                      fontSize: 10,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      textAlign: "center",
+                      lineHeight: 1.3,
+                      color: "var(--muted)",
+                    }}
+                  >
+                    {icon.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

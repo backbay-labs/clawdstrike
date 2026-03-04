@@ -19,11 +19,11 @@ services:
     ports:
       - "4222:4222"   # client
       - "8222:8222"   # monitoring
-    command: ["--jetstream", "--store_dir", "/data"]
+    command: ["--jetstream", "--store_dir", "/data", "-m", "8222"]
     volumes:
       - nats-data:/data
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8222/healthz"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -37,11 +37,13 @@ services:
       dockerfile: infra/docker/Dockerfile.spine
       args:
         BIN: spine-checkpointer
+    command: ["--replicas", "1"]
     depends_on:
       nats:
         condition: service_healthy
     environment:
       NATS_URL: nats://nats:4222
+      SPINE_LOG_SEED_HEX: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
       RUST_LOG: info,spine=debug
 
   spine-witness:
@@ -55,6 +57,7 @@ services:
         condition: service_healthy
     environment:
       NATS_URL: nats://nats:4222
+      SPINE_WITNESS_SEED_HEX: "f1e1d1c1b1a191817161514131211101f0e0d0c0b0a090807060504030201000"
       RUST_LOG: info,spine=debug
 
   spine-proofs-api:

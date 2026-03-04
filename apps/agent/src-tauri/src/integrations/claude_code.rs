@@ -90,27 +90,10 @@ if [ -z "${TARGET:-}" ]; then
   exit 0
 fi
 
-# Build JSON safely.
-if [ "$ACTION_TYPE" = "mcp_tool" ]; then
-  if [ -n "${CONTENT:-}" ]; then
-    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,content:$content,args:$args}' 2>/dev/null); then
-      fail "failed to encode policy request payload"
-    fi
-  else
-    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,args:$args}' 2>/dev/null); then
-      fail "failed to encode policy request payload"
-    fi
-  fi
-else
-  if [ -n "${CONTENT:-}" ]; then
-    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" '{action_type:$action_type,target:$target,content:$content}' 2>/dev/null); then
-      fail "failed to encode policy request payload"
-    fi
-  else
-    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" '{action_type:$action_type,target:$target}' 2>/dev/null); then
-      fail "failed to encode policy request payload"
-    fi
-  fi
+RUNTIME_AGENT_KIND="claude_code"
+RUNTIME_AGENT_EXTERNAL_ID=$(echo "$TOOL_INPUT" | jq -er '.agent_id // .runtime_agent_id // .session_id // .conversation_id // empty' 2>/dev/null || true)
+if [ -z "${RUNTIME_AGENT_EXTERNAL_ID:-}" ]; then
+  RUNTIME_AGENT_EXTERNAL_ID="${CLAUDE_AGENT_ID:-claude-code}"
 fi
 
 if [ ! -f "$CLAWDSTRIKE_TOKEN_FILE" ]; then
@@ -123,6 +106,43 @@ fi
 
 if [ -z "$CLAWDSTRIKE_TOKEN" ]; then
   fail "agent auth token is empty"
+fi
+
+RUNTIME_AGENT_ID="$RUNTIME_AGENT_EXTERNAL_ID"
+REGISTER_URL="${CLAWDSTRIKE_ENDPOINT}/api/v1/agent/runtimes/register"
+if REGISTER_PAYLOAD=$(jq -cn --arg runtime_agent_kind "$RUNTIME_AGENT_KIND" --arg runtime_agent_id "$RUNTIME_AGENT_EXTERNAL_ID" '{runtime_agent_kind:$runtime_agent_kind,runtime_agent_id:$runtime_agent_id}' 2>/dev/null); then
+  if REGISTER_RESPONSE=$(curl -sS --max-time 4 -X POST "$REGISTER_URL" \
+    -H "Authorization: Bearer ${CLAWDSTRIKE_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "$REGISTER_PAYLOAD" 2>/dev/null); then
+    REGISTERED_ID=$(echo "$REGISTER_RESPONSE" | jq -er '.runtime_agent_id // empty' 2>/dev/null || true)
+    if [ -n "${REGISTERED_ID:-}" ]; then
+      RUNTIME_AGENT_ID="$REGISTERED_ID"
+    fi
+  fi
+fi
+
+# Build JSON safely.
+if [ "$ACTION_TYPE" = "mcp_tool" ]; then
+  if [ -n "${CONTENT:-}" ]; then
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" --arg runtime_agent_id "$RUNTIME_AGENT_ID" --arg runtime_agent_kind "$RUNTIME_AGENT_KIND" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,content:$content,args:$args,runtime_agent_id:$runtime_agent_id,runtime_agent_kind:$runtime_agent_kind}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  else
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg runtime_agent_id "$RUNTIME_AGENT_ID" --arg runtime_agent_kind "$RUNTIME_AGENT_KIND" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,args:$args,runtime_agent_id:$runtime_agent_id,runtime_agent_kind:$runtime_agent_kind}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  fi
+else
+  if [ -n "${CONTENT:-}" ]; then
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" --arg runtime_agent_id "$RUNTIME_AGENT_ID" --arg runtime_agent_kind "$RUNTIME_AGENT_KIND" '{action_type:$action_type,target:$target,content:$content,runtime_agent_id:$runtime_agent_id,runtime_agent_kind:$runtime_agent_kind}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  else
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg runtime_agent_id "$RUNTIME_AGENT_ID" --arg runtime_agent_kind "$RUNTIME_AGENT_KIND" '{action_type:$action_type,target:$target,runtime_agent_id:$runtime_agent_id,runtime_agent_kind:$runtime_agent_kind}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  fi
 fi
 
 CHECK_URL="${CLAWDSTRIKE_ENDPOINT}/api/v1/agent/policy-check"

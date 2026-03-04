@@ -1,5 +1,8 @@
 //! Shared policy-check gate for hook/API/MCP paths.
 
+use crate::runtime_registry::{
+    resolve_effective_endpoint_agent_id, resolve_runtime_for_policy_event,
+};
 use crate::settings::Settings;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -70,6 +73,63 @@ fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput
     input
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn enqueue_offline_audit_event(
+    audit_queue: Option<&Arc<crate::daemon::AuditQueue>>,
+    action_type: &str,
+    target: &str,
+    guard: &str,
+    severity: &str,
+    message: &str,
+    session_id: Option<&str>,
+    endpoint_agent_id: &str,
+    runtime_agent_id: Option<&str>,
+    runtime_agent_kind: Option<&str>,
+    details: Option<&Value>,
+) {
+    let Some(queue) = audit_queue else {
+        return;
+    };
+
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(
+        "reason".to_string(),
+        Value::String("offline_fail_closed".to_string()),
+    );
+    if let Some(runtime_agent_id) = runtime_agent_id {
+        metadata.insert(
+            "runtime_agent_id".to_string(),
+            Value::String(runtime_agent_id.to_string()),
+        );
+    }
+    if let Some(runtime_agent_kind) = runtime_agent_kind {
+        metadata.insert(
+            "runtime_agent_kind".to_string(),
+            Value::String(runtime_agent_kind.to_string()),
+        );
+    }
+    if let Some(details) = details {
+        metadata.insert("details".to_string(), details.clone());
+    }
+
+    queue
+        .enqueue(serde_json::json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "event_type": "violation",
+            "action_type": action_type,
+            "target": target,
+            "decision": "blocked",
+            "guard": guard,
+            "severity": severity,
+            "message": message,
+            "session_id": session_id,
+            "agent_id": endpoint_agent_id,
+            "metadata": Value::Object(metadata),
+        }))
+        .await;
+}
+
 /// Policy check request payload.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PolicyCheckInput {
@@ -79,6 +139,16 @@ pub struct PolicyCheckInput {
     pub content: Option<String>,
     #[serde(default)]
     pub args: Option<HashMap<String, Value>>,
+    /// Legacy endpoint identifier field accepted from older integrations.
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    /// Canonical endpoint agent identifier.
+    #[serde(default)]
+    pub endpoint_agent_id: Option<String>,
+    #[serde(default)]
+    pub runtime_agent_id: Option<String>,
+    #[serde(default)]
+    pub runtime_agent_kind: Option<String>,
 }
 
 /// Policy check response payload.
@@ -101,15 +171,49 @@ pub async fn evaluate_policy_check(
     http_client: &reqwest::Client,
     input: PolicyCheckInput,
     session_id: Option<String>,
+    audit_queue: Option<Arc<crate::daemon::AuditQueue>>,
 ) -> PolicyCheckOutput {
     let input = normalize_policy_check_input(input);
-    let (enforced, daemon_url, api_key, include_error_body) = {
-        let settings_guard = settings.read().await;
+    let (enforced, daemon_url, api_key, include_error_body, endpoint_agent_id, runtime_identity) = {
+        let mut settings_guard = settings.write().await;
+        let endpoint_agent_id = resolve_effective_endpoint_agent_id(
+            &mut settings_guard,
+            input
+                .endpoint_agent_id
+                .as_deref()
+                .or(input.agent_id.as_deref()),
+        );
+        let runtime_identity = match resolve_runtime_for_policy_event(
+            &mut settings_guard,
+            &endpoint_agent_id,
+            input.runtime_agent_id.as_deref(),
+            input.runtime_agent_kind.as_deref(),
+        ) {
+            Ok(value) => value,
+            Err(message) => {
+                drop(settings_guard);
+                return PolicyCheckOutput {
+                    allowed: false,
+                    guard: Some("invalid_runtime_identity".to_string()),
+                    severity: Some("high".to_string()),
+                    message: Some(message),
+                    details: Some(serde_json::json!({
+                        "reason": "invalid_runtime_identity",
+                        "provenance": { "mode": "input_validation" }
+                    })),
+                };
+            }
+        };
+        if let Err(err) = settings_guard.save() {
+            tracing::warn!(error = %err, "Failed to persist runtime registry updates");
+        }
         (
             settings_guard.enabled,
             settings_guard.daemon_url(),
             settings_guard.api_key.clone(),
             settings_guard.debug_include_daemon_error_body,
+            endpoint_agent_id,
+            runtime_identity,
         )
     };
 
@@ -128,15 +232,25 @@ pub async fn evaluate_policy_check(
         };
     }
 
+    let action_type = input.action_type.clone();
+    let target = input.target.clone();
+    let session_id_for_audit = session_id.clone();
     let url = format!("{}/api/v1/check", daemon_url);
     let mut body = serde_json::json!({
-        "action_type": input.action_type,
-        "target": input.target,
+        "action_type": action_type.clone(),
+        "target": target.clone(),
         "content": input.content,
         "args": input.args,
+        "endpoint_agent_id": endpoint_agent_id.clone(),
     });
-    if let Some(sid) = session_id {
+    if let Some(sid) = session_id.clone() {
         body["session_id"] = serde_json::Value::String(sid);
+    }
+    if let Some(runtime_identity) = runtime_identity.as_ref() {
+        body["runtime_agent_id"] =
+            serde_json::Value::String(runtime_identity.runtime_agent_id.clone());
+        body["runtime_agent_kind"] =
+            serde_json::Value::String(runtime_identity.runtime_agent_kind.clone());
     }
     let mut request = http_client.post(&url).json(&body);
 
@@ -147,9 +261,34 @@ pub async fn evaluate_policy_check(
     let response = match request.send().await {
         Ok(resp) => resp,
         Err(err) => {
+            let details = serde_json::json!({
+                "reason": "hushd_unreachable",
+                "provenance": { "mode": "offline_deny" },
+                "error": err.to_string(),
+            });
+            let message = format!(
+                "Policy daemon unreachable at {} — action denied (fail-closed)",
+                daemon_url
+            );
+            enqueue_offline_audit_event(
+                audit_queue.as_ref(),
+                &action_type,
+                &target,
+                "hushd_unreachable",
+                "critical",
+                &message,
+                session_id_for_audit.as_deref(),
+                &endpoint_agent_id,
+                runtime_identity.as_ref().map(|value| value.runtime_agent_id.as_str()),
+                runtime_identity
+                    .as_ref()
+                    .map(|value| value.runtime_agent_kind.as_str()),
+                Some(&details),
+            )
+            .await;
             tracing::warn!(
-                action_type = %input.action_type,
-                target = %input.target,
+                action_type = %action_type,
+                target = %target,
                 error = %err,
                 "hushd unreachable — denying action"
             );
@@ -157,15 +296,8 @@ pub async fn evaluate_policy_check(
                 allowed: false,
                 guard: Some("hushd_unreachable".to_string()),
                 severity: Some("critical".to_string()),
-                message: Some(format!(
-                    "Policy daemon unreachable at {} — action denied (fail-closed)",
-                    daemon_url
-                )),
-                details: Some(serde_json::json!({
-                    "reason": "hushd_unreachable",
-                    "provenance": { "mode": "offline_deny" },
-                    "error": err.to_string(),
-                })),
+                message: Some(message),
+                details: Some(details),
             };
         }
     };
@@ -200,8 +332,8 @@ pub async fn evaluate_policy_check(
         };
 
         tracing::warn!(
-            action_type = %input.action_type,
-            target = %input.target,
+            action_type = %action_type,
+            target = %target,
             http_status = %status,
             guard = guard,
             "hushd returned error — denying action"
@@ -218,15 +350,32 @@ pub async fn evaluate_policy_check(
         if let Some(truncated) = body_truncated {
             details["body_truncated"] = serde_json::Value::Bool(truncated);
         }
+        let message = format!(
+            "{} ({}) — action denied (fail-closed)",
+            reason_prefix, status
+        );
+        enqueue_offline_audit_event(
+            audit_queue.as_ref(),
+            &action_type,
+            &target,
+            guard,
+            severity,
+            &message,
+            session_id_for_audit.as_deref(),
+            &endpoint_agent_id,
+            runtime_identity.as_ref().map(|value| value.runtime_agent_id.as_str()),
+            runtime_identity
+                .as_ref()
+                .map(|value| value.runtime_agent_kind.as_str()),
+            Some(&details),
+        )
+        .await;
 
         return PolicyCheckOutput {
             allowed: false,
             guard: Some(guard.to_string()),
             severity: Some(severity.to_string()),
-            message: Some(format!(
-                "{} ({}) — action denied (fail-closed)",
-                reason_prefix, status
-            )),
+            message: Some(message),
             details: Some(details),
         };
     }
@@ -238,8 +387,8 @@ pub async fn evaluate_policy_check(
         Ok(payload) => payload,
         Err(err) => {
             tracing::warn!(
-                action_type = %input.action_type,
-                target = %input.target,
+                action_type = %action_type,
+                target = %target,
                 http_status = %status,
                 error = %err,
                 "hushd returned malformed policy response — denying action"
@@ -264,15 +413,30 @@ pub async fn evaluate_policy_check(
             if let Some(truncated) = body_truncated {
                 details["body_truncated"] = serde_json::Value::Bool(truncated);
             }
+            let message =
+                "Policy daemon returned malformed response — action denied (fail-closed)".to_string();
+            enqueue_offline_audit_event(
+                audit_queue.as_ref(),
+                &action_type,
+                &target,
+                "hushd_parse_error",
+                "critical",
+                &message,
+                session_id_for_audit.as_deref(),
+                &endpoint_agent_id,
+                runtime_identity.as_ref().map(|value| value.runtime_agent_id.as_str()),
+                runtime_identity
+                    .as_ref()
+                    .map(|value| value.runtime_agent_kind.as_str()),
+                Some(&details),
+            )
+            .await;
 
             PolicyCheckOutput {
                 allowed: false,
                 guard: Some("hushd_parse_error".to_string()),
                 severity: Some("critical".to_string()),
-                message: Some(
-                    "Policy daemon returned malformed response — action denied (fail-closed)"
-                        .to_string(),
-                ),
+                message: Some(message),
                 details: Some(details),
             }
         }
@@ -299,6 +463,10 @@ mod tests {
             target: "echo hi".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "shell");
@@ -308,6 +476,10 @@ mod tests {
             target: "example.com".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "egress");
@@ -318,6 +490,10 @@ mod tests {
             target: "tool".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "mcp_tool");
@@ -327,6 +503,10 @@ mod tests {
             target: "x".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "custom_action");
@@ -339,6 +519,10 @@ mod tests {
             target: "/tmp/a.txt".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "file_access");
@@ -348,6 +532,10 @@ mod tests {
             target: "/tmp/a.txt".to_string(),
             content: Some("hello".to_string()),
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "file_write");
@@ -360,6 +548,10 @@ mod tests {
             target: "https://example.com/foo".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "egress");
@@ -370,6 +562,10 @@ mod tests {
             target: "http://example.com:8080/path".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.action_type, "egress");
@@ -383,6 +579,10 @@ mod tests {
             target: "https://[::1]:8443/".to_string(),
             content: None,
             args: None,
+            agent_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
         };
         let normalized = normalize_policy_check_input(input);
         assert_eq!(normalized.target, "[::1]:8443");
@@ -418,7 +618,12 @@ mod tests {
                 target: "/tmp/a.txt".to_string(),
                 content: None,
                 args: None,
+                agent_id: None,
+                endpoint_agent_id: None,
+                runtime_agent_id: None,
+                runtime_agent_kind: None,
             },
+            None,
             None,
         )
         .await;
@@ -450,7 +655,12 @@ mod tests {
                 target: "/tmp/a.txt".to_string(),
                 content: None,
                 args: None,
+                agent_id: None,
+                endpoint_agent_id: None,
+                runtime_agent_id: None,
+                runtime_agent_kind: None,
             },
+            None,
             None,
         )
         .await;

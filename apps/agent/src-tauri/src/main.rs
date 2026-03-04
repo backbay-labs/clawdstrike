@@ -27,6 +27,7 @@ mod posture_commands;
 mod security;
 mod session;
 mod settings;
+mod runtime_registry;
 mod telemetry_publisher;
 mod tray;
 mod updater;
@@ -47,6 +48,7 @@ use notifications::{
 };
 use openclaw::OpenClawManager;
 use session::SessionManager;
+use runtime_registry::resolve_effective_endpoint_agent_id;
 use settings::{ensure_default_policy, NatsSettings, Settings};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -334,6 +336,23 @@ async fn run_agent<R: Runtime>(
     // current session ID from shared state each tick (so daemon reconnect replacements do not
     // require restarting the loop).
     session_manager.start_heartbeat(daemon_url.clone(), api_key.clone(), shutdown_tx.subscribe());
+    {
+        let settings_for_local_hb = settings.clone();
+        let session_for_local_hb = session_manager.clone();
+        let policy_cache_for_local_hb = policy_cache.clone();
+        let daemon_for_local_hb = daemon_manager.clone();
+        let local_hb_shutdown = shutdown_tx.subscribe();
+        tokio::spawn(async move {
+            local_heartbeat_loop(
+                settings_for_local_hb,
+                session_for_local_hb,
+                policy_cache_for_local_hb,
+                daemon_for_local_hb,
+                local_hb_shutdown,
+            )
+            .await;
+        });
+    }
     updater.start_background(shutdown_tx.subscribe());
 
     tracing::info!("Starting hushd daemon...");
@@ -537,6 +556,42 @@ async fn run_agent<R: Runtime>(
                 }
             }
         }
+    }
+
+    // Periodic durable audit-outbox flush (independent of daemon lifecycle notifications).
+    {
+        let audit_queue_for_periodic = audit_queue.clone();
+        let settings_for_periodic = settings.clone();
+        let mut periodic_shutdown = shutdown_tx.subscribe();
+        tokio::spawn(async move {
+            let flush_interval = Duration::from_secs(5);
+            loop {
+                tokio::select! {
+                    _ = periodic_shutdown.recv() => {
+                        tracing::debug!("Periodic audit-outbox flush loop shutting down");
+                        break;
+                    }
+                    _ = tokio::time::sleep(flush_interval) => {
+                        if audit_queue_for_periodic.len().await == 0 {
+                            continue;
+                        }
+                        let (daemon_url, api_key) = {
+                            let guard = settings_for_periodic.read().await;
+                            (guard.daemon_url(), guard.api_key.clone())
+                        };
+                        match audit_queue_for_periodic.flush(&daemon_url, api_key.as_deref()).await {
+                            Ok(count) if count > 0 => {
+                                tracing::debug!(count, "Flushed durable audit outbox");
+                            }
+                            Ok(_) => {}
+                            Err(err) => {
+                                tracing::debug!(error = %err, "Durable audit outbox flush failed");
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 
     let mut daemon_rx = daemon_manager.subscribe();
@@ -810,6 +865,7 @@ async fn run_agent<R: Runtime>(
             daemon_manager: daemon_manager.clone(),
             session_manager: session_manager.clone(),
             approval_queue: approval_queue.clone(),
+            audit_queue: audit_queue.clone(),
             openclaw: openclaw_manager.clone(),
             updater: updater.clone(),
             auth_token: agent_api_token,
@@ -1011,6 +1067,132 @@ async fn nats_heartbeat_loop(
                 });
                 let payload = serde_json::to_vec(&heartbeat).unwrap_or_default();
                 telemetry.publish_heartbeat(&payload).await;
+            }
+        }
+    }
+}
+
+/// Periodic local heartbeat loop that updates hushd endpoint/runtime liveness state.
+async fn local_heartbeat_loop(
+    settings: Arc<RwLock<Settings>>,
+    session_manager: Arc<SessionManager>,
+    policy_cache: Arc<daemon::PolicyCache>,
+    daemon_manager: Arc<DaemonManager>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let interval = Duration::from_secs(30);
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                tracing::debug!("Local heartbeat loop shutting down");
+                break;
+            }
+            _ = tokio::time::sleep(interval) => {
+                let (daemon_url, api_key, endpoint_agent_id, runtime_identities) = {
+                    let mut guard = settings.write().await;
+                    let endpoint_agent_id =
+                        resolve_effective_endpoint_agent_id(&mut guard, None);
+                    let staleness_threshold = chrono::Utc::now() - chrono::Duration::minutes(5);
+                    let runtime_identities = guard
+                        .runtime_registry
+                        .runtimes
+                        .iter()
+                        .filter(|runtime| {
+                            chrono::DateTime::parse_from_rfc3339(&runtime.last_seen_at)
+                                .map(|ts| ts >= staleness_threshold)
+                                .unwrap_or(false)
+                        })
+                        .map(|runtime| {
+                            (
+                                runtime.runtime_agent_id.clone(),
+                                runtime.runtime_agent_kind.clone(),
+                                runtime.endpoint_agent_id.clone(),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    (guard.daemon_url(), guard.api_key.clone(), endpoint_agent_id, runtime_identities)
+                };
+
+                let session_state = session_manager.state().await;
+                let daemon_status = daemon_manager.status().await;
+                let policy_version = policy_cache.cached_policy_version().await;
+                let heartbeat_base = serde_json::json!({
+                    "endpoint_agent_id": endpoint_agent_id,
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "session_id": session_state.session_id,
+                    "posture": session_state.posture,
+                    "policy_version": policy_version,
+                    "daemon_version": daemon_status.version,
+                });
+
+                let send_heartbeat = |payload: serde_json::Value| {
+                    let client = client.clone();
+                    let daemon_url = daemon_url.clone();
+                    let api_key = api_key.clone();
+                    async move {
+                        let mut request = client
+                            .post(format!("{}/api/v1/agent/heartbeat", daemon_url))
+                            .json(&payload);
+                        if let Some(key) = api_key.as_deref() {
+                            request = request.header("Authorization", format!("Bearer {}", key));
+                        }
+                        request.send().await
+                    }
+                };
+
+                match send_heartbeat(heartbeat_base.clone()).await {
+                    Ok(response) if response.status().is_success() => {
+                        for (runtime_agent_id, runtime_agent_kind, runtime_endpoint_agent_id) in runtime_identities {
+                            let runtime_heartbeat = serde_json::json!({
+                                "endpoint_agent_id": if runtime_endpoint_agent_id.trim().is_empty() {
+                                    heartbeat_base
+                                        .get("endpoint_agent_id")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or_default()
+                                } else {
+                                    runtime_endpoint_agent_id.as_str()
+                                },
+                                "runtime_agent_id": runtime_agent_id,
+                                "runtime_agent_kind": runtime_agent_kind,
+                                "timestamp": heartbeat_base.get("timestamp").cloned(),
+                                "session_id": heartbeat_base.get("session_id").cloned(),
+                                "posture": heartbeat_base.get("posture").cloned(),
+                                "policy_version": heartbeat_base.get("policy_version").cloned(),
+                                "daemon_version": heartbeat_base.get("daemon_version").cloned(),
+                            });
+                            match send_heartbeat(runtime_heartbeat.clone()).await {
+                                Ok(runtime_response) if runtime_response.status().is_success() => {}
+                                Ok(runtime_response) => {
+                                    tracing::debug!(
+                                        status = %runtime_response.status(),
+                                        runtime_agent_id = %runtime_heartbeat
+                                            .get("runtime_agent_id")
+                                            .and_then(serde_json::Value::as_str)
+                                            .unwrap_or(""),
+                                        "Runtime heartbeat POST returned non-success status"
+                                    );
+                                }
+                                Err(err) => {
+                                    tracing::debug!(error = %err, "Failed to send runtime heartbeat");
+                                }
+                            }
+                        }
+                    }
+                    Ok(response) => {
+                        tracing::debug!(
+                            status = %response.status(),
+                            "Local heartbeat POST returned non-success status"
+                        );
+                    }
+                    Err(err) => {
+                        tracing::debug!(error = %err, "Failed to send local heartbeat");
+                    }
+                }
             }
         }
     }

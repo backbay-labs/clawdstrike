@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { desktopIcons, pinnedAppIds, processes } from "./processRegistry";
+import {
+  desktopIconGroups,
+  desktopIcons,
+  pinnedAppIds,
+  processes,
+  startMenuDefaultPinnedIds,
+} from "./processRegistry";
 
 describe("processRegistry", () => {
   it("every process has a unique id", () => {
@@ -33,5 +39,27 @@ describe("processRegistry", () => {
   it("desktop icon ids are unique", () => {
     const ids = desktopIcons.map((i) => i.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("desktop groups include each icon exactly once", () => {
+    const flattenedIds = desktopIconGroups.flatMap((group) => group.icons.map((icon) => icon.id));
+    expect(flattenedIds).toHaveLength(desktopIcons.length);
+    expect(new Set(flattenedIds).size).toBe(desktopIcons.length);
+  });
+
+  it("desktop groups contain only valid process ids", () => {
+    const processIds = new Set(processes.map((p) => p.id));
+    for (const group of desktopIconGroups) {
+      for (const icon of group.icons) {
+        expect(processIds.has(icon.processId)).toBe(true);
+      }
+    }
+  });
+
+  it("start menu default pins are valid process ids", () => {
+    const processIds = new Set(processes.map((p) => p.id));
+    for (const id of startMenuDefaultPinnedIds) {
+      expect(processIds.has(id)).toBe(true);
+    }
   });
 });

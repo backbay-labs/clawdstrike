@@ -1,21 +1,21 @@
 //! System tray management for Clawdstrike Agent.
 
+use crate::agent_auth::read_local_api_token;
 use crate::daemon::DaemonState;
 use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
 use crate::notifications::show_notification;
 use crate::settings::Settings;
-use crate::AgentApiAuthToken;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::RwLock;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 #[derive(Debug, Serialize)]
 struct UiBootstrapStartRequest {
@@ -27,6 +27,12 @@ struct UiBootstrapStartResponse {
     session_id: String,
     user_code: String,
     expires_in_seconds: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiagnosticsBundleResponse {
+    bundle_path: String,
+    generated_at: String,
 }
 
 #[derive(Debug)]
@@ -41,6 +47,9 @@ struct DashboardLaunchTarget {
 pub mod menu_ids {
     pub const STATUS: &str = "status";
     pub const SESSION_INFO: &str = "session_info";
+    pub const UI_BOOTSTRAP_HINT: &str = "ui_bootstrap_hint";
+    pub const COPY_UI_BOOTSTRAP_CODE: &str = "copy_ui_bootstrap_code";
+    pub const REGENERATE_UI_BOOTSTRAP_CODE: &str = "regenerate_ui_bootstrap_code";
     pub const TOGGLE_ENABLED: &str = "toggle_enabled";
     pub const EVENT_PREFIX: &str = "event_";
     pub const OPEN_WEB_UI: &str = "open_web_ui";
@@ -50,6 +59,7 @@ pub mod menu_ids {
     pub const INTEGRATIONS_CONFIGURE_SIEM: &str = "integrations_configure_siem";
     pub const INTEGRATIONS_CONFIGURE_WEBHOOKS: &str = "integrations_configure_webhooks";
     pub const RELOAD_POLICY: &str = "reload_policy";
+    pub const CREATE_DIAGNOSTICS_BUNDLE: &str = "create_diagnostics_bundle";
     pub const QUIT: &str = "quit";
 }
 
@@ -61,6 +71,8 @@ pub struct TrayState {
     pub recent_events: Vec<PolicyEvent>,
     pub blocks_today: u32,
     pub session_info: Option<String>,
+    pub ui_bootstrap_hint: Option<String>,
+    pub ui_bootstrap_code: Option<String>,
     pub pending_approvals: usize,
 }
 
@@ -72,6 +84,8 @@ impl Default for TrayState {
             recent_events: Vec::new(),
             blocks_today: 0,
             session_info: None,
+            ui_bootstrap_hint: None,
+            ui_bootstrap_code: None,
             pending_approvals: 0,
         }
     }
@@ -94,6 +108,35 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
         menu_ids::SESSION_INFO,
         session_text,
         false,
+        None::<&str>,
+    )?;
+    let ui_bootstrap_hint_label = state
+        .ui_bootstrap_hint
+        .clone()
+        .unwrap_or_else(|| "Web UI code: not active".to_string());
+    let ui_bootstrap_hint_item = MenuItem::with_id(
+        app,
+        menu_ids::UI_BOOTSTRAP_HINT,
+        &ui_bootstrap_hint_label,
+        state.ui_bootstrap_code.is_some(),
+        None::<&str>,
+    )?;
+    let ui_bootstrap_copy_label = match state.ui_bootstrap_code.as_deref() {
+        Some(code) => format!("Copy Web UI Code ({code})"),
+        None => "Copy Web UI Code".to_string(),
+    };
+    let ui_bootstrap_copy_item = MenuItem::with_id(
+        app,
+        menu_ids::COPY_UI_BOOTSTRAP_CODE,
+        &ui_bootstrap_copy_label,
+        state.ui_bootstrap_code.is_some(),
+        None::<&str>,
+    )?;
+    let ui_bootstrap_regenerate_item = MenuItem::with_id(
+        app,
+        menu_ids::REGENERATE_UI_BOOTSTRAP_CODE,
+        "Regenerate Web UI Code",
+        true,
         None::<&str>,
     )?;
 
@@ -119,6 +162,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
         true,
         None::<&str>,
     )?;
+    let create_diagnostics_bundle = MenuItem::with_id(
+        app,
+        menu_ids::CREATE_DIAGNOSTICS_BUNDLE,
+        "Create Diagnostics Bundle",
+        true,
+        None::<&str>,
+    )?;
     let open_web_ui = MenuItem::with_id(
         app,
         menu_ids::OPEN_WEB_UI,
@@ -128,22 +178,27 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
     )?;
     let quit_item = MenuItem::with_id(app, menu_ids::QUIT, "Quit", true, None::<&str>)?;
 
-    let menu = Menu::with_items(
-        app,
-        &[
-            &status_item,
-            &session_item,
-            &toggle_item,
-            &sep1,
-            &events_submenu,
-            &sep2,
-            &integrations_submenu,
-            &reload_policy,
-            &open_web_ui,
-            &sep3,
-            &quit_item,
-        ],
-    )?;
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![
+        &status_item,
+        &session_item,
+        &ui_bootstrap_hint_item,
+        &ui_bootstrap_copy_item,
+        &ui_bootstrap_regenerate_item,
+    ];
+    items.extend([
+        &toggle_item as &dyn tauri::menu::IsMenuItem<R>,
+        &sep1,
+        &events_submenu,
+        &sep2,
+        &integrations_submenu,
+        &reload_policy,
+        &create_diagnostics_bundle,
+        &open_web_ui,
+        &sep3,
+        &quit_item,
+    ]);
+
+    let menu = Menu::with_items(app, &items)?;
 
     Ok(menu)
 }
@@ -434,6 +489,16 @@ async fn build_dashboard_launch_target(
     })
 }
 
+fn load_current_local_api_token() -> Option<String> {
+    match read_local_api_token() {
+        Ok(token) => Some(token),
+        Err(err) => {
+            tracing::warn!(error = %err, "Failed to read current local API auth token");
+            None
+        }
+    }
+}
+
 fn is_legacy_local_dev_dashboard_url(candidate: &str) -> bool {
     let parsed = match reqwest::Url::parse(candidate) {
         Ok(url) => url,
@@ -537,6 +602,125 @@ fn open_dashboard_url(url: &str) {
     }
 }
 
+fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut child = Command::new("pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|err| format!("failed to spawn pbcopy: {err}"))?;
+        let Some(mut stdin) = child.stdin.take() else {
+            return Err("pbcopy stdin unavailable".to_string());
+        };
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|err| format!("failed to write clipboard content: {err}"))?;
+        drop(stdin);
+        let status = child
+            .wait()
+            .map_err(|err| format!("failed to wait for pbcopy: {err}"))?;
+        if !status.success() {
+            return Err(format!("pbcopy exited with status {status}"));
+        }
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut child = Command::new("cmd")
+            .args(["/C", "clip"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|err| format!("failed to spawn clip: {err}"))?;
+        let Some(mut stdin) = child.stdin.take() else {
+            return Err("clip stdin unavailable".to_string());
+        };
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|err| format!("failed to write clipboard content: {err}"))?;
+        drop(stdin);
+        let status = child
+            .wait()
+            .map_err(|err| format!("failed to wait for clip: {err}"))?;
+        if !status.success() {
+            return Err(format!("clip exited with status {status}"));
+        }
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for (binary, args) in [
+            ("wl-copy", Vec::<&str>::new()),
+            ("xclip", vec!["-selection", "clipboard"]),
+        ] {
+            let mut child = match Command::new(binary)
+                .args(&args)
+                .stdin(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(_) => continue,
+            };
+            if let Some(mut stdin) = child.stdin.take() {
+                if stdin.write_all(text.as_bytes()).is_err() {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+            if let Ok(status) = child.wait() {
+                if status.success() {
+                    return Ok(());
+                }
+            }
+        }
+        return Err("no supported clipboard utility found (tried wl-copy, xclip)".to_string());
+    }
+
+    #[allow(unreachable_code)]
+    Err("clipboard copy is not supported on this platform".to_string())
+}
+
+fn present_ui_bootstrap_code<R: Runtime>(app: &AppHandle<R>, code: &str, ttl_seconds: u64) {
+    let ttl_seconds = ttl_seconds.max(1);
+    show_notification(
+        app,
+        "Web UI One-Time Code",
+        &format!("Enter code {code} in your browser within {ttl_seconds}s."),
+    );
+
+    let Some(tray_manager_state) = app.try_state::<Arc<TrayManager<R>>>() else {
+        tracing::warn!(
+            "Tray manager state unavailable; one-time code is only shown in system notification"
+        );
+        return;
+    };
+    let tray_manager = tray_manager_state.inner().clone();
+    let code_for_clear = code.to_string();
+    let clear_after = ttl_seconds.min(300);
+    let expires_at = Instant::now() + Duration::from_secs(clear_after);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let remaining = expires_at.saturating_duration_since(Instant::now()).as_secs();
+            if remaining == 0 {
+                break;
+            }
+            let hint = format!("Web UI code: {code_for_clear} ({remaining}s) · click to copy");
+            tray_manager
+                .set_ui_bootstrap_hint(Some(hint), Some(code_for_clear.clone()))
+                .await;
+            sleep(Duration::from_secs(1)).await;
+        }
+        tray_manager
+            .clear_ui_bootstrap_hint_if_code_matches(&code_for_clear)
+            .await;
+    });
+}
+
 /// Create and setup the tray icon.
 pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
     let state = TrayState::default();
@@ -581,9 +765,6 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             let settings: Arc<RwLock<Settings>> =
                 app.state::<Arc<RwLock<Settings>>>().inner().clone();
             let app_handle = app.clone();
-            let auth_token = app
-                .try_state::<AgentApiAuthToken>()
-                .map(|state| state.inner().0.clone());
             tauri::async_runtime::spawn(async move {
                 let settings_snapshot = settings.read().await.clone();
                 let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
@@ -594,6 +775,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                     tracing::warn!("Failed to build SIEM settings URL; refusing to open");
                     return;
                 };
+                let auth_token = load_current_local_api_token();
                 let Some(target) = build_dashboard_launch_target(
                     &raw_target,
                     &settings_snapshot,
@@ -606,11 +788,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                 };
                 if let Some(code) = target.bootstrap_code.as_deref() {
                     let ttl = target.bootstrap_ttl_seconds.unwrap_or(60);
-                    show_notification(
-                        &app_handle,
-                        "Web UI One-Time Code",
-                        &format!("Enter code {code} in your browser within {ttl}s."),
-                    );
+                    present_ui_bootstrap_code(&app_handle, code, ttl);
                 }
                 tracing::debug!(url = %redact_url_for_log(&target.url), "Opening SIEM config");
                 open_dashboard_url(&target.url);
@@ -621,9 +799,6 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             let settings: Arc<RwLock<Settings>> =
                 app.state::<Arc<RwLock<Settings>>>().inner().clone();
             let app_handle = app.clone();
-            let auth_token = app
-                .try_state::<AgentApiAuthToken>()
-                .map(|state| state.inner().0.clone());
             tauri::async_runtime::spawn(async move {
                 let settings_snapshot = settings.read().await.clone();
                 let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
@@ -634,6 +809,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                     tracing::warn!("Failed to build webhook settings URL; refusing to open");
                     return;
                 };
+                let auth_token = load_current_local_api_token();
                 let Some(target) = build_dashboard_launch_target(
                     &raw_target,
                     &settings_snapshot,
@@ -646,11 +822,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                 };
                 if let Some(code) = target.bootstrap_code.as_deref() {
                     let ttl = target.bootstrap_ttl_seconds.unwrap_or(60);
-                    show_notification(
-                        &app_handle,
-                        "Web UI One-Time Code",
-                        &format!("Enter code {code} in your browser within {ttl}s."),
-                    );
+                    present_ui_bootstrap_code(&app_handle, code, ttl);
                 }
                 tracing::debug!(
                     url = %redact_url_for_log(&target.url),
@@ -663,20 +835,180 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             tracing::info!("Reload policy clicked");
             let _ = app.emit("reload_policy", ());
         }
+        menu_ids::CREATE_DIAGNOSTICS_BUNDLE => {
+            tracing::info!("Create diagnostics bundle clicked");
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let auth_token = load_current_local_api_token();
+                let Some(token) = auth_token
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                else {
+                    show_notification(
+                        &app_handle,
+                        "Diagnostics Failed",
+                        "Agent auth token unavailable.",
+                    );
+                    return;
+                };
+
+                let client = reqwest::Client::new();
+                let url = format!(
+                    "http://127.0.0.1:{}/api/v1/agent/diagnostics/bundle",
+                    settings_snapshot.agent_api_port
+                );
+                let response = client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("Content-Type", "application/json")
+                    .body("{}")
+                    .send()
+                    .await;
+                match response {
+                    Ok(resp) if resp.status().is_success() => {
+                        match resp.json::<DiagnosticsBundleResponse>().await {
+                            Ok(payload) => {
+                                open_dashboard_url(&payload.bundle_path);
+                                show_notification(
+                                    &app_handle,
+                                    "Diagnostics Bundle Created",
+                                    &format!(
+                                        "Bundle generated at {}",
+                                        payload.generated_at
+                                    ),
+                                );
+                            }
+                            Err(err) => {
+                                tracing::warn!(error = %err, "Failed to parse diagnostics response");
+                                show_notification(
+                                    &app_handle,
+                                    "Diagnostics Failed",
+                                    "Bundle created, but response parsing failed.",
+                                );
+                            }
+                        }
+                    }
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let body = resp.text().await.unwrap_or_default();
+                        tracing::warn!(
+                            status = %status,
+                            body = %body,
+                            "Diagnostics bundle request failed"
+                        );
+                        show_notification(
+                            &app_handle,
+                            "Diagnostics Failed",
+                            "Agent API rejected diagnostics bundle request.",
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(error = %err, "Diagnostics bundle request errored");
+                        show_notification(
+                            &app_handle,
+                            "Diagnostics Failed",
+                            "Could not reach local agent API.",
+                        );
+                    }
+                }
+            });
+        }
+        menu_ids::UI_BOOTSTRAP_HINT | menu_ids::COPY_UI_BOOTSTRAP_CODE => {
+            tracing::info!("Copy Web UI code clicked");
+            let app_handle = app.clone();
+            let Some(tray_manager_state) = app.try_state::<Arc<TrayManager<R>>>() else {
+                tracing::warn!("Tray manager state unavailable; cannot copy Web UI code");
+                return;
+            };
+            let tray_manager = tray_manager_state.inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let Some(code) = tray_manager.current_ui_bootstrap_code().await else {
+                    tracing::warn!("No active Web UI bootstrap code available to copy");
+                    show_notification(
+                        &app_handle,
+                        "Web UI Code Unavailable",
+                        "Generate a one-time code first.",
+                    );
+                    return;
+                };
+                match copy_text_to_clipboard(&code) {
+                    Ok(()) => {
+                        show_notification(
+                            &app_handle,
+                            "Web UI Code Copied",
+                            &format!("Copied code {code} to clipboard."),
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(error = %err, "Failed to copy Web UI bootstrap code");
+                        show_notification(
+                            &app_handle,
+                            "Web UI Copy Failed",
+                            "Could not copy the code to clipboard.",
+                        );
+                    }
+                }
+            });
+        }
+        menu_ids::REGENERATE_UI_BOOTSTRAP_CODE => {
+            tracing::info!("Regenerate Web UI code clicked");
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let auth_token = load_current_local_api_token();
+                let Some(token) = auth_token
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                else {
+                    show_notification(
+                        &app_handle,
+                        "Web UI Code Failed",
+                        "Agent auth token unavailable.",
+                    );
+                    return;
+                };
+
+                let Some(bootstrap) = request_local_ui_bootstrap(
+                    settings_snapshot.agent_api_port,
+                    token,
+                    "/ui".to_string(),
+                )
+                .await
+                else {
+                    show_notification(
+                        &app_handle,
+                        "Web UI Code Failed",
+                        "Could not generate a new one-time code.",
+                    );
+                    return;
+                };
+
+                present_ui_bootstrap_code(
+                    &app_handle,
+                    &bootstrap.user_code,
+                    bootstrap.expires_in_seconds,
+                );
+            });
+        }
         menu_ids::OPEN_WEB_UI => {
             tracing::info!("Open Web UI clicked");
             let settings: Arc<RwLock<Settings>> =
                 app.state::<Arc<RwLock<Settings>>>().inner().clone();
             let app_handle = app.clone();
-            let auth_token = app
-                .try_state::<AgentApiAuthToken>()
-                .map(|state| state.inner().0.clone());
             tauri::async_runtime::spawn(async move {
                 let settings_snapshot = settings.read().await.clone();
                 let Some(raw_url) = resolve_dashboard_url(&settings_snapshot).await else {
                     tracing::warn!("Dashboard URL is invalid; refusing to open Web UI");
                     return;
                 };
+                let auth_token = load_current_local_api_token();
                 let Some(target) = build_dashboard_launch_target(
                     &raw_url,
                     &settings_snapshot,
@@ -689,11 +1021,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                 };
                 if let Some(code) = target.bootstrap_code.as_deref() {
                     let ttl = target.bootstrap_ttl_seconds.unwrap_or(60);
-                    show_notification(
-                        &app_handle,
-                        "Web UI One-Time Code",
-                        &format!("Enter code {code} in your browser within {ttl}s."),
-                    );
+                    present_ui_bootstrap_code(&app_handle, code, ttl);
                 }
                 tracing::debug!(url = %redact_url_for_log(&target.url), "Opening Web UI");
                 open_dashboard_url(&target.url);
@@ -772,6 +1100,31 @@ impl<R: Runtime> TrayManager<R> {
         state.session_info = info;
         drop(state);
         self.refresh_menu().await;
+    }
+
+    /// Set an ephemeral Web UI bootstrap hint and copyable code.
+    pub async fn set_ui_bootstrap_hint(&self, hint: Option<String>, code: Option<String>) {
+        let mut state = self.state.write().await;
+        state.ui_bootstrap_hint = hint;
+        state.ui_bootstrap_code = code;
+        drop(state);
+        self.refresh_menu().await;
+    }
+
+    /// Clear bootstrap hint/code only if the active code still matches.
+    pub async fn clear_ui_bootstrap_hint_if_code_matches(&self, expected_code: &str) {
+        let mut state = self.state.write().await;
+        if state.ui_bootstrap_code.as_deref() == Some(expected_code) {
+            state.ui_bootstrap_hint = None;
+            state.ui_bootstrap_code = None;
+        }
+        drop(state);
+        self.refresh_menu().await;
+    }
+
+    /// Return the active one-time Web UI bootstrap code, if present.
+    pub async fn current_ui_bootstrap_code(&self) -> Option<String> {
+        self.state.read().await.ui_bootstrap_code.clone()
     }
 
     /// Update the pending approvals badge count.

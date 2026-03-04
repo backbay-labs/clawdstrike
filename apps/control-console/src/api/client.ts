@@ -24,6 +24,7 @@ export interface AuditEvent {
   message?: string;
   session_id?: string;
   agent_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface AuditResponse {
@@ -31,6 +32,8 @@ export interface AuditResponse {
   total: number;
   limit?: number;
   offset?: number;
+  next_cursor?: string;
+  has_more?: boolean;
 }
 
 export interface AuditStats {
@@ -69,8 +72,52 @@ export interface AuditFilters {
   action_type?: string;
   session_id?: string;
   agent_id?: string;
+  runtime_agent_id?: string;
+  runtime_agent_kind?: string;
   limit?: number;
   offset?: number;
+  cursor?: string;
+}
+
+export interface AgentDriftFlags {
+  policy_drift: boolean;
+  daemon_drift: boolean;
+  stale: boolean;
+}
+
+export interface EndpointStatus {
+  endpoint_agent_id: string;
+  last_heartbeat_at: string;
+  last_seen_ip?: string;
+  last_session_id?: string;
+  posture?: string;
+  policy_version?: string;
+  daemon_version?: string;
+  runtime_count: number;
+  seconds_since_heartbeat: number;
+  online: boolean;
+  drift: AgentDriftFlags;
+}
+
+export interface RuntimeStatus {
+  runtime_agent_id: string;
+  endpoint_agent_id: string;
+  runtime_agent_kind: string;
+  last_heartbeat_at: string;
+  last_session_id?: string;
+  posture?: string;
+  policy_version?: string;
+  daemon_version?: string;
+  seconds_since_heartbeat: number;
+  online: boolean;
+  drift: AgentDriftFlags;
+}
+
+export interface AgentStatusResponse {
+  generated_at: string;
+  stale_after_secs: number;
+  endpoints: EndpointStatus[];
+  runtimes: RuntimeStatus[];
 }
 
 export interface IntegrationSiemSettings {
@@ -117,6 +164,20 @@ export interface IntegrationApplyResponse {
   warning?: string;
 }
 
+export type IntegrationTestTarget = "siem" | "webhook";
+
+export interface IntegrationTestResult {
+  target: IntegrationTestTarget;
+  endpoint: string;
+  delivered: boolean;
+  status_code?: number;
+  attempts: number;
+  retry_count: number;
+  latency_ms: number;
+  last_error?: string;
+  tested_at: string;
+}
+
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${getApiBase()}/health`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
@@ -129,8 +190,11 @@ export async function fetchAuditEvents(filters?: AuditFilters): Promise<AuditRes
   if (filters?.action_type) params.set("action_type", filters.action_type);
   if (filters?.session_id) params.set("session_id", filters.session_id);
   if (filters?.agent_id) params.set("agent_id", filters.agent_id);
+  if (filters?.runtime_agent_id) params.set("runtime_agent_id", filters.runtime_agent_id);
+  if (filters?.runtime_agent_kind) params.set("runtime_agent_kind", filters.runtime_agent_kind);
   if (filters?.limit != null) params.set("limit", String(filters.limit));
   if (filters?.offset != null) params.set("offset", String(filters.offset));
+  if (filters?.cursor) params.set("cursor", filters.cursor);
 
   const qs = params.toString();
   const url = `${getApiBase()}/api/v1/audit${qs ? `?${qs}` : ""}`;
@@ -142,6 +206,30 @@ export async function fetchAuditEvents(filters?: AuditFilters): Promise<AuditRes
 export async function fetchAuditStats(): Promise<AuditStats> {
   const res = await fetch(`${getApiBase()}/api/v1/audit/stats`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Audit stats failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAgentStatus(params?: {
+  endpoint_agent_id?: string;
+  runtime_agent_id?: string;
+  runtime_agent_kind?: string;
+  include_stale?: boolean;
+  stale_after_secs?: number;
+  limit?: number;
+}): Promise<AgentStatusResponse> {
+  const query = new URLSearchParams();
+  if (params?.endpoint_agent_id) query.set("endpoint_agent_id", params.endpoint_agent_id);
+  if (params?.runtime_agent_id) query.set("runtime_agent_id", params.runtime_agent_id);
+  if (params?.runtime_agent_kind) query.set("runtime_agent_kind", params.runtime_agent_kind);
+  if (params?.include_stale != null) query.set("include_stale", String(params.include_stale));
+  if (params?.stale_after_secs != null) query.set("stale_after_secs", String(params.stale_after_secs));
+  if (params?.limit != null) query.set("limit", String(params.limit));
+
+  const qs = query.toString();
+  const res = await fetch(`${getApiBase()}/api/v1/agents/status${qs ? `?${qs}` : ""}`, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error(`Agent status query failed: ${res.status}`);
   return res.json();
 }
 
@@ -168,6 +256,25 @@ export async function saveIntegrationSettings(
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `Integration settings update failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function testIntegrationDelivery(
+  target: IntegrationTestTarget,
+  maxRetries = 2,
+): Promise<IntegrationTestResult> {
+  const res = await fetch("/api/v1/agent/integrations/test", {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({
+      target,
+      max_retries: maxRetries,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Integration test failed: ${res.status}`);
   }
   return res.json();
 }

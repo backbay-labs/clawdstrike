@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/engine-adaptive",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Adaptive policy engine with automatic mode switching between local and remote engines",
   "type": "module",
   "main": "dist/index.js",

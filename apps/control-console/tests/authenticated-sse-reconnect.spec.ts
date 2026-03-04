@@ -57,14 +57,14 @@ test("authenticated SSE reconnects and resumes events", async ({ page }) => {
       };
       res.write(`event: check\ndata: ${JSON.stringify(payload)}\n\n`);
     };
-    setTimeout(sendEvent, 50);
+    setTimeout(sendEvent, isFirstConnection ? 250 : 50);
 
     if (isFirstConnection) {
       setTimeout(() => {
         if (!res.writableEnded) {
           res.end();
         }
-      }, 300);
+      }, 1000);
     }
   });
 
@@ -89,11 +89,12 @@ test("authenticated SSE reconnects and resumes events", async ({ page }) => {
 
     // Navigate to root and open Event Stream via desktop icon
     await page.goto("/");
-    await page.getByText("Event Stream").dblclick();
+    await page.getByRole("button", { name: "Event Stream" }).first().dblclick();
+    await expect(page.getByRole("columnheader", { name: "Target" })).toBeVisible();
 
     // Wait for events to appear in the event stream table
-    await expect(page.getByText("/tmp/first")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText("/tmp/second")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("tr", { hasText: "/tmp/first" })).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("tr", { hasText: "/tmp/second" })).toBeVisible({ timeout: 20_000 });
     expect(connectionCount).toBeGreaterThanOrEqual(2);
   } finally {
     for (const response of openResponses) {

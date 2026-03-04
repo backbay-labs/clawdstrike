@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/opencode",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "In-process tool boundary hooks for OpenCode-style coding assistants",
   "type": "module",
   "main": "dist/index.js",

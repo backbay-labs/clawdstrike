@@ -13,6 +13,9 @@ Updates all-on profile image tags to the provided SHA:
   - hushd.image.tag -> <sha>
   - bridges.tetragon.image.tag -> <sha>
   - bridges.hubble.image.tag -> <sha>
+  - bridges.auditd.image.tag -> <sha>
+  - bridges.k8sAudit.image.tag -> <sha>
+  - easAnchor.image.tag -> <sha>
 EOF
 }
 
@@ -73,6 +76,9 @@ updated = {
     "hushd": False,
     "tetragon": False,
     "hubble": False,
+    "auditd": False,
+    "k8sAudit": False,
+    "easAnchor": False,
 }
 
 for idx, line in enumerate(lines):
@@ -103,6 +109,15 @@ for idx, line in enumerate(lines):
     elif section == "bridges" and bridge == "hubble" and indent == 6:
         lines[idx] = re.sub(r'tag:\s*".*"', f'tag: "{sha}"', line)
         updated["hubble"] = True
+    elif section == "bridges" and bridge == "auditd" and indent == 6:
+        lines[idx] = re.sub(r'tag:\s*".*"', f'tag: "{sha}"', line)
+        updated["auditd"] = True
+    elif section == "bridges" and bridge == "k8sAudit" and indent == 6:
+        lines[idx] = re.sub(r'tag:\s*".*"', f'tag: "{sha}"', line)
+        updated["k8sAudit"] = True
+    elif section == "easAnchor" and indent == 4:
+        lines[idx] = re.sub(r'tag:\s*".*"', f'tag: "{sha}"', line)
+        updated["easAnchor"] = True
 
 missing = [k for k, v in updated.items() if not v]
 if missing:

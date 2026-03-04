@@ -9,7 +9,10 @@ export interface SSEEvent {
   guard?: string;
   policy_hash?: string;
   session_id?: string;
+  endpoint_agent_id?: string;
   agent_id?: string;
+  runtime_agent_id?: string;
+  runtime_agent_kind?: string;
   timestamp: string;
 }
 
@@ -32,16 +35,82 @@ interface UseSSEResult {
   status: SSEConnectionStatus;
   error: string | null;
   reconnect: () => void;
+  paused: boolean;
+  setPaused: (paused: boolean) => void;
+  maxEvents: number;
+  setMaxEvents: (max: number) => void;
+  droppedEvents: number;
+  clearEvents: () => void;
 }
 
-export function useSSE(url: string): UseSSEResult {
+interface UseSSEOptions {
+  initialMaxEvents?: number;
+}
+
+const DEFAULT_MAX_EVENTS = 500;
+const MIN_MAX_EVENTS = 1;
+const MAX_MAX_EVENTS = 10_000;
+
+export function useSSE(url: string, options?: UseSSEOptions): UseSSEResult {
   const nextEventIdRef = useRef(1);
   const [events, setEvents] = useState<SSEEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<SSEConnectionStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [paused, setPausedState] = useState(false);
+  const [maxEvents, setMaxEventsState] = useState(
+    Math.min(
+      MAX_MAX_EVENTS,
+      Math.max(MIN_MAX_EVENTS, options?.initialMaxEvents ?? DEFAULT_MAX_EVENTS),
+    ),
+  );
+  const [droppedEvents, setDroppedEvents] = useState(0);
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const sourceRef = useRef<EventSource | null>(null);
+  const pausedRef = useRef(paused);
+  const maxEventsRef = useRef(maxEvents);
+
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+
+  useEffect(() => {
+    maxEventsRef.current = maxEvents;
+    setEvents((prev) => prev.slice(0, maxEvents));
+  }, [maxEvents]);
+
+  const setMaxEvents = useCallback((value: number) => {
+    setMaxEventsState(
+      Math.min(MAX_MAX_EVENTS, Math.max(MIN_MAX_EVENTS, Math.floor(value || DEFAULT_MAX_EVENTS))),
+    );
+  }, []);
+
+  const clearEvents = useCallback(() => {
+    setEvents([]);
+    setDroppedEvents(0);
+  }, []);
+
+  const setPaused = useCallback((value: boolean) => {
+    pausedRef.current = value;
+    setPausedState(value);
+  }, []);
+
+  const pushEvent = useCallback((event: SSEEvent) => {
+    if (pausedRef.current) {
+      setDroppedEvents((prev) => prev + 1);
+      return;
+    }
+    setEvents((prev) => {
+      const next = [event, ...prev];
+      const cap = maxEventsRef.current;
+      if (next.length <= cap) {
+        return next;
+      }
+      setDroppedEvents((dropped) => dropped + (next.length - cap));
+      return next.slice(0, cap);
+    });
+  }, []);
+
   const reconnect = useCallback(() => {
     setReconnectNonce((prev) => prev + 1);
   }, []);
@@ -158,13 +227,17 @@ export function useSSE(url: string): UseSSEResult {
                           const data = JSON.parse(raw);
                           if (data !== "ping" && raw !== "ping") {
                             const eventType = currentEvent || "message";
+                            const endpointAgentId =
+                              data.endpoint_agent_id ?? data.agent_id;
                             const event: SSEEvent = {
                               _id: nextEventIdRef.current++,
                               ...data,
+                              endpoint_agent_id: endpointAgentId,
+                              agent_id: endpointAgentId,
                               event_type: eventType,
                               timestamp: data.timestamp ?? new Date().toISOString(),
                             };
-                            setEvents((prev) => [event, ...prev].slice(0, 500));
+                            pushEvent(event);
                           }
                         } catch (err) {
                           console.debug("[SSE] skipping malformed payload:", err);
@@ -225,13 +298,16 @@ export function useSSE(url: string): UseSSEResult {
       return (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
+          const endpointAgentId = data.endpoint_agent_id ?? data.agent_id;
           const event: SSEEvent = {
             _id: nextEventIdRef.current++,
             ...data,
+            endpoint_agent_id: endpointAgentId,
+            agent_id: endpointAgentId,
             event_type: eventType,
             timestamp: data.timestamp ?? new Date().toISOString(),
           };
-          setEvents((prev) => [event, ...prev].slice(0, 500));
+          pushEvent(event);
         } catch (err) {
           console.debug("[SSE] skipping malformed event:", err);
         }
@@ -251,13 +327,16 @@ export function useSSE(url: string): UseSSEResult {
       try {
         const data = JSON.parse(e.data);
         if (data === "ping" || e.data === "ping") return;
+        const endpointAgentId = data.endpoint_agent_id ?? data.agent_id;
         const event: SSEEvent = {
           _id: nextEventIdRef.current++,
           ...data,
+          endpoint_agent_id: endpointAgentId,
+          agent_id: endpointAgentId,
           event_type: "message",
           timestamp: data.timestamp ?? new Date().toISOString(),
         };
-        setEvents((prev) => [event, ...prev].slice(0, 500));
+        pushEvent(event);
       } catch (err) {
         console.debug("[SSE] event parse error:", err);
       }
@@ -267,7 +346,19 @@ export function useSSE(url: string): UseSSEResult {
       source.close();
       sourceRef.current = null;
     };
-  }, [url, reconnectNonce]);
+  }, [url, reconnectNonce, pushEvent]);
 
-  return { events, connected, status, error, reconnect };
+  return {
+    events,
+    connected,
+    status,
+    error,
+    reconnect,
+    paused,
+    setPaused,
+    maxEvents,
+    setMaxEvents,
+    droppedEvents,
+    clearEvents,
+  };
 }
