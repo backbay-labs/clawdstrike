@@ -350,10 +350,12 @@ impl GuardConfigs {
                 .clone()
                 .or_else(|| self.input_injection_capability.clone()),
             #[cfg(feature = "full")]
-            spider_sense: child
-                .spider_sense
-                .clone()
-                .or_else(|| self.spider_sense.clone()),
+            spider_sense: match (&self.spider_sense, &child.spider_sense) {
+                (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
+                (Some(base), None) => Some(base.clone()),
+                (None, Some(child_cfg)) => Some(child_cfg.clone()),
+                (None, None) => None,
+            },
             #[cfg(all(feature = "policy-event", not(feature = "full")))]
             spider_sense: child
                 .spider_sense
@@ -2600,5 +2602,47 @@ guards:
             .spider_sense
             .expect("child disable override should preserve explicit spider_sense config");
         assert!(!merged_spider.enabled);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_preserves_base_fields_on_partial_child_override() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "similarity_threshold": 0.82,
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "similarity_threshold": 0.91
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let merged_spider = merged
+            .spider_sense
+            .expect("partial child override should preserve base spider_sense config");
+        assert!(!merged_spider.enabled);
+        assert_eq!(
+            merged_spider.embedding_api_url,
+            "https://example.invalid/v1/embeddings"
+        );
+        assert_eq!(merged_spider.embedding_api_key, "base-key");
+        assert_eq!(merged_spider.embedding_model, "text-embedding-3-small");
+        assert_eq!(merged_spider.pattern_db_path, "builtin:s2bench-v1");
+        assert_eq!(merged_spider.similarity_threshold, 0.91);
     }
 }

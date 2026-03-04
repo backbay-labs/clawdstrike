@@ -173,6 +173,161 @@ fn default_top_k() -> usize {
     DEFAULT_TOP_K
 }
 
+impl Default for SpiderSensePolicyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_enabled(),
+            embedding_api_url: String::new(),
+            embedding_api_key: String::new(),
+            embedding_model: String::new(),
+            similarity_threshold: default_similarity_threshold(),
+            ambiguity_band: default_ambiguity_band(),
+            top_k: default_top_k(),
+            pattern_db_path: String::new(),
+            pattern_db_version: None,
+            pattern_db_checksum: None,
+            pattern_db_signature: None,
+            pattern_db_signature_key_id: None,
+            pattern_db_public_key: None,
+            pattern_db_trust_store_path: None,
+            pattern_db_trusted_keys: vec![],
+            pattern_db_manifest_path: None,
+            pattern_db_manifest_trust_store_path: None,
+            pattern_db_manifest_trusted_keys: vec![],
+            llm_api_url: None,
+            llm_api_key: None,
+            llm_model: None,
+            llm_prompt_template_id: None,
+            llm_prompt_template_version: None,
+            llm_timeout_ms: None,
+            llm_fail_mode: None,
+            async_config: None,
+        }
+    }
+}
+
+impl SpiderSensePolicyConfig {
+    /// Merge a child Spider-Sense config over a base config.
+    ///
+    /// This is used by policy inheritance `deep_merge` to allow partial child
+    /// overrides without dropping required base fields.
+    pub fn merge_with(&self, child: &Self) -> Self {
+        let defaults = Self::default();
+
+        Self {
+            enabled: if child.enabled != defaults.enabled {
+                child.enabled
+            } else {
+                self.enabled
+            },
+            embedding_api_url: if !child.embedding_api_url.trim().is_empty() {
+                child.embedding_api_url.clone()
+            } else {
+                self.embedding_api_url.clone()
+            },
+            embedding_api_key: if !child.embedding_api_key.trim().is_empty() {
+                child.embedding_api_key.clone()
+            } else {
+                self.embedding_api_key.clone()
+            },
+            embedding_model: if !child.embedding_model.trim().is_empty() {
+                child.embedding_model.clone()
+            } else {
+                self.embedding_model.clone()
+            },
+            similarity_threshold: if child.similarity_threshold != defaults.similarity_threshold {
+                child.similarity_threshold
+            } else {
+                self.similarity_threshold
+            },
+            ambiguity_band: if child.ambiguity_band != defaults.ambiguity_band {
+                child.ambiguity_band
+            } else {
+                self.ambiguity_band
+            },
+            top_k: if child.top_k != defaults.top_k {
+                child.top_k
+            } else {
+                self.top_k
+            },
+            pattern_db_path: if !child.pattern_db_path.trim().is_empty() {
+                child.pattern_db_path.clone()
+            } else {
+                self.pattern_db_path.clone()
+            },
+            pattern_db_version: child
+                .pattern_db_version
+                .clone()
+                .or_else(|| self.pattern_db_version.clone()),
+            pattern_db_checksum: child
+                .pattern_db_checksum
+                .clone()
+                .or_else(|| self.pattern_db_checksum.clone()),
+            pattern_db_signature: child
+                .pattern_db_signature
+                .clone()
+                .or_else(|| self.pattern_db_signature.clone()),
+            pattern_db_signature_key_id: child
+                .pattern_db_signature_key_id
+                .clone()
+                .or_else(|| self.pattern_db_signature_key_id.clone()),
+            pattern_db_public_key: child
+                .pattern_db_public_key
+                .clone()
+                .or_else(|| self.pattern_db_public_key.clone()),
+            pattern_db_trust_store_path: child
+                .pattern_db_trust_store_path
+                .clone()
+                .or_else(|| self.pattern_db_trust_store_path.clone()),
+            pattern_db_trusted_keys: if !child.pattern_db_trusted_keys.is_empty() {
+                child.pattern_db_trusted_keys.clone()
+            } else {
+                self.pattern_db_trusted_keys.clone()
+            },
+            pattern_db_manifest_path: child
+                .pattern_db_manifest_path
+                .clone()
+                .or_else(|| self.pattern_db_manifest_path.clone()),
+            pattern_db_manifest_trust_store_path: child
+                .pattern_db_manifest_trust_store_path
+                .clone()
+                .or_else(|| self.pattern_db_manifest_trust_store_path.clone()),
+            pattern_db_manifest_trusted_keys: if !child.pattern_db_manifest_trusted_keys.is_empty()
+            {
+                child.pattern_db_manifest_trusted_keys.clone()
+            } else {
+                self.pattern_db_manifest_trusted_keys.clone()
+            },
+            llm_api_url: child
+                .llm_api_url
+                .clone()
+                .or_else(|| self.llm_api_url.clone()),
+            llm_api_key: child
+                .llm_api_key
+                .clone()
+                .or_else(|| self.llm_api_key.clone()),
+            llm_model: child.llm_model.clone().or_else(|| self.llm_model.clone()),
+            llm_prompt_template_id: child
+                .llm_prompt_template_id
+                .clone()
+                .or_else(|| self.llm_prompt_template_id.clone()),
+            llm_prompt_template_version: child
+                .llm_prompt_template_version
+                .clone()
+                .or_else(|| self.llm_prompt_template_version.clone()),
+            llm_timeout_ms: child.llm_timeout_ms.or(self.llm_timeout_ms),
+            llm_fail_mode: child
+                .llm_fail_mode
+                .clone()
+                .or_else(|| self.llm_fail_mode.clone()),
+            async_config: child
+                .async_config
+                .clone()
+                .or_else(|| self.async_config.clone()),
+        }
+    }
+}
+
 // ── Guard Implementation ────────────────────────────────────────────────
 
 /// Spider-Sense AsyncGuard implementing two-tier screening.
