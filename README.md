@@ -311,7 +311,7 @@ try {
 }
 ```
 
-Runnable examples:
+Hello secure agent examples:
 - [`examples/hello-secure-agent-ts/`](examples/hello-secure-agent-ts/) -- TypeScript tool-shape demo with inline policy checks
 - [`examples/hello-secure-agent-py/`](examples/hello-secure-agent-py/) -- Python + OpenAI Agents SDK
 - [`examples/hello-secure-agent-vercel/`](examples/hello-secure-agent-vercel/) -- TypeScript + Vercel AI SDK (middleware pattern)
@@ -385,6 +385,11 @@ agent = Agent(name="assistant", tools=[read_file])
 result = Runner.run_sync(agent, "Read /etc/shadow")
 print(result.final_output)  # "Blocked: Access to forbidden path: ..."
 ```
+
+Hello secure agent examples:
+- [`examples/hello-secure-agent-py/`](examples/hello-secure-agent-py/) -- Python + OpenAI Agents SDK
+- [`examples/hello-secure-agent-ts/`](examples/hello-secure-agent-ts/) -- TypeScript tool-shape demo with inline policy checks
+- [`examples/hello-secure-agent-vercel/`](examples/hello-secure-agent-vercel/) -- TypeScript + Vercel AI SDK (middleware pattern)
 
 See all supported frameworks in the [Multi-Language & Frameworks guide](docs/src/concepts/multi-language.md).
 
