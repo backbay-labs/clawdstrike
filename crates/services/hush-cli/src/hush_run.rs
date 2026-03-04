@@ -33,6 +33,8 @@ const PROXY_HEADER_READ_TIMEOUT_DEFAULT: Duration = Duration::from_secs(5);
 const PROXY_TLS_SNI_TIMEOUT: Duration = Duration::from_secs(3);
 const PROXY_DNS_RESOLVE_TIMEOUT_DEFAULT: Duration = Duration::from_secs(2);
 const HUSHD_FORWARD_TIMEOUT_DEFAULT: Duration = Duration::from_secs(3);
+pub const DEFAULT_EVENTS_OUT: &str = "clawdstrike.events.jsonl";
+pub const DEFAULT_RECEIPT_OUT: &str = "clawdstrike.run.receipt.json";
 
 static TEST_RESOLVER_CALLS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
@@ -559,9 +561,17 @@ pub async fn cmd_run(
         }
     }
 
+    let events_abs = absolutize_output_path(Path::new(&events_out));
+    let receipt_abs = absolutize_output_path(&receipt_path);
     let _ = writeln!(stdout, "Session: {}", session_id);
-    let _ = writeln!(stdout, "Events: {}", Path::new(&events_out).display());
-    let _ = writeln!(stdout, "Receipt: {}", receipt_path.display());
+    let _ = writeln!(stdout, "Events: {}", events_abs.display());
+    let _ = writeln!(stdout, "Receipt: {}", receipt_abs.display());
+    if events_out == DEFAULT_EVENTS_OUT || receipt_out == DEFAULT_RECEIPT_OUT {
+        let _ = writeln!(
+            stdout,
+            "Note: default artifact paths are reused each run. Use --events-out/--receipt-out to keep per-run files."
+        );
+    }
     if let Some(url) = env_proxy_url.as_ref() {
         let _ = writeln!(stdout, "Proxy: {}", url);
     } else {
@@ -586,6 +596,16 @@ fn child_exit_code(status: std::process::ExitStatus) -> i32 {
     }
     // On Unix, a signal-terminated process yields None. Use a conventional non-zero value.
     1
+}
+
+fn absolutize_output_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    match std::env::current_dir() {
+        Ok(cwd) => cwd.join(path),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 fn load_policy(
@@ -1660,6 +1680,14 @@ guards:
             queued += 1;
         }
         assert_eq!(queued, 2, "queue must stay bounded at channel capacity");
+    }
+
+    #[test]
+    fn absolutize_output_path_resolves_relative_paths() {
+        let rel = Path::new("clawdstrike.run.receipt.json");
+        let abs = absolutize_output_path(rel);
+        assert!(abs.is_absolute());
+        assert!(abs.ends_with(rel));
     }
 
     #[tokio::test]
