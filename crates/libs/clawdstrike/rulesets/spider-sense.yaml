@@ -8,6 +8,7 @@ description: >
 
 guards:
   spider_sense:
+    enabled: true
     embedding_api_url: "${SPIDER_SENSE_EMBEDDING_URL}"
     embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
     embedding_model: "text-embedding-3-small"

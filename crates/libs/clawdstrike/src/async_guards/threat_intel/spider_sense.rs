@@ -347,12 +347,17 @@ impl SpiderSensePolicyConfig {
             present_fields.insert("async".to_string());
         }
 
-        // Heuristic merge cannot reliably distinguish serde-default
-        // enabled=true from explicit enabled=true, so only enabled=false is
-        // treated as explicitly present here.
-        // For explicit enabled=true overrides, callers should use
-        // `merge_with_present_fields` with `enabled` in the field set.
-        if !child.enabled {
+        // Heuristic merge cannot generally distinguish serde-default
+        // enabled=true from explicit enabled=true. Preserve fail-safe behavior
+        // (no implicit re-enable), but allow a programmatic toggle-only child
+        // to explicitly enable a disabled base.
+        let explicit_programmatic_enable_toggle = child.enabled && !self.enabled && {
+            let mut toggle_only = Self::default();
+            toggle_only.enabled = true;
+            child == &toggle_only
+        };
+
+        if !child.enabled || explicit_programmatic_enable_toggle {
             present_fields.insert("enabled".to_string());
         }
 
@@ -2053,6 +2058,20 @@ mod tests {
 
         let merged = base.merge_with(&child);
         assert!(!merged.enabled, "child enabled=false should override base");
+    }
+
+    #[test]
+    fn spider_sense_policy_merge_with_allows_programmatic_enable_toggle_override() {
+        let mut base = test_cfg();
+        base.enabled = false;
+        let mut child = SpiderSensePolicyConfig::default();
+        child.enabled = true;
+
+        let merged = base.merge_with(&child);
+        assert!(
+            merged.enabled,
+            "toggle-only child enabled=true should override disabled base in heuristic mode"
+        );
     }
 
     #[test]
