@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -1220,6 +1221,14 @@ const SPIDER_SENSE_BUILTIN_S2BENCH: SpiderSensePattern[] = [
 ];
 
 function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSensePattern[] {
+  const normalizeHex = (value: string): string => {
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.startsWith("0x") ? trimmed.slice(2) : trimmed;
+  };
+  const hasNonEmptyString = (value: unknown): boolean =>
+    typeof value === "string" && value.trim().length > 0;
+  const hasNonEmptyArray = (value: unknown): boolean => Array.isArray(value) && value.length > 0;
+
   const parsePattern = (entry: unknown): SpiderSensePattern | null => {
     if (!isRecord(entry) || !Array.isArray(entry.embedding) || entry.embedding.length === 0) {
       return null;
@@ -1257,6 +1266,34 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
   }
   if (patternDbPath.length > 0) {
     const raw = readFileSync(patternDbPath, "utf8");
+    const expectedChecksum = hasNonEmptyString(config.pattern_db_checksum)
+      ? normalizeHex(String(config.pattern_db_checksum))
+      : "";
+    if (expectedChecksum.length > 0) {
+      const actualChecksum = createHash("sha256").update(raw).digest("hex").toLowerCase();
+      if (actualChecksum !== expectedChecksum) {
+        throw new Error(
+          `spider_sense pattern DB checksum mismatch for '${patternDbPath}': expected ${expectedChecksum}, got ${actualChecksum}`,
+        );
+      }
+    }
+
+    const hasSignatureMetadata =
+      hasNonEmptyString(config.pattern_db_signature) ||
+      hasNonEmptyString(config.pattern_db_signature_key_id) ||
+      hasNonEmptyString(config.pattern_db_public_key) ||
+      hasNonEmptyString(config.pattern_db_trust_store_path) ||
+      hasNonEmptyArray(config.pattern_db_trusted_keys);
+    const hasManifestMetadata =
+      hasNonEmptyString(config.pattern_db_manifest_path) ||
+      hasNonEmptyString(config.pattern_db_manifest_trust_store_path) ||
+      hasNonEmptyArray(config.pattern_db_manifest_trusted_keys);
+    if (hasSignatureMetadata || hasManifestMetadata) {
+      throw new Error(
+        "spider_sense signature/manifest integrity metadata is not executable in OpenClaw runtime",
+      );
+    }
+
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new Error(`spider_sense pattern DB at '${patternDbPath}' is empty or invalid`);
@@ -1435,12 +1472,22 @@ async function evaluateSpiderSenseRuntime(
   event: PolicyEvent,
 ): Promise<Decision> {
   if (!runtime.enabled) return { status: "allow" };
-  const embedding =
-    extractEmbeddingFromEvent(event) ?? (await fetchSpiderSenseEmbedding(runtime, event));
-  if (!embedding) {
-    return { status: "allow" };
+  try {
+    const embedding =
+      extractEmbeddingFromEvent(event) ?? (await fetchSpiderSenseEmbedding(runtime, event));
+    if (!embedding) {
+      return { status: "allow" };
+    }
+    return evaluateSpiderSenseEmbedding(runtime, embedding);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return denyDecision(
+      POLICY_REASON_CODES.GUARD_ERROR,
+      `Spider-Sense runtime error: ${detail}`,
+      "clawdstrike-spider-sense",
+      "high",
+    );
   }
-  return evaluateSpiderSenseEmbedding(runtime, embedding);
 }
 
 function buildThreatIntelEngine(

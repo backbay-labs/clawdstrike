@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PolicyEvent } from "../types.js";
 import { PolicyEngine } from "./engine.js";
 
@@ -13,6 +14,7 @@ describe("PolicyEngine", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     rmSync(testDir, { recursive: true, force: true });
   });
 
@@ -221,6 +223,103 @@ guards:
           },
         }),
     ).toThrow(/contains invalid entry at index 0/);
+  });
+
+  it("fails closed with deny decision when spider_sense embedding provider returns non-2xx", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 503 }));
+
+    const policyPath = join(testDir, "spider-sense-provider-failure-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: builtin:s2bench-v1
+        embedding_api_url: https://api.example.test/v1/embeddings
+        embedding_api_key: test-key
+        embedding_model: text-embedding-3-small
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: true,
+      },
+    });
+    const decision = await engine.evaluate({
+      eventId: "spider-sense-provider-failure",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        payload: "no local embedding present",
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("clawdstrike-spider-sense");
+    expect(decision.reason).toMatch(/runtime error/i);
+  });
+
+  it("rejects external spider_sense pattern DB on checksum mismatch", () => {
+    const patternDbPath = join(testDir, "spider-sense-patterns-checksum.json");
+    const patternDbRaw = JSON.stringify([
+      {
+        id: "ok-1",
+        category: "prompt_injection",
+        stage: "perception",
+        label: "known bad pattern",
+        embedding: [0.9, 0.1, 0.0],
+      },
+    ]);
+    writeFileSync(patternDbPath, patternDbRaw);
+    const wrongChecksum = createHash("sha256")
+      .update("tampered-content")
+      .digest("hex")
+      .toLowerCase();
+
+    const policyPath = join(testDir, "spider-sense-bad-checksum-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "${patternDbPath}"
+        pattern_db_checksum: "${wrongChecksum}"
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/checksum mismatch/i);
   });
 
   it("warns but allows in advisory mode", async () => {
