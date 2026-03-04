@@ -209,10 +209,148 @@ impl Default for SpiderSensePolicyConfig {
 impl SpiderSensePolicyConfig {
     /// Merge a child Spider-Sense config over a base config.
     ///
-    /// This is used by policy inheritance `deep_merge` to allow partial child
-    /// overrides without dropping required base fields.
+    /// This public helper performs a heuristic partial merge for programmatic
+    /// callers that do not have source-field presence metadata. Empty/default
+    /// child values are treated as absent.
     pub fn merge_with(&self, child: &Self) -> Self {
-        self.merge_with_present_fields(child, &BTreeSet::new())
+        let mut present_fields = BTreeSet::new();
+
+        if child.enabled {
+            present_fields.insert("enabled".to_string());
+        }
+        if !child.embedding_api_url.trim().is_empty() {
+            present_fields.insert("embedding_api_url".to_string());
+        }
+        if !child.embedding_api_key.trim().is_empty() {
+            present_fields.insert("embedding_api_key".to_string());
+        }
+        if !child.embedding_model.trim().is_empty() {
+            present_fields.insert("embedding_model".to_string());
+        }
+        if child.similarity_threshold != default_similarity_threshold() {
+            present_fields.insert("similarity_threshold".to_string());
+        }
+        if child.ambiguity_band != default_ambiguity_band() {
+            present_fields.insert("ambiguity_band".to_string());
+        }
+        if child.top_k != default_top_k() {
+            present_fields.insert("top_k".to_string());
+        }
+        if !child.pattern_db_path.trim().is_empty() {
+            present_fields.insert("pattern_db_path".to_string());
+        }
+        if child
+            .pattern_db_version
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_version".to_string());
+        }
+        if child
+            .pattern_db_checksum
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_checksum".to_string());
+        }
+        if child
+            .pattern_db_signature
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_signature".to_string());
+        }
+        if child
+            .pattern_db_signature_key_id
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_signature_key_id".to_string());
+        }
+        if child
+            .pattern_db_public_key
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_public_key".to_string());
+        }
+        if child
+            .pattern_db_trust_store_path
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_trust_store_path".to_string());
+        }
+        if !child.pattern_db_trusted_keys.is_empty() {
+            present_fields.insert("pattern_db_trusted_keys".to_string());
+        }
+        if child
+            .pattern_db_manifest_path
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_manifest_path".to_string());
+        }
+        if child
+            .pattern_db_manifest_trust_store_path
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("pattern_db_manifest_trust_store_path".to_string());
+        }
+        if !child.pattern_db_manifest_trusted_keys.is_empty() {
+            present_fields.insert("pattern_db_manifest_trusted_keys".to_string());
+        }
+        if child
+            .llm_api_url
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("llm_api_url".to_string());
+        }
+        if child
+            .llm_api_key
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("llm_api_key".to_string());
+        }
+        if child
+            .llm_model
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("llm_model".to_string());
+        }
+        if child
+            .llm_prompt_template_id
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("llm_prompt_template_id".to_string());
+        }
+        if child
+            .llm_prompt_template_version
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("llm_prompt_template_version".to_string());
+        }
+        if child.llm_timeout_ms.is_some() {
+            present_fields.insert("llm_timeout_ms".to_string());
+        }
+        if child
+            .llm_fail_mode
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            present_fields.insert("llm_fail_mode".to_string());
+        }
+        if child.async_config.is_some() {
+            present_fields.insert("async".to_string());
+        }
+
+        self.merge_with_present_fields(child, &present_fields)
     }
 
     /// Merge a child Spider-Sense config over a base config using explicit
@@ -359,8 +497,9 @@ impl SpiderSensePolicyConfig {
             };
         }
 
-        // Programmatic merge path has no field-presence metadata; treat the
-        // child config as an explicit replacement to avoid mixed heuristics.
+        // No field-presence metadata available: treat as explicit replacement.
+        // Policy inheritance paths call this intentionally to avoid hidden
+        // heuristics when source-level field presence is unavailable.
         child.clone()
     }
 }
@@ -1859,6 +1998,39 @@ mod tests {
         }))
         .expect("policy config should deserialize");
         assert!(cfg.enabled, "serialized config should default enabled=true");
+    }
+
+    #[test]
+    fn spider_sense_policy_merge_with_preserves_base_when_child_values_are_default() {
+        let mut base = test_cfg();
+        base.similarity_threshold = 0.91;
+        base.top_k = 7;
+
+        let mut child = SpiderSensePolicyConfig::default();
+        child.top_k = 11;
+
+        let merged = base.merge_with(&child);
+        assert!(merged.enabled, "default child should not disable base");
+        assert_eq!(
+            merged.embedding_api_url, base.embedding_api_url,
+            "default child should preserve base required fields"
+        );
+        assert_eq!(
+            merged.similarity_threshold, 0.91,
+            "default threshold should not override base"
+        );
+        assert_eq!(merged.top_k, 11, "non-default child values should override");
+    }
+
+    #[test]
+    fn spider_sense_policy_merge_with_allows_programmatic_enable_override() {
+        let mut base = test_cfg();
+        base.enabled = false;
+        let mut child = SpiderSensePolicyConfig::default();
+        child.enabled = true;
+
+        let merged = base.merge_with(&child);
+        assert!(merged.enabled, "child enabled=true should override base");
     }
 
     #[test]
