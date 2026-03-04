@@ -602,7 +602,7 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 | **JailbreakGuard**                     | 4-layer detection engine with session aggregation (see below)                                                                                                                              |
 | **ComputerUseGuard**                   | Controls CUA actions: remote sessions, clipboard, input injection, file transfer                                                                                                           |
 | **ShellCommandGuard**                  | Blocks dangerous shell commands before execution                                                                                                                                           |
-| **SpiderSenseGuard**&nbsp;<sup>β</sup> | Hierarchical threat screening adapted from [Yu et al. 2026](https://arxiv.org/abs/2602.05386): fast vector similarity resolves known patterns, optional LLM escalation for ambiguous cases |
+| **SpiderSenseGuard** | Hierarchical threat screening adapted from [Yu et al. 2026](https://arxiv.org/abs/2602.05386): fast vector similarity resolves known patterns, optional LLM escalation for ambiguous cases |
 
 ---
 
@@ -619,7 +619,7 @@ Clawdstrike policies are versioned, deterministic policy-as-code artifacts desig
 | **Posture state machine** | `1.2.0+` posture states, budgets, and transitions for runtime containment/escalation flows |
 | **Fail-closed runtime semantics** | Load or evaluation ambiguity resolves to deny rather than implicit allow |
 
-Built-in rulesets: `permissive` | `default` | `strict` | `ai-agent` | `ai-agent-posture` | `cicd` | `remote-desktop` | `remote-desktop-permissive` | `remote-desktop-strict`
+Built-in rulesets: `permissive` | `default` | `strict` | `ai-agent` | `ai-agent-posture` | `cicd` | `remote-desktop` | `remote-desktop-permissive` | `remote-desktop-strict` | `spider-sense`
 
 Operational policy loop:
 

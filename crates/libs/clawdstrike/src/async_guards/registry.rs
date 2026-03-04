@@ -2,11 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::async_guards::threat_intel::{
-    SafeBrowsingGuard, SafeBrowsingPolicyConfig, SnykGuard, SnykPolicyConfig, VirusTotalGuard,
-    VirusTotalPolicyConfig,
+    SafeBrowsingGuard, SafeBrowsingPolicyConfig, SnykGuard, SnykPolicyConfig, SpiderSenseGuard,
+    SpiderSensePolicyConfig, VirusTotalGuard, VirusTotalPolicyConfig,
 };
-#[cfg(feature = "clawdstrike-spider-sense")]
-use crate::async_guards::threat_intel::{SpiderSenseGuard, SpiderSensePolicyConfig};
 use crate::async_guards::types::{
     AsyncGuard, AsyncGuardConfig, CircuitBreakerConfig, RateLimitConfig, RetryConfig,
 };
@@ -23,6 +21,14 @@ const DEFAULT_CACHE_MAX_SIZE_MB: u64 = 64;
 
 pub fn build_async_guards(policy: &Policy) -> Result<Vec<Arc<dyn AsyncGuard>>> {
     let mut out: Vec<Arc<dyn AsyncGuard>> = Vec::new();
+
+    // First-class spider_sense field.
+    if let Some(ref ss_cfg) = policy.guards.spider_sense {
+        let async_cfg = async_config_for_spec(ss_cfg.async_config.as_ref())?;
+        let guard = SpiderSenseGuard::new(ss_cfg.clone(), async_cfg)
+            .map_err(|e| Error::ConfigError(format!("spider-sense init: {e}")))?;
+        out.push(Arc::new(guard));
+    }
 
     for spec in &policy.guards.custom {
         if !spec.enabled {
@@ -52,8 +58,11 @@ fn build_guard(spec: &CustomGuardSpec) -> Result<Arc<dyn AsyncGuard>> {
             let typed: SnykPolicyConfig = serde_json::from_value(config)?;
             Ok(Arc::new(SnykGuard::new(typed, async_cfg)))
         }
-        #[cfg(feature = "clawdstrike-spider-sense")]
         "clawdstrike-spider-sense" => {
+            tracing::warn!(
+                "guards.custom[package=\"clawdstrike-spider-sense\"] is deprecated; \
+                 use guards.spider_sense instead"
+            );
             let typed: SpiderSensePolicyConfig = serde_json::from_value(config)?;
             let guard = SpiderSenseGuard::new(typed, async_cfg)
                 .map_err(|e| Error::ConfigError(format!("spider-sense init: {e}")))?;

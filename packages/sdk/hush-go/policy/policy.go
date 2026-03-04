@@ -33,6 +33,7 @@ type GuardConfigs struct {
 	McpTool         *McpToolConfig         `yaml:"mcp_tool,omitempty"`
 	PromptInjection *PromptInjectionConfig `yaml:"prompt_injection,omitempty"`
 	Jailbreak       *JailbreakConfig       `yaml:"jailbreak,omitempty"`
+	SpiderSense     *SpiderSenseConfig     `yaml:"spider_sense,omitempty"`
 }
 
 // PolicySettings holds global policy settings.

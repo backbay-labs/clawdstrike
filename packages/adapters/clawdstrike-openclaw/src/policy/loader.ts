@@ -317,6 +317,11 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
+    if (typeof guards.spider_sense === "object") {
+      const cfg = guards.spider_sense as Record<string, unknown>;
+      toggles.spider_sense = cfg.enabled !== false;
+    }
+
     if (typeof guards.computer_use === "object") {
       const cfg = guards.computer_use as Record<string, unknown>;
       const translated: NonNullable<Policy["guards"]>["computer_use"] = {};

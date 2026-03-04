@@ -17,7 +17,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Method, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use hush_core::sha256;
 
@@ -26,6 +26,7 @@ use crate::async_guards::types::{
     AsyncGuard, AsyncGuardConfig, AsyncGuardError, AsyncGuardErrorKind,
 };
 use crate::guards::{GuardAction, GuardContext, GuardResult, Severity};
+use crate::spider_sense::{PatternDb, PatternMatch};
 
 // ── Configuration ───────────────────────────────────────────────────────
 
@@ -33,8 +34,11 @@ const DEFAULT_SIMILARITY_THRESHOLD: f64 = 0.85;
 const DEFAULT_AMBIGUITY_BAND: f64 = 0.10;
 const DEFAULT_TOP_K: usize = 5;
 
+/// Built-in S2Bench v1 pattern database (36 demo entries, 3-dim embeddings).
+const BUILTIN_S2BENCH_V1: &str = include_str!("../../../../../../rulesets/patterns/s2bench-v1.json");
+
 /// Policy-level configuration for the Spider-Sense guard.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpiderSensePolicyConfig {
     /// URL of the embedding API (OpenAI-compatible POST /embeddings).
@@ -53,7 +57,8 @@ pub struct SpiderSensePolicyConfig {
     #[serde(default = "default_ambiguity_band")]
     pub ambiguity_band: f64,
 
-    /// Path to the external JSON pattern database file.
+    /// Path to the external JSON pattern database file, or `builtin:s2bench-v1`
+    /// to use the embedded demo database.
     pub pattern_db_path: String,
 
     /// Optional LLM API URL for the deep reasoning path.
@@ -65,6 +70,12 @@ pub struct SpiderSensePolicyConfig {
     /// Optional LLM model name.
     #[serde(default)]
     pub llm_model: Option<String>,
+
+    /// Optional async guard configuration (used when Spider-Sense is configured
+    /// as a first-class field in `guards.spider_sense` rather than via
+    /// `guards.custom`).
+    #[serde(default, rename = "async")]
+    pub async_config: Option<crate::policy::AsyncGuardPolicyConfig>,
 }
 
 fn default_similarity_threshold() -> f64 {
@@ -73,145 +84,6 @@ fn default_similarity_threshold() -> f64 {
 
 fn default_ambiguity_band() -> f64 {
     DEFAULT_AMBIGUITY_BAND
-}
-
-// ── Pattern Database ────────────────────────────────────────────────────
-
-/// A single entry in the pattern database.
-#[derive(Clone, Debug, Deserialize)]
-pub struct PatternEntry {
-    /// Unique identifier for this pattern.
-    pub id: String,
-    /// Attack category (e.g. `"prompt_injection"`, `"data_exfiltration"`).
-    pub category: String,
-    /// Spider-Sense stage: perception, cognition, action, feedback.
-    pub stage: String,
-    /// Human-readable label.
-    pub label: String,
-    /// Pre-computed embedding vector.
-    pub embedding: Vec<f32>,
-}
-
-/// A scored match from the pattern database.
-#[derive(Clone, Debug)]
-pub struct PatternMatch {
-    pub entry: PatternEntry,
-    pub score: f64,
-}
-
-/// In-memory pattern database for vector similarity search.
-#[derive(Clone, Debug)]
-pub struct PatternDb {
-    entries: Vec<PatternEntry>,
-    expected_dim: Option<usize>,
-}
-
-impl PatternDb {
-    /// Load from a JSON file. Returns an error if parsing fails or dimensions
-    /// are inconsistent.
-    pub fn load_from_json(path: &str) -> Result<Self, String> {
-        let data = std::fs::read_to_string(path)
-            .map_err(|e| format!("failed to read pattern DB at {path}: {e}"))?;
-        Self::parse_json(&data)
-    }
-
-    /// Parse a JSON string containing a pattern array.
-    pub fn parse_json(json: &str) -> Result<Self, String> {
-        let entries: Vec<PatternEntry> =
-            serde_json::from_str(json).map_err(|e| format!("failed to parse pattern DB: {e}"))?;
-
-        if entries.is_empty() {
-            return Err("pattern DB must contain at least one entry".to_string());
-        }
-
-        let dim = entries[0].embedding.len();
-        if dim == 0 {
-            return Err("pattern DB entries must have non-empty embeddings".to_string());
-        }
-
-        for (i, entry) in entries.iter().enumerate() {
-            if entry.embedding.len() != dim {
-                return Err(format!(
-                    "pattern DB dimension mismatch at index {i}: expected {dim}, got {}",
-                    entry.embedding.len()
-                ));
-            }
-        }
-
-        Ok(Self {
-            entries,
-            expected_dim: Some(dim),
-        })
-    }
-
-    /// Brute-force cosine similarity search. Returns the top-k matches sorted
-    /// by descending similarity score.
-    pub fn search(&self, query: &[f32], top_k: usize) -> Vec<PatternMatch> {
-        let mut scored: Vec<PatternMatch> = self
-            .entries
-            .iter()
-            .map(|entry| {
-                let score = cosine_similarity_f32(query, &entry.embedding);
-                PatternMatch {
-                    entry: entry.clone(),
-                    score,
-                }
-            })
-            .collect();
-
-        // Sort descending by score.
-        scored.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        scored.truncate(top_k);
-        scored
-    }
-
-    /// Number of entries in the database.
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Whether the database is empty.
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Expected embedding dimension, if known.
-    pub fn expected_dim(&self) -> Option<usize> {
-        self.expected_dim
-    }
-}
-
-// ── Cosine Similarity ───────────────────────────────────────────────────
-
-/// Compute cosine similarity between two f32 vectors, using f64 precision
-/// for the accumulation. Returns 0.0 if either vector has zero norm.
-pub fn cosine_similarity_f32(a: &[f32], b: &[f32]) -> f64 {
-    if a.len() != b.len() {
-        return 0.0;
-    }
-
-    let mut dot: f64 = 0.0;
-    let mut norm_a: f64 = 0.0;
-    let mut norm_b: f64 = 0.0;
-
-    for (x, y) in a.iter().zip(b.iter()) {
-        let xd = f64::from(*x);
-        let yd = f64::from(*y);
-        dot += xd * yd;
-        norm_a += xd * xd;
-        norm_b += yd * yd;
-    }
-
-    let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 {
-        return 0.0;
-    }
-
-    dot / denom
 }
 
 // ── Guard Implementation ────────────────────────────────────────────────
@@ -230,7 +102,7 @@ pub struct SpiderSenseGuard {
 impl SpiderSenseGuard {
     /// Create a new SpiderSenseGuard. Fails if the pattern DB cannot be loaded.
     pub fn new(cfg: SpiderSensePolicyConfig, async_cfg: AsyncGuardConfig) -> Result<Self, String> {
-        let pattern_db = PatternDb::load_from_json(&cfg.pattern_db_path)?;
+        let pattern_db = load_pattern_db(&cfg.pattern_db_path)?;
 
         let (upper_bound, lower_bound) = validate_policy_config(&cfg)?;
 
@@ -741,6 +613,14 @@ fn embedding_request_policy(api_url: &str) -> Result<HttpRequestPolicy, String> 
     })
 }
 
+/// Load the pattern database from a path, supporting `builtin:*` prefixes.
+fn load_pattern_db(path: &str) -> Result<PatternDb, String> {
+    match path {
+        "builtin:s2bench-v1" => PatternDb::parse_json(BUILTIN_S2BENCH_V1),
+        _ => PatternDb::load_from_json(path),
+    }
+}
+
 fn validate_policy_config(cfg: &SpiderSensePolicyConfig) -> Result<(f64, f64), String> {
     if cfg.embedding_api_url.trim().is_empty() {
         return Err("embedding_api_url cannot be empty".to_string());
@@ -827,6 +707,7 @@ mod tests {
     use super::*;
     use crate::async_guards::types::AsyncGuardConfig;
     use crate::policy::{AsyncExecutionMode, TimeoutBehavior};
+    use crate::spider_sense::cosine_similarity_f32;
 
     fn test_cfg() -> SpiderSensePolicyConfig {
         SpiderSensePolicyConfig {
@@ -839,6 +720,7 @@ mod tests {
             llm_api_url: None,
             llm_api_key: None,
             llm_model: None,
+            async_config: None,
         }
     }
 

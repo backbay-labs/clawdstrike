@@ -46,6 +46,7 @@ const GUARDS_KEYS = new Set([
   "computer_use",
   "remote_desktop_side_channel",
   "input_injection_capability",
+  "spider_sense",
 ]);
 const COMPUTER_USE_KEYS = new Set(["enabled", "mode", "allowed_actions"]);
 const REMOTE_DESKTOP_SIDE_CHANNEL_KEYS = new Set([
@@ -283,6 +284,7 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
       ensureBoolean((p.guards as any).secret_leak, "guards.secret_leak", errors);
       ensureBoolean((p.guards as any).patch_integrity, "guards.patch_integrity", errors);
       ensureBoolean((p.guards as any).mcp_tool, "guards.mcp_tool", errors);
+      ensureBoolean((p.guards as any).spider_sense, "guards.spider_sense", errors);
 
       const computerUse = (p.guards as any).computer_use;
       if (computerUse !== undefined) {

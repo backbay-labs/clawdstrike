@@ -116,6 +116,13 @@ func BuildFromPolicy(p *policy.Policy) (*HushEngine, error) {
 	if cfg := p.Guards.Jailbreak; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
 		b.WithGuard(guards.NewJailbreakGuard())
 	}
+	if cfg := p.Guards.SpiderSense; cfg != nil && policy.GuardEnabled(cfg.Enabled) {
+		g, err := guards.NewSpiderSenseGuard(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("engine: instantiate spider_sense guard: %w", err)
+		}
+		b.WithGuard(g)
+	}
 
 	return b.Build()
 }

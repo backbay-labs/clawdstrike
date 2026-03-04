@@ -11,6 +11,7 @@ const wasmAdvancedAvailable =
   typeof wasm?.WasmOutputSanitizer === "function" &&
   typeof wasm?.WasmJailbreakDetector === "function" &&
   typeof wasm?.WasmInstructionHierarchyEnforcer === "function" &&
+  typeof wasm?.WasmSpiderSenseDetector === "function" &&
   typeof wasm?.detect_prompt_injection === "function";
 
 // biome-ignore lint/suspicious/noExplicitAny: vitest global injection

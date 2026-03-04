@@ -277,6 +277,7 @@ export class PolicyEngine {
     if (g.secret_leak) enabled.push("secret_leak");
     if (g.patch_integrity) enabled.push("patch_integrity");
     if (g.mcp_tool) enabled.push("mcp_tool");
+    if (g.spider_sense) enabled.push("spider_sense");
     return enabled;
   }
 

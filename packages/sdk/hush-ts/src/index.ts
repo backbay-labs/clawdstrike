@@ -124,6 +124,8 @@ export {
   type SecretLeakConfig,
   SecretLeakGuard,
   Severity,
+  SpiderSenseGuard,
+  type SpiderSenseGuardConfig,
   ToolDecision,
   toCanonicalSeverity,
 } from "./guards";
@@ -151,6 +153,15 @@ export {
   type JailbreakSignal,
   type LayerResult,
 } from "./jailbreak";
+// Spider-Sense detection
+export {
+  type PatternEntry,
+  type PatternMatchResult,
+  type ScreeningResult,
+  type ScreeningVerdict,
+  SpiderSenseDetector,
+  type SpiderSenseDetectorConfig,
+} from "./spider-sense";
 // Merkle tree
 export {
   computeRoot,

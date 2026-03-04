@@ -92,7 +92,6 @@ full = [
 ]
 ipfs = ["full"]
 llm-judge-openai = ["full"]
-clawdstrike-spider-sense = ["full"]
 wasm-plugin-runtime = ["full", "dep:wasmtime"]
 
 [lints]

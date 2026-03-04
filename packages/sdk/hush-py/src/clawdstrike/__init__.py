@@ -48,6 +48,8 @@ from clawdstrike.guards import (
     ShellCommandAction,
     ShellCommandConfig,
     ShellCommandGuard,
+    SpiderSenseConfig,
+    SpiderSenseGuard,
 )
 from clawdstrike.merkle import (
     MerkleProof,
@@ -164,6 +166,8 @@ __all__ = [
     "ShellCommandConfig",
     "PathAllowlistGuard",
     "PathAllowlistConfig",
+    "SpiderSenseGuard",
+    "SpiderSenseConfig",
     # Merkle
     "hash_leaf",
     "hash_node",

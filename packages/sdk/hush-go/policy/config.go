@@ -1,6 +1,8 @@
 // Package policy implements Clawdstrike policy loading, validation, and resolution.
 package policy
 
+import "encoding/json"
+
 // ForbiddenPathConfig configures the forbidden path guard.
 type ForbiddenPathConfig struct {
 	Enabled    *bool    `yaml:"enabled,omitempty"`
@@ -62,6 +64,16 @@ type PromptInjectionConfig struct {
 // Currently a placeholder for native delegation.
 type JailbreakConfig struct {
 	Enabled *bool `yaml:"enabled,omitempty"`
+}
+
+// SpiderSenseConfig configures the spider_sense guard for embedding-based
+// threat detection via cosine similarity against a pattern database.
+type SpiderSenseConfig struct {
+	Enabled             *bool            `yaml:"enabled,omitempty"`
+	SimilarityThreshold float64          `yaml:"similarity_threshold,omitempty"`
+	AmbiguityBand       float64          `yaml:"ambiguity_band,omitempty"`
+	TopK                int              `yaml:"top_k,omitempty"`
+	Patterns            json.RawMessage  `yaml:"patterns,omitempty" json:"patterns,omitempty"`
 }
 
 // GuardEnabled returns whether a guard is enabled based on its Enabled field.

@@ -14,6 +14,7 @@ export {
 } from "./patch-integrity";
 export { type PromptInjectionConfig, PromptInjectionGuard } from "./prompt-injection";
 export { type SecretLeakConfig, SecretLeakGuard } from "./secret-leak";
+export { SpiderSenseGuard, type SpiderSenseGuardConfig } from "./spider-sense";
 export {
   type CanonicalSeverity,
   fromCanonicalSeverity,

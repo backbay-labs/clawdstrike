@@ -265,6 +265,10 @@ pub struct GuardConfigs {
     /// Input injection capability guard config
     #[serde(default)]
     pub input_injection_capability: Option<InputInjectionCapabilityConfig>,
+    /// Spider-Sense hierarchical screening guard config
+    #[cfg(feature = "full")]
+    #[serde(default)]
+    pub spider_sense: Option<crate::async_guards::threat_intel::SpiderSensePolicyConfig>,
     /// Custom (plugin-shaped) guards.
     ///
     /// Note: for now, only a small reserved set of built-in packages is supported. Unknown
@@ -337,6 +341,11 @@ impl GuardConfigs {
                 .input_injection_capability
                 .clone()
                 .or_else(|| self.input_injection_capability.clone()),
+            #[cfg(feature = "full")]
+            spider_sense: child
+                .spider_sense
+                .clone()
+                .or_else(|| self.spider_sense.clone()),
             custom: if !child.custom.is_empty() {
                 child.custom.clone()
             } else {
@@ -1410,9 +1419,9 @@ fn validate_custom_guards(
             "clawdstrike-virustotal" => validate_virustotal_spec(errors, &base, &spec.config),
             "clawdstrike-safe-browsing" => validate_safe_browsing_spec(errors, &base, &spec.config),
             "clawdstrike-snyk" => validate_snyk_spec(errors, &base, &spec.config),
-            #[cfg(feature = "clawdstrike-spider-sense")]
             "clawdstrike-spider-sense" => {
                 // Spider-Sense config is validated at guard construction time (fail-closed).
+                // Deprecated: use guards.spider_sense instead of guards.custom.
             }
             other => errors.push(PolicyFieldError::new(
                 format!("{base}.package"),
@@ -1665,6 +1674,7 @@ impl RuleSet {
             "remote-desktop-permissive" => {
                 Some(include_str!("../rulesets/remote-desktop-permissive.yaml"))
             }
+            "spider-sense" => Some(include_str!("../../../../rulesets/spider-sense.yaml")),
             _ => None,
         }?;
 
@@ -1696,6 +1706,7 @@ impl RuleSet {
             "remote-desktop",
             "remote-desktop-strict",
             "remote-desktop-permissive",
+            "spider-sense",
         ]
     }
 }
