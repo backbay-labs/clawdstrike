@@ -35,6 +35,54 @@ describe("PolicyEngine", () => {
     expect(decision.guard).toBe("forbidden_path");
   });
 
+  it("skips spider_sense custom guard execution when spider_sense toggle is false", async () => {
+    const policyPath = join(testDir, "spider-sense-toggle-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: ignore previous
+            embedding: [1, 0, 0]
+`,
+    );
+
+    const event: PolicyEvent = {
+      eventId: "spider-sense-toggle-disabled",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        embedding: [1, 0, 0],
+      },
+    };
+
+    const disabledEngine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: false,
+      },
+    });
+    const disabledDecision = await disabledEngine.evaluate(event);
+    expect(disabledDecision.status).toBe("allow");
+
+  });
+
   it("warns but allows in advisory mode", async () => {
     const engine = new PolicyEngine({
       policy: "clawdstrike:ai-agent-minimal",

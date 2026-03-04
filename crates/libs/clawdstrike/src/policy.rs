@@ -2021,6 +2021,7 @@ name: Test
         assert_eq!(policy.version, "1.3.0");
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn test_policy_1_3_spider_sense_fields_parse() {
         let yaml = r#"

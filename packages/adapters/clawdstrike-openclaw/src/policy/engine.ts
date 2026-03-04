@@ -266,7 +266,7 @@ export class PolicyEngine {
     this.egressGuard = new EgressGuard();
     this.secretLeakGuard = new SecretLeakGuard();
     this.patchIntegrityGuard = new PatchIntegrityGuard();
-    this.threatIntelEngine = buildThreatIntelEngine(this.policy);
+    this.threatIntelEngine = buildThreatIntelEngine(this.policy, this.config.guards);
   }
 
   enabledGuards(): string[] {
@@ -918,9 +918,30 @@ export class PolicyEngine {
   }
 }
 
-function buildThreatIntelEngine(policy: Policy): CanonicalPolicyEngineLike | null {
+function isSpiderSenseCustomGuard(entry: unknown): boolean {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return false;
+  }
+  const pkg = (entry as Record<string, unknown>).package;
+  return typeof pkg === "string" && pkg.trim().toLowerCase() === "clawdstrike-spider-sense";
+}
+
+function buildThreatIntelEngine(
+  policy: Policy,
+  guardToggles: Required<ClawdstrikeConfig>["guards"],
+): CanonicalPolicyEngineLike | null {
   const custom = policy.guards?.custom;
   if (!Array.isArray(custom) || custom.length === 0) {
+    return null;
+  }
+
+  const filteredCustom = custom.filter((entry) => {
+    if (!guardToggles.spider_sense && isSpiderSenseCustomGuard(entry)) {
+      return false;
+    }
+    return true;
+  });
+  if (filteredCustom.length === 0) {
     return null;
   }
 
@@ -929,7 +950,7 @@ function buildThreatIntelEngine(policy: Policy): CanonicalPolicyEngineLike | nul
   // GuardConfigs has an index signature so `unknown[]` is assignable.
   const canonicalPolicy: CanonicalPolicy = {
     version: "1.1.0",
-    guards: { custom },
+    guards: { custom: filteredCustom },
   };
 
   return createPolicyEngineFromPolicy(canonicalPolicy);
