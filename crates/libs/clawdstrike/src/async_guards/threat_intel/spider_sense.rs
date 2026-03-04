@@ -12,15 +12,17 @@
 //! different, but reusing the same fast/deep tiering and the S2Bench
 //! taxonomy (four semantic stages × nine attack types).
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 
-use hush_core::sha256;
+use hush_core::{sha256, PublicKey, Signature};
 
 use crate::async_guards::http::{HttpClient, HttpRequestPolicy};
 use crate::async_guards::types::{
@@ -548,6 +550,62 @@ struct LlmVerdict {
 struct PatternDbManifest {
     #[serde(default)]
     pattern_db_path: Option<String>,
+    #[serde(default)]
+    pattern_db_version: Option<String>,
+    #[serde(default)]
+    pattern_db_checksum: Option<String>,
+    #[serde(default)]
+    pattern_db_signature: Option<String>,
+    #[serde(default)]
+    pattern_db_public_key: Option<String>,
+    #[serde(default)]
+    pattern_db_signature_key_id: Option<String>,
+    #[serde(default)]
+    pattern_db_trust_store_path: Option<String>,
+    #[serde(default)]
+    pattern_db_trusted_keys: Vec<SpiderSenseTrustedKeyConfig>,
+    #[serde(default)]
+    manifest_signature: Option<String>,
+    #[serde(default)]
+    manifest_signature_key_id: Option<String>,
+    #[serde(default)]
+    not_before: Option<String>,
+    #[serde(default)]
+    not_after: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpiderSenseTrustedKeyStatus {
+    Active,
+    Deprecated,
+    Revoked,
+}
+
+#[derive(Clone, Debug)]
+struct SpiderSenseTrustedKey {
+    key_id: String,
+    public_key: String,
+    not_before: Option<DateTime<Utc>>,
+    not_after: Option<DateTime<Utc>>,
+    status: SpiderSenseTrustedKeyStatus,
+}
+
+#[derive(Default)]
+struct SpiderSenseTrustStore {
+    keys: HashMap<String, SpiderSenseTrustedKey>,
+}
+
+#[derive(Clone, Debug)]
+struct PatternDbIntegrity {
+    version: String,
+    checksum: String,
+    signature: String,
+    public_key: String,
+    signature_key_id: String,
+    trust_store_path: String,
+    trusted_keys: Vec<SpiderSenseTrustedKeyConfig>,
+    use_trust_store: bool,
+    use_legacy_key_pair: bool,
 }
 
 #[async_trait]
@@ -699,6 +757,556 @@ fn load_pattern_db(path: &str) -> Result<PatternDb, String> {
     }
 }
 
+fn read_pattern_db_bytes(path: &str) -> Result<Vec<u8>, String> {
+    match path {
+        "builtin:s2bench-v1" => Ok(BUILTIN_S2BENCH_V1.as_bytes().to_vec()),
+        _ => {
+            std::fs::read(path).map_err(|e| format!("spider_sense: read pattern DB '{path}': {e}"))
+        }
+    }
+}
+
+fn normalize_hex_value(value: &str) -> String {
+    value
+        .trim()
+        .to_ascii_lowercase()
+        .trim_start_matches("0x")
+        .to_string()
+}
+
+fn derive_spider_sense_key_id(public_key_hex: &str) -> String {
+    let normalized = normalize_hex_value(public_key_hex);
+    sha256(normalized.as_bytes()).to_hex()[..16].to_string()
+}
+
+fn resolve_path_relative(base_file: &str, value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.starts_with("builtin:") {
+        return trimmed.to_string();
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return trimmed.to_string();
+    }
+    let base = Path::new(base_file)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    base.join(path).to_string_lossy().to_string()
+}
+
+fn parse_rfc3339(value: &str, label: &str) -> Result<DateTime<Utc>, String> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|e| format!("{label}: {e}"))
+}
+
+fn normalize_spider_sense_trusted_key(
+    entry: &SpiderSenseTrustedKeyConfig,
+) -> Result<SpiderSenseTrustedKey, String> {
+    let public_key_raw = entry.public_key.trim();
+    if public_key_raw.is_empty() {
+        return Err("trust store entry is missing public_key".to_string());
+    }
+    let public_key = normalize_hex_value(public_key_raw);
+    PublicKey::from_hex(&public_key).map_err(|e| format!("invalid trusted public_key: {e}"))?;
+
+    let derived_key_id = derive_spider_sense_key_id(&public_key);
+    let key_id = entry
+        .key_id
+        .as_deref()
+        .map(normalize_hex_value)
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| derived_key_id.clone());
+    if key_id != derived_key_id {
+        return Err(format!(
+            "trusted key_id \"{key_id}\" does not match derived key_id \"{derived_key_id}\""
+        ));
+    }
+
+    let status = match entry
+        .status
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "active" => SpiderSenseTrustedKeyStatus::Active,
+        "deprecated" => SpiderSenseTrustedKeyStatus::Deprecated,
+        "revoked" => SpiderSenseTrustedKeyStatus::Revoked,
+        other => return Err(format!("unsupported trusted key status \"{other}\"")),
+    };
+
+    let not_before = entry
+        .not_before
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| parse_rfc3339(v, &format!("invalid not_before for key_id \"{key_id}\"")))
+        .transpose()?;
+    let not_after = entry
+        .not_after
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| parse_rfc3339(v, &format!("invalid not_after for key_id \"{key_id}\"")))
+        .transpose()?;
+
+    if let (Some(start), Some(end)) = (&not_before, &not_after) {
+        if end < start {
+            return Err(format!(
+                "invalid trusted key window for key_id \"{key_id}\""
+            ));
+        }
+    }
+
+    Ok(SpiderSenseTrustedKey {
+        key_id,
+        public_key,
+        not_before,
+        not_after,
+        status,
+    })
+}
+
+fn parse_spider_sense_trust_store_file(
+    raw: &str,
+) -> Result<Vec<SpiderSenseTrustedKeyConfig>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| format!("parse trust store JSON: {e}"))?;
+    if let Some(arr) = value.as_array() {
+        return arr
+            .iter()
+            .cloned()
+            .map(serde_json::from_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("parse trust store entry: {e}"));
+    }
+    if let Some(keys) = value.get("keys").and_then(|v| v.as_array()) {
+        return keys
+            .iter()
+            .cloned()
+            .map(serde_json::from_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("parse trust store entry: {e}"));
+    }
+    Err("trust store must be a JSON array or object with keys[]".to_string())
+}
+
+fn load_spider_sense_trust_store(
+    path: &str,
+    inline: &[SpiderSenseTrustedKeyConfig],
+) -> Result<SpiderSenseTrustStore, String> {
+    let mut store = SpiderSenseTrustStore::default();
+
+    let mut add_entries = |entries: Vec<SpiderSenseTrustedKeyConfig>| -> Result<(), String> {
+        for entry in entries {
+            let normalized = normalize_spider_sense_trusted_key(&entry)?;
+            store.keys.insert(normalized.key_id.clone(), normalized);
+        }
+        Ok(())
+    };
+
+    if !path.trim().is_empty() {
+        let raw = std::fs::read_to_string(path)
+            .map_err(|e| format!("read trust store \"{path}\": {e}"))?;
+        let entries = parse_spider_sense_trust_store_file(&raw)?;
+        add_entries(entries)?;
+    }
+
+    add_entries(inline.to_vec())?;
+    if store.keys.is_empty() {
+        return Err("trust store is empty".to_string());
+    }
+    Ok(store)
+}
+
+impl SpiderSenseTrustStore {
+    fn select_key(
+        &self,
+        key_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<&SpiderSenseTrustedKey, String> {
+        let normalized_id = normalize_hex_value(key_id);
+        let key = self.keys.get(&normalized_id).ok_or_else(|| {
+            format!("pattern DB signature key_id \"{normalized_id}\" not found in trust store")
+        })?;
+        if key.status == SpiderSenseTrustedKeyStatus::Revoked {
+            return Err(format!(
+                "pattern DB signature key_id \"{normalized_id}\" is revoked"
+            ));
+        }
+        if let Some(not_before) = key.not_before.as_ref() {
+            if now < *not_before {
+                return Err(format!(
+                    "pattern DB signature key_id \"{normalized_id}\" is not yet valid"
+                ));
+            }
+        }
+        if let Some(not_after) = key.not_after.as_ref() {
+            if now > *not_after {
+                return Err(format!(
+                    "pattern DB signature key_id \"{normalized_id}\" is expired"
+                ));
+            }
+        }
+        Ok(key)
+    }
+}
+
+fn spider_sense_trusted_keys_digest(entries: &[SpiderSenseTrustedKeyConfig]) -> String {
+    if entries.is_empty() {
+        return sha256(&[]).to_hex();
+    }
+
+    let mut parts: Vec<String> = entries
+        .iter()
+        .map(|entry| {
+            format!(
+                "{}|{}|{}|{}|{}",
+                entry
+                    .key_id
+                    .as_deref()
+                    .map(normalize_hex_value)
+                    .unwrap_or_default(),
+                normalize_hex_value(&entry.public_key),
+                entry
+                    .status
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_ascii_lowercase(),
+                entry
+                    .not_before
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default(),
+                entry
+                    .not_after
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    parts.sort();
+    sha256(parts.join(";").as_bytes()).to_hex()
+}
+
+fn spider_sense_manifest_signing_message(manifest: &PatternDbManifest) -> Vec<u8> {
+    format!(
+        "spider_sense_manifest:v1:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        manifest
+            .pattern_db_path
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default(),
+        manifest
+            .pattern_db_version
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default(),
+        normalize_hex_value(manifest.pattern_db_checksum.as_deref().unwrap_or_default()),
+        normalize_hex_value(manifest.pattern_db_signature.as_deref().unwrap_or_default()),
+        normalize_hex_value(
+            manifest
+                .pattern_db_signature_key_id
+                .as_deref()
+                .unwrap_or_default()
+        ),
+        normalize_hex_value(
+            manifest
+                .pattern_db_public_key
+                .as_deref()
+                .unwrap_or_default()
+        ),
+        manifest
+            .pattern_db_trust_store_path
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default(),
+        spider_sense_trusted_keys_digest(&manifest.pattern_db_trusted_keys),
+        manifest
+            .not_before
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default(),
+        manifest
+            .not_after
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default(),
+    )
+    .into_bytes()
+}
+
+fn verify_manifest_window(manifest: &PatternDbManifest, now: DateTime<Utc>) -> Result<(), String> {
+    if let Some(raw) = manifest
+        .not_before
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        let not_before =
+            parse_rfc3339(raw, "spider_sense: invalid pattern DB manifest not_before")?;
+        if now < not_before {
+            return Err("spider_sense: pattern DB manifest not yet valid".to_string());
+        }
+    }
+    if let Some(raw) = manifest
+        .not_after
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        let not_after = parse_rfc3339(raw, "spider_sense: invalid pattern DB manifest not_after")?;
+        if now > not_after {
+            return Err("spider_sense: pattern DB manifest expired".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn verify_pattern_manifest_signature(
+    manifest: &PatternDbManifest,
+    roots_path: &str,
+    inline_roots: &[SpiderSenseTrustedKeyConfig],
+    now: DateTime<Utc>,
+) -> Result<(), String> {
+    let manifest_signature = manifest
+        .manifest_signature
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
+    let manifest_signature_key_id = normalize_hex_value(
+        manifest
+            .manifest_signature_key_id
+            .as_deref()
+            .unwrap_or_default(),
+    );
+    if manifest_signature.is_empty() {
+        return Err("spider_sense: pattern DB manifest missing manifest_signature".to_string());
+    }
+    if manifest_signature_key_id.is_empty() {
+        return Err(
+            "spider_sense: pattern DB manifest missing manifest_signature_key_id".to_string(),
+        );
+    }
+
+    let store = load_spider_sense_trust_store(roots_path, inline_roots)
+        .map_err(|e| format!("spider_sense: load pattern DB manifest trust store: {e}"))?;
+    let key = store
+        .select_key(&manifest_signature_key_id, now)
+        .map_err(|e| format!("spider_sense: {e}"))?;
+    let pk = PublicKey::from_hex(&key.public_key).map_err(|e| {
+        format!(
+            "spider_sense: invalid pattern DB manifest trust key material for key_id \"{}\": {e}",
+            key.key_id
+        )
+    })?;
+    let sig = Signature::from_hex(manifest_signature)
+        .map_err(|e| format!("spider_sense: invalid pattern DB manifest signature: {e}"))?;
+    if !pk.verify(&spider_sense_manifest_signing_message(manifest), &sig) {
+        return Err(format!(
+            "spider_sense: pattern DB manifest signature verification failed for key_id \"{}\"",
+            key.key_id
+        ));
+    }
+    Ok(())
+}
+
+fn required_pattern_db_integrity_fields(
+    version: &str,
+    checksum: &str,
+    signature: &str,
+    public_key: &str,
+    signature_key_id: &str,
+    trust_store_path: &str,
+    trusted_keys: Vec<SpiderSenseTrustedKeyConfig>,
+) -> Result<PatternDbIntegrity, String> {
+    let version = version.trim().to_string();
+    let checksum = checksum.trim().to_string();
+    if version.is_empty() || checksum.is_empty() {
+        return Err(
+            "spider_sense: pattern_db_version and pattern_db_checksum are required when pattern_db_path is set"
+                .to_string(),
+        );
+    }
+
+    let signature = signature.trim().to_string();
+    let public_key = public_key.trim().to_string();
+    let signature_key_id = normalize_hex_value(signature_key_id);
+    let trust_store_path = trust_store_path.trim().to_string();
+    let use_trust_store =
+        !signature_key_id.is_empty() || !trust_store_path.is_empty() || !trusted_keys.is_empty();
+    let use_legacy_key_pair = !signature.is_empty() && !public_key.is_empty();
+
+    if use_trust_store && !public_key.is_empty() {
+        return Err(
+            "spider_sense: pattern_db_public_key cannot be combined with trust-store based verification"
+                .to_string(),
+        );
+    }
+    if use_trust_store {
+        if signature.is_empty() {
+            return Err(
+                "spider_sense: pattern_db_signature is required when trust-store fields are set"
+                    .to_string(),
+            );
+        }
+        if signature_key_id.is_empty() {
+            return Err(
+                "spider_sense: pattern_db_signature_key_id is required when trust-store fields are set"
+                    .to_string(),
+            );
+        }
+    } else if signature.is_empty() != public_key.is_empty() {
+        return Err(
+            "spider_sense: pattern_db_signature and pattern_db_public_key must either both be set or both be omitted"
+                .to_string(),
+        );
+    }
+
+    Ok(PatternDbIntegrity {
+        version,
+        checksum,
+        signature,
+        public_key,
+        signature_key_id,
+        trust_store_path,
+        trusted_keys,
+        use_trust_store,
+        use_legacy_key_pair,
+    })
+}
+
+fn verify_pattern_db_integrity(
+    data: &[u8],
+    integrity: &PatternDbIntegrity,
+) -> Result<Option<String>, String> {
+    let actual_checksum = sha256(data).to_hex().to_ascii_lowercase();
+    let expected_checksum = normalize_hex_value(&integrity.checksum);
+    if actual_checksum != expected_checksum {
+        return Err(format!(
+            "spider_sense: pattern DB checksum mismatch: expected {expected_checksum}, got {actual_checksum}"
+        ));
+    }
+
+    let message = format!(
+        "spider_sense_db:v1:{}:{expected_checksum}",
+        integrity.version
+    );
+
+    if integrity.use_legacy_key_pair {
+        let pk = PublicKey::from_hex(&integrity.public_key)
+            .map_err(|e| format!("spider_sense: invalid pattern DB public key: {e}"))?;
+        let sig = Signature::from_hex(&integrity.signature)
+            .map_err(|e| format!("spider_sense: invalid pattern DB signature: {e}"))?;
+        if !pk.verify(message.as_bytes(), &sig) {
+            return Err("spider_sense: pattern DB signature verification failed".to_string());
+        }
+        return Ok(None);
+    }
+
+    if integrity.use_trust_store {
+        let store =
+            load_spider_sense_trust_store(&integrity.trust_store_path, &integrity.trusted_keys)
+                .map_err(|e| format!("spider_sense: load trust store: {e}"))?;
+        let key = store
+            .select_key(&integrity.signature_key_id, Utc::now())
+            .map_err(|e| format!("spider_sense: {e}"))?;
+        let pk = PublicKey::from_hex(&key.public_key).map_err(|e| {
+            format!(
+                "spider_sense: invalid trusted key material for key_id \"{}\": {e}",
+                key.key_id
+            )
+        })?;
+        let sig = Signature::from_hex(&integrity.signature)
+            .map_err(|e| format!("spider_sense: invalid pattern DB signature: {e}"))?;
+        if !pk.verify(message.as_bytes(), &sig) {
+            return Err(format!(
+                "spider_sense: pattern DB signature verification failed for key_id \"{}\"",
+                key.key_id
+            ));
+        }
+        return Ok(Some(key.key_id.clone()));
+    }
+
+    if !integrity.signature.is_empty() || !integrity.public_key.is_empty() {
+        return Err(
+            "spider_sense: pattern_db_signature and pattern_db_public_key must either both be set or both be omitted"
+                .to_string(),
+        );
+    }
+
+    Ok(None)
+}
+
+fn resolve_pattern_db_path_from_manifest(
+    cfg: &SpiderSensePolicyConfig,
+    manifest_path: &str,
+) -> Result<String, String> {
+    let raw = std::fs::read_to_string(manifest_path)
+        .map_err(|e| format!("failed to read pattern DB manifest '{manifest_path}': {e}"))?;
+    let manifest: PatternDbManifest = serde_json::from_str(&raw)
+        .map_err(|e| format!("failed to parse pattern DB manifest '{manifest_path}': {e}"))?;
+
+    let manifest_roots_path = resolve_path_relative(
+        manifest_path,
+        cfg.pattern_db_manifest_trust_store_path
+            .as_deref()
+            .unwrap_or_default(),
+    );
+    let manifest_roots_inline = &cfg.pattern_db_manifest_trusted_keys;
+    if manifest_roots_path.is_empty() && manifest_roots_inline.is_empty() {
+        return Err(
+            "spider_sense: pattern_db_manifest_path requires pattern_db_manifest_trust_store_path or pattern_db_manifest_trusted_keys"
+                .to_string(),
+        );
+    }
+
+    let now = Utc::now();
+    verify_manifest_window(&manifest, now)?;
+    verify_pattern_manifest_signature(&manifest, &manifest_roots_path, manifest_roots_inline, now)?;
+
+    let db_path = manifest
+        .pattern_db_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| {
+            format!("pattern DB manifest '{manifest_path}' missing non-empty pattern_db_path")
+        })?;
+    let resolved_db_path = resolve_path_relative(manifest_path, db_path);
+
+    let pattern_trust_store_path = resolve_path_relative(
+        manifest_path,
+        manifest
+            .pattern_db_trust_store_path
+            .as_deref()
+            .unwrap_or_default(),
+    );
+    let integrity = required_pattern_db_integrity_fields(
+        manifest.pattern_db_version.as_deref().unwrap_or_default(),
+        manifest.pattern_db_checksum.as_deref().unwrap_or_default(),
+        manifest.pattern_db_signature.as_deref().unwrap_or_default(),
+        manifest
+            .pattern_db_public_key
+            .as_deref()
+            .unwrap_or_default(),
+        manifest
+            .pattern_db_signature_key_id
+            .as_deref()
+            .unwrap_or_default(),
+        &pattern_trust_store_path,
+        manifest.pattern_db_trusted_keys.clone(),
+    )?;
+
+    let data = read_pattern_db_bytes(&resolved_db_path)?;
+    let _ = verify_pattern_db_integrity(&data, &integrity)?;
+    Ok(resolved_db_path)
+}
+
 fn resolve_pattern_db_path(cfg: &SpiderSensePolicyConfig) -> Result<String, String> {
     let manifest_path = cfg
         .pattern_db_manifest_path
@@ -706,32 +1314,7 @@ fn resolve_pattern_db_path(cfg: &SpiderSensePolicyConfig) -> Result<String, Stri
         .map(str::trim)
         .filter(|v| !v.is_empty());
     if let Some(manifest_path) = manifest_path {
-        let raw = std::fs::read_to_string(manifest_path)
-            .map_err(|e| format!("failed to read pattern DB manifest '{manifest_path}': {e}"))?;
-        let manifest: PatternDbManifest = serde_json::from_str(&raw)
-            .map_err(|e| format!("failed to parse pattern DB manifest '{manifest_path}': {e}"))?;
-        let db_path = manifest
-            .pattern_db_path
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| {
-                format!("pattern DB manifest '{manifest_path}' missing non-empty pattern_db_path")
-            })?;
-
-        if db_path.starts_with("builtin:") {
-            return Ok(db_path.to_string());
-        }
-
-        let path = Path::new(db_path);
-        if path.is_absolute() {
-            return Ok(db_path.to_string());
-        }
-
-        let base = Path::new(manifest_path)
-            .parent()
-            .unwrap_or_else(|| Path::new("."));
-        return Ok(base.join(path).to_string_lossy().to_string());
+        return resolve_pattern_db_path_from_manifest(cfg, manifest_path);
     }
 
     let path = cfg.pattern_db_path.trim();
@@ -910,6 +1493,7 @@ mod tests {
     use crate::async_guards::types::AsyncGuardConfig;
     use crate::policy::{AsyncExecutionMode, TimeoutBehavior};
     use crate::spider_sense::cosine_similarity_f32;
+    use hush_core::Keypair;
 
     fn test_cfg() -> SpiderSensePolicyConfig {
         SpiderSensePolicyConfig {
@@ -1195,32 +1779,160 @@ mod tests {
     }
 
     #[test]
-    fn resolve_pattern_db_path_accepts_manifest_with_extra_fields() {
+    fn resolve_pattern_db_path_accepts_signed_manifest_with_extra_fields() {
         let dir = tempfile::tempdir().expect("tempdir");
+        let patterns_dir = dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("create patterns dir");
+        let pattern_db_path = patterns_dir.join("db.json");
+        let pattern_db_json = r#"[
+  {
+    "id": "p1",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "ignore previous",
+    "embedding": [1.0, 0.0, 0.0]
+  }
+]"#;
+        std::fs::write(&pattern_db_path, pattern_db_json).expect("write pattern db");
+
+        let checksum = sha256(pattern_db_json.as_bytes()).to_hex();
+        let db_keypair = Keypair::generate();
+        let db_public_key = db_keypair.public_key().to_hex();
+        let db_key_id = derive_spider_sense_key_id(&db_public_key);
+        let db_signature = db_keypair
+            .sign(format!("spider_sense_db:v1:test-v1:{checksum}").as_bytes())
+            .to_hex();
+
+        let manifest_keypair = Keypair::generate();
+        let manifest_public_key = manifest_keypair.public_key().to_hex();
+        let manifest_key_id = derive_spider_sense_key_id(&manifest_public_key);
+
         let manifest_path = dir.path().join("pattern_db.manifest.json");
+        let mut manifest = serde_json::json!({
+          "pattern_db_path": "patterns/db.json",
+          "pattern_db_version": "test-v1",
+          "pattern_db_checksum": checksum,
+          "pattern_db_signature": db_signature,
+          "pattern_db_signature_key_id": db_key_id,
+          "pattern_db_trusted_keys": [
+            {
+              "key_id": db_key_id,
+              "public_key": db_public_key,
+              "status": "active"
+            }
+          ],
+          "manifest_signature_key_id": manifest_key_id,
+          "not_before": "1970-01-01T00:00:00Z",
+          "not_after": "2999-01-01T00:00:00Z",
+          "extra_field": "kept"
+        });
+        let manifest_for_signing: PatternDbManifest =
+            serde_json::from_value(manifest.clone()).expect("deserialize manifest");
+        let manifest_signature = manifest_keypair
+            .sign(&spider_sense_manifest_signing_message(
+                &manifest_for_signing,
+            ))
+            .to_hex();
+        manifest["manifest_signature"] = serde_json::Value::String(manifest_signature);
         std::fs::write(
             &manifest_path,
-            r#"{
-  "pattern_db_path": "patterns/db.json",
-  "pattern_db_version": "s2intel-v1",
-  "pattern_db_checksum": "abc123",
-  "pattern_db_signature": "deadbeef",
-  "manifest_signature": "feedface",
-  "not_before": "2025-01-01T00:00:00Z",
-  "not_after": "2030-01-01T00:00:00Z"
-}"#,
+            serde_json::to_string_pretty(&manifest).expect("manifest json"),
         )
         .expect("write manifest");
 
         let mut cfg = test_cfg();
         cfg.pattern_db_path.clear();
         cfg.pattern_db_manifest_path = Some(manifest_path.to_string_lossy().to_string());
-        cfg.pattern_db_manifest_trust_store_path = Some("manifest-roots.json".to_string());
+        cfg.pattern_db_manifest_trusted_keys = vec![SpiderSenseTrustedKeyConfig {
+            key_id: Some(manifest_key_id),
+            public_key: manifest_public_key,
+            not_before: None,
+            not_after: None,
+            status: Some("active".to_string()),
+        }];
 
         let resolved = resolve_pattern_db_path(&cfg).expect("resolve manifest path");
         assert!(
             resolved.ends_with("patterns/db.json"),
             "resolved path should preserve manifest-relative DB path"
+        );
+    }
+
+    #[test]
+    fn resolve_pattern_db_path_rejects_tampered_signed_manifest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let patterns_dir = dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("create patterns dir");
+        let pattern_db_path = patterns_dir.join("db.json");
+        let pattern_db_json = r#"[
+  {
+    "id": "p1",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "ignore previous",
+    "embedding": [1.0, 0.0, 0.0]
+  }
+]"#;
+        std::fs::write(&pattern_db_path, pattern_db_json).expect("write pattern db");
+
+        let checksum = sha256(pattern_db_json.as_bytes()).to_hex();
+        let db_keypair = Keypair::generate();
+        let db_public_key = db_keypair.public_key().to_hex();
+        let db_key_id = derive_spider_sense_key_id(&db_public_key);
+        let db_signature = db_keypair
+            .sign(format!("spider_sense_db:v1:test-v1:{checksum}").as_bytes())
+            .to_hex();
+
+        let manifest_keypair = Keypair::generate();
+        let manifest_public_key = manifest_keypair.public_key().to_hex();
+        let manifest_key_id = derive_spider_sense_key_id(&manifest_public_key);
+
+        let manifest_path = dir.path().join("pattern_db.manifest.json");
+        let mut manifest = serde_json::json!({
+          "pattern_db_path": "patterns/db.json",
+          "pattern_db_version": "test-v1",
+          "pattern_db_checksum": checksum,
+          "pattern_db_signature": db_signature,
+          "pattern_db_signature_key_id": db_key_id,
+          "pattern_db_trusted_keys": [
+            {
+              "key_id": db_key_id,
+              "public_key": db_public_key,
+              "status": "active"
+            }
+          ],
+          "manifest_signature_key_id": manifest_key_id
+        });
+        let manifest_for_signing: PatternDbManifest =
+            serde_json::from_value(manifest.clone()).expect("deserialize manifest");
+        let manifest_signature = manifest_keypair
+            .sign(&spider_sense_manifest_signing_message(
+                &manifest_for_signing,
+            ))
+            .to_hex();
+        manifest["manifest_signature"] = serde_json::Value::String(manifest_signature);
+        manifest["pattern_db_version"] = serde_json::Value::String("tampered".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).expect("manifest json"),
+        )
+        .expect("write manifest");
+
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path.clear();
+        cfg.pattern_db_manifest_path = Some(manifest_path.to_string_lossy().to_string());
+        cfg.pattern_db_manifest_trusted_keys = vec![SpiderSenseTrustedKeyConfig {
+            key_id: Some(manifest_key_id),
+            public_key: manifest_public_key,
+            not_before: None,
+            not_after: None,
+            status: Some("active".to_string()),
+        }];
+
+        let err = resolve_pattern_db_path(&cfg).expect_err("tampered manifest should fail");
+        assert!(
+            err.contains("manifest signature verification failed"),
+            "expected signature verification failure, got: {err}"
         );
     }
 }
