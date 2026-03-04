@@ -12,7 +12,7 @@
 //! different, but reusing the same fast/deep tiering and the S2Bench
 //! taxonomy (four semantic stages × nine attack types).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::time::Duration;
 
@@ -39,8 +39,7 @@ const DEFAULT_AMBIGUITY_BAND: f64 = 0.10;
 const DEFAULT_TOP_K: usize = 5;
 
 /// Built-in S2Bench v1 pattern database (36 demo entries, 3-dim embeddings).
-const BUILTIN_S2BENCH_V1: &str =
-    include_str!("../../../../../../rulesets/patterns/s2bench-v1.json");
+const BUILTIN_S2BENCH_V1: &str = include_str!("../../../rulesets/patterns/s2bench-v1.json");
 
 /// Policy-level configuration for the Spider-Sense guard.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -212,6 +211,153 @@ impl SpiderSensePolicyConfig {
     /// This is used by policy inheritance `deep_merge` to allow partial child
     /// overrides without dropping required base fields.
     pub fn merge_with(&self, child: &Self) -> Self {
+        self.merge_with_present_fields(child, &BTreeSet::new())
+    }
+
+    /// Merge a child Spider-Sense config over a base config using explicit
+    /// field presence extracted from source policy YAML.
+    pub fn merge_with_present_fields(
+        &self,
+        child: &Self,
+        present_fields: &BTreeSet<String>,
+    ) -> Self {
+        if !present_fields.is_empty() {
+            let has = |name: &str| present_fields.contains(name);
+            return Self {
+                enabled: if has("enabled") {
+                    child.enabled
+                } else {
+                    self.enabled
+                },
+                embedding_api_url: if has("embedding_api_url") {
+                    child.embedding_api_url.clone()
+                } else {
+                    self.embedding_api_url.clone()
+                },
+                embedding_api_key: if has("embedding_api_key") {
+                    child.embedding_api_key.clone()
+                } else {
+                    self.embedding_api_key.clone()
+                },
+                embedding_model: if has("embedding_model") {
+                    child.embedding_model.clone()
+                } else {
+                    self.embedding_model.clone()
+                },
+                similarity_threshold: if has("similarity_threshold") {
+                    child.similarity_threshold
+                } else {
+                    self.similarity_threshold
+                },
+                ambiguity_band: if has("ambiguity_band") {
+                    child.ambiguity_band
+                } else {
+                    self.ambiguity_band
+                },
+                top_k: if has("top_k") {
+                    child.top_k
+                } else {
+                    self.top_k
+                },
+                pattern_db_path: if has("pattern_db_path") {
+                    child.pattern_db_path.clone()
+                } else {
+                    self.pattern_db_path.clone()
+                },
+                pattern_db_version: if has("pattern_db_version") {
+                    child.pattern_db_version.clone()
+                } else {
+                    self.pattern_db_version.clone()
+                },
+                pattern_db_checksum: if has("pattern_db_checksum") {
+                    child.pattern_db_checksum.clone()
+                } else {
+                    self.pattern_db_checksum.clone()
+                },
+                pattern_db_signature: if has("pattern_db_signature") {
+                    child.pattern_db_signature.clone()
+                } else {
+                    self.pattern_db_signature.clone()
+                },
+                pattern_db_signature_key_id: if has("pattern_db_signature_key_id") {
+                    child.pattern_db_signature_key_id.clone()
+                } else {
+                    self.pattern_db_signature_key_id.clone()
+                },
+                pattern_db_public_key: if has("pattern_db_public_key") {
+                    child.pattern_db_public_key.clone()
+                } else {
+                    self.pattern_db_public_key.clone()
+                },
+                pattern_db_trust_store_path: if has("pattern_db_trust_store_path") {
+                    child.pattern_db_trust_store_path.clone()
+                } else {
+                    self.pattern_db_trust_store_path.clone()
+                },
+                pattern_db_trusted_keys: if has("pattern_db_trusted_keys") {
+                    child.pattern_db_trusted_keys.clone()
+                } else {
+                    self.pattern_db_trusted_keys.clone()
+                },
+                pattern_db_manifest_path: if has("pattern_db_manifest_path") {
+                    child.pattern_db_manifest_path.clone()
+                } else {
+                    self.pattern_db_manifest_path.clone()
+                },
+                pattern_db_manifest_trust_store_path: if has("pattern_db_manifest_trust_store_path")
+                {
+                    child.pattern_db_manifest_trust_store_path.clone()
+                } else {
+                    self.pattern_db_manifest_trust_store_path.clone()
+                },
+                pattern_db_manifest_trusted_keys: if has("pattern_db_manifest_trusted_keys") {
+                    child.pattern_db_manifest_trusted_keys.clone()
+                } else {
+                    self.pattern_db_manifest_trusted_keys.clone()
+                },
+                llm_api_url: if has("llm_api_url") {
+                    child.llm_api_url.clone()
+                } else {
+                    self.llm_api_url.clone()
+                },
+                llm_api_key: if has("llm_api_key") {
+                    child.llm_api_key.clone()
+                } else {
+                    self.llm_api_key.clone()
+                },
+                llm_model: if has("llm_model") {
+                    child.llm_model.clone()
+                } else {
+                    self.llm_model.clone()
+                },
+                llm_prompt_template_id: if has("llm_prompt_template_id") {
+                    child.llm_prompt_template_id.clone()
+                } else {
+                    self.llm_prompt_template_id.clone()
+                },
+                llm_prompt_template_version: if has("llm_prompt_template_version") {
+                    child.llm_prompt_template_version.clone()
+                } else {
+                    self.llm_prompt_template_version.clone()
+                },
+                llm_timeout_ms: if has("llm_timeout_ms") {
+                    child.llm_timeout_ms
+                } else {
+                    self.llm_timeout_ms
+                },
+                llm_fail_mode: if has("llm_fail_mode") {
+                    child.llm_fail_mode.clone()
+                } else {
+                    self.llm_fail_mode.clone()
+                },
+                async_config: if has("async") {
+                    child.async_config.clone()
+                } else {
+                    self.async_config.clone()
+                },
+            };
+        }
+
         let defaults = Self::default();
 
         Self {
