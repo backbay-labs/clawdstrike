@@ -240,7 +240,7 @@ class PolicyResolver:
         else:
             ruleset_id = reference
         builtin_names = {
-            "default", "strict", "ai-agent", "ai-agent-posture", "cicd", "permissive",
+            "default", "strict", "ai-agent", "ai-agent-posture", "cicd", "permissive", "spider-sense",
         }
 
         if ruleset_id in builtin_names:

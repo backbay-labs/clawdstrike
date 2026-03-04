@@ -237,6 +237,7 @@ function validateSpiderSense(
     if (!isPlainObject(asyncValue)) {
       errors.push(`${base}.async must be an object`);
     } else {
+      validateAsyncConfig(asyncValue, `${base}.async`, errors);
       validateSpiderSenseRetry(asyncValue.retry, `${base}.async.retry`, errors);
     }
   }

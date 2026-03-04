@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+from pathlib import Path
 from urllib import error as urllib_error
 
 import pytest
@@ -42,6 +43,15 @@ def _test_patterns_as_dicts() -> list[dict]:
 
 def _checksum_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _manifest_tamper_vectors() -> list[dict[str, str]]:
+    repo_root = Path(__file__).resolve().parents[4]
+    vectors_path = repo_root / "fixtures" / "spider-sense" / "manifest_tamper_vectors.json"
+    vectors = json.loads(vectors_path.read_text(encoding="utf-8"))
+    if not isinstance(vectors, list) or not vectors:
+        raise AssertionError("manifest tamper vectors fixture must be a non-empty list")
+    return vectors
 
 
 # -- Cosine Similarity -----------------------------------------------------
@@ -758,17 +768,24 @@ class TestSpiderSenseGuard:
         )
         assert result.allowed is False
 
-        manifest["pattern_db_version"] = "tampered"
-        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        with pytest.raises(ValueError, match="manifest signature verification failed"):
-            SpiderSenseGuard(
-                SpiderSenseConfig(
-                    pattern_db_manifest_path=str(manifest_path),
-                    pattern_db_manifest_trusted_keys=[
-                        {"key_id": root_key_id, "public_key": root_public_key_hex, "status": "active"}
-                    ],
+        def _assert_manifest_tamper_fails(tampered: dict[str, object]) -> None:
+            manifest_path.write_text(json.dumps(tampered), encoding="utf-8")
+            with pytest.raises(ValueError, match="manifest signature verification failed"):
+                SpiderSenseGuard(
+                    SpiderSenseConfig(
+                        pattern_db_manifest_path=str(manifest_path),
+                        pattern_db_manifest_trusted_keys=[
+                            {"key_id": root_key_id, "public_key": root_public_key_hex, "status": "active"}
+                        ],
+                    )
                 )
-            )
+
+        for vector in _manifest_tamper_vectors():
+            field = str(vector.get("field", ""))
+            value = str(vector.get("value", ""))
+            if field not in {"pattern_db_version", "not_before", "not_after"}:
+                raise AssertionError(f"unsupported tamper field in fixture: {field}")
+            _assert_manifest_tamper_fails({**manifest, field: value})
 
     def test_deep_path_deny_on_ambiguous(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class _FakeResponse:

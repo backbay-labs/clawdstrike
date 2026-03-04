@@ -2746,7 +2746,7 @@ func spiderSenseVerifyPatternManifestSignature(
 
 func spiderSenseManifestSigningMessage(manifest spiderSensePatternManifest) []byte {
 	return []byte(fmt.Sprintf(
-		"spider_sense_manifest:v1:%s:%s:%s:%s:%s:%s:%s:%s",
+		"spider_sense_manifest:v1:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s",
 		strings.TrimSpace(manifest.PatternDBPath),
 		strings.TrimSpace(manifest.PatternDBVersion),
 		normalizeHexValue(manifest.PatternDBChecksum),
@@ -2755,6 +2755,8 @@ func spiderSenseManifestSigningMessage(manifest spiderSensePatternManifest) []by
 		normalizeHexValue(manifest.PatternDBPublicKey),
 		strings.TrimSpace(manifest.PatternDBTrustStore),
 		spiderSenseTrustedKeysDigest(manifest.PatternDBTrustedKeys),
+		strings.TrimSpace(manifest.NotBefore),
+		strings.TrimSpace(manifest.NotAfter),
 	))
 }
 

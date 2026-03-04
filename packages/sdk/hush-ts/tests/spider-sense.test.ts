@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { SpiderSenseDetector, type PatternEntry } from "../src/spider-sense";
 import { SpiderSenseGuard } from "../src/guards/spider-sense";
@@ -12,6 +14,19 @@ import { generateKeypair, signMessage } from "../src/crypto/sign";
 
 // biome-ignore lint/suspicious/noExplicitAny: vitest global from setup.ts
 const wasmAvailable = (globalThis as any).__WASM_SPIDER_SENSE_AVAILABLE__ as boolean;
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, "../../../../");
+
+interface SpiderSenseManifestTamperVector {
+  name: string;
+  field: "pattern_db_version" | "not_before" | "not_after";
+  value: string;
+}
+
+function loadManifestTamperVectors(): SpiderSenseManifestTamperVector[] {
+  const vectorsPath = path.join(REPO_ROOT, "fixtures/spider-sense/manifest_tamper_vectors.json");
+  return JSON.parse(fs.readFileSync(vectorsPath, "utf8")) as SpiderSenseManifestTamperVector[];
+}
 
 const testPatterns: PatternEntry[] = [
   {
@@ -598,6 +613,8 @@ describe("spider-sense guard", () => {
       pattern_db_signature_key_id: dbKeyId,
       pattern_db_trust_store_path: path.basename(trustStorePath),
       manifest_signature_key_id: rootKeyId,
+      not_before: "",
+      not_after: "",
     };
     const trustedDigest = createHash("sha256").update("").digest("hex");
     const manifestMessage = new TextEncoder().encode(
@@ -611,6 +628,8 @@ describe("spider-sense guard", () => {
         "",
         manifest.pattern_db_trust_store_path,
         trustedDigest,
+        manifest.not_before,
+        manifest.not_after,
       ].join(":"),
     );
     const manifestSignature = await signMessage(manifestMessage, rootKeypair.privateKey);
@@ -639,27 +658,35 @@ describe("spider-sense guard", () => {
     );
     expect(result.allowed).toBe(false);
 
-    await writeFile(
-      manifestPath,
-      JSON.stringify({
+    const expectManifestTamperFailure = async (tampered: Record<string, unknown>): Promise<void> => {
+      await writeFile(
+        manifestPath,
+        JSON.stringify({
+          ...tampered,
+          manifest_signature: toHex(manifestSignature),
+        }),
+        "utf8",
+      );
+      await expect(
+        new SpiderSenseGuard({
+          patternDbManifestPath: manifestPath,
+          patternDbManifestTrustedKeys: [
+            {
+              key_id: rootKeyId,
+              public_key: rootPublicKeyHex,
+              status: "active",
+            },
+          ],
+        }).check(GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] }), ctx),
+      ).rejects.toThrow(/manifest signature verification failed/i);
+    };
+
+    for (const vector of loadManifestTamperVectors()) {
+      await expectManifestTamperFailure({
         ...manifest,
-        pattern_db_version: "tampered",
-        manifest_signature: toHex(manifestSignature),
-      }),
-      "utf8",
-    );
-    await expect(
-      new SpiderSenseGuard({
-        patternDbManifestPath: manifestPath,
-        patternDbManifestTrustedKeys: [
-          {
-            key_id: rootKeyId,
-            public_key: rootPublicKeyHex,
-            status: "active",
-          },
-        ],
-      }).check(GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] }), ctx),
-    ).rejects.toThrow(/manifest signature verification failed/i);
+        [vector.field]: vector.value,
+      });
+    }
     await rm(dir, { recursive: true, force: true });
   });
 

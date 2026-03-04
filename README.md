@@ -748,6 +748,8 @@ Prompt watermarking embeds signed provenance markers for attribution and forensi
 
 **Spider-Sense** <sup>β</sup> adapts the hierarchical screening pattern from [Yu et al. (2026)](https://arxiv.org/abs/2602.05386) as a tool-boundary guard. Fast-path cosine similarity against an attack pattern database resolves known threats; ambiguous inputs optionally escalate to an external LLM for deeper analysis. Test coverage uses the paper's S2Bench taxonomy (4 lifecycle stages × 9 attack types). Note: the original paper proposes agent-intrinsic risk sensing — our adaptation applies the screening hierarchy as middleware, not as an intrinsic agent capability. Feature-gated: `--features clawdstrike-spider-sense`.
 
+Operator and policy details (provider support, retries/backoff, signed DB manifests, trust stores, deep-path templates, metrics, and conformance vectors): [`docs/src/reference/guards/spider-sense.md`](docs/src/reference/guards/spider-sense.md).
+
 **WASM runtime:** Custom guards in sandboxed WebAssembly with declared capability sets and resource limits.
 
 </td>

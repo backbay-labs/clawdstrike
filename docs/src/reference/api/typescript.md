@@ -20,6 +20,7 @@ What it provides today:
 - RFC 8785 canonical JSON: `canonicalize`, `canonicalHash`
 - Merkle trees + receipt verification (`Receipt`, `SignedReceipt`)
 - Guard primitives: `GuardAction`, `GuardContext`, plus built-in guards (ForbiddenPath, EgressAllowlist, SecretLeak, …)
+- Spider-Sense guard + detector APIs with provider embeddings, signed pattern DB integrity, and optional deep-path escalation
 - Prompt-security utilities:
   - `JailbreakDetector`
   - `OutputSanitizer` + `SanitizationStream`

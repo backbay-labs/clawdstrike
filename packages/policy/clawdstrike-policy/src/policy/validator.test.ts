@@ -90,6 +90,30 @@ describe("policy validator posture/version gating", () => {
     expect(lint.errors).toEqual([]);
   });
 
+  it("validates spider_sense async cache/circuit fields", () => {
+    const lint = validatePolicy({
+      version: "1.3.0",
+      guards: {
+        spider_sense: {
+          async: {
+            cache: {
+              ttl_seconds: 0,
+            },
+            circuit_breaker: {
+              failure_threshold: 0,
+            },
+          },
+        },
+      },
+    });
+
+    expect(lint.valid).toBe(false);
+    expect(lint.errors).toContain("guards.spider_sense.async.cache.ttl_seconds must be >= 1");
+    expect(lint.errors).toContain(
+      "guards.spider_sense.async.circuit_breaker.failure_threshold must be >= 1",
+    );
+  });
+
   it("warns when 1.3 fields are used in v1.2.0 spider_sense", () => {
     const lint = validatePolicy({
       version: "1.2.0",

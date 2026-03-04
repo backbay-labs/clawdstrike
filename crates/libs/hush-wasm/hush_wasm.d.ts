@@ -39,6 +39,16 @@ export class WasmPolicyLab {
     constructor(policy_yaml: string);
 }
 
+export class WasmSpiderSenseDetector {
+    free(): void;
+    [Symbol.dispose](): void;
+    expected_dim(): number | undefined;
+    load_patterns(patterns_json: string): void;
+    constructor(config_json?: string | null);
+    pattern_count(): number;
+    screen(embedding_json: string): string;
+}
+
 export function canonicalize_json(json_str: string): string;
 
 /**

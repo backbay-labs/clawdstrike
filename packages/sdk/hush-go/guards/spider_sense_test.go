@@ -21,6 +21,29 @@ import (
 func ptrF64(v float64) *float64 { return &v }
 func ptrInt(v int) *int         { return &v }
 
+type spiderSenseManifestTamperVector struct {
+	Name  string `json:"name"`
+	Field string `json:"field"`
+	Value string `json:"value"`
+}
+
+func loadSpiderSenseManifestTamperVectors(t *testing.T) []spiderSenseManifestTamperVector {
+	t.Helper()
+	path := filepath.Clean(filepath.Join("..", "..", "..", "..", "fixtures", "spider-sense", "manifest_tamper_vectors.json"))
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read manifest tamper vectors: %v", err)
+	}
+	var vectors []spiderSenseManifestTamperVector
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatalf("decode manifest tamper vectors: %v", err)
+	}
+	if len(vectors) == 0 {
+		t.Fatal("manifest tamper vectors must be non-empty")
+	}
+	return vectors
+}
+
 // --- CosineSimilarityF32 ---
 
 func TestCosineSimilarityF32(t *testing.T) {
@@ -967,21 +990,39 @@ func TestSpiderSenseSignedPatternManifest(t *testing.T) {
 		t.Fatal("expected deny against manifest-validated pattern DB")
 	}
 
-	tampered := manifest
-	tampered.PatternDBVersion = "tampered"
-	tamperedRaw, err := json.Marshal(tampered)
-	if err != nil {
-		t.Fatalf("marshal tampered manifest: %v", err)
+	assertManifestTamperFails := func(tampered spiderSensePatternManifest) {
+		tamperedRaw, err := json.Marshal(tampered)
+		if err != nil {
+			t.Fatalf("marshal tampered manifest: %v", err)
+		}
+		if err := os.WriteFile(manifestPath, tamperedRaw, 0o644); err != nil {
+			t.Fatalf("write tampered manifest: %v", err)
+		}
+		_, err = NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			PatternDBManifestPath:        manifestPath,
+			PatternDBManifestTrustedKeys: []policy.SpiderSenseTrustedKeyConfig{{KeyID: rootKeyID, PublicKey: rootPublicKeyHex, Status: "active"}},
+		})
+		if err == nil {
+			t.Fatal("expected manifest signature verification failure after tamper")
+		}
 	}
-	if err := os.WriteFile(manifestPath, tamperedRaw, 0o644); err != nil {
-		t.Fatalf("write tampered manifest: %v", err)
-	}
-	_, err = NewSpiderSenseGuard(&policy.SpiderSenseConfig{
-		PatternDBManifestPath:        manifestPath,
-		PatternDBManifestTrustedKeys: []policy.SpiderSenseTrustedKeyConfig{{KeyID: rootKeyID, PublicKey: rootPublicKeyHex, Status: "active"}},
-	})
-	if err == nil {
-		t.Fatal("expected manifest signature verification failure after tamper")
+
+	for _, vector := range loadSpiderSenseManifestTamperVectors(t) {
+		vector := vector
+		t.Run(vector.Name, func(t *testing.T) {
+			tampered := manifest
+			switch vector.Field {
+			case "pattern_db_version":
+				tampered.PatternDBVersion = vector.Value
+			case "not_before":
+				tampered.NotBefore = vector.Value
+			case "not_after":
+				tampered.NotAfter = vector.Value
+			default:
+				t.Fatalf("unsupported tamper field %q", vector.Field)
+			}
+			assertManifestTamperFails(tampered)
+		})
 	}
 }
 

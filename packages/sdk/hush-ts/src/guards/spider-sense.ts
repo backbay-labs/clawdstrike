@@ -789,7 +789,7 @@ function normalizeTrustedKey(entry: SpiderSenseTrustedKeyConfig): SpiderSenseTru
   }
 
   const statusRaw = (entry.status ?? "").trim().toLowerCase();
-  let status: SpiderSenseTrustedKeyStatus = "active";
+  let status: SpiderSenseTrustedKeyStatus;
   if (statusRaw === "" || statusRaw === "active") {
     status = "active";
   } else if (statusRaw === "deprecated") {
@@ -1011,6 +1011,8 @@ function manifestSigningMessage(manifest: SpiderSensePatternManifest): Uint8Arra
     normalizeHex(String(manifest.pattern_db_public_key ?? "")),
     String(manifest.pattern_db_trust_store_path ?? "").trim(),
     trustedKeysDigest(Array.isArray(manifest.pattern_db_trusted_keys) ? manifest.pattern_db_trusted_keys : []),
+    String(manifest.not_before ?? "").trim(),
+    String(manifest.not_after ?? "").trim(),
   ].join(":");
   return new TextEncoder().encode(payload);
 }

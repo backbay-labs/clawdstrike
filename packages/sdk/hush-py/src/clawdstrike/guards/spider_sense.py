@@ -334,7 +334,9 @@ def _manifest_signing_message(manifest: dict[str, Any]) -> bytes:
         f"{_normalize_hex(str(manifest.get('pattern_db_signature_key_id', '')))}:"
         f"{_normalize_hex(str(manifest.get('pattern_db_public_key', '')))}:"
         f"{str(manifest.get('pattern_db_trust_store_path', '')).strip()}:"
-        f"{_trusted_keys_digest(manifest.get('pattern_db_trusted_keys', []) if isinstance(manifest.get('pattern_db_trusted_keys'), list) else [])}"
+        f"{_trusted_keys_digest(manifest.get('pattern_db_trusted_keys', []) if isinstance(manifest.get('pattern_db_trusted_keys'), list) else [])}:"
+        f"{str(manifest.get('not_before', '')).strip()}:"
+        f"{str(manifest.get('not_after', '')).strip()}"
     )
     return payload.encode("utf-8")
 

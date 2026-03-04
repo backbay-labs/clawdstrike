@@ -127,6 +127,17 @@ extends: clawdstrike:default
         assert policy.name == "CustomDefault"
         assert policy.guards.forbidden_path is not None
 
+    def test_extends_builtin_spider_sense(self) -> None:
+        yaml_str = """
+version: "1.3.0"
+name: CustomSpiderSense
+extends: spider-sense
+"""
+        policy = Policy.from_yaml_with_extends(yaml_str)
+        assert policy.name == "CustomSpiderSense"
+        assert policy.guards.spider_sense is not None
+        assert policy.guards.spider_sense.pattern_db_path == "builtin:s2bench-v1"
+
     def test_extends_unknown_raises(self) -> None:
         yaml_str = """
 version: "1.1.0"

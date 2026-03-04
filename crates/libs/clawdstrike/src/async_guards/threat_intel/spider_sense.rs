@@ -58,10 +58,20 @@ pub struct SpiderSensePolicyConfig {
     /// Default: 0.10
     #[serde(default = "default_ambiguity_band")]
     pub ambiguity_band: f64,
+    /// Number of nearest-neighbor matches returned from the pattern DB.
+    /// Default: 5
+    #[serde(default = "default_top_k")]
+    pub top_k: usize,
 
     /// Path to the external JSON pattern database file, or `builtin:s2bench-v1`
     /// to use the embedded demo database.
     pub pattern_db_path: String,
+    /// Optional version label for the external pattern DB (metadata only).
+    #[serde(default)]
+    pub pattern_db_version: Option<String>,
+    /// Optional SHA-256 checksum for the external pattern DB (metadata only).
+    #[serde(default)]
+    pub pattern_db_checksum: Option<String>,
 
     /// Optional LLM API URL for the deep reasoning path.
     #[serde(default)]
@@ -86,6 +96,10 @@ fn default_similarity_threshold() -> f64 {
 
 fn default_ambiguity_band() -> f64 {
     DEFAULT_AMBIGUITY_BAND
+}
+
+fn default_top_k() -> usize {
+    DEFAULT_TOP_K
 }
 
 // ── Guard Implementation ────────────────────────────────────────────────
@@ -516,7 +530,7 @@ impl AsyncGuard for SpiderSenseGuard {
         }
 
         // 3. Search pattern DB.
-        let matches = self.pattern_db.search(&query_embedding, DEFAULT_TOP_K);
+        let matches = self.pattern_db.search(&query_embedding, self.cfg.top_k);
         let top_score = matches.first().map(|m| m.score).unwrap_or(0.0);
 
         // 4. Decision based on score bands.
@@ -643,6 +657,9 @@ fn validate_policy_config(cfg: &SpiderSensePolicyConfig) -> Result<(f64, f64), S
             cfg.ambiguity_band
         ));
     }
+    if cfg.top_k == 0 {
+        return Err("top_k must be >= 1".to_string());
+    }
 
     let upper_bound = cfg.similarity_threshold + cfg.ambiguity_band;
     let lower_bound = cfg.similarity_threshold - cfg.ambiguity_band;
@@ -705,7 +722,10 @@ mod tests {
             embedding_model: "test-model".to_string(),
             similarity_threshold: 0.85,
             ambiguity_band: 0.10,
+            top_k: 5,
             pattern_db_path: "/tmp/patterns.json".to_string(),
+            pattern_db_version: None,
+            pattern_db_checksum: None,
             llm_api_url: None,
             llm_api_key: None,
             llm_model: None,

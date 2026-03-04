@@ -8,6 +8,8 @@ Native Rust API for policy evaluation and receipt signing.
 - `hush-core`: hashing/signing, Merkle trees, and `SignedReceipt`
 - `hush-proxy`: domain matching + DNS/SNI parsing utilities
 
+Spider-Sense (`guards.spider_sense`) is available in `full` builds and is also exposed as the built-in `clawdstrike:spider-sense` ruleset.
+
 ## Plugin scaffold (custom guards)
 
 `clawdstrike::plugins` provides manifest parsing and loader planning for custom guard plugins:
