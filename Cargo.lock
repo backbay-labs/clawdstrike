@@ -1121,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "auditd-bridge"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1406,7 +1406,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-runtime"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-nats",
  "axum",
@@ -1662,7 +1662,7 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "clawdstrike"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -1704,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-control-api"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-nats",
  "axum",
@@ -1735,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-guard-sdk"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "clawdstrike-guard-sdk-macros",
  "serde",
@@ -1744,7 +1744,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-guard-sdk-macros"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1753,7 +1753,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-ocsf"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "proptest",
@@ -1766,7 +1766,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-policy-event"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1784,7 +1784,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-registry"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2365,7 +2365,7 @@ dependencies = [
 
 [[package]]
 name = "darwin-telemetry-bridge"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2588,7 +2588,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "eas-anchor"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "alloy",
  "anyhow",
@@ -3486,7 +3486,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hubble-bridge"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3520,7 +3520,7 @@ dependencies = [
 
 [[package]]
 name = "hunt-correlate"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-nats",
  "chrono",
@@ -3543,7 +3543,7 @@ dependencies = [
 
 [[package]]
 name = "hunt-query"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-nats",
  "chrono",
@@ -3566,7 +3566,7 @@ dependencies = [
 
 [[package]]
 name = "hunt-scan"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "clawdstrike",
@@ -3591,7 +3591,7 @@ dependencies = [
 
 [[package]]
 name = "hush-certification"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3609,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "hush-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3650,7 +3650,7 @@ dependencies = [
 
 [[package]]
 name = "hush-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "criterion",
@@ -3671,7 +3671,7 @@ dependencies = [
 
 [[package]]
 name = "hush-ffi"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "base64 0.22.1",
  "clawdstrike",
@@ -3683,7 +3683,7 @@ dependencies = [
 
 [[package]]
 name = "hush-multi-agent"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "hush-core",
@@ -3698,7 +3698,7 @@ dependencies = [
 
 [[package]]
 name = "hush-native"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "base64 0.22.1",
  "clawdstrike",
@@ -3713,7 +3713,7 @@ dependencies = [
 
 [[package]]
 name = "hush-proxy"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "globset",
  "proptest",
@@ -3723,7 +3723,7 @@ dependencies = [
 
 [[package]]
 name = "hush-spine"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3746,7 +3746,7 @@ dependencies = [
 
 [[package]]
 name = "hush-wasm"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "clawdstrike",
  "clawdstrike-policy-event",
@@ -3765,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "hushd"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -4303,7 +4303,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-audit-bridge"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -6350,7 +6350,7 @@ dependencies = [
 
 [[package]]
 name = "sdr-integration-tests"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-nats",
  "futures",
@@ -6821,7 +6821,7 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "spine-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -7116,7 +7116,7 @@ dependencies = [
 
 [[package]]
 name = "tetragon-bridge"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-nats",

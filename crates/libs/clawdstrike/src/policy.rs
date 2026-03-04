@@ -2713,7 +2713,7 @@ guards:
 
     #[cfg(feature = "full")]
     #[test]
-    fn test_spider_sense_deep_merge_without_presence_honors_child_default_scalar_overrides() {
+    fn test_spider_sense_deep_merge_without_presence_treats_child_as_explicit_replacement() {
         let base = GuardConfigs {
             spider_sense: Some(
                 serde_json::from_value(serde_json::json!({
@@ -2749,8 +2749,8 @@ guards:
         assert_eq!(ss.similarity_threshold, 0.85);
         assert_eq!(ss.ambiguity_band, 0.10);
         assert_eq!(ss.top_k, 5);
-        assert_eq!(ss.embedding_api_key, "base-key");
-        assert_eq!(ss.pattern_db_path, "builtin:s2bench-v1");
+        assert_eq!(ss.embedding_api_key, "");
+        assert_eq!(ss.pattern_db_path, "");
     }
 
     #[cfg(feature = "full")]
