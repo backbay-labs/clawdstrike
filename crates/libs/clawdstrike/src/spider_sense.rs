@@ -268,6 +268,27 @@ impl SpiderSenseDetector {
     ///
     /// This is a pure, sync operation with no I/O.
     pub fn screen(&self, embedding: &[f32]) -> ScreeningResult {
+        if let Some(expected_dim) = self.pattern_db.expected_dim() {
+            if embedding.len() != expected_dim {
+                return ScreeningResult {
+                    verdict: ScreeningVerdict::Deny,
+                    top_score: 0.0,
+                    threshold: self.threshold,
+                    ambiguity_band: self.ambiguity_band,
+                    top_matches: vec![],
+                };
+            }
+        }
+        if embedding.iter().any(|v| !v.is_finite()) {
+            return ScreeningResult {
+                verdict: ScreeningVerdict::Deny,
+                top_score: 0.0,
+                threshold: self.threshold,
+                ambiguity_band: self.ambiguity_band,
+                top_matches: vec![],
+            };
+        }
+
         let matches = self.pattern_db.search(embedding, self.top_k);
         let top_score = matches.first().map(|m| m.score).unwrap_or(0.0);
 
@@ -482,6 +503,28 @@ mod tests {
         // Partially similar → score ~0.577, within band [0.40, 0.60]
         let result = detector.screen(&[0.577, 0.577, 0.577]);
         assert_eq!(result.verdict, ScreeningVerdict::Ambiguous);
+    }
+
+    #[test]
+    fn detector_screen_dimension_mismatch_denies() {
+        let db = test_pattern_db();
+        let config = SpiderSenseDetectorConfig::default();
+        let detector = SpiderSenseDetector::new(db, &config).unwrap();
+        let result = detector.screen(&[1.0, 0.0]);
+        assert_eq!(result.verdict, ScreeningVerdict::Deny);
+        assert_eq!(result.top_score, 0.0);
+        assert!(result.top_matches.is_empty());
+    }
+
+    #[test]
+    fn detector_screen_non_finite_embedding_denies() {
+        let db = test_pattern_db();
+        let config = SpiderSenseDetectorConfig::default();
+        let detector = SpiderSenseDetector::new(db, &config).unwrap();
+        let result = detector.screen(&[f32::NAN, 0.0, 0.0]);
+        assert_eq!(result.verdict, ScreeningVerdict::Deny);
+        assert_eq!(result.top_score, 0.0);
+        assert!(result.top_matches.is_empty());
     }
 
     #[test]
