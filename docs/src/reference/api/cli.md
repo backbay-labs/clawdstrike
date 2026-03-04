@@ -113,8 +113,8 @@ clawdstrike run --policy <POLICY_REF|FILE> -- <CMD> <ARGS...>
 Options:
 
 - `--policy <ref>` — policy reference (ruleset id or YAML file path; required)
-- `--events-out <path>` — output path for PolicyEvent JSONL (default: `hush.events.jsonl`)
-- `--receipt-out <path>` — output path for the signed receipt (default: `hush.run.receipt.json`)
+- `--events-out <path>` — output path for PolicyEvent JSONL (default when omitted: `clawdstrike.events.<session-id>.jsonl`)
+- `--receipt-out <path>` — output path for the signed receipt (default when omitted: `clawdstrike.run.receipt.<session-id>.json`)
 - `--signing-key <path>` — Ed25519 signing key path (default: `hush.key`; generated if missing)
 - `--no-proxy` — disable the local CONNECT proxy (egress enforcement becomes audit-only)
 - `--proxy-port <port>` — proxy listen port (0 = random free port)

@@ -170,13 +170,13 @@ enum Commands {
         #[arg(long)]
         policy: String,
 
-        /// Output path for PolicyEvent JSONL
-        #[arg(long, default_value = "clawdstrike.events.jsonl")]
-        events_out: String,
+        /// Output path for PolicyEvent JSONL (default: session-scoped filename)
+        #[arg(long)]
+        events_out: Option<String>,
 
-        /// Output path for the signed receipt
-        #[arg(long, default_value = "clawdstrike.run.receipt.json")]
-        receipt_out: String,
+        /// Output path for the signed receipt (default: session-scoped filename)
+        #[arg(long)]
+        receipt_out: Option<String>,
 
         /// Signing key path (hex-encoded Ed25519 seed). If missing, a new keypair is generated.
         #[arg(long, default_value = "clawdstrike.key")]
@@ -2733,7 +2733,11 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
                 cmd.arg("--config").arg(&config);
             }
 
-            let _ = writeln!(stdout, "Starting clawdstrike daemon on {}:{}...", bind, port);
+            let _ = writeln!(
+                stdout,
+                "Starting clawdstrike daemon on {}:{}...",
+                bind, port
+            );
 
             match cmd.spawn() {
                 Ok(_) => {

@@ -61,8 +61,8 @@ pub async fn cmd_policy_observe(
     let code = hush_run::cmd_run(
         hush_run::RunArgs {
             policy: args.policy,
-            events_out: args.out.to_string_lossy().to_string(),
-            receipt_out: "clawdstrike.observe.receipt.json".to_string(),
+            events_out: Some(args.out.to_string_lossy().to_string()),
+            receipt_out: Some("clawdstrike.observe.receipt.json".to_string()),
             signing_key: "clawdstrike.key".to_string(),
             no_proxy: false,
             proxy_port: 0,

@@ -33,8 +33,6 @@ const PROXY_HEADER_READ_TIMEOUT_DEFAULT: Duration = Duration::from_secs(5);
 const PROXY_TLS_SNI_TIMEOUT: Duration = Duration::from_secs(3);
 const PROXY_DNS_RESOLVE_TIMEOUT_DEFAULT: Duration = Duration::from_secs(2);
 const HUSHD_FORWARD_TIMEOUT_DEFAULT: Duration = Duration::from_secs(3);
-pub const DEFAULT_EVENTS_OUT: &str = "clawdstrike.events.jsonl";
-pub const DEFAULT_RECEIPT_OUT: &str = "clawdstrike.run.receipt.json";
 
 static TEST_RESOLVER_CALLS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
@@ -221,8 +219,8 @@ impl EventEmitter {
 #[derive(Clone, Debug)]
 pub struct RunArgs {
     pub policy: String,
-    pub events_out: String,
-    pub receipt_out: String,
+    pub events_out: Option<String>,
+    pub receipt_out: Option<String>,
     pub signing_key: String,
     pub no_proxy: bool,
     pub proxy_port: u16,
@@ -284,6 +282,8 @@ pub async fn cmd_run(
     let engine = Arc::new(engine);
 
     let session_id = Uuid::new_v4().to_string();
+    let (events_out, receipt_out) =
+        default_run_artifact_paths(&session_id, events_out.as_deref(), receipt_out.as_deref());
 
     let base_context = GuardContext::new()
         .with_session_id(&session_id)
@@ -566,12 +566,6 @@ pub async fn cmd_run(
     let _ = writeln!(stdout, "Session: {}", session_id);
     let _ = writeln!(stdout, "Events: {}", events_abs.display());
     let _ = writeln!(stdout, "Receipt: {}", receipt_abs.display());
-    if events_out == DEFAULT_EVENTS_OUT || receipt_out == DEFAULT_RECEIPT_OUT {
-        let _ = writeln!(
-            stdout,
-            "Note: default artifact paths are reused each run. Use --events-out/--receipt-out to keep per-run files."
-        );
-    }
     if let Some(url) = env_proxy_url.as_ref() {
         let _ = writeln!(stdout, "Proxy: {}", url);
     } else {
@@ -596,6 +590,20 @@ fn child_exit_code(status: std::process::ExitStatus) -> i32 {
     }
     // On Unix, a signal-terminated process yields None. Use a conventional non-zero value.
     1
+}
+
+fn default_run_artifact_paths(
+    session_id: &str,
+    events_out: Option<&str>,
+    receipt_out: Option<&str>,
+) -> (String, String) {
+    let events = events_out
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| format!("clawdstrike.events.{session_id}.jsonl"));
+    let receipt = receipt_out
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| format!("clawdstrike.run.receipt.{session_id}.json"));
+    (events, receipt)
 }
 
 fn absolutize_output_path(path: &Path) -> PathBuf {
@@ -1690,6 +1698,25 @@ guards:
         assert!(abs.ends_with(rel));
     }
 
+    #[test]
+    fn default_run_artifact_paths_use_session_id_when_unspecified() {
+        let session_id = "sess-123";
+        let (events, receipt) = default_run_artifact_paths(session_id, None, None);
+        assert_eq!(events, "clawdstrike.events.sess-123.jsonl");
+        assert_eq!(receipt, "clawdstrike.run.receipt.sess-123.json");
+    }
+
+    #[test]
+    fn default_run_artifact_paths_preserve_explicit_values() {
+        let (events, receipt) = default_run_artifact_paths(
+            "sess-123",
+            Some("/tmp/custom.events.jsonl"),
+            Some("/tmp/custom.receipt.json"),
+        );
+        assert_eq!(events, "/tmp/custom.events.jsonl");
+        assert_eq!(receipt, "/tmp/custom.receipt.json");
+    }
+
     #[tokio::test]
     async fn cmd_run_spawn_failure_does_not_hang_with_proxy_enabled() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -1702,8 +1729,8 @@ guards:
 
         let args = RunArgs {
             policy: policy_path.display().to_string(),
-            events_out: temp.path().join("events.jsonl").display().to_string(),
-            receipt_out: temp.path().join("receipt.json").display().to_string(),
+            events_out: Some(temp.path().join("events.jsonl").display().to_string()),
+            receipt_out: Some(temp.path().join("receipt.json").display().to_string()),
             signing_key: temp.path().join("clawdstrike.key").display().to_string(),
             no_proxy: false,
             proxy_port: 0,
