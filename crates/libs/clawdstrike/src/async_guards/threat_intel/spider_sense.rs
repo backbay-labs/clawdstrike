@@ -175,7 +175,8 @@ fn default_top_k() -> usize {
 impl Default for SpiderSensePolicyConfig {
     fn default() -> Self {
         Self {
-            enabled: default_enabled(),
+            // Programmatic defaults should be inert until required fields are set.
+            enabled: false,
             embedding_api_url: String::new(),
             embedding_api_key: String::new(),
             embedding_model: String::new(),
@@ -738,6 +739,7 @@ struct LlmVerdict {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PatternDbManifest {
     #[serde(default)]
     pattern_db_path: Option<String>,
@@ -1842,6 +1844,24 @@ mod tests {
     }
 
     #[test]
+    fn spider_sense_policy_default_is_disabled() {
+        let cfg = SpiderSensePolicyConfig::default();
+        assert!(!cfg.enabled, "programmatic default should be disabled");
+    }
+
+    #[test]
+    fn spider_sense_policy_deserialize_missing_enabled_defaults_to_true() {
+        let cfg: SpiderSensePolicyConfig = serde_json::from_value(serde_json::json!({
+            "embedding_api_url": "https://api.example.test/v1/embeddings",
+            "embedding_api_key": "test-key",
+            "embedding_model": "test-model",
+            "pattern_db_path": "builtin:s2bench-v1"
+        }))
+        .expect("policy config should deserialize");
+        assert!(cfg.enabled, "serialized config should default enabled=true");
+    }
+
+    #[test]
     fn pattern_db_parse_valid() {
         let json = r#"[
             {
@@ -2021,7 +2041,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_pattern_db_path_accepts_signed_manifest_with_extra_fields() {
+    fn resolve_pattern_db_path_accepts_signed_manifest() {
         let dir = tempfile::tempdir().expect("tempdir");
         let patterns_dir = dir.path().join("patterns");
         std::fs::create_dir_all(&patterns_dir).expect("create patterns dir");
@@ -2065,8 +2085,7 @@ mod tests {
           ],
           "manifest_signature_key_id": manifest_key_id,
           "not_before": "1970-01-01T00:00:00Z",
-          "not_after": "2999-01-01T00:00:00Z",
-          "extra_field": "kept"
+          "not_after": "2999-01-01T00:00:00Z"
         });
         let manifest_for_signing: PatternDbManifest =
             serde_json::from_value(manifest.clone()).expect("deserialize manifest");
@@ -2097,6 +2116,87 @@ mod tests {
         assert!(
             resolved.ends_with("patterns/db.json"),
             "resolved path should preserve manifest-relative DB path"
+        );
+    }
+
+    #[test]
+    fn resolve_pattern_db_path_rejects_signed_manifest_with_unknown_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let patterns_dir = dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("create patterns dir");
+        let pattern_db_path = patterns_dir.join("db.json");
+        let pattern_db_json = r#"[
+  {
+    "id": "p1",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "ignore previous",
+    "embedding": [1.0, 0.0, 0.0]
+  }
+]"#;
+        std::fs::write(&pattern_db_path, pattern_db_json).expect("write pattern db");
+
+        let checksum = sha256(pattern_db_json.as_bytes()).to_hex();
+        let db_keypair = Keypair::generate();
+        let db_public_key = db_keypair.public_key().to_hex();
+        let db_key_id = derive_spider_sense_key_id(&db_public_key);
+        let db_signature = db_keypair
+            .sign(format!("spider_sense_db:v1:test-v1:{checksum}").as_bytes())
+            .to_hex();
+
+        let manifest_keypair = Keypair::generate();
+        let manifest_public_key = manifest_keypair.public_key().to_hex();
+        let manifest_key_id = derive_spider_sense_key_id(&manifest_public_key);
+
+        let manifest_path = dir.path().join("pattern_db.manifest.json");
+        let mut manifest = serde_json::json!({
+          "pattern_db_path": "patterns/db.json",
+          "pattern_db_version": "test-v1",
+          "pattern_db_checksum": checksum,
+          "pattern_db_signature": db_signature,
+          "pattern_db_signature_key_id": db_key_id,
+          "pattern_db_trusted_keys": [
+            {
+              "key_id": db_key_id,
+              "public_key": db_public_key,
+              "status": "active"
+            }
+          ],
+          "manifest_signature_key_id": manifest_key_id,
+          "not_before": "1970-01-01T00:00:00Z",
+          "not_after": "2999-01-01T00:00:00Z"
+        });
+        let manifest_for_signing: PatternDbManifest =
+            serde_json::from_value(manifest.clone()).expect("deserialize manifest");
+        let manifest_signature = manifest_keypair
+            .sign(&spider_sense_manifest_signing_message(
+                &manifest_for_signing,
+            ))
+            .to_hex();
+        manifest["manifest_signature"] = serde_json::Value::String(manifest_signature);
+        manifest["extra_field"] = serde_json::Value::String("unexpected".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).expect("manifest json"),
+        )
+        .expect("write manifest");
+
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path.clear();
+        cfg.pattern_db_manifest_path = Some(manifest_path.to_string_lossy().to_string());
+        cfg.pattern_db_manifest_trusted_keys = vec![SpiderSenseTrustedKeyConfig {
+            key_id: Some(manifest_key_id),
+            public_key: manifest_public_key,
+            not_before: None,
+            not_after: None,
+            status: Some("active".to_string()),
+        }];
+
+        let err =
+            resolve_pattern_db_path(&cfg).expect_err("manifest with unknown fields must fail");
+        assert!(
+            err.contains("unknown field"),
+            "expected unknown-field parse error, got: {err}"
         );
     }
 

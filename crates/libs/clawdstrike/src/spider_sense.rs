@@ -485,6 +485,27 @@ mod tests {
     }
 
     #[test]
+    fn detector_screen_exact_lower_bound_is_allow() {
+        let db = PatternDb::parse_json(
+            r#"[
+                { "id": "p1", "category": "a", "stage": "s", "label": "x", "embedding": [1.0, 0.0, 0.0] }
+            ]"#,
+        )
+        .unwrap();
+        let config = SpiderSenseDetectorConfig {
+            similarity_threshold: 0.10,
+            ambiguity_band: 0.10,
+            top_k: 5,
+        };
+        let detector = SpiderSenseDetector::new(db, &config).unwrap();
+        let lower = config.similarity_threshold - config.ambiguity_band;
+        let query = [0.0, 1.0, 0.0];
+        let result = detector.screen(&query);
+        assert_eq!(result.verdict, ScreeningVerdict::Allow);
+        assert!((result.top_score - lower).abs() < 1e-6);
+    }
+
+    #[test]
     fn detector_config_rejects_invalid_threshold() {
         let db = test_pattern_db();
         let config = SpiderSenseDetectorConfig {
