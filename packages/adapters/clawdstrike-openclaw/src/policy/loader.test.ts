@@ -83,6 +83,30 @@ guards:
     expect(() => loadPolicyFromString(yaml)).toThrow(/spider_sense: true is not executable/i);
   });
 
+  it("accepts canonical spider_sense boolean true when an enabled spider-sense custom guard exists", () => {
+    const yaml = `
+version: "1.3.0"
+name: "spider-sense-bool-with-custom"
+guards:
+  spider_sense: true
+  custom:
+    - package: "clawdstrike-spider-sense"
+      enabled: true
+      config:
+        embedding_api_url: "https://api.openai.com/v1/embeddings"
+        embedding_api_key: "test-key"
+        embedding_model: "text-embedding-3-small"
+        pattern_db_path: "builtin:s2bench-v1"
+        pattern_db_version: "s2bench-v1"
+        pattern_db_checksum: "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
+`;
+
+    const policy = loadPolicyFromString(yaml);
+    expect(policy.guards?.spider_sense).toBe(true);
+    const custom = (policy.guards?.custom as Array<Record<string, unknown>>) ?? [];
+    expect(custom.some((entry) => entry.package === "clawdstrike-spider-sense")).toBe(true);
+  });
+
   it("translates canonical spider_sense object toggle", () => {
     const yaml = `
 version: "1.3.0"

@@ -339,9 +339,16 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
     if (typeof guards.spider_sense === "boolean") {
       toggles.spider_sense = guards.spider_sense;
       if (guards.spider_sense) {
-        throw new PolicyLoadError(
-          "canonical guards.spider_sense: true is not executable in OpenClaw translation; provide an object config or guards.custom entry",
-        );
+        const hasExecutableSpiderSenseCustom = customGuards.some((entry) => {
+          if (!isSpiderSenseCustomGuard(entry)) return false;
+          const enabled = isPlainObject(entry) ? entry.enabled : undefined;
+          return enabled !== false;
+        });
+        if (!hasExecutableSpiderSenseCustom) {
+          throw new PolicyLoadError(
+            "canonical guards.spider_sense: true is not executable in OpenClaw translation; provide an object config or guards.custom entry",
+          );
+        }
       }
     } else if (typeof guards.spider_sense === "object") {
       const cfg = guards.spider_sense as Record<string, unknown>;
