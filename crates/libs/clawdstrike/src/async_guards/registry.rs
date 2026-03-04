@@ -21,6 +21,7 @@ const DEFAULT_CACHE_MAX_SIZE_MB: u64 = 64;
 
 pub fn build_async_guards(policy: &Policy) -> Result<Vec<Arc<dyn AsyncGuard>>> {
     let mut out: Vec<Arc<dyn AsyncGuard>> = Vec::new();
+    let has_first_class_spider = policy.guards.spider_sense.is_some();
 
     // First-class spider_sense field.
     if let Some(ref ss_cfg) = policy.guards.spider_sense {
@@ -39,6 +40,13 @@ pub fn build_async_guards(policy: &Policy) -> Result<Vec<Arc<dyn AsyncGuard>>> {
 
     for spec in &policy.guards.custom {
         if !spec.enabled {
+            continue;
+        }
+        if has_first_class_spider && spec.package == "clawdstrike-spider-sense" {
+            tracing::warn!(
+                "guards.custom[package=\"clawdstrike-spider-sense\"] is ignored because \
+                 guards.spider_sense is configured"
+            );
             continue;
         }
 
@@ -161,5 +169,48 @@ fn retry_for_policy(cfg: &AsyncRetryPolicyConfig) -> RetryConfig {
         initial_backoff: Duration::from_millis(cfg.initial_backoff_ms.unwrap_or(250).max(100)),
         max_backoff: Duration::from_millis(cfg.max_backoff_ms.unwrap_or(2_000).max(100)),
         multiplier: cfg.multiplier.unwrap_or(2.0).max(1.0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn spider_config() -> SpiderSensePolicyConfig {
+        SpiderSensePolicyConfig {
+            embedding_api_url: "https://api.openai.com/v1/embeddings".to_string(),
+            embedding_api_key: "test-key".to_string(),
+            embedding_model: "text-embedding-3-small".to_string(),
+            similarity_threshold: 0.85,
+            ambiguity_band: 0.10,
+            pattern_db_path: "builtin:s2bench-v1".to_string(),
+            llm_api_url: None,
+            llm_api_key: None,
+            llm_model: None,
+            async_config: None,
+        }
+    }
+
+    #[test]
+    fn skips_deprecated_custom_spider_when_first_class_present() {
+        let mut policy = Policy::default();
+        policy.guards.spider_sense = Some(spider_config());
+        policy.guards.custom.push(CustomGuardSpec {
+            package: "clawdstrike-spider-sense".to_string(),
+            registry: None,
+            version: None,
+            enabled: true,
+            config: json!({
+                "embedding_api_url": "https://api.openai.com/v1/embeddings",
+                "embedding_api_key": "test-key",
+                "embedding_model": "text-embedding-3-small",
+                "pattern_db_path": "builtin:s2bench-v1",
+            }),
+            async_config: None,
+        });
+
+        let guards = build_async_guards(&policy).expect("build async guards");
+        assert_eq!(guards.len(), 1, "custom spider-sense should be skipped");
     }
 }

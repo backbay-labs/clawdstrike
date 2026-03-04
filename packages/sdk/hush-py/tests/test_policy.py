@@ -216,15 +216,29 @@ class TestGuardConfigs:
                 "pattern_db_checksum": (
                     "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
                 ),
+                "pattern_db_signature_key_id": "abcd1234",
+                "pattern_db_trusted_keys": [
+                    {"public_key": "11" * 32, "status": "active"},
+                ],
+                "pattern_db_manifest_path": "/tmp/spider/manifest.json",
+                "pattern_db_manifest_trust_store_path": "/tmp/spider/manifest-roots.json",
                 "embedding_api_url": "https://api.openai.com/v1/embeddings",
                 "embedding_api_key": "test-key",
                 "embedding_model": "text-embedding-3-small",
+                "llm_prompt_template_id": "spider_sense.deep_path.json_classifier",
+                "llm_prompt_template_version": "1.0.0",
+                "llm_timeout_ms": 1200,
+                "llm_fail_mode": "warn",
                 "async": {"timeout_ms": 5000},
             },
         })
         assert configs.spider_sense is not None
         assert configs.spider_sense.pattern_db_path == "builtin:s2bench-v1"
         assert configs.spider_sense.async_config == {"timeout_ms": 5000}
+        assert configs.spider_sense.pattern_db_signature_key_id == "abcd1234"
+        assert configs.spider_sense.pattern_db_manifest_path == "/tmp/spider/manifest.json"
+        assert configs.spider_sense.llm_prompt_template_id == "spider_sense.deep_path.json_classifier"
+        assert configs.spider_sense.llm_timeout_ms == 1200
 
     def test_from_dict_spider_sense_bool(self) -> None:
         configs = GuardConfigs.from_dict({

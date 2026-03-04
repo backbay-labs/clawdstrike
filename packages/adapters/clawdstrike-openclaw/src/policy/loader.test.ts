@@ -26,7 +26,7 @@ egress:
 
   it("accepts canonical policy schema and translates to OpenClaw shape", () => {
     const yaml = `
-version: "1.2.0"
+version: "1.3.0"
 guards:
   forbidden_path:
     enabled: true
@@ -74,7 +74,7 @@ guards:
 
   it("translates canonical spider_sense boolean toggle", () => {
     const yaml = `
-version: "1.2.0"
+version: "1.3.0"
 name: "spider-sense-bool"
 guards:
   spider_sense: true
@@ -86,7 +86,7 @@ guards:
 
   it("translates canonical spider_sense object toggle", () => {
     const yaml = `
-version: "1.2.0"
+version: "1.3.0"
 name: "spider-sense-object"
 guards:
   spider_sense:

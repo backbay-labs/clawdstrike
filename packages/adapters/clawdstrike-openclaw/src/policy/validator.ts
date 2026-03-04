@@ -2,7 +2,7 @@ import { validatePolicy as validateCanonicalPolicy } from "@clawdstrike/policy";
 import type { Policy, PolicyLintResult } from "../types.js";
 
 export const POLICY_SCHEMA_VERSION = "clawdstrike-v1.0";
-const SUPPORTED_CANONICAL_VERSIONS = new Set(["1.1.0", "1.2.0"]);
+const SUPPORTED_CANONICAL_VERSIONS = new Set(["1.1.0", "1.2.0", "1.3.0"]);
 
 const VALID_EGRESS_MODES = new Set(["allowlist", "denylist", "open", "deny_all"]);
 const VALID_VIOLATION_ACTIONS = new Set(["cancel", "warn"]);
@@ -165,7 +165,7 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
     };
   } else if (p.version !== POLICY_SCHEMA_VERSION) {
     errors.push(
-      `unsupported policy version: ${p.version} (supported: ${POLICY_SCHEMA_VERSION}, 1.1.0, 1.2.0)`,
+      `unsupported policy version: ${p.version} (supported: ${POLICY_SCHEMA_VERSION}, 1.1.0, 1.2.0, 1.3.0)`,
     );
   }
 

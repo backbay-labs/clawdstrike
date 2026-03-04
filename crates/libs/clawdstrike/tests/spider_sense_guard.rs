@@ -1341,8 +1341,8 @@ async fn spider_sense_first_class_ambiguous_with_llm_deny() {
 
 #[tokio::test]
 async fn spider_sense_merge_child_overrides_parent() {
-    use clawdstrike::policy::GuardConfigs;
     use clawdstrike::async_guards::threat_intel::SpiderSensePolicyConfig;
+    use clawdstrike::policy::GuardConfigs;
 
     let parent_cfg = SpiderSensePolicyConfig {
         embedding_api_url: "http://parent.example.com/v1/embeddings".to_string(),
@@ -1393,8 +1393,8 @@ async fn spider_sense_merge_child_overrides_parent() {
 
 #[tokio::test]
 async fn spider_sense_merge_parent_preserved_when_child_absent() {
-    use clawdstrike::policy::GuardConfigs;
     use clawdstrike::async_guards::threat_intel::SpiderSensePolicyConfig;
+    use clawdstrike::policy::GuardConfigs;
 
     let parent_cfg = SpiderSensePolicyConfig {
         embedding_api_url: "http://parent.example.com/v1/embeddings".to_string(),

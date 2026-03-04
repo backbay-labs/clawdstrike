@@ -756,6 +756,29 @@ function toSpiderSenseConfig(value: unknown): SpiderSenseGuardConfig | undefined
       }))
     : undefined;
 
+  const trustedKeys = Array.isArray(value.pattern_db_trusted_keys)
+    ? value.pattern_db_trusted_keys
+      .filter((entry): entry is Record<string, unknown> => isPlainObject(entry))
+      .map((entry) => ({
+        key_id: typeof entry.key_id === 'string' ? entry.key_id : undefined,
+        public_key: typeof entry.public_key === 'string' ? entry.public_key : '',
+        not_before: typeof entry.not_before === 'string' ? entry.not_before : undefined,
+        not_after: typeof entry.not_after === 'string' ? entry.not_after : undefined,
+        status: typeof entry.status === 'string' ? entry.status : undefined,
+      }))
+    : undefined;
+  const manifestTrustedKeys = Array.isArray(value.pattern_db_manifest_trusted_keys)
+    ? value.pattern_db_manifest_trusted_keys
+      .filter((entry): entry is Record<string, unknown> => isPlainObject(entry))
+      .map((entry) => ({
+        key_id: typeof entry.key_id === 'string' ? entry.key_id : undefined,
+        public_key: typeof entry.public_key === 'string' ? entry.public_key : '',
+        not_before: typeof entry.not_before === 'string' ? entry.not_before : undefined,
+        not_after: typeof entry.not_after === 'string' ? entry.not_after : undefined,
+        status: typeof entry.status === 'string' ? entry.status : undefined,
+      }))
+    : undefined;
+
   return {
     enabled: toBoolean(value.enabled),
     similarityThreshold: toNumber(value.similarity_threshold),
@@ -773,9 +796,35 @@ function toSpiderSenseConfig(value: unknown): SpiderSenseGuardConfig | undefined
     patternDbSignature: typeof value.pattern_db_signature === 'string'
       ? value.pattern_db_signature
       : undefined,
+    patternDbSignatureKeyId: typeof value.pattern_db_signature_key_id === 'string'
+      ? value.pattern_db_signature_key_id
+      : undefined,
     patternDbPublicKey: typeof value.pattern_db_public_key === 'string'
       ? value.pattern_db_public_key
       : undefined,
+    patternDbTrustStorePath: typeof value.pattern_db_trust_store_path === 'string'
+      ? value.pattern_db_trust_store_path
+      : undefined,
+    patternDbTrustedKeys: trustedKeys,
+    patternDbManifestPath: typeof value.pattern_db_manifest_path === 'string'
+      ? value.pattern_db_manifest_path
+      : undefined,
+    patternDbManifestTrustStorePath: typeof value.pattern_db_manifest_trust_store_path === 'string'
+      ? value.pattern_db_manifest_trust_store_path
+      : undefined,
+    patternDbManifestTrustedKeys: manifestTrustedKeys,
+    llmApiUrl: typeof value.llm_api_url === 'string' ? value.llm_api_url : undefined,
+    llmApiKey: typeof value.llm_api_key === 'string' ? value.llm_api_key : undefined,
+    llmModel: typeof value.llm_model === 'string' ? value.llm_model : undefined,
+    llmPromptTemplateId: typeof value.llm_prompt_template_id === 'string'
+      ? value.llm_prompt_template_id
+      : undefined,
+    llmPromptTemplateVersion: typeof value.llm_prompt_template_version === 'string'
+      ? value.llm_prompt_template_version
+      : undefined,
+    llmTimeoutMs: toNumber(value.llm_timeout_ms),
+    llmFailMode: typeof value.llm_fail_mode === 'string' ? value.llm_fail_mode : undefined,
+    async: isPlainObject(value.async) ? value.async : undefined,
   };
 }
 

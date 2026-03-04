@@ -88,7 +88,7 @@ describe("validatePolicy", () => {
 
   it("accepts canonical schema policies", () => {
     const policy = {
-      version: "1.2.0",
+      version: "1.3.0",
       guards: {
         forbidden_path: {
           patterns: ["~/.ssh"],

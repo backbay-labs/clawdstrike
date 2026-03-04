@@ -32,3 +32,11 @@ def test_spider_sense_conformance_vectors() -> None:
             assert result.details["analysis"] == check["expected_analysis"]
             top_score = float(result.details["top_score"])
             assert check["top_score_min"] <= top_score <= check["top_score_max"]
+            assert isinstance(result.details["top_matches"], list)
+            assert len(result.details["top_matches"]) == check["expected_top_matches_len"]
+            first = result.details["top_matches"][0]
+            assert "id" in first
+            assert "category" in first
+            assert "stage" in first
+            assert "label" in first
+            assert "score" in first

@@ -24,6 +24,7 @@ type spiderSenseConformanceCheck struct {
 	ExpectedVerdict       string    `json:"expected_verdict"`
 	ExpectedEmbeddingFrom string    `json:"expected_embedding_from"`
 	ExpectedAnalysis      string    `json:"expected_analysis"`
+	ExpectedTopMatchesLen int       `json:"expected_top_matches_len"`
 	TopScoreMin           float64   `json:"top_score_min"`
 	TopScoreMax           float64   `json:"top_score_max"`
 }
@@ -101,6 +102,36 @@ func TestSpiderSenseConformanceVectors(t *testing.T) {
 							"top_score out of range: got=%f expected in [%f, %f]",
 							topScore, check.TopScoreMin, check.TopScoreMax,
 						)
+					}
+
+					var topMatches []map[string]interface{}
+					switch typed := details["top_matches"].(type) {
+					case []map[string]interface{}:
+						topMatches = typed
+					case []interface{}:
+						topMatches = make([]map[string]interface{}, 0, len(typed))
+						for _, item := range typed {
+							entry, ok := item.(map[string]interface{})
+							if !ok {
+								t.Fatalf("expected top_matches entry object, got %T", item)
+							}
+							topMatches = append(topMatches, entry)
+						}
+					default:
+						t.Fatalf("expected top_matches array, got %T", details["top_matches"])
+					}
+					if check.ExpectedTopMatchesLen > 0 && len(topMatches) != check.ExpectedTopMatchesLen {
+						t.Fatalf("top_matches length mismatch: expected=%d got=%d", check.ExpectedTopMatchesLen, len(topMatches))
+					}
+					if len(topMatches) == 0 {
+						t.Fatal("expected non-empty top_matches")
+					}
+					first := topMatches[0]
+					required := []string{"id", "category", "stage", "label", "score"}
+					for _, key := range required {
+						if _, exists := first[key]; !exists {
+							t.Fatalf("expected top_matches[0].%s", key)
+						}
 					}
 				})
 			}

@@ -1,10 +1,12 @@
 """Tests for Spider Sense detection guard."""
 
 import hashlib
+import io
 import json
 from urllib import error as urllib_error
 
 import pytest
+from nacl.signing import SigningKey
 
 from clawdstrike.guards.base import CustomAction, GuardContext, Severity
 from clawdstrike.guards.spider_sense import (
@@ -14,11 +16,12 @@ from clawdstrike.guards.spider_sense import (
     SpiderSenseDetector,
     SpiderSenseDetectorConfig,
     SpiderSenseGuard,
+    _manifest_signing_message,
     cosine_similarity,
 )
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────
+# -- Helpers ---------------------------------------------------------------
 
 def _test_pattern_json() -> str:
     """Return a 3-entry pattern DB JSON string with 3-dimensional embeddings."""
@@ -41,7 +44,7 @@ def _checksum_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-# ── Cosine Similarity ─────────────────────────────────────────────────────
+# -- Cosine Similarity -----------------------------------------------------
 
 
 class TestCosineSimilarity:
@@ -83,7 +86,7 @@ class TestCosineSimilarity:
         assert abs(cosine_similarity(a, b) - 1.0) < 1e-10
 
 
-# ── PatternDb ─────────────────────────────────────────────────────────────
+# -- PatternDb -------------------------------------------------------------
 
 
 class TestPatternDb:
@@ -144,7 +147,7 @@ class TestPatternDb:
         assert db.expected_dim == 3
 
 
-# ── SpiderSenseDetector ──────────────────────────────────────────────────
+# -- SpiderSenseDetector ---------------------------------------------------
 
 
 class TestSpiderSenseDetector:
@@ -223,7 +226,7 @@ class TestSpiderSenseDetector:
         assert result.top_matches[0].entry.id == "p1"
 
 
-# ── SpiderSenseGuard ─────────────────────────────────────────────────────
+# -- SpiderSenseGuard ------------------------------------------------------
 
 
 class TestSpiderSenseGuard:
@@ -469,6 +472,405 @@ class TestSpiderSenseGuard:
         assert result.details is not None
         assert result.details["analysis"] == "provider"
 
+    def test_embedding_cache_reduces_provider_calls(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        call_count = 0
+
+        class _FakeResponse:
+            def __enter__(self) -> "_FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+                return None
+
+            def getcode(self) -> int:
+                return 200
+
+            def read(self, _size: int = -1) -> bytes:
+                return json.dumps({"data": [{"embedding": [1.0, 0.0, 0.0]}]}).encode("utf-8")
+
+        def _fake_urlopen(*_args: object, **_kwargs: object) -> _FakeResponse:
+            nonlocal call_count
+            call_count += 1
+            return _FakeResponse()
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                patterns=_test_patterns_as_dicts(),
+                embedding_api_url="https://api.openai.com/v1/embeddings?unused=true",
+                embedding_api_key="test-key",
+                embedding_model="text-embedding-3-small",
+                async_config={"cache": {"enabled": True, "ttl_seconds": 3600}},
+            )
+        )
+        action = CustomAction(custom_type="user_input", custom_data={"text": "   hello world   "})
+        first = guard.check(action, GuardContext())
+        second = guard.check(action, GuardContext())
+        assert first.allowed is False
+        assert second.allowed is False
+        assert call_count == 1
+
+    def test_provider_retry_backoff(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        call_count = 0
+
+        class _FakeResponse:
+            def __enter__(self) -> "_FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+                return None
+
+            def getcode(self) -> int:
+                return 200
+
+            def read(self, _size: int = -1) -> bytes:
+                return json.dumps({"data": [{"embedding": [1.0, 0.0, 0.0]}]}).encode("utf-8")
+
+        def _fake_urlopen(*_args: object, **_kwargs: object) -> _FakeResponse:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise urllib_error.URLError("temporary")
+            return _FakeResponse()
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                patterns=_test_patterns_as_dicts(),
+                embedding_api_url="https://api.openai.com/v1/embeddings",
+                embedding_api_key="test-key",
+                embedding_model="text-embedding-3-small",
+                async_config={
+                    "retry": {
+                        "max_retries": 2,
+                        "initial_backoff_ms": 1,
+                        "max_backoff_ms": 2,
+                        "multiplier": 1.0,
+                    }
+                },
+            )
+        )
+
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"text": "hello"}),
+            GuardContext(),
+        )
+        assert result.allowed is False
+        assert result.details is not None
+        assert result.details["embedding_from"] == "provider"
+        assert call_count == 3
+
+    def test_provider_retry_after_header_with_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        call_count = 0
+        sleeps: list[float] = []
+
+        class _FakeResponse:
+            def __enter__(self) -> "_FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+                return None
+
+            def getcode(self) -> int:
+                return 200
+
+            @property
+            def headers(self) -> dict[str, str]:
+                return {}
+
+            def read(self, _size: int = -1) -> bytes:
+                return json.dumps({"data": [{"embedding": [1.0, 0.0, 0.0]}]}).encode("utf-8")
+
+        def _fake_urlopen(req, timeout=None):  # type: ignore[no-untyped-def]
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise urllib_error.HTTPError(
+                    req.full_url,
+                    429,
+                    "too many requests",
+                    {"Retry-After": "1"},
+                    io.BytesIO(b"rate limited"),
+                )
+            return _FakeResponse()
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.time.sleep", lambda delay: sleeps.append(delay))
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                patterns=_test_patterns_as_dicts(),
+                embedding_api_url="https://api.openai.com/v1/embeddings",
+                embedding_api_key="test-key",
+                embedding_model="text-embedding-3-small",
+                async_config={
+                    "retry": {
+                        "max_retries": 1,
+                        "initial_backoff_ms": 1,
+                        "max_backoff_ms": 2,
+                        "multiplier": 1.0,
+                        "honor_retry_after": True,
+                        "retry_after_cap_ms": 5,
+                    }
+                },
+            )
+        )
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"text": "hello"}),
+            GuardContext(),
+        )
+        assert result.allowed is False
+        assert call_count == 2
+        assert len(sleeps) == 1
+        assert sleeps[0] >= 0.004
+
+    def test_provider_circuit_breaker_warn_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        call_count = 0
+
+        def _fake_urlopen(*_args: object, **_kwargs: object) -> object:
+            nonlocal call_count
+            call_count += 1
+            raise urllib_error.URLError("network down")
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                patterns=_test_patterns_as_dicts(),
+                embedding_api_url="https://api.openai.com/v1/embeddings",
+                embedding_api_key="test-key",
+                embedding_model="text-embedding-3-small",
+                async_config={
+                    "retry": {"max_retries": 0},
+                    "circuit_breaker": {
+                        "failure_threshold": 1,
+                        "reset_timeout_ms": 60000,
+                        "success_threshold": 1,
+                        "on_open": "warn",
+                    },
+                },
+            )
+        )
+
+        first = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"text": "first"}),
+            GuardContext(),
+        )
+        assert first.allowed is False
+
+        second = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"text": "second"}),
+            GuardContext(),
+        )
+        assert second.allowed is True
+        assert second.severity == Severity.WARNING
+        assert second.details is not None
+        assert second.details["on_open"] == "warn"
+        assert call_count == 1
+
+    def test_trust_store_signature_key_id_verification(self, tmp_path) -> None:
+        db_path = tmp_path / "patterns.json"
+        trust_store_path = tmp_path / "trust-store.json"
+        db_bytes = b'[{"id":"p1","category":"test","stage":"perception","label":"x","embedding":[1.0,0.0,0.0]}]'
+        db_path.write_bytes(db_bytes)
+        checksum = _checksum_hex(db_bytes)
+
+        signing_key = SigningKey.generate()
+        public_key_hex = signing_key.verify_key.encode().hex()
+        key_id = hashlib.sha256(public_key_hex.lower().encode("utf-8")).hexdigest()[:16]
+        message = f"spider_sense_db:v1:test-v1:{checksum}".encode()
+        signature = signing_key.sign(message).signature.hex()
+
+        trust_store_path.write_text(
+            json.dumps({"keys": [{"key_id": key_id, "public_key": public_key_hex, "status": "active"}]}),
+            encoding="utf-8",
+        )
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                pattern_db_path=str(db_path),
+                pattern_db_version="test-v1",
+                pattern_db_checksum=checksum,
+                pattern_db_signature=signature,
+                pattern_db_signature_key_id=key_id,
+                pattern_db_trust_store_path=str(trust_store_path),
+            )
+        )
+
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"embedding": [1.0, 0.0, 0.0]}),
+            GuardContext(),
+        )
+        assert result.allowed is False
+
+    def test_signed_pattern_manifest_support(self, tmp_path) -> None:
+        db_path = tmp_path / "patterns.json"
+        trust_store_path = tmp_path / "trust-store.json"
+        manifest_path = tmp_path / "manifest.json"
+
+        db_bytes = b'[{"id":"p1","category":"test","stage":"perception","label":"x","embedding":[1.0,0.0,0.0]}]'
+        db_path.write_bytes(db_bytes)
+        checksum = _checksum_hex(db_bytes)
+
+        db_signing_key = SigningKey.generate()
+        db_public_key_hex = db_signing_key.verify_key.encode().hex()
+        db_key_id = hashlib.sha256(db_public_key_hex.lower().encode("utf-8")).hexdigest()[:16]
+        db_message = f"spider_sense_db:v1:test-v1:{checksum}".encode()
+        db_signature = db_signing_key.sign(db_message).signature.hex()
+
+        trust_store_path.write_text(
+            json.dumps({"keys": [{"key_id": db_key_id, "public_key": db_public_key_hex, "status": "active"}]}),
+            encoding="utf-8",
+        )
+
+        root_signing_key = SigningKey.generate()
+        root_public_key_hex = root_signing_key.verify_key.encode().hex()
+        root_key_id = hashlib.sha256(root_public_key_hex.lower().encode("utf-8")).hexdigest()[:16]
+
+        manifest: dict[str, Any] = {
+            "pattern_db_path": db_path.name,
+            "pattern_db_version": "test-v1",
+            "pattern_db_checksum": checksum,
+            "pattern_db_signature": db_signature,
+            "pattern_db_signature_key_id": db_key_id,
+            "pattern_db_trust_store_path": trust_store_path.name,
+            "manifest_signature_key_id": root_key_id,
+        }
+        manifest_signature = root_signing_key.sign(_manifest_signing_message(manifest)).signature.hex()
+        manifest["manifest_signature"] = manifest_signature
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                pattern_db_manifest_path=str(manifest_path),
+                pattern_db_manifest_trusted_keys=[
+                    {"key_id": root_key_id, "public_key": root_public_key_hex, "status": "active"}
+                ],
+            )
+        )
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"embedding": [1.0, 0.0, 0.0]}),
+            GuardContext(),
+        )
+        assert result.allowed is False
+
+        manifest["pattern_db_version"] = "tampered"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with pytest.raises(ValueError, match="manifest signature verification failed"):
+            SpiderSenseGuard(
+                SpiderSenseConfig(
+                    pattern_db_manifest_path=str(manifest_path),
+                    pattern_db_manifest_trusted_keys=[
+                        {"key_id": root_key_id, "public_key": root_public_key_hex, "status": "active"}
+                    ],
+                )
+            )
+
+    def test_deep_path_deny_on_ambiguous(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class _FakeResponse:
+            def __enter__(self) -> "_FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+                return None
+
+            def getcode(self) -> int:
+                return 200
+
+            def read(self, _size: int = -1) -> bytes:
+                return json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": json.dumps(
+                                        {"verdict": "deny", "reason": "policy confidence high"}
+                                    )
+                                }
+                            }
+                        ]
+                    }
+                ).encode("utf-8")
+
+        def _fake_urlopen(*_args: object, **_kwargs: object) -> _FakeResponse:
+            return _FakeResponse()
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                patterns=_test_patterns_as_dicts(),
+                similarity_threshold=0.5,
+                ambiguity_band=0.1,
+                llm_api_url="https://api.openai.com/v1/chat/completions",
+                llm_api_key="llm-key",
+                llm_model="gpt-4.1-mini",
+                llm_prompt_template_id="spider_sense.deep_path.json_classifier",
+                llm_prompt_template_version="1.0.0",
+            )
+        )
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"embedding": [0.577, 0.577, 0.577]}),
+            GuardContext(),
+        )
+        assert result.allowed is False
+        assert result.details is not None
+        assert result.details["analysis"] == "deep_path"
+        assert result.details["verdict"] == "deny"
+
+    def test_deep_path_fail_mode_allow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _fake_urlopen(*_args: object, **_kwargs: object) -> object:
+            raise urllib_error.URLError("llm down")
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                patterns=_test_patterns_as_dicts(),
+                similarity_threshold=0.5,
+                ambiguity_band=0.1,
+                llm_api_url="https://api.openai.com/v1/chat/completions",
+                llm_api_key="llm-key",
+                llm_fail_mode="allow",
+                llm_prompt_template_id="spider_sense.deep_path.json_classifier",
+                llm_prompt_template_version="1.0.0",
+            )
+        )
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"embedding": [0.577, 0.577, 0.577]}),
+            GuardContext(),
+        )
+        assert result.allowed is True
+        assert result.details is not None
+        assert result.details["analysis"] == "deep_path_error"
+        assert result.details["fail_mode"] == "allow"
+
+    def test_deep_path_requires_template_id_and_version(self) -> None:
+        with pytest.raises(ValueError, match="llm_prompt_template_id and llm_prompt_template_version"):
+            SpiderSenseGuard(
+                SpiderSenseConfig(
+                    patterns=_test_patterns_as_dicts(),
+                    llm_api_url="https://api.openai.com/v1/chat/completions",
+                    llm_api_key="llm-key",
+                )
+            )
+
+    def test_deep_path_rejects_unknown_template(self) -> None:
+        with pytest.raises(ValueError, match="unsupported llm prompt template"):
+            SpiderSenseGuard(
+                SpiderSenseConfig(
+                    patterns=_test_patterns_as_dicts(),
+                    llm_api_url="https://api.openai.com/v1/chat/completions",
+                    llm_api_key="llm-key",
+                    llm_prompt_template_id="spider_sense.deep_path.unknown",
+                    llm_prompt_template_version="9.9.9",
+                )
+            )
+
     def test_pattern_db_path_integrity_controls(self, tmp_path) -> None:
         db_path = tmp_path / "patterns.json"
         db_bytes = b'[{\"id\":\"p1\",\"category\":\"test\",\"stage\":\"perception\",\"label\":\"x\",\"embedding\":[1.0,0.0,0.0]}]'
@@ -535,3 +937,4 @@ class TestSpiderSenseGuard:
         assert len(snapshots) == 2
         assert snapshots[0].top_score >= 0.0
         assert snapshots[1].total_count == 2
+        assert snapshots[0].db_source in {"inline", ""}

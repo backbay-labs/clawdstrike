@@ -31,7 +31,7 @@ from clawdstrike.guards.shell_command import ShellCommandConfig, ShellCommandGua
 from clawdstrike.guards.spider_sense import SpiderSenseConfig, SpiderSenseGuard
 
 POLICY_SCHEMA_VERSION = "1.2.0"
-POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0"}
+POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0", "1.3.0"}
 
 # Built-in ruleset directory.
 # Try package-relative path first (works in both monorepo and installed layouts),
@@ -178,10 +178,20 @@ _GUARD_MERGE_SPECS: dict[str, dict[str, _MergeMode]] = {
         "pattern_db_version": _MergeMode.OVERRIDE,
         "pattern_db_checksum": _MergeMode.OVERRIDE,
         "pattern_db_signature": _MergeMode.OVERRIDE,
+        "pattern_db_signature_key_id": _MergeMode.OVERRIDE,
         "pattern_db_public_key": _MergeMode.OVERRIDE,
+        "pattern_db_trust_store_path": _MergeMode.OVERRIDE,
+        "pattern_db_trusted_keys": _MergeMode.OVERRIDE,
+        "pattern_db_manifest_path": _MergeMode.OVERRIDE,
+        "pattern_db_manifest_trust_store_path": _MergeMode.OVERRIDE,
+        "pattern_db_manifest_trusted_keys": _MergeMode.OVERRIDE,
         "llm_api_url": _MergeMode.OVERRIDE,
         "llm_api_key": _MergeMode.OVERRIDE,
         "llm_model": _MergeMode.OVERRIDE,
+        "llm_prompt_template_id": _MergeMode.OVERRIDE,
+        "llm_prompt_template_version": _MergeMode.OVERRIDE,
+        "llm_timeout_ms": _MergeMode.OVERRIDE,
+        "llm_fail_mode": _MergeMode.OVERRIDE,
         "async_config": _MergeMode.OVERRIDE,
         "embedding_timeout_secs": _MergeMode.OVERRIDE,
     },
@@ -703,8 +713,11 @@ class Policy:
                 base_val = getattr(base_cfg, field_name)
                 child_val = getattr(child_cfg, field_name)
                 mode = spec.get(field_name, _MergeMode.OVERRIDE)
+                raw_present = field_name in guard_raw
+                if guard_name == "spider_sense" and field_name == "async_config":
+                    raw_present = raw_present or "async" in guard_raw
 
-                if field_name not in guard_raw:
+                if not raw_present:
                     merged_fields[field_name] = base_val
                 elif mode == _MergeMode.MERGE_LIST:
                     merged_fields[field_name] = _merge_str_list(base_val, child_val)
@@ -813,14 +826,34 @@ class Policy:
                 spider_data["pattern_db_checksum"] = spider.pattern_db_checksum
             if spider.pattern_db_signature is not None:
                 spider_data["pattern_db_signature"] = spider.pattern_db_signature
+            if spider.pattern_db_signature_key_id is not None:
+                spider_data["pattern_db_signature_key_id"] = spider.pattern_db_signature_key_id
             if spider.pattern_db_public_key is not None:
                 spider_data["pattern_db_public_key"] = spider.pattern_db_public_key
+            if spider.pattern_db_trust_store_path is not None:
+                spider_data["pattern_db_trust_store_path"] = spider.pattern_db_trust_store_path
+            if spider.pattern_db_trusted_keys is not None:
+                spider_data["pattern_db_trusted_keys"] = spider.pattern_db_trusted_keys
+            if spider.pattern_db_manifest_path is not None:
+                spider_data["pattern_db_manifest_path"] = spider.pattern_db_manifest_path
+            if spider.pattern_db_manifest_trust_store_path is not None:
+                spider_data["pattern_db_manifest_trust_store_path"] = spider.pattern_db_manifest_trust_store_path
+            if spider.pattern_db_manifest_trusted_keys is not None:
+                spider_data["pattern_db_manifest_trusted_keys"] = spider.pattern_db_manifest_trusted_keys
             if spider.llm_api_url is not None:
                 spider_data["llm_api_url"] = spider.llm_api_url
             if spider.llm_api_key is not None:
                 spider_data["llm_api_key"] = spider.llm_api_key
             if spider.llm_model is not None:
                 spider_data["llm_model"] = spider.llm_model
+            if spider.llm_prompt_template_id is not None:
+                spider_data["llm_prompt_template_id"] = spider.llm_prompt_template_id
+            if spider.llm_prompt_template_version is not None:
+                spider_data["llm_prompt_template_version"] = spider.llm_prompt_template_version
+            if spider.llm_timeout_ms is not None:
+                spider_data["llm_timeout_ms"] = spider.llm_timeout_ms
+            if spider.llm_fail_mode is not None:
+                spider_data["llm_fail_mode"] = spider.llm_fail_mode
             if spider.async_config is not None:
                 spider_data["async"] = spider.async_config
             data["guards"]["spider_sense"] = spider_data

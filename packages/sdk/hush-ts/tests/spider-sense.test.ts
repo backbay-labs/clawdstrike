@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -7,6 +7,8 @@ import path from "node:path";
 import { SpiderSenseDetector, type PatternEntry } from "../src/spider-sense";
 import { SpiderSenseGuard } from "../src/guards/spider-sense";
 import { GuardAction, GuardContext } from "../src/guards/types";
+import { toHex } from "../src/crypto/hash";
+import { generateKeypair, signMessage } from "../src/crypto/sign";
 
 // biome-ignore lint/suspicious/noExplicitAny: vitest global from setup.ts
 const wasmAvailable = (globalThis as any).__WASM_SPIDER_SENSE_AVAILABLE__ as boolean;
@@ -336,6 +338,414 @@ describe("spider-sense guard", () => {
     expect(result.message).toContain("provider error");
   });
 
+  it("uses embedding cache with normalized key to avoid duplicate provider calls", async () => {
+    let callCount = 0;
+    const guard = new SpiderSenseGuard({
+      patterns: testPatterns,
+      embeddingApiUrl: "https://api.openai.com/v1/embeddings?unused=true",
+      embeddingApiKey: "test-key",
+      embeddingModel: "text-embedding-3-small",
+      async: {
+        cache: {
+          enabled: true,
+          ttl_seconds: 3600,
+        },
+      },
+      fetchFn: async () => {
+        callCount += 1;
+        return new Response(
+          JSON.stringify({
+            data: [{ embedding: [1.0, 0.0, 0.0] }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    const action = GuardAction.custom("user_input", { text: "   hello world   " });
+    const first = await guard.check(action, ctx);
+    const second = await guard.check(action, ctx);
+    expect(first.allowed).toBe(false);
+    expect(second.allowed).toBe(false);
+    expect(callCount).toBe(1);
+  });
+
+  it("retries embedding provider with backoff and succeeds", async () => {
+    let callCount = 0;
+    const guard = new SpiderSenseGuard({
+      patterns: testPatterns,
+      embeddingApiUrl: "https://api.openai.com/v1/embeddings",
+      embeddingApiKey: "test-key",
+      embeddingModel: "text-embedding-3-small",
+      async: {
+        retry: {
+          max_retries: 2,
+          initial_backoff_ms: 1,
+          max_backoff_ms: 2,
+          multiplier: 1,
+        },
+      },
+      fetchFn: async () => {
+        callCount += 1;
+        if (callCount < 3) {
+          return new Response("temporary failure", { status: 500 });
+        }
+        return new Response(
+          JSON.stringify({
+            data: [{ embedding: [1.0, 0.0, 0.0] }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    const result = await guard.check(GuardAction.custom("user_input", { text: "hello" }), ctx);
+    expect(result.allowed).toBe(false);
+    expect(result.details?.embedding_from).toBe("provider");
+    expect(callCount).toBe(3);
+  });
+
+  it("honors Retry-After with cap for provider retries", async () => {
+    vi.useFakeTimers();
+    try {
+      let callCount = 0;
+      const guard = new SpiderSenseGuard({
+        patterns: testPatterns,
+        embeddingApiUrl: "https://api.openai.com/v1/embeddings",
+        embeddingApiKey: "test-key",
+        embeddingModel: "text-embedding-3-small",
+        async: {
+          retry: {
+            max_retries: 1,
+            initial_backoff_ms: 1,
+            max_backoff_ms: 2,
+            multiplier: 1,
+            honor_retry_after: true,
+            retry_after_cap_ms: 5,
+          },
+        },
+        fetchFn: async () => {
+          callCount += 1;
+          if (callCount === 1) {
+            return new Response("rate limited", {
+              status: 429,
+              headers: { "Retry-After": "1" },
+            });
+          }
+          return new Response(
+            JSON.stringify({
+              data: [{ embedding: [1.0, 0.0, 0.0] }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        },
+      });
+
+      const checkPromise = guard.check(GuardAction.custom("user_input", { text: "hello" }), ctx);
+      await vi.advanceTimersByTimeAsync(4);
+      expect(callCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await checkPromise;
+      expect(result.allowed).toBe(false);
+      expect(callCount).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("supports circuit breaker on_open warn mode", async () => {
+    let callCount = 0;
+    const guard = new SpiderSenseGuard({
+      patterns: testPatterns,
+      embeddingApiUrl: "https://api.openai.com/v1/embeddings",
+      embeddingApiKey: "test-key",
+      embeddingModel: "text-embedding-3-small",
+      async: {
+        retry: {
+          max_retries: 0,
+        },
+        circuit_breaker: {
+          failure_threshold: 1,
+          reset_timeout_ms: 60_000,
+          success_threshold: 1,
+          on_open: "warn",
+        },
+      },
+      fetchFn: async () => {
+        callCount += 1;
+        return new Response("failure", { status: 500 });
+      },
+    });
+
+    const first = await guard.check(GuardAction.custom("user_input", { text: "first" }), ctx);
+    expect(first.allowed).toBe(false);
+
+    const second = await guard.check(GuardAction.custom("user_input", { text: "second" }), ctx);
+    expect(second.allowed).toBe(true);
+    expect(second.severity).toBe("warning");
+    expect(second.details?.on_open).toBe("warn");
+    expect(callCount).toBe(1);
+  });
+
+  it("supports key-id trust store verification for pattern DB", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "spider-sense-ts-trust-"));
+    const dbPath = path.join(dir, "patterns.json");
+    const trustStorePath = path.join(dir, "trust-store.json");
+    const dbJson = JSON.stringify([
+      {
+        id: "p1",
+        category: "prompt_injection",
+        stage: "perception",
+        label: "ignore previous",
+        embedding: [1.0, 0.0, 0.0],
+      },
+    ]);
+    await writeFile(dbPath, dbJson, "utf8");
+    const checksum = createHash("sha256").update(dbJson).digest("hex");
+
+    const keypair = await generateKeypair();
+    const publicKeyHex = toHex(keypair.publicKey);
+    const keyId = createHash("sha256")
+      .update(publicKeyHex.toLowerCase())
+      .digest("hex")
+      .slice(0, 16);
+    const message = new TextEncoder().encode(`spider_sense_db:v1:test-v1:${checksum}`);
+    const signature = await signMessage(message, keypair.privateKey);
+
+    await writeFile(
+      trustStorePath,
+      JSON.stringify({
+        keys: [
+          {
+            key_id: keyId,
+            public_key: publicKeyHex,
+            status: "active",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const guard = new SpiderSenseGuard({
+      patternDbPath: dbPath,
+      patternDbVersion: "test-v1",
+      patternDbChecksum: checksum,
+      patternDbSignature: toHex(signature),
+      patternDbSignatureKeyId: keyId,
+      patternDbTrustStorePath: trustStorePath,
+    });
+
+    const result = await guard.check(
+      GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] }),
+      ctx,
+    );
+    expect(result.allowed).toBe(false);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("supports signed pattern DB manifests for trust-store metadata", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "spider-sense-ts-manifest-"));
+    const dbPath = path.join(dir, "patterns.json");
+    const trustStorePath = path.join(dir, "trust-store.json");
+    const manifestPath = path.join(dir, "manifest.json");
+    const dbJson = JSON.stringify([
+      {
+        id: "p1",
+        category: "prompt_injection",
+        stage: "perception",
+        label: "ignore previous",
+        embedding: [1.0, 0.0, 0.0],
+      },
+    ]);
+    await writeFile(dbPath, dbJson, "utf8");
+    const checksum = createHash("sha256").update(dbJson).digest("hex");
+
+    const dbKeypair = await generateKeypair();
+    const dbPublicKeyHex = toHex(dbKeypair.publicKey);
+    const dbKeyId = createHash("sha256")
+      .update(dbPublicKeyHex.toLowerCase())
+      .digest("hex")
+      .slice(0, 16);
+    const dbMessage = new TextEncoder().encode(`spider_sense_db:v1:test-v1:${checksum}`);
+    const dbSignature = await signMessage(dbMessage, dbKeypair.privateKey);
+
+    await writeFile(
+      trustStorePath,
+      JSON.stringify({
+        keys: [
+          {
+            key_id: dbKeyId,
+            public_key: dbPublicKeyHex,
+            status: "active",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const rootKeypair = await generateKeypair();
+    const rootPublicKeyHex = toHex(rootKeypair.publicKey);
+    const rootKeyId = createHash("sha256")
+      .update(rootPublicKeyHex.toLowerCase())
+      .digest("hex")
+      .slice(0, 16);
+
+    const manifest = {
+      pattern_db_path: path.basename(dbPath),
+      pattern_db_version: "test-v1",
+      pattern_db_checksum: checksum,
+      pattern_db_signature: toHex(dbSignature),
+      pattern_db_signature_key_id: dbKeyId,
+      pattern_db_trust_store_path: path.basename(trustStorePath),
+      manifest_signature_key_id: rootKeyId,
+    };
+    const trustedDigest = createHash("sha256").update("").digest("hex");
+    const manifestMessage = new TextEncoder().encode(
+      [
+        "spider_sense_manifest:v1",
+        manifest.pattern_db_path,
+        manifest.pattern_db_version,
+        checksum,
+        toHex(dbSignature).toLowerCase(),
+        dbKeyId,
+        "",
+        manifest.pattern_db_trust_store_path,
+        trustedDigest,
+      ].join(":"),
+    );
+    const manifestSignature = await signMessage(manifestMessage, rootKeypair.privateKey);
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...manifest,
+        manifest_signature: toHex(manifestSignature),
+      }),
+      "utf8",
+    );
+
+    const guard = new SpiderSenseGuard({
+      patternDbManifestPath: manifestPath,
+      patternDbManifestTrustedKeys: [
+        {
+          key_id: rootKeyId,
+          public_key: rootPublicKeyHex,
+          status: "active",
+        },
+      ],
+    });
+    const result = await guard.check(
+      GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] }),
+      ctx,
+    );
+    expect(result.allowed).toBe(false);
+
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...manifest,
+        pattern_db_version: "tampered",
+        manifest_signature: toHex(manifestSignature),
+      }),
+      "utf8",
+    );
+    await expect(
+      new SpiderSenseGuard({
+        patternDbManifestPath: manifestPath,
+        patternDbManifestTrustedKeys: [
+          {
+            key_id: rootKeyId,
+            public_key: rootPublicKeyHex,
+            status: "active",
+          },
+        ],
+      }).check(GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] }), ctx),
+    ).rejects.toThrow(/manifest signature verification failed/i);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("uses deep path on ambiguous results and applies deny verdict", async () => {
+    const guard = new SpiderSenseGuard({
+      patterns: testPatterns,
+      similarityThreshold: 0.5,
+      ambiguityBand: 0.1,
+      llmApiUrl: "https://api.openai.com/v1/chat/completions",
+      llmApiKey: "llm-key",
+      llmModel: "gpt-4.1-mini",
+      llmPromptTemplateId: "spider_sense.deep_path.json_classifier",
+      llmPromptTemplateVersion: "1.0.0",
+      deepPathFetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    verdict: "deny",
+                    reason: "policy confidence high",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    const result = await guard.check(
+      GuardAction.custom("embedding_check", { embedding: [0.577, 0.577, 0.577] }),
+      ctx,
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.details?.analysis).toBe("deep_path");
+    expect(result.details?.verdict).toBe("deny");
+  });
+
+  it("applies deep path fail-mode allow on deep path failure", async () => {
+    const guard = new SpiderSenseGuard({
+      patterns: testPatterns,
+      similarityThreshold: 0.5,
+      ambiguityBand: 0.1,
+      llmApiUrl: "https://api.openai.com/v1/chat/completions",
+      llmApiKey: "llm-key",
+      llmFailMode: "allow",
+      llmPromptTemplateId: "spider_sense.deep_path.json_classifier",
+      llmPromptTemplateVersion: "1.0.0",
+      deepPathFetchFn: async () => new Response("llm down", { status: 503 }),
+    });
+
+    const result = await guard.check(
+      GuardAction.custom("embedding_check", { embedding: [0.577, 0.577, 0.577] }),
+      ctx,
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.details?.analysis).toBe("deep_path_error");
+    expect(result.details?.fail_mode).toBe("allow");
+  });
+
+  it("requires deep-path prompt template id/version", () => {
+    expect(
+      () =>
+        new SpiderSenseGuard({
+          patterns: testPatterns,
+          llmApiUrl: "https://api.openai.com/v1/chat/completions",
+          llmApiKey: "llm-key",
+        }),
+    ).toThrow(/llm_prompt_template_id and llm_prompt_template_version/i);
+  });
+
+  it("rejects unknown deep-path prompt templates", () => {
+    expect(
+      () =>
+        new SpiderSenseGuard({
+          patterns: testPatterns,
+          llmApiUrl: "https://api.openai.com/v1/chat/completions",
+          llmApiKey: "llm-key",
+          llmPromptTemplateId: "spider_sense.deep_path.unknown",
+          llmPromptTemplateVersion: "9.9.9",
+        }),
+    ).toThrow(/unsupported llm prompt template/i);
+  });
+
   it("validates pattern DB checksum for path-based loading", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "spider-sense-ts-"));
     const dbPath = path.join(dir, "patterns.json");
@@ -395,5 +805,7 @@ describe("spider-sense guard", () => {
     expect(events.length).toBe(2);
     expect(events[1].total_count).toBe(2);
     expect(events[1]).toHaveProperty("ambiguity_rate");
+    expect(events[0]).toHaveProperty("db_source");
+    expect(events[0]).toHaveProperty("provider_attempts");
   });
 });

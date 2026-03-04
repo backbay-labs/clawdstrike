@@ -1,4 +1,4 @@
-export type PolicySchemaVersion = "1.1.0" | "1.2.0";
+export type PolicySchemaVersion = "1.1.0" | "1.2.0" | "1.3.0";
 
 export type TimeoutBehavior = "allow" | "deny" | "warn" | "defer";
 export type AsyncExecutionMode = "parallel" | "sequential" | "background";

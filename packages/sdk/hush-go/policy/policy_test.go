@@ -35,7 +35,7 @@ func TestLoadAllBuiltinRulesets(t *testing.T) {
 
 func TestSpiderSenseCanonicalConfigParses(t *testing.T) {
 	yamlData := []byte(`
-version: "1.2.0"
+version: "1.3.0"
 name: SpiderSenseParse
 guards:
   spider_sense:
@@ -52,6 +52,10 @@ guards:
     llm_api_url: "https://example.invalid/v1/messages"
     llm_api_key: "llm-key"
     llm_model: "gpt-4.1-mini"
+    llm_prompt_template_id: "spider_sense.deep_path.json_classifier"
+    llm_prompt_template_version: "1.0.0"
+    pattern_db_manifest_path: "/tmp/spider/manifest.json"
+    pattern_db_manifest_trust_store_path: "/tmp/spider/manifest-roots.json"
     async:
       timeout_ms: 5000
       on_timeout: warn
@@ -78,6 +82,12 @@ guards:
 	}
 	if p.Guards.SpiderSense.Async == nil {
 		t.Fatal("expected guards.spider_sense.async to parse")
+	}
+	if p.Guards.SpiderSense.LlmPromptTemplateID != "spider_sense.deep_path.json_classifier" {
+		t.Fatalf("unexpected llm_prompt_template_id: %q", p.Guards.SpiderSense.LlmPromptTemplateID)
+	}
+	if p.Guards.SpiderSense.PatternDBManifestPath != "/tmp/spider/manifest.json" {
+		t.Fatalf("unexpected pattern_db_manifest_path: %q", p.Guards.SpiderSense.PatternDBManifestPath)
 	}
 }
 

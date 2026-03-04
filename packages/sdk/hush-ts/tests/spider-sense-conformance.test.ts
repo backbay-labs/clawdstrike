@@ -14,6 +14,7 @@ interface SpiderSenseConformanceCheck {
   expected_verdict: "allow" | "ambiguous" | "deny";
   expected_embedding_from: "action" | "provider";
   expected_analysis: string;
+  expected_top_matches_len: number;
   top_score_min: number;
   top_score_max: number;
 }
@@ -74,6 +75,16 @@ describe("spider-sense conformance vectors", () => {
         expect(topScore, `${vector.name}:${check.name}:top_score_max`).toBeLessThanOrEqual(
           check.top_score_max,
         );
+        expect(Array.isArray(result.details?.top_matches)).toBe(true);
+        const topMatches = result.details?.top_matches as Array<Record<string, unknown>>;
+        expect(topMatches.length, `${vector.name}:${check.name}:top_matches_len`).toBe(
+          check.expected_top_matches_len,
+        );
+        expect(topMatches[0]).toHaveProperty("id");
+        expect(topMatches[0]).toHaveProperty("category");
+        expect(topMatches[0]).toHaveProperty("stage");
+        expect(topMatches[0]).toHaveProperty("label");
+        expect(topMatches[0]).toHaveProperty("score");
       }
     }
   });

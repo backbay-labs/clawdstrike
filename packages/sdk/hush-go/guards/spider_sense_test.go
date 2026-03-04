@@ -3,6 +3,7 @@ package guards
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,9 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	sdkcrypto "github.com/backbay-labs/clawdstrike-go/crypto"
 	"github.com/backbay-labs/clawdstrike-go/policy"
 )
 
@@ -46,6 +49,29 @@ func TestCosineSimilarityF32(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTruncateToUTF8Boundary(t *testing.T) {
+	t.Run("does not split multi-byte rune", func(t *testing.T) {
+		input := "éclair"
+		got := truncateTo(input, 1)
+		if got != "" {
+			t.Fatalf("expected empty string when max cuts into rune boundary, got %q", got)
+		}
+
+		got = truncateTo(input, 2)
+		if got != "é" {
+			t.Fatalf("expected full rune at boundary, got %q", got)
+		}
+	})
+
+	t.Run("preserves ascii truncation behavior", func(t *testing.T) {
+		input := "hello world"
+		got := truncateTo(input, 5)
+		if got != "hello" {
+			t.Fatalf("expected ascii truncation to remain unchanged, got %q", got)
+		}
+	})
 }
 
 // --- ParsePatternDB ---
@@ -571,6 +597,517 @@ func TestSpiderSenseEmbeddingProvider(t *testing.T) {
 		}
 		if result.Severity != Error {
 			t.Fatalf("expected Error severity, got %v", result.Severity)
+		}
+	})
+}
+
+func TestSpiderSenseEmbeddingCache(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[1.0,0.0,0.0]}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &policy.SpiderSenseConfig{
+		Patterns: []policy.PatternEntryConfig{
+			{
+				ID:        "p1",
+				Category:  "prompt_injection",
+				Stage:     "perception",
+				Label:     "ignore previous",
+				Embedding: []float32{1, 0, 0},
+			},
+		},
+		EmbeddingAPIURL: server.URL + "?unused=true",
+		EmbeddingAPIKey: "test-key",
+		EmbeddingModel:  "text-embedding-3-small",
+		Async: map[string]interface{}{
+			"cache": map[string]interface{}{
+				"enabled":     true,
+				"ttl_seconds": 3600,
+			},
+		},
+	}
+	guard, err := NewSpiderSenseGuard(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	action := Custom("spider_sense", map[string]interface{}{"text": "   hello world   "})
+	first := guard.Check(action, NewContext())
+	second := guard.Check(action, NewContext())
+	if first.Allowed || second.Allowed {
+		t.Fatal("expected deny from provider embedding")
+	}
+	if requests != 1 {
+		t.Fatalf("expected 1 provider call due to cache, got %d", requests)
+	}
+}
+
+func TestSpiderSenseProviderRetryBackoff(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests < 3 {
+			http.Error(w, "temporary failure", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[1.0,0.0,0.0]}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &policy.SpiderSenseConfig{
+		Patterns: []policy.PatternEntryConfig{
+			{
+				ID:        "p1",
+				Category:  "prompt_injection",
+				Stage:     "perception",
+				Label:     "ignore previous",
+				Embedding: []float32{1, 0, 0},
+			},
+		},
+		EmbeddingAPIURL: server.URL,
+		EmbeddingAPIKey: "test-key",
+		EmbeddingModel:  "text-embedding-3-small",
+		Async: map[string]interface{}{
+			"retry": map[string]interface{}{
+				"max_retries":        2,
+				"initial_backoff_ms": 1,
+				"max_backoff_ms":     2,
+				"multiplier":         1.0,
+			},
+		},
+	}
+	guard, err := NewSpiderSenseGuard(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := guard.Check(Custom("spider_sense", map[string]interface{}{"text": "hello"}), NewContext())
+	if result.Allowed {
+		t.Fatal("expected deny after successful provider retry path")
+	}
+	details, ok := result.Details.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected details map, got %T", result.Details)
+	}
+	if details["embedding_from"] != "provider" {
+		t.Fatalf("expected embedding_from provider, got %v", details["embedding_from"])
+	}
+	if requests != 3 {
+		t.Fatalf("expected 3 provider attempts, got %d", requests)
+	}
+}
+
+func TestSpiderSenseProviderRetryAfterHeader(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[1.0,0.0,0.0]}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &policy.SpiderSenseConfig{
+		Patterns: []policy.PatternEntryConfig{
+			{
+				ID:        "p1",
+				Category:  "prompt_injection",
+				Stage:     "perception",
+				Label:     "ignore previous",
+				Embedding: []float32{1, 0, 0},
+			},
+		},
+		EmbeddingAPIURL: server.URL,
+		EmbeddingAPIKey: "test-key",
+		EmbeddingModel:  "text-embedding-3-small",
+		Async: map[string]interface{}{
+			"retry": map[string]interface{}{
+				"max_retries":            1,
+				"initial_backoff_ms":     1,
+				"max_backoff_ms":         2,
+				"multiplier":             1.0,
+				"honor_retry_after":      true,
+				"retry_after_cap_ms":     5,
+				"honor_rate_limit_reset": true,
+			},
+		},
+	}
+	guard, err := NewSpiderSenseGuard(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	start := time.Now()
+	result := guard.Check(Custom("spider_sense", map[string]interface{}{"text": "hello"}), NewContext())
+	elapsed := time.Since(start)
+	if result.Allowed {
+		t.Fatal("expected deny after provider retry path")
+	}
+	if requests != 2 {
+		t.Fatalf("expected 2 provider attempts, got %d", requests)
+	}
+	// Retry-After=1s should be honored, but capped at 5ms.
+	if elapsed < 4*time.Millisecond {
+		t.Fatalf("expected retry delay >= 4ms when honoring Retry-After cap, got %s", elapsed)
+	}
+}
+
+func TestSpiderSenseProviderCircuitBreakerWarnMode(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "failure", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := &policy.SpiderSenseConfig{
+		Patterns: []policy.PatternEntryConfig{
+			{
+				ID:        "p1",
+				Category:  "prompt_injection",
+				Stage:     "perception",
+				Label:     "ignore previous",
+				Embedding: []float32{1, 0, 0},
+			},
+		},
+		EmbeddingAPIURL: server.URL,
+		EmbeddingAPIKey: "test-key",
+		EmbeddingModel:  "text-embedding-3-small",
+		Async: map[string]interface{}{
+			"retry": map[string]interface{}{
+				"max_retries": 0,
+			},
+			"circuit_breaker": map[string]interface{}{
+				"failure_threshold": 1,
+				"reset_timeout_ms":  60000,
+				"success_threshold": 1,
+				"on_open":           "warn",
+			},
+		},
+	}
+	guard, err := NewSpiderSenseGuard(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	first := guard.Check(Custom("spider_sense", map[string]interface{}{"text": "first"}), NewContext())
+	if first.Allowed {
+		t.Fatal("expected first provider failure to deny")
+	}
+
+	second := guard.Check(Custom("spider_sense", map[string]interface{}{"text": "second"}), NewContext())
+	if !second.Allowed || second.Severity != Warning {
+		t.Fatalf("expected warn result on open circuit, got allowed=%v severity=%v", second.Allowed, second.Severity)
+	}
+	details, ok := second.Details.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected details map, got %T", second.Details)
+	}
+	if details["on_open"] != "warn" {
+		t.Fatalf("expected on_open=warn, got %v", details["on_open"])
+	}
+	if requests != 1 {
+		t.Fatalf("expected second check to short-circuit provider call, got %d calls", requests)
+	}
+}
+
+func TestSpiderSenseTrustStoreSignatureKeyID(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "patterns.json")
+	dbContent := []byte(`[
+		{"id":"p1","category":"test","stage":"perception","label":"test pattern","embedding":[1.0,0.0,0.0]}
+	]`)
+	if err := os.WriteFile(dbPath, dbContent, 0o644); err != nil {
+		t.Fatalf("write db: %v", err)
+	}
+	checksum := checksumHex(dbContent)
+
+	kp, err := sdkcrypto.GenerateKeypair()
+	if err != nil {
+		t.Fatalf("generate keypair: %v", err)
+	}
+	publicKeyHex := kp.PublicKey().Hex()
+	sum := sha256.Sum256([]byte(publicKeyHex))
+	keyID := hex.EncodeToString(sum[:])[:16]
+	message := []byte("spider_sense_db:v1:test-v1:" + checksum)
+	sig, err := kp.Sign(message)
+	if err != nil {
+		t.Fatalf("sign message: %v", err)
+	}
+
+	trustStorePath := filepath.Join(dir, "trust-store.json")
+	trustStoreRaw, err := json.Marshal(map[string]interface{}{
+		"keys": []map[string]string{
+			{
+				"key_id":     keyID,
+				"public_key": publicKeyHex,
+				"status":     "active",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal trust store: %v", err)
+	}
+	if err := os.WriteFile(trustStorePath, trustStoreRaw, 0o644); err != nil {
+		t.Fatalf("write trust store: %v", err)
+	}
+
+	guard, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+		PatternDBPath:           dbPath,
+		PatternDBVersion:        "test-v1",
+		PatternDBChecksum:       checksum,
+		PatternDBSignature:      sig.Hex(),
+		PatternDBSignatureKeyID: keyID,
+		PatternDBTrustStorePath: trustStorePath,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := guard.Check(Custom("spider_sense", map[string]interface{}{
+		"embedding": []interface{}{float64(1), float64(0), float64(0)},
+	}), NewContext())
+	if result.Allowed {
+		t.Fatal("expected deny against trust-store validated pattern DB")
+	}
+}
+
+func TestSpiderSenseSignedPatternManifest(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "patterns.json")
+	dbContent := []byte(`[
+		{"id":"p1","category":"test","stage":"perception","label":"test pattern","embedding":[1.0,0.0,0.0]}
+	]`)
+	if err := os.WriteFile(dbPath, dbContent, 0o644); err != nil {
+		t.Fatalf("write db: %v", err)
+	}
+	checksum := checksumHex(dbContent)
+
+	dbKeyPair, err := sdkcrypto.GenerateKeypair()
+	if err != nil {
+		t.Fatalf("generate db keypair: %v", err)
+	}
+	dbPublicKeyHex := dbKeyPair.PublicKey().Hex()
+	dbKeyID := deriveSpiderSenseKeyID(dbPublicKeyHex)
+	dbMessage := []byte("spider_sense_db:v1:test-v1:" + checksum)
+	dbSignature, err := dbKeyPair.Sign(dbMessage)
+	if err != nil {
+		t.Fatalf("sign db message: %v", err)
+	}
+
+	trustStorePath := filepath.Join(dir, "trust-store.json")
+	trustStoreRaw, err := json.Marshal(map[string]interface{}{
+		"keys": []map[string]string{
+			{
+				"key_id":     dbKeyID,
+				"public_key": dbPublicKeyHex,
+				"status":     "active",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal trust store: %v", err)
+	}
+	if err := os.WriteFile(trustStorePath, trustStoreRaw, 0o644); err != nil {
+		t.Fatalf("write trust store: %v", err)
+	}
+
+	rootKeyPair, err := sdkcrypto.GenerateKeypair()
+	if err != nil {
+		t.Fatalf("generate root keypair: %v", err)
+	}
+	rootPublicKeyHex := rootKeyPair.PublicKey().Hex()
+	rootKeyID := deriveSpiderSenseKeyID(rootPublicKeyHex)
+
+	manifest := spiderSensePatternManifest{
+		PatternDBPath:         filepath.Base(dbPath),
+		PatternDBVersion:      "test-v1",
+		PatternDBChecksum:     checksum,
+		PatternDBSignature:    dbSignature.Hex(),
+		PatternDBSignatureKey: dbKeyID,
+		PatternDBTrustStore:   filepath.Base(trustStorePath),
+		ManifestSignatureKey:  rootKeyID,
+	}
+	manifestSignature, err := rootKeyPair.Sign(spiderSenseManifestSigningMessage(manifest))
+	if err != nil {
+		t.Fatalf("sign manifest message: %v", err)
+	}
+	manifest.ManifestSignature = manifestSignature.Hex()
+
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifestRaw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestRaw, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	guard, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+		PatternDBManifestPath:        manifestPath,
+		PatternDBManifestTrustedKeys: []policy.SpiderSenseTrustedKeyConfig{{KeyID: rootKeyID, PublicKey: rootPublicKeyHex, Status: "active"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := guard.Check(Custom("spider_sense", map[string]interface{}{
+		"embedding": []interface{}{float64(1), float64(0), float64(0)},
+	}), NewContext())
+	if result.Allowed {
+		t.Fatal("expected deny against manifest-validated pattern DB")
+	}
+
+	tampered := manifest
+	tampered.PatternDBVersion = "tampered"
+	tamperedRaw, err := json.Marshal(tampered)
+	if err != nil {
+		t.Fatalf("marshal tampered manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, tamperedRaw, 0o644); err != nil {
+		t.Fatalf("write tampered manifest: %v", err)
+	}
+	_, err = NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+		PatternDBManifestPath:        manifestPath,
+		PatternDBManifestTrustedKeys: []policy.SpiderSenseTrustedKeyConfig{{KeyID: rootKeyID, PublicKey: rootPublicKeyHex, Status: "active"}},
+	})
+	if err == nil {
+		t.Fatal("expected manifest signature verification failure after tamper")
+	}
+}
+
+func TestSpiderSenseDeepPath(t *testing.T) {
+	t.Run("ambiguous is denied by deep path verdict", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"choices": [
+					{
+						"message": {
+							"content": "{\"verdict\":\"deny\",\"reason\":\"policy confidence high\"}"
+						}
+					}
+				]
+			}`))
+		}))
+		defer server.Close()
+
+		guard, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			SimilarityThreshold: ptrF64(0.50),
+			AmbiguityBand:       ptrF64(0.10),
+			Patterns: []policy.PatternEntryConfig{
+				{ID: "p1", Category: "prompt_injection", Stage: "perception", Label: "ignore previous", Embedding: []float32{1, 0, 0}},
+				{ID: "p2", Category: "data_exfiltration", Stage: "action", Label: "exfil data", Embedding: []float32{0, 1, 0}},
+				{ID: "p3", Category: "privilege_escalation", Stage: "cognition", Label: "escalate", Embedding: []float32{0, 0, 1}},
+			},
+			LlmAPIURL:                server.URL,
+			LlmAPIKey:                "llm-key",
+			LlmModel:                 "gpt-4.1-mini",
+			LlmPromptTemplateID:      "spider_sense.deep_path.json_classifier",
+			LlmPromptTemplateVersion: "1.0.0",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := guard.Check(Custom("spider_sense", map[string]interface{}{
+			"embedding": []interface{}{float64(0.577), float64(0.577), float64(0.577)},
+		}), NewContext())
+		if result.Allowed {
+			t.Fatal("expected deep path deny")
+		}
+		details, ok := result.Details.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected details map, got %T", result.Details)
+		}
+		if details["analysis"] != "deep_path" {
+			t.Fatalf("expected deep_path analysis, got %v", details["analysis"])
+		}
+		if details["verdict"] != "deny" {
+			t.Fatalf("expected deep path verdict deny, got %v", details["verdict"])
+		}
+	})
+
+	t.Run("deep path fail mode allow", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "llm down", http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+
+		guard, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			SimilarityThreshold: ptrF64(0.50),
+			AmbiguityBand:       ptrF64(0.10),
+			Patterns: []policy.PatternEntryConfig{
+				{ID: "p1", Category: "prompt_injection", Stage: "perception", Label: "ignore previous", Embedding: []float32{1, 0, 0}},
+				{ID: "p2", Category: "data_exfiltration", Stage: "action", Label: "exfil data", Embedding: []float32{0, 1, 0}},
+				{ID: "p3", Category: "privilege_escalation", Stage: "cognition", Label: "escalate", Embedding: []float32{0, 0, 1}},
+			},
+			LlmAPIURL:                server.URL,
+			LlmAPIKey:                "llm-key",
+			LlmFailMode:              "allow",
+			LlmPromptTemplateID:      "spider_sense.deep_path.json_classifier",
+			LlmPromptTemplateVersion: "1.0.0",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := guard.Check(Custom("spider_sense", map[string]interface{}{
+			"embedding": []interface{}{float64(0.577), float64(0.577), float64(0.577)},
+		}), NewContext())
+		if !result.Allowed {
+			t.Fatal("expected allow when deep path fail mode=allow")
+		}
+		details, ok := result.Details.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected details map, got %T", result.Details)
+		}
+		if details["analysis"] != "deep_path_error" {
+			t.Fatalf("expected deep_path_error analysis, got %v", details["analysis"])
+		}
+		if details["fail_mode"] != "allow" {
+			t.Fatalf("expected fail_mode=allow, got %v", details["fail_mode"])
+		}
+	})
+
+	t.Run("deep path requires template id/version", func(t *testing.T) {
+		_, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			SimilarityThreshold: ptrF64(0.50),
+			AmbiguityBand:       ptrF64(0.10),
+			Patterns: []policy.PatternEntryConfig{
+				{ID: "p1", Category: "prompt_injection", Stage: "perception", Label: "ignore previous", Embedding: []float32{1, 0, 0}},
+			},
+			LlmAPIURL: "https://example.invalid/v1/chat/completions",
+			LlmAPIKey: "llm-key",
+		})
+		if err == nil {
+			t.Fatal("expected template id/version validation error")
+		}
+	})
+
+	t.Run("deep path rejects unknown template", func(t *testing.T) {
+		_, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			SimilarityThreshold: ptrF64(0.50),
+			AmbiguityBand:       ptrF64(0.10),
+			Patterns: []policy.PatternEntryConfig{
+				{ID: "p1", Category: "prompt_injection", Stage: "perception", Label: "ignore previous", Embedding: []float32{1, 0, 0}},
+			},
+			LlmAPIURL:                "https://example.invalid/v1/chat/completions",
+			LlmAPIKey:                "llm-key",
+			LlmPromptTemplateID:      "spider_sense.deep_path.unknown",
+			LlmPromptTemplateVersion: "9.9.9",
+		})
+		if err == nil {
+			t.Fatal("expected unknown template validation error")
 		}
 	})
 }

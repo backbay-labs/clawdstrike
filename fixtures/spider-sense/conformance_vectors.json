@@ -38,6 +38,7 @@
         "expected_verdict": "deny",
         "expected_embedding_from": "action",
         "expected_analysis": "fast_path",
+        "expected_top_matches_len": 3,
         "top_score_min": 0.99,
         "top_score_max": 1.0
       },
@@ -49,6 +50,7 @@
         "expected_verdict": "allow",
         "expected_embedding_from": "action",
         "expected_analysis": "fast_path",
+        "expected_top_matches_len": 3,
         "top_score_min": 0.5,
         "top_score_max": 0.7
       }
@@ -93,6 +95,7 @@
         "expected_verdict": "ambiguous",
         "expected_embedding_from": "action",
         "expected_analysis": "fast_path",
+        "expected_top_matches_len": 3,
         "top_score_min": 0.5,
         "top_score_max": 0.7
       }

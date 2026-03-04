@@ -13,6 +13,7 @@ import (
 var supportedVersions = map[string]bool{
 	"1.1.0": true,
 	"1.2.0": true,
+	"1.3.0": true,
 }
 
 // MergeStrategy controls how policies are combined via extends.

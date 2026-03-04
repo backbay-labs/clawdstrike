@@ -73,7 +73,7 @@ export function loadPolicyFromString(content: string): Policy {
   const policy = parsed as Policy;
   if (policy.version === "clawdstrike-v1.0") {
     warnLegacyCompatibility(
-      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.",
+      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.3.0 is preferred.",
     );
   }
   return policy;
@@ -158,7 +158,7 @@ function loadPolicyRecursive(ref: string, stack: string[]): Policy {
   const policy = parsed as Policy;
   if (policy.version === "clawdstrike-v1.0") {
     warnLegacyCompatibility(
-      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.",
+      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.3.0 is preferred.",
     );
   }
 
@@ -224,7 +224,7 @@ function parseYamlObject(content: string): Record<string, unknown> {
 
 function isCanonicalPolicy(policy: Record<string, unknown>): boolean {
   const version = policy.version;
-  return typeof version === "string" && /^(1\.1\.0|1\.2\.0)$/.test(version);
+  return typeof version === "string" && /^(1\.1\.0|1\.2\.0|1\.3\.0)$/.test(version);
 }
 
 function warnLegacyCompatibility(message: string): void {
