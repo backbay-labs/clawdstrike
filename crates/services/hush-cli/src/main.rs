@@ -2745,7 +2745,7 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
                         let _ = writeln!(
                             stderr,
                             "Error: clawdstrike daemon (hushd) not found.\n\
-                             Install it with: brew upgrade clawdstrike\n\
+                             Install it with: brew install backbay-labs/tap/clawdstrike\n\
                              Or from source:  cargo install --path crates/services/hushd"
                         );
                     } else {
