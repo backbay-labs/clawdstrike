@@ -1,0 +1,33 @@
+# Clawdstrike/OpenClaw policy for the hello-secure-agent example.
+#
+# This file is consumed by the @clawdstrike/openclaw plugin (not the Rust `clawdstrike::Policy` type).
+# Validate it with:
+#   npx clawdstrike policy lint ./policy.yaml
+
+version: "clawdstrike-v1.0"
+
+egress:
+  mode: allowlist
+  allowed_domains:
+    - "api.openai.com"
+    - "api.anthropic.com"
+    - "api.github.com"
+    - "registry.npmjs.org"
+    - "pypi.org"
+    - "files.pythonhosted.org"
+  denied_domains:
+    - "*.onion"
+    - "localhost"
+    - "127.*"
+    - "10.*"
+    - "192.168.*"
+
+filesystem:
+  forbidden_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.gnupg"
+    - ".env"
+    - ".env.*"
+
+on_violation: cancel

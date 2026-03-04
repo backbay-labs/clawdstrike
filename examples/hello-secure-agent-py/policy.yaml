@@ -1,0 +1,34 @@
+# Clawdstrike policy for the hello-secure-agent-py example.
+#
+# Schema v1.2.0, extending the built-in ai-agent ruleset which provides
+# sensible defaults for AI coding assistants (forbidden paths, secret
+# leak detection, prompt injection, jailbreak detection, etc.).
+#
+# We layer on a path allowlist and tighten egress to only the domains
+# this agent actually needs.
+
+version: "1.2.0"
+name: hello-secure-agent-py
+extends: ai-agent
+
+guards:
+  # Only allow file access within /tmp/workspace.
+  # The base ai-agent ruleset already blocks sensitive paths like
+  # ~/.ssh, ~/.aws, /etc/shadow, etc. This guard adds an explicit
+  # allowlist so the agent can only touch its own workspace.
+  path_allowlist:
+    allowed_paths:
+      - "/tmp/workspace/**"
+
+  # Tighten network egress to only what this agent needs.
+  # The base ai-agent ruleset allows a broad set of AI APIs and
+  # package registries. We override to allow only OpenAI.
+  egress_allowlist:
+    allow:
+      - "api.openai.com"
+    block: []
+    default_action: block
+
+settings:
+  fail_fast: false
+  verbose_logging: false

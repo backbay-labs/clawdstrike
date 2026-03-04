@@ -1,0 +1,13 @@
+[project]
+name = "hello-secure-agent-py"
+version = "0.1.0"
+description = "Secure AI agent using Clawdstrike + OpenAI Agents SDK"
+requires-python = ">=3.10"
+dependencies = [
+    "clawdstrike",
+    "openai-agents>=0.1.0",
+    "requests",
+]
+
+[project.scripts]
+agent = "agent:main"

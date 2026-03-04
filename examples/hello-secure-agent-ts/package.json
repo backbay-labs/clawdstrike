@@ -1,0 +1,19 @@
+{
+  "name": "hello-secure-agent-ts",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Secure AI agent using Clawdstrike + OpenAI Agents SDK",
+  "scripts": {
+    "start": "npx tsx agent.ts",
+    "dry-run": "npx tsx agent.ts --dry-run"
+  },
+  "dependencies": {
+    "@clawdstrike/sdk": "workspace:*",
+    "@clawdstrike/openai": "workspace:*",
+    "@clawdstrike/policy": "workspace:*",
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}

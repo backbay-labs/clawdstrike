@@ -1,0 +1,34 @@
+# Secure Agent Policy (Vercel AI)
+# Extends the built-in ai-agent ruleset with tighter controls
+# for this demo's specific needs.
+version: "1.2.0"
+name: Hello Secure Agent (Vercel AI)
+description: Demo policy showing file, command, and network guards with middleware
+
+# Inherit all guards from the ai-agent base ruleset
+extends: ai-agent
+
+guards:
+  # Restrict file reads/writes to /tmp/workspace only.
+  # The ai-agent base already blocks sensitive paths like ~/.ssh and /etc/shadow;
+  # this guard adds an explicit allowlist so the agent can ONLY touch its sandbox.
+  path_allowlist:
+    file_access_allow:
+      - "/tmp/workspace/**"
+    file_write_allow:
+      - "/tmp/workspace/**"
+
+  # Tighten network egress to only the domains this agent actually needs.
+  # Overrides the broader allowlist from ai-agent.
+  egress_allowlist:
+    allow:
+      - "api.openai.com"
+    block: []
+    default_action: block
+
+  # Shell command guard is inherited from ai-agent and blocks
+  # destructive commands like rm -rf / out of the box.
+
+settings:
+  fail_fast: false
+  verbose_logging: true

@@ -1,0 +1,19 @@
+{
+  "name": "hello-secure-agent-vercel",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Secure AI agent using Clawdstrike + Vercel AI SDK",
+  "scripts": {
+    "start": "npx tsx agent.ts",
+    "dry-run": "npx tsx agent.ts --dry-run"
+  },
+  "dependencies": {
+    "@clawdstrike/sdk": "workspace:*",
+    "ai": "^4.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}
