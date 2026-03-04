@@ -545,7 +545,7 @@ fn emit_sarif(
         "runs": [{
             "tool": {
                 "driver": {
-                    "name": "hush policy lint",
+                    "name": "clawdstrike policy lint",
                     "rules": rules,
                 }
             },
