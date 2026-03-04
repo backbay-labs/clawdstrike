@@ -477,7 +477,7 @@ class GuardConfigs:
             else:
                 got = type(spider_data).__name__
                 raise PolicyError(
-                    f"Expected bool or mapping for guards.spider_sense, got {got}"
+                    f"Expected mapping for guards.spider_sense, got {got}"
                 )
 
         return cls(
