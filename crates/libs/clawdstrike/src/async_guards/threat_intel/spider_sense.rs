@@ -215,9 +215,6 @@ impl SpiderSensePolicyConfig {
     pub fn merge_with(&self, child: &Self) -> Self {
         let mut present_fields = BTreeSet::new();
 
-        if child.enabled != self.enabled {
-            present_fields.insert("enabled".to_string());
-        }
         if !child.embedding_api_url.trim().is_empty() {
             present_fields.insert("embedding_api_url".to_string());
         }
@@ -348,6 +345,14 @@ impl SpiderSensePolicyConfig {
         }
         if child.async_config.is_some() {
             present_fields.insert("async".to_string());
+        }
+
+        if !child.enabled {
+            present_fields.insert("enabled".to_string());
+        } else if child.enabled != self.enabled && present_fields.is_empty() {
+            // Heuristic: only infer explicit enabled=true when it is the only
+            // child change. This avoids treating serde defaults as intent.
+            present_fields.insert("enabled".to_string());
         }
 
         self.merge_with_present_fields(child, &present_fields)
@@ -2066,6 +2071,27 @@ mod tests {
         assert!(
             !merged.enabled,
             "explicit field-presence merge should not auto-enable from serde defaults"
+        );
+    }
+
+    #[test]
+    fn spider_sense_policy_merge_with_preserves_base_enabled_when_child_partial_serde_defaults() {
+        let mut base = test_cfg();
+        base.enabled = false;
+        base.similarity_threshold = 0.84;
+        let child: SpiderSensePolicyConfig = serde_json::from_value(serde_json::json!({
+            "similarity_threshold": 0.91
+        }))
+        .expect("policy config should deserialize");
+
+        let merged = base.merge_with(&child);
+        assert!(
+            !merged.enabled,
+            "heuristic merge should not auto-enable from serde defaults"
+        );
+        assert_eq!(
+            merged.similarity_threshold, 0.91,
+            "non-default child threshold should still override"
         );
     }
 
